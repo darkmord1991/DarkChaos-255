@@ -555,6 +555,9 @@ public:
     // Called from End of Creature Update.
     virtual void OnAllCreatureUpdate(Creature* /*creature*/, uint32 /*diff*/) { }
 
+    // Called just before the level of the creature is set.
+    virtual void OnBeforeCreatureSelectLevel(const CreatureTemplate* /*cinfo*/, Creature* /*creature*/, uint8& /*level*/) { }
+
     // Called from End of Creature SelectLevel.
     virtual void Creature_SelectLevel(const CreatureTemplate* /*cinfo*/, Creature* /*creature*/) { }
 
@@ -705,6 +708,9 @@ public:
     // Called when the game object is damaged (destructible buildings only).
     virtual void OnGameObjectDamaged(GameObject* /*go*/, Player* /*player*/) { }
 
+    // Called when the health of a game object is modified (destructible buildings only).
+    virtual void OnGameObjectModifyHealth(GameObject* /*go*/, Unit* /*attackerOrHealer*/, int32& /*change*/, SpellInfo const* /*spellInfo*/) { }
+
     // Called when the game object loot state is changed.
     virtual void OnGameObjectLootStateChanged(GameObject* /*go*/, uint32 /*state*/, Unit* /*unit*/) { }
 
@@ -786,6 +792,9 @@ public:
 
     // Called when the game object is damaged (destructible buildings only).
     virtual void OnDamaged(GameObject* /*go*/, Player* /*player*/) { }
+
+    // Called when the health of a game object is modified (destructible buildings only).
+    virtual void OnModifyHealth(GameObject* /*go*/, Unit* /*attackerOrHealer*/, int32& /*change*/, SpellInfo const* /*spellInfo*/) { }
 
     // Called when the game object loot state is changed.
     virtual void OnLootStateChanged(GameObject* /*go*/, uint32 /*state*/, Unit* /*unit*/) { }
@@ -2228,6 +2237,7 @@ public: /* GameObjectScript */
     uint32 GetDialogStatus(Player* player, GameObject* go);
     void OnGameObjectDestroyed(GameObject* go, Player* player);
     void OnGameObjectDamaged(GameObject* go, Player* player);
+    void OnGameObjectModifyHealth(GameObject* go, Unit* attackerOrHealer, int32& change, SpellInfo const* spellInfo);
     void OnGameObjectLootStateChanged(GameObject* go, uint32 state, Unit* unit);
     void OnGameObjectStateChanged(GameObject* go, uint32 state);
     void OnGameObjectUpdate(GameObject* go, uint32 diff);
@@ -2548,6 +2558,7 @@ public: /* MovementHandlerScript */
 public: /* AllCreatureScript */
     //listener function (OnAllCreatureUpdate) is called by OnCreatureUpdate
     //void OnAllCreatureUpdate(Creature* creature, uint32 diff);
+    void OnBeforeCreatureSelectLevel(const CreatureTemplate* cinfo, Creature* creature, uint8& level);
     void Creature_SelectLevel(const CreatureTemplate* cinfo, Creature* creature);
     void OnCreatureSaveToDB(Creature* creature);
 
