@@ -107,7 +107,7 @@ void OPvPCapturePointGH::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(571, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(_capturePointSpawnId);
+    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
     for (auto itr = bounds.first; itr != bounds.second; ++itr)
         itr->second->SetGoArtKit(artkit);
 }
