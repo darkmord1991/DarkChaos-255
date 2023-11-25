@@ -24,7 +24,7 @@
         IS_RESOURCE_MESSAGE_A = false;
         IS_RESOURCE_MESSAGE_H = false;
 
-        m_FirstLoad = false;
+        _FirstLoad = false;
 
         limit_A = 0;
         limit_H = 0;
@@ -148,18 +148,18 @@
 
         if(honor)
         {
-            player->SetHonorPoints(m_GetHonorPoints + honorpointsorarena);
+            player->SetHonorPoints(_GetHonorPoints + honorpointsorarena);
             snprintf(msg, 250, "You got %u bonus honor!", honorpointsorarena);
         }
         else if(arena)
         {
-            player->SetArenaPoints(m_GetArenaPoints + honorpointsorarena);
+            player->SetArenaPoints(_GetArenaPoints + honorpointsorarena);
             snprintf(msg, 250, "You got amount of %u additional arena points!", honorpointsorarena);
         }
         else if(both)
         {
-            player->SetHonorPoints(m_GetHonorPoints + honorpointsorarena);
-            player->SetArenaPoints(m_GetArenaPoints + honorpointsorarena);
+            player->SetHonorPoints(_GetHonorPoints + honorpointsorarena);
+            player->SetArenaPoints(_GetArenaPoints + honorpointsorarena);
             snprintf(msg, 250, "You got amount of %u additional arena points and bonus honor!", honorpointsorarena);
         }
         HandleWinMessage(msg);
@@ -180,7 +180,7 @@
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Horde ");
             }
                 
-            else if(m_LastWin == 0) 
+            else if(_LastWin == 0) 
             {
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
             }
