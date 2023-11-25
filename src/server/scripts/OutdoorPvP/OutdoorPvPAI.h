@@ -35,13 +35,13 @@ class OutdoorPvPAI : public OutdoorPvP
 
     // from Battlefield.cpp
     // Players info maps
-    GuidUnorderedSet m_players[PVP_TEAMS_COUNT];             // Players in zone
-    GuidUnorderedSet m_PlayersInQueue[PVP_TEAMS_COUNT];      // Players in the queue
-    GuidUnorderedSet m_PlayersInWar[PVP_TEAMS_COUNT];
+    GuidUnorderedSet _players[PVP_TEAMS_COUNT];             // Players in zone
+    GuidUnorderedSet _PlayersInQueue[PVP_TEAMS_COUNT];      // Players in the queue
+    GuidUnorderedSet _PlayersInWar[PVP_TEAMS_COUNT];
 
       protected:
-	  GuidSet m_Groups[2];
-      uint32 m_BattleId;
+	  GuidSet _Groups[2];
+      uint32 _BattleId;
 	  //PlayerSet m_PlayersInWar[2]; // deactivated for testing
 
     /// Called when a player accept to join the battle

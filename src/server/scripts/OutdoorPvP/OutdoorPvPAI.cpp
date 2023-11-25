@@ -16,7 +16,7 @@
 
 OutdoorPvPAI::OutdoorPvPAI()
 {
-    m_TypeId = OUTDOOR_PVP_AI; // also defined in OutdoorPvP.h
+    _TypeId = OUTDOOR_PVP_AI; // also defined in OutdoorPvP.h
 }
 
 bool OutdoorPvPAI::SetupOutdoorPvP()
@@ -35,7 +35,7 @@ bool OutdoorPvPAI::SetupOutdoorPvP()
 
 Group* OutdoorPvPAI::GetFreeBfRaid(TeamId TeamId)
 {
-    for (GuidSet::const_iterator itr = m_Groups[TeamId].begin(); itr != m_Groups[TeamId].end(); ++itr)
+    for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
         if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
             if (!group->IsFull())
                 return group;
@@ -63,7 +63,7 @@ bool OutdoorPvPAI::AddOrSetPlayerToCorrectBfGroup(Player* plr)
         group->SetBattlegroundGroup(bg);
         group->Create(plr);
         sGroupMgr->AddGroup(group);
-        m_Groups[plr->GetTeamId()].insert(group->GetGUID());
+        _Groups[plr->GetTeamId()].insert(group->GetGUID());
     }
     else if (group->IsMember(plr->GetGUID()))
     {
@@ -84,8 +84,8 @@ void OutdoorPvPAI::HandlePlayerEnterZone(Player* player, uint32 zone)
 {
     if(AddOrSetPlayerToCorrectBfGroup(player))
     {
-        player->GetSession()->SendBfEntered(m_BattleId);
-        m_PlayersInWar[player->GetTeamId()].insert(player->GetGUID());
+        player->GetSession()->SendBfEntered(_BattleId);
+        _PlayersInWar[player->GetTeamId()].insert(player->GetGUID());
         
         if (player->isAFK())
             player->ToggleAFK();
@@ -109,7 +109,7 @@ void OutdoorPvPAI::HandlePlayerEnterZone(Player* player, uint32 zone)
 
 Group* OutdoorPvPAI::GetGroupPlayer(ObjectGuid guid, TeamId TeamId)
 {
-    for (GuidSet::const_iterator itr = m_Groups[TeamId].begin(); itr != m_Groups[TeamId].end(); ++itr)
+    for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
         if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
             if (group->IsMember(guid))
                 return group;
@@ -123,7 +123,7 @@ void OutdoorPvPAI::HandlePlayerLeaveZone(Player *plr, uint32 zone)
     {
         if (!group->RemoveMember(plr->GetGUID()))       
         {
-            m_Groups[plr->GetTeamId()].erase(group->GetGUID());
+            _Groups[plr->GetTeamId()].erase(group->GetGUID());
             group->SetBattlegroundGroup(NULL);
         }
     }
