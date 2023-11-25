@@ -29,7 +29,7 @@
         limit_A = 0;
         limit_H = 0;
 
-        m_LastWin = 0;
+        _LastWin = 0;
 
         limit_resources_message_A = 0;
         limit_resources_message_H = 0;
@@ -48,8 +48,8 @@
         //Welcome to Hinterland BG
         player->TextEmote("Welcome to Hinterland BG!");
 
-		m_ally_gathered = HL_RESOURCES_A;
-		m_horde_gathered = HL_RESOURCES_H;
+		_ally_gathered = HL_RESOURCES_A;
+		_horde_gathered = HL_RESOURCES_H;
 
         //char message[250];
         if(player->GetTeamId() == TEAM_ALLIANCE)
@@ -85,9 +85,9 @@
 
     void OutdoorPvPHL::PlaySounds(bool side)
     {
-        SessionMap m_sessions = sWorld->GetAllSessions();
+        SessionMap _sessions = sWorld->GetAllSessions();
         SessionMap::iterator itr;
-        for(SessionMap::iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
+        for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr)
         {
             for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             {
@@ -107,14 +107,14 @@
 
     void OutdoorPvPHL::HandleReset()
     {
-        m_ally_gathered = HL_RESOURCES_A;
-        m_horde_gathered = HL_RESOURCES_H;
+        _ally_gathered = HL_RESOURCES_A;
+        _horde_gathered = HL_RESOURCES_H;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
         IS_RESOURCE_MESSAGE_H = false;
 
-        m_FirstLoad = false;
+        _FirstLoad = false;
 
         limit_A = 0;
         limit_H = 0;
@@ -143,8 +143,8 @@
     void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool honor, bool arena, bool both)
     {
         char msg[250];
-        uint32 m_GetHonorPoints = player->GetHonorPoints();
-        uint32 m_GetArenaPoints = player->GetArenaPoints();
+        uint32 _GetHonorPoints = player->GetHonorPoints();
+        uint32 _GetArenaPoints = player->GetArenaPoints();
 
         if(honor)
         {
@@ -168,14 +168,14 @@
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
-        if(m_FirstLoad == false)
+        if(_FirstLoad == false)
         {
-            if(m_LastWin == ALLIANCE) 
+            if(_LastWin == ALLIANCE) 
             {
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Alliance");                
             }
              
-            else if(m_LastWin == HORDE) 
+            else if(_LastWin == HORDE) 
             {
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Horde ");
             }
@@ -185,68 +185,68 @@
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
             }
                 
-            m_FirstLoad = true;
+            _FirstLoad = true;
         }
 
-        if(m_ally_gathered <= 50 && limit_A == 0)
+        if(_ally_gathered <= 50 && limit_A == 0)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
             IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
             limit_A = 1; // We set this to one to stop the spamming
             PlaySounds(false);
         }
-        else if(m_horde_gathered <= 50 && limit_H == 0)
+        else if(_horde_gathered <= 50 && limit_H == 0)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
             IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
             limit_H = 1; // Same as above
             PlaySounds(true);
         }
-        else if(m_ally_gathered <= 0 && limit_A == 1)
+        else if(_ally_gathered <= 0 && limit_A == 1)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
             IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
             limit_A = 2;
             PlaySounds(false);
         }
-        else if(m_horde_gathered <= 0 && limit_H == 1)
+        else if(_horde_gathered <= 0 && limit_H == 1)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
             IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
             limit_H = 2;
             PlaySounds(true);
         }
-        else if(m_ally_gathered <= 300 && limit_resources_message_A == 0)
+        else if(_ally_gathered <= 300 && limit_resources_message_A == 0)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_A = 1;
             PlaySounds(false);
         }
-        else if(m_horde_gathered <= 300 && limit_resources_message_H == 0)
+        else if(_horde_gathered <= 300 && limit_resources_message_H == 0)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_H = 1;
             PlaySounds(true);
         }
-        else if(m_ally_gathered <= 200 && limit_resources_message_A == 1)
+        else if(_ally_gathered <= 200 && limit_resources_message_A == 1)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_A = 2;
             PlaySounds(false);
         }
-        else if(m_horde_gathered <= 200 && limit_resources_message_H == 1)
+        else if(_horde_gathered <= 200 && limit_resources_message_H == 1)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_H = 2;
             PlaySounds(true);
         }
-        else if(m_ally_gathered <= 100 && limit_resources_message_A == 2)
+        else if(_ally_gathered <= 100 && limit_resources_message_A == 2)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_A = 3;
             PlaySounds(false);
         }
-        else if(m_horde_gathered <= 100 && limit_resources_message_H == 2)
+        else if(_horde_gathered <= 100 && limit_resources_message_H == 2)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true;
             limit_resources_message_H = 3;
@@ -255,8 +255,8 @@
      
         if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
         {
-            SessionMap m_sessions = sWorld->GetAllSessions();
-            for(SessionMap::iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr) // We're searching for all the sessions(Players)
+            SessionMap _sessions = sWorld->GetAllSessions();
+            for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr) // We're searching for all the sessions(Players)
             {
                 if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||
                     itr->second->GetPlayer()->GetZoneId() != 47)
@@ -299,7 +299,7 @@
                                     break;
                             }
                             
-                            m_LastWin = HORDE;
+                            _LastWin = HORDE;
                             IS_RESOURCE_MESSAGE_A = false; // Reset
                         }
                     }
@@ -326,7 +326,7 @@
                                     HandleBuffs(itr->second->GetPlayer(), true);
                                     break;
                             }
-                            m_LastWin = ALLIANCE;
+                            _LastWin = ALLIANCE;
                             IS_RESOURCE_MESSAGE_H = false; // Reset
                         }
                     }
@@ -382,12 +382,12 @@
             switch(killed->ToPlayer()->GetTeamId())
             {
                case TEAM_ALLIANCE:
-                    m_ally_gathered -= PointsLoseOnPvPKill;
+                    _ally_gathered -= PointsLoseOnPvPKill;
 					player->AddItem(40752, 1);
                     Randomizer(player);					
                     break;
                default: //Horde
-                    m_horde_gathered -= PointsLoseOnPvPKill;					
+                    _horde_gathered -= PointsLoseOnPvPKill;					
                     Randomizer(player);
 					player->AddItem(40752, 1);
                     break;
@@ -400,40 +400,40 @@
                 switch(killed->GetEntry()) // Alliance killing horde guards
                 {
                     case Horde_Infantry:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case Horde_Squadleader: // 2?
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case Horde_Boss:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         /*BossReward(player); */
                         break;
                     case Horde_Heal:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     /*
                     case WARSONG_HONOR_GUARD:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case WARSONG_MARKSMAN:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case WARSONG_RECRUITMENT_OFFICER:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case WARSONG_SCOUT:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case WARSONG_WIND_RIDER:
-                        m_horde_gathered -= PointsLoseOnPvPKill;
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     */
@@ -444,40 +444,40 @@
                 switch(killed->GetEntry()) // Horde killing alliance guards
                 {
                     case Alliance_Healer:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case Alliance_Boss:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         /*BossReward(player); <- NEU? */
                         break;
                     case Alliance_Infantry:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case Alliance_Squadleader: // Wrong?
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     /*
                     case VALIANCE_KEEP_FOOTMAN_2: // 2?
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case VALIANCE_KEEP_OFFICER:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case VALIANCE_KEEP_RIFLEMAN:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case VALIANCE_KEEP_WORKER:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     case DURDAN_THUNDERBEAK:
-                        m_ally_gathered -= PointsLoseOnPvPKill;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
                     */
