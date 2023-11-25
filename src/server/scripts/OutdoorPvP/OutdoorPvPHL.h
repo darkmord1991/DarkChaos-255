@@ -97,13 +97,13 @@
             void PlaySounds(bool side);
 
         private:
-            uint32 m_ally_gathered;
-            uint32 m_horde_gathered;
-            uint32 m_LastWin;
+            uint32 _ally_gathered;
+            uint32 _horde_gathered;
+            uint32 _LastWin;
             bool IS_ABLE_TO_SHOW_MESSAGE;
             bool IS_RESOURCE_MESSAGE_A;
             bool IS_RESOURCE_MESSAGE_H;
-            bool m_FirstLoad;
+            bool _FirstLoad;
             int limit_A;
             int limit_H;
             int limit_resources_message_A;

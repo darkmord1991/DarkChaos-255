@@ -16,7 +16,7 @@
 
 OutdoorPvPAI::OutdoorPvPAI()
 {
-    _TypeId = OUTDOOR_PVP_AI; // also defined in OutdoorPvP.h
+    _typeId = OUTDOOR_PVP_AI; // also defined in OutdoorPvP.h
 }
 
 bool OutdoorPvPAI::SetupOutdoorPvP()

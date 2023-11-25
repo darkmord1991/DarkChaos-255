@@ -15,10 +15,10 @@
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
-        m_TypeId = OUTDOOR_PVP_HL;
+        _typeId = OUTDOOR_PVP_HL;
         
-        m_ally_gathered = HL_RESOURCES_A;
-        m_horde_gathered = HL_RESOURCES_H;
+        _ally_gathered = HL_RESOURCES_A;
+        _horde_gathered = HL_RESOURCES_H;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
