@@ -13,6 +13,8 @@
 #include "Log.h"
 #include "WorldPacket.h"
 #include "Player.h"
+#include "OutdoorPvPScript.h"
+#include "CreatureScript.h"
 
 OutdoorPvPAI::OutdoorPvPAI()
 {

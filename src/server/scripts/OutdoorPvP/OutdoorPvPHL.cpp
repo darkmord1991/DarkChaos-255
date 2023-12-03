@@ -12,6 +12,8 @@
     #include "OutdoorPvP.h"
     #include "World.h"
     #include "WorldPacket.h"
+    #include "OutdoorPvPScript.h"
+    #include "CreatureScript.h"
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
