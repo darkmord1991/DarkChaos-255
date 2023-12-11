@@ -297,6 +297,7 @@ public: /* PlayerScript */
     void OnBeforePlayerUpdate(Player* player, uint32 p_time);
     void OnPlayerUpdate(Player* player, uint32 p_time);
     void OnSendInitialPacketsBeforeAddToMap(Player* player, WorldPacket& data);
+    void OnPlayerJustDied(Player* player);
     void OnPlayerReleasedGhost(Player* player);
     void OnPVPKill(Player* killer, Player* killed);
     void OnPlayerPVPFlagChange(Player* player, bool state);
@@ -455,7 +456,6 @@ public: /* PlayerScript */
     bool OnCanPlayerFlyInZone(Player* player, uint32 mapId, uint32 zoneId, SpellInfo const* bySpell);
 
     // Anti cheat
-    void AnticheatSetSkipOnePacketForASH(Player* player, bool apply);
     void AnticheatSetCanFlybyServer(Player* player, bool apply);
     void AnticheatSetUnderACKmount(Player* player);
     void AnticheatSetRootACKUpd(Player* player);
@@ -518,6 +518,7 @@ public: /* GlobalScript */
     bool OnAllowedToLootContainerCheck(Player const* player, ObjectGuid source);
     void OnInstanceIdRemoved(uint32 instanceId);
     void OnBeforeSetBossState(uint32 id, EncounterState newState, EncounterState oldState, Map* instance);
+    void AfterInstanceGameObjectCreate(Map* instance, GameObject* go);
 
 public: /* Scheduled scripts */
     uint32 IncreaseScheduledScriptsCount() { return ++_scheduledScripts; }

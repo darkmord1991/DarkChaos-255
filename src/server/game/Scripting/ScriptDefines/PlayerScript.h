@@ -29,6 +29,10 @@ protected:
     PlayerScript(const char* name);
 
 public:
+    // Called when a player dies
+    virtual void OnPlayerJustDied(Player* /*player*/) { }
+
+    // Called when clicking the release button
     virtual void OnPlayerReleasedGhost(Player* /*player*/) { }
 
     // Called on Send Initial Packets Before Add To Map
@@ -526,7 +530,6 @@ public:
     [[nodiscard]] virtual bool OnCanPlayerFlyInZone(Player* /*player*/, uint32 /*mapId*/, uint32 /*zoneId*/, SpellInfo const* /*bySpell*/) { return true; }
 
     // Passive Anticheat System
-    virtual void AnticheatSetSkipOnePacketForASH(Player* /*player*/, bool /*apply*/) { }
     virtual void AnticheatSetCanFlybyServer(Player* /*player*/, bool /*apply*/) { }
     virtual void AnticheatSetUnderACKmount(Player* /*player*/) { }
     virtual void AnticheatSetRootACKUpd(Player* /*player*/) { }
