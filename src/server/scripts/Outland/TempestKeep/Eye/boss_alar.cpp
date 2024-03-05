@@ -69,7 +69,8 @@ enum Misc
     EVENT_SPELL_BERSERK         = 3,
 
     EVENT_MOVE_TO_PHASE_2       = 4,
-    EVENT_FINISH_DIVE           = 5
+    EVENT_FINISH_DIVE           = 5,
+    EVENT_INVISIBLE             = 6
 };
 
 enum GroupAlar
@@ -89,7 +90,7 @@ struct boss_alar : public BossAI
 
     boss_alar(Creature* creature) : BossAI(creature, DATA_ALAR)
     {
-        SetCombatMovement(false);
+        me->SetCombatMovement(false);
     }
 
     void JustReachedHome() override
@@ -108,6 +109,7 @@ struct boss_alar : public BossAI
         _baseAttackOverride = false;
         _spawnPhoenixes = false;
         _platform = 0;
+        _noMelee = false;
         _platformRoll = 0;
         _noQuillTimes = 0;
         _platformMoveRepeatTimer = 16s;
@@ -172,27 +174,44 @@ struct boss_alar : public BossAI
         if (damage >= me->GetHealth() && _platform < POINT_MIDDLE)
         {
             damage = 0;
-            me->SetReactState(REACT_PASSIVE);
-            scheduler.CancelAll();
-            me->CastStop();
-            me->SetHealth(me->GetMaxHealth());
-            DoCastSelf(SPELL_EMBER_BLAST, true); //spellscript doesn't trigger
-
+            DoCastSelf(SPELL_EMBER_BLAST, true);
+            PretendToDie(me);
+            ScheduleUniqueTimedEvent(1s, [&]{
+                me->SetVisible(false);
+            }, EVENT_INVISIBLE);
             ScheduleUniqueTimedEvent(8s, [&]{
                 me->SetPosition(alarPoints[POINT_MIDDLE]);
             }, EVENT_RELOCATE_MIDDLE);
             ScheduleUniqueTimedEvent(12s, [&]
             {
+                me->SetStandState(UNIT_STAND_STATE_STAND);
+                me->SetVisible(true);
                 DoCastSelf(SPELL_CLEAR_ALL_DEBUFFS, true);
                 DoCastSelf(SPELL_REBIRTH_PHASE2);
             }, EVENT_MOVE_TO_PHASE_2);
             ScheduleUniqueTimedEvent(16001ms, [&]{
+                me->SetHealth(me->GetMaxHealth());
                 me->SetReactState(REACT_AGGRESSIVE);
+                _noMelee = false;
+                me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 _platform = POINT_MIDDLE;
                 me->GetMotionMaster()->MoveChase(me->GetVictim());
                 ScheduleAbilities();
             }, EVENT_REBIRTH);
         }
+    }
+
+    void PretendToDie(Creature* creature)
+    {
+        _noMelee = true;
+        scheduler.CancelAll();
+        creature->InterruptNonMeleeSpells(true);
+        creature->RemoveAllAuras();
+        creature->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+        creature->SetReactState(REACT_PASSIVE);
+        creature->GetMotionMaster()->MovementExpired(false);
+        creature->GetMotionMaster()->MoveIdle();
+        creature->SetStandState(UNIT_STAND_STATE_DEAD);
     }
 
     void ScheduleAbilities()
@@ -213,11 +232,11 @@ struct boss_alar : public BossAI
                 me->SummonCreature(NPC_FLAME_PATCH, *target, TEMPSUMMON_TIMED_DESPAWN, 2 * MINUTE * IN_MILLISECONDS);
             }
         }, 30s);
-        ScheduleTimedEvent(30s, [&]
+        ScheduleTimedEvent(50s, [&]
         {
             me->GetMotionMaster()->MovePoint(POINT_DIVE, alarPoints[POINT_DIVE], false, true);
             scheduler.DelayAll(15s);
-        }, 30s);
+        }, 50s);
         ScheduleUniqueTimedEvent(10min, [&]
         {
             DoCastSelf(SPELL_BERSERK);
@@ -238,6 +257,7 @@ struct boss_alar : public BossAI
 
     void DoDiveBomb()
     {
+        _noMelee = true;
         scheduler.Schedule(2s, [this](TaskContext)
         {
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 10.0f, true))
@@ -251,6 +271,7 @@ struct boss_alar : public BossAI
         }).Schedule(10s, [this](TaskContext)
         {
             me->GetMotionMaster()->MoveChase(me->GetVictim());
+            _noMelee = false;
         });
         if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 90.0f, true))
         {
@@ -325,10 +346,31 @@ struct boss_alar : public BossAI
         }
     }
 
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+        {
+            return;
+        }
+
+        scheduler.Update(diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+        {
+            return;
+        }
+
+        if (!_noMelee)
+        {
+            DoMeleeAttackIfReady();
+        }
+    }
+
 private:
     bool _canAttackCooldown;
     bool _baseAttackOverride;
     bool _spawnPhoenixes;
+    bool _noMelee;
     uint8 _platform;
     uint8 _platformRoll;
     uint8 _noQuillTimes;
@@ -394,37 +436,6 @@ class spell_alar_ember_blast : public SpellScript
     }
 };
 
-class spell_alar_ember_blast_death : public AuraScript
-{
-    PrepareAuraScript(spell_alar_ember_blast_death);
-
-    void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
-    {
-        PreventDefaultAction(); // xinef: prevent default action after change that invisibility in instances is executed instantly even for creatures
-        Unit* target = GetTarget();
-        InvisibilityType type = InvisibilityType(aurEff->GetMiscValue());
-        target->m_invisibility.AddFlag(type);
-        target->m_invisibility.AddValue(type, aurEff->GetAmount());
-
-        GetUnitOwner()->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
-        GetUnitOwner()->SetStandState(UNIT_STAND_STATE_DEAD);
-        GetUnitOwner()->m_last_notify_position.Relocate(0.0f, 0.0f, 0.0f);
-        GetUnitOwner()->m_delayed_unit_relocation_timer = 1000;
-    }
-
-    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-    {
-        GetUnitOwner()->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
-        GetUnitOwner()->SetStandState(UNIT_STAND_STATE_STAND);
-    }
-
-    void Register() override
-    {
-        OnEffectApply += AuraEffectApplyFn(spell_alar_ember_blast_death::OnApply, EFFECT_2, SPELL_AURA_MOD_INVISIBILITY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_alar_ember_blast_death::OnRemove, EFFECT_2, SPELL_AURA_MOD_INVISIBILITY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
-
 class spell_alar_dive_bomb : public AuraScript
 {
     PrepareAuraScript(spell_alar_dive_bomb);
@@ -446,7 +457,6 @@ void AddSC_boss_alar()
     RegisterTheEyeAI(boss_alar);
     RegisterSpellScript(spell_alar_flame_quills);
     RegisterSpellScript(spell_alar_ember_blast);
-    RegisterSpellScript(spell_alar_ember_blast_death);
     RegisterSpellScript(spell_alar_dive_bomb);
 }
 
