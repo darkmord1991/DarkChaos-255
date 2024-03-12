@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cmath>
 #include "CreatureScript.h"
 #include "MoveSplineInit.h"
 #include "ScriptedCreature.h"
@@ -85,12 +86,18 @@ enum qruseoftheAshtongue
     QUEST_RUSE_OF_THE_ASHTONGUE = 10946,
 };
 
+const float INNER_CIRCLE_RADIUS = 60.0f;
+
 struct boss_alar : public BossAI
 {
 
     boss_alar(Creature* creature) : BossAI(creature, DATA_ALAR)
     {
         me->SetCombatMovement(false);
+        scheduler.SetValidator([this]
+        {
+            return !me->HasUnitState(UNIT_STATE_CASTING);
+        });
     }
 
     void JustReachedHome() override
@@ -248,9 +255,10 @@ struct boss_alar : public BossAI
     {
         if (targetToSpawnAt)
         {
+            Position spawnPosition = DeterminePhoenixPosition(targetToSpawnAt->GetPosition());
             for (uint8 i = 0; i < count; ++i)
             {
-                me->SummonCreature(NPC_EMBER_OF_ALAR, *targetToSpawnAt, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 6000);
+                me->SummonCreature(NPC_EMBER_OF_ALAR, spawnPosition, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 6000);
             }
         }
     }
@@ -260,7 +268,7 @@ struct boss_alar : public BossAI
         _noMelee = true;
         scheduler.Schedule(2s, [this](TaskContext)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 10.0f, true))
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 110.0f, true))
             {
                 SpawnPhoenixes(2, target);
             }
@@ -364,6 +372,36 @@ struct boss_alar : public BossAI
         {
             DoMeleeAttackIfReady();
         }
+    }
+
+    Position DeterminePhoenixPosition(Position playerPosition)
+    {
+        // set finalPosition to playerPosition in case the fraction fails
+        Position finalPosition = playerPosition;
+        float playerXPosition = playerPosition.GetPositionX();
+        float playerYPosition = playerPosition.GetPositionY();
+        float centreXPosition = alarPoints[POINT_MIDDLE].GetPositionX();
+        float centreYPosition = alarPoints[POINT_MIDDLE].GetPositionY();
+        float deltaX = std::abs(playerXPosition-centreXPosition);
+        float deltaY = std::abs(playerYPosition-centreYPosition);
+        int8 signMultiplier[2] = {1, 1};
+        // if fraction has x position 0.0f we get nan as a result
+        if (float playerFraction = deltaX/deltaY)
+        {
+            // player angle based on delta X and delta Y
+            float playerAngle = std::atan(playerFraction);
+            float phoenixDeltaYPosition = std::cos(playerAngle)*INNER_CIRCLE_RADIUS;
+            float phoenixDeltaXPosition = std::sin(playerAngle)*INNER_CIRCLE_RADIUS;
+            // as calculations are absolute values we have to multiply in the end
+            // should be negative if player position was further down than centre
+            if (playerXPosition < centreXPosition)
+                signMultiplier[0] = -1;
+            if (playerYPosition < centreYPosition)
+                signMultiplier[1] = -1;
+            // phoenix position based on set distance
+            finalPosition = {centreXPosition+signMultiplier[0]*phoenixDeltaXPosition, centreYPosition+signMultiplier[1]*phoenixDeltaYPosition, 0.0f, 0.0f};
+        }
+        return finalPosition;
     }
 
 private:
