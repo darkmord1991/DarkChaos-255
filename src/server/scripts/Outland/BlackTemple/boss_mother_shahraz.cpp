@@ -54,7 +54,6 @@ enum Spells
     SPELL_FATAL_ATTRACTION_AURA     = 41001,
     SPELL_FATAL_ATTRACTION_DAMAGE   = 40871,
     SPELL_ENRAGE                    = 45078,
-    SPELL_FRENZY                    = 40683,
     SPELL_SABER_LASH_IMMUNITY       = 43690
 };
 
@@ -74,7 +73,6 @@ struct boss_mother_shahraz : public BossAI
         _canTalk = true;
 
         ScheduleHealthCheckEvent(10, [&] {
-            DoCastSelf(SPELL_FRENZY, true);
             Talk(SAY_EMOTE_FRENZY);
         });
     }
@@ -145,10 +143,10 @@ class spell_mother_shahraz_random_periodic_aura : public AuraScript
         return ValidateSpellInfo({ SPELL_SINFUL_PERIODIC, SPELL_SINISTER_PERIODIC, SPELL_VILE_PERIODIC, SPELL_WICKED_PERIODIC });
     }
 
-    void Update(AuraEffect const* /*effect*/)
+    void Update(AuraEffect const* effect)
     {
         PreventDefaultAction();
-        if (GetUnitOwner())
+        if (GetUnitOwner() && (effect->GetTickNumber() % 6 == 1 || effect->GetTickNumber() == 1)) // Reapplies 12-18s after the third beam
             GetUnitOwner()->CastSpell(GetUnitOwner(), RAND(SPELL_SINFUL_PERIODIC, SPELL_SINISTER_PERIODIC, SPELL_VILE_PERIODIC, SPELL_WICKED_PERIODIC), true);
     }
 
