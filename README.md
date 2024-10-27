@@ -9,6 +9,8 @@
 * Blizzlike orientation
 * Teleporters (mobile + NPC)
 * Service NPC mobile
+* Help commands via LUA (currently not working due to an Eluna change)
+* Hinterland Custom Open world Battleground
 
 ## Handling in general:
 
@@ -55,3 +57,24 @@
 * Ashzara Crater - Level 1 - 80
 * Hyjal - Level 80 - 130
 * Strathholme dungeon outside - Level 130 - 160
+
+## used modules
+* https://github.com/azerothcore/mod-ah-bot.git
+* https://github.com/azerothcore/mod-duel-reset.git
+* https://github.com/azerothcore/mod-learn-spells.git
+* https://github.com/azerothcore/mod-transmog.git modules/mod-transmog
+* https://github.com/azerothcore/mod-npc-all-mounts.git modules/mod-npc-all-mounts
+* https://github.com/azerothcore/mod-world-chat.git modules/mod-world-chat
+* https://github.com/azerothcore/mod-npc-free-professions.git modules/mod-npc-free-professions
+* https://github.com/azerothcore/mod-cfbg.git modules/mod-cfbg
+* https://github.com/azerothcore/mod-skip-dk-starting-area.git modules/mod-skip-dk-starting-area
+* https://github.com/azerothcore/mod-npc-services.git modules/mod-npc-services
+* https://github.com/azerothcore/mod-instance-reset.git modules/mod-instance-reset
+* https://github.com/azerothcore/mod-arac.git modules/mod-arac
+* https://github.com/azerothcore/mod-anticheat.git modules/mod-anticheat
+* https://github.com/azerothcore/mod-autobalance.git modules/mod-autobalance
+* https://github.com/azerothcore/mod-npc-beastmaster.git modules/mod-npc-beastmaster
+* https://github.com/azerothcore/mod-zone-difficulty.git modules/mod-zone-difficulty
+* https://github.com/azerothcore/mod-solocraft.git modules/mod-solocraft
+* https://github.com/azerothcore/mod-weekend-xp.git modules/mod-weekend-xp
+* https://github.com/azerothcore/mod-eluna.git modules/mod-eluna
