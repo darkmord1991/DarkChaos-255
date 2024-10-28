@@ -66,7 +66,7 @@
 * https://github.com/azerothcore/mod-npc-all-mounts.git
 * https://github.com/azerothcore/mod-world-chat.git
 * https://github.com/azerothcore/mod-npc-free-professions.git
-* https://github.com/azerothcore/mod-cfbg.git modules/mod-cfbg
+* https://github.com/azerothcore/mod-cfbg.git
 * https://github.com/azerothcore/mod-skip-dk-starting-area.git
 * https://github.com/azerothcore/mod-npc-services.git
 * https://github.com/azerothcore/mod-instance-reset.git
