@@ -61,7 +61,7 @@ struct boss_muru : public BossAI
     void Reset() override
     {
         BossAI::Reset();
-        me->SetReactState(REACT_AGGRESSIVE);
+        me->SetReactState(REACT_PASSIVE);
         me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         me->SetVisible(true);
         me->m_Events.KillAllEvents(false);
@@ -293,7 +293,7 @@ class spell_entropius_void_zone_visual_aura : public AuraScript
     void Register() override
     {
         OnEffectApply += AuraEffectApplyFn(spell_entropius_void_zone_visual_aura::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_entropius_void_zone_visual_aura::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_entropius_void_zone_visual_aura::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
