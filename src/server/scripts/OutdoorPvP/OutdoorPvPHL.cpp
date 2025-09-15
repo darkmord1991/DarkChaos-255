@@ -14,6 +14,7 @@
     #include "WorldPacket.h"
     #include "OutdoorPvPScript.h"
     #include "CreatureScript.h"
+    #include "WorldSessionMgr.h"
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
