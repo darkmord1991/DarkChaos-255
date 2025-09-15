@@ -18,6 +18,7 @@
     #include "SharedDefines.h"
     #include "Util.h"
     #include "ZoneScript.h"
+    #include "WorldStateDefines.h"
 
     using namespace std;
 

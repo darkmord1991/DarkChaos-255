@@ -82,14 +82,14 @@
     void OutdoorPvPHL::HandleWinMessage(const char* message)
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
-            sWorld->SendZoneText(OutdoorPvPHLBuffZones[i], message);
+            sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], message);
     }
 
     void OutdoorPvPHL::PlaySounds(bool side)
     {
-        SessionMap _sessions = sWorld->GetAllSessions();
-        SessionMap::iterator itr;
-        for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr)
+        sessionMap _sessions = sWorldSessionMgr->GetAllSessions();
+        sessionMap::iterator itr;
+        for(sessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr)
         {
             for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             {
@@ -257,7 +257,7 @@
      
         if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
         {
-            SessionMap _sessions = sWorld->GetAllSessions();
+            SessionMap _sessions = sWorldSessionMgr->GetAllSessions();
             for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr) // We're searching for all the sessions(Players)
             {
                 if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||
