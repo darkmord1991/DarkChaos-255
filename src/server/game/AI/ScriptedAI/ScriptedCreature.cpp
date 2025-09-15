@@ -491,7 +491,7 @@ Unit* ScriptedAI::DoSelectLowestHpFriendly(float range, uint32 minHPDiff)
     Unit* unit = nullptr;
     Acore::MostHPMissingInRange u_check(me, range, minHPDiff);
     Acore::UnitLastSearcher<Acore::MostHPMissingInRange> searcher(me, unit, u_check);
-    Cell::VisitAllObjects(me, searcher, range);
+    Cell::VisitObjects(me, searcher, range);
 
     return unit;
 }
@@ -501,7 +501,7 @@ std::list<Creature*> ScriptedAI::DoFindFriendlyCC(float range)
     std::list<Creature*> list;
     Acore::FriendlyCCedInRange u_check(me, range);
     Acore::CreatureListSearcher<Acore::FriendlyCCedInRange> searcher(me, list, u_check);
-    Cell::VisitAllObjects(me, searcher, range);
+    Cell::VisitObjects(me, searcher, range);
     return list;
 }
 
@@ -510,7 +510,7 @@ std::list<Creature*> ScriptedAI::DoFindFriendlyMissingBuff(float range, uint32 u
     std::list<Creature*> list;
     Acore::FriendlyMissingBuffInRange u_check(me, range, uiSpellid);
     Acore::CreatureListSearcher<Acore::FriendlyMissingBuffInRange> searcher(me, list, u_check);
-    Cell::VisitAllObjects(me, searcher, range);
+    Cell::VisitObjects(me, searcher, range);
     return list;
 }
 
@@ -521,7 +521,7 @@ Player* ScriptedAI::GetPlayerAtMinimumRange(float minimumRange)
     Acore::PlayerAtMinimumRangeAway check(me, minimumRange);
     Acore::PlayerSearcher<Acore::PlayerAtMinimumRangeAway> searcher(me, player, check);
 
-    Cell::VisitWorldObjects(me, searcher, minimumRange);
+    Cell::VisitObjects(me, searcher, minimumRange);
 
     return player;
 }
@@ -751,6 +751,10 @@ void BossAI::DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damage
     ScriptedAI::DamageTaken(attacker, damage, damagetype, damageSchoolMask);
 
     if (_nextHealthCheck._valid)
+    {
+        if (!_nextHealthCheck._allowedWhileCasting && me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
         if (me->HealthBelowPctDamaged(_nextHealthCheck._healthPct, damage))
         {
             _nextHealthCheck._exec();
@@ -764,6 +768,7 @@ void BossAI::DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damage
             if (!_healthCheckEvents.empty())
                 _nextHealthCheck = _healthCheckEvents.front();
         }
+    }
 }
 
 /**
@@ -771,19 +776,18 @@ void BossAI::DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damage
  *
  * @param healthPct The health percent at which the code will be executed.
  * @param exec The fuction to be executed.
+ * @param allowedWhileCasting If false, the event will not be checked while the creature is casting.
  */
-void BossAI::ScheduleHealthCheckEvent(uint32 healthPct, std::function<void()> exec)
+void BossAI::ScheduleHealthCheckEvent(uint32 healthPct, std::function<void()> exec, bool allowedWhileCasting /*=true*/)
 {
-    _healthCheckEvents.push_back(HealthCheckEventData(healthPct, exec));
+    _healthCheckEvents.push_back(HealthCheckEventData(healthPct, exec, true, allowedWhileCasting));
     _nextHealthCheck = _healthCheckEvents.front();
 };
 
-void BossAI::ScheduleHealthCheckEvent(std::initializer_list<uint8> healthPct, std::function<void()> exec)
+void BossAI::ScheduleHealthCheckEvent(std::initializer_list<uint8> healthPct, std::function<void()> exec, bool allowedWhileCasting /*=true*/)
 {
     for (auto const& checks : healthPct)
-    {
-        _healthCheckEvents.push_back(HealthCheckEventData(checks, exec));
-    }
+        _healthCheckEvents.push_back(HealthCheckEventData(checks, exec, true, allowedWhileCasting));
 
     _nextHealthCheck = _healthCheckEvents.front();
 }

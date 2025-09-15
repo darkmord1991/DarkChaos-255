@@ -765,6 +765,7 @@ struct SmartAction
             uint32 textGroupID;
             uint32 duration;
             SAIBool useTalkTarget;
+            uint32 delay;
         } talk;
 
         struct
@@ -1284,8 +1285,11 @@ struct SmartAction
 
         struct
         {
-            std::array<uint32, SMART_ACTION_PARAM_COUNT> wps;
-        } closestWaypointFromList;
+            uint32 pathId1;
+            uint32 pathId2;
+            uint32 repeat;
+            uint32 run;
+        } startClosestWaypoint;
 
         struct
         {
