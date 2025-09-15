@@ -14,6 +14,7 @@
     #include "WorldPacket.h"
     #include "OutdoorPvPScript.h"
     #include "CreatureScript.h"
+    #include "WorldSession.h"
     #include "WorldSessionMgr.h"
 
     OutdoorPvPHL::OutdoorPvPHL()
@@ -89,8 +90,8 @@
     void OutdoorPvPHL::PlaySounds(bool side)
     {
         WorldSessionMgr::SessionMap const& smap = sWorldSessionMgr->GetAllSessions();
-        SessionMap::iterator itr;
-        for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr)
+        WorldSessionMgr::SessionMap::iterator itr;
+        for (SessionMap::iterator itr = _sessions.begin(), next; itr != _sessions.end(); itr = next) // We're searching for all the sessions(Players)
         {
             for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             {
@@ -258,8 +259,8 @@
      
         if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
         {
-            WorldSessionMgr::SessionMap const& smap = sWorldSessionMgr->GetAllSessions();
-            for(SessionMap::iterator itr = _sessions.begin(); itr != _sessions.end(); ++itr) // We're searching for all the sessions(Players)
+            WorldSessionMgr::SessionMap const& smap = sWorldSessionMgr->FindSession();
+            for (SessionMap::iterator itr = _sessions.begin(), next; itr != _sessions.end(); itr = next) // We're searching for all the sessions(Players)
             {
                 if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||
                     itr->second->GetPlayer()->GetZoneId() != 47)
