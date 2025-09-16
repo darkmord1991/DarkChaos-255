@@ -258,7 +258,7 @@
      
         if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
         {
-            WorldSessionMgr::SessionMap const& smap = sWorldSessionMgr->FindSession();
+            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
             for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr) // We're searching for all the sessions(Players)
             {
                 if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||

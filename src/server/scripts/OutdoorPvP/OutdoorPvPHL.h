@@ -19,6 +19,8 @@
     #include "Util.h"
     #include "ZoneScript.h"
     #include "WorldStateDefines.h"
+    #include "WorldSession.h"
+    #include "WorldSessionMgr.h"
 
     using namespace std;
 
