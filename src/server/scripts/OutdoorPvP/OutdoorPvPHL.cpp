@@ -89,8 +89,8 @@
 
     void OutdoorPvPHL::PlaySounds(bool side)
     {
-        WorldSessionMgr::SessionMap const& smap = sWorldSessionMgr->GetAllSessions();
-                for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr) // We're searching for all the sessions(Players)
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
         {
             for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             {
