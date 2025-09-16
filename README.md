@@ -1,3 +1,6 @@
+## I need help in every area to work on more topics and issues - especially scripting and Client changes
+## Please contact me via Github or Discord (Darkmord1991)
+
 ## Features - based on AzerothCore:
 
 * Max Level 255
