@@ -1538,7 +1538,7 @@ update creature_template set trainer_type = 2 where entry = 95026;
 -- riding trainer
 DELETE FROM `creature_template` WHERE (`entry` = 95026);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(95026, 0, 0, 0, 0, 0, 'Flying Instructor', 'Global Trainer', NULL, 0, 255, 255, 0, 35, 81, 1, 1.14286, 1, 1, 20, 2.5, 3, 0, 1, 0, 0, 1, 1, 1, 0, 2048, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, '0', 12340);
+(95026, 0, 0, 0, 0, 0, 'Flying Instructor', 'Global Trainer', NULL, 0, 255, 255, 0, 35, 81, 1, 1.14286, 1, 1, 20, 2, 3, 0, 1, 0, 0, 1, 1, 1, 0, 2048, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, '0', 12340);
 
 
 DELETE FROM `npc_trainer` WHERE (`ID` = 95026) AND (`SpellID` IN (33389, 33392, 34092, 34093, 54197, 0));
