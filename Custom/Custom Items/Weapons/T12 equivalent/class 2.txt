@@ -117,8 +117,8 @@ INSERT INTO `item_template` (`entry`, `class`, `subclass`, `SoundOverrideSubclas
 
 -- changes of attributes/values
 
--- ItemLevel upgrade + 10
-update item_template set ItemLevel = 304 where entry >= 91100 and entry < 91200;
+-- ItemLevel upgrade 510
+update item_template set ItemLevel = 510 where entry >= 91100 and entry < 91200;
 
 -- Required Level to use = 130
 update item_template set RequiredLevel = 130 where entry >= 91100 and entry < 91200;
