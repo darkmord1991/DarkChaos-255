@@ -1,3 +1,5 @@
 Patch-A -> AllRaces All Classes
 Patch-B -> Custom Currency
 Patch-C -> Custom Currency
+Patch-D -> ItemExtendedCost
+Patch-E -> Item
