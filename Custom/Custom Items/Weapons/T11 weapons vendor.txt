@@ -2,7 +2,7 @@ DELETE FROM `creature_template` WHERE (`entry` = 800007);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
 (800007, 0, 0, 0, 0, 0, 'Weapons Tier 11', 'Custom Weapon Sets', NULL, 0, 80, 80, 0, 35, 4224, 1, 1.14286, 1, 1, 20, 1, 3, 0, 1, 0, 0, 1, 1, 1, 0, 2048, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, '0', 12340);
 
-DELETE FROM `npc_vendor` WHERE `entry`=800007 AND `item`=91000 AND `ExtendedCost`=0;
+DELETE FROM `npc_vendor` WHERE `entry`=800007;
 INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES (800007, 1, 91000, 0, 0, 0, 0);
 DELETE FROM `npc_vendor` WHERE `entry`=800007 AND `item`=91001 AND `ExtendedCost`=0;
 INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES (800007, 2, 91001, 0, 0, 0, 0);
@@ -118,5 +118,5 @@ DELETE FROM `npc_vendor` WHERE `entry`=800007 AND `item`=91056 AND `ExtendedCost
 INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES (800007, 57, 91056, 0, 0, 0, 0);
 
 -- Extended Cost - 2500 coins for T12
--- Extended Cost ID = 3000
-update npc_vendor set ExtendedCost = 3000 where entry = 800007;
+-- Extended Cost ID = 2998
+update npc_vendor set ExtendedCost = 2998 where entry = 800007;

@@ -101,5 +101,5 @@ INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `Exte
 INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES (800006, 95, 81194, 0, 0, 0, 0);
 
 -- Extended Cost - 7500 coins for T12
--- Extended Cost ID = 3001
-update npc_vendor set ExtendedCost = 3001 where entry = 800006;
+-- Extended Cost ID = 2998
+update npc_vendor set ExtendedCost = 2998 where entry = 800006;
