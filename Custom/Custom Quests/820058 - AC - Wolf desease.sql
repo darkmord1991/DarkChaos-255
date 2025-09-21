@@ -17,3 +17,7 @@ INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
 DELETE FROM `creature_questender` WHERE (`quest` = 820058) AND (`id` IN (800009));
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (800009, 820058);
+
+DELETE FROM `quest_template_addon` WHERE (`ID` = 820058);
+INSERT INTO `quest_template_addon` (`ID`, `MaxLevel`, `AllowableClasses`, `SourceSpellID`, `PrevQuestID`, `NextQuestID`, `ExclusiveGroup`, `RewardMailTemplateID`, `RewardMailDelay`, `RequiredSkillID`, `RequiredSkillPoints`, `RequiredMinRepFaction`, `RequiredMaxRepFaction`, `RequiredMinRepValue`, `RequiredMaxRepValue`, `ProvidedItemCount`, `SpecialFlags`) VALUES
+(820058, 0, 0, 0, 820057, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
