@@ -1,6 +1,9 @@
 Level 1 - 20:
 https://www.wowhead.com/wotlk/de/object=3695/nahrungsmittelkiste
+https://www.wowhead.com/wotlk/de/object=3705/fass-mit-milch
+https://www.wowhead.com/wotlk/de/object=2850/robuste-truhe
 
 Level 20 - 40:
+https://www.wowhead.com/wotlk/de/object=2855/robuste-truhe
 https://www.wowhead.com/wotlk/de/object=75300/gro%C3%9Fe-robuste-truhe
 https://www.wowhead.com/wotlk/de/object=74448/gro%C3%9Fe-robuste-truhe
