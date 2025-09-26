@@ -37,6 +37,8 @@
 
         limit_resources_message_A = 0;
         limit_resources_message_H = 0;
+
+        _messageTimer = 0; // Timer for periodic message
     }
 
     bool OutdoorPvPHL::SetupOutdoorPvP()
@@ -77,7 +79,7 @@
 
     void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
     {
-         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going!");
+         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
     }
 
@@ -189,6 +191,22 @@
             }
                 
             _FirstLoad = true;
+        }
+
+        // Periodic message every 60 seconds
+        _messageTimer += diff;
+        if (_messageTimer >= 60000) // 60,000 ms = 60 seconds
+        {
+            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+            {
+                if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
+                    continue;
+                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");, _horde_gathered);
+                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: Current standings - Alliance: %u | Horde: %u", _ally_gathered, _horde_gathered);
+            }
+            _messageTimer = 0;
         }
 
         if(_ally_gathered <= 50 && limit_A == 0)
