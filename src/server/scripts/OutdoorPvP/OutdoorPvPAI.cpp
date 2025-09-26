@@ -6,6 +6,7 @@
 */
 
 #include "OutdoorPvPAI.h"
+#include "OutdoorPvPHL.h"
 #include "OutdoorPvPMgr.h"
 #include "OutdoorPvP.h"
 #include "Group.h"
