@@ -111,5 +111,6 @@
             int limit_H;
             int limit_resources_message_A;
             int limit_resources_message_H;
+               uint32 _messageTimer; // Timer for periodic message
     };
     #endif
