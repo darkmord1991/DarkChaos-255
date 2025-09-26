@@ -82,13 +82,14 @@ https://www.wowhead.com/wotlk/de/npc=5307/talkreischer
 https://www.wowhead.com/wotlk/de/npc=5258/alpha-der-waldpfoten
 https://www.wowhead.com/wotlk/de/npc=5255/h%C3%A4scher-der-waldpfoten
 https://www.wowhead.com/wotlk/de/npc=5251/fallensteller-der-waldpfoten
-
+https://www.wowhead.com/de/npc=8759/mooshufl%C3%A4ufer
 
 Rares:
 https://www.wowhead.com/wotlk/de/npc=8211/klippenspringer
 https://www.wowhead.com/wotlk/de/npc=2601/faulbauch
 https://www.wowhead.com/wotlk/de/npc=14234/hayoc
 https://www.wowhead.com/wotlk/de/npc=14236/lord-angler
+https://www.wowhead.com/de/npc=6648/antilos
 
 -- 51 - 60
 https://www.wowhead.com/wotlk/de/npc=2681/raubwolf-der-blutfratzen
