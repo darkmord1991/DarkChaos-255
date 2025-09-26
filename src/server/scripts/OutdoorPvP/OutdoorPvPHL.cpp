@@ -202,9 +202,12 @@
             {
                 if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
                     continue;
-                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
-                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");, _horde_gathered);
-                itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: Current standings - Alliance: %u | Horde: %u", _ally_gathered, _horde_gathered);
+                char msgA[128];
+                char msgH[128];
+                snprintf(msgA, sizeof(msgA), "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+                snprintf(msgH, sizeof(msgH), "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+                itr->second->GetPlayer()->TextEmote(msgA);
+                itr->second->GetPlayer()->TextEmote(msgH);
             }
             _messageTimer = 0;
         }
