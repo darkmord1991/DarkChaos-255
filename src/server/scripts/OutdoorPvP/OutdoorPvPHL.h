@@ -111,7 +111,14 @@
             int limit_H;
             int limit_resources_message_A;
             int limit_resources_message_H;
-               uint32 _messageTimer; // Timer for periodic message
+            uint32 _messageTimer; // Timer for periodic message
+            // Group management
+            GuidSet _Groups[2];
+            uint32 _BattleId;
+            GuidUnorderedSet _PlayersInWar[2];
+            Group* GetFreeBfRaid(TeamId TeamId);
+            bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
+            Group* GetGroupPlayer(ObjectGuid guid, TeamId TeamId);
 
         public:
             // Public wrapper for protected HandlePlayerEnterZone

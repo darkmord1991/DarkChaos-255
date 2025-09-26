@@ -50,31 +50,74 @@
 
     void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     {
+        // Auto-invite logic
+        AddOrSetPlayerToCorrectBfGroup(player);
 
-        //Welcome to Hinterland BG
+        // Welcome message
         player->TextEmote("Welcome to Hinterland BG!");
 
-		_ally_gathered = HL_RESOURCES_A;
-		_horde_gathered = HL_RESOURCES_H;
+        // Private resource message
+        char msg[128];
+        if (player->GetTeamId() == TEAM_ALLIANCE)
+            snprintf(msg, sizeof(msg), "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+        else
+            snprintf(msg, sizeof(msg), "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+        player->TextEmote(msg);
 
-        //char message[250];
-        //if(player->GetTeamId() == TEAM_ALLIANCE)
-        //player->TextEmote("Alliance has less than 250 resources remaining!");
-        //else
-        //player->TextEmote("Horde has less than 250 resources remaining!");
-        
-        if (HL_RESOURCES_A <= 250)
-        {
-        player->TextEmote("Alliance has less than 250 resources remaining!");
-        }
-
-        if (HL_RESOURCES_H <= 250)
-        {
-        player->TextEmote("Horde has less than 250 resources remaining!");
-        }           
-             
-        //player->TextEmote(message);
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
+    }
+
+    // Group management functions
+    Group* OutdoorPvPHL::GetFreeBfRaid(TeamId TeamId)
+    {
+        for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
+            if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
+                if (!group->IsFull())
+                    return group;
+        return nullptr;
+    }
+
+    bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
+    {
+        if (!plr->IsInWorld())
+            return false;
+        if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
+            return false;
+        Group* group = GetFreeBfRaid(plr->GetTeamId());
+        if (group)
+        {
+            if (!group->IsMember(plr->GetGUID()))
+            {
+                group->AddMember(plr);
+                if (Group* originalGroup = plr->GetOriginalGroup())
+                    if (originalGroup->IsLeader(plr->GetGUID()))
+                        group->ChangeLeader(plr->GetGUID());
+            }
+            else
+            {
+                uint8 subgroup = group->GetMemberGroup(plr->GetGUID());
+                plr->SetBattlegroundOrBattlefieldRaid(group, subgroup);
+            }
+        }
+        else
+        {
+            group = new Group;
+            Battleground *bg = (Battleground*)sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47);
+            group->SetBattlegroundGroup(bg);
+            group->Create(plr);
+            sGroupMgr->AddGroup(group);
+            _Groups[plr->GetTeamId()].insert(group->GetGUID());
+        }
+        return true;
+    }
+
+    Group* OutdoorPvPHL::GetGroupPlayer(ObjectGuid guid, TeamId TeamId)
+    {
+        for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
+            if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
+                if (group->IsMember(guid))
+                    return group;
+        return nullptr;
     }
 
     // Helper: Teleport player to race starting location
@@ -231,7 +274,7 @@
             _FirstLoad = true;
         }
 
-        // Periodic message every 60 seconds
+        // Periodic message every 60 seconds (private to each player)
         _messageTimer += diff;
         if (_messageTimer >= 60000) // 60,000 ms = 60 seconds
         {
@@ -240,12 +283,13 @@
             {
                 if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
                     continue;
-                char msgA[128];
-                char msgH[128];
-                snprintf(msgA, sizeof(msgA), "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
-                snprintf(msgH, sizeof(msgH), "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
-                itr->second->GetPlayer()->TextEmote(msgA);
-                itr->second->GetPlayer()->TextEmote(msgH);
+                Player* player = itr->second->GetPlayer();
+                char msg[128];
+                if (player->GetTeamId() == TEAM_ALLIANCE)
+                    snprintf(msg, sizeof(msg), "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+                else
+                    snprintf(msg, sizeof(msg), "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+                player->TextEmote(msg);
             }
             _messageTimer = 0;
         }
