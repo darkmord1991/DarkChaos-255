@@ -112,5 +112,9 @@
             int limit_resources_message_A;
             int limit_resources_message_H;
                uint32 _messageTimer; // Timer for periodic message
+
+        public:
+            // Public wrapper for protected HandlePlayerEnterZone
+            void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };
     #endif

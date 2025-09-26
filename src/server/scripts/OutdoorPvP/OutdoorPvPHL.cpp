@@ -82,7 +82,7 @@
     {
         // Example: Human (race 1) -> Elwynn Forest, Orc (race 2) -> Durotar, etc.
         // You may want to refine these coordinates for your server.
-        switch (player->GetRace())
+    switch (player->getRace())
         {
             case RACE_HUMAN:
                 player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f); // Elwynn Forest

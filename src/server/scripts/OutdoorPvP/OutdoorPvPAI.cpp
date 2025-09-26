@@ -114,11 +114,14 @@ void OutdoorPvPAI::HandlePlayerEnterZone(Player* player, uint32 zone)
     // Start OutdoorPvPHL logic for zone 47
     if (zone == 47)
     {
-        if (OutdoorPvP* pvpHL = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47))
+        if (OutdoorPvP* pvpHLBase = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47))
         {
             // Only call if it's actually an OutdoorPvPHL instance
-            if (pvpHL->GetTypeId() == OUTDOOR_PVP_HL)
-                pvpHL->HandlePlayerEnterZone(player, zone);
+            if (pvpHLBase->GetTypeId() == OUTDOOR_PVP_HL)
+            {
+                OutdoorPvPHL* pvpHL = static_cast<OutdoorPvPHL*>(pvpHLBase);
+                pvpHL->PublicHandlePlayerEnterZone(player, zone);
+            }
         }
     }
 
