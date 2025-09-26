@@ -58,10 +58,10 @@
 		_horde_gathered = HL_RESOURCES_H;
 
         //char message[250];
-        if(player->GetTeamId() == TEAM_ALLIANCE)
-        player->TextEmote("Alliance has less than 250 resources remaining!");
-        else
-        player->TextEmote("Horde has less than 250 resources remaining!");
+        //if(player->GetTeamId() == TEAM_ALLIANCE)
+        //player->TextEmote("Alliance has less than 250 resources remaining!");
+        //else
+        //player->TextEmote("Horde has less than 250 resources remaining!");
         
         if (HL_RESOURCES_A <= 250)
         {
@@ -77,9 +77,47 @@
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
+    // Helper: Teleport player to race starting location
+    void TeleportPlayerToStart(Player* player)
+    {
+        // Example: Human (race 1) -> Elwynn Forest, Orc (race 2) -> Durotar, etc.
+        // You may want to refine these coordinates for your server.
+        switch (player->GetRace())
+        {
+            case RACE_HUMAN:
+                player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f); // Elwynn Forest
+                break;
+            case RACE_ORC:
+                player->TeleportTo(1, 1676.21f, 1677.85f, 121.67f, 0.0f); // Durotar
+                break;
+            case RACE_DWARF:
+                player->TeleportTo(0, -6240.32f, 336.23f, 382.758f, 0.0f); // Dun Morogh
+                break;
+            case RACE_NIGHTELF:
+                player->TeleportTo(1, 10311.3f, 832.463f, 1326.41f, 0.0f); // Teldrassil
+                break;
+            case RACE_UNDEAD_PLAYER:
+                player->TeleportTo(0, 1676.21f, 1677.85f, 121.67f, 0.0f); // Tirisfal Glades
+                break;
+            case RACE_TAUREN:
+                player->TeleportTo(1, -2917.58f, -257.98f, 52.9968f, 0.0f); // Mulgore
+                break;
+            case RACE_GNOME:
+                player->TeleportTo(0, -6240.32f, 336.23f, 382.758f, 0.0f); // Dun Morogh
+                break;
+            case RACE_TROLL:
+                player->TeleportTo(1, 1676.21f, 1677.85f, 121.67f, 0.0f); // Durotar
+                break;
+            default:
+                player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f); // Default to Elwynn Forest
+                break;
+        }
+    }
+
     void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
     {
-         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
+        player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
+        TeleportPlayerToStart(player);
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
     }
 
@@ -232,6 +270,15 @@
             IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
             limit_A = 2;
             PlaySounds(false);
+            // Teleport all Alliance players in zone 47 to their start location
+            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+            {
+                if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
+                    continue;
+                if (itr->second->GetPlayer()->GetTeamId() == TEAM_ALLIANCE)
+                    TeleportPlayerToStart(itr->second->GetPlayer());
+            }
         }
         else if(_horde_gathered <= 0 && limit_H == 1)
         {
@@ -239,6 +286,15 @@
             IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
             limit_H = 2;
             PlaySounds(true);
+            // Teleport all Horde players in zone 47 to their start location
+            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+            {
+                if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
+                    continue;
+                if (itr->second->GetPlayer()->GetTeamId() == TEAM_HORDE)
+                    TeleportPlayerToStart(itr->second->GetPlayer());
+            }
         }
         else if(_ally_gathered <= 300 && limit_resources_message_A == 0)
         {

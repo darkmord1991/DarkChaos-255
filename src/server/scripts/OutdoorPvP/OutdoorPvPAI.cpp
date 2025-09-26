@@ -50,34 +50,40 @@ bool OutdoorPvPAI::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     if (!plr->IsInWorld())
         return false;
 
+    // If player is already in a BG/BF group, do not re-invite
     if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
     {
-        //LOG_INFO("misc", "Battlefield::AddOrSetPlayerToCorrectBfGroup - player is already in {} group!", (player->GetGroup()->isBGGroup() ? "BG" : "BF"));
         LOG_INFO("misc", "Battlefield::AddOrSetPlayerToCorrectBfGroup - player is already in {} group! AutoGroup HL");
         return false;
     }
 
+    // Find existing raid group for this team in zone 47
     Group* group = GetFreeBfRaid(plr->GetTeamId());
-    if (!group)
+    if (group)
     {
+        // If player is not a member, add them
+        if (!group->IsMember(plr->GetGUID()))
+        {
+            group->AddMember(plr);
+            if (Group* originalGroup = plr->GetOriginalGroup())
+                if (originalGroup->IsLeader(plr->GetGUID()))
+                    group->ChangeLeader(plr->GetGUID());
+        }
+        else
+        {
+            uint8 subgroup = group->GetMemberGroup(plr->GetGUID());
+            plr->SetBattlegroundOrBattlefieldRaid(group, subgroup);
+        }
+    }
+    else
+    {
+        // No group exists, create a new one
         group = new Group;
         Battleground *bg = (Battleground*)sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47);
         group->SetBattlegroundGroup(bg);
         group->Create(plr);
         sGroupMgr->AddGroup(group);
         _Groups[plr->GetTeamId()].insert(group->GetGUID());
-    }
-    else if (group->IsMember(plr->GetGUID()))
-    {
-        uint8 subgroup = group->GetMemberGroup(plr->GetGUID());
-        plr->SetBattlegroundOrBattlefieldRaid(group, subgroup);
-    }
-    else
-    {
-        group->AddMember(plr);
-        if (Group* originalGroup = plr->GetOriginalGroup())
-            if (originalGroup->IsLeader(plr->GetGUID()))
-                group->ChangeLeader(plr->GetGUID());
     }
     return true;
 }
@@ -95,18 +101,28 @@ void OutdoorPvPAI::HandlePlayerEnterZone(Player* player, uint32 zone)
         OnPlayerJoinWar(player);  
     }
 
-    //Faction buffs from Wintergrasp
+    // Faction buffs from Wintergrasp
     if (player->GetTeamId() == TEAM_ALLIANCE)
     {
-        //if (m_AllianceTowersControlled >= 3)
         player->CastSpell(player, AllianceBuff, true);
     }
     else
     {
-        //if (m_HordeTowersControlled >= 3)
         player->CastSpell(player, HordeBuff, true);
-    }        
-	OutdoorPvP::HandlePlayerEnterZone(player, zone);
+    }
+
+    // Start OutdoorPvPHL logic for zone 47
+    if (zone == 47)
+    {
+        if (OutdoorPvP* pvpHL = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47))
+        {
+            // Only call if it's actually an OutdoorPvPHL instance
+            if (pvpHL->GetTypeId() == OUTDOOR_PVP_HL)
+                pvpHL->HandlePlayerEnterZone(player, zone);
+        }
+    }
+
+    OutdoorPvP::HandlePlayerEnterZone(player, zone);
 }
 
 Group* OutdoorPvPAI::GetGroupPlayer(ObjectGuid guid, TeamId TeamId)
