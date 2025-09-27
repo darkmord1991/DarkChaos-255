@@ -496,7 +496,9 @@
                                 if (p && p->IsInWorld() && p->GetZoneId() == 47) {
                                     if (p->GetTeamId() == TEAM_ALLIANCE) {
                                         p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
-                                    } else {
+                                    }
+                                    else
+                                    {
                                         p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
                                     }
                                 }
@@ -601,10 +603,7 @@
                     case Horde_Squadleader: // 2?
                         _horde_gathered -= PointsLoseOnPvPKill;
                         break;
-                    case Horde_Boss:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        /*BossReward(player); */
-                        break;
+                    /* Removed duplicate case for Horde_Boss (entry 810002) */
                     case Horde_Heal:
                         _horde_gathered -= PointsLoseOnPvPKill;
                         break;
@@ -647,10 +646,7 @@
                     case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
                         break;
-                    case Alliance_Boss:
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        /*BossReward(player); <- NEU? */
-                        break;
+                    /* Removed duplicate case for Alliance_Boss (entry 810003) */
                     case Alliance_Infantry:
                         _ally_gathered -= PointsLoseOnPvPKill;
                         break;
