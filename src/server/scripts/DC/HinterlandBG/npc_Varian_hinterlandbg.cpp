@@ -11,7 +11,7 @@
  *
  * Integration:
  * - Place this file in src/server/scripts/DC/HinterlandBG/
- * - Register AddSC_hinterlandbg_Varian_hinterlandbg and AddSC_hinterlandbg_Varian_wrynn in your script loader
+ * - Register AddSC_hinterlandbg_Varian_wrynn in your script loader
  * - Add to CMakeLists.txt for compilation
  * - Set ScriptName to "npc_Varian_hinterlandbg" in your creature_template DB entry
  * - Set npcflag to 1 (GOSSIP) for the NPC in the DB
