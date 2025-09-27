@@ -1,5 +1,11 @@
 /*
 ================================================================================
+// Forward declaration: the player movement script registration function is
+// defined later in this file. Declare it here so AddSC_outdoorpvp_hl can call
+// it without requiring the function to be defined earlier in the translation
+// unit.
+static void RegisterOutdoorPvPHLPlayerMoveScript();
+
                 OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
@@ -1071,6 +1077,8 @@ void OutdoorPvPHL::ForceReset()
         new OutdoorPvP_hinterland;
 
         // Register movement hook for AFK tracking
+        // Forward-declared below; registers the player movement script that
+        // stamps AFK last-move timestamps via `TouchPlayerLastMove()`.
         RegisterOutdoorPvPHLPlayerMoveScript();
     }
 
