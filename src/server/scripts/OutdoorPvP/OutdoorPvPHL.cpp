@@ -334,39 +334,15 @@
                 return true; // End update early to restart
             }
 
-        // Periodic zone-wide broadcast every 180 seconds with both teams' resources
+        // Periodic zone-wide broadcast every 120 seconds with resources and remaining timer
         _messageTimer += diff;
-        if (_messageTimer >= 180000) // 180,000 ms = 180 seconds
+        if (_messageTimer >= 120000) // 120,000 ms = 120 seconds
         {
+            uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
             char msg[256];
-            snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u resources | Horde: %u resources", _ally_gathered, _horde_gathered);
+            snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %u seconds", _ally_gathered, _horde_gathered, timeRemaining);
             sWorldSessionMgr->SendZoneText(47, msg);
             _messageTimer = 0;
-        }
-
-        // Live/permanent resource broadcast and worldstate timer update every 5 seconds
-        _liveResourceTimer += diff;
-        if (_liveResourceTimer >= 5000) // 5,000 ms = 5 seconds
-        {
-            char liveMsg[256];
-            snprintf(liveMsg, sizeof(liveMsg), "[Hinterland Defence]: LIVE: Alliance: %u/%u | Horde: %u/%u", _ally_gathered, _ally_permanent_resources, _horde_gathered, _horde_permanent_resources);
-            sWorldSessionMgr->SendZoneText(47, liveMsg);
-
-            // Calculate time remaining in seconds
-            uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
-
-            // Send Wintergrasp timer worldstate update (ID: 3801) to all players in zone 47
-            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
-            {
-                Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
-                if (!player || !player->IsInWorld() || player->GetZoneId() != 47)
-                    continue;
-                // Use Wintergrasp clock worldstate ID (3801)
-                player->SendUpdateWorldState(3801, timeRemaining);
-            }
-
-            _liveResourceTimer = 0;
         }
 
         // AFK teleport logic: teleport players in zone 47 who have not moved for 180 seconds
