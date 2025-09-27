@@ -1,29 +1,54 @@
 
 /*
 ================================================================================
-    OutdoorPvPHL.h - Header for Hinterland Outdoor PvP Battleground (zone 47)
+        OutdoorPvPHL.h - Header for Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-    Features & Gameplay Overview (2025):
-    -----------------------------------------------------------------------------
-    - Zone-wide Alliance vs Horde PvP battleground in Hinterland (zone 47)
-    - Automatic group management and raid linking
-    - Resource system and permanent resource tracking
-    - Periodic broadcasts and worldstate timer updates
-    - AFK detection and teleportation
-    - Buffs, rewards, and item drops for kills and victory
-    - Custom teleportation logic
-    - Respawn logic for NPCs and game objects is currently disabled
+        Purpose
+        -------
+        Header declarations and constants for the Hinterland (zone 47) Outdoor PvP
+        battleground implementation. Declares the `OutdoorPvPHL` class and related
+        configuration values, sound IDs, and NPC enums used by the implementation.
 
-    Class Structure:
-    -----------------------------------------------------------------------------
-    - OutdoorPvPHL: Main class, inherits OutdoorPvP
-            * Resource counters, timers, and AFK tracking
-            * Group management and player linking
-            * All battleground event handlers and gameplay logic
-            * Worldstate timer broadcast for live match time
+        Recent changes summary
+        ----------------------
+        - Added explicit loser sound IDs and changed PlaySounds signature to accept
+            a `TeamId` winner value for clearer semantics.
+        - Introduced TouchPlayerLastMove(ObjectGuid) public API so a PlayerScript
+            can update AFK timestamps when players move.
+        - Added helper method declarations to split the Update logic into focused
+            responsibilities (timers, AFK, message broadcasting, resource checks).
+        - The code now supports automatic creation of multiple battleground raid
+            groups per faction when existing raid groups fill up to 40 players.
 
-    For maintainers: See method comments for details on each gameplay feature.
+        Public contract (short)
+        -----------------------
+        - Inputs: player enters/leaves zone, players move, kills occur, periodic
+            server tick via Update(diff).
+        - Outputs: zone-wide messages, worldstate timer updates, teleportation,
+            buff/honor/item rewards, sound playback, and group management changes.
+        - Error modes: group creation failures are checked and handled (returns
+            false), resource counters are clamped to avoid underflow.
+
+        Important notes for maintainers
+        --------------------------------
+        - `MAXRAIDSIZE` and `MAXGROUPSIZE` are defined in `Group.h` (40 and 5)
+            and are used to determine group fullness. The script creates additional
+            battleground raid groups per faction when needed.
+        - Keep sound IDs and coordinates in sync with your DBC and server config.
+
+        TODO / Enhancements (summary)
+        ------------------------------
+        - Move config values to a central configuration file (`acore.json` or
+            module config) to allow runtime tuning.
+        - Use `_Groups[team]` to compute exact battleground-raid membership in
+            periodic announcements (more accurate than counting all players in zone).
+        - Add admin commands to query and manage battleground state (resources,
+            raid groups, resets).
+        - Consider persisting permanent resource counters to DB if state should
+            survive server restarts between matches.
+
+        See `OutdoorPvPHL.cpp` for implementation details and helper responsibilities.
 ================================================================================
 */
 
@@ -108,6 +133,8 @@
 
     // AFK tracking: map player GUID to last movement timestamp (ms)
         std::map<ObjectGuid, uint32> _playerLastMove;
+    // Track whether a player has already received the AFK teleport warning
+        std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
 
     // Group management
         GuidSet _Groups[2];
@@ -159,5 +186,11 @@
     void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     // Update last movement timestamp for AFK tracking (called from PlayerScript movement hook)
     void TouchPlayerLastMove(ObjectGuid guid);
+    // Return battleground raid group GUIDs tracked for the given team
+    std::vector<ObjectGuid> GetBattlegroundGroupGUIDs(TeamId team) const;
+    // Admin helpers: inspect and modify resource counters and force a reset
+    uint32 GetResources(TeamId team) const;
+    void SetResources(TeamId team, uint32 amount);
+    void ForceReset();
     };
     #endif

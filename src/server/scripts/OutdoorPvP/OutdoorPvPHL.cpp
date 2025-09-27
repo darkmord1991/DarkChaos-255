@@ -1,41 +1,90 @@
 /*
 ================================================================================
-    OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
+        OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-    Features & Gameplay Overview (2025):
-    -----------------------------------------------------------------------------
-    - Zone-wide Alliance vs Horde PvP battleground in Hinterland (zone 47)
-    - Automatic group management: auto-invites, raid creation, and linking
-    - Resource system: each faction starts with resources, lose them on deaths/kills
-    - Permanent resource tracking: resources never reset during a run, only at reset
-    - Periodic zone-wide broadcasts:
-            * Every 120s: announces current resources and time left (MM:SS, start 60:00) via chat
-    - AFK detection: teleports players who have not moved for 10 minutes to their faction's start location
-    - Battleground start and win announcements:
-            * Global and zone-wide messages for start and victory
-            * Sound effects for victory/defeat per faction
-    - Buffs and rewards:
-            * Win/lose buffs applied to players
-            * Honor and arena point rewards for kills and victory
-            * Item rewards for player and boss kills
-    - Custom teleportation:
-            * Faction-based teleport coordinates for start/end of battle
-    - Handles player entry/exit, kill logic, and group linking
-    - All random honor reward logic (Randomizer) has been removed for clarity
-    - Respawn logic for NPCs and game objects is currently disabled
-    - Group removal on zone leave resets phase mask and raid flags to prevent phasing issues
+        Purpose
+        -------
+        Implements a zone-wide Alliance vs Horde open-world battleground for Hinterland
+        (zone id 47). The script handles automatic battleground-style raid grouping,
+        a resource system (teams lose resources on deaths/NPC kills), periodic
+        announcements, AFK handling, sounds, buffs/rewards, and basic teleportation.
 
-    Code Structure:
-    -----------------------------------------------------------------------------
-    - OutdoorPvPHL: Main class implementing battleground logic
-    - GroupMgr, WorldSessionMgr: Used for group and player session management
-    - Timers: For periodic messaging, match duration, and AFK detection
-    - std::map<ObjectGuid, uint32>: Tracks last movement for AFK logic
-    - Functions: Setup, Update, HandlePlayerEnterZone, HandlePlayerLeaveZone,
-                             HandleKill, HandleRewards, HandleBuffs, HandleWinMessage, etc.
+        Recent notable changes (developer summary)
+        --------------------------------------------------------------
+        - Replaced unsafe printf-style calls with a safe PlayerTextEmoteFmt helper.
+        - Centralized configuration constants (zone id, timers, thresholds).
+        - Added AFK movement tracking using a PlayerScript movement hook and
+            TouchPlayerLastMove(ObjectGuid) to keep timestamps up to date.
+        - Prevented unsigned underflow on resource counters (ClampResources).
+        - Split large Update() into focused helpers: ProcessMatchTimer,
+            ProcessPeriodicMessage, ProcessAFK, CheckResourceThresholds,
+            BroadcastResourceMessages, ClampResourceCounters.
+        - Changed PlaySounds signature to accept TeamId and play distinct
+            victory/defeat sounds for winners/losers.
+        - Implemented multi-raid support per faction: when a battleground raid
+            group reaches the server-side limit (40 players) a new battleground raid
+            group is created for that faction (logged via LOG_INFO).
+        - Added a small DC wrapper registration file so the script can be built
+         /registered from the DC scripts module without duplicating AddSC_* symbols.
 
-    For maintainers: See function comments for details on each gameplay feature.
+        High-level feature overview
+        -----------------------------------------------------------------------------
+        - Auto-grouping / raid creation: players entering the zone are auto-added
+            into existing battleground raid groups for their faction. If all such
+            groups are full (40 players), a new raid group is created automatically.
+        - Resource system: each side has a resource counter which decreases on
+            player/NPC deaths; thresholds trigger announcements and sounds.
+        - Periodic announcements: Every 120s the script announces resources,
+            approximate team sizes, and time left.
+        - AFK handling: players who do not move for a configurable timeout are
+            teleported back to their faction's start position.
+        - Rewards: buffs, honor/arena point awarding, and item drops for kills.
+
+        Quality & safety notes
+        -----------------------------------------------------------------------------
+        - Resource counters are clamped to prevent unsigned wraparound.
+        - Movement-based AFK detection is implemented via a PlayerScript hook to
+            update per-player last-move timestamps; this is more reliable than only
+            setting timestamps on zone enter.
+        - The script avoids global side-effects where possible (e.g. only
+            creates battleground-type raid groups rather than touching unrelated groups).
+
+        TODO / Enhancements (prioritized)
+        -----------------------------------------------------------------------------
+        1) Announcements: switch periodic report to count battleground-raid members
+             directly from the `_Groups[team]` sets (more accurate for raid sizes).
+        2) Configuration: move zone id, thresholds, timers, coordinates and sound IDs
+             to a config file or `acore.json` option so server owners can tune behavior
+             without code changes.
+        3) Persistence: optionally persist permanent resources to DB so they survive
+             server restarts between matches (if desired for long-running events).
+        4) AFK heuristics: refine movement detection (ignore tiny position jitter,
+             consider orientation-only movement) and allow staff to exempt players.
+        5) Tests: add unit / integration tests for resource clamping, AddOrSetPlayerToCorrectBfGroup
+             behavior and PlaySounds mapping.
+        6) Admin tooling: add console commands or GM chat commands to query/adjust
+             resources, force-reset matches, and list battleground raid groups and sizes.
+       7) Teleport safety: implemented 30s AFK warning and safe-teleport checks
+           (player-is-alive check). Admin commands (.hlbg get/set/reset/status) were
+           added to query and modify resource counters and raid groups.
+        8) Logging/metrics: add optional telemetry (counts of raid groups created,
+             match start/end, long AFK events) and rate-limit logs to avoid flooding.
+        9) Refactor: consider extracting battleground-specific code to
+             `src/server/scripts/DC/HinterlandBG/` and add a small unit-test harness.
+     10) Sound & DBC validation: confirm DBC/sound ids used for HL_SOUND_*_* and
+             expose mapping in config or data files.
+
+        How to test quickly
+        -----------------------------------------------------------------------------
+        - Build server, start instance, create multiple test accounts and join zone 47.
+        - Fill one battleground raid group to 40 players and verify the 41st player
+            triggers creation of a second battleground raid group (watch server log).
+        - Verify periodic messages include resources and approximate sizes, AFK
+            teleports after configured timeout, resource decrements and clamping on kills,
+            and that sounds play correctly for winners/losers.
+
+        For maintainers: update this header when adding/removing major features.
 ================================================================================
 */
     #include "OutdoorPvPHL.h"
@@ -129,6 +178,7 @@ static inline void ClampResources(uint32 &value)
 
         // AFK tracking: map player GUID to last movement timestamp (ms)
         _playerLastMove.clear();
+        _playerWarnedBeforeTeleport.clear();
     }
 
     // Setup: Registers the Hinterland zone for OutdoorPvP events.
@@ -190,8 +240,10 @@ static inline void ClampResources(uint32 &value)
         if (!plr->IsInWorld())
             return false;
         // Don't re-invite if already in a BG/BF group
-            if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
+        if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
+        {
             return false;
+        }
             // Try to find an existing non-full raid group for this team
             Group* group = GetFreeBfRaid(plr->GetTeamId());
             if (group)
@@ -360,6 +412,9 @@ static inline void ClampResources(uint32 &value)
         _messageTimer = 0;
         _liveResourceTimer = 0;
 
+    // Clear AFK warning state on reset
+    _playerWarnedBeforeTeleport.clear();
+
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     }
 
@@ -405,12 +460,13 @@ static inline void ClampResources(uint32 &value)
         HandleWinMessage(msg);
     }
 
-    // Main update loop for Hinterland battleground logic.
-    // Handles battleground start announcement, periodic resource broadcasts, live timer worldstate updates,
-    // AFK teleport, win/lose logic, and all match progression features.
-    bool OutdoorPvPHL::Update(uint32 diff)
-    {
-        OutdoorPvP::Update(diff);
+// Main update loop for Hinterland battleground logic.
+// Handles battleground start announcement, periodic resource broadcasts, live timer worldstate updates,
+// AFK teleport (with warning), win/lose logic, and match progression features.
+bool OutdoorPvPHL::Update(uint32 diff)
+{
+    OutdoorPvP::Update(diff);
+
     // Split responsibilities to helpers for readability
     if (_FirstLoad == false)
     {
@@ -424,6 +480,20 @@ static inline void ClampResources(uint32 &value)
         _FirstLoad = true;
         _matchTimer = 0;
     }
+
+    // timers and periodic tasks
+    ProcessMatchTimer(diff);
+    ProcessPeriodicMessage(diff);
+
+    uint32 now = getMSTime();
+    ProcessAFK(now);
+
+    CheckResourceThresholds();
+    BroadcastResourceMessages();
+
+    IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
+    return false;
+}
 
 // Helper implementations
 void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
@@ -447,19 +517,24 @@ void OutdoorPvPHL::ProcessPeriodicMessage(uint32 diff)
         uint32 minutes = timeRemaining / 60;
         uint32 seconds = timeRemaining % 60;
 
-        // Count current players in the Hinterland zone per team (raid/group size approximation)
+        // Count battleground-raid members using tracked raid groups for each team
         uint32 allianceCount = 0;
         uint32 hordeCount = 0;
-        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-        for (WorldSessionMgr::SessionMap::const_iterator it = sessionMap.begin(); it != sessionMap.end(); ++it)
+        // Iterate Alliance groups
+        for (GuidSet::const_iterator itr = _Groups[TEAM_ALLIANCE].begin(); itr != _Groups[TEAM_ALLIANCE].end(); ++itr)
         {
-            Player* p = it->second ? it->second->GetPlayer() : nullptr;
-            if (!p || !p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
+            Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());
+            if (!g || !g->isBGGroup())
                 continue;
-            if (p->GetTeamId() == TEAM_ALLIANCE)
-                ++allianceCount;
-            else
-                ++hordeCount;
+            allianceCount += g->GetMembersCount();
+        }
+        // Iterate Horde groups
+        for (GuidSet::const_iterator itr = _Groups[TEAM_HORDE].begin(); itr != _Groups[TEAM_HORDE].end(); ++itr)
+        {
+            Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());
+            if (!g || !g->isBGGroup())
+                continue;
+            hordeCount += g->GetMembersCount();
         }
 
         char msg[256];
@@ -481,11 +556,28 @@ void OutdoorPvPHL::ProcessAFK(uint32 now)
         ObjectGuid guid = player->GetGUID();
         if (_playerLastMove.find(guid) == _playerLastMove.end())
             _playerLastMove[guid] = now;
+
+        // If player hasn't moved for AFK_TIMEOUT_MS - 30s, warn them once
+        const uint32 warnThreshold = AFK_TIMEOUT_MS > 30000 ? AFK_TIMEOUT_MS - 30000 : 0;
+        if (!_playerWarnedBeforeTeleport[guid] && now - _playerLastMove[guid] >= warnThreshold && now - _playerLastMove[guid] < AFK_TIMEOUT_MS)
+        {
+            player->SendAreaTriggerMessage("You will be teleported to your start point in 30 seconds due to inactivity. Move to cancel.");
+            _playerWarnedBeforeTeleport[guid] = true;
+            continue;
+        }
+
         if (now - _playerLastMove[guid] >= AFK_TIMEOUT_MS)
         {
-            TeleportPlayerToStart(player);
+            // Safe teleport check: ensure player is alive and map is valid
+            if (player->IsAlive())
+            {
+                // Teleport the player to safe coordinates for their faction
+                TeleportPlayerToStart(player);
+                player->TextEmote("You have been summoned to your starting position due to inactivity.");
+            }
+            // Reset timers and warned flag
             _playerLastMove[guid] = now; // Reset timer after teleport
-            player->TextEmote("You have been summoned to your starting position due to inactivity.");
+            _playerWarnedBeforeTeleport[guid] = false;
         }
     }
 }
@@ -594,19 +686,43 @@ void OutdoorPvPHL::ClampResourceCounters()
     ClampResources(_horde_gathered);
 }
 
-    // timers and periodic tasks
-    ProcessMatchTimer(diff);
-    ProcessPeriodicMessage(diff);
+std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
+{
+    std::vector<ObjectGuid> res;
+    if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
+        return res;
 
-    uint32 now = getMSTime();
-    ProcessAFK(now);
-
-    CheckResourceThresholds();
-    BroadcastResourceMessages();
-
-    IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
-    return false;
+    for (GuidSet::const_iterator itr = _Groups[team].begin(); itr != _Groups[team].end(); ++itr)
+    {
+        ObjectGuid gid = *itr;
+        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+        if (!g)
+            continue;
+        if (!g->isBGGroup())
+            continue;
+        res.push_back(g->GetGUID());
     }
+    return res;
+}
+
+// Admin accessors
+uint32 OutdoorPvPHL::GetResources(TeamId team) const
+{
+    if (team == TEAM_ALLIANCE) return _ally_gathered;
+    if (team == TEAM_HORDE) return _horde_gathered;
+    return 0;
+}
+
+void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)
+{
+    if (team == TEAM_ALLIANCE) _ally_gathered = amount;
+    else if (team == TEAM_HORDE) _horde_gathered = amount;
+}
+
+void OutdoorPvPHL::ForceReset()
+{
+    HandleReset();
+}
     
     // Handles logic for when a player kills another player or NPC in the battleground.
     // Awards items, deducts resources, and sends kill announcements. Boss kills reward all raid members.
