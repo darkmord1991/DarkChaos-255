@@ -655,7 +655,7 @@
                 {
                     case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case Alliance_Boss:
                         _ally_gathered -= PointsLoseOnPvPKill;
@@ -663,32 +663,32 @@
                         break;
                     case Alliance_Infantry:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case Alliance_Squadleader: // Wrong?
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     /*
                     case VALIANCE_KEEP_FOOTMAN_2: // 2?
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_OFFICER:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_RIFLEMAN:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_WORKER:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case DURDAN_THUNDERBEAK:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     */
                 }
