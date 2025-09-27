@@ -504,10 +504,11 @@
                             {
                                 Player* p = itp->second ? itp->second->GetPlayer() : nullptr;
                                 if (p && p->IsInWorld() && p->GetZoneId() == 47)
-                                    if (p->GetTeamId() == TEAM_ALLIANCE)
+                                    if (p->GetTeamId() == TEAM_ALLIANCE) {
                                         p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
-                                    else
+                                    } else {
                                         p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
+                                    }
                             }
                             _LastWin = HORDE;
                             IS_RESOURCE_MESSAGE_A = false; // Reset
@@ -536,7 +537,7 @@
                                     break;
                             }
                             // Announce winning team to all players
-                            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+                            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
                                     player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
                             }
