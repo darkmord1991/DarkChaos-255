@@ -60,82 +60,53 @@
     };
 
 /* OutdoorPvPHL Related */
-    class OutdoorPvPHL : public OutdoorPvP
-        private:
-                uint32 _ally_gathered;
-                uint32 _horde_gathered;
-            uint32 _LastWin;
-            bool IS_ABLE_TO_SHOW_MESSAGE;
-            bool IS_RESOURCE_MESSAGE_A;
-            bool IS_RESOURCE_MESSAGE_H;
-            bool _FirstLoad;
-            int limit_A;
-            int limit_H;
-            int limit_resources_message_A;
-            int limit_resources_message_H;
-            uint32 _messageTimer; // Timer for periodic message
+    class OutdoorPvPHL : public OutdoorPvP {
+    private:
+        uint32 _ally_gathered;
+        uint32 _horde_gathered;
+        uint32 _LastWin;
+        bool IS_ABLE_TO_SHOW_MESSAGE;
+        bool IS_RESOURCE_MESSAGE_A;
+        bool IS_RESOURCE_MESSAGE_H;
+        bool _FirstLoad;
+        int limit_A;
+        int limit_H;
+        int limit_resources_message_A;
+        int limit_resources_message_H;
+        uint32 _messageTimer; // Timer for periodic message
 
-            // Permanent resources for each team (never reset during a run, only at battleground reset)
-            uint32 _ally_permanent_resources;
-            uint32 _horde_permanent_resources;
+        // Permanent resources for each team (never reset during a run, only at battleground reset)
+        uint32 _ally_permanent_resources;
+        uint32 _horde_permanent_resources;
 
-            // Timer for live/permanent resource broadcast (5s interval)
-            uint32 _liveResourceTimer;
+        // Timer for live/permanent resource broadcast (5s interval)
+        uint32 _liveResourceTimer;
 
-            // AFK tracking: map player GUID to last movement timestamp (ms)
-            std::map<ObjectGuid, uint32> _playerLastMove;
+        // AFK tracking: map player GUID to last movement timestamp (ms)
+        std::map<ObjectGuid, uint32> _playerLastMove;
 
-            // Group management
-            GuidSet _Groups[2];
-            uint32 _BattleId;
-            GuidUnorderedSet _PlayersInWar[2];
-            Group* GetFreeBfRaid(TeamId TeamId);
-            bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
-            Group* GetGroupPlayer(ObjectGuid guid, TeamId TeamId);
+        // Group management
+        GuidSet _Groups[2];
+        uint32 _BattleId;
+        GuidUnorderedSet _PlayersInWar[2];
+        Group* GetFreeBfRaid(TeamId TeamId);
+        bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
+        Group* GetGroupPlayer(ObjectGuid guid, TeamId TeamId);
 
-            /* Reset */
-            void HandleReset();
+        /* Reset */
+        void HandleReset();
 
-            /* Rewards */
-            void HandleRewards(Player * player, uint32 honorpointsorarena, bool honor, bool arena, bool both);
+        /* Rewards */
+        void HandleRewards(Player * player, uint32 honorpointsorarena, bool honor, bool arena, bool both);
 
-            /* Updates */
-            bool Update(uint32 diff) override;
+        /* Updates */
+        bool Update(uint32 diff) override;
 
-            /* Sounds */
-            void PlaySounds(bool side);
+        /* Sounds */
+        void PlaySounds(bool side);
 
-        private:
-            uint32 _ally_gathered;
-            uint32 _horde_gathered;
-            uint32 _LastWin;
-            bool IS_ABLE_TO_SHOW_MESSAGE;
-            bool IS_RESOURCE_MESSAGE_A;
-            bool IS_RESOURCE_MESSAGE_H;
-            bool _FirstLoad;
-            int limit_A;
-            int limit_H;
-            int limit_resources_message_A;
-            int limit_resources_message_H;
-            uint32 _messageTimer; // Timer for periodic message
-
-            // Permanent resources for each team (never reset during a run, only at battleground reset)
-            uint32 _ally_permanent_resources;
-            uint32 _horde_permanent_resources;
-
-            // Timer for live/permanent resource broadcast (5s interval)
-            uint32 _liveResourceTimer;
-
-            // Group management
-            GuidSet _Groups[2];
-            uint32 _BattleId;
-            GuidUnorderedSet _PlayersInWar[2];
-            Group* GetFreeBfRaid(TeamId TeamId);
-            bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
-            Group* GetGroupPlayer(ObjectGuid guid, TeamId TeamId);
-
-        public:
-            // Public wrapper for protected HandlePlayerEnterZone
-            void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
+    public:
+        // Public wrapper for protected HandlePlayerEnterZone
+        void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };
     #endif
