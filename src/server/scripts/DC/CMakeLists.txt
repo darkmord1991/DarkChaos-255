@@ -11,4 +11,5 @@ set(SCRIPTS_DC_AC
 set(SCRIPTS_WORLD
     ${SCRIPTS_WORLD}
     ${SCRIPTS_DC_AC}
+    ${SCRIPTS_DC_HinterlandBG}
 )
