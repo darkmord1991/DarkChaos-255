@@ -130,6 +130,14 @@
     // Plays victory/defeat sounds for all players in the zone
     void PlaySounds(bool side);
 
+    // Helper functions split out of Update for clarity
+    void ProcessMatchTimer(uint32 diff);
+    void ProcessPeriodicMessage(uint32 diff);
+    void ProcessAFK(uint32 now);
+    void CheckResourceThresholds();
+    void BroadcastResourceMessages();
+    void ClampResourceCounters();
+
     public:
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking
     OutdoorPvPHL();

@@ -49,9 +49,57 @@
     #include "WorldSessionMgr.h"
     #include "GroupMgr.h"
 #include "MapMgr.h"
+#include <cstdarg>
+#include <cstdint>
+#include <algorithm>
 
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
 // Implements group management, resource tracking, AFK detection, messaging, rewards, and faction-based teleportation.
+
+// Configuration constants
+static constexpr uint32_t HL_ZONE_ID = 47;
+static constexpr uint32_t MATCH_DURATION_MS = 3600000; // 60 minutes
+static constexpr uint32_t MESSAGE_INTERVAL_MS = 120000; // 120 seconds
+static constexpr uint32_t AFK_TIMEOUT_MS = 600000; // 10 minutes
+static constexpr int RESOURCE_THRESHOLD_WARN_1 = 300;
+static constexpr int RESOURCE_THRESHOLD_WARN_2 = 200;
+static constexpr int RESOURCE_THRESHOLD_WARN_3 = 100;
+static constexpr int RESOURCE_THRESHOLD_LOW = 50;
+
+// Small helper to call TextEmote with printf-style formatting
+static inline void PlayerTextEmoteFmt(Player* player, const char* fmt, ...)
+{
+    if (!player) return;
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    player->TextEmote(buf);
+}
+
+// Helper: Teleport all players in the Hinterland zone to their faction start
+static inline void TeleportAllPlayersInZoneToStart()
+{
+    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+    for (WorldSessionMgr::SessionMap::const_iterator it = sessionMap.begin(); it != sessionMap.end(); ++it)
+    {
+        Player* p = it->second ? it->second->GetPlayer() : nullptr;
+        if (p && p->IsInWorld() && p->GetZoneId() == HL_ZONE_ID) {
+            if (p->GetTeamId() == TEAM_ALLIANCE)
+                p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
+            else
+                p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
+        }
+    }
+}
+
+// Ensure resource counters do not underflow (they're unsigned)
+static inline void ClampResources(uint32 &value)
+{
+    if ((int32)value < 0)
+        value = 0;
+}
 
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
     // Sets up all initial values for resources, timers, and player movement tracking.
@@ -177,7 +225,8 @@
 
     // Helper: Teleport player to Hinterland Outdoor BG start location by faction.
     // Teleports player to their faction's start location in Hinterland BG.
-    void TeleportPlayerToStart(Player* player)
+    // Marked static to keep internal linkage to this translation unit.
+    static inline void TeleportPlayerToStart(Player* player)
     {
         // Start locations of the Hinterland BG
         // Alliance: 0, -17.743, -4635.110, 12.933, 2.422
@@ -209,6 +258,12 @@
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
     }
 
+    // Touch/update player's last move timestamp (used by movement hooks)
+    void OutdoorPvPHL::TouchPlayerLastMove(ObjectGuid guid)
+    {
+        _playerLastMove[guid] = getMSTime();
+    }
+
     // Broadcasts a win message to all players in the Hinterland zone.
     // Respawn logic for NPCs and game objects is currently disabled.
     void OutdoorPvPHL::HandleWinMessage(const char* message)
@@ -220,7 +275,8 @@
     }
 
     // Plays victory/defeat sounds for all players in the zone, depending on side.
-    void OutdoorPvPHL::PlaySounds(bool side)
+    // Play victory sounds for the winning team; winner indicates which team won/should be celebrated
+    void OutdoorPvPHL::PlaySounds(TeamId winner)
     {
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
         for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
@@ -232,10 +288,20 @@
 
                 if(itr->second->GetPlayer()->GetZoneId() == OutdoorPvPHLBuffZones[i])
                 {
-                    if(itr->second->GetPlayer()->GetTeamId() == TEAM_ALLIANCE && side == true)
-                        itr->second->GetPlayer()->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, itr->second->GetPlayer());
-                    else
-                        itr->second->GetPlayer()->PlayDirectSound(HL_SOUND_HORDE_GOOD, itr->second->GetPlayer());
+                    Player* p = itr->second->GetPlayer();
+                    // Play the winning sound for players on the winning team and a neutral/other sound for others.
+                    if (p->GetTeamId() == winner) {
+                        if (winner == TEAM_ALLIANCE)
+                            p->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, p);
+                        else
+                            p->PlayDirectSound(HL_SOUND_HORDE_GOOD, p);
+                    } else {
+                        // Play the opposing team's good sound for losing players as feedback as well.
+                        if (winner == TEAM_ALLIANCE)
+                            p->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, p);
+                        else
+                            p->PlayDirectSound(HL_SOUND_HORDE_GOOD, p);
+                    }
                 }
             }
         }
@@ -313,266 +379,184 @@
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
-        if(_FirstLoad == false)
-        {
-            // Announce battleground start to all players on the server
-            char announceMsg[256];
-            snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
-            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
-                if (Player* player = sessionPair.second->GetPlayer())
-                    player->GetSession()->SendAreaTriggerMessage(announceMsg);
-            }
-            LOG_INFO("misc", announceMsg);
-            _FirstLoad = true;
-                _matchTimer = 0; // Reset match timer
+    // Split responsibilities to helpers for readability
+    if (_FirstLoad == false)
+    {
+        char announceMsg[256];
+        snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in zone %u! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
+        for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
+            if (Player* player = sessionPair.second->GetPlayer())
+                player->GetSession()->SendAreaTriggerMessage(announceMsg);
         }
+        LOG_INFO("misc", announceMsg);
+        _FirstLoad = true;
+        _matchTimer = 0;
+    }
 
-            // Match duration logic: 60 minutes (3,600,000 ms)
-            _matchTimer += diff;
-            if (_matchTimer >= 3600000) // 60 minutes
-            {
-                HandleWinMessage("[Hinterland Defence]: The match has ended due to time limit! Restarting...");
-                HandleReset();
-                _matchTimer = 0;
-                _FirstLoad = false;
-                return true; // End update early to restart
-            }
+// Helper implementations
+void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
+{
+    _matchTimer += diff;
+    if (_matchTimer >= MATCH_DURATION_MS)
+    {
+        HandleWinMessage("[Hinterland Defence]: The match has ended due to time limit! Restarting...");
+        HandleReset();
+        _matchTimer = 0;
+        _FirstLoad = false;
+    }
+}
 
-        // Periodic zone-wide broadcast every 120 seconds with resources and remaining timer
-        _messageTimer += diff;
-        if (_messageTimer >= 120000) // 120,000 ms = 120 seconds
-        {
-            uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
-            uint32 minutes = timeRemaining / 60;
-            uint32 seconds = timeRemaining % 60;
-            char msg[256];
-            snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %02u:%02u (Start: 60:00)", _ally_gathered, _horde_gathered, minutes, seconds);
-            sWorldSessionMgr->SendZoneText(47, msg);
-            _messageTimer = 0;
-        }
+void OutdoorPvPHL::ProcessPeriodicMessage(uint32 diff)
+{
+    _messageTimer += diff;
+    if (_messageTimer >= MESSAGE_INTERVAL_MS)
+    {
+        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+        uint32 minutes = timeRemaining / 60;
+        uint32 seconds = timeRemaining % 60;
+        char msg[256];
+        snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %02u:%02u (Start: 60:00)", _ally_gathered, _horde_gathered, minutes, seconds);
+        sWorldSessionMgr->SendZoneText(HL_ZONE_ID, msg);
+        _messageTimer = 0;
+    }
+}
 
-        // AFK teleport logic: teleport players in zone 47 who have not moved for 10 minutes (600 seconds)
-        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-        uint32 now = getMSTime();
-        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+void OutdoorPvPHL::ProcessAFK(uint32 now)
+{
+    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+    for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+    {
+        Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
+        if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+            continue;
+        ObjectGuid guid = player->GetGUID();
+        if (_playerLastMove.find(guid) == _playerLastMove.end())
+            _playerLastMove[guid] = now;
+        if (now - _playerLastMove[guid] >= AFK_TIMEOUT_MS)
         {
-            Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
-            if (!player || !player->IsInWorld() || player->GetZoneId() != 47)
-                continue;
-            ObjectGuid guid = player->GetGUID();
-            // If player is not tracked, initialize
-            if (_playerLastMove.find(guid) == _playerLastMove.end())
-                _playerLastMove[guid] = now;
-            // If player has not moved for 10 minutes, teleport and notify
-            if (now - _playerLastMove[guid] >= 600000)
-            {
-                if (player->GetTeamId() == TEAM_ALLIANCE)
-                    player->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
-                else
-                    player->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
-                _playerLastMove[guid] = now; // Reset timer after teleport
-                player->TextEmote("You have been summoned to your starting position due to inactivity.");
-            }
+            TeleportPlayerToStart(player);
+            _playerLastMove[guid] = now; // Reset timer after teleport
+            player->TextEmote("You have been summoned to your starting position due to inactivity.");
         }
+    }
+}
 
-        if(_ally_gathered <= 50 && limit_A == 0)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
-            limit_A = 1; // We set this to one to stop the spamming
-            PlaySounds(false);
-        }
-        else if(_horde_gathered <= 50 && limit_H == 0)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
-            limit_H = 1; // Same as above
-            PlaySounds(true);
-        }
-        else if(_ally_gathered <= 0 && limit_A == 1)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
-            limit_A = 2;
-            PlaySounds(false);
-            // Teleport all Alliance players in zone 47 to their start location
-            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
-            {
-                if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
-                    continue;
-                if (itr->second->GetPlayer()->GetTeamId() == TEAM_ALLIANCE)
-                    TeleportPlayerToStart(itr->second->GetPlayer());
-            }
-        }
-        else if(_horde_gathered <= 0 && limit_H == 1)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
-            limit_H = 2;
-            PlaySounds(true);
-            // Teleport all Horde players in zone 47 to their start location
-            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
-            {
-                if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
-                    continue;
-                if (itr->second->GetPlayer()->GetTeamId() == TEAM_HORDE)
-                    TeleportPlayerToStart(itr->second->GetPlayer());
-            }
-        }
-        else if(_ally_gathered <= 300 && limit_resources_message_A == 0)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_A = 1;
-            PlaySounds(false);
-        }
-        else if(_horde_gathered <= 300 && limit_resources_message_H == 0)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_H = 1;
-            PlaySounds(true);
-        }
-        else if(_ally_gathered <= 200 && limit_resources_message_A == 1)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_A = 2;
-            PlaySounds(false);
-        }
-        else if(_horde_gathered <= 200 && limit_resources_message_H == 1)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_H = 2;
-            PlaySounds(true);
-        }
-        else if(_ally_gathered <= 100 && limit_resources_message_A == 2)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_A = 3;
-            PlaySounds(false);
-        }
-        else if(_horde_gathered <= 100 && limit_resources_message_H == 2)
-        {
-            IS_ABLE_TO_SHOW_MESSAGE = true;
-            limit_resources_message_H = 3;
-            PlaySounds(true);
-        }
-     
-        if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
-        {
-            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr) // We're searching for all the sessions(Players)
-            {
-                if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||
-                    itr->second->GetPlayer()->GetZoneId() != 47)
-                    continue;
-     
-                if(itr->second->GetPlayer()->GetZoneId() == 47)
-                {
-                    // Removed unused variable 'msg'
-                    if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
-                    {
-                        itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
-                    }
-                    else if(limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
-                    {
-                        itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");
-                    }
-     
-                    if(IS_RESOURCE_MESSAGE_A == true)
-                    {
-                        if(limit_A == 1)
-                        {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
-                            IS_RESOURCE_MESSAGE_A = false; // Reset
-                        }
-                        else if(limit_A == 2)
-                        {
-                            // Alliance resources reached 0: Alliance loses, Horde wins
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");
-                            HandleWinMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
-                            HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
-                            switch(itr->second->GetPlayer()->GetTeamId())
-                            {
-                                case TEAM_ALLIANCE:
-                                    HandleBuffs(itr->second->GetPlayer(), true);
-                                    break;
-                                default: //Horde
-                                    HandleBuffs(itr->second->GetPlayer(), false);
-                                    break;
-                            }
-                            // Announce winning team to all players
-                            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
-                                if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
-                            }
-                            // After battle: teleport all players in zone 47 to 'start'
-                            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                            for (WorldSessionMgr::SessionMap::const_iterator itp = sessionMap.begin(); itp != sessionMap.end(); ++itp)
-                            {
-                                Player* p = itp->second ? itp->second->GetPlayer() : nullptr;
-                                if (p && p->IsInWorld() && p->GetZoneId() == 47) {
-                                    if (p->GetTeamId() == TEAM_ALLIANCE) {
-                                        p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
-                                    }
-                                    else
-                                    {
-                                        p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
-                                    }
-                                }
-                            }
-                            _LastWin = HORDE;
-                            IS_RESOURCE_MESSAGE_A = false; // Reset
-                        }
-                    }
-                    else if(IS_RESOURCE_MESSAGE_H == true)
-                    {
-                        if(limit_H == 1)
-                        {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");
-                            IS_RESOURCE_MESSAGE_H = false; // Reset
-                        }
-                        else if(limit_H == 2)
-                        {
-                            // Horde resources reached 0: Horde loses, Alliance wins
-                            HandleWinMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
-                            HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
-                            switch(itr->second->GetPlayer()->GetTeamId())
-                            {
-                                case TEAM_ALLIANCE:
-                                    HandleBuffs(itr->second->GetPlayer(), false);
-                                    break;
-                                default: //Horde
-                                    HandleBuffs(itr->second->GetPlayer(), true);
-                                    break;
-                            }
-                            // Announce winning team to all players
-                            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
-                                if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
-                            }
-                            // After battle: teleport all players in zone 47 to 'start'
-                            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                            for (WorldSessionMgr::SessionMap::const_iterator itp = sessionMap.begin(); itp != sessionMap.end(); ++itp)
-                            {
-                                Player* p = itp->second ? itp->second->GetPlayer() : nullptr;
-                                if (p && p->IsInWorld() && p->GetZoneId() == 47)
-                                    if (p->GetTeamId() == TEAM_ALLIANCE) {
-                                        p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
-                                    } else {
-                                        p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
-                                    }
-                            }
-                            _LastWin = ALLIANCE;
-                            IS_RESOURCE_MESSAGE_H = false; // Reset
-                        }
-                    }
-                }
-            }
-        }
+void OutdoorPvPHL::CheckResourceThresholds()
+{
+    if(_ally_gathered <= RESOURCE_THRESHOLD_LOW && limit_A == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_A = true; limit_A = 1; PlaySounds(TEAM_HORDE);
+    }
+    else if(_horde_gathered <= RESOURCE_THRESHOLD_LOW && limit_H == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 1; PlaySounds(TEAM_ALLIANCE);
+    }
+    else if(_ally_gathered <= 0 && limit_A == 1)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_A = true; limit_A = 2; PlaySounds(TEAM_HORDE); TeleportAllPlayersInZoneToStart();
+    }
+    else if(_horde_gathered <= 0 && limit_H == 1)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 2; PlaySounds(TEAM_ALLIANCE); TeleportAllPlayersInZoneToStart();
+    }
+    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_A == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 1; PlaySounds(TEAM_HORDE);
+    }
+    else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_H == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 1; PlaySounds(TEAM_ALLIANCE);
+    }
+    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_2 && limit_resources_message_A == 1)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 2; PlaySounds(TEAM_HORDE);
+    }
+    else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_2 && limit_resources_message_H == 1)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 2; PlaySounds(TEAM_ALLIANCE);
+    }
+    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_3 && limit_resources_message_A == 2)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 3; PlaySounds(TEAM_HORDE);
+    }
+    else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_3 && limit_resources_message_H == 2)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 3; PlaySounds(TEAM_ALLIANCE);
+    }
+}
 
-        IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
-        return false;
+void OutdoorPvPHL::BroadcastResourceMessages()
+{
+    if(!IS_ABLE_TO_SHOW_MESSAGE) return;
+    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+    for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+    {
+        if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != HL_ZONE_ID)
+            continue;
+        Player* p = itr->second->GetPlayer();
+        if(limit_resources_message_A >= 1 && limit_resources_message_A <= 3)
+            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+        else if(limit_resources_message_H >= 1 && limit_resources_message_H <= 3)
+            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+
+        if(IS_RESOURCE_MESSAGE_A)
+        {
+            if(limit_A == 1)
+            {
+                PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+                IS_RESOURCE_MESSAGE_A = false;
+            }
+            else if(limit_A == 2)
+            {
+                p->TextEmote("[Hinterland Defence]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");
+                HandleWinMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
+                HandleRewards(p, 1500, true, false, false);
+                if (p->GetTeamId() == TEAM_ALLIANCE) HandleBuffs(p, true); else HandleBuffs(p, false);
+                for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
+                TeleportAllPlayersInZoneToStart();
+                _LastWin = HORDE;
+                IS_RESOURCE_MESSAGE_A = false;
+            }
+        }
+        else if(IS_RESOURCE_MESSAGE_H)
+        {
+            if(limit_H == 1)
+            {
+                PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+                IS_RESOURCE_MESSAGE_H = false;
+            }
+            else if(limit_H == 2)
+            {
+                HandleWinMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
+                HandleRewards(p, 1500, true, false, false);
+                if (p->GetTeamId() == TEAM_ALLIANCE) HandleBuffs(p, false); else HandleBuffs(p, true);
+                for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
+                TeleportAllPlayersInZoneToStart();
+                _LastWin = ALLIANCE;
+                IS_RESOURCE_MESSAGE_H = false;
+            }
+        }
+    }
+}
+
+void OutdoorPvPHL::ClampResourceCounters()
+{
+    ClampResources(_ally_gathered);
+    ClampResources(_horde_gathered);
+}
+
+    // timers and periodic tasks
+    ProcessMatchTimer(diff);
+    ProcessPeriodicMessage(diff);
+
+    uint32 now = getMSTime();
+    ProcessAFK(now);
+
+    CheckResourceThresholds();
+    BroadcastResourceMessages();
+
+    IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
+    return false;
     }
     
     // Handles logic for when a player kills another player or NPC in the battleground.
@@ -597,10 +581,12 @@
             {
                 case TEAM_ALLIANCE:
                     _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
+                    ClampResourceCounters();
                     player->AddItem(40752, 1);
                     break;
                 default: //Horde
                     _horde_gathered -= 5; // Remove 5 resources from Horde on player kill
+                    ClampResourceCounters();
                     player->AddItem(40752, 1);
                     break;
             }
@@ -613,6 +599,7 @@
                 {
                     case 810002: // Horde boss
                         _horde_gathered -= 200; // Remove 200 resources from Horde on boss kill
+                        ClampResourceCounters();
                         {
                             char bossMsg[256];
                             snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost! Horde now has %u resources left!", player->GetName().c_str(), _horde_gathered);
@@ -631,29 +618,36 @@
                         break;
                     case Horde_Infantry:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     case Horde_Squadleader: // 2?
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     /* Removed duplicate case for Horde_Boss (entry 810002) */
                     case Horde_Heal:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     /*
                     case WARSONG_HONOR_GUARD:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case WARSONG_MARKSMAN:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case WARSONG_RECRUITMENT_OFFICER:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case WARSONG_SCOUT:
                         _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case WARSONG_WIND_RIDER:
@@ -669,6 +663,7 @@
                 {
                     case 810003: // Alliance boss
                         _ally_gathered -= 200; // Remove 200 resources from Alliance on boss kill
+                        ClampResourceCounters();
                         {
                             char bossMsg[256];
                             snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Alliance boss! 200 Alliance resources lost! Alliance now has %u resources left!", player->GetName().c_str(), _ally_gathered);
@@ -687,29 +682,36 @@
                         break;
                     case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     /* Removed duplicate case for Alliance_Boss (entry 810003) */
                     case Alliance_Infantry:
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     case Alliance_Squadleader: // Wrong?
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     /*
                     case VALIANCE_KEEP_FOOTMAN_2: // 2?
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_OFFICER:
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_RIFLEMAN:
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_WORKER:
                         _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         // Removed Randomizer call
                         break;
                     case DURDAN_THUNDERBEAK:
@@ -744,4 +746,39 @@
     void AddSC_outdoorpvp_hl()
     {
         new OutdoorPvP_hinterland;
-	}
+
+        // Register movement hook for AFK tracking
+        RegisterOutdoorPvPHLPlayerMoveScript();
+    }
+
+// Player movement hook to update AFK tracking for Hinterland Outdoor PvP
+class OutdoorPvPHL_PlayerMoveScript : public PlayerScript
+{
+public:
+    OutdoorPvPHL_PlayerMoveScript() : PlayerScript("OutdoorPvPHL_PlayerMoveScript") {}
+
+    void OnPlayerMove(Player* player, MovementInfo movementInfo, uint32 /*opcode*/) override
+    {
+        if (!player || !player->IsInWorld())
+            return;
+        if (player->GetZoneId() != HL_ZONE_ID)
+            return;
+
+        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID);
+        if (!out)
+            return;
+        OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out);
+        if (!hl)
+            return;
+
+        // Update last move timestamp for AFK tracking
+        hl->TouchPlayerLastMove(player->GetGUID());
+    }
+};
+
+// Register the player movement script
+static void RegisterOutdoorPvPHLPlayerMoveScript()
+{
+    new OutdoorPvPHL_PlayerMoveScript();
+}
+
