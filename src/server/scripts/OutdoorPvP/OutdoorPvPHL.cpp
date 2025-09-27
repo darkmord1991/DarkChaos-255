@@ -160,12 +160,25 @@ static inline void ClampResources(uint32 &value)
     // Ensures only one raid group per faction is used for auto-invite.
     Group* OutdoorPvPHL::GetFreeBfRaid(TeamId TeamId)
     {
-        for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
+        // Iterate all stored group GUIDs for the team and return first non-full raid group.
+        // Remove stale group GUIDs (groups that no longer exist) from the set.
+        for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); )
         {
-            // Look up the group by GUID
-            Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter());
-            if (group && !group->IsFull())
+            ObjectGuid gid = *itr;
+            Group* group = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+            if (!group)
+            {
+                // Erase stale GUID from set
+                GuidSet::const_iterator toErase = itr++;
+                _Groups[TeamId].erase(toErase);
+                continue;
+            }
+
+            // Prefer battleground raid groups for this zone and ensure they are not full
+            if (group->isBGGroup() && group->isRaidGroup() && !group->IsFull())
                 return group;
+
+            ++itr;
         }
         return nullptr;
     }
@@ -177,10 +190,11 @@ static inline void ClampResources(uint32 &value)
         if (!plr->IsInWorld())
             return false;
         // Don't re-invite if already in a BG/BF group
-        if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
+            if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
             return false;
-        Group* group = GetFreeBfRaid(plr->GetTeamId());
-        if (group)
+            // Try to find an existing non-full raid group for this team
+            Group* group = GetFreeBfRaid(plr->GetTeamId());
+            if (group)
         {
             // Add player to group if not already a member
             if (!group->IsMember(plr->GetGUID()))
@@ -200,13 +214,30 @@ static inline void ClampResources(uint32 &value)
         }
         else
         {
-            // No group exists, create a new one and add player
-            group = new Group;
-            Battleground *bg = (Battleground*)sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47);
-            group->SetBattlegroundGroup(bg);
-            group->Create(plr);
-            sGroupMgr->AddGroup(group);
-            _Groups[plr->GetTeamId()].insert(group->GetGUID());
+                // No available non-full raid group: create a new raid group for this team
+                group = new Group;
+                Battleground* bg = (Battleground*)sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID);
+                if (bg)
+                    group->SetBattlegroundGroup(bg);
+
+                // Create will initialize the group and mark it as a BG raid if m_bgGroup was set
+                if (!group->Create(plr))
+                {
+                    // Creation failed: cleanup and abort
+                    delete group;
+                    return false;
+                }
+
+                // Ensure the group is a raid-type (raid-size up to MAXRAIDSIZE)
+                if (!group->isRaidGroup())
+                    group->ConvertToRaid();
+
+                sGroupMgr->AddGroup(group);
+                _Groups[plr->GetTeamId()].insert(group->GetGUID());
+
+                // Log creation for ops/debugging. Include team and group low-guid.
+                LOG_INFO("outdoorpvp", "[OutdoorPvPHL]: Created new battleground raid group %u for team %s in zone %u",
+                         group->GetGUID().GetCounter(), plr->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde", HL_ZONE_ID);
         }
         return true;
     }
@@ -415,8 +446,25 @@ void OutdoorPvPHL::ProcessPeriodicMessage(uint32 diff)
         uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
         uint32 minutes = timeRemaining / 60;
         uint32 seconds = timeRemaining % 60;
+
+        // Count current players in the Hinterland zone per team (raid/group size approximation)
+        uint32 allianceCount = 0;
+        uint32 hordeCount = 0;
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator it = sessionMap.begin(); it != sessionMap.end(); ++it)
+        {
+            Player* p = it->second ? it->second->GetPlayer() : nullptr;
+            if (!p || !p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
+                continue;
+            if (p->GetTeamId() == TEAM_ALLIANCE)
+                ++allianceCount;
+            else
+                ++hordeCount;
+        }
+
         char msg[256];
-        snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %02u:%02u (Start: 60:00)", _ally_gathered, _horde_gathered, minutes, seconds);
+        snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u (%u players) | Horde: %u (%u players) | Time left: %02u:%02u (Start: 60:00)",
+                 _ally_gathered, allianceCount, _horde_gathered, hordeCount, minutes, seconds);
         sWorldSessionMgr->SendZoneText(HL_ZONE_ID, msg);
         _messageTimer = 0;
     }

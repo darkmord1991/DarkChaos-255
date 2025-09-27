@@ -1,11 +1,13 @@
-// Registration file for Hinterland OutdoorPvP scripts
-#include "../../../../OutdoorPvP/OutdoorPvPHL.h"
+// Registration file for Hinterland OutdoorPvP scripts (DC module wrapper)
+#include "OutdoorPvP/OutdoorPvPHL.h"
 #include "ScriptMgr.h"
 
-// Register the OutdoorPvP Hinterland instance and movement script
+// Forward existing registration function implemented in OutdoorPvPHL.cpp
+extern void AddSC_outdoorpvp_hl();
+
+// Small DC-specific AddSC wrapper so the DC scripts module picks up the registration.
 void AddSC_outdoorpvp_hl_dc()
 {
-    new OutdoorPvP_hinterland();
-    // Movement script registration (constructed object registers itself)
-    new OutdoorPvPHL_PlayerMoveScript();
+    // Call the original registration (will create the OutdoorPvPHL instance and register movement script)
+    AddSC_outdoorpvp_hl();
 }
