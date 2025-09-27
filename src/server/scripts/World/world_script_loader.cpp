@@ -35,6 +35,7 @@ void AddSC_server_mail();
 void AddSC_transport_zeppelins();
 void AddSC_suns_reach_reclamation();
 void AddSC_scourge_invasion();
+void AddSC_ac_guard_npc(); // location: scripts\World\ac_guard_npc.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -59,4 +60,5 @@ void AddWorldScripts()
     AddSC_transport_zeppelins();
     AddSC_suns_reach_reclamation();
     AddSC_scourge_invasion();
+    AddSC_ac_guard_npc();
 }
