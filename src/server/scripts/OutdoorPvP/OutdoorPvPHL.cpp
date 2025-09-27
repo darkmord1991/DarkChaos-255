@@ -18,6 +18,9 @@
     #include "WorldSessionMgr.h"
     #include "GroupMgr.h"
 
+// OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
+// Implements group management, resource tracking, AFK detection, messaging, and rewards.
+
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
     OutdoorPvPHL::OutdoorPvPHL()
     {
@@ -46,6 +49,7 @@
         _playerLastMove.clear();
     }
 
+    // Setup: Registers the Hinterland zone for OutdoorPvP events
     bool OutdoorPvPHL::SetupOutdoorPvP()
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
@@ -53,6 +57,7 @@
         return true;
     }
 
+    // Called when a player enters the Hinterland zone
     void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     {
         // Auto-invite logic
@@ -69,6 +74,7 @@
 
     // Returns a non-full raid group for the given team in zone 47, or nullptr if none exists.
     // This ensures only one raid group per faction is used for auto-invite.
+    // Finds a non-full raid group for the given team in zone 47
     Group* OutdoorPvPHL::GetFreeBfRaid(TeamId TeamId)
     {
         for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
@@ -83,6 +89,7 @@
 
     // Ensures the player is in the correct raid group for their faction in zone 47.
     // If a group exists, adds the player if not present. Otherwise, creates a new group.
+    // Ensures the player is in the correct raid group for their faction in zone 47
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     {
         if (!plr->IsInWorld())
@@ -123,6 +130,7 @@
     }
 
     // Returns the group for the given player GUID and team, or nullptr if not found.
+    // Returns the group for the given player GUID and team, or nullptr if not found
     Group* OutdoorPvPHL::GetGroupPlayer(ObjectGuid guid, TeamId TeamId)
     {
         for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
@@ -135,6 +143,7 @@
     }
 
     // Helper: Teleport player to Hinterland Outdoor BG start location by faction
+    // Teleports player to their faction's start location in Hinterland BG
     void TeleportPlayerToStart(Player* player)
     {
         // Alliance: 0, -17.743, -4635.110, 12.933, 2.422
@@ -145,6 +154,7 @@
             player->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
     }
 
+    // Called when a player leaves the Hinterland zone
     void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
     {
         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
@@ -154,12 +164,14 @@
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
     }
 
+    // Broadcasts a win message to all players in the Hinterland zone
     void OutdoorPvPHL::HandleWinMessage(const char* message)
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], message);
     }
 
+    // Plays victory/defeat sounds for all players in the zone, depending on side
     void OutdoorPvPHL::PlaySounds(bool side)
     {
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -182,6 +194,7 @@
     }
 
     // Resets battleground and permanent resources to initial values.
+    // Resets battleground and permanent resources to initial values
     void OutdoorPvPHL::HandleReset()
     {
         _ally_gathered = HL_RESOURCES_A;
@@ -204,6 +217,7 @@
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     }
 
+    // Applies win/lose buffs to a player after the battle
     void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
     {
         if(loser)
@@ -218,6 +232,7 @@
         }
     }
 
+    // Handles honor/arena rewards for a player after a win/kill
     void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool honor, bool arena, bool both)
     {
         char msg[250];
@@ -245,6 +260,8 @@
 
     // Main update loop for Hinterland battleground logic.
     // Handles battleground start announcement, periodic zone-wide resource broadcast, AFK teleport, and win/lose logic.
+    // Main update loop for Hinterland battleground logic
+    // Handles battleground start announcement, periodic zone-wide resource broadcast, AFK teleport, and win/lose logic
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
@@ -493,6 +510,7 @@
     
 
     // Randomizes the honor reward for each NPC kill in the battleground.
+    // Randomizes the honor reward for each NPC kill in the battleground
     void OutdoorPvPHL::Randomizer(Player* player)
     {
         switch(urand(0, 4))
@@ -525,7 +543,8 @@
             snprintf(message, 250, "Der Boss der Allianz wurde soeben besiegt!);
     */
 
-	void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
+    // Handles logic for when a player kills another player or NPC in the battleground
+    void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     {
         if(killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
         {
@@ -642,6 +661,7 @@
     // Add to OutdoorPvPHL.h:
     // std::map<ObjectGuid, uint32> _playerLastMove;
 
+    // Script registration for OutdoorPvP Hinterland
     class OutdoorPvP_hinterland : public OutdoorPvPScript
     {
         public:
@@ -656,6 +676,7 @@
     };
 
      
+    // Registers the OutdoorPvP Hinterland script
     void AddSC_outdoorpvp_hl()
     {
         new OutdoorPvP_hinterland;

@@ -64,7 +64,6 @@
         private:
                 uint32 _ally_gathered;
                 uint32 _horde_gathered;
-            {
             uint32 _LastWin;
             bool IS_ABLE_TO_SHOW_MESSAGE;
             bool IS_RESOURCE_MESSAGE_A;
