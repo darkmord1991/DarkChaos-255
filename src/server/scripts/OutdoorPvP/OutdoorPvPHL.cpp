@@ -198,6 +198,10 @@
         if (Group* group = player->GetGroup()) {
             if (group->isRaidGroup() && group->IsMember(player->GetGUID())) {
                 group->RemoveMember(player->GetGUID(), GROUP_REMOVEMETHOD_DEFAULT);
+                // Reset phase mask to default (1) after group removal
+                player->SetPhaseMask(1, true);
+                // Clear battleground/battlefield raid flags
+                player->SetBattlegroundOrBattlefieldRaid(nullptr, 0);
             }
         }
         // Remove AFK tracking
