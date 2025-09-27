@@ -160,6 +160,9 @@
     // Main update loop for Hinterland battleground logic
     bool Update(uint32 diff) override;
 
+    // Initialize worldstates (called during SendInitWorldStates). Ensures HUD appears for players entering the zone.
+    void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
+
     // Plays victory/defeat sounds for all players in the zone (winner indicates which team won)
     void PlaySounds(TeamId winner);
 

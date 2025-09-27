@@ -267,6 +267,9 @@ static inline void ClampResources(uint32 &value)
         // Initialize last movement timestamp
     _playerLastMove[player->GetGUID()] = getMSTime();
 
+        // Ensure client initializes its worldstate set for the zone before sending updates
+        player->SendInitWorldStates(player->GetZoneId(), player->GetAreaId());
+
         // If battle is active, ensure player gets the current worldstate UI and is not excluded by stale flags
         if (IsBattleActive())
         {
@@ -279,6 +282,38 @@ static inline void ClampResources(uint32 &value)
 
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
+
+// Provide initial worldstates so clients see the HUD as soon as they load the zone
+void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
+{
+    // Only apply to our zone id
+    if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID)
+        return;
+
+    // Enable WG HUD and SA timer, and seed counters
+    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+    uint32 minutes = timeRemaining / 60;
+    uint32 seconds = timeRemaining % 60;
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
+
+    // AB resources
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+
+    // WG vehicle bars repurposed as resource bars
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, _horde_permanent_resources);
+}
 
     // Finds a non-full raid group for the given team in zone 47.
     // Ensures only one raid group per faction is used for auto-invite.
@@ -645,7 +680,7 @@ bool OutdoorPvPHL::Update(uint32 diff)
     if (_FirstLoad == false)
     {
         char announceMsg[256];
-        snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in zone %u! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
+        snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in Hinterland! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
         for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
             if (Player* player = sessionPair.second->GetPlayer())
                 player->GetSession()->SendAreaTriggerMessage(announceMsg);
