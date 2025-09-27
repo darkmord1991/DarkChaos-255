@@ -286,28 +286,15 @@ static inline void ClampResources(uint32 &value)
 // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // Only apply to our zone id
-    if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID)
-        return;
-
-    // Enable WG HUD and SA timer, and seed counters
+    // Enable WG HUD and seed counters/clock
     uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-    uint32 minutes = timeRemaining / 60;
-    uint32 seconds = timeRemaining % 60;
     uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
 
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+    // Do not show a controlling faction; keep neutral to avoid misleading UI
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, now + timeRemaining);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
-
-    // AB resources
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
-
     // WG vehicle bars repurposed as resource bars
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
@@ -482,25 +469,16 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
         if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
             return;
 
-        // Timer (use Strand of the Ancients style UI: minutes + seconds digits)
-        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-        uint32 minutes = timeRemaining / 60;
-        uint32 seconds = timeRemaining % 60;
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
-
-        // Resources (use AB resource counters for clarity)
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
-
-        // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
-        uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
-        // Reuse vehicle counters to display resources near the clock
+    // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
+    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+    // Set both WG clock worldstates like Wintergrasp does (absolute epoch seconds when the timer ends)
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, now + timeRemaining);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
+    // Ensure no faction control indicator is shown (neutral)
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+    // Reuse vehicle counters to display resources near the clock
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -587,7 +565,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             if (!p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
                 continue;
             p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
-            p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
+            p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
         }
     }
 
@@ -1021,6 +999,26 @@ void OutdoorPvPHL::ClampResourceCounters()
 void OutdoorPvPHL::TeleportPlayersToStart()
 {
     TeleportAllPlayersInZoneToStart();
+}
+
+// Return max/initial resources for a team (permanent resource pool value)
+uint32 OutdoorPvPHL::GetPermanentResources(TeamId team) const
+{
+    if (team == TEAM_ALLIANCE) return _ally_permanent_resources;
+    if (team == TEAM_HORDE) return _horde_permanent_resources;
+    return 0;
+}
+
+// Match timer helpers exposed for admin/status commands (seconds granularity)
+uint32 OutdoorPvPHL::GetMatchTimeElapsedSeconds() const
+{
+    return std::min(_matchTimer, MATCH_DURATION_MS) / 1000; // clamp to duration
+}
+
+uint32 OutdoorPvPHL::GetMatchTimeRemainingSeconds() const
+{
+    if (_matchTimer >= MATCH_DURATION_MS) return 0;
+    return (MATCH_DURATION_MS - _matchTimer) / 1000;
 }
 
 std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const

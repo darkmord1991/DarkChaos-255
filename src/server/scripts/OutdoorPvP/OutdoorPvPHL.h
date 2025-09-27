@@ -208,6 +208,12 @@
     // Admin helpers: inspect and modify resource counters and force a reset
     uint32 GetResources(TeamId team) const;
     void SetResources(TeamId team, uint32 amount);
+    // Additional admin/status helpers
+    uint32 GetPermanentResources(TeamId team) const; // max/initial resources for side
+    uint32 GetLastWinner() const { return _LastWin; } // 0 none, ALLIANCE or HORDE
+    bool BattleActive() const { return _FirstLoad; } // public wrapper for status command
+    uint32 GetMatchTimeElapsedSeconds() const; // seconds
+    uint32 GetMatchTimeRemainingSeconds() const; // seconds
     void ForceReset();
     // Teleport all players in the Hinterland zone to their faction start
     void TeleportPlayersToStart();
