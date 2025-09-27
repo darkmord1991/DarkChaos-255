@@ -106,6 +106,7 @@
         void PlaySounds(bool side);
 
     public:
+        OutdoorPvPHL(); // Default constructor declaration
         // Public wrapper for protected HandlePlayerEnterZone
         void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };
