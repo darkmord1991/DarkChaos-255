@@ -2,27 +2,32 @@
 /*
  * AzerothCore Custom Script: Hinterland BG - King Varian Wrynn NPC
  *
- * Feature Overview:
- * - Custom King Varian Wrynn NPC for Hinterland Battleground
- * - Interactive gossip menu for quest progression and lore
- * - Handles quest rewards, spell casting, and event triggers
- * - Schedules emotes, spell effects, and map-wide player interactions
- * - Easily extendable for custom battleground logic
+ * Purpose / Feature Overview:
+ * - Provides a counterpart NPC (Varian) to Thrall for the opposing faction.
+ * - Mirrors the behavior of npc_thrall_hinterlandbg to keep factional events
+ *   symmetric. Useful for demonstrations and faction-based storytelling.
  *
- * Integration:
- * - Place this file in src/server/scripts/DC/HinterlandBG/
- * - Register AddSC_hinterlandbg_Varian_wrynn in your script loader
- * - Add to CMakeLists.txt for compilation
- * - Set ScriptName to "npc_Varian_hinterlandbg" in your creature_template DB entry
- * - Set npcflag to 1 (GOSSIP) for the NPC in the DB
+ * Implementation notes:
+ * - Uses the same TaskScheduler-driven sequence pattern as Thrall for
+ *   readability and reliability.
+ * - Currently reuses placeholder spell IDs and herald IDs; these should be
+ *   set to faction-appropriate values before being used in production.
+ * - The script carefully checks player area IDs before applying targeted
+ *   buffs so it doesn't unintentionally affect players in other parts of
+ *   the map or outside the battleground.
  *
- * Author: (your name or team)
- * Date: 2025-09-27
+ * Deployment / Integration:
+ * - Place in src/server/scripts/DC/HinterlandBG/ and ensure it is listed in
+ *   the DC CMakeLists and that AddSC_hinterlandbg_Varian_wrynn() is invoked
+ *   by the script loader.
  *
- * Usage:
- * - Talk to King Varian Wrynn in Hinterland BG
- * - Select options from the gossip menu for quest and event progression
- * - NPC will trigger emotes, spells, and interact with players on the map
+ * TODO / Enhancements:
+ * - Replace placeholder IDs (spells, NPCs) with the correct assets.
+ * - Add logging around the DoAction sequence for easier debugging when the
+ *   event is triggered in live tests.
+ * - Consider converting repeated patterns between Thrall/Varian into a
+ *   shared helper class to reduce duplication.
+ * - Add rate limiting or cooldowns so the event cannot be spammed.
  */
 // --- Main King Varian Wrynn NPC Script ---
     // Build gossip menu with quest/event options

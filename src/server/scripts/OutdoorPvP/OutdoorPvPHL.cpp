@@ -355,7 +355,7 @@ static inline void ClampResources(uint32 &value)
                 _Groups[plr->GetTeamId()].insert(group->GetGUID());
 
                 // Log creation for ops/debugging. Include team and group low-guid.
-                LOG_INFO("outdoorpvp", "[OutdoorPvPHL]: Created new battleground raid group %u for team %s in zone %u",
+                LOG_INFO("outdoorpvp", "[OutdoorPvPHL]: Created new battleground raid group %u for team %s in Hinterland",
                          group->GetGUID().GetCounter(), plr->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde", HL_ZONE_ID);
                 // Note: creating a Group dynamically and calling Create(plr)
                 // mirrors the server's group creation flow. Ensure this path is

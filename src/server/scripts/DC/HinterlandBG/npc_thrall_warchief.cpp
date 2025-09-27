@@ -2,27 +2,36 @@
 /*
  * AzerothCore Custom Script: Hinterland BG - Thrall Warchief NPC
  *
- * Feature Overview:
- * - Custom Thrall Warchief NPC for Hinterland Battleground
- * - Interactive gossip menu for quest progression and lore
- * - Handles quest rewards, spell casting, and event triggers
- * - Schedules emotes, spell effects, and map-wide player interactions
- * - Easily extendable for custom battleground logic
+ * Purpose / Feature Overview:
+ * - Provides an in-world NPC (Thrall) used to trigger lore-based events,
+ *   temporary buffs and map-wide interactions inside the Hinterland battleground.
+ * - Exposes a simple gossip menu to initiate multi-step sequences. Used for
+ *   demonstration and can be expanded into quest-like flows inside the BG.
  *
- * Integration:
- * - Place this file in src/server/scripts/DC/HinterlandBG/
- * - Register AddSC_hinterlandbg_thrall_hinterlandbg and AddSC_hinterlandbg_thrall_warchief in your script loader
- * - Add to CMakeLists.txt for compilation
- * - Set ScriptName to "npc_thrall_hinterlandbg" in your creature_template DB entry
- * - Set npcflag to 1 (GOSSIP) for the NPC in the DB
+ * Implementation notes:
+ * - Uses a TaskScheduler to sequence emotes and spells with delays which
+ *   makes the script easier to read and less error-prone than manual timers.
+ * - Removes the gossip flag while an event runs then restores it once the
+ *   sequence completes so players cannot re-trigger while the event is active.
+ * - The script is intentionally conservative about what it affects: it only
+ *   targets players in specific area IDs when applying buffs to avoid
+ *   accidentally buffing players outside the expected regions.
  *
- * Author: (your name or team)
- * Date: 2025-09-27
+ * Deployment / Integration:
+ * - Place in src/server/scripts/DC/HinterlandBG/ and ensure it is added to
+ *   the DC CMakeLists and that the DC loader calls AddSC_hinterlandbg_thrall_hinterlandbg().
+ * - Creature template should set ScriptName="npc_thrall_hinterlandbg" and
+ *   have the GOSSIP npcflag.
  *
- * Usage:
- * - Talk to Thrall Warchief in Hinterland BG
- * - Select options from the gossip menu for quest and event progression
- * - NPC will trigger emotes, spells, and interact with players on the map
+ * TODO / Enhancements:
+ * - Externalize the spell IDs and text lines to a config file to simplify
+ *   tuning and localization.
+ * - Add safety checks to avoid summoning creatures in occupied grids or
+ *   when the map is unloading.
+ * - Consider using a separate event state to persist across server restarts
+ *   if events should be recoverable after a crash.
+ * - Add role-based restrictions so only GMs or certain players can trigger
+ *   the event in live environments.
  */
 // --- Main Thrall Warchief NPC Script ---
     // Build gossip menu with quest/event options
