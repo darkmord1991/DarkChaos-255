@@ -343,13 +343,15 @@
         if (_messageTimer >= 120000) // 120,000 ms = 120 seconds
         {
             uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
+            uint32 minutes = timeRemaining / 60;
+            uint32 seconds = timeRemaining % 60;
             char msg[256];
-            snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %u seconds", _ally_gathered, _horde_gathered, timeRemaining);
+            snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u | Horde: %u | Time left: %02u:%02u (Start: 60:00)", _ally_gathered, _horde_gathered, minutes, seconds);
             sWorldSessionMgr->SendZoneText(47, msg);
             _messageTimer = 0;
         }
 
-        // AFK teleport logic: teleport players in zone 47 who have not moved for 180 seconds
+        // AFK teleport logic: teleport players in zone 47 who have not moved for 10 minutes (600 seconds)
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
         uint32 now = getMSTime();
         for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
@@ -361,8 +363,8 @@
             // If player is not tracked, initialize
             if (_playerLastMove.find(guid) == _playerLastMove.end())
                 _playerLastMove[guid] = now;
-            // If player has not moved for 180 seconds, teleport and notify
-            if (now - _playerLastMove[guid] >= 180000)
+            // If player has not moved for 10 minutes, teleport and notify
+            if (now - _playerLastMove[guid] >= 600000)
             {
                 if (player->GetTeamId() == TEAM_ALLIANCE)
                     player->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
@@ -613,7 +615,7 @@
                         _horde_gathered -= 200; // Remove 200 resources from Horde on boss kill
                         {
                             char bossMsg[256];
-                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost!", player->GetName().c_str());
+                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost! Horde now has %u resources left!", player->GetName().c_str(), _horde_gathered);
                             sWorldSessionMgr->SendZoneText(47, bossMsg);
                             // Reward all raid members with 500x item 80003
                             if (Group* raid = player->GetGroup()) {
@@ -669,7 +671,7 @@
                         _ally_gathered -= 200; // Remove 200 resources from Alliance on boss kill
                         {
                             char bossMsg[256];
-                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Alliance boss! 200 Alliance resources lost!", player->GetName().c_str());
+                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Alliance boss! 200 Alliance resources lost! Alliance now has %u resources left!", player->GetName().c_str(), _ally_gathered);
                             sWorldSessionMgr->SendZoneText(47, bossMsg);
                             // Reward all raid members with 500x item 80003
                             if (Group* raid = player->GetGroup()) {
