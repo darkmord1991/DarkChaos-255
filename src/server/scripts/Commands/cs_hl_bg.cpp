@@ -5,6 +5,7 @@
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Player.h"
+#include "OutdoorPvP/OutdoorPvPMgr.h"
 #include <sstream>
 #include <algorithm>
 
