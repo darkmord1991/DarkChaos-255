@@ -355,15 +355,15 @@
             // Calculate time remaining in seconds
             uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
 
-            // Send worldstate update to all players in zone 47
+            // Send Wintergrasp timer worldstate update (ID: 3801) to all players in zone 47
             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
             for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
             {
                 Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
                 if (!player || !player->IsInWorld() || player->GetZoneId() != 47)
                     continue;
-                // Use a custom worldstate ID, e.g., 4000 (should be unique and not conflict with existing worldstates)
-                player->SendUpdateWorldState(4000, timeRemaining);
+                // Use Wintergrasp clock worldstate ID (3801)
+                player->SendUpdateWorldState(3801, timeRemaining);
             }
 
             _liveResourceTimer = 0;
