@@ -1,41 +1,41 @@
 /*
 ================================================================================
-  OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
+    OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-  Features & Gameplay Overview (2025):
-  -----------------------------------------------------------------------------
-  - Zone-wide Alliance vs Horde PvP battleground in Hinterland (zone 47)
-  - Automatic group management: auto-invites, raid creation, and linking
-  - Resource system: each faction starts with resources, lose them on deaths/kills
-  - Permanent resource tracking: resources never reset during a run, only at reset
-  - Periodic zone-wide broadcasts:
-      * Every 180s: announces current resources for both factions
-      * Every 5s: live resource status and match timer (via worldstate update)
-  - AFK detection: teleports players who have not moved for 180s to start location
-  - Battleground start and win announcements:
-      * Global and zone-wide messages for start and victory
-      * Sound effects for victory/defeat per faction
-  - Buffs and rewards:
-      * Win/lose buffs applied to players
-      * Honor and arena point rewards for kills and victory
-      * Item rewards for player and boss kills
-  - Custom teleportation:
-      * Faction-based teleport coordinates for start/end of battle
-  - Handles player entry/exit, kill logic, and group linking
-  - All random honor reward logic (Randomizer) has been removed for clarity
-  - Respawn logic for NPCs and game objects is currently disabled
+    Features & Gameplay Overview (2025):
+    -----------------------------------------------------------------------------
+    - Zone-wide Alliance vs Horde PvP battleground in Hinterland (zone 47)
+    - Automatic group management: auto-invites, raid creation, and linking
+    - Resource system: each faction starts with resources, lose them on deaths/kills
+    - Permanent resource tracking: resources never reset during a run, only at reset
+    - Periodic zone-wide broadcasts:
+            * Every 120s: announces current resources and time left (MM:SS, start 60:00) via chat
+    - AFK detection: teleports players who have not moved for 10 minutes to their faction's start location
+    - Battleground start and win announcements:
+            * Global and zone-wide messages for start and victory
+            * Sound effects for victory/defeat per faction
+    - Buffs and rewards:
+            * Win/lose buffs applied to players
+            * Honor and arena point rewards for kills and victory
+            * Item rewards for player and boss kills
+    - Custom teleportation:
+            * Faction-based teleport coordinates for start/end of battle
+    - Handles player entry/exit, kill logic, and group linking
+    - All random honor reward logic (Randomizer) has been removed for clarity
+    - Respawn logic for NPCs and game objects is currently disabled
+    - Group removal on zone leave resets phase mask and raid flags to prevent phasing issues
 
-  Code Structure:
-  -----------------------------------------------------------------------------
-  - OutdoorPvPHL: Main class implementing battleground logic
-  - GroupMgr, WorldSessionMgr: Used for group and player session management
-  - Timers: For periodic messaging, match duration, and AFK detection
-  - std::map<ObjectGuid, uint32>: Tracks last movement for AFK logic
-  - Functions: Setup, Update, HandlePlayerEnterZone, HandlePlayerLeaveZone,
-               HandleKill, HandleRewards, HandleBuffs, HandleWinMessage, etc.
+    Code Structure:
+    -----------------------------------------------------------------------------
+    - OutdoorPvPHL: Main class implementing battleground logic
+    - GroupMgr, WorldSessionMgr: Used for group and player session management
+    - Timers: For periodic messaging, match duration, and AFK detection
+    - std::map<ObjectGuid, uint32>: Tracks last movement for AFK logic
+    - Functions: Setup, Update, HandlePlayerEnterZone, HandlePlayerLeaveZone,
+                             HandleKill, HandleRewards, HandleBuffs, HandleWinMessage, etc.
 
-  For maintainers: See function comments for details on each gameplay feature.
+    For maintainers: See function comments for details on each gameplay feature.
 ================================================================================
 */
     #include "OutdoorPvPHL.h"
