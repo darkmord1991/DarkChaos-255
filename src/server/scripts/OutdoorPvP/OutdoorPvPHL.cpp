@@ -307,7 +307,10 @@
             // Announce battleground start to all players on the server
             char announceMsg[256];
             snprintf(announceMsg, sizeof(announceMsg), "[Hinterland BG]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
-            sWorld->SendServerMessage(SERVER_MSG_STRING, announceMsg);
+            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+                if (Player* player = sessionPair.second->GetPlayer())
+                    player->GetSession()->SendNotification("%s", announceMsg);
+            }
             LOG_INFO("misc", announceMsg);
             _FirstLoad = true;
         }
@@ -488,7 +491,10 @@
                                     break;
                             }
                             // Announce winning team to all players
-                            sWorld->SendServerMessage(SERVER_MSG_STRING, "[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
+                            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+                                if (Player* player = sessionPair.second->GetPlayer())
+                                    player->GetSession()->SendNotification("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
+                            }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
                             for (WorldSessionMgr::SessionMap::const_iterator itp = sessionMap.begin(); itp != sessionMap.end(); ++itp)
@@ -524,7 +530,10 @@
                                     break;
                             }
                             // Announce winning team to all players
-                            sWorld->SendServerMessage(SERVER_MSG_STRING, "[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
+                            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+                                if (Player* player = sessionPair.second->GetPlayer())
+                                    player->GetSession()->SendNotification("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
+                            }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
                             for (WorldSessionMgr::SessionMap::const_iterator itp = sessionMap.begin(); itp != sessionMap.end(); ++itp)
