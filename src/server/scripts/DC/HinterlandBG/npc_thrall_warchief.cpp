@@ -192,7 +192,7 @@ public:
 
 
 // Registration function for the script loader (extern "C" for stable linkage)
-extern "C" void AddSC_npc_thrall_hinterlandbg()
+void AddSC_npc_thrall_hinterlandbg()
 {
     new npc_thrall_hinterlandbg();
 }

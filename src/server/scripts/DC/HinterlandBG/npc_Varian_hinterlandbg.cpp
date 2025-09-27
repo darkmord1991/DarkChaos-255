@@ -191,7 +191,7 @@ public:
 };
 
 
-extern "C" void AddSC_hinterlandbg_Varian_wrynn()
+void AddSC_hinterlandbg_Varian_wrynn()
 {
     new npc_Varian_hinterlandbg();
 }
