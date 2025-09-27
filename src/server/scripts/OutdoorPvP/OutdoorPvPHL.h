@@ -112,7 +112,7 @@
     void HandlePlayerLeaveZone(Player* player, uint32 zone) override;
     void HandleWinMessage(const char* message);
     void HandleBuffs(Player* player, bool loser);
-    void HandleKill(Player* player, Unit* killed);
+    void HandleKill(Player* player, Unit* killed) override;
         // Public wrapper for protected HandlePlayerEnterZone
         void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };

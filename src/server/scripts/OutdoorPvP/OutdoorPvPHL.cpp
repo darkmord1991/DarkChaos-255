@@ -598,7 +598,7 @@
                     break;
                default: //Horde
                     _horde_gathered -= PointsLoseOnPvPKill;					
-                    Randomizer(player);
+                    // Removed Randomizer call
 					player->AddItem(40752, 1);
                     break;
             }
