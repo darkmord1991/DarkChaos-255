@@ -461,7 +461,7 @@
      
                 if(itr->second->GetPlayer()->GetZoneId() == 47)
                 {
-                    char msg[250];
+                    // Removed unused variable 'msg'
                     if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
                     {
                         itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
@@ -503,12 +503,13 @@
                             for (WorldSessionMgr::SessionMap::const_iterator itp = sessionMap.begin(); itp != sessionMap.end(); ++itp)
                             {
                                 Player* p = itp->second ? itp->second->GetPlayer() : nullptr;
-                                if (p && p->IsInWorld() && p->GetZoneId() == 47)
+                                if (p && p->IsInWorld() && p->GetZoneId() == 47) {
                                     if (p->GetTeamId() == TEAM_ALLIANCE) {
                                         p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
                                     } else {
                                         p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
                                     }
+                                }
                             }
                             _LastWin = HORDE;
                             IS_RESOURCE_MESSAGE_A = false; // Reset
