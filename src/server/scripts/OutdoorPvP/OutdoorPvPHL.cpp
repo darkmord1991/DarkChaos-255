@@ -309,7 +309,7 @@
             snprintf(announceMsg, sizeof(announceMsg), "[Hinterland BG]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
             for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                 if (Player* player = sessionPair.second->GetPlayer())
-                    player->GetSession()->SendNotification("%s", announceMsg);
+                    player->GetSession()->SendAreaTriggerMessage(announceMsg);
             }
             LOG_INFO("misc", announceMsg);
             _FirstLoad = true;
@@ -493,7 +493,7 @@
                             // Announce winning team to all players
                             for (const auto& sessionPair : sWorld->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendNotification("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
+                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
                             }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -532,7 +532,7 @@
                             // Announce winning team to all players
                             for (const auto& sessionPair : sWorld->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendNotification("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
+                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
                             }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
