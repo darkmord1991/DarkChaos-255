@@ -16,6 +16,7 @@
     #include "CreatureScript.h"
     #include "WorldSession.h"
     #include "WorldSessionMgr.h"
+    #include "GroupMgr.h"
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
@@ -67,40 +68,51 @@
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
-    // Group management functions
+    // Returns a non-full raid group for the given team in zone 47, or nullptr if none exists.
+    // This ensures only one raid group per faction is used for auto-invite.
     Group* OutdoorPvPHL::GetFreeBfRaid(TeamId TeamId)
     {
         for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
-            if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
-                if (!group->IsFull())
-                    return group;
+        {
+            // Look up the group by GUID
+            Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter());
+            if (group && !group->IsFull())
+                return group;
+        }
         return nullptr;
     }
 
+    // Ensures the player is in the correct raid group for their faction in zone 47.
+    // If a group exists, adds the player if not present. Otherwise, creates a new group.
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     {
         if (!plr->IsInWorld())
             return false;
+        // Don't re-invite if already in a BG/BF group
         if (plr->GetGroup() && (plr->GetGroup()->isBGGroup() || plr->GetGroup()->isBFGroup()))
             return false;
         Group* group = GetFreeBfRaid(plr->GetTeamId());
         if (group)
         {
+            // Add player to group if not already a member
             if (!group->IsMember(plr->GetGUID()))
             {
                 group->AddMember(plr);
+                // If player was a leader in their original group, transfer leadership
                 if (Group* originalGroup = plr->GetOriginalGroup())
                     if (originalGroup->IsLeader(plr->GetGUID()))
                         group->ChangeLeader(plr->GetGUID());
             }
             else
             {
+                // Already a member, set their subgroup
                 uint8 subgroup = group->GetMemberGroup(plr->GetGUID());
                 plr->SetBattlegroundOrBattlefieldRaid(group, subgroup);
             }
         }
         else
         {
+            // No group exists, create a new one and add player
             group = new Group;
             Battleground *bg = (Battleground*)sOutdoorPvPMgr->GetOutdoorPvPToZoneId(47);
             group->SetBattlegroundGroup(bg);
@@ -111,12 +123,15 @@
         return true;
     }
 
+    // Returns the group for the given player GUID and team, or nullptr if not found.
     Group* OutdoorPvPHL::GetGroupPlayer(ObjectGuid guid, TeamId TeamId)
     {
         for (GuidSet::const_iterator itr = _Groups[TeamId].begin(); itr != _Groups[TeamId].end(); ++itr)
-            if (Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter()))
-                if (group->IsMember(guid))
-                    return group;
+        {
+            Group* group = sGroupMgr->GetGroupByGUID(itr->GetCounter());
+            if (group && group->IsMember(guid))
+                return group;
+        }
         return nullptr;
     }
 
@@ -275,16 +290,19 @@
         }
 
         // Periodic message every 60 seconds (private to each player)
+        // This avoids zone-wide spam and keeps players informed individually.
         _messageTimer += diff;
         if (_messageTimer >= 60000) // 60,000 ms = 60 seconds
         {
             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
             for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
             {
+                // Only message players in zone 47
                 if (!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != 47)
                     continue;
                 Player* player = itr->second->GetPlayer();
                 char msg[128];
+                // Send faction-specific resource message
                 if (player->GetTeamId() == TEAM_ALLIANCE)
                     snprintf(msg, sizeof(msg), "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
                 else
