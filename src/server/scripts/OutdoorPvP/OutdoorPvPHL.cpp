@@ -226,21 +226,29 @@
                 Player* player = itr->GetSource();
                 if (!player)
                     continue;
-                // Respawn nearby creatures
+                // Respawn nearby creatures (within 200 yards)
                 std::list<Creature*> creatures;
-                player->GetCreaturesInRange(creatures, 200.0f); // 200 yards radius
-                for (Creature* creature : creatures)
+                for (Map::CreatureList::const_iterator citr = map->GetCreatures().begin(); citr != map->GetCreatures().end(); ++citr)
                 {
-                    if (!creature->IsAlive())
-                        creature->Respawn();
+                    Creature* creature = *citr;
+                    if (creature && creature->IsInWorld() && creature->GetDistance(player) <= 200.0f)
+                    {
+                        if (!creature->IsAlive())
+                            creature->Respawn();
+                        creatures.push_back(creature);
+                    }
                 }
-                // Respawn nearby game objects
+                // Respawn nearby game objects (within 200 yards)
                 std::list<GameObject*> gameObjects;
-                player->GetGameObjectsInRange(gameObjects, 200.0f);
-                for (GameObject* go : gameObjects)
+                for (Map::GameObjectList::const_iterator goitr = map->GetGameObjects().begin(); goitr != map->GetGameObjects().end(); ++goitr)
                 {
-                    if (!go->IsSpawned())
-                        go->Respawn();
+                    GameObject* go = *goitr;
+                    if (go && go->IsInWorld() && go->GetDistance(player) <= 200.0f)
+                    {
+                        if (!go->IsSpawned())
+                            go->Respawn();
+                        gameObjects.push_back(go);
+                    }
                 }
             }
         }
