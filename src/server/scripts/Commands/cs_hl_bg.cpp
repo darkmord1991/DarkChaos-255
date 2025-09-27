@@ -22,6 +22,13 @@
  *
  * Audit logging: administrative actions (.hlbg set/.hlbg reset) are logged to
  * the server log under the `admin.hlbg` category with the GM name and GUID.
+ * Log format: "[ADMIN] <name> (GUID:<low>) <action>". This is intended for
+ * lightweight operational audit trails; maintainers may redirect or persist
+ * these messages to a centralized logging system if desired.
+ *
+ * Note: the Hinterland match code implements an explicit draw behavior when
+ * match time expires with equal resources (no winner). See the comment in
+ * `OutdoorPvPHL.cpp` for alternate tiebreak/reward approaches.
  */
 
 using namespace Acore::ChatCommands;
@@ -35,10 +42,10 @@ public:
     {
         static ChatCommandTable hlbgCommandTable =
         {
-            { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No, AcoreStrings("Show Hinterland BG raid groups and sizes") },
-            { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No, AcoreStrings("Get resource amount for a team: hlbg get alliance|horde") },
-            { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No, AcoreStrings("Set resource amount for a team: hlbg set alliance|horde <amount>") },
-            { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No, AcoreStrings("Force reset the Hinterland BG match state") },
+            { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No },
+            { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
+            { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
+            { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =

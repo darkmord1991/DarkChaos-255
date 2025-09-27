@@ -70,10 +70,32 @@
            added to query and modify resource counters and raid groups.
         8) Logging/metrics: add optional telemetry (counts of raid groups created,
              match start/end, long AFK events) and rate-limit logs to avoid flooding.
-        9) Refactor: consider extracting battleground-specific code to
-             `src/server/scripts/DC/HinterlandBG/` and add a small unit-test harness.
+                9) Refactor: consider extracting battleground-specific code to
+                         `src/server/scripts/DC/HinterlandBG/` and add a small unit-test harness.
      10) Sound & DBC validation: confirm DBC/sound ids used for HL_SOUND_*_* and
              expose mapping in config or data files.
+
+                Match timeout / draw behavior
+                ------------------------------------------------------------------
+                - Current implementation: when the match timer expires the code compares
+                    remaining resources. If one side has strictly more resources, that
+                    side is declared the winner (rewards, buffs and sounds applied). If
+                    both sides have exactly the same resources the match is declared a
+                    draw: no winner is set and no win-specific rewards are granted.
+
+                - Options considered (documented for maintainers):
+                    * Reward both sides: both factions receive full win rewards/buffs.
+                    * Split rewards: give both sides scaled/half rewards to acknowledge
+                        an even finish but avoid rewarding the full win twice.
+                    * Deterministic tiebreak: record the last-kill timestamp per team
+                        (e.g. `_ally_last_kill_time` / `_horde_last_kill_time`) and on tie
+                        award the match to the side with the most recent kill. This requires
+                        updating `HandleKill()` to stamp the killer team's timestamp.
+
+                The current code intentionally chooses the simple draw behavior to be
+                explicit and avoid accidental double-wins; maintainers can change the
+                behavior above by updating `ProcessMatchTimer()` and (for the
+                deterministic tiebreak) adding the last-kill timestamp bookkeeping.
 
         How to test quickly
         -----------------------------------------------------------------------------
@@ -501,7 +523,82 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
     _matchTimer += diff;
     if (_matchTimer >= MATCH_DURATION_MS)
     {
-        HandleWinMessage("[Hinterland Defence]: The match has ended due to time limit! Restarting...");
+        // Match time expired - determine winner by remaining resources
+        if (_ally_gathered > _horde_gathered)
+        {
+            // Alliance wins by resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
+            PlaySounds(TEAM_ALLIANCE);
+            // Reward winners and apply buffs/loser debuffs
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+
+                    // Winners receive rewards
+                    if (player->GetTeamId() == TEAM_ALLIANCE)
+                    {
+                        HandleRewards(player, 1500, true, false, false);
+                        HandleBuffs(player, false);
+                    }
+                    else
+                    {
+                        // Losing side gets loser-buffs if configured
+                        HandleBuffs(player, true);
+                    }
+
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
+                }
+            }
+            _LastWin = ALLIANCE;
+        }
+        else if (_horde_gathered > _ally_gathered)
+        {
+            // Horde wins by resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
+            PlaySounds(TEAM_HORDE);
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+
+                    if (player->GetTeamId() == TEAM_HORDE)
+                    {
+                        HandleRewards(player, 1500, true, false, false);
+                        HandleBuffs(player, false);
+                    }
+                    else
+                    {
+                        HandleBuffs(player, true);
+                    }
+
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
+                }
+            }
+            _LastWin = HORDE;
+        }
+        else
+        {
+            // Draw: equal resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! The match ended in a draw (equal resources).");
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! The match ended in a draw (equal resources).");
+                }
+            }
+            // No last-win update on draw
+        }
+
+        // Teleport everyone back to their starts and reset the match
+        TeleportAllPlayersInZoneToStart();
         HandleReset();
         _matchTimer = 0;
         _FirstLoad = false;
