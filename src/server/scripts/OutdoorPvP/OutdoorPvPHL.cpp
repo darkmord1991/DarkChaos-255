@@ -201,7 +201,7 @@
         // Remove player from raid group if in one
         if (Group* group = player->GetGroup()) {
             if (group->isRaidGroup() && group->IsMember(player->GetGUID())) {
-                group->RemoveMember(player->GetGUID(), 0);
+                group->RemoveMember(player->GetGUID(), GROUP_REMOVEMETHOD_DEFAULT);
             }
         }
         // Remove AFK tracking
