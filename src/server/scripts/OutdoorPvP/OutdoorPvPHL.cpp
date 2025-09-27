@@ -307,7 +307,7 @@
             // Announce battleground start to all players on the server
             char announceMsg[256];
             snprintf(announceMsg, sizeof(announceMsg), "[Hinterland BG]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
-            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                 if (Player* player = sessionPair.second->GetPlayer())
                     player->GetSession()->SendNotification("%s", announceMsg);
             }
