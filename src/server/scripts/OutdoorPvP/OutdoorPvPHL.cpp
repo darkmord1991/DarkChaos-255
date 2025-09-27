@@ -350,7 +350,10 @@
             // If player has not moved for 180 seconds, teleport
             if (now - _playerLastMove[guid] >= 180000)
             {
-                player->TeleportTo("start");
+                if (player->GetTeamId() == TEAM_ALLIANCE)
+                    player->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
+                else
+                    player->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
                 _playerLastMove[guid] = now; // Reset timer after teleport
                 player->TextEmote("You have been teleported for being AFK!");
             }
