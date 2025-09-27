@@ -1,30 +1,51 @@
 #include "ScriptMgr.h"
 #include "Chat.h"
+#include "CommandScript.h"
+#include <string>
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Player.h"
 #include <sstream>
 #include <algorithm>
 
+/*
+ * hlbg_commandscript
+ * ------------------
+ * Provides GM/admin commands to inspect and manage the Hinterland (zone 47)
+ * outdoor battleground state.
+ *
+ * Commands:
+ *   .hlbg status            -- show battleground raid groups and sizes
+ *   .hlbg get <alliance|horde> -- show resources for a team
+ *   .hlbg set <team> <amt>  -- set resources for a team (GM-only); action is audited
+ *   .hlbg reset             -- force-reset the Hinterland match state; action is audited
+ *
+ * Audit logging: administrative actions (.hlbg set/.hlbg reset) are logged to
+ * the server log under the `admin.hlbg` category with the GM name and GUID.
+ */
+
+using namespace Acore::ChatCommands;
+
 class hlbg_commandscript : public CommandScript
 {
 public:
     hlbg_commandscript() : CommandScript("hlbg_commandscript") {}
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> hlbgCommandTable =
+        static ChatCommandTable hlbgCommandTable =
         {
-            { "status",   SEC_GAMEMASTER,  false, &HandleHLBGStatusCommand, "Show Hinterland BG raid groups and sizes" },
-            { "get",       SEC_GAMEMASTER,  false, &HandleHLBGGetCommand, "Get resource amount for a team: hlbg get alliance|horde" },
-            { "set",       SEC_GAMEMASTER,  false, &HandleHLBGSetCommand, "Set resource amount for a team: hlbg set alliance|horde <amount>" },
-            { "reset",     SEC_GAMEMASTER,  false, &HandleHLBGResetCommand, "Force reset the Hinterland BG match state" },
+            { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No, AcoreStrings("Show Hinterland BG raid groups and sizes") },
+            { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No, AcoreStrings("Get resource amount for a team: hlbg get alliance|horde") },
+            { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No, AcoreStrings("Set resource amount for a team: hlbg set alliance|horde <amount>") },
+            { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No, AcoreStrings("Force reset the Hinterland BG match state") },
         };
 
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "hlbg",      SEC_GAMEMASTER,  false, nullptr, "Commands for Hinterland BG" , hlbgCommandTable },
+            { "hlbg", hlbgCommandTable }
         };
+
         return commandTable;
     }
 
@@ -102,11 +123,18 @@ public:
         iss >> teamStr >> amount;
         std::transform(teamStr.begin(), teamStr.end(), teamStr.begin(), ::tolower);
         TeamId tid = (teamStr == "alliance") ? TEAM_ALLIANCE : TEAM_HORDE;
+        uint32 prev = 0;
         if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID))
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
+            {
+                prev = hl->GetResources(tid);
                 hl->SetResources(tid, amount);
+            }
         }
+        // Audit log with previous value
+        if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+            LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) set %s resources from %u -> %u", admin->GetName().c_str(), admin->GetGUID().GetCounter(), teamStr.c_str(), prev, amount);
         handler->PSendSysMessage("Set %s resources to %u", teamStr.c_str(), amount);
         return true;
     }
@@ -118,6 +146,9 @@ public:
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
                 hl->ForceReset();
+                // Audit log
+                if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+                    LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) forced a Hinterland BG reset", admin->GetName().c_str(), admin->GetGUID().GetCounter());
                 handler->PSendSysMessage("Hinterland BG forced reset executed.");
                 return true;
             }
