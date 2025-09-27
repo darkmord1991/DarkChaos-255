@@ -291,16 +291,17 @@ static inline void ClampResources(uint32 &value)
                     Player* p = itr->second->GetPlayer();
                     // Play the winning sound for players on the winning team and a neutral/other sound for others.
                     if (p->GetTeamId() == winner) {
+                        // Winning team hears the victory sound
                         if (winner == TEAM_ALLIANCE)
                             p->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, p);
                         else
                             p->PlayDirectSound(HL_SOUND_HORDE_GOOD, p);
                     } else {
-                        // Play the opposing team's good sound for losing players as feedback as well.
+                        // Losing team hears the defeat/loser sound
                         if (winner == TEAM_ALLIANCE)
-                            p->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, p);
+                            p->PlayDirectSound(HL_SOUND_HORDE_BAD, p);
                         else
-                            p->PlayDirectSound(HL_SOUND_HORDE_GOOD, p);
+                            p->PlayDirectSound(HL_SOUND_ALLIANCE_BAD, p);
                     }
                 }
             }

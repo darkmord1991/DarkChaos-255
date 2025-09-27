@@ -60,6 +60,8 @@
     {
         HL_SOUND_ALLIANCE_GOOD  = 8173,
         HL_SOUND_HORDE_GOOD     = 8213,
+        HL_SOUND_ALLIANCE_BAD   = 8174, // loser/defeat sound (example ID)
+        HL_SOUND_HORDE_BAD      = 8214, // loser/defeat sound (example ID)
     };
 
     enum AllianceNpcs
@@ -127,8 +129,8 @@
     // Main update loop for Hinterland battleground logic
     bool Update(uint32 diff) override;
 
-    // Plays victory/defeat sounds for all players in the zone
-    void PlaySounds(bool side);
+    // Plays victory/defeat sounds for all players in the zone (winner indicates which team won)
+    void PlaySounds(TeamId winner);
 
     // Helper functions split out of Update for clarity
     void ProcessMatchTimer(uint32 diff);
@@ -155,5 +157,7 @@
     void HandleKill(Player* player, Unit* killed) override;
     // Public wrapper for protected HandlePlayerEnterZone
     void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
+    // Update last movement timestamp for AFK tracking (called from PlayerScript movement hook)
+    void TouchPlayerLastMove(ObjectGuid guid);
     };
     #endif
