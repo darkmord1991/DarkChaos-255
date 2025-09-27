@@ -81,6 +81,7 @@
         limit_resources_message_H = 0;
         _messageTimer = 0; // Timer for periodic zone-wide message
         _liveResourceTimer = 0; // Timer for live/permanent resource broadcast
+        _matchTimer = 0; // Timer for match duration
 
         // AFK tracking: map player GUID to last movement timestamp (ms)
         _playerLastMove.clear();
@@ -197,6 +198,12 @@
     {
         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
         TeleportPlayerToStart(player);
+        // Remove player from raid group if in one
+        if (Group* group = player->GetGroup()) {
+            if (group->IsRaidGroup() && group->IsMember(player->GetGUID())) {
+                group->RemoveMember(player->GetGUID(), 0);
+            }
+        }
         // Remove AFK tracking
         _playerLastMove.erase(player->GetGUID());
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
@@ -207,6 +214,35 @@
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], message);
+
+        // Respawn all NPCs and game objects in zone 47
+        Map* map = sMapMgr->FindMap(0, 47);
+        if (map)
+        {
+            // Respawn all creatures
+            for (Map::PlayerList::const_iterator itr = map->GetPlayers().begin(); itr != map->GetPlayers().end(); ++itr)
+            {
+                Player* player = itr->GetSource();
+                if (!player)
+                    continue;
+                // Respawn nearby creatures
+                std::list<Creature*> creatures;
+                player->GetCreaturesInRange(creatures, 200.0f); // 200 yards radius
+                for (Creature* creature : creatures)
+                {
+                    if (!creature->IsAlive())
+                        creature->Respawn();
+                }
+                // Respawn nearby game objects
+                std::list<GameObject*> gameObjects;
+                player->GetGameObjectsInRange(gameObjects, 200.0f);
+                for (GameObject* go : gameObjects)
+                {
+                    if (!go->IsSpawned())
+                        go->Respawn();
+                }
+            }
+        }
     }
 
     // Plays victory/defeat sounds for all players in the zone, depending on side
@@ -311,7 +347,19 @@
             }
             LOG_INFO("misc", announceMsg);
             _FirstLoad = true;
+                _matchTimer = 0; // Reset match timer
         }
+
+            // Match duration logic: 60 minutes (3,600,000 ms)
+            _matchTimer += diff;
+            if (_matchTimer >= 3600000) // 60 minutes
+            {
+                HandleWinMessage("[Hinterland Defence]: The match has ended due to time limit! Restarting...");
+                HandleReset();
+                _matchTimer = 0;
+                _FirstLoad = false;
+                return true; // End update early to restart
+            }
 
         // Periodic zone-wide broadcast every 180 seconds with both teams' resources
         _messageTimer += diff;
@@ -323,13 +371,28 @@
             _messageTimer = 0;
         }
 
-        // Live/permanent resource broadcast every 5 seconds
+        // Live/permanent resource broadcast and worldstate timer update every 5 seconds
         _liveResourceTimer += diff;
         if (_liveResourceTimer >= 5000) // 5,000 ms = 5 seconds
         {
             char liveMsg[256];
             snprintf(liveMsg, sizeof(liveMsg), "[Hinterland Defence]: LIVE: Alliance: %u/%u | Horde: %u/%u", _ally_gathered, _ally_permanent_resources, _horde_gathered, _horde_permanent_resources);
             sWorldSessionMgr->SendZoneText(47, liveMsg);
+
+            // Calculate time remaining in seconds
+            uint32 timeRemaining = (_matchTimer >= 3600000) ? 0 : (3600000 - _matchTimer) / 1000;
+
+            // Send worldstate update to all players in zone 47
+            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+            {
+                Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
+                if (!player || !player->IsInWorld() || player->GetZoneId() != 47)
+                    continue;
+                // Use a custom worldstate ID, e.g., 4000 (should be unique and not conflict with existing worldstates)
+                player->SendUpdateWorldState(4000, timeRemaining);
+            }
+
             _liveResourceTimer = 0;
         }
 
@@ -571,17 +634,20 @@
             snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: %s has slain %s!", player->GetName().c_str(), killed->GetName().c_str());
             sWorldSessionMgr->SendZoneText(47, announceMsg);
 
-          switch(killed->ToPlayer()->GetTeamId())
-          {
-            case TEAM_ALLIANCE:
-                _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
-                player->AddItem(40752, 1);
-                break;
-            default: //Horde
-                _horde_gathered -= 5; // Remove 5 resources from Horde on player kill
-                player->AddItem(40752, 1);
-                break;
-          }
+            // Reward killer with 100x item 80003
+            player->AddItem(80003, 100);
+
+            switch(killed->ToPlayer()->GetTeamId())
+            {
+                case TEAM_ALLIANCE:
+                    _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
+                    player->AddItem(40752, 1);
+                    break;
+                default: //Horde
+                    _horde_gathered -= 5; // Remove 5 resources from Horde on player kill
+                    player->AddItem(40752, 1);
+                    break;
+            }
         }
         else // If is something besides a player
         {
@@ -595,6 +661,16 @@
                             char bossMsg[256];
                             snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost!", player->GetName().c_str());
                             sWorldSessionMgr->SendZoneText(47, bossMsg);
+                            // Reward all raid members with 500x item 80003
+                            if (Group* raid = player->GetGroup()) {
+                                for (GroupReference* ref = raid->GetFirstMember(); ref; ref = ref->next()) {
+                                    Player* member = ref->GetSource();
+                                    if (member && member->IsInWorld() && member->GetZoneId() == 47)
+                                        member->AddItem(80003, 500);
+                                }
+                            } else {
+                                player->AddItem(80003, 500);
+                            }
                         }
                         break;
                     case Horde_Infantry:
@@ -641,6 +717,16 @@
                             char bossMsg[256];
                             snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Alliance boss! 200 Alliance resources lost!", player->GetName().c_str());
                             sWorldSessionMgr->SendZoneText(47, bossMsg);
+                            // Reward all raid members with 500x item 80003
+                            if (Group* raid = player->GetGroup()) {
+                                for (GroupReference* ref = raid->GetFirstMember(); ref; ref = ref->next()) {
+                                    Player* member = ref->GetSource();
+                                    if (member && member->IsInWorld() && member->GetZoneId() == 47)
+                                        member->AddItem(80003, 500);
+                                }
+                            } else {
+                                player->AddItem(80003, 500);
+                            }
                         }
                         break;
                     case Alliance_Healer:
