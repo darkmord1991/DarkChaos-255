@@ -132,6 +132,7 @@ For maintainers: update this header when adding/removing major features.
 #include "MapMgr.h"
     #include "ScriptDefines/MovementHandlerScript.h"
     #include "WorldState.h"
+    #include "Pet.h"
 #include <cstdarg>
 #include <cstdint>
 #include <algorithm>
