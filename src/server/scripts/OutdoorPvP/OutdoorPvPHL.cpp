@@ -134,6 +134,11 @@ For maintainers: update this header when adding/removing major features.
 #include <cstdint>
 #include <algorithm>
 
+// Forward declaration: registration function for the player movement script used
+// for AFK tracking. The function is defined later in this file but is called
+// from AddSC_outdoorpvp_hl(), so we must declare it beforehand.
+static void RegisterOutdoorPvPHLPlayerMoveScript();
+
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
 // Implements group management, resource tracking, AFK detection, messaging, rewards, and faction-based teleportation.
 
