@@ -200,7 +200,7 @@
         TeleportPlayerToStart(player);
         // Remove player from raid group if in one
         if (Group* group = player->GetGroup()) {
-            if (group->IsRaidGroup() && group->IsMember(player->GetGUID())) {
+            if (group->isRaidGroup() && group->IsMember(player->GetGUID())) {
                 group->RemoveMember(player->GetGUID(), 0);
             }
         }
