@@ -54,6 +54,7 @@
     #include "WorldSession.h"
     #include "WorldSessionMgr.h"
     #include "GroupMgr.h"
+#include "MapMgr.h"
 
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
 // Implements group management, resource tracking, AFK detection, messaging, rewards, and faction-based teleportation.
