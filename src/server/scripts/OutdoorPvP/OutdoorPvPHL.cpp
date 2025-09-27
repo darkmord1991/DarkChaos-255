@@ -1,112 +1,116 @@
 /*
 ================================================================================
-        OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
+                OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-        Purpose
-        -------
-        Implements a zone-wide Alliance vs Horde open-world battleground for Hinterland
-        (zone id 47). The script handles automatic battleground-style raid grouping,
-        a resource system (teams lose resources on deaths/NPC kills), periodic
-        announcements, AFK handling, sounds, buffs/rewards, and basic teleportation.
+Purpose
+-------
+Implements a persistent, zone-wide Alliance vs Horde open-world battleground for
+Hinterland (default zone id 47). Responsibilities include automatic battleground
+raid-group management, a simple resource-scoring system, periodic status
+announcements, AFK detection and handling, award/buff distribution, and basic
+teleportation and end-of-match logic.
 
-        Recent notable changes (developer summary)
-        --------------------------------------------------------------
-        - Replaced unsafe printf-style calls with a safe PlayerTextEmoteFmt helper.
-        - Centralized configuration constants (zone id, timers, thresholds).
-        - Added AFK movement tracking using a PlayerScript movement hook and
-            TouchPlayerLastMove(ObjectGuid) to keep timestamps up to date.
-        - Prevented unsigned underflow on resource counters (ClampResources).
-        - Split large Update() into focused helpers: ProcessMatchTimer,
-            ProcessPeriodicMessage, ProcessAFK, CheckResourceThresholds,
-            BroadcastResourceMessages, ClampResourceCounters.
-        - Changed PlaySounds signature to accept TeamId and play distinct
-            victory/defeat sounds for winners/losers.
-        - Implemented multi-raid support per faction: when a battleground raid
-            group reaches the server-side limit (40 players) a new battleground raid
-            group is created for that faction (logged via LOG_INFO).
-        - Added a small DC wrapper registration file so the script can be built
-         /registered from the DC scripts module without duplicating AddSC_* symbols.
+Recent notable changes (developer summary)
+------------------------------------------
+- Replaced unsafe printf-style calls with a safe PlayerTextEmoteFmt helper.
+- Centralized configuration constants (timers, thresholds) near the top of the file.
+- Added AFK movement tracking using a PlayerScript movement hook and
+    `TouchPlayerLastMove(ObjectGuid)` so we can reliably warn and teleport idle players.
+- Prevented unsigned underflow on resource counters (`ClampResources`).
+- Split `Update()` into focused helpers: `ProcessMatchTimer`,
+    `ProcessPeriodicMessage`, `ProcessAFK`, `CheckResourceThresholds`,
+    `BroadcastResourceMessages`, and `ClampResourceCounters` for easier maintenance.
+- Distinct victory/defeat sounds are played for winners/losers via `PlaySounds`.
+- Added automatic creation of multiple battleground raid groups per faction
+    when existing raid groups reach server-side limits (logged via `LOG_INFO`).
 
-        High-level feature overview
-        -----------------------------------------------------------------------------
-        - Auto-grouping / raid creation: players entering the zone are auto-added
-            into existing battleground raid groups for their faction. If all such
-            groups are full (40 players), a new raid group is created automatically.
-        - Resource system: each side has a resource counter which decreases on
-            player/NPC deaths; thresholds trigger announcements and sounds.
-        - Periodic announcements: Every 120s the script announces resources,
-            approximate team sizes, and time left.
-        - AFK handling: players who do not move for a configurable timeout are
-            teleported back to their faction's start position.
-        - Rewards: buffs, honor/arena point awarding, and item drops for kills.
+High-level feature overview
+---------------------------
+- Auto-grouping / raid creation: players entering the zone are auto-added into
+    battleground-style raid groups for their faction. New groups are created when
+    current groups fill (e.g. 40 players).
+- Resource scoring: each faction has a resource counter. Player/NPC deaths reduce
+    the counter; hit thresholds cause announcements, warnings, and eventual loss.
+- Periodic announcements: every `MESSAGE_INTERVAL_MS` the script broadcasts
+    resource and approximate player counts, and time-left information.
+- AFK handling: players idle for `AFK_TIMEOUT_MS` are warned and then
+    teleported to a safe start location to prevent camping/griefing.
+- Rewards: winners receive honor/arena point gains, buffs, and item rewards.
 
-        Quality & safety notes
-        -----------------------------------------------------------------------------
-        - Resource counters are clamped to prevent unsigned wraparound.
-        - Movement-based AFK detection is implemented via a PlayerScript hook to
-            update per-player last-move timestamps; this is more reliable than only
-            setting timestamps on zone enter.
-        - The script avoids global side-effects where possible (e.g. only
-            creates battleground-type raid groups rather than touching unrelated groups).
+Quality & safety notes
+----------------------
+- Resource counters are clamped to prevent unsigned wraparound on deductions.
+- Movement-based AFK detection is implemented via a PlayerScript hook; this is
+    more reliable than relying solely on zone-enter timestamps.
+- Teleportation and reward paths are conservative: basic alive checks are done
+    before teleporting, and group creation failures are handled gracefully.
 
-        TODO / Enhancements (prioritized)
-        -----------------------------------------------------------------------------
-        1) Announcements: switch periodic report to count battleground-raid members
-             directly from the `_Groups[team]` sets (more accurate for raid sizes).
-        2) Configuration: move zone id, thresholds, timers, coordinates and sound IDs
-             to a config file or `acore.json` option so server owners can tune behavior
-             without code changes.
-        3) Persistence: optionally persist permanent resources to DB so they survive
-             server restarts between matches (if desired for long-running events).
-        4) AFK heuristics: refine movement detection (ignore tiny position jitter,
-             consider orientation-only movement) and allow staff to exempt players.
-        5) Tests: add unit / integration tests for resource clamping, AddOrSetPlayerToCorrectBfGroup
-             behavior and PlaySounds mapping.
-        6) Admin tooling: add console commands or GM chat commands to query/adjust
-             resources, force-reset matches, and list battleground raid groups and sizes.
-       7) Teleport safety: implemented 30s AFK warning and safe-teleport checks
-           (player-is-alive check). Admin commands (.hlbg get/set/reset/status) were
-           added to query and modify resource counters and raid groups.
-        8) Logging/metrics: add optional telemetry (counts of raid groups created,
-             match start/end, long AFK events) and rate-limit logs to avoid flooding.
-                9) Refactor: consider extracting battleground-specific code to
-                         `src/server/scripts/DC/HinterlandBG/` and add a small unit-test harness.
-     10) Sound & DBC validation: confirm DBC/sound ids used for HL_SOUND_*_* and
-             expose mapping in config or data files.
+Prioritized TODO / Enhancements
+-------------------------------
+1) Configuration: move hardcoded values (zone id, timers, thresholds, coords,
+     sound IDs) into `acore.json` or module config to allow server owners to
+     tune behavior without recompilation.
 
-                Match timeout / draw behavior
-                ------------------------------------------------------------------
-                - Current implementation: when the match timer expires the code compares
-                    remaining resources. If one side has strictly more resources, that
-                    side is declared the winner (rewards, buffs and sounds applied). If
-                    both sides have exactly the same resources the match is declared a
-                    draw: no winner is set and no win-specific rewards are granted.
+2) Deterministic tiebreak (recommended): implement last-kill timestamp tracking
+     (`_ally_last_kill_time`, `_horde_last_kill_time`) updated in `HandleKill()` and
+     used in `ProcessMatchTimer()` to break exact resource ties. This is fair and
+     predictable — the side with the most recent kill wins.
 
-                - Options considered (documented for maintainers):
-                    * Reward both sides: both factions receive full win rewards/buffs.
-                    * Split rewards: give both sides scaled/half rewards to acknowledge
-                        an even finish but avoid rewarding the full win twice.
-                    * Deterministic tiebreak: record the last-kill timestamp per team
-                        (e.g. `_ally_last_kill_time` / `_horde_last_kill_time`) and on tie
-                        award the match to the side with the most recent kill. This requires
-                        updating `HandleKill()` to stamp the killer team's timestamp.
+3) Draw reward policy: decide whether a draw should reward both sides, split
+     rewards, or grant no reward. Add configuration to control the chosen policy.
 
-                The current code intentionally chooses the simple draw behavior to be
-                explicit and avoid accidental double-wins; maintainers can change the
-                behavior above by updating `ProcessMatchTimer()` and (for the
-                deterministic tiebreak) adding the last-kill timestamp bookkeeping.
+4) Admin tooling & audit: add optional DB-backed audit logging for `.hlbg set`
+     and `.hlbg reset` (current logs go to `admin.hlbg`) and add an optional
+     `reason` parameter to `.hlbg set` to capture admin intent.
 
-        How to test quickly
-        -----------------------------------------------------------------------------
-        - Build server, start instance, create multiple test accounts and join zone 47.
-        - Fill one battleground raid group to 40 players and verify the 41st player
-            triggers creation of a second battleground raid group (watch server log).
-        - Verify periodic messages include resources and approximate sizes, AFK
-            teleports after configured timeout, resource decrements and clamping on kills,
-            and that sounds play correctly for winners/losers.
+5) Teleport safety & UX: add additional teleport guards (e.g. avoid teleporting
+     players in combat, during mounts, or inside certain phases) and provide
+     clearer area-trigger messages describing why the teleport happened.
 
-        For maintainers: update this header when adding/removing major features.
+6) AFK heuristics: debounce small positional jitter, treat orientation-only
+     changes as non-activity, and allow staff/roles to mark players exempt.
+
+7) Tests & CI: add unit/integration tests for resource clamping, group creation
+     behavior, and match-end handling. Add CI checks to run script compilation and
+     basic static analysis during PRs.
+
+8) Telemetry/metrics: optionally collect counters (matches started/ended,
+     raids created, AFK teleports) and publish to a metrics sink for ops.
+
+9) Sound & DBC validation: ensure used sound IDs exist in the target DBC set
+     and add a startup warning if IDs are missing; document the mapping in config.
+
+10) Refactor: consider moving battleground-specific files into
+     `src/server/scripts/DC/HinterlandBG/` and create a small test harness to make
+     iterative development and testing simpler.
+
+Match timeout / draw behavior notes
+----------------------------------
+- Current implementation: when the match timer expires the code compares
+    remaining resources. If one side has strictly more resources, that side is
+    declared the winner (rewards, buffs and sounds applied). If both sides have
+    exactly the same resources the match is declared a draw: no `_LastWin` is set
+    and no win-specific rewards are granted.
+
+- Alternatives recorded for maintainers:
+    * Reward both sides: simplest, but may be considered unfair for competitive play.
+    * Split rewards: both sides receive scaled rewards (e.g. half), acknowledging
+        a close finish while avoiding double full-win payouts.
+    * Deterministic tiebreak: break ties using last-kill timestamps, total kills,
+        or another deterministic metric; this requires a small amount of extra state
+        but produces a single winner for every match.
+
+How to test quickly
+-------------------
+- Build server, start instance, create test accounts and join zone 47.
+- Use `.hlbg get/set/reset/status` (GM) to validate admin tooling and audit
+    logging. Test draw behavior by setting equal resources for both sides and
+    allowing the timer to expire.
+- Fill a raid group to the server limit and ensure the 41st player triggers
+    creation of an additional battleground raid group (watch logs for creation).
+
+For maintainers: update this header when adding/removing major features.
 ================================================================================
 */
     #include "OutdoorPvPHL.h"
