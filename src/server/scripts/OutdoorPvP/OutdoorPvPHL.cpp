@@ -133,6 +133,7 @@ For maintainers: update this header when adding/removing major features.
     #include "ScriptDefines/MovementHandlerScript.h"
     #include "WorldState.h"
     #include "Pet.h"
+    #include "GameTime.h"
 #include <cstdarg>
 #include <cstdint>
 #include <algorithm>
@@ -459,6 +460,16 @@ static inline void ClampResources(uint32 &value)
         player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+
+        // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
+        uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
+        // Reuse vehicle counters to display resources near the clock
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, _horde_permanent_resources);
     }
 
     // Broadcast worldstates to all players in Hinterland
@@ -532,6 +543,18 @@ static inline void ClampResources(uint32 &value)
     _playerWarnedBeforeTeleport.clear();
     // Clear reward-exclusion sets for the next battle
     ClearRewardExclusions();
+
+    // Hide Wintergrasp HUD and SA timer for all players in zone
+    for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
+    {
+        if (Player* p = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
+        {
+            if (!p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
+                continue;
+            p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
+            p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
+        }
+    }
 
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     }
@@ -1205,7 +1228,7 @@ class OutdoorPvPHL_PlayerMoveScript : public MovementHandlerScript
 public:
     OutdoorPvPHL_PlayerMoveScript() : MovementHandlerScript("OutdoorPvPHL_PlayerMoveScript", std::vector<uint16>{MOVEMENTHOOK_ON_PLAYER_MOVE}) {}
 
-    void OnPlayerMove(Player* player, MovementInfo movementInfo, uint32 /*opcode*/) override
+    void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
     {
         if (!player || !player->IsInWorld())
             return;

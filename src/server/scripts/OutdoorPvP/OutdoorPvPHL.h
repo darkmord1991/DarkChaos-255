@@ -142,9 +142,8 @@
         GuidUnorderedSet _deserters;      // players who left the zone during an active battle get no rewards
 
     // Group management
-        GuidSet _Groups[2];
-        uint32 _BattleId;
-        GuidUnorderedSet _PlayersInWar[2];
+    GuidSet _Groups[2];
+    GuidUnorderedSet _PlayersInWar[2];
     // Finds a non-full raid group for the given team in zone 47
     Group* GetFreeBfRaid(TeamId TeamId);
     // Ensures the player is in the correct raid group for their faction
