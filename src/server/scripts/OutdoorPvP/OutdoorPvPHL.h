@@ -107,7 +107,8 @@
 
     public:
     OutdoorPvPHL(); // Default constructor declaration
-    bool SetupOutdoorPvP(); // Setup function declaration
+    bool SetupOutdoorPvP() override; // Setup function declaration
+    void HandlePlayerEnterZone(Player* player, uint32 zone) override;
         // Public wrapper for protected HandlePlayerEnterZone
         void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };
