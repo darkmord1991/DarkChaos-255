@@ -36,10 +36,12 @@ void AddSC_transport_zeppelins();
 void AddSC_suns_reach_reclamation();
 void AddSC_scourge_invasion();
 void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp
+void AddSC_hinterlandbg_thrall_warchief(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
+void AddSC_hinterlandbg_Varian_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
-void AddWorldScripts()
+void AddDCScripts()
 {
     AddSC_areatrigger_scripts();
     AddSC_emerald_dragons();
@@ -61,4 +63,6 @@ void AddWorldScripts()
     AddSC_suns_reach_reclamation();
     AddSC_scourge_invasion();
     AddSC_ac_guard_npc();
+    AddSC_hinterlandbg_thrall_warchief();
+    AddSC_hinterlandbg_Varian_hinterlandbg();
 }
