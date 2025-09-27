@@ -1088,10 +1088,12 @@ void OutdoorPvPHL::ForceReset()
     }
 
 // Player movement hook to update AFK tracking for Hinterland Outdoor PvP
-class OutdoorPvPHL_PlayerMoveScript : public PlayerScript
+// Use MovementHandlerScript so we can override the movement hook and register
+// the MOVEMENTHOOK_ON_PLAYER_MOVE hook during construction.
+class OutdoorPvPHL_PlayerMoveScript : public MovementHandlerScript
 {
 public:
-    OutdoorPvPHL_PlayerMoveScript() : PlayerScript("OutdoorPvPHL_PlayerMoveScript") {}
+    OutdoorPvPHL_PlayerMoveScript() : MovementHandlerScript("OutdoorPvPHL_PlayerMoveScript", std::vector<uint16>{MOVEMENTHOOK_ON_PLAYER_MOVE}) {}
 
     void OnPlayerMove(Player* player, MovementInfo movementInfo, uint32 /*opcode*/) override
     {
