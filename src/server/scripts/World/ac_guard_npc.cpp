@@ -43,7 +43,7 @@ public:
         for (size_t i = 0; i < sizeof(ac_guard_pois)/sizeof(ACGuardPOI); ++i) {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, ac_guard_pois[i].name, GOSSIP_SENDER_MAIN, i);
         }
-        player->SEND_GOSSIP_MENU(1, creature->GetGUID());
+    SendGossipMenuFor(player, 1, creature->GetGUID());
         return true;
     }
 
