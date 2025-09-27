@@ -104,7 +104,7 @@
         player->TextEmote("Welcome to Hinterland BG!");
 
         // Initialize last movement timestamp
-        _playerLastMove[player->GetGUID()] = World::GetGameTimeMS();
+    _playerLastMove[player->GetGUID()] = getMSTime();
 
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
@@ -334,7 +334,7 @@
 
         // AFK teleport logic: teleport players in zone 47 who have not moved for 180 seconds
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-        uint32 now = World::GetGameTimeMS();
+        uint32 now = getMSTime();
         for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
         {
             Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
@@ -354,7 +354,7 @@
         }
         // Call this from Player movement event (not shown here):
         // void OutdoorPvPHL::NotifyPlayerMoved(Player* player) {
-        //     _playerLastMove[player->GetGUID()] = World::GetGameTimeMS();
+    //     _playerLastMove[player->GetGUID()] = getMSTime();
         // }
 // Add to OutdoorPvPHL.h:
 // uint32 _ally_permanent_resources;
