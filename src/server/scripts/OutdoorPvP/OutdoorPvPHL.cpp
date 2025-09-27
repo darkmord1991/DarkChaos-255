@@ -130,6 +130,7 @@ For maintainers: update this header when adding/removing major features.
     #include "WorldSessionMgr.h"
     #include "GroupMgr.h"
 #include "MapMgr.h"
+    #include "ScriptDefines/MovementHandlerScript.h"
 #include <cstdarg>
 #include <cstdint>
 #include <algorithm>
