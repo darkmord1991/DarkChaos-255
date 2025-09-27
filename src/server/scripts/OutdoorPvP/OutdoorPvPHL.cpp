@@ -165,12 +165,24 @@ static inline void TeleportAllPlayersInZoneToStart()
     }
 }
 
+// Note: TeleportAllPlayersInZoneToStart is intentionally broad — it iterates
+// all world sessions and teleports any player currently in the Hinterland
+// zone to their faction start coordinates. This helper is used both on
+// resource-victory conditions and when the match is force-reset. Consider
+// adding additional safety checks (combat state, flight/mount checks, or
+// phase handling) if the teleport should be restricted in future.
+
 // Ensure resource counters do not underflow (they're unsigned)
 static inline void ClampResources(uint32 &value)
 {
     if ((int32)value < 0)
         value = 0;
 }
+
+// Explanation: Resource counters are stored as unsigned integers. When
+// resource deductions occur we clamp negative values to zero to avoid
+// unsigned wraparound. The cast-to-int32 checks for negative semantics
+// while avoiding UB for normal positive values.
 
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
     // Sets up all initial values for resources, timers, and player movement tracking.
@@ -203,6 +215,13 @@ static inline void ClampResources(uint32 &value)
         _playerWarnedBeforeTeleport.clear();
     }
 
+    // Constructor notes:
+    // - The constructor intentionally leaves most timers at zero. `_FirstLoad`
+    //   controls the initial-start announcement which is emitted on the first
+    //   Update() call. Permanent resources are initialized from HL_RESOURCES_*.
+    // - `_playerWarnedBeforeTeleport` tracks whether we already warned a
+    //   particular player of imminent AFK teleport so the warning isn't spammed.
+
     // Setup: Registers the Hinterland zone for OutdoorPvP events.
     // Registers zone 47 for battleground logic and event handling.
     bool OutdoorPvPHL::SetupOutdoorPvP()
@@ -211,6 +230,10 @@ static inline void ClampResources(uint32 &value)
             RegisterZone(OutdoorPvPHLBuffZones[i]);
         return true;
     }
+
+// Setup notes:
+// - RegisterZone wires this OutdoorPvP script into the server for the
+//   configured buff zones so `sOutdoorPvPMgr` will own and update it.
 
     // Called when a player enters the Hinterland zone.
     // Handles auto-invite to raid group, welcome message, and AFK tracking initialization.
@@ -224,6 +247,9 @@ static inline void ClampResources(uint32 &value)
 
         // Initialize last movement timestamp
     _playerLastMove[player->GetGUID()] = getMSTime();
+
+    // Note: we set last-move on zone enter so players who stand still after
+    // entering the zone will still be considered active for a short period.
 
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
@@ -247,6 +273,9 @@ static inline void ClampResources(uint32 &value)
             }
 
             // Prefer battleground raid groups for this zone and ensure they are not full
+            // Accept the group only if it is a battleground-type raid group and
+            // has room for additional members. This keeps unrelated groups out
+            // of the auto-invite rotation.
             if (group->isBGGroup() && group->isRaidGroup() && !group->IsFull())
                 return group;
 
@@ -312,6 +341,10 @@ static inline void ClampResources(uint32 &value)
                 // Log creation for ops/debugging. Include team and group low-guid.
                 LOG_INFO("outdoorpvp", "[OutdoorPvPHL]: Created new battleground raid group %u for team %s in zone %u",
                          group->GetGUID().GetCounter(), plr->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde", HL_ZONE_ID);
+                // Note: creating a Group dynamically and calling Create(plr)
+                // mirrors the server's group creation flow. Ensure this path is
+                // only used for battleground-style grouping to avoid side-effects
+                // on unrelated grouping logic.
         }
         return true;
     }
@@ -523,7 +556,7 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
     _matchTimer += diff;
     if (_matchTimer >= MATCH_DURATION_MS)
     {
-        // Match time expired - determine winner by remaining resources
+    // Match time expired - determine winner by remaining resources
         if (_ally_gathered > _horde_gathered)
         {
             // Alliance wins by resources
@@ -597,13 +630,36 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
             // No last-win update on draw
         }
 
-        // Teleport everyone back to their starts and reset the match
+            // Teleport everyone back to their starts and reset the match
         TeleportAllPlayersInZoneToStart();
         HandleReset();
         _matchTimer = 0;
         _FirstLoad = false;
     }
 }
+
+// Notes on ProcessMatchTimer:
+// - The function compares resource counters at time expiry and awards
+//   victory to the side with strictly more resources. For an exact tie the
+//   match is declared a draw and no win-specific rewards or `_LastWin`
+//   updates are applied. The behavior is intentional; see header comments
+//   for alternative approaches (reward both, split rewards, last-kill
+//   tiebreak).
+
+// AFK handling notes:
+// - `ProcessAFK` tracks per-player movement timestamps and warns players 30s
+//   before teleporting them to prevent accidental displacements. The current
+//   implementation uses `PlayerScript::OnPlayerMove` to stamp movement which
+//   is more reliable than polling position deltas. Consider debouncing tiny
+//   position jitter or orientation-only updates if the server generates
+//   excessive move events.
+
+// HandleKill notes:
+// - `HandleKill` deducts resources from the killed side and awards items
+//   / rewards to the killer or raid. Boss entries deduct large resource
+//   amounts and reward raid members. The function clamps resource counters
+//   after modification to avoid wraparound. For deterministic tiebreaks the
+//   function is a natural place to stamp last-kill timestamps for each team.
 
 void OutdoorPvPHL::ProcessPeriodicMessage(uint32 diff)
 {
@@ -658,7 +714,8 @@ void OutdoorPvPHL::ProcessAFK(uint32 now)
         const uint32 warnThreshold = AFK_TIMEOUT_MS > 30000 ? AFK_TIMEOUT_MS - 30000 : 0;
         if (!_playerWarnedBeforeTeleport[guid] && now - _playerLastMove[guid] >= warnThreshold && now - _playerLastMove[guid] < AFK_TIMEOUT_MS)
         {
-            player->SendAreaTriggerMessage("You will be teleported to your start point in 30 seconds due to inactivity. Move to cancel.");
+            if (player->GetSession())
+                player->GetSession()->SendAreaTriggerMessage("You will be teleported to your start point in 30 seconds due to inactivity. Move to cancel.");
             _playerWarnedBeforeTeleport[guid] = true;
             continue;
         }
