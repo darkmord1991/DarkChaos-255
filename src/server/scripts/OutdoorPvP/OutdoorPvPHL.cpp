@@ -228,9 +228,8 @@
                     continue;
                 // Respawn nearby creatures (within 200 yards)
                 std::list<Creature*> creatures;
-                for (Map::CreatureList::const_iterator citr = map->GetCreatures().begin(); citr != map->GetCreatures().end(); ++citr)
+                for (Creature* creature : map->GetAllCreatures())
                 {
-                    Creature* creature = *citr;
                     if (creature && creature->IsInWorld() && creature->GetDistance(player) <= 200.0f)
                     {
                         if (!creature->IsAlive())
@@ -240,9 +239,8 @@
                 }
                 // Respawn nearby game objects (within 200 yards)
                 std::list<GameObject*> gameObjects;
-                for (Map::GameObjectList::const_iterator goitr = map->GetGameObjects().begin(); goitr != map->GetGameObjects().end(); ++goitr)
+                for (GameObject* go : map->GetAllGameObjects())
                 {
-                    GameObject* go = *goitr;
                     if (go && go->IsInWorld() && go->GetDistance(player) <= 200.0f)
                     {
                         if (!go->IsSpawned())
