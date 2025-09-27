@@ -112,6 +112,14 @@
             int limit_resources_message_A;
             int limit_resources_message_H;
             uint32 _messageTimer; // Timer for periodic message
+
+            // Permanent resources for each team (never reset during a run, only at battleground reset)
+            uint32 _ally_permanent_resources;
+            uint32 _horde_permanent_resources;
+
+            // Timer for live/permanent resource broadcast (5s interval)
+            uint32 _liveResourceTimer;
+
             // Group management
             GuidSet _Groups[2];
             uint32 _BattleId;
