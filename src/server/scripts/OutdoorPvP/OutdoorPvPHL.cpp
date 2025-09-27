@@ -228,8 +228,9 @@
                     continue;
                 // Respawn nearby creatures (within 200 yards)
                 std::list<Creature*> creatures;
-                for (Creature* creature : map->GetAllCreatures())
+                for (auto const& pair : map->GetCreatures())
                 {
+                    Creature* creature = pair.second;
                     if (creature && creature->IsInWorld() && creature->GetDistance(player) <= 200.0f)
                     {
                         if (!creature->IsAlive())
@@ -239,8 +240,9 @@
                 }
                 // Respawn nearby game objects (within 200 yards)
                 std::list<GameObject*> gameObjects;
-                for (GameObject* go : map->GetAllGameObjects())
+                for (auto const& pair : map->GetGameObjects())
                 {
+                    GameObject* go = pair.second;
                     if (go && go->IsInWorld() && go->GetDistance(player) <= 200.0f)
                     {
                         if (!go->IsSpawned())
