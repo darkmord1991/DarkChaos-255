@@ -110,6 +110,7 @@
     bool SetupOutdoorPvP() override; // Setup function declaration
     void HandlePlayerEnterZone(Player* player, uint32 zone) override;
     void HandlePlayerLeaveZone(Player* player, uint32 zone) override;
+    void HandleWinMessage(const char* message);
         // Public wrapper for protected HandlePlayerEnterZone
         void PublicHandlePlayerEnterZone(Player* player, uint32 zone) { HandlePlayerEnterZone(player, zone); }
     };
