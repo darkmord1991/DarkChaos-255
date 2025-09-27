@@ -1,11 +1,48 @@
 /*
     .__      .___.                
     [__)  .    |   _ ._ _ ._ _   .
-    [__)\_|    |  (_)[ | )[ | )\_|
+    [__)_|    |  (_)[ | )[ | )\_|
             ._|                    ._|
 
-            Was for Omni-WoW
-            Now: Released - 5/4/2012
+    Was for Omni-WoW
+    Now: Released - 5/4/2012
+
+================================================================================
+  OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
+================================================================================
+
+  Features & Gameplay Overview:
+  -----------------------------------------------------------------------------
+  - Zone-wide PvP battleground for Alliance vs Horde in Hinterland (zone 47)
+  - Automatic group management: auto-invites, raid creation, and linking
+  - Resource system: each faction starts with resources, lose them on deaths/kills
+  - Permanent resource tracking: resources never reset during a run, only at reset
+  - Periodic zone-wide broadcasts:
+      * Every 60s: announces current resources for both factions
+      * Every 5s: live/permanent resource status
+  - AFK detection: teleports players who have not moved for 180s to start location
+  - Battleground start and win announcements:
+      * Global and zone-wide messages for start and victory
+      * Sound effects for victory/defeat per faction
+  - Buffs and rewards:
+      * Win/lose buffs applied to players
+      * Honor and arena point rewards for kills and victory
+      * Randomized honor rewards for NPC kills
+  - Custom teleportation:
+      * Faction-based teleport coordinates for start/end of battle
+  - Handles player entry/exit, kill logic, and group linking
+
+  Code Structure:
+  -----------------------------------------------------------------------------
+  - OutdoorPvPHL: Main class implementing battleground logic
+  - GroupMgr, WorldSessionMgr: Used for group and player session management
+  - Timers: For periodic messaging and AFK detection
+  - std::map<ObjectGuid, uint32>: Tracks last movement for AFK logic
+  - Functions: Setup, Update, HandlePlayerEnterZone, HandlePlayerLeaveZone,
+               HandleKill, HandleRewards, HandleBuffs, HandleWinMessage, etc.
+
+  For maintainers: See function comments for details on each gameplay feature.
+================================================================================
 */
     #include "OutdoorPvPHL.h"
     #include "Player.h"
