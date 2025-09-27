@@ -557,7 +557,7 @@ static inline void ClampResources(uint32 &value)
             p->SetHealth(p->GetMaxHealth());
             p->SetPower(POWER_RAGE, 0);
             p->SetPower(POWER_ENERGY, p->GetMaxPower(POWER_ENERGY));
-            if (p->GetPowerType() == POWER_MANA)
+            if (p->getPowerType() == POWER_MANA)
                 p->SetPower(POWER_MANA, p->GetMaxPower(POWER_MANA));
 
             if (Pet* pet = p->GetPet())
