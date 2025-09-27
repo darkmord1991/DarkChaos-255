@@ -183,6 +183,7 @@
     // Teleports player to their faction's start location in Hinterland BG
     void TeleportPlayerToStart(Player* player)
     {
+        // Start locations of the Hinterland BG
         // Alliance: 0, -17.743, -4635.110, 12.933, 2.422
         // Horde:    0, -581.244, -4577.710, 10.215, 0.548
         if (player->GetTeamId() == TEAM_ALLIANCE)
@@ -230,7 +231,6 @@
         }
     }
 
-    // Resets battleground and permanent resources to initial values.
     // Resets battleground and permanent resources to initial values
     void OutdoorPvPHL::HandleReset()
     {
@@ -295,8 +295,6 @@
         HandleWinMessage(msg);
     }
 
-    // Main update loop for Hinterland battleground logic.
-    // Handles battleground start announcement, periodic zone-wide resource broadcast, AFK teleport, and win/lose logic.
     // Main update loop for Hinterland battleground logic
     // Handles battleground start announcement, periodic zone-wide resource broadcast, AFK teleport, and win/lose logic
     bool OutdoorPvPHL::Update(uint32 diff)
@@ -306,7 +304,7 @@
         {
             // Announce battleground start to all players on the server
             char announceMsg[256];
-            snprintf(announceMsg, sizeof(announceMsg), "[Hinterland BG]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
+            snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in zone 47! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
             for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                 if (Player* player = sessionPair.second->GetPlayer())
                     player->GetSession()->SendAreaTriggerMessage(announceMsg);
@@ -315,9 +313,9 @@
             _FirstLoad = true;
         }
 
-        // Periodic zone-wide broadcast every 60 seconds with both teams' resources
+        // Periodic zone-wide broadcast every 180 seconds with both teams' resources
         _messageTimer += diff;
-        if (_messageTimer >= 60000) // 60,000 ms = 60 seconds
+        if (_messageTimer >= 180000) // 180,000 ms = 180 seconds
         {
             char msg[256];
             snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u resources | Horde: %u resources", _ally_gathered, _horde_gathered);
@@ -330,7 +328,7 @@
         if (_liveResourceTimer >= 5000) // 5,000 ms = 5 seconds
         {
             char liveMsg[256];
-            snprintf(liveMsg, sizeof(liveMsg), "[Hinterland BG]: LIVE: Alliance: %u/%u | Horde: %u/%u", _ally_gathered, _ally_permanent_resources, _horde_gathered, _horde_permanent_resources);
+            snprintf(liveMsg, sizeof(liveMsg), "[Hinterland Defence]: LIVE: Alliance: %u/%u | Horde: %u/%u", _ally_gathered, _ally_permanent_resources, _horde_gathered, _horde_permanent_resources);
             sWorldSessionMgr->SendZoneText(47, liveMsg);
             _liveResourceTimer = 0;
         }
@@ -347,7 +345,7 @@
             // If player is not tracked, initialize
             if (_playerLastMove.find(guid) == _playerLastMove.end())
                 _playerLastMove[guid] = now;
-            // If player has not moved for 180 seconds, teleport
+            // If player has not moved for 180 seconds, teleport and notify
             if (now - _playerLastMove[guid] >= 180000)
             {
                 if (player->GetTeamId() == TEAM_ALLIANCE)
@@ -355,17 +353,9 @@
                 else
                     player->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
                 _playerLastMove[guid] = now; // Reset timer after teleport
-                player->TextEmote("You have been teleported for being AFK!");
+                player->TextEmote("You have been summoned to your starting position due to inactivity.");
             }
         }
-        // Call this from Player movement event (not shown here):
-        // void OutdoorPvPHL::NotifyPlayerMoved(Player* player) {
-    //     _playerLastMove[player->GetGUID()] = getMSTime();
-        // }
-// Add to OutdoorPvPHL.h:
-// uint32 _ally_permanent_resources;
-// uint32 _horde_permanent_resources;
-// uint32 _liveResourceTimer;
 
         if(_ally_gathered <= 50 && limit_A == 0)
         {
@@ -482,7 +472,7 @@
                         {
                             // Alliance resources reached 0: Alliance loses, Horde wins
                             itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");
-                            HandleWinMessage("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
+                            HandleWinMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
@@ -496,7 +486,7 @@
                             // Announce winning team to all players
                             for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
+                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
                             }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -525,8 +515,7 @@
                         else if(limit_H == 2)
                         {
                             // Horde resources reached 0: Horde loses, Alliance wins
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde has lost! Alliance wins as Horde resources dropped to 0.");
-                            HandleWinMessage("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
+                            HandleWinMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
@@ -540,7 +529,7 @@
                             // Announce winning team to all players
                             for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
-                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Alliance wins! Horde resources dropped to 0.");
+                                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
                             }
                             // After battle: teleport all players in zone 47 to 'start'
                             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -566,43 +555,31 @@
         return false;
     }
     
-
-
-    /*
-    void outdoorPvPHL::BossReward(Player * player)
-    {
-        HandleRewards(player, 5000, true, false, false);
-        HandleRewards(player, 200, false, true, false);   <- Anpassen?
-        
-        char message[250];
-        if(player->GetTeam() == ALLIANCE)
-            snprintf(message, 250, "Der Boss der Horde wurde soeben besiegt!");
-        else
-            snprintf(message, 250, "Der Boss der Allianz wurde soeben besiegt!);
-    */
-
     // Handles logic for when a player kills another player or NPC in the battleground
     // Randomizer function and all random honor reward logic have been removed for maintainability
     void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     {
         if(killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
         {
-            if(player->GetGUID() != killed->GetGUID())
-                    return;
-     
-            switch(killed->ToPlayer()->GetTeamId())
-            {
-               case TEAM_ALLIANCE:
-                    _ally_gathered -= PointsLoseOnPvPKill;
-					player->AddItem(40752, 1);
-                    // Removed Randomizer call
-                    break;
-               default: //Horde
-                    _horde_gathered -= PointsLoseOnPvPKill;					
-                    // Removed Randomizer call
-					player->AddItem(40752, 1);
-                    break;
-            }
+            if(player->GetGUID() == killed->GetGUID())
+                return;
+
+            // Announce the kill to the zone
+            char announceMsg[256];
+            snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: %s has slain %s!", player->GetName().c_str(), killed->GetName().c_str());
+            sWorldSessionMgr->SendZoneText(47, announceMsg);
+
+          switch(killed->ToPlayer()->GetTeamId())
+          {
+            case TEAM_ALLIANCE:
+                _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
+                player->AddItem(40752, 1);
+                break;
+            default: //Horde
+                _horde_gathered -= 5; // Remove 5 resources from Horde on player kill
+                player->AddItem(40752, 1);
+                break;
+          }
         }
         else // If is something besides a player
         {
@@ -610,13 +587,19 @@
             {
                 switch(killed->GetEntry()) // Alliance killing horde guards
                 {
+                    case 810002: // Horde boss
+                        _horde_gathered -= 200; // Remove 200 resources from Horde on boss kill
+                        {
+                            char bossMsg[256];
+                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost!", player->GetName().c_str());
+                            sWorldSessionMgr->SendZoneText(47, bossMsg);
+                        }
+                        break;
                     case Horde_Infantry:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     case Horde_Squadleader: // 2?
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     case Horde_Boss:
                         _horde_gathered -= PointsLoseOnPvPKill;
@@ -624,7 +607,6 @@
                         break;
                     case Horde_Heal:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     /*
                     case WARSONG_HONOR_GUARD:
@@ -654,9 +636,16 @@
             {
                 switch(killed->GetEntry()) // Horde killing alliance guards
                 {
+                    case 810003: // Alliance boss
+                        _ally_gathered -= 200; // Remove 200 resources from Alliance on boss kill
+                        {
+                            char bossMsg[256];
+                            snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Alliance boss! 200 Alliance resources lost!", player->GetName().c_str());
+                            sWorldSessionMgr->SendZoneText(47, bossMsg);
+                        }
+                        break;
                     case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     case Alliance_Boss:
                         _ally_gathered -= PointsLoseOnPvPKill;
@@ -664,11 +653,9 @@
                         break;
                     case Alliance_Infantry:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     case Alliance_Squadleader: // Wrong?
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        // Removed Randomizer call
                         break;
                     /*
                     case VALIANCE_KEEP_FOOTMAN_2: // 2?
