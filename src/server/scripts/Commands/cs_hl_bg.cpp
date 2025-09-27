@@ -42,6 +42,21 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        // ChatCommandTable usage
+        // ----------------------
+        // A ChatCommandTable is a simple vector-of-entries that the command
+        // dispatch system converts into a tree. Each entry below registers
+        // a subcommand name, a handler function, the required security level
+        // and whether the console may execute it. Help text may be provided
+        // via other overloads; for these simple admin commands we rely on the
+        // top-level help and the explicit usage strings in the handlers.
+
+        // Notes for maintainers:
+        // - The handler signatures in this file use the legacy
+        //   `bool(ChatHandler*, char const*)` form which is compatible with
+        //   the CommandInvoker wrapper. Newer commands may use typed
+        //   argument parsing and different handler signatures.
+
         static ChatCommandTable hlbgCommandTable =
         {
             { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No },
@@ -60,6 +75,16 @@ public:
 
     static bool HandleHLBGStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
+        // Purpose: show all battleground-style raid groups tracked for the
+        // Hinterland (zone defined by `OutdoorPvPHLBuffZones[0]`) and their
+        // member counts. This helps GMs inspect which auto-created raid
+        // groups are currently active for each faction.
+        //
+        // Inputs: Chat handler for the GM invoking the command. No arguments
+        // are expected.
+        // Outputs: multiple `PSendSysMessage` calls to the GM with group info.
+        // Error modes: returns false if no player is associated with the handler.
+
         Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
         if (!player)
             return false;
@@ -71,6 +96,11 @@ public:
             std::string teamName = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
             handler->PSendSysMessage("Team: %s", teamName.c_str());
 
+            // Query the OutdoorPvP manager for the Hinterland instance.
+            // We look it up by the buff-zone constant exported from
+            // `OutdoorPvPHL.h` (the script that implements Hinterland's logic).
+            // The dynamic_cast ensures we only call HL-specific helpers when
+            // the zone script is present and matches the expected type.
             std::vector<ObjectGuid> groups;
             if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
             {
@@ -100,6 +130,13 @@ public:
 
     static bool HandleHLBGGetCommand(ChatHandler* handler, char const* args)
     {
+        // Purpose: show the current resource counter for the requested team.
+        //
+        // Usage: .hlbg get alliance|horde
+        // Inputs: `args` should contain the team name. Handler will respond
+        // with a usage message if args are missing or malformed.
+        // Outputs: PSysMessage showing the requested team's resources.
+
         if (!args || !*args)
         {
             handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
@@ -120,6 +157,16 @@ public:
 
     static bool HandleHLBGSetCommand(ChatHandler* handler, char const* args)
     {
+        // Purpose: allow a GM to set a team's resource counter (audit-logged).
+        //
+        // Usage: .hlbg set alliance|horde <amount>
+        // Inputs: `args` parsed into team and numeric amount. No further
+        // validation is performed here (amount is taken as an unsigned 32-bit
+        // value). Consider clamping or validating ranges if needed.
+        // Outputs: sets the resource counter via the `OutdoorPvPHL` API and
+        // emits an audit log line under the `admin.hlbg` category.
+        // Error modes: returns false / prints usage when args are missing.
+
         if (!args || !*args)
         {
             handler->PSendSysMessage("Usage: .hlbg set alliance|horde <amount>");
@@ -137,11 +184,16 @@ public:
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
+                // Capture previous value for audit trail, then set new amount.
                 prev = hl->GetResources(tid);
                 hl->SetResources(tid, amount);
             }
         }
         // Audit log with previous value
+        // Record the administrative action to the server log. The category
+        // `admin.hlbg` is used to make it easy to filter these entries for
+        // operational auditing. The message includes the GM name and low GUID
+        // as a compact identity marker.
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
             LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) set %s resources from %u -> %u", admin->GetName().c_str(), admin->GetGUID().GetCounter(), teamStr.c_str(), prev, amount);
         handler->PSendSysMessage("Set %s resources to %u", teamStr.c_str(), amount);
@@ -150,6 +202,13 @@ public:
 
     static bool HandleHLBGResetCommand(ChatHandler* handler, char const* /*args*/)
     {
+        // Purpose: force the Hinterland match into its reset state. This is a
+        // powerful operation and is therefore logged to `admin.hlbg`.
+        //
+        // Usage: .hlbg reset
+        // Inputs: no args; acts on the Hinterland OutdoorPvP instance if present.
+        // Outputs: calls `ForceReset()` on the HL instance and logs the action.
+
     if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
