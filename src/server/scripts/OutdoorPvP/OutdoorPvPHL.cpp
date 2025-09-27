@@ -547,7 +547,11 @@
                             {
                                 Player* p = itp->second ? itp->second->GetPlayer() : nullptr;
                                 if (p && p->IsInWorld() && p->GetZoneId() == 47)
-                                    p->TeleportTo("start");
+                                    if (p->GetTeamId() == TEAM_ALLIANCE) {
+                                        p->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
+                                    } else {
+                                        p->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
+                                    }
                             }
                             _LastWin = ALLIANCE;
                             IS_RESOURCE_MESSAGE_H = false; // Reset
