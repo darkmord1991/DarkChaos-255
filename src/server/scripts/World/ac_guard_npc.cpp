@@ -54,6 +54,8 @@ public:
             char msg[256];
             snprintf(msg, sizeof(msg), "%s: Map %u, X %.2f, Y %.2f, Z %.2f, O %.2f", poi.name, poi.map, poi.x, poi.y, poi.z, poi.o);
             ChatHandler(player->GetSession()).PSendSysMessage(msg);
+            // Show a marker on the world map for this POI
+            player->SendPointOfInterest(poi.x, poi.y, poi.o, 6, 6, poi.name);
         }
         return true;
     }

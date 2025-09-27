@@ -5,12 +5,21 @@ local Teleporter = {
 -- Do not edit anything below this line.
 
 function Teleporter.OnHello(event, player, unit)
-    for k, v in pairs(Teleporter["Options"]) do
-        if(player:GetTeam() == v["faction"] or v["faction"] == -1) and ( v["parent"] == 0) then
-            player:GossipMenuAddItem(v["icon"], v["name"], 0, k)
+        -- Collect and sort options for parent == 0
+        local sorted = {}
+        for k, v in pairs(Teleporter["Options"]) do
+            if (player:GetTeam() == v["faction"] or v["faction"] == -1) and (v["parent"] == 0) then
+                table.insert(sorted, {key = k, value = v})
+            end
         end
-    end
-    player:GossipSendMenu(1, unit)
+        table.sort(sorted, function(a, b)
+            return a.key < b.key
+        end)
+        for _, entry in ipairs(sorted) do
+            local v = entry.value
+            player:GossipMenuAddItem(v["icon"], v["name"], 0, entry.key)
+        end
+        player:GossipSendMenu(1, unit)
 end
 
 function Teleporter.OnSelect(event, player, unit, sender, intid, code)
@@ -19,13 +28,21 @@ function Teleporter.OnSelect(event, player, unit, sender, intid, code)
     if(intid == 0) then -- Special handling for "Back" option in case parent is 0
         Teleporter.OnHello(event, player, unit)
     elseif(t[intid]["type"] == 1) then
-        -- Hacky loops, but I want the results to be sorted damnit
+        -- Collect and sort submenu options
+        local sorted = {}
         for i = 1, 2 do
             for k, v in pairs(t) do
                 if(v["parent"] == intid and v["type"] == i and (player:GetTeam() == v["faction"] or v["faction"] == -1)) then
-                    player:GossipMenuAddItem(v["icon"], v["name"], 0, k)
+                    table.insert(sorted, {key = k, value = v})
                 end
             end
+        end
+        table.sort(sorted, function(a, b)
+            return a.key < b.key
+        end)
+        for _, entry in ipairs(sorted) do
+            local v = entry.value
+            player:GossipMenuAddItem(v["icon"], v["name"], 0, entry.key)
         end
         player:GossipMenuAddItem(7, "[Back]", 0, t[intid]["parent"])
         player:GossipSendMenu(1, unit)
