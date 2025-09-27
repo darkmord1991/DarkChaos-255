@@ -11,6 +11,8 @@
 #include "Creature.h"
 #include "Player.h"
 #include "Chat.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 
 struct ACGuardPOI {
     const char* name;
