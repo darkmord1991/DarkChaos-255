@@ -193,13 +193,13 @@ public:
 };
 
 
-void AddSC_hinterlandbg_thrall_hinterlandbg()
+void AddSC_npc_thrall_hinterlandbg()
 {
     new npc_thrall_hinterlandbg();
 }
 
 // Wrapper for compatibility with script loader
-extern "C" void AddSC_hinterlandbg_thrall_warchief()
+extern "C" void AddSC_npc_thrall_hinterlandbg()
 {
-    AddSC_hinterlandbg_thrall_hinterlandbg();
+    AddSC_npc_thrall_hinterlandbg();
 }
