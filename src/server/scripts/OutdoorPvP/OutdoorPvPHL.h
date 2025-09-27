@@ -65,6 +65,7 @@
     #include "WorldStateDefines.h"
     #include "WorldSession.h"
     #include "WorldSessionMgr.h"
+    #include <unordered_set>
 
     using namespace std;
 
@@ -136,6 +137,10 @@
     // Track whether a player has already received the AFK teleport warning
         std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
 
+    // Reward exclusion tracking for current match
+        GuidUnorderedSet _afkExcluded;    // players teleported due to AFK get no rewards
+        GuidUnorderedSet _deserters;      // players who left the zone during an active battle get no rewards
+
     // Group management
         GuidSet _Groups[2];
         uint32 _BattleId;
@@ -166,6 +171,16 @@
     void CheckResourceThresholds();
     void BroadcastResourceMessages();
     void ClampResourceCounters();
+
+    // Worldstate UI helpers (timer/resources like Wintergrasp/AB-style)
+    void UpdateWorldStatesForPlayer(Player* player);
+    void UpdateWorldStatesAllPlayers();
+
+    // Battle lifecycle helpers
+    void ApplyBattleMaintenanceToZonePlayers(); // repair, reset cooldowns, refill health/power for all players in zone
+    inline bool IsBattleActive() const { return _FirstLoad; } // active after start announcement until reset
+    inline bool IsExcludedFromRewards(Player* p) const { return p && (_afkExcluded.find(p->GetGUID()) != _afkExcluded.end() || _deserters.find(p->GetGUID()) != _deserters.end()); }
+    void ClearRewardExclusions() { _afkExcluded.clear(); _deserters.clear(); }
 
     public:
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking

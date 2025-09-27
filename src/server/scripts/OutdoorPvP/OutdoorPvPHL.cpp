@@ -131,6 +131,7 @@ For maintainers: update this header when adding/removing major features.
     #include "GroupMgr.h"
 #include "MapMgr.h"
     #include "ScriptDefines/MovementHandlerScript.h"
+    #include "WorldState.h"
 #include <cstdarg>
 #include <cstdint>
 #include <algorithm>
@@ -264,6 +265,13 @@ static inline void ClampResources(uint32 &value)
         // Initialize last movement timestamp
     _playerLastMove[player->GetGUID()] = getMSTime();
 
+        // If battle is active, ensure player gets the current worldstate UI and is not excluded by stale flags
+        if (IsBattleActive())
+        {
+            _afkExcluded.erase(player->GetGUID());
+            UpdateWorldStatesForPlayer(player);
+        }
+
     // Note: we set last-move on zone enter so players who stand still after
     // entering the zone will still be considered active for a short period.
 
@@ -396,6 +404,9 @@ static inline void ClampResources(uint32 &value)
     void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
     {
         player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
+        // Mark deserter during an active battle (excluded from rewards this round)
+        if (IsBattleActive())
+            _deserters.insert(player->GetGUID());
         TeleportPlayerToStart(player);
         // Remove player from raid group if in one
         if (Group* group = player->GetGroup()) {
@@ -426,6 +437,39 @@ static inline void ClampResources(uint32 &value)
             sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], message);
 
             // Respawn logic for NPCs and game objects temporarily removed as requested.
+    }
+
+    // Update worldstates (timer + resources) for a single player in Hinterland
+    void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
+    {
+        if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+            return;
+
+        // Timer (use Strand of the Ancients style UI: minutes + seconds digits)
+        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+        uint32 minutes = timeRemaining / 60;
+        uint32 seconds = timeRemaining % 60;
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
+
+        // Resources (use AB resource counters for clarity)
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+    }
+
+    // Broadcast worldstates to all players in Hinterland
+    void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
+    {
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+        {
+            Player* p = itr->second ? itr->second->GetPlayer() : nullptr;
+            if (p && p->IsInWorld() && p->GetZoneId() == HL_ZONE_ID)
+                UpdateWorldStatesForPlayer(p);
+        }
     }
 
     // Plays victory/defeat sounds for all players in the zone, depending on side.
@@ -485,8 +529,43 @@ static inline void ClampResources(uint32 &value)
 
     // Clear AFK warning state on reset
     _playerWarnedBeforeTeleport.clear();
+    // Clear reward-exclusion sets for the next battle
+    ClearRewardExclusions();
 
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
+    }
+
+    // Apply repairs, reset cooldowns, and refill health/power for all Hinterland players
+    void OutdoorPvPHL::ApplyBattleMaintenanceToZonePlayers()
+    {
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+        {
+            Player* p = itr->second ? itr->second->GetPlayer() : nullptr;
+            if (!p || !p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
+                continue;
+
+            // Free repair (no cost)
+            p->DurabilityRepairAll(false, 0.0f, false);
+
+            // Reset all spell cooldowns by iterating cooldown map
+            SpellCooldowns cds = p->GetSpellCooldownMap();
+            for (auto const& kv : cds)
+                p->RemoveSpellCooldown(kv.first, true);
+
+            // Refill health and power pools
+            p->SetHealth(p->GetMaxHealth());
+            p->SetPower(POWER_RAGE, 0);
+            p->SetPower(POWER_ENERGY, p->GetMaxPower(POWER_ENERGY));
+            if (p->GetPowerType() == POWER_MANA)
+                p->SetPower(POWER_MANA, p->GetMaxPower(POWER_MANA));
+
+            if (Pet* pet = p->GetPet())
+            {
+                pet->SetHealth(pet->GetMaxHealth());
+                pet->SetPower(pet->getPowerType(), pet->GetMaxPower(pet->getPowerType()));
+            }
+        }
     }
 
     // Applies win/lose buffs to a player after the battle.
@@ -550,11 +629,22 @@ bool OutdoorPvPHL::Update(uint32 diff)
         LOG_INFO("misc", announceMsg);
         _FirstLoad = true;
         _matchTimer = 0;
+        // At battle start: repair, reset CDs, refill, and sync worldstate UI
+        ApplyBattleMaintenanceToZonePlayers();
+        UpdateWorldStatesAllPlayers();
     }
 
     // timers and periodic tasks
     ProcessMatchTimer(diff);
     ProcessPeriodicMessage(diff);
+
+    // Update timer/resources UI roughly once per second
+    _liveResourceTimer += diff;
+    if (_liveResourceTimer >= 1000)
+    {
+        UpdateWorldStatesAllPlayers();
+        _liveResourceTimer = 0;
+    }
 
     uint32 now = getMSTime();
     ProcessAFK(now);
@@ -586,16 +676,20 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
                     if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
                         continue;
 
-                    // Winners receive rewards
-                    if (player->GetTeamId() == TEAM_ALLIANCE)
+                    // Skip rewards/buffs for deserters and AFK-excluded
+                    if (!IsExcludedFromRewards(player))
                     {
-                        HandleRewards(player, 1500, true, false, false);
-                        HandleBuffs(player, false);
-                    }
-                    else
-                    {
-                        // Losing side gets loser-buffs if configured
-                        HandleBuffs(player, true);
+                        // Winners receive rewards/buffs
+                        if (player->GetTeamId() == TEAM_ALLIANCE)
+                        {
+                            HandleRewards(player, 1500, true, false, false);
+                            HandleBuffs(player, false);
+                        }
+                        else
+                        {
+                            // Losing side gets loser-buffs if configured
+                            HandleBuffs(player, true);
+                        }
                     }
 
                     player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
@@ -615,14 +709,17 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
                     if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
                         continue;
 
-                    if (player->GetTeamId() == TEAM_HORDE)
+                    if (!IsExcludedFromRewards(player))
                     {
-                        HandleRewards(player, 1500, true, false, false);
-                        HandleBuffs(player, false);
-                    }
-                    else
-                    {
-                        HandleBuffs(player, true);
+                        if (player->GetTeamId() == TEAM_HORDE)
+                        {
+                            HandleRewards(player, 1500, true, false, false);
+                            HandleBuffs(player, false);
+                        }
+                        else
+                        {
+                            HandleBuffs(player, true);
+                        }
                     }
 
                     player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
@@ -648,6 +745,8 @@ void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
 
             // Teleport everyone back to their starts and reset the match
         TeleportAllPlayersInZoneToStart();
+        // End-of-battle maintenance and UI sync
+        ApplyBattleMaintenanceToZonePlayers();
         HandleReset();
         _matchTimer = 0;
         _FirstLoad = false;
@@ -744,6 +843,8 @@ void OutdoorPvPHL::ProcessAFK(uint32 now)
                 // Teleport the player to safe coordinates for their faction
                 TeleportPlayerToStart(player);
                 player->TextEmote("You have been summoned to your starting position due to inactivity.");
+                // Mark player as excluded from this round's rewards
+                _afkExcluded.insert(guid);
             }
             // Reset timers and warned flag
             _playerLastMove[guid] = now; // Reset timer after teleport
