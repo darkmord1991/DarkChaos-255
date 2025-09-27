@@ -494,7 +494,7 @@
                                     break;
                             }
                             // Announce winning team to all players
-                            for (const auto& sessionPair : sWorld->GetAllSessions()) {
+                            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
                                 if (Player* player = sessionPair.second->GetPlayer())
                                     player->GetSession()->SendAreaTriggerMessage("[Hinterland BG]: Horde wins! Alliance resources dropped to 0.");
                             }
