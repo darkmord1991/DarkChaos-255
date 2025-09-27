@@ -192,5 +192,7 @@
     uint32 GetResources(TeamId team) const;
     void SetResources(TeamId team, uint32 amount);
     void ForceReset();
+    // Teleport all players in the Hinterland zone to their faction start
+    void TeleportPlayersToStart();
     };
     #endif

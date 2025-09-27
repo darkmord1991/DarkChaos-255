@@ -89,12 +89,12 @@ public:
         if (!player)
             return false;
 
-        handler->PSendSysMessage("Hinterland BG raid groups:");
+    handler->PSendSysMessage("Hinterland BG raid groups:");
 
         for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
         {
             std::string teamName = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-            handler->PSendSysMessage("Team: %s", teamName.c_str());
+            handler->PSendSysMessage("Team: {}", teamName);
 
             // Query the OutdoorPvP manager for the Hinterland instance.
             // We look it up by the buff-zone constant exported from
@@ -119,10 +119,10 @@ public:
                 Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
                 if (!g)
                 {
-                    handler->PSendSysMessage("  Group %u: (stale)", gid.GetCounter());
+                    handler->PSendSysMessage("  Group {}: (stale)", gid.GetCounter());
                     continue;
                 }
-                handler->PSendSysMessage("  Group %u: members=%u", g->GetGUID().GetCounter(), g->GetMembersCount());
+                handler->PSendSysMessage("  Group {}: members={}", g->GetGUID().GetCounter(), g->GetMembersCount());
             }
         }
         return true;
@@ -139,7 +139,7 @@ public:
 
         if (!args || !*args)
         {
-            handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
+        handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
             return false;
         }
         std::string team(args);
@@ -151,7 +151,7 @@ public:
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
                 res = hl->GetResources(tid);
         }
-        handler->PSendSysMessage("%s resources: %u", team.c_str(), res);
+    handler->PSendSysMessage("{} resources: {}", team, res);
         return true;
     }
 
@@ -196,7 +196,7 @@ public:
         // as a compact identity marker.
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
             LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) set %s resources from %u -> %u", admin->GetName().c_str(), admin->GetGUID().GetCounter(), teamStr.c_str(), prev, amount);
-        handler->PSendSysMessage("Set %s resources to %u", teamStr.c_str(), amount);
+    handler->PSendSysMessage("Set {} resources to {}", teamStr, amount);
         return true;
     }
 
@@ -214,6 +214,8 @@ public:
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
                 hl->ForceReset();
+                // Teleport players back to start positions configured in the OutdoorPvP script
+                hl->TeleportPlayersToStart();
                 // Audit log
                 if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
                     LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) forced a Hinterland BG reset", admin->GetName().c_str(), admin->GetGUID().GetCounter());

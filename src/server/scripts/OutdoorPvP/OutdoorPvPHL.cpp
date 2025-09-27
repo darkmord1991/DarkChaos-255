@@ -856,6 +856,13 @@ void OutdoorPvPHL::ClampResourceCounters()
     ClampResources(_horde_gathered);
 }
 
+// Public wrapper that teleports all players in the Hinterland zone to their faction start.
+// Exposed so external commands (GM tools) can reuse the script's teleport helper.
+void OutdoorPvPHL::TeleportPlayersToStart()
+{
+    TeleportAllPlayersInZoneToStart();
+}
+
 std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
 {
     std::vector<ObjectGuid> res;

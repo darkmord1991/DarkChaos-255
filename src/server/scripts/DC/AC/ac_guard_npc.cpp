@@ -91,7 +91,7 @@ public:
         if (action < sizeof(ac_guard_pois)/sizeof(ACGuardPOI)) {
             const ACGuardPOI& poi = ac_guard_pois[action];
             // Optional: brief confirmation before teleport
-            ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to %s (Map %u: %.1f, %.1f, %.1f)", poi.name, poi.map, poi.x, poi.y, poi.z);
+            ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poi.name);
             // Direct teleport to the POI
             player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
         }
