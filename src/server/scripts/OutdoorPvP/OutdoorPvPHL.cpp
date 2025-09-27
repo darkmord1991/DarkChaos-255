@@ -11,7 +11,7 @@
   OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-  Features & Gameplay Overview:
+  Features & Gameplay Overview (2025):
   -----------------------------------------------------------------------------
   - Zone-wide PvP battleground for Alliance vs Horde in Hinterland (zone 47)
   - Automatic group management: auto-invites, raid creation, and linking
@@ -27,10 +27,10 @@
   - Buffs and rewards:
       * Win/lose buffs applied to players
       * Honor and arena point rewards for kills and victory
-      * Randomized honor rewards for NPC kills
   - Custom teleportation:
       * Faction-based teleport coordinates for start/end of battle
   - Handles player entry/exit, kill logic, and group linking
+  - All random honor reward logic (Randomizer) has been removed for clarity and maintainability
 
   Code Structure:
   -----------------------------------------------------------------------------
@@ -56,7 +56,7 @@
     #include "GroupMgr.h"
 
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
-// Implements group management, resource tracking, AFK detection, messaging, and rewards.
+// Implements group management, resource tracking, AFK detection, messaging, rewards, and faction-based teleportation.
 
     // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
     OutdoorPvPHL::OutdoorPvPHL()
@@ -582,6 +582,7 @@
     */
 
     // Handles logic for when a player kills another player or NPC in the battleground
+    // Randomizer function and all random honor reward logic have been removed for maintainability
     void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     {
         if(killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
