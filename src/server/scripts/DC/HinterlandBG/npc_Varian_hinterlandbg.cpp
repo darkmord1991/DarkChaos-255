@@ -42,8 +42,6 @@ enum VarianHinterlandBG : uint32
 {
     SPELL_CHAIN_LIGHTNING          = 16033, // You may want to change these to Varian-specific spells
     SPELL_SHOCK                    = 16034,
-    SPELL_CHAIN_LIGHTNING          = 16033, // You may want to change these to Varian-specific spells
-    SPELL_SHOCK                    = 16034,
     SPELL_KING_BLESSING            = 16609,  // Example spell, adjust as needed
     NPC_HERALD_OF_VARIAN           = 29589,  // Example herald, adjust as needed
     ACTION_START_TALKING           = 0,
