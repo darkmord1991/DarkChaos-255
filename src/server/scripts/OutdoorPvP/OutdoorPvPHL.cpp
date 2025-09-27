@@ -134,41 +134,15 @@
         return nullptr;
     }
 
-    // Helper: Teleport player to race starting location
+    // Helper: Teleport player to Hinterland Outdoor BG start location by faction
     void TeleportPlayerToStart(Player* player)
     {
-        // Example: Human (race 1) -> Elwynn Forest, Orc (race 2) -> Durotar, etc.
-        // You may want to refine these coordinates for your server.
-    switch (player->getRace())
-        {
-            case RACE_HUMAN:
-                player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f); // Elwynn Forest
-                break;
-            case RACE_ORC:
-                player->TeleportTo(1, 1676.21f, 1677.85f, 121.67f, 0.0f); // Durotar
-                break;
-            case RACE_DWARF:
-                player->TeleportTo(0, -6240.32f, 336.23f, 382.758f, 0.0f); // Dun Morogh
-                break;
-            case RACE_NIGHTELF:
-                player->TeleportTo(1, 10311.3f, 832.463f, 1326.41f, 0.0f); // Teldrassil
-                break;
-            case RACE_UNDEAD_PLAYER:
-                player->TeleportTo(0, 1676.21f, 1677.85f, 121.67f, 0.0f); // Tirisfal Glades
-                break;
-            case RACE_TAUREN:
-                player->TeleportTo(1, -2917.58f, -257.98f, 52.9968f, 0.0f); // Mulgore
-                break;
-            case RACE_GNOME:
-                player->TeleportTo(0, -6240.32f, 336.23f, 382.758f, 0.0f); // Dun Morogh
-                break;
-            case RACE_TROLL:
-                player->TeleportTo(1, 1676.21f, 1677.85f, 121.67f, 0.0f); // Durotar
-                break;
-            default:
-                player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f); // Default to Elwynn Forest
-                break;
-        }
+        // Alliance: 0, -17.743, -4635.110, 12.933, 2.422
+        // Horde:    0, -581.244, -4577.710, 10.215, 0.548
+        if (player->GetTeamId() == TEAM_ALLIANCE)
+            player->TeleportTo(0, -17.743f, -4635.110f, 12.933f, 2.422f);
+        else
+            player->TeleportTo(0, -581.244f, -4577.710f, 10.215f, 0.548f);
     }
 
     void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)

@@ -61,31 +61,37 @@
 
 /* OutdoorPvPHL Related */
     class OutdoorPvPHL : public OutdoorPvP
-    {
-        public:            
-            OutdoorPvPHL();
+        private:
+            uint32 _ally_gathered;
+            uint32 _horde_gathered;
+            uint32 _LastWin;
+            bool IS_ABLE_TO_SHOW_MESSAGE;
+            bool IS_RESOURCE_MESSAGE_A;
+            bool IS_RESOURCE_MESSAGE_H;
+            bool _FirstLoad;
+            int limit_A;
+            int limit_H;
+            int limit_resources_message_A;
+            int limit_resources_message_H;
+            uint32 _messageTimer; // Timer for periodic message
 
-            bool SetupOutdoorPvP() override;
+            // Permanent resources for each team (never reset during a run, only at battleground reset)
+            uint32 _ally_permanent_resources;
+            uint32 _horde_permanent_resources;
 
-            /* Handle Player Action */
-            void HandlePlayerEnterZone(Player * player, uint32 zone) override;
-            void HandlePlayerLeaveZone(Player * player, uint32 zone) override;
+            // Timer for live/permanent resource broadcast (5s interval)
+            uint32 _liveResourceTimer;
 
-            /* Handle Killer Kill */
-            void HandleKill(Player * player, Unit * killed) override;
-			
-            /* Handle Randomizer */
-            void Randomizer(Player * player);
+            // AFK tracking: map player GUID to last movement timestamp (ms)
+            std::map<ObjectGuid, uint32> _playerLastMove;
 
-            /*Handle Boss
-            void BossReward(Player *player);      <- ?
-            */
-
-            /* Buffs */
-            void HandleBuffs(Player * player, bool loser);
-
-            /* Chat */
-            void HandleWinMessage(const char * msg);
+            // Group management
+            GuidSet _Groups[2];
+            uint32 _BattleId;
+            GuidUnorderedSet _PlayersInWar[2];
+            Group* GetFreeBfRaid(TeamId TeamId);
+            bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
+            Group* GetGroupPlayer(ObjectGuid guid, TeamId TeamId);
 
             /* Reset */
             void HandleReset();
