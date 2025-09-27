@@ -566,26 +566,6 @@
     }
     
 
-    // Randomizes the honor reward for each NPC kill in the battleground.
-    // Randomizes the honor reward for each NPC kill in the battleground
-    void OutdoorPvPHL::Randomizer(Player* player)
-    {
-        switch(urand(0, 4))
-        {
-            case 0:
-                HandleRewards(player, 17, true, false, false);
-                break;
-            case 1:
-                HandleRewards(player, 11, true, false, false);
-                break;
-            case 2:
-                HandleRewards(player, 19, true, false, false);
-                break;
-            case 3:
-                HandleRewards(player, 22, true, false, false);
-                break;
-        }
-    }
 
     /*
     void outdoorPvPHL::BossReward(Player * player)
@@ -613,7 +593,7 @@
                case TEAM_ALLIANCE:
                     _ally_gathered -= PointsLoseOnPvPKill;
 					player->AddItem(40752, 1);
-                    Randomizer(player);					
+                    // Removed Randomizer call
                     break;
                default: //Horde
                     _horde_gathered -= PointsLoseOnPvPKill;					
@@ -630,11 +610,11 @@
                 {
                     case Horde_Infantry:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case Horde_Squadleader: // 2?
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case Horde_Boss:
                         _horde_gathered -= PointsLoseOnPvPKill;
@@ -642,24 +622,24 @@
                         break;
                     case Horde_Heal:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     /*
                     case WARSONG_HONOR_GUARD:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case WARSONG_MARKSMAN:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case WARSONG_RECRUITMENT_OFFICER:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case WARSONG_SCOUT:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
+                        // Removed Randomizer call
                         break;
                     case WARSONG_WIND_RIDER:
                         _horde_gathered -= PointsLoseOnPvPKill;
