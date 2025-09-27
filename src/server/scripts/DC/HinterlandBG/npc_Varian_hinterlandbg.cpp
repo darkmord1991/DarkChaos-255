@@ -173,7 +173,14 @@ public:
     };
 };
 
+
 void AddSC_hinterlandbg_Varian_hinterlandbg()
 {
     new npc_Varian_hinterlandbg();
+}
+
+// Wrapper for compatibility with script loader
+extern "C" void AddSC_hinterlandbg_Varian_wrynn()
+{
+    AddSC_hinterlandbg_Varian_hinterlandbg();
 }

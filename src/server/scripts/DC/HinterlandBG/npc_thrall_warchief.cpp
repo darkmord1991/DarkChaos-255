@@ -174,7 +174,14 @@ public:
     };
 };
 
+
 void AddSC_hinterlandbg_thrall_hinterlandbg()
 {
     new npc_thrall_hinterlandbg();
+}
+
+// Wrapper for compatibility with script loader
+extern "C" void AddSC_hinterlandbg_thrall_warchief()
+{
+    AddSC_hinterlandbg_thrall_hinterlandbg();
 }
