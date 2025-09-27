@@ -35,8 +35,11 @@
 #include "Creature.h"
 #include "Player.h"
 #include "Chat.h"
+#include "ScriptedGossip.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
+#include <string>
+#include <cstdio>
 
 // Structure representing a Point of Interest (POI)
 struct ACGuardPOI {
@@ -70,9 +73,10 @@ public:
 
     // Called when a player interacts with the NPC
     bool OnGossipHello(Player* player, Creature* creature) override {
-        // Add each POI as a gossip menu item
+        // Add each POI as a gossip menu item with "Teleport to" prefix
         for (size_t i = 0; i < sizeof(ac_guard_pois)/sizeof(ACGuardPOI); ++i) {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, ac_guard_pois[i].name, GOSSIP_SENDER_MAIN, i);
+            std::string label = std::string("Teleport to ") + ac_guard_pois[i].name;
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, label, GOSSIP_SENDER_MAIN, static_cast<uint32>(i));
         }
         // Show the gossip menu to the player
         SendGossipMenuFor(player, 1, creature->GetGUID());
@@ -80,26 +84,16 @@ public:
     }
 
     // Called when a player selects a gossip menu item
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override {
+    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override {
         // Close the gossip menu
         CloseGossipMenuFor(player);
         // Validate the selected action (POI index)
         if (action < sizeof(ac_guard_pois)/sizeof(ACGuardPOI)) {
             const ACGuardPOI& poi = ac_guard_pois[action];
-            // Build and send a system message with POI details
-            char msg[256];
-            snprintf(msg, sizeof(msg), "%s: Map %u, X %.2f, Y %.2f, Z %.2f, O %.2f", poi.name, poi.map, poi.x, poi.y, poi.z, poi.o);
-            ChatHandler(player->GetSession()).PSendSysMessage(msg);
-            // Build and send a world map marker packet for the POI
-            WorldPacket data(SMSG_GOSSIP_POI);
-            data << float(poi.x); // POI X coordinate
-            data << float(poi.y); // POI Y coordinate
-            data << uint32(6);    // Icon type (6 = default)
-            data << uint32(6);    // Flags (6 = default)
-            data << uint32(0);    // Data (unused, usually 0)
-            data << float(poi.o); // POI orientation
-            data << std::string(poi.name); // POI name
-            player->SendDirectMessage(&data);
+            // Optional: brief confirmation before teleport
+            ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to %s (Map %u: %.1f, %.1f, %.1f)", poi.name, poi.map, poi.x, poi.y, poi.z);
+            // Direct teleport to the POI
+            player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
         }
         return true;
     }

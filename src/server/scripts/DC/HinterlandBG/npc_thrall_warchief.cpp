@@ -42,8 +42,6 @@ enum ThrallWarchief : uint32
 {
     SPELL_CHAIN_LIGHTNING          = 16033,
     SPELL_SHOCK                    = 16034,
-    SPELL_CHAIN_LIGHTNING          = 16033,
-    SPELL_SHOCK                    = 16034,
     SPELL_WARCHIEF_BLESSING        = 16609,
     NPC_HERALD_OF_THRALL           = 10719,
     ACTION_START_TALKING           = 0,
