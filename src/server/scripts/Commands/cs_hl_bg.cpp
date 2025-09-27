@@ -6,6 +6,7 @@
 #include "GroupMgr.h"
 #include "Player.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
+#include "OutdoorPvP/OutdoorPvPHL.h"
 #include <sstream>
 #include <algorithm>
 
@@ -71,7 +72,7 @@ public:
             handler->PSendSysMessage("Team: %s", teamName.c_str());
 
             std::vector<ObjectGuid> groups;
-            if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID))
+            if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
             {
                 if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
                     groups = hl->GetBattlegroundGroupGUIDs((TeamId)team);
@@ -108,7 +109,7 @@ public:
         std::transform(team.begin(), team.end(), team.begin(), ::tolower);
         TeamId tid = (team == "alliance") ? TEAM_ALLIANCE : TEAM_HORDE;
         uint32 res = 0;
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID))
+            if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
                 res = hl->GetResources(tid);
@@ -132,7 +133,7 @@ public:
         std::transform(teamStr.begin(), teamStr.end(), teamStr.begin(), ::tolower);
         TeamId tid = (teamStr == "alliance") ? TEAM_ALLIANCE : TEAM_HORDE;
         uint32 prev = 0;
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID))
+    if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
@@ -149,7 +150,7 @@ public:
 
     static bool HandleHLBGResetCommand(ChatHandler* handler, char const* /*args*/)
     {
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID))
+    if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
