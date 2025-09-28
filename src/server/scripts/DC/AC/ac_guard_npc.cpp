@@ -87,7 +87,9 @@ static const ACGuardPOI ac_guard_pois[] = {
     {"Transmog", 37, 148.838f, 1000.34f, 295.753f, 5.98384f},           // Transmog NPC
     {"Ridetrainer", 37, 120.768f, 955.565f, 295.072f, 5.15048f},        // Riding trainer
     {"Profession trainers", 37, 43.905f, 1172.420f, 367.342f, 2.560f}, // Profession trainers
-    {"Weapontrainer", 37, 100.351f, 1004.96f, 296.329f, 0.258275f}      // Weapon trainer
+    {"Weapontrainer", 37, 100.351f, 1004.96f, 296.329f, 0.258275f},     // Weapon trainer
+    {"Violet Temple (empty)", 37, -574.179f, -208.159f, 355.034f, 3.8202f}, // Violet Temple
+    {"Dragon Statues (empty)", 37, -53.4259f, -40.4419f, 271.541f, 3.42052f} // Dragon Statues
 };
 
 // Main script class for the Guard NPC
