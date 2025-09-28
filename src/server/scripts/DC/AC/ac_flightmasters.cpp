@@ -121,7 +121,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             if (Player* p = passenger->ToPlayer())
                                 ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
                         }
-                    me->DespawnOrUnsummon(std::chrono::seconds(2));
+                    me->DespawnOrUnsummon(2000); // 2 seconds
                 });
             }
         }
@@ -188,7 +188,7 @@ public:
         // Summon gryphon slightly above ground near the flightmaster
         Position where = creature->GetPosition();
         where.m_positionZ += 3.0f;
-    TempSummon* taxi = creature->SummonCreature(NPC_AC_GRYPHON_TAXI, where, TEMPSUMMON_TIMED_DESPAWN, std::chrono::minutes(5));
+    TempSummon* taxi = creature->SummonCreature(NPC_AC_GRYPHON_TAXI, where, TEMPSUMMON_TIMED_DESPAWN, 300000); // 5 minutes
         if (!taxi)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry %u).", NPC_AC_GRYPHON_TAXI);
@@ -198,7 +198,7 @@ public:
         if (!taxi->GetVehicleKit())
         {
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", taxi->GetEntry());
-            taxi->DespawnOrUnsummon(std::chrono::seconds(1));
+            taxi->DespawnOrUnsummon(1000);
             return true;
         }
 
