@@ -21,7 +21,7 @@
     #include "ObjectMgr.h"
     #include "ObjectAccessor.h"
     #include "DBCStores.h"
-    #include "WorldSafeLocsMgr.h"
+    #include "Misc/GameGraveyard.h"
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
@@ -318,8 +318,8 @@
         {
             Whisper(player, "You must be max level to join the Hinterland battle.");
             // Teleport out to nearest graveyard as a soft rejection
-            if (WorldSafeLocsEntry const* loc = sObjectMgr->GetClosestGraveyard(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), player->GetTeamId()))
-                player->TeleportTo(loc->MapID, loc->x, loc->y, loc->z, player->GetOrientation());
+            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(player, player->GetTeamId()))
+                player->TeleportTo(g->Map, g->x, g->y, g->z, player->GetOrientation());
             return; // do not register enter to PvP logic
         }
 
@@ -614,8 +614,8 @@
                         if (count == 1)
                         {
                             Whisper(p, "AFK detected due to inactivity. You receive half rewards. You'll be moved back to the starting area.");
-                            if (WorldSafeLocsEntry const* loc = sObjectMgr->GetClosestGraveyard(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ(), p->GetMapId(), p->GetTeamId()))
-                                p->TeleportTo(loc->MapID, loc->x, loc->y, loc->z, p->GetOrientation());
+                            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(p, p->GetTeamId()))
+                                p->TeleportTo(g->Map, g->x, g->y, g->z, p->GetOrientation());
                         }
                         else if (count >= 2)
                         {
