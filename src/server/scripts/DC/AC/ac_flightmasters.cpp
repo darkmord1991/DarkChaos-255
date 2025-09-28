@@ -80,6 +80,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
     void PassengerBoarded(Unit* passenger, int8 seatId, bool apply) override
     {
+        (void)passenger; // unused
         if (!apply || seatId != 0)
             return;
 
@@ -118,7 +119,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         {
                             passenger->ExitVehicle();
                             if (Player* p = passenger->ToPlayer())
-                                p->SendSysMessage("You have arrived at your destination.");
+                                ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
                         }
                     me->DespawnOrUnsummon(std::chrono::seconds(2));
                 });
