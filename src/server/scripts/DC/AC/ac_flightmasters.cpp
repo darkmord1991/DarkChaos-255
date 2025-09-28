@@ -52,7 +52,8 @@ static Position const kPath[] = {
     {  -4.513f, 415.750f, 308.212f, 2.919730f }   // acfm10 (final)
 };
 
-static constexpr uint8 kPathLength = static_cast<uint8>(std::extent<decltype(kPath)>::value);
+// Robust path length (avoid toolchain issues with std::extent)
+static constexpr uint8 kPathLength = static_cast<uint8>(sizeof(kPath) / sizeof(kPath[0]));
 
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 struct ac_gryphon_taxi_800011AI : public VehicleAI
@@ -100,9 +101,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (id == POINT_TAKEOFF)
             return; // ignore pre-flight lift
 
-        if (id == (_currentPointId))
+        if (id == POINT_LAND_FINAL)
         {
-            // Reached a path node; continue to next or finish
+            // Landed: dismount passenger and despawn gently
+            if (Vehicle* kit = me->GetVehicleKit())
+                if (Unit* passenger = kit->GetPassenger(0))
+                {
+                    passenger->ExitVehicle();
+                    if (Player* p = passenger->ToPlayer())
+                        ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
+                }
+            me->DespawnOrUnsummon(2000);
+            return;
+        }
+
+        if (id == _currentPointId)
+        {
+            // Reached a path node; continue to next or start landing sequence at the last
             if (_index + 1 < kPathLength)
             {
                 ++_index;
@@ -110,19 +125,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             }
             else
             {
-                // Final node reached: gently slow, face forward, dismount and despawn
-                me->SetOrientation(kPath[_index].GetOrientation());
-                _scheduler.Schedule(std::chrono::seconds(1), [this](TaskContext /*context*/)
-                {
-                    if (Vehicle* kit = me->GetVehicleKit())
-                        if (Unit* passenger = kit->GetPassenger(0))
-                        {
-                            passenger->ExitVehicle();
-                            if (Player* p = passenger->ToPlayer())
-                                ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
-                        }
-                    me->DespawnOrUnsummon(2000); // 2 seconds
-                });
+                // Final node reached: initiate a safe landing, then dismount at ground
+                float x = kPath[_index].GetPositionX();
+                float y = kPath[_index].GetPositionY();
+                float z = kPath[_index].GetPositionZ();
+                me->UpdateGroundPositionZ(x, y, z);
+                Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
+                me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
             }
         }
     }
@@ -134,29 +143,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     }
 
 private:
-    enum : uint32 { POINT_TAKEOFF = 9000 };
+    enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
 
     void MoveToIndex(uint8 idx)
     {
         _currentPointId = 10000u + idx; // unique id per node
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
     }
-
-    TaskScheduler _scheduler;
-    uint8 _index = 0;
-    uint32 _currentPointId = 0;
-};
-
-class ac_gryphon_taxi_800011 : public CreatureScript
-{
-public:
-    ac_gryphon_taxi_800011() : CreatureScript("ac_gryphon_taxi_800011") { }
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new ac_gryphon_taxi_800011AI(creature);
-    }
-};
 
 class ACFM1 : public CreatureScript
 {
