@@ -286,29 +286,17 @@ static inline void ClampResources(uint32 &value)
 // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // Only apply to our zone id
-    if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID)
-        return;
-
-    // Enable WG HUD and SA timer, and seed counters
-    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-    uint32 minutes = timeRemaining / 60;
-    uint32 seconds = timeRemaining % 60;
+    // WG-only HUD (client DBC patched). Seed absolute end time for both WG clocks.
+    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
     uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+    uint32 endEpoch = now + timeRemaining;
 
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
 
-    // AB resources
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
-
-    // WG vehicle bars repurposed as resource bars
+    // Reuse WG vehicle bars for resource counters
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -482,25 +470,17 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
         if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
             return;
 
-        // Timer (use Strand of the Ancients style UI: minutes + seconds digits)
-        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-        uint32 minutes = timeRemaining / 60;
-        uint32 seconds = timeRemaining % 60;
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
-
-        // Resources (use AB resource counters for clarity)
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
-
-        // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
+        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+        uint32 endEpoch = now + timeRemaining;
+
+        // WG-only HUD with absolute end time on both clocks; control neutral
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
-        // Reuse vehicle counters to display resources near the clock
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+
+        // Resource bars via WG vehicle states
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -579,7 +559,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Clear reward-exclusion sets for the next battle
     ClearRewardExclusions();
 
-    // Hide Wintergrasp HUD and SA timer for all players in zone
+    // Hide Wintergrasp HUD for all players in zone
     for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
     {
         if (Player* p = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
@@ -587,7 +567,6 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             if (!p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
                 continue;
             p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
-            p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
         }
     }
 
@@ -680,12 +659,12 @@ bool OutdoorPvPHL::Update(uint32 diff)
     if (_FirstLoad == false)
     {
         char announceMsg[256];
-        snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in Hinterland! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
+    snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in Hinterland! Last winner: %s", (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
         for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
             if (Player* player = sessionPair.second->GetPlayer())
                 player->GetSession()->SendAreaTriggerMessage(announceMsg);
         }
-        LOG_INFO("misc", announceMsg);
+    LOG_INFO("misc", "%s", announceMsg);
         _FirstLoad = true;
         _matchTimer = 0;
         // At battle start: repair, reset CDs, refill, and sync worldstate UI
