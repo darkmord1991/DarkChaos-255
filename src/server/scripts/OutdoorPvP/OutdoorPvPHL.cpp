@@ -457,8 +457,9 @@
 
     void OutdoorPvPHL::HandleWinMessage(const char* message)
     {
+        std::string full = GetBgChatPrefix() + std::string(message);
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
-            sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], message);
+            sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[i], full.c_str());
     }
 
     void OutdoorPvPHL::PlaySounds(bool side)
@@ -480,6 +481,15 @@
                 }
             }
         }
+    }
+
+    // Cosmetic: provide a Battleground-like item link prefix for chat/notifications
+    // Example: |cff0070dd|Hitem:47241:0:0:0:0:0:0:0:0|h[Hinterland Defence]|h|r
+    // Note: Using a harmless vanity item ID for link formatting. Only the text is shown; clicking opens an item tooltip.
+    std::string OutdoorPvPHL::GetBgChatPrefix() const
+    {
+        // Blue-quality color for visibility (can be tuned); item ID 47241 (Emblem of Triumph) used as a neutral link host
+        return "|cff0070dd|Hitem:47241:0:0:0:0:0:0:0:0|h[Hinterland Defence]|h|r ";
     }
 
     void OutdoorPvPHL::HandleReset()
@@ -530,8 +540,8 @@
             Whisper(player, "|cffff0000You are not eligible for rewards (Deserter).|r");
             return;
         }
-        // Deny any rewards if the player has at least one AFK infraction this match
-        if (player && GetAfkCount(player) >= 1)
+        // Deny any rewards if the player has at least one AFK infraction this match (GMs exempt)
+        if (player && !player->IsGameMaster() && GetAfkCount(player) >= 1)
         {
             Whisper(player, "|cffff0000AFK penalty: you receive no rewards.|r");
             return;
@@ -561,7 +571,7 @@
     }
 
     // Movement-based AFK thresholds (in seconds)
-    static constexpr uint32 HL_AFK_WARN_SECONDS = 60;      // warn after 60s idle
+    static constexpr uint32 HL_AFK_WARN_SECONDS = 120;     // warn after 120s idle
     static constexpr uint32 HL_AFK_TELEPORT_SECONDS = 180; // act after 180s idle
 
     bool OutdoorPvPHL::Update(uint32 diff)
@@ -718,6 +728,12 @@
                 Player* p = it.second ? it.second->GetPlayer() : nullptr;
                 if (!p || !p->IsInWorld() || p->GetZoneId() != 47)
                     continue;
+                // Exempt GMs from AFK tracking entirely
+                if (p->IsGameMaster())
+                {
+                    ClearAfkState(p);
+                    continue;
+                }
                 uint32 low = p->GetGUID().GetCounter();
                 bool wasAfk = _afkFlagged.count(low) > 0;
                 // movement-based check
@@ -892,23 +908,23 @@
                 {
                     if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
                     {
-                        itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r");
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
                     }
                     else if(limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
                     {
-                        itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has resources left!|r");
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
                     }
      
                     if(IS_RESOURCE_MESSAGE_A == true)
                     {
                         if(limit_A == 1)
                         {
-                            itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r");
+                            itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
                             IS_RESOURCE_MESSAGE_A = false; // Reset
                         }
                         else if(limit_A == 2)
                         {
-                            itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r");
+                            itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r").c_str());
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cffff0000For the HORDE!|r");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
@@ -932,12 +948,12 @@
                     {
                         if(limit_H == 1)
                         {
-                            itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has resources left!|r");
+                            itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
                             IS_RESOURCE_MESSAGE_H = false; // Reset
                         }
                         else if(limit_H == 2)
                         {
-                            itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r");
+                            itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r").c_str());
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
@@ -973,13 +989,13 @@
         uint32 h = GetResources(TEAM_HORDE);
 
         // Compose strings
-        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], "|cffffd700Hinterland BG status:|r");
+    sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "|cffffd700Hinterland BG status:|r").c_str());
         char line1[64];
         snprintf(line1, sizeof(line1), "  Time remaining: %02u:%02u", (unsigned)min, (unsigned)sec);
-        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line1);
+    sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line1)).c_str());
         char line2[96];
         snprintf(line2, sizeof(line2), "  Resources: |cff1e90ffAlliance|r=%u, |cffff0000Horde|r=%u", (unsigned)a, (unsigned)h);
-        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line2);
+    sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line2)).c_str());
 
         // Optional: log for server visibility
         LOG_DEBUG("misc", "[HLBG] Broadcast status: %02u:%02u A=%u H=%u", (unsigned)min, (unsigned)sec, (unsigned)a, (unsigned)h);
@@ -1033,7 +1049,7 @@
                     _ally_gathered -= PointsLoseOnPvPKill;
                     if (IsEligibleForRewards(player))
                     {
-                        if (GetAfkCount(player) >= 1)
+                        if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
                         {
                             Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
                         }
@@ -1048,7 +1064,7 @@
                     _horde_gathered -= PointsLoseOnPvPKill;
                     if (IsEligibleForRewards(player))
                     {
-                        if (GetAfkCount(player) >= 1)
+                        if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
                         {
                             Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
                         }

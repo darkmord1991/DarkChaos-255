@@ -126,6 +126,8 @@
             void NotePlayerMovement(Player* player);
             // Periodic status broadcast (matches .hlbg status output)
             void BroadcastStatusToZone();
+            // Chat cosmetics: clickable item link prefix for BG notifications
+            std::string GetBgChatPrefix() const;
 
         private:
             // helpers
