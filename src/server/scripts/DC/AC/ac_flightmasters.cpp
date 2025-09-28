@@ -89,6 +89,10 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             _started = true;
             _index = 0;
+            // Ensure we are in flying mode when starting the route
+            me->SetCanFly(true);
+            me->SetDisableGravity(true);
+            me->SetHover(true);
             if (Player* p = passenger ? passenger->ToPlayer() : nullptr)
                 ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat %d. Starting at acfm1.", (int)seatId);
             MoveToIndex(_index);
@@ -115,10 +119,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             // Reached a path node; continue to next or start landing sequence at the last
             if (_index + 1 < kPathLength)
             {
-                ++_index;
-                // Debug: announce waypoint reached to the passenger
+                uint8 arrivedIdx = _index; // index we just reached
+                _awaitingArrival = false;
+                ++_index; // move to next index
+                // Debug: announce waypoint reached to the passenger (human-friendly: acfm1..acfmN)
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Reached waypoint acfm%u.", (uint32)_index);
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Reached waypoint acfm%u.", (uint32)(arrivedIdx + 1));
                 MoveToIndex(_index);
             }
             else
@@ -131,14 +137,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
                 me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
                 // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
-                _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+                if (!_landingScheduled)
                 {
-                    if (!me->IsInWorld())
-                        return;
-                    if (Player* p = GetPassengerPlayer())
-                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
-                    DismountAndDespawn();
-                });
+                    _landingScheduled = true;
+                    _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+                    {
+                        if (!me->IsInWorld())
+                            return;
+                        if (Player* p = GetPassengerPlayer())
+                            ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                        DismountAndDespawn();
+                    });
+                }
             }
         }
     }
@@ -155,7 +165,14 @@ private:
     void MoveToIndex(uint8 idx)
     {
         _currentPointId = 10000u + idx; // unique id per node
+        // Reassert flying for each hop to avoid any gravity re-enabling from vehicle state changes
+        me->SetCanFly(true);
+        me->SetDisableGravity(true);
+        me->SetHover(true);
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
+        _awaitingArrival = true;
+        if (Player* p = GetPassengerPlayer())
+            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to acfm%u (idx %u).", (uint32)(idx + 1), (uint32)idx);
     }
 
     Player* GetPassengerPlayer() const
@@ -182,12 +199,14 @@ private:
                         ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
                 }
         }
-        me->DespawnOrUnsummon(2000);
+    me->DespawnOrUnsummon(2000);
     }
 
     uint8 _index = 0;
     uint32 _currentPointId = 0;
     bool _started = false;
+    bool _awaitingArrival = false;
+    bool _landingScheduled = false;
         TaskScheduler _scheduler;
     };
 // Script wrapper for the gryphon taxi AI
