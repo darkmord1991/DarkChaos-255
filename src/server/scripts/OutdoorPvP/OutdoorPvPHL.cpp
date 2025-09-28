@@ -465,26 +465,6 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             // Respawn logic for NPCs and game objects temporarily removed as requested.
     }
 
-    // Provide initial worldstates so clients see the HUD as soon as they load the zone
-void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
-{
-    // WG HUD only (DBC patched for WG frames in Hinterlands)
-    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
-
-    // GameTime returns Seconds; use .count()
-    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-    uint32 endEpoch = now + timeRemaining;
-
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
-
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, _horde_permanent_resources);
-}
 
     // Update worldstates (timer + resources) for a single player in Hinterland
     void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
