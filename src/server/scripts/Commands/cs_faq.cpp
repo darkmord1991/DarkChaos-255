@@ -7,6 +7,9 @@ using namespace Acore::ChatCommands;
 
 namespace
 {
+    // Forward declaration so it can be referenced by HandleFaqNoArg
+    static bool HandleFaqHelp(ChatHandler* handler, char const* args);
+
     inline Player* GetInvokerPlayer(ChatHandler* handler)
     {
         if (!handler)
