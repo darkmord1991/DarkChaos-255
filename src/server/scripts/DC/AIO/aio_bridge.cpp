@@ -21,6 +21,8 @@
 #include "Chat.h"
 #include "CommandScript.h"
 
+using namespace Acore::ChatCommands;
+
 // If Rochet2/AIO is installed server-side, define HAS_AIO in your CMake/toolchain
 // and ensure the include directory is set so the header below resolves.
 #ifdef HAS_AIO
