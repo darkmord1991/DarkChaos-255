@@ -161,6 +161,14 @@ public:
                     }).Schedule(4000ms, [this, player](TaskContext /*ctx*/)
                     {
                         me->Whisper("Do you see this Shrine? It is for more challenging experiences.", LANG_UNIVERSAL, player);
+                    }).Schedule(4500ms, [this](TaskContext /*ctx*/)
+                    {
+                        // Give a friendly wave just before despawn
+                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                    }).Schedule(5s, [this](TaskContext /*ctx*/)
+                    {
+                        // Despawn at current location 5 seconds after arriving at the last station
+                        me->DespawnOrUnsummon();
                     });
                 }
             }
