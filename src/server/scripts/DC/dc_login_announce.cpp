@@ -2,6 +2,7 @@
 #include "Chat.h"
 #include "Player.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include <array>
 #include <string>
 
@@ -53,7 +54,7 @@ public:
         else
             suffix = " - |cff0101DF[Alliance]|h|r has logged in.";
 
-    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, colored + suffix);
+    ChatHandler(nullptr).SendWorldText("%s", (colored + suffix).c_str());
     }
 
     void OnPlayerLogout(Player* player) override
@@ -66,7 +67,7 @@ public:
             tag = (player->GetTeamId(true) == TEAM_HORDE) ? "Horde" : "Alliance";
 
         std::string msg = "[" + player->GetName() + " - " + tag + "] has logged out.";
-    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
+    ChatHandler(nullptr).SendWorldText("%s", msg.c_str());
     }
 };
 
