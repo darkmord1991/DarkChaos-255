@@ -224,7 +224,7 @@
         // If player already in a raid group, nothing to do
         if (Group* g = plr->GetGroup())
         {
-            if (g->IsRaidGroup())
+            if (g->isRaidGroup())
                 return true;
         }
         // Maintain our own list of BG raids per team and enforce capacity
@@ -234,14 +234,14 @@
         vec.erase(std::remove_if(vec.begin(), vec.end(), [](ObjectGuid gguid)
         {
             Group* g = sGroupMgr->GetGroupByGUID(gguid.GetCounter());
-            return !g || !g->IsRaidGroup();
+            return !g || !g->isRaidGroup();
         }), vec.end());
         // Find non-full group
         Group* target = nullptr;
         for (ObjectGuid gid : vec)
         {
             Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-            if (g && g->IsRaidGroup() && g->GetMembersCount() < MAXRAIDSIZE)
+            if (g && g->isRaidGroup() && g->GetMembersCount() < MAXRAIDSIZE)
             {
                 target = g;
                 break;
@@ -249,17 +249,19 @@
         }
         if (!target)
         {
-            Group* g = new Group(true);
+            Group* g = new Group();
             if (!g->Create(plr))
             {
                 delete g;
                 return false;
             }
+            // Ensure the group is a raid
+            g->ConvertToRaid();
             sGroupMgr->AddGroup(g);
             _teamRaidGroups[tid].push_back(g->GetGUID());
             return true;
         }
-        target->AddMember(plr->GetGUID());
+        target->AddMember(plr);
         return true;
     }
 
@@ -315,7 +317,7 @@
              // If player was in one of our tracked battleground raid groups, remove them now
              if (Group* g = player->GetGroup())
              {
-                 if (g->IsRaidGroup())
+                 if (g->isRaidGroup())
                  {
                      ObjectGuid gid = g->GetGUID();
                      bool tracked = (std::find(_teamRaidGroups[TEAM_ALLIANCE].begin(), _teamRaidGroups[TEAM_ALLIANCE].end(), gid) != _teamRaidGroups[TEAM_ALLIANCE].end()) ||
@@ -522,7 +524,7 @@
                 for (ObjectGuid gid : _teamRaidGroups[tid])
                 {
                     Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                    if (!g || !g->IsRaidGroup())
+                    if (!g || !g->isRaidGroup())
                         continue;
                     for (auto const& slot : g->GetMemberSlots())
                     {
@@ -550,7 +552,7 @@
                     for (ObjectGuid gid : _teamRaidGroups[tid])
                     {
                         Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                        if (!g || !g->IsRaidGroup())
+                        if (!g || !g->isRaidGroup())
                             continue;
                         if (g->IsMember(kv.first))
                         {
@@ -575,7 +577,7 @@
             for (auto it = vec.begin(); it != vec.end();)
             {
                 Group* g = sGroupMgr->GetGroupByGUID(it->GetCounter());
-                if (!g || !g->IsRaidGroup() || g->GetMembersCount() == 0)
+                if (!g || !g->isRaidGroup() || g->GetMembersCount() == 0)
                 {
                     // Disband group if it still exists to avoid leaving empty raids hanging around
                     if (g)
