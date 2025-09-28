@@ -53,7 +53,7 @@ public:
         else
             suffix = " - |cff0101DF[Alliance]|h|r has logged in.";
 
-        sWorld->SendServerMessage(SERVER_MSG_STRING, (colored + suffix).c_str());
+    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, colored + suffix);
     }
 
     void OnPlayerLogout(Player* player) override
@@ -66,7 +66,7 @@ public:
             tag = (player->GetTeamId(true) == TEAM_HORDE) ? "Horde" : "Alliance";
 
         std::string msg = "[" + player->GetName() + " - " + tag + "] has logged out.";
-        sWorld->SendServerMessage(SERVER_MSG_STRING, msg.c_str());
+    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
     }
 };
 
