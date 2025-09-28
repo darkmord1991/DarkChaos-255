@@ -1,11 +1,22 @@
 /*
-    .__      .___.                
-    [__)  .    |   _ ._ _ ._ _   .
-    [__)\_|    |  (_)[ | )[ | )\_|
-            ._|                    ._|
+        .__      .___.                
+        [__)  .    |   _ ._ _ ._ _   .
+        [__)\_|    |  (_)[ | )[ | )\_|
+                        ._|                    ._|
 
-            Was for Omni-WoW
-            Now: Released - 5/4/2012
+        Hinterland BG (OutdoorPvP HL)
+        ------------------------------
+        - Max-level gate: under-max players are teleported to capitals with a whisper.
+        - Join UX: colored welcome + current standing as whispers; no zone broadcast on join.
+        - HUD: Wintergrasp worldstates for SHOW/context/timer/resources with periodic refresh.
+        - Timer: 60-minute match window with absolute end time.
+        - Broadcasts: zone-wide status every 60s (time/resources), branded with an item-link prefix.
+        - AFK/deserter: deserters get no rewards; AFK warn at 120s, action at 180s; any AFK infraction
+            denies rewards; first AFK teleports to start GY, repeat AFK teleports to capital; GMs exempt.
+        - Groups: per-faction BG-like raids, prune empties/offline; when raids shrink from 2→1, keep
+            the remaining player in a new raid to avoid losing BG context.
+        - Reset helper: teleports all in-zone players to their team start graveyards and refreshes HUD.
+        - Diagnostics: logs around a ~60s empty-zone window to help verify NPC presence after emptiness.
 */
     #include "OutdoorPvPHL.h"
     #include "Player.h"
@@ -138,11 +149,11 @@
     {
         if (!player)
             return false;
-        // Deserters or players flagged AFK do not get rewards
+        // Deserters do not get rewards. AFK denial is handled in reward sites (kills/end) to allow GM exemptions.
         static constexpr uint32 BG_DESERTER_SPELL = 26013; // "Deserter"
         if (player->HasAura(BG_DESERTER_SPELL))
             return false;
-        // AFK is handled with reduction/teleport policy outside this check
+        // AFK denial handled separately so we can consider GM mode.
         return true;
     }
 

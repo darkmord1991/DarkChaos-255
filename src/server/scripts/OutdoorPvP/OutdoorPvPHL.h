@@ -29,6 +29,64 @@
 
     using namespace std;
 
+    /*
+     * Hinterland BG — Feature Overview (2025-09-28)
+     * ------------------------------------------------
+     * Core gameplay and systems implemented by this OutdoorPvP script:
+     * - Participation gate:
+     *   - Only max-level players can join; under-max are teleported to capitals
+     *     (Alliance → Stormwind, Horde → Orgrimmar) with a whisper.
+     * - Joiner UX:
+     *   - Private whisper on zone enter with a gold welcome and the current standing
+     *     (Alliance/Horde resources, colored names).
+     * - Worldstate HUD (Wintergrasp-style):
+     *   - Sends required WG worldstates (SHOW, ACTIVE, ATTACKER/DEFENDER, CONTROL, ICON_ACTIVE,
+     *     CLOCK, CLOCK_TEXTS, VEHICLE counters as resources, MAX values) and refreshes periodically
+     *     to keep timer/resources visible in Hinterlands.
+     * - Match window:
+     *   - 60-minute duration tracked as an absolute end time for the clock; resets set a new window.
+     * - Status broadcasting:
+     *   - Zone-wide status broadcast every 60s matches the .hlbg status: time remaining and resources.
+     *   - Messages are branded with a clickable battleground-style item link prefix
+     *     (GetBgChatPrefix) for consistent chat visuals.
+     * - AFK/deserter policy:
+     *   - Deserters receive no rewards.
+     *   - Movement- and /afk-based detection; warn after 120s idle, action at 180s.
+     *   - First AFK infraction: no rewards and teleport to team start graveyard; repeated AFK:
+     *     teleport to capital; all AFKs deny rewards. GMs are exempt from AFK checks and penalties.
+     * - Group management (BG-like raids):
+     *   - Auto-create/join per-faction raids, track and prune groups, remove offline >45s,
+     *     disband empties. When a 2-person raid becomes 1, keep the remaining player in a new
+     *     raid so they are not dropped from BG context.
+     * - Reset/teleport helpers:
+     *   - .hlbg reset forces a reset, updates HUD, and teleports all in-zone players to their
+     *     nearest team graveyard (start points), with a zone-wide confirmation.
+     * - Resource thresholds and alerts:
+     *   - Emote-style notices at 300/200/100 and when a side hits 50 and 0; win shouts are colored.
+     * - Diagnostics for NPCs missing after empty zone:
+     *   - When zone empties, start a ~60s timer and log; on first join after that window, log a
+     *     reminder to verify NPC presence.
+     *
+     * Enhancements / TODO
+     * --------------------
+     * 1) Configurables in worldserver.conf:
+     *    - AFK warn/action thresholds; match duration; enable/disable periodic status broadcasts.
+     * 2) HUD alternatives:
+     *    - Option to switch to AB-style resource worldstates if WG HUD ever conflicts on clients.
+     * 3) Messaging:
+     *    - Localize messages; make item link and colors configurable; optional prefix in whispers.
+     * 4) Teleports:
+     *    - Move capital/start coordinates to config or DB; optional flight path to starts.
+     * 5) Rewards:
+     *    - Balance values, add configurable reward tables, add draw/tie logic customization.
+     * 6) Admin/ops:
+     *    - Add commands to toggle AFK gating, pause timer, or force HUD refresh.
+     * 7) Observability:
+     *    - Add metrics/counters (joins, AFKs, resets, wins) and structured logs.
+     * 8) Tests:
+     *    - Scripted unit-style tests for timers and state transitions where possible.
+     */
+
     const uint8 PointsLoseOnPvPKill = 5;
     
     const uint8 OutdoorPvPHLBuffZonesNum = 1;
