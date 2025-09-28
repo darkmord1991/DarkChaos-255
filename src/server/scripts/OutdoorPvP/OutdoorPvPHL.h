@@ -1,4 +1,3 @@
-
 /*
 ================================================================================
         OutdoorPvPHL.h - Header for Hinterland Outdoor PvP Battleground (zone 47)
@@ -107,8 +106,12 @@
     };
 
 /* OutdoorPvPHL Related */
-    class OutdoorPvPHL : public OutdoorPvP {
-    private:
+    // Forward declare the packet type to avoid a heavy include here.
+namespace WorldPackets { namespace WorldState { class InitWorldStates; } }
+
+class OutdoorPvPHL : public OutdoorPvP
+{
+private:
         // Resource counters for each team
         uint32 _ally_gathered;
         uint32 _horde_gathered;
@@ -161,7 +164,7 @@
     bool Update(uint32 diff) override;
 
     // Initialize worldstates (called during SendInitWorldStates). Ensures HUD appears for players entering the zone.
-    void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
+    void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) const override;
 
     // Plays victory/defeat sounds for all players in the zone (winner indicates which team won)
     void PlaySounds(TeamId winner);
