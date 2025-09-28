@@ -276,27 +276,20 @@
                 break;
             }
         }
-                    // Toggle SHOW to force HUD redraw
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+        if (!target)
         {
             Group* g = new Group();
             if (!g->Create(plr))
-                    // Provide WG context first
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
             {
                 delete g;
                 return false;
-                    // Then resources (repurposed as "vehicle" counters)
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
-                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, GetResources(TEAM_ALLIANCE));
+            }
             g->ConvertToRaid();
             sGroupMgr->AddGroup(g);
             _teamRaidGroups[tid].push_back(g->GetGUID());
+            return true;
+        }
+        target->AddMember(plr);
         return true;
     }
 
