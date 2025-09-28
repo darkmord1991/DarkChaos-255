@@ -25,7 +25,7 @@ namespace
 
     static std::string MakeClassColoredName(Player* player)
     {
-        uint8 cls = player->GetClass();
+    uint8 cls = player->getClass();
         char const* hex = (cls < kClassHex.size() && kClassHex[cls] && *kClassHex[cls]) ? kClassHex[cls] : "FFFFFF";
         // |cffHEX|Hplayer:|h [Name]|h|r
         std::string out = "|cff";
