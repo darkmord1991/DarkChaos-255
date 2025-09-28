@@ -24,6 +24,8 @@
     #include <unordered_map>
     #include <unordered_set>
     #include <string>
+    #include <vector>
+    #include <map>
 
     using namespace std;
 
@@ -39,6 +41,8 @@
 
     const uint32 HL_RESOURCES_A         = 450;
     const uint32 HL_RESOURCES_H         = 450;
+    // Default match duration used for the status timer (in seconds)
+    static constexpr uint32 HL_MATCH_DURATION_SECONDS = 30u * 60u;
 
     enum Sounds
     {
@@ -102,6 +106,24 @@
             /* Sounds */
             void PlaySounds(bool side);
 
+            // Admin/inspection helpers used by commands
+            uint32 GetTimeRemainingSeconds() const; // returns 0 if no timer is tracked
+            uint32 GetResources(TeamId team) const;
+            void SetResources(TeamId team, uint32 amount);
+            std::vector<ObjectGuid> GetBattlegroundGroupGUIDs(TeamId team) const;
+            void ForceReset();
+            void TeleportPlayersToStart();
+
+            // Worldstate HUD helpers (timer/resources like Wintergrasp/AB-style)
+            void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
+            void UpdateWorldStatesForPlayer(Player* player);
+            void UpdateWorldStatesAllPlayers();
+
+            // Group auto-invite helpers (battleground-like raid management)
+            bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
+            // Movement tracking API used by movement handler
+            void NotePlayerMovement(Player* player);
+
         private:
             // helpers
             bool IsMaxLevel(Player* player) const;
@@ -115,6 +137,7 @@
             uint32 _ally_gathered;
             uint32 _horde_gathered;
             uint32 _LastWin;
+            uint32 _matchEndTime; // absolute epoch seconds when match ends (for status timer)
             bool IS_ABLE_TO_SHOW_MESSAGE;
             bool IS_RESOURCE_MESSAGE_A;
             bool IS_RESOURCE_MESSAGE_H;
@@ -128,5 +151,13 @@
         uint32 _afkCheckTimerMs;
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
+            // Movement-based AFK tracking
+            std::map<ObjectGuid, uint32> _playerLastMove; // ms since start
+            std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
+            std::map<ObjectGuid, Position> _playerLastPos;
+            // Group management: track battleground raid groups per faction
+            std::vector<ObjectGuid> _teamRaidGroups[2];
+        // Track when a member of a tracked raid group went offline (epoch seconds)
+        std::map<ObjectGuid, uint32> _memberOfflineSince;
     };
     #endif

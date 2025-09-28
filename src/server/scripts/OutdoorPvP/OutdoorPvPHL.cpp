@@ -10,6 +10,7 @@
     #include "OutdoorPvPHL.h"
     #include "Player.h"
     #include "OutdoorPvP.h"
+    #include "OutdoorPvPMgr.h"
     #include "World.h"
     #include "WorldPacket.h"
     #include "OutdoorPvPScript.h"
@@ -18,16 +19,24 @@
     #include "WorldSessionMgr.h"
     #include "Chat.h"
     #include "ObjectMgr.h"
+    #include "ObjectAccessor.h"
     #include "DBCStores.h"
     #include "WorldSafeLocsMgr.h"
     
+    #include "GroupMgr.h"
+    #include "MapMgr.h"
+    #include "ScriptDefines/MovementHandlerScript.h"
+    #include <algorithm>
+    #include <cmath>
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
         _typeId = OUTDOOR_PVP_HL;
-        
+
         _ally_gathered = HL_RESOURCES_A;
         _horde_gathered = HL_RESOURCES_H;
+        _LastWin = 0;
+        _matchEndTime = 0;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
@@ -37,21 +46,49 @@
 
         limit_A = 0;
         limit_H = 0;
-
-        _LastWin = 0;
-
         limit_resources_message_A = 0;
         limit_resources_message_H = 0;
+
         _playersInZone = 0;
         _npcCheckTimerMs = 0;
-        _afkCheckTimerMs = 2000; // poll AFK edge every 2s
+        _afkCheckTimerMs = 0;
+            _memberOfflineSince.clear();
+
+    // Initialize the WG-like HUD states when a client first loads the worldstates
+    void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
+    {
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_SHOW, 1);
+        uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_CLOCK, endEpoch);
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_CLOCK_TEXTS, endEpoch);
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_VEHICLE_H, GetResources(TEAM_HORDE));
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_VEHICLE_A, GetResources(TEAM_ALLIANCE));
+        packet.Worldstates.emplace_back(WS_WINTERGRASP_MAX_VEHICLE, std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE)));
     }
 
-    bool OutdoorPvPHL::SetupOutdoorPvP()
+    void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
     {
-        for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
-            RegisterZone(OutdoorPvPHLBuffZones[i]);
-        return true;
+        if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+            return;
+        player->SendUpdateWorldState(WS_WINTERGRASP_SHOW, 1);
+        uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
+        player->SendUpdateWorldState(WS_WINTERGRASP_CLOCK, endEpoch);
+        player->SendUpdateWorldState(WS_WINTERGRASP_CLOCK_TEXTS, endEpoch);
+        player->SendUpdateWorldState(WS_WINTERGRASP_VEHICLE_H, GetResources(TEAM_HORDE));
+        player->SendUpdateWorldState(WS_WINTERGRASP_VEHICLE_A, GetResources(TEAM_ALLIANCE));
+        player->SendUpdateWorldState(WS_WINTERGRASP_MAX_VEHICLE, std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE)));
+    }
+
+    void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
+    {
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (auto const& it : sessionMap)
+        {
+            Player* p = it.second ? it.second->GetPlayer() : nullptr;
+            if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
+                continue;
+            UpdateWorldStatesForPlayer(p);
+        }
     }
 
     // small helper impls
@@ -91,6 +128,61 @@
         uint32 low = player->GetGUID().GetCounter();
         auto it = _afkInfractions.find(low);
         if (it == _afkInfractions.end())
+            // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
+            {
+                uint32 nowSec = sWorld->GetGameTime();
+                // Mark newly offline members & clear marks for those who returned
+                for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+                {
+                    for (ObjectGuid gid : _teamRaidGroups[tid])
+                    {
+                        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                        if (!g || !g->IsRaidGroup())
+                            continue;
+                        for (auto const& slot : g->GetMemberSlots())
+                        {
+                            Player* m = ObjectAccessor::FindPlayer(slot.guid);
+                            if (m && m->IsInWorld())
+                            {
+                                _memberOfflineSince.erase(slot.guid);
+                            }
+                            else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
+                            {
+                                _memberOfflineSince[slot.guid] = nowSec; // first seen offline
+                            }
+                        }
+                    }
+                }
+                // Collect removals
+                static constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
+                std::vector<std::pair<ObjectGuid/*group*/, ObjectGuid/*member*/>> offlineRemovals;
+                for (auto const& kv : _memberOfflineSince)
+                {
+                    if (nowSec - kv.second < HL_OFFLINE_GRACE_SECONDS)
+                        continue;
+                    for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+                    {
+                        for (ObjectGuid gid : _teamRaidGroups[tid])
+                        {
+                            Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                            if (!g || !g->IsRaidGroup())
+                                continue;
+                            if (g->IsMember(kv.first))
+                            {
+                                offlineRemovals.emplace_back(gid, kv.first);
+                                break;
+                            }
+                        }
+                    }
+                }
+                for (auto const& rem : offlineRemovals)
+                {
+                    if (Group* g = sGroupMgr->GetGroupByGUID(rem.first.GetCounter()))
+                        g->RemoveMember(rem.second);
+                    _memberOfflineSince.erase(rem.second);
+                }
+            }
+
             return 0;
         return it->second;
     }
@@ -129,6 +221,96 @@
         }
     }
 
+    // --- Admin/inspection helpers ---
+    uint32 OutdoorPvPHL::GetTimeRemainingSeconds() const
+    {
+        if (_matchEndTime == 0)
+            return 0u;
+        uint32 now = sWorld->GetGameTime();
+        if (now >= _matchEndTime)
+            return 0u;
+        return _matchEndTime - now;
+    }
+
+    uint32 OutdoorPvPHL::GetResources(TeamId team) const
+    {
+        return (team == TEAM_ALLIANCE) ? _ally_gathered : _horde_gathered;
+    }
+
+    void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)
+    {
+        if (team == TEAM_ALLIANCE)
+            _ally_gathered = amount;
+        else
+            _horde_gathered = amount;
+    }
+
+    
+    std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
+    {
+        if (team > TEAM_HORDE)
+            return {};
+        return _teamRaidGroups[team];
+    }
+
+    void OutdoorPvPHL::ForceReset()
+    {
+        HandleReset();
+    }
+
+    void OutdoorPvPHL::TeleportPlayersToStart()
+    {
+        // No-op placeholder; can be implemented to move players to start positions if needed.
+    }
+
+    bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
+    {
+        if (!plr)
+            return false;
+        if (plr->GetZoneId() != OutdoorPvPHLBuffZones[0])
+            return false;
+        // If player already in a raid group, nothing to do
+        if (Group* g = plr->GetGroup())
+        {
+            if (g->IsRaidGroup())
+                return true;
+        }
+        // Maintain our own list of BG raids per team and enforce capacity
+        TeamId tid = plr->GetTeamId();
+        // Clean dead groups
+        auto& vec = _teamRaidGroups[tid];
+        vec.erase(std::remove_if(vec.begin(), vec.end(), [](ObjectGuid gguid)
+        {
+            Group* g = sGroupMgr->GetGroupByGUID(gguid.GetCounter());
+            return !g || !g->IsRaidGroup();
+        }), vec.end());
+        // Find non-full group
+        Group* target = nullptr;
+        for (ObjectGuid gid : vec)
+        {
+            Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+            if (g && g->IsRaidGroup() && g->GetMembersCount() < MAXRAIDSIZE)
+            {
+                target = g;
+                break;
+            }
+        }
+        if (!target)
+        {
+            Group* g = new Group(true);
+            if (!g->Create(plr))
+            {
+                delete g;
+                return false;
+            }
+            sGroupMgr->AddGroup(g);
+            _teamRaidGroups[tid].push_back(g->GetGUID());
+            return true;
+        }
+        target->AddMember(plr->GetGUID());
+        return true;
+    }
+
     void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     {
         // Max level gate
@@ -145,9 +327,19 @@
         Whisper(player, "Welcome to Hinterland BG!");
         Whisper(player, "Current standing — Alliance: " + std::to_string(_ally_gathered) + ", Horde: " + std::to_string(_horde_gathered) + ".");
 
-        ++_playersInZone;
+    ++_playersInZone;
         // entering the zone clears AFK flagged edge state
-        _afkFlagged.erase(player->GetGUID().GetCounter());
+    _afkFlagged.erase(player->GetGUID().GetCounter());
+    // seed last-move trackers
+    _playerLastMove[player->GetGUID()] = sWorld->GetGameTime();
+    _playerWarnedBeforeTeleport[player->GetGUID()] = false;
+    _playerLastPos[player->GetGUID()] = player->GetPosition();
+
+        // Auto-invite into faction battleground-raid if available
+        AddOrSetPlayerToCorrectBfGroup(player);
+
+        // Seed HUD worldstates for the player entering
+        UpdateWorldStatesForPlayer(player);
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
@@ -162,7 +354,59 @@
          }
          // clear AFK tracking on leave
          ClearAfkState(player);
+         if (player)
+         {
+             _playerLastMove.erase(player->GetGUID());
+             _playerWarnedBeforeTeleport.erase(player->GetGUID());
+             _playerLastPos.erase(player->GetGUID());
+
+             // If player was in one of our tracked battleground raid groups, remove them now
+             if (Group* g = player->GetGroup())
+             {
+                 if (g->IsRaidGroup())
+                 {
+                     ObjectGuid gid = g->GetGUID();
+                     bool tracked = (std::find(_teamRaidGroups[TEAM_ALLIANCE].begin(), _teamRaidGroups[TEAM_ALLIANCE].end(), gid) != _teamRaidGroups[TEAM_ALLIANCE].end()) ||
+                                    (std::find(_teamRaidGroups[TEAM_HORDE].begin(), _teamRaidGroups[TEAM_HORDE].end(), gid) != _teamRaidGroups[TEAM_HORDE].end());
+                     if (tracked)
+                     {
+                         // Remove this player from the raid
+                         g->RemoveMember(player->GetGUID());
+                         // If empty afterwards, disband immediately and untrack
+                         if (g->GetMembersCount() == 0)
+                         {
+                             g->Disband(true /*hideDestroy*/);
+                             for (auto& vec : _teamRaidGroups)
+                             {
+                                 vec.erase(std::remove(vec.begin(), vec.end(), gid), vec.end());
+                             }
+                         }
+                     }
+                 }
+             }
+         }
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
+    }
+
+    void OutdoorPvPHL::NotePlayerMovement(Player* player)
+    {
+        if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+            return;
+        // Update last move time on any movement that meaningfully changes position
+        Position const& cur = player->GetPosition();
+        Position& last = _playerLastPos[player->GetGUID()];
+        float dx = last.GetPositionX() - cur.GetPositionX();
+        float dy = last.GetPositionY() - cur.GetPositionY();
+        float dz = last.GetPositionZ() - cur.GetPositionZ();
+        float dist2d = std::sqrt(dx*dx + dy*dy);
+        if (dist2d > 0.5f || std::fabs(dz) > 0.5f)
+        {
+            _playerLastMove[player->GetGUID()] = sWorld->GetGameTime();
+            _playerWarnedBeforeTeleport[player->GetGUID()] = false; // reset warn once they move
+            last = cur;
+            // If previously flagged AFK due to inactivity, clear the edge flag so next AFK is a new infraction only when idle again
+            _afkFlagged.erase(player->GetGUID().GetCounter());
+        }
     }
 
     void OutdoorPvPHL::HandleWinMessage(const char* message)
@@ -209,6 +453,8 @@
         limit_resources_message_A = 0;
         limit_resources_message_H = 0;
 
+        // seed a fresh timer window from now
+        _matchEndTime = sWorld->GetGameTime() + HL_MATCH_DURATION_SECONDS;
         //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     }
@@ -235,8 +481,8 @@
             return;
         }
         uint32 amount = honorpointsorarena;
-        // If currently AFK: half rewards for first AFK, none on second or more
-        if (player && player->isAFK())
+        // Apply AFK reward policy based on infraction count (movement or chat-based)
+        if (player)
         {
             uint8 count = GetAfkCount(player);
             if (count >= 2)
@@ -273,6 +519,10 @@
         HandleWinMessage(msg);
     }
 
+    // Movement-based AFK thresholds (in seconds)
+    static constexpr uint32 HL_AFK_WARN_SECONDS = 60;      // warn after 60s idle
+    static constexpr uint32 HL_AFK_TELEPORT_SECONDS = 90;  // act after 90s idle
+
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
@@ -293,6 +543,8 @@
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
             }
                 
+            if (_matchEndTime == 0)
+                _matchEndTime = sWorld->GetGameTime() + HL_MATCH_DURATION_SECONDS;
             _FirstLoad = true;
         }
 
@@ -309,7 +561,28 @@
                 _npcCheckTimerMs -= diff;
         }
 
-        // Edge-based AFK tracking: detect transitions to AFK and apply policy
+        // Stricter group lifecycle: remove empty raid groups promptly
+        for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+        {
+            auto& vec = _teamRaidGroups[tid];
+            for (auto it = vec.begin(); it != vec.end();)
+            {
+                Group* g = sGroupMgr->GetGroupByGUID(it->GetCounter());
+                if (!g || !g->IsRaidGroup() || g->GetMembersCount() == 0)
+                {
+                    // Disband group if it still exists to avoid leaving empty raids hanging around
+                    if (g)
+                        g->Disband(true /*hideDestroy*/);
+                    it = vec.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+        }
+
+        // AFK tracking (movement-based + chat /afk): detect transitions and apply policy
         if (_afkCheckTimerMs <= diff)
         {
             _afkCheckTimerMs = 2000;
@@ -320,27 +593,64 @@
                 if (!p || !p->IsInWorld() || p->GetZoneId() != 47)
                     continue;
                 uint32 low = p->GetGUID().GetCounter();
-                bool nowAfk = p->isAFK();
                 bool wasAfk = _afkFlagged.count(low) > 0;
-                if (nowAfk && !wasAfk)
+                // movement-based check
+                uint32 nowSec = sWorld->GetGameTime();
+                auto itLast = _playerLastMove.find(p->GetGUID());
+                if (itLast == _playerLastMove.end())
                 {
-                    // Transitioned into AFK
+                    _playerLastMove[p->GetGUID()] = nowSec;
+                    _playerWarnedBeforeTeleport[p->GetGUID()] = false;
+                    _playerLastPos[p->GetGUID()] = p->GetPosition();
+                }
+                uint32 idleSec = nowSec - _playerLastMove[p->GetGUID()];
+                if (idleSec >= HL_AFK_TELEPORT_SECONDS)
+                {
+                    if (!wasAfk)
+                    {
+                        _afkFlagged.insert(low);
+                        IncrementAfk(p);
+                        uint8 count = GetAfkCount(p);
+                        if (count == 1)
+                        {
+                            Whisper(p, "AFK detected due to inactivity. You receive half rewards. You'll be moved back to the starting area.");
+                            if (WorldSafeLocsEntry const* loc = sObjectMgr->GetClosestGraveyard(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ(), p->GetMapId(), p->GetTeamId()))
+                                p->TeleportTo(loc->MapID, loc->x, loc->y, loc->z, p->GetOrientation());
+                        }
+                        else if (count >= 2)
+                        {
+                            Whisper(p, "Repeated AFK detected. You will be teleported to your capital and will not receive rewards anymore.");
+                            TeleportToCapital(p);
+                        }
+                    }
+                }
+                else if (idleSec >= HL_AFK_WARN_SECONDS)
+                {
+                    if (!_playerWarnedBeforeTeleport[p->GetGUID()])
+                    {
+                        uint32 secondsLeft = HL_AFK_TELEPORT_SECONDS - idleSec;
+                        Whisper(p, "You seem AFK. Move now or you'll be teleported in " + std::to_string(secondsLeft) + "s.");
+                        _playerWarnedBeforeTeleport[p->GetGUID()] = true;
+                    }
+                }
+
+                // chat-based /afk edge tracking for those who manually toggle (kept for parity)
+                bool nowAfkChat = p->isAFK();
+                if (nowAfkChat && !wasAfk)
+                {
                     _afkFlagged.insert(low);
                     IncrementAfk(p);
                     uint8 count = GetAfkCount(p);
                     if (count == 1)
-                    {
-                        Whisper(p, "AFK detected. While AFK you receive half rewards. A second AFK will forfeit all rewards and teleport you to your capital.");
-                    }
+                        Whisper(p, "AFK detected. While AFK you receive half rewards. A second AFK will teleport you to your capital and forfeit rewards.");
                     else if (count >= 2)
                     {
                         Whisper(p, "Repeated AFK detected. You will be teleported to your capital and will not receive rewards anymore.");
                         TeleportToCapital(p);
                     }
                 }
-                else if (!nowAfk && wasAfk)
+                else if (!nowAfkChat && wasAfk)
                 {
-                    // Cleared AFK
                     _afkFlagged.erase(low);
                 }
             }
@@ -682,8 +992,27 @@
         }
     };
 
+    // Movement hook to feed movement-based AFK tracking
+    class HLMovementHandlerScript : public MovementHandlerScript
+    {
+    public:
+        HLMovementHandlerScript() : MovementHandlerScript("hl_movement_handler", { MOVEMENTHOOK_ON_PLAYER_MOVE }) {}
+
+        void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
+        {
+            if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+                return;
+            if (OutdoorPvP* pvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+            {
+                if (auto* hl = dynamic_cast<OutdoorPvPHL*>(pvp))
+                    hl->NotePlayerMovement(player);
+            }
+        }
+    };
+
      
     void AddSC_outdoorpvp_hl()
     {
         new OutdoorPvP_hinterland;
+        new HLMovementHandlerScript();
 	}
