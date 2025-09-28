@@ -57,6 +57,17 @@
 
     }
 
+    OutdoorPvPHL::~OutdoorPvPHL() = default;
+
+    // Basic OutdoorPvP setup: register managed zones and derive the map id from the zone
+    bool OutdoorPvPHL::SetupOutdoorPvP()
+    {
+        for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
+            RegisterZone(OutdoorPvPHLBuffZones[i]);
+        SetMapFromZone(OutdoorPvPHLBuffZones[0]);
+        return true;
+    }
+
     // Initialize the WG-like HUD states when a client first loads the worldstates
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
     {

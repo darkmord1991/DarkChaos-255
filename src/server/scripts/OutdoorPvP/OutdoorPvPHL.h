@@ -71,6 +71,7 @@
     {
         public:            
             OutdoorPvPHL();
+            ~OutdoorPvPHL() override; // ensure key function for vtable emission
 
             bool SetupOutdoorPvP() override;
 
