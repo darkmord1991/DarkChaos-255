@@ -152,6 +152,7 @@
             int32 _playersInZone;
         uint32 _npcCheckTimerMs;
         uint32 _afkCheckTimerMs;
+    uint32 _hudRefreshTimerMs;
         uint32 _statusBroadcastTimerMs;
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)

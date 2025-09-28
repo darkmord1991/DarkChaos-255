@@ -53,6 +53,7 @@
         _playersInZone = 0;
         _npcCheckTimerMs = 0;
         _afkCheckTimerMs = 0;
+    _hudRefreshTimerMs = 0;
         _statusBroadcastTimerMs = 0;
         _memberOfflineSince.clear();
 
@@ -81,12 +82,13 @@
         uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
-        // Ensure unrelated Wintergrasp map control/icon states are hidden in Hinterlands
+        // Provide WG context so the client renders the HUD: wartime + both teams
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0); // 0 during wartime (per WG implementation)
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
+        // Some clients require CONTROL and ICON_ACTIVE to be present for full HUD render
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
-        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
-        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, 0);
-        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, 0);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
@@ -102,12 +104,13 @@
         uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
-        // Hide Wintergrasp control/icon states for this player while in Hinterlands
+        // Provide WG context so the client renders the HUD: wartime + both teams
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
+        // Include CONTROL and ICON states to match WG expectations
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, 0);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, 0);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
@@ -273,21 +276,27 @@
                 break;
             }
         }
-        if (!target)
+                    // Toggle SHOW to force HUD redraw
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
         {
             Group* g = new Group();
             if (!g->Create(plr))
+                    // Provide WG context first
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
             {
                 delete g;
                 return false;
-            }
-            // Ensure the group is a raid
+                    // Then resources (repurposed as "vehicle" counters)
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
+                    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, GetResources(TEAM_ALLIANCE));
             g->ConvertToRaid();
             sGroupMgr->AddGroup(g);
             _teamRaidGroups[tid].push_back(g->GetGUID());
-            return true;
-        }
-        target->AddMember(plr);
         return true;
     }
 
@@ -696,6 +705,20 @@
         else
         {
             _afkCheckTimerMs -= diff;
+        }
+
+        // Periodic HUD refresh to keep timer/resources visible (every 10s)
+        if (_playersInZone > 0)
+        {
+            if (_hudRefreshTimerMs <= diff)
+            {
+                UpdateWorldStatesAllPlayers();
+                _hudRefreshTimerMs = 10 * IN_MILLISECONDS;
+            }
+            else
+            {
+                _hudRefreshTimerMs -= diff;
+            }
         }
 
         // Periodic status broadcast (every 60s) only if there are players in the zone
