@@ -1,42 +1,122 @@
 /*
 ================================================================================
-  OutdoorPvPHL.cpp — Hinterland Outdoor PvP (zone 47)
+// Forward declaration: the player movement script registration function is
+// defined later in this file. Declare it here so AddSC_outdoorpvp_hl can call
+// it without requiring the function to be defined earlier in the translation
+// unit.
+static void RegisterOutdoorPvPHLPlayerMoveScript();
+
+                OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
 ================================================================================
 
-Overview
---------
-Open-world Alliance vs Horde battleground for Hinterlands (zone 47):
-- Auto-group players into battleground-style raid groups per faction.
-- Resource scoring with thresholds → warnings, sounds, and win/lose.
-- AFK handling via movement hook (warn, then teleport to start, exclude from rewards).
-- WG-style HUD only (client DBC patched): show, clock, resources; control forced neutral.
-- Periodic zone announcements and per-player worldstate updates.
-
-Latest changes
---------------
-- Switched HUD to Wintergrasp worldstates only; removed SA/AB worldstates.
-- HUD timer now uses absolute end time on both WG clock states for correct “Time left”.
-- Control indicator is forced neutral to avoid tie ambiguity; resources are authoritative.
-- Added safe PlayerTextEmoteFmt, AFK stamping on movement, and resource clamping.
-- Extended reset path to hide WG HUD and clear AFK/deserter exclusions.
-
-Notes & safety
---------------
-- Resource counters are clamped to avoid unsigned wraparound.
-- Teleports are guarded by basic liveness checks; more guards can be added.
-- Group management prefers battleground-raid groups and ignores unrelated groups.
-
-Roadmap (nice-to-have)
-----------------------
-- Deterministic tiebreaker (e.g., last kill time) for exact resource ties.
-- Configurable rewards on draw (none/split/both) and tunable timers/thresholds.
-- Optional audit logging for admin commands; lightweight unit tests for counters/timer.
-
-Testing
+Purpose
 -------
-- Use `.hlbg status/get/set/reset` and watch zone 47 while starting/ending matches.
-- Verify WG HUD shows with correct countdown and resource bars; SA/AB elements absent.
+Implements a persistent, zone-wide Alliance vs Horde open-world battleground for
+Hinterland (default zone id 47). Responsibilities include automatic battleground
+raid-group management, a simple resource-scoring system, periodic status
+announcements, AFK detection and handling, award/buff distribution, and basic
+teleportation and end-of-match logic.
 
+Recent notable changes (developer summary)
+------------------------------------------
+- Replaced unsafe printf-style calls with a safe PlayerTextEmoteFmt helper.
+- Centralized configuration constants (timers, thresholds) near the top of the file.
+- Added AFK movement tracking using a PlayerScript movement hook and
+    `TouchPlayerLastMove(ObjectGuid)` so we can reliably warn and teleport idle players.
+- Prevented unsigned underflow on resource counters (`ClampResources`).
+- Split `Update()` into focused helpers: `ProcessMatchTimer`,
+    `ProcessPeriodicMessage`, `ProcessAFK`, `CheckResourceThresholds`,
+    `BroadcastResourceMessages`, and `ClampResourceCounters` for easier maintenance.
+- Distinct victory/defeat sounds are played for winners/losers via `PlaySounds`.
+- Added automatic creation of multiple battleground raid groups per faction
+    when existing raid groups reach server-side limits (logged via `LOG_INFO`).
+
+High-level feature overview
+---------------------------
+- Auto-grouping / raid creation: players entering the zone are auto-added into
+    battleground-style raid groups for their faction. New groups are created when
+    current groups fill (e.g. 40 players).
+- Resource scoring: each faction has a resource counter. Player/NPC deaths reduce
+    the counter; hit thresholds cause announcements, warnings, and eventual loss.
+- Periodic announcements: every `MESSAGE_INTERVAL_MS` the script broadcasts
+    resource and approximate player counts, and time-left information.
+- AFK handling: players idle for `AFK_TIMEOUT_MS` are warned and then
+    teleported to a safe start location to prevent camping/griefing.
+- Rewards: winners receive honor/arena point gains, buffs, and item rewards.
+
+Quality & safety notes
+----------------------
+- Resource counters are clamped to prevent unsigned wraparound on deductions.
+- Movement-based AFK detection is implemented via a PlayerScript hook; this is
+    more reliable than relying solely on zone-enter timestamps.
+- Teleportation and reward paths are conservative: basic alive checks are done
+    before teleporting, and group creation failures are handled gracefully.
+
+Prioritized TODO / Enhancements
+-------------------------------
+1) Configuration: move hardcoded values (zone id, timers, thresholds, coords,
+     sound IDs) into `acore.json` or module config to allow server owners to
+     tune behavior without recompilation.
+
+2) Deterministic tiebreak (recommended): implement last-kill timestamp tracking
+     (`_ally_last_kill_time`, `_horde_last_kill_time`) updated in `HandleKill()` and
+     used in `ProcessMatchTimer()` to break exact resource ties. This is fair and
+     predictable — the side with the most recent kill wins.
+
+3) Draw reward policy: decide whether a draw should reward both sides, split
+     rewards, or grant no reward. Add configuration to control the chosen policy.
+
+4) Admin tooling & audit: add optional DB-backed audit logging for `.hlbg set`
+     and `.hlbg reset` (current logs go to `admin.hlbg`) and add an optional
+     `reason` parameter to `.hlbg set` to capture admin intent.
+
+5) Teleport safety & UX: add additional teleport guards (e.g. avoid teleporting
+     players in combat, during mounts, or inside certain phases) and provide
+     clearer area-trigger messages describing why the teleport happened.
+
+6) AFK heuristics: debounce small positional jitter, treat orientation-only
+     changes as non-activity, and allow staff/roles to mark players exempt.
+
+7) Tests & CI: add unit/integration tests for resource clamping, group creation
+     behavior, and match-end handling. Add CI checks to run script compilation and
+     basic static analysis during PRs.
+
+8) Telemetry/metrics: optionally collect counters (matches started/ended,
+     raids created, AFK teleports) and publish to a metrics sink for ops.
+
+9) Sound & DBC validation: ensure used sound IDs exist in the target DBC set
+     and add a startup warning if IDs are missing; document the mapping in config.
+
+10) Refactor: consider moving battleground-specific files into
+     `src/server/scripts/DC/HinterlandBG/` and create a small test harness to make
+     iterative development and testing simpler.
+
+Match timeout / draw behavior notes
+----------------------------------
+- Current implementation: when the match timer expires the code compares
+    remaining resources. If one side has strictly more resources, that side is
+    declared the winner (rewards, buffs and sounds applied). If both sides have
+    exactly the same resources the match is declared a draw: no `_LastWin` is set
+    and no win-specific rewards are granted.
+
+- Alternatives recorded for maintainers:
+    * Reward both sides: simplest, but may be considered unfair for competitive play.
+    * Split rewards: both sides receive scaled rewards (e.g. half), acknowledging
+        a close finish while avoiding double full-win payouts.
+    * Deterministic tiebreak: break ties using last-kill timestamps, total kills,
+        or another deterministic metric; this requires a small amount of extra state
+        but produces a single winner for every match.
+
+How to test quickly
+-------------------
+- Build server, start instance, create test accounts and join zone 47.
+- Use `.hlbg get/set/reset/status` (GM) to validate admin tooling and audit
+    logging. Test draw behavior by setting equal resources for both sides and
+    allowing the timer to expire.
+- Fill a raid group to the server limit and ensure the 41st player triggers
+    creation of an additional battleground raid group (watch logs for creation).
+
+For maintainers: update this header when adding/removing major features.
 ================================================================================
 */
     #include "OutdoorPvPHL.h"
@@ -58,8 +138,9 @@ Testing
 #include <cstdint>
 #include <algorithm>
 
-// Forward declaration: movement script registration used for AFK tracking.
-// Defined later; declared here so AddSC_outdoorpvp_hl() can invoke it.
+// Forward declaration: registration function for the player movement script used
+// for AFK tracking. The function is defined later in this file but is called
+// from AddSC_outdoorpvp_hl(), so we must declare it beforehand.
 static void RegisterOutdoorPvPHLPlayerMoveScript();
 
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
@@ -75,7 +156,7 @@ static constexpr int RESOURCE_THRESHOLD_WARN_2 = 200;
 static constexpr int RESOURCE_THRESHOLD_WARN_3 = 100;
 static constexpr int RESOURCE_THRESHOLD_LOW = 50;
 
-// Helper: safe printf-style TextEmote sender
+// Small helper to call TextEmote with printf-style formatting
 static inline void PlayerTextEmoteFmt(Player* player, const char* fmt, ...)
 {
     if (!player) return;
@@ -87,7 +168,7 @@ static inline void PlayerTextEmoteFmt(Player* player, const char* fmt, ...)
     player->TextEmote(buf);
 }
 
-// Helper: teleport all players in Hinterlands to their faction start
+// Helper: Teleport all players in the Hinterland zone to their faction start
 static inline void TeleportAllPlayersInZoneToStart()
 {
     WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -103,18 +184,27 @@ static inline void TeleportAllPlayersInZoneToStart()
     }
 }
 
-// Used on win and force-reset. Consider adding combat/flight/mount guards if needed.
+// Note: TeleportAllPlayersInZoneToStart is intentionally broad — it iterates
+// all world sessions and teleports any player currently in the Hinterland
+// zone to their faction start coordinates. This helper is used both on
+// resource-victory conditions and when the match is force-reset. Consider
+// adding additional safety checks (combat state, flight/mount checks, or
+// phase handling) if the teleport should be restricted in future.
 
-// Clamp resource counters (unsigned underflow guard)
+// Ensure resource counters do not underflow (they're unsigned)
 static inline void ClampResources(uint32 &value)
 {
     if ((int32)value < 0)
         value = 0;
 }
 
-// Cast to int32 so negative semantics clamp to zero and avoid wraparound.
+// Explanation: Resource counters are stored as unsigned integers. When
+// resource deductions occur we clamp negative values to zero to avoid
+// unsigned wraparound. The cast-to-int32 checks for negative semantics
+// while avoiding UB for normal positive values.
 
-    // Constructor: initialize state, resources, timers, and AFK tracking
+    // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
+    // Sets up all initial values for resources, timers, and player movement tracking.
     OutdoorPvPHL::OutdoorPvPHL()
     {
         _typeId = OUTDOOR_PVP_HL;
@@ -144,9 +234,15 @@ static inline void ClampResources(uint32 &value)
         _playerWarnedBeforeTeleport.clear();
     }
 
-    // `_FirstLoad` gates the initial announce; permanent resources mirror HL_RESOURCES_*.
+    // Constructor notes:
+    // - The constructor intentionally leaves most timers at zero. `_FirstLoad`
+    //   controls the initial-start announcement which is emitted on the first
+    //   Update() call. Permanent resources are initialized from HL_RESOURCES_*.
+    // - `_playerWarnedBeforeTeleport` tracks whether we already warned a
+    //   particular player of imminent AFK teleport so the warning isn't spammed.
 
-    // Register Hinterlands for OutdoorPvP
+    // Setup: Registers the Hinterland zone for OutdoorPvP events.
+    // Registers zone 47 for battleground logic and event handling.
     bool OutdoorPvPHL::SetupOutdoorPvP()
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
@@ -154,9 +250,12 @@ static inline void ClampResources(uint32 &value)
         return true;
     }
 
-// `RegisterZone` wires this script so `sOutdoorPvPMgr` owns/updates it.
+// Setup notes:
+// - RegisterZone wires this OutdoorPvP script into the server for the
+//   configured buff zones so `sOutdoorPvPMgr` will own and update it.
 
-    // Player enters Hinterlands: auto-invite, welcome, AFK stamp, seed HUD
+    // Called when a player enters the Hinterland zone.
+    // Handles auto-invite to raid group, welcome message, and AFK tracking initialization.
     void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     {
         // Auto-invite logic
@@ -184,21 +283,32 @@ static inline void ClampResources(uint32 &value)
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
-// Seed WG HUD worldstates on client init (WG-only mapping)
+// Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // WG HUD only (DBC patched for WG frames in Hinterlands)
-    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
+    // Only apply to our zone id
+    if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID)
+        return;
 
-    // GameTime returns Seconds; use .count()
+    // Enable WG HUD and SA timer, and seed counters
+    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+    uint32 minutes = timeRemaining / 60;
+    uint32 seconds = timeRemaining % 60;
     uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-    uint32 endEpoch = now + timeRemaining;
 
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
 
+    // AB resources
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+
+    // WG vehicle bars repurposed as resource bars
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -366,22 +476,31 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             // Respawn logic for NPCs and game objects temporarily removed as requested.
     }
 
-
     // Update worldstates (timer + resources) for a single player in Hinterland
     void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
     {
         if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
             return;
 
-        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
+        // Timer (use Strand of the Ancients style UI: minutes + seconds digits)
+        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+        uint32 minutes = timeRemaining / 60;
+        uint32 seconds = timeRemaining % 60;
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
+
+        // Resources (use AB resource counters for clarity)
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+
+        // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-        uint32 endEpoch = now + timeRemaining;
-
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
-
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
+        // Reuse vehicle counters to display resources near the clock
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -460,7 +579,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Clear reward-exclusion sets for the next battle
     ClearRewardExclusions();
 
-    // Hide Wintergrasp HUD for all players in zone
+    // Hide Wintergrasp HUD and SA timer for all players in zone
     for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
     {
         if (Player* p = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
@@ -468,8 +587,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             if (!p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
                 continue;
             p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
-            // Removed SA timer clear for consistency
-            // p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
+            p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
         }
     }
 
@@ -562,27 +680,190 @@ bool OutdoorPvPHL::Update(uint32 diff)
     if (_FirstLoad == false)
     {
         char announceMsg[256];
-terland Defence]: A new battle has started in Hinterland! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
-        // Count battleground-raid members using tracked raid groups for each teamsionPair : sWorldSessionMgr->GetAllSessions()) {
-        uint32 allianceCount = 0;       if (Player* player = sessionPair.second->GetPlayer())
-        uint32 hordeCount = 0;sion()->SendAreaTriggerMessage(announceMsg);
+        snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: A new battle has started in Hinterland! Last winner: %s", HL_ZONE_ID, (_LastWin == ALLIANCE ? "Alliance" : (_LastWin == HORDE ? "Horde" : "None")));
+        for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) {
+            if (Player* player = sessionPair.second->GetPlayer())
+                player->GetSession()->SendAreaTriggerMessage(announceMsg);
+        }
+        LOG_INFO("misc", announceMsg);
+        _FirstLoad = true;
+        _matchTimer = 0;
+        // At battle start: repair, reset CDs, refill, and sync worldstate UI
+        ApplyBattleMaintenanceToZonePlayers();
+        UpdateWorldStatesAllPlayers();
+    }
+
+    // timers and periodic tasks
+    ProcessMatchTimer(diff);
+    ProcessPeriodicMessage(diff);
+
+    // Update timer/resources UI roughly once per second
+    _liveResourceTimer += diff;
+    if (_liveResourceTimer >= 1000)
+    {
+        UpdateWorldStatesAllPlayers();
+        _liveResourceTimer = 0;
+    }
+
+    uint32 now = getMSTime();
+    ProcessAFK(now);
+
+    CheckResourceThresholds();
+    BroadcastResourceMessages();
+
+    IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
+    return false;
+}
+
+// Helper implementations
+void OutdoorPvPHL::ProcessMatchTimer(uint32 diff)
+{
+    _matchTimer += diff;
+    if (_matchTimer >= MATCH_DURATION_MS)
+    {
+    // Match time expired - determine winner by remaining resources
+        if (_ally_gathered > _horde_gathered)
+        {
+            // Alliance wins by resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
+            PlaySounds(TEAM_ALLIANCE);
+            // Reward winners and apply buffs/loser debuffs
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+
+                    // Skip rewards/buffs for deserters and AFK-excluded
+                    if (!IsExcludedFromRewards(player))
+                    {
+                        // Winners receive rewards/buffs
+                        if (player->GetTeamId() == TEAM_ALLIANCE)
+                        {
+                            HandleRewards(player, 1500, true, false, false);
+                            HandleBuffs(player, false);
+                        }
+                        else
+                        {
+                            // Losing side gets loser-buffs if configured
+                            HandleBuffs(player, true);
+                        }
+                    }
+
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
+                }
+            }
+            _LastWin = ALLIANCE;
+        }
+        else if (_horde_gathered > _ally_gathered)
+        {
+            // Horde wins by resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
+            PlaySounds(TEAM_HORDE);
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+
+                    if (!IsExcludedFromRewards(player))
+                    {
+                        if (player->GetTeamId() == TEAM_HORDE)
+                        {
+                            HandleRewards(player, 1500, true, false, false);
+                            HandleBuffs(player, false);
+                        }
+                        else
+                        {
+                            HandleBuffs(player, true);
+                        }
+                    }
+
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
+                }
+            }
+            _LastWin = HORDE;
+        }
+        else
+        {
+            // Draw: equal resources
+            HandleWinMessage("[Hinterland Defence]: Time's up! The match ended in a draw (equal resources).");
+            for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+            {
+                if (Player* player = sessionPair.second->GetPlayer())
+                {
+                    if (!player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
+                        continue;
+                    player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Time's up! The match ended in a draw (equal resources).");
+                }
+            }
+            // No last-win update on draw
+        }
+
+            // Teleport everyone back to their starts and reset the match
+        TeleportAllPlayersInZoneToStart();
+        // End-of-battle maintenance and UI sync
+        ApplyBattleMaintenanceToZonePlayers();
+        HandleReset();
+        _matchTimer = 0;
+        _FirstLoad = false;
+    }
+}
+
+// Notes on ProcessMatchTimer:
+// - The function compares resource counters at time expiry and awards
+//   victory to the side with strictly more resources. For an exact tie the
+//   match is declared a draw and no win-specific rewards or `_LastWin`
+//   updates are applied. The behavior is intentional; see header comments
+//   for alternative approaches (reward both, split rewards, last-kill
+//   tiebreak).
+
+// AFK handling notes:
+// - `ProcessAFK` tracks per-player movement timestamps and warns players 30s
+//   before teleporting them to prevent accidental displacements. The current
+//   implementation uses `PlayerScript::OnPlayerMove` to stamp movement which
+//   is more reliable than polling position deltas. Consider debouncing tiny
+//   position jitter or orientation-only updates if the server generates
+//   excessive move events.
+
+// HandleKill notes:
+// - `HandleKill` deducts resources from the killed side and awards items
+//   / rewards to the killer or raid. Boss entries deduct large resource
+//   amounts and reward raid members. The function clamps resource counters
+//   after modification to avoid wraparound. For deterministic tiebreaks the
+//   function is a natural place to stamp last-kill timestamps for each team.
+
+void OutdoorPvPHL::ProcessPeriodicMessage(uint32 diff)
+{
+    _messageTimer += diff;
+    if (_messageTimer >= MESSAGE_INTERVAL_MS)
+    {
+        uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
+        uint32 minutes = timeRemaining / 60;
+        uint32 seconds = timeRemaining % 60;
+
+        // Count battleground-raid members using tracked raid groups for each team
+        uint32 allianceCount = 0;
+        uint32 hordeCount = 0;
         // Iterate Alliance groups
         for (GuidSet::const_iterator itr = _Groups[TEAM_ALLIANCE].begin(); itr != _Groups[TEAM_ALLIANCE].end(); ++itr)
         {
             Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());
-            if (!g || !g->isBGGroup())/ At battle start: repair, reset CDs, refill, and sync worldstate UI
-                continue;ayers();
-            allianceCount += g->GetMembersCount();llPlayers();
+            if (!g || !g->isBGGroup())
+                continue;
+            allianceCount += g->GetMembersCount();
         }
         // Iterate Horde groups
         for (GuidSet::const_iterator itr = _Groups[TEAM_HORDE].begin(); itr != _Groups[TEAM_HORDE].end(); ++itr)
         {
-            Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());rocessPeriodicMessage(diff);
+            Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());
             if (!g || !g->isBGGroup())
-                continue; roughly once per second
-            hordeCount += g->GetMembersCount();ff;
-        }0)
-    {
+                continue;
+            hordeCount += g->GetMembersCount();
+        }
+
         char msg[256];
         snprintf(msg, sizeof(msg), "[Hinterland Defence]: Alliance: %u (%u players) | Horde: %u (%u players) | Time left: %02u:%02u (Start: 60:00)",
                  _ally_gathered, allianceCount, _horde_gathered, hordeCount, minutes, seconds);
@@ -590,300 +871,300 @@ terland Defence]: A new battle has started in Hinterland! Last winner: %s", HL_Z
         _messageTimer = 0;
     }
 }
-    CheckResourceThresholds();
-void OutdoorPvPHL::ProcessAFK(uint32 now)();
+
+void OutdoorPvPHL::ProcessAFK(uint32 now)
 {
-    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();    IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
+    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
     for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
     {
         Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
         if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
-            continue;::ProcessMatchTimer(uint32 diff)
+            continue;
         ObjectGuid guid = player->GetGUID();
-        if (_playerLastMove.find(guid) == _playerLastMove.end())    _matchTimer += diff;
-            _playerLastMove[guid] = now;TCH_DURATION_MS)
+        if (_playerLastMove.find(guid) == _playerLastMove.end())
+            _playerLastMove[guid] = now;
 
-        // If player hasn't moved for AFK_TIMEOUT_MS - 30s, warn them once   // Match time expired - determine winner by remaining resources
-        const uint32 warnThreshold = AFK_TIMEOUT_MS > 30000 ? AFK_TIMEOUT_MS - 30000 : 0;ed > _horde_gathered)
+        // If player hasn't moved for AFK_TIMEOUT_MS - 30s, warn them once
+        const uint32 warnThreshold = AFK_TIMEOUT_MS > 30000 ? AFK_TIMEOUT_MS - 30000 : 0;
         if (!_playerWarnedBeforeTeleport[guid] && now - _playerLastMove[guid] >= warnThreshold && now - _playerLastMove[guid] < AFK_TIMEOUT_MS)
-        {       // Alliance wins by resources
-            if (player->GetSession())ance wins by having more resources.");
+        {
+            if (player->GetSession())
                 player->GetSession()->SendAreaTriggerMessage("You will be teleported to your start point in 30 seconds due to inactivity. Move to cancel.");
-            _playerWarnedBeforeTeleport[guid] = true;   // Reward winners and apply buffs/loser debuffs
-            continue;: sWorldSessionMgr->GetAllSessions())
+            _playerWarnedBeforeTeleport[guid] = true;
+            continue;
         }
-essionPair.second->GetPlayer())
+
         if (now - _playerLastMove[guid] >= AFK_TIMEOUT_MS)
-        {_ID)
-            // Safe teleport check: ensure player is alive and map is valid           continue;
+        {
+            // Safe teleport check: ensure player is alive and map is valid
             if (player->IsAlive())
-            {   // Skip rewards/buffs for deserters and AFK-excluded
+            {
                 // Teleport the player to safe coordinates for their faction
                 TeleportPlayerToStart(player);
-                player->TextEmote("You have been summoned to your starting position due to inactivity.");                        // Winners receive rewards/buffs
+                player->TextEmote("You have been summoned to your starting position due to inactivity.");
                 // Mark player as excluded from this round's rewards
                 _afkExcluded.insert(guid);
-            }       HandleRewards(player, 1500, true, false, false);
+            }
             // Reset timers and warned flag
             _playerLastMove[guid] = now; // Reset timer after teleport
-            _playerWarnedBeforeTeleport[guid] = false;lse
+            _playerWarnedBeforeTeleport[guid] = false;
         }
-    }uffs if configured
-}   HandleBuffs(player, true);
+    }
+}
 
 void OutdoorPvPHL::CheckResourceThresholds()
 {
-    if(_ally_gathered <= RESOURCE_THRESHOLD_LOW && limit_A == 0)gerMessage("[Hinterland Defence]: Time's up! Alliance wins by having more resources.");
+    if(_ally_gathered <= RESOURCE_THRESHOLD_LOW && limit_A == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_A = true; limit_A = 1; PlaySounds(TEAM_HORDE);
-    }            _LastWin = ALLIANCE;
+    }
     else if(_horde_gathered <= RESOURCE_THRESHOLD_LOW && limit_H == 0)
-    {_horde_gathered > _ally_gathered)
-        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 1; PlaySounds(TEAM_ALLIANCE);
-    }ources
-    else if(_ally_gathered <= 0 && limit_A == 1)   HandleWinMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
     {
-        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_A = true; limit_A = 2; PlaySounds(TEAM_HORDE); TeleportAllPlayersInZoneToStart();   for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 1; PlaySounds(TEAM_ALLIANCE);
+    }
+    else if(_ally_gathered <= 0 && limit_A == 1)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_A = true; limit_A = 2; PlaySounds(TEAM_HORDE); TeleportAllPlayersInZoneToStart();
     }
     else if(_horde_gathered <= 0 && limit_H == 1)
     {
-        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 2; PlaySounds(TEAM_ALLIANCE); TeleportAllPlayersInZoneToStart();_ID)
-    }           continue;
-    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_A == 0)
-    {   if (!IsExcludedFromRewards(player))
-        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 1; PlaySounds(TEAM_HORDE);
-    }r->GetTeamId() == TEAM_HORDE)
-    else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_H == 0)                        {
-    { true, false, false);
-        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 1; PlaySounds(TEAM_ALLIANCE);       HandleBuffs(player, false);
+        IS_ABLE_TO_SHOW_MESSAGE = true; IS_RESOURCE_MESSAGE_H = true; limit_H = 2; PlaySounds(TEAM_ALLIANCE); TeleportAllPlayersInZoneToStart();
     }
-    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_2 && limit_resources_message_A == 1)lse
+    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_A == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 1; PlaySounds(TEAM_HORDE);
+    }
+    else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_1 && limit_resources_message_H == 0)
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 1; PlaySounds(TEAM_ALLIANCE);
+    }
+    else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_2 && limit_resources_message_A == 1)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 2; PlaySounds(TEAM_HORDE);
     }
     else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_2 && limit_resources_message_H == 1)
     {
-        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 2; PlaySounds(TEAM_ALLIANCE);gerMessage("[Hinterland Defence]: Time's up! Horde wins by having more resources.");
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 2; PlaySounds(TEAM_ALLIANCE);
     }
     else if(_ally_gathered <= RESOURCE_THRESHOLD_WARN_3 && limit_resources_message_A == 2)
-    {            _LastWin = HORDE;
+    {
         IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_A = 3; PlaySounds(TEAM_HORDE);
     }
     else if(_horde_gathered <= RESOURCE_THRESHOLD_WARN_3 && limit_resources_message_H == 2)
-    {sources
-        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 3; PlaySounds(TEAM_ALLIANCE);   HandleWinMessage("[Hinterland Defence]: Time's up! The match ended in a draw (equal resources).");
-    }for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions())
-}   {
- sessionPair.second->GetPlayer())
+    {
+        IS_ABLE_TO_SHOW_MESSAGE = true; limit_resources_message_H = 3; PlaySounds(TEAM_ALLIANCE);
+    }
+}
+
 void OutdoorPvPHL::BroadcastResourceMessages()
-{_ID)
-    if(!IS_ABLE_TO_SHOW_MESSAGE) return;           continue;
-    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();nterland Defence]: Time's up! The match ended in a draw (equal resources).");
+{
+    if(!IS_ABLE_TO_SHOW_MESSAGE) return;
+    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
     for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
     {
-        if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != HL_ZONE_ID) on draw
+        if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != HL_ZONE_ID)
             continue;
         Player* p = itr->second->GetPlayer();
-        if(limit_resources_message_A >= 1 && limit_resources_message_A <= 3)/ Teleport everyone back to their starts and reset the match
-            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);;
-        else if(limit_resources_message_H >= 1 && limit_resources_message_H <= 3)/ End-of-battle maintenance and UI sync
-            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);        ApplyBattleMaintenanceToZonePlayers();
+        if(limit_resources_message_A >= 1 && limit_resources_message_A <= 3)
+            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
+        else if(limit_resources_message_H >= 1 && limit_resources_message_H <= 3)
+            PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
 
         if(IS_RESOURCE_MESSAGE_A)
         {
             if(limit_A == 1)
             {
                 PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
-                IS_RESOURCE_MESSAGE_A = false;er:
-            }The function compares resource counters at time expiry and awards
-            else if(limit_A == 2)/   victory to the side with strictly more resources. For an exact tie the
-            {//   match is declared a draw and no win-specific rewards or `_LastWin`
-                p->TextEmote("[Hinterland Defence]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");behavior is intentional; see header comments
+                IS_RESOURCE_MESSAGE_A = false;
+            }
+            else if(limit_A == 2)
+            {
+                p->TextEmote("[Hinterland Defence]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");
                 HandleWinMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
                 HandleRewards(p, 1500, true, false, false);
                 if (p->GetTeamId() == TEAM_ALLIANCE) HandleBuffs(p, true); else HandleBuffs(p, false);
                 for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
-                TeleportAllPlayersInZoneToStart();ers 30s
-                _LastWin = HORDE;eporting them to prevent accidental displacements. The current
-                IS_RESOURCE_MESSAGE_A = false;//   implementation uses `PlayerScript::OnPlayerMove` to stamp movement which
-            }than polling position deltas. Consider debouncing tiny
+                TeleportAllPlayersInZoneToStart();
+                _LastWin = HORDE;
+                IS_RESOURCE_MESSAGE_A = false;
+            }
         }
         else if(IS_RESOURCE_MESSAGE_H)
         {
             if(limit_H == 1)
-            {s
-                PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);r or raid. Boss entries deduct large resource
-                IS_RESOURCE_MESSAGE_H = false;//   amounts and reward raid members. The function clamps resource counters
-            }ion to avoid wraparound. For deterministic tiebreaks the
-            else if(limit_H == 2)eam.
+            {
+                PlayerTextEmoteFmt(p, "[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
+                IS_RESOURCE_MESSAGE_H = false;
+            }
+            else if(limit_H == 2)
             {
                 HandleWinMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
                 HandleRewards(p, 1500, true, false, false);
                 if (p->GetTeamId() == TEAM_ALLIANCE) HandleBuffs(p, false); else HandleBuffs(p, true);
-                for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");    if (_messageTimer >= MESSAGE_INTERVAL_MS)
+                for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
                 TeleportAllPlayersInZoneToStart();
-                _LastWin = ALLIANCE;       uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-                IS_RESOURCE_MESSAGE_H = false;imeRemaining / 60;
+                _LastWin = ALLIANCE;
+                IS_RESOURCE_MESSAGE_H = false;
             }
         }
     }
 }
 
-void OutdoorPvPHL::ClampResourceCounters()        // Iterate Alliance groups
-{_Groups[TEAM_ALLIANCE].end(); ++itr)
+void OutdoorPvPHL::ClampResourceCounters()
+{
     ClampResources(_ally_gathered);
-    ClampResources(_horde_gathered);gr->GetGroupByGUID(itr->GetCounter());
-}p())
+    ClampResources(_horde_gathered);
+}
 
-// Public wrapper that teleports all players in the Hinterland zone to their faction start.   allianceCount += g->GetMembersCount();
+// Public wrapper that teleports all players in the Hinterland zone to their faction start.
 // Exposed so external commands (GM tools) can reuse the script's teleport helper.
 void OutdoorPvPHL::TeleportPlayersToStart()
-{st_iterator itr = _Groups[TEAM_HORDE].begin(); itr != _Groups[TEAM_HORDE].end(); ++itr)
+{
     TeleportAllPlayersInZoneToStart();
-}   Group* g = sGroupMgr->GetGroupByGUID(itr->GetCounter());
-roup())
+}
+
 std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
-{   hordeCount += g->GetMembersCount();
+{
     std::vector<ObjectGuid> res;
     if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
         return res;
- Defence]: Alliance: %u (%u players) | Horde: %u (%u players) | Time left: %02u:%02u (Start: 60:00)",
-    for (GuidSet::const_iterator itr = _Groups[team].begin(); itr != _Groups[team].end(); ++itr)        _ally_gathered, allianceCount, _horde_gathered, hordeCount, minutes, seconds);
-    {        sWorldSessionMgr->SendZoneText(HL_ZONE_ID, msg);
-        ObjectGuid gid = *itr;= 0;
+
+    for (GuidSet::const_iterator itr = _Groups[team].begin(); itr != _Groups[team].end(); ++itr)
+    {
+        ObjectGuid gid = *itr;
         Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
         if (!g)
             continue;
-        if (!g->isBGGroup())AFK(uint32 now)
+        if (!g->isBGGroup())
             continue;
-        res.push_back(g->GetGUID());   WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-    }    for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
+        res.push_back(g->GetGUID());
+    }
     return res;
-}       Player* player = itr->second ? itr->second->GetPlayer() : nullptr;
+}
 
 // Admin accessors
-uint32 OutdoorPvPHL::GetResources(TeamId team) const   ObjectGuid guid = player->GetGUID();
+uint32 OutdoorPvPHL::GetResources(TeamId team) const
 {
     if (team == TEAM_ALLIANCE) return _ally_gathered;
     if (team == TEAM_HORDE) return _horde_gathered;
-    return 0;MEOUT_MS - 30s, warn them once
-}K_TIMEOUT_MS - 30000 : 0;
-[guid] && now - _playerLastMove[guid] >= warnThreshold && now - _playerLastMove[guid] < AFK_TIMEOUT_MS)
-void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)        {
+    return 0;
+}
+
+void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)
 {
-    if (team == TEAM_ALLIANCE) _ally_gathered = amount;our start point in 30 seconds due to inactivity. Move to cancel.");
+    if (team == TEAM_ALLIANCE) _ally_gathered = amount;
     else if (team == TEAM_HORDE) _horde_gathered = amount;
-}   continue;
+}
 
 void OutdoorPvPHL::ForceReset()
-{T_MS)
+{
     HandleReset();
-}   // Safe teleport check: ensure player is alive and map is valid
-                if (player->IsAlive())
+}
+    
     // Handles logic for when a player kills another player or NPC in the battleground.
-    // Awards items, deducts resources, and sends kill announcements. Boss kills reward all raid members.       // Teleport the player to safe coordinates for their faction
+    // Awards items, deducts resources, and sends kill announcements. Boss kills reward all raid members.
     // Randomizer and random honor logic have been removed for maintainability.
-    void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)"You have been summoned to your starting position due to inactivity.");
-    {   // Mark player as excluded from this round's rewards
+    void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
+    {
         if(killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
         {
             if(player->GetGUID() == killed->GetGUID())
-                return;rt
-id] = false;
+                return;
+
             // Announce the kill to the zone
             char announceMsg[256];
             snprintf(announceMsg, sizeof(announceMsg), "[Hinterland Defence]: %s has slain %s!", player->GetName().c_str(), killed->GetName().c_str());
             sWorldSessionMgr->SendZoneText(47, announceMsg);
-oorPvPHL::CheckResourceThresholds()
+
             // Reward killer with 100x item 80003
-            player->AddItem(80003, 100);   if(_ally_gathered <= RESOURCE_THRESHOLD_LOW && limit_A == 0)
-    {
-            switch(killed->ToPlayer()->GetTeamId())ESOURCE_MESSAGE_A = true; limit_A = 1; PlaySounds(TEAM_HORDE);
-            {   }
-                case TEAM_ALLIANCE: == 0)
+            player->AddItem(80003, 100);
+
+            switch(killed->ToPlayer()->GetTeamId())
+            {
+                case TEAM_ALLIANCE:
                     _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
-                    ClampResourceCounters();E);
+                    ClampResourceCounters();
                     player->AddItem(40752, 1);
                     break;
                 default: //Horde
-                    _horde_gathered -= 5; // Remove 5 resources from Horde on player killleportAllPlayersInZoneToStart();
+                    _horde_gathered -= 5; // Remove 5 resources from Horde on player kill
                     ClampResourceCounters();
-                    player->AddItem(40752, 1);)
+                    player->AddItem(40752, 1);
                     break;
-            }();
+            }
         }
-        else // If is something besides a playerWARN_1 && limit_resources_message_A == 0)
+        else // If is something besides a player
         {
             if(player->GetTeamId() == TEAM_ALLIANCE)
             {
-                switch(killed->GetEntry()) // Alliance killing horde guards)
+                switch(killed->GetEntry()) // Alliance killing horde guards
                 {
-                    case 810002: // Horde bossE);
+                    case 810002: // Horde boss
                         _horde_gathered -= 200; // Remove 200 resources from Horde on boss kill
                         ClampResourceCounters();
                         {
                             char bossMsg[256];
                             snprintf(bossMsg, sizeof(bossMsg), "[Hinterland Defence]: %s has slain the Horde boss! 200 Horde resources lost! Horde now has %u resources left!", player->GetName().c_str(), _horde_gathered);
-                            sWorldSessionMgr->SendZoneText(47, bossMsg);)
+                            sWorldSessionMgr->SendZoneText(47, bossMsg);
                             // Reward all raid members with 500x item 80003
-                            if (Group* raid = player->GetGroup()) {E);
+                            if (Group* raid = player->GetGroup()) {
                                 for (GroupReference* ref = raid->GetFirstMember(); ref; ref = ref->next()) {
                                     Player* member = ref->GetSource();
                                     if (member && member->IsInWorld() && member->GetZoneId() == 47)
                                         member->AddItem(80003, 500);
                                 }
-                            } else {)
+                            } else {
                                 player->AddItem(80003, 500);
-                            }E);
+                            }
                         }
                         break;
                     case Horde_Infantry:
                         _horde_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
-                        break;   if(!IS_ABLE_TO_SHOW_MESSAGE) return;
-                    case Horde_Squadleader: // 2?    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                        _horde_gathered -= PointsLoseOnPvPKill;erator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
-                        ClampResourceCounters();   {
-                        break;>GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != HL_ZONE_ID)
+                        break;
+                    case Horde_Squadleader: // 2?
+                        _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
+                        break;
                     /* Removed duplicate case for Horde_Boss (entry 810002) */
                     case Horde_Heal:
-                        _horde_gathered -= PointsLoseOnPvPKill;   if(limit_resources_message_A >= 1 && limit_resources_message_A <= 3)
+                        _horde_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
-                        break;_resources_message_H >= 1 && limit_resources_message_H <= 3)
-                    /*d Defence]: The Horde got %u resources left!", _horde_gathered);
+                        break;
+                    /*
                     case WARSONG_HONOR_GUARD:
                         _horde_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
                         // Removed Randomizer call
-                        break;            {
-                    case WARSONG_MARKSMAN:t(p, "[Hinterland Defence]: The Alliance got %u resources left!", _ally_gathered);
-                        _horde_gathered -= PointsLoseOnPvPKill;       IS_RESOURCE_MESSAGE_A = false;
-                        ClampResourceCounters();
-                        // Removed Randomizer calllse if(limit_A == 2)
                         break;
-                    case WARSONG_RECRUITMENT_OFFICER:nce]: The Alliance has lost! Horde wins as Alliance resources dropped to 0.");
-                        _horde_gathered -= PointsLoseOnPvPKill;   HandleWinMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
-                        ClampResourceCounters();1500, true, false, false);
-                        // Removed Randomizer call   if (p->GetTeamId() == TEAM_ALLIANCE) HandleBuffs(p, true); else HandleBuffs(p, false);
-                        break;GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Horde wins! Alliance resources dropped to 0.");
+                    case WARSONG_MARKSMAN:
+                        _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
+                        // Removed Randomizer call
+                        break;
+                    case WARSONG_RECRUITMENT_OFFICER:
+                        _horde_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
+                        // Removed Randomizer call
+                        break;
                     case WARSONG_SCOUT:
                         _horde_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
                         // Removed Randomizer call
                         break;
-                    case WARSONG_WIND_RIDER:GE_H)
+                    case WARSONG_WIND_RIDER:
                         _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor rewardf(limit_H == 1)
-                        break;   {
-                    */"[Hinterland Defence]: The Horde got %u resources left!", _horde_gathered);
-                }       IS_RESOURCE_MESSAGE_H = false;
+                        Randomizer(player); // Randomizes the honor reward
+                        break;
+                    */
+                }
             }
-            else // Team Hordelse if(limit_H == 2)
+            else // Team Horde
             {
-                switch(killed->GetEntry()) // Horde killing alliance guardsDefence]: Alliance wins! Horde resources dropped to 0.");
-                {   HandleRewards(p, 1500, true, false, false);
-                    case 810003: // Alliance boss) == TEAM_ALLIANCE) HandleBuffs(p, false); else HandleBuffs(p, true);
-                        _ally_gathered -= 200; // Remove 200 resources from Alliance on boss kill   for (const auto& sessionPair : sWorldSessionMgr->GetAllSessions()) if (Player* player = sessionPair.second->GetPlayer()) player->GetSession()->SendAreaTriggerMessage("[Hinterland Defence]: Alliance wins! Horde resources dropped to 0.");
+                switch(killed->GetEntry()) // Horde killing alliance guards
+                {
+                    case 810003: // Alliance boss
+                        _ally_gathered -= 200; // Remove 200 resources from Alliance on boss kill
                         ClampResourceCounters();
                         {
                             char bossMsg[256];
@@ -892,108 +1173,108 @@ oorPvPHL::CheckResourceThresholds()
                             // Reward all raid members with 500x item 80003
                             if (Group* raid = player->GetGroup()) {
                                 for (GroupReference* ref = raid->GetFirstMember(); ref; ref = ref->next()) {
-                                    Player* member = ref->GetSource();oorPvPHL::ClampResourceCounters()
+                                    Player* member = ref->GetSource();
                                     if (member && member->IsInWorld() && member->GetZoneId() == 47)
-                                        member->AddItem(80003, 500);   ClampResources(_ally_gathered);
-                                }    ClampResources(_horde_gathered);
+                                        member->AddItem(80003, 500);
+                                }
                             } else {
                                 player->AddItem(80003, 500);
-                            }l players in the Hinterland zone to their faction start.
-                        }tools) can reuse the script's teleport helper.
-                        break;oid OutdoorPvPHL::TeleportPlayersToStart()
-                    case Alliance_Healer:{
+                            }
+                        }
+                        break;
+                    case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
                         break;
-                    /* Removed duplicate case for Alliance_Boss (entry 810003) */td::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
+                    /* Removed duplicate case for Alliance_Boss (entry 810003) */
                     case Alliance_Infantry:
-                        _ally_gathered -= PointsLoseOnPvPKill;   std::vector<ObjectGuid> res;
-                        ClampResourceCounters();    if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
+                        _ally_gathered -= PointsLoseOnPvPKill;
+                        ClampResourceCounters();
                         break;
                     case Alliance_Squadleader: // Wrong?
-                        _ally_gathered -= PointsLoseOnPvPKill; itr = _Groups[team].begin(); itr != _Groups[team].end(); ++itr)
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
-                        break;gid = *itr;
-                    /*        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                        break;
+                    /*
                     case VALIANCE_KEEP_FOOTMAN_2: // 2?
-                        _ally_gathered -= PointsLoseOnPvPKill;       continue;
+                        _ally_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
                         // Removed Randomizer call
-                        break;h_back(g->GetGUID());
+                        break;
                     case VALIANCE_KEEP_OFFICER:
                         _ally_gathered -= PointsLoseOnPvPKill;
                         ClampResourceCounters();
                         // Removed Randomizer call
-                        break;min accessors
-                    case VALIANCE_KEEP_RIFLEMAN:vPHL::GetResources(TeamId team) const
+                        break;
+                    case VALIANCE_KEEP_RIFLEMAN:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        ClampResourceCounters();    if (team == TEAM_ALLIANCE) return _ally_gathered;
-                        // Removed Randomizer callAM_HORDE) return _horde_gathered;
+                        ClampResourceCounters();
+                        // Removed Randomizer call
                         break;
                     case VALIANCE_KEEP_WORKER:
                         _ally_gathered -= PointsLoseOnPvPKill;
-                        ClampResourceCounters(); amount)
+                        ClampResourceCounters();
                         // Removed Randomizer call
-                        break;   if (team == TEAM_ALLIANCE) _ally_gathered = amount;
-                    case DURDAN_THUNDERBEAK:    else if (team == TEAM_HORDE) _horde_gathered = amount;
+                        break;
+                    case DURDAN_THUNDERBEAK:
                         _ally_gathered -= PointsLoseOnPvPKill;
                         // Removed Randomizer call
                         break;
                     */
-                }   HandleReset();
-            }}
+                }
+            }
         }
-    }   // Handles logic for when a player kills another player or NPC in the battleground.
-    s, deducts resources, and sends kill announcements. Boss kills reward all raid members.
-    // Add to OutdoorPvPHL.h:   // Randomizer and random honor logic have been removed for maintainability.
-    // std::map<ObjectGuid, uint32> _playerLastMove;void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
+    }
+    
+    // Add to OutdoorPvPHL.h:
+    // std::map<ObjectGuid, uint32> _playerLastMove;
 
-    // Script registration for OutdoorPvP Hinterlandso gives extra honor.
+    // Script registration for OutdoorPvP Hinterland
     class OutdoorPvP_hinterland : public OutdoorPvPScript
     {
-        public:           return;
+        public:
      
-        OutdoorPvP_hinterland()   // Announce the kill to the zone
+        OutdoorPvP_hinterland()
             : OutdoorPvPScript("outdoorpvp_hl") {}
-     nounceMsg, sizeof(announceMsg), "[Hinterland Defence]: %s has slain %s!", player->GetName().c_str(), killed->GetName().c_str());
-        OutdoorPvP* GetOutdoorPvP() const            sWorldSessionMgr->SendZoneText(47, announceMsg);
+     
+        OutdoorPvP* GetOutdoorPvP() const
         {
-            return new OutdoorPvPHL();100x item 80003
+            return new OutdoorPvPHL();
         }
     };
-            switch(killed->ToPlayer()->GetTeamId())
+
      
     // Registers the OutdoorPvP Hinterland script
-    void AddSC_outdoorpvp_hl()                    _ally_gathered -= 5; // Remove 5 resources from Alliance on player kill
+    void AddSC_outdoorpvp_hl()
     {
-        new OutdoorPvP_hinterland;       player->AddItem(40752, 1);
+        new OutdoorPvP_hinterland;
 
         // Register movement hook for AFK tracking
-        // Forward-declared below; registers the player movement script that Remove 5 resources from Horde on player kill
+        // Forward-declared below; registers the player movement script that
         // stamps AFK last-move timestamps via `TouchPlayerLastMove()`.
-        RegisterOutdoorPvPHLPlayerMoveScript();->AddItem(40752, 1);
+        RegisterOutdoorPvPHLPlayerMoveScript();
     }
 
 // Player movement hook to update AFK tracking for Hinterland Outdoor PvP
-// Use MovementHandlerScript so we can override the movement hook and registerer
+// Use MovementHandlerScript so we can override the movement hook and register
 // the MOVEMENTHOOK_ON_PLAYER_MOVE hook during construction.
-class OutdoorPvPHL_PlayerMoveScript : public MovementHandlerScriptf(player->GetTeamId() == TEAM_ALLIANCE)
-{   {
-public:liance killing horde guards
-    OutdoorPvPHL_PlayerMoveScript() : MovementHandlerScript("OutdoorPvPHL_PlayerMoveScript", std::vector<uint16>{MOVEMENTHOOK_ON_PLAYER_MOVE}) {}       {
+class OutdoorPvPHL_PlayerMoveScript : public MovementHandlerScript
+{
+public:
+    OutdoorPvPHL_PlayerMoveScript() : MovementHandlerScript("OutdoorPvPHL_PlayerMoveScript", std::vector<uint16>{MOVEMENTHOOK_ON_PLAYER_MOVE}) {}
 
-    void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override           _horde_gathered -= 200; // Remove 200 resources from Horde on boss kill
+    void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
     {
-        if (!player || !player->IsInWorld())       {
+        if (!player || !player->IsInWorld())
             return;
-        if (player->GetZoneId() != HL_ZONE_ID)ain the Horde boss! 200 Horde resources lost! Horde now has %u resources left!", player->GetName().c_str(), _horde_gathered);
-            return;ndZoneText(47, bossMsg);
-   // Reward all raid members with 500x item 80003
-        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID);player->GetGroup()) {
+        if (player->GetZoneId() != HL_ZONE_ID)
+            return;
+
+        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(HL_ZONE_ID);
         if (!out)
             return;
-        OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out);mber->GetZoneId() == 47)
-        if (!hl);
+        OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out);
+        if (!hl)
             return;
 
         // Update last move timestamp for AFK tracking
@@ -1001,9 +1282,9 @@ public:liance killing horde guards
     }
 };
 
-// Register the player movement scripte_gathered -= PointsLoseOnPvPKill;
-static void RegisterOutdoorPvPHLPlayerMoveScript()lampResourceCounters();
+// Register the player movement script
+static void RegisterOutdoorPvPHLPlayerMoveScript()
 {
-    new OutdoorPvPHL_PlayerMoveScript();er: // 2?
+    new OutdoorPvPHL_PlayerMoveScript();
 }
 
