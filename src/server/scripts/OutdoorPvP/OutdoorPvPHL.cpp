@@ -497,7 +497,7 @@ static inline void ClampResources(uint32 &value)
         player->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
 
         // Wintergrasp-like UI: explicitly show WG HUD and set clock to absolute time
-        uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+        uint32 now = GameTime::GetGameTime();
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
         // Reuse vehicle counters to display resources near the clock
