@@ -241,7 +241,27 @@
 
     void OutdoorPvPHL::TeleportPlayersToStart()
     {
-        // No-op placeholder; can be implemented to move players to start positions if needed.
+        // Teleport all players in Hinterlands to their team startpoints.
+        // We use the team-specific nearest graveyard as the start location.
+        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        uint32 countA = 0, countH = 0;
+        for (auto const& it : sessionMap)
+        {
+            Player* p = it.second ? it.second->GetPlayer() : nullptr;
+            if (!p || !p->IsInWorld() || p->GetZoneId() != zoneId)
+                continue;
+            TeamId team = p->GetTeamId();
+            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(p, team))
+            {
+                p->TeleportTo(g->Map, g->x, g->y, g->z, p->GetOrientation());
+                if (team == TEAM_ALLIANCE) ++countA; else ++countH;
+            }
+        }
+        // Inform the zone
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — teleported %u Alliance and %u Horde to start.", (unsigned)countA, (unsigned)countH);
+        sWorldSessionMgr->SendZoneText(zoneId, msg);
     }
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
