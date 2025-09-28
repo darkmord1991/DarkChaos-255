@@ -1,3 +1,26 @@
+/*
+ * AzerothCore Command Script: .faq (faq_commandscript)
+ *
+ * Purpose / Feature Overview:
+ * - Provides an in-game FAQ command with multiple subtopics for players.
+ * - Default invocation `.faq` shows a compact help list (4 topics per line).
+ * - Subcommands send short guidance via notification + chat to the invoker.
+ *
+ * Command names:
+ * - .faq help | (no args)
+ * - .faq buff | .faq discord | .faq dungeons | .faq hinterland
+ * - .faq leveling | .faq maxlevel | .faq progression | .faq source
+ * - .faq t11 | .faq t12 | .faq teleporter
+ *
+ * Script names and integration:
+ * - Class: faq_commandscript (CommandScript)
+ * - Registration: AddSC_faq_commandscript() (wired in Commands/cs_script_loader.cpp)
+ * - DB: No ScriptName needed; CommandScripts are loaded globally via the loader.
+ *
+ * Notes:
+ * - The `discord` topic currently sends a placeholder string; replace with your invite.
+ * - All messages are intentionally concise; expand with PSendSysMessage if needed.
+ */
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "CommandScript.h"
@@ -70,6 +93,7 @@ namespace
 
     static bool HandleFaqDiscord(ChatHandler* handler, char const* /*args*/)
     {
+        // TODO: Replace PLACEHOLDER with your actual Discord invite or URL
         NotifyAndChat(handler, "PLACEHOLDER");
         return true;
     }
