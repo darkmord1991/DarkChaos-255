@@ -105,15 +105,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
         if (id == POINT_LAND_FINAL)
         {
-            // Landed: dismount passenger and despawn gently
-            if (Vehicle* kit = me->GetVehicleKit())
-                if (Unit* passenger = kit->GetPassenger(0))
-                {
-                    passenger->ExitVehicle();
-                    if (Player* p = passenger->ToPlayer())
-                        ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
-                }
-            me->DespawnOrUnsummon(2000);
+            // Landed: dismount any passengers and despawn gently
+            DismountAndDespawn();
             return;
         }
 
@@ -195,10 +188,8 @@ private:
     uint8 _index = 0;
     uint32 _currentPointId = 0;
     bool _started = false;
-    TaskScheduler _scheduler;
-};
-};
-
+        TaskScheduler _scheduler;
+    };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
 {
@@ -265,9 +256,8 @@ public:
 
 void AddSC_flightmasters()
 {
-    using namespace DC_AC_Flight;
-    new ACFM1();
-    new ac_gryphon_taxi_800011();
+    new DC_AC_Flight::ACFM1();
+    new DC_AC_Flight::ac_gryphon_taxi_800011();
 }
 
 /*
