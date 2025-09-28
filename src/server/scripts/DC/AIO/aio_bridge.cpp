@@ -48,6 +48,29 @@ namespace DC_AIO
     }
 }
 
+// Static command handler for ".aio ping"
+static bool HandleAioPing(ChatHandler* handler, char const* /*args*/)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+#ifdef HAS_AIO
+    bool sent = DC_AIO::SendHudMessage(player, "PING", "Test");
+    if (sent)
+        handler->PSendSysMessage("AIO: ping sent to addon.");
+    else
+        handler->PSendSysMessage("AIO: ping attempted, check server AIO API wiring.");
+#else
+    // Attempt call (no-op in stub), then inform the user
+    (void)DC_AIO::SendHudMessage(player, "PING", "Test");
+    handler->PSendSysMessage("AIO not enabled server-side. Install Rochet2/AIO and define HAS_AIO.");
+#endif
+    return true;
+}
+
 // Optional: greet players with a client handshake on login (if AIO present)
 class DC_AIO_PlayerScript : public PlayerScript
 {
@@ -71,33 +94,14 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable sub =
-        {
-            { "ping", [this](ChatHandler* handler, char const* /*args*/)
-                {
-                    if (!handler || !handler->GetSession())
-                        return false;
-                    Player* player = handler->GetSession()->GetPlayer();
-                    if (!player)
-                        return false;
-                    bool sent = DC_AIO::SendHudMessage(player, "PING", "Test");
-#ifdef HAS_AIO
-                    if (sent)
-                        handler->PSendSysMessage("AIO: ping sent to addon.");
-                    else
-                        handler->PSendSysMessage("AIO: ping attempted, check server AIO API wiring.");
-#else
-                    handler->PSendSysMessage("AIO not enabled server-side. Install Rochet2/AIO and define HAS_AIO.");
-#endif
-                    return true;
-                }, SEC_PLAYER, Console::No }
+        static ChatCommandTable subTable = {
+            { "ping", HandleAioPing, SEC_PLAYER, Console::No },
         };
 
-        static ChatCommandTable cmds =
-        {
-            { "aio", sub }
+        static ChatCommandTable root = {
+            { "aio", subTable }
         };
-        return cmds;
+        return root;
     }
 };
 
