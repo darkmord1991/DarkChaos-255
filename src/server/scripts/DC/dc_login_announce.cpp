@@ -31,7 +31,9 @@ namespace
         // |cffHEX|Hplayer:|h [Name]|h|r
         std::string out = "|cff";
         out += hex;
-        out += "|Hplayer:|h [";
+        out += "|Hplayer:";
+        out += player->GetName();
+        out += "|h[";
         out += player->GetName();
         out += "]|h|r";
         return out;
@@ -54,7 +56,8 @@ public:
         else
             suffix = " - |cff0101DF[Alliance]|h|r has logged in.";
 
-    ChatHandler(nullptr).SendWorldText(colored + suffix);
+        // Use global sys message broadcaster to avoid nullptr session access
+        ChatHandler(nullptr).SendGlobalSysMessage((colored + suffix).c_str());
     }
 
     void OnPlayerLogout(Player* player) override
@@ -67,7 +70,7 @@ public:
             tag = (player->GetTeamId(true) == TEAM_HORDE) ? "Horde" : "Alliance";
 
         std::string msg = "[" + player->GetName() + " - " + tag + "] has logged out.";
-    ChatHandler(nullptr).SendWorldText(msg);
+        ChatHandler(nullptr).SendGlobalSysMessage(msg.c_str());
     }
 };
 
