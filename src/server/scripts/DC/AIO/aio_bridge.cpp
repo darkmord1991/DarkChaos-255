@@ -52,7 +52,7 @@ class DC_AIO_PlayerScript : public PlayerScript
 public:
     DC_AIO_PlayerScript() : PlayerScript("DC_AIO_PlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!player)
             return;
