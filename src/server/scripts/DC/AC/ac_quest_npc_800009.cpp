@@ -161,9 +161,23 @@ public:
                     }).Schedule(4000ms, [this, player](TaskContext /*ctx*/)
                     {
                         me->Whisper("Do you see this Shrine? It is for more challenging experiences.", LANG_UNIVERSAL, player);
+                    }).Schedule(3500ms, [this](TaskContext /*ctx*/)
+                    {
+                        // Face the player and wave early to ensure animation is seen
+                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                            me->SetFacingToObject(player);
+                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
                     }).Schedule(4500ms, [this](TaskContext /*ctx*/)
                     {
-                        // Give a friendly wave just before despawn
+                        // Face again and give a friendly wave just before despawn
+                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                            me->SetFacingToObject(player);
+                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                    }).Schedule(4800ms, [this](TaskContext /*ctx*/)
+                    {
+                        // Face again and reinforce in case of client latency/animation cut-off
+                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                            me->SetFacingToObject(player);
                         me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
                     }).Schedule(5s, [this](TaskContext /*ctx*/)
                     {
