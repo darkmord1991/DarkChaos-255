@@ -138,7 +138,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
                 me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
                 // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
-                _scheduler.Schedule(10000, [this](TaskContext /*ctx*/)
+                _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
                 {
                     if (!me->IsInWorld())
                         return;
@@ -148,6 +148,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 });
             }
         }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        VehicleAI::UpdateAI(diff);
+        _scheduler.Update(diff);
     }
 
 private:
