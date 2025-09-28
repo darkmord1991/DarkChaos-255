@@ -504,7 +504,7 @@
 
     // Movement-based AFK thresholds (in seconds)
     static constexpr uint32 HL_AFK_WARN_SECONDS = 60;      // warn after 60s idle
-    static constexpr uint32 HL_AFK_TELEPORT_SECONDS = 90;  // act after 90s idle
+    static constexpr uint32 HL_AFK_TELEPORT_SECONDS = 180; // act after 180s idle
 
     bool OutdoorPvPHL::Update(uint32 diff)
     {
