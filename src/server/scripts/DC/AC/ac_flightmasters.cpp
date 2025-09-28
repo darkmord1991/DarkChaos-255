@@ -87,10 +87,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
         // Start the scenic route once the player sits
         _index = 0;
-        _scheduler.Schedule(std::chrono::milliseconds(800), [this](TaskContext /*context*/)
-        {
-            MoveToIndex(_index);
-        });
+        MoveToIndex(_index);
     }
 
     void MovementInform(uint32 type, uint32 id) override
@@ -136,12 +133,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
 
-    void UpdateAI(uint32 diff) override
-    {
-        VehicleAI::UpdateAI(diff);
-        _scheduler.Update(diff);
-    }
-
 private:
     enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
 
@@ -150,6 +141,21 @@ private:
         _currentPointId = 10000u + idx; // unique id per node
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
     }
+
+    uint8 _index = 0;
+    uint32 _currentPointId = 0;
+};
+
+// Script wrapper for the gryphon taxi AI
+class ac_gryphon_taxi_800011 : public CreatureScript
+{
+public:
+    ac_gryphon_taxi_800011() : CreatureScript("ac_gryphon_taxi_800011") { }
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new ac_gryphon_taxi_800011AI(creature);
+    }
+};
 
 class ACFM1 : public CreatureScript
 {
