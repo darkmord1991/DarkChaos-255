@@ -120,6 +120,9 @@ endforeach()
 
 message("")
 
+# Copy DC HinterlandBG config into configs/modules as well
+CopyModuleConfig("${CMAKE_SOURCE_DIR}/src/server/scripts/DC/HinterlandBG/hinterlandbg.conf.dist")
+
 # Base sources which are used by every script project
 if (USE_SCRIPTPCH)
   set(PRIVATE_PCH_HEADER ModulesPCH.h)
@@ -346,6 +349,9 @@ foreach(ModuleName ${MODULE_LIST__})
     message(STATUS "  |  * ${configFileName}")
   endforeach()
 endforeach()
+
+# Include DC HinterlandBG config in module configs list so it loads via ConfigMgr
+set(CONFIG_LIST ${CONFIG_LIST}hinterlandbg.conf.dist,)
 
 # Define modules list
 target_compile_options(modules

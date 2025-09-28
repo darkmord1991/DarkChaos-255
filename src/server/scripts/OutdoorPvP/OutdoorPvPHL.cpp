@@ -1275,15 +1275,11 @@
 
     void OutdoorPvPHL::LoadConfig()
     {
-        // Load overrides from an optional separate file (conf/hinterlandbg.conf) if present
-        // and from worldserver.conf values under the same keys. Missing keys keep defaults.
+        // Read options that may come from worldserver.conf or modules configs.
+        // Note: The modules config loader (modules/CMakeLists CONFIG_LIST) handles copying
+        // and loading hinterlandbg.conf(.dist) under configs/modules automatically.
         if (sConfigMgr)
         {
-            // Try multiple locations relative to the configs directory
-            std::string base = sConfigMgr->GetConfigPath();
-            sConfigMgr->LoadAdditionalFile(base + "hinterlandbg.conf", true, false);
-            sConfigMgr->LoadAdditionalFile(base + "modules/hinterlandbg.conf", true, false);
-            sConfigMgr->LoadAdditionalFile(base + "modules/hinterlandbg/hinterlandbg.conf", true, false);
             _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
             _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
             _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);

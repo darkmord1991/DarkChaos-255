@@ -1,7 +1,12 @@
 Hinterland BG configuration
 
-Copy `conf/hinterlandbg.conf.dist` to the same directory as your `worldserver.conf` and rename it to `hinterlandbg.conf`.
-The script will auto-load it at startup and during `SetupOutdoorPvP()`.
+Primary location (recommended):
+- The source template lives at `src/server/scripts/DC/HinterlandBG/hinterlandbg.conf.dist` and is installed to `configs/modules/hinterlandbg.conf.dist` by the build.
+- To customize, copy `configs/modules/hinterlandbg.conf.dist` to `configs/modules/hinterlandbg.conf` and edit your values.
+- The server automatically loads module configs from `configs/modules` at startup; no manual loader calls are needed.
+
+Alternative:
+- You can also set any of these keys directly in `worldserver.conf`.
 
 Available keys (with defaults):
 
@@ -28,7 +33,6 @@ Notes:
 - Broadcast.Period is in seconds.
 - If KillItemId is set to 0 the item reward for player kills is disabled.
 - KillHonorValues is a CSV string; the first 4 values are used (fallbacks: 17,11,19,22).
-- You can also set these in worldserver.conf; the separate file is optional.
- - NPCEntriesAlliance/Horde are CSV creature entry IDs; when killed by the opposite team, the killer receives NPCTokenItem.
- - NPCEntryCountsAlliance/Horde let you override the token amount for specific entries (entry:count). If not set, NPCTokenItemCount is used.
- - The killer receives a brief whisper indicating the number of tokens awarded for configured NPC kills.
+- NPCEntriesAlliance/Horde are CSV creature entry IDs; when killed by the opposite team, the killer receives NPCTokenItem.
+- NPCEntryCountsAlliance/Horde let you override the token amount for specific entries (entry:count). If not set, NPCTokenItemCount is used.
+- The killer receives a brief whisper indicating the number of tokens awarded for configured NPC kills.
