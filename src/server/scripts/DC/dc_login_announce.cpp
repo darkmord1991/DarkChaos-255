@@ -54,7 +54,7 @@ public:
         else
             suffix = " - |cff0101DF[Alliance]|h|r has logged in.";
 
-    ChatHandler(nullptr).SendWorldText("%s", (colored + suffix).c_str());
+    ChatHandler(nullptr).SendWorldText(colored + suffix);
     }
 
     void OnPlayerLogout(Player* player) override
@@ -67,7 +67,7 @@ public:
             tag = (player->GetTeamId(true) == TEAM_HORDE) ? "Horde" : "Alliance";
 
         std::string msg = "[" + player->GetName() + " - " + tag + "] has logged out.";
-    ChatHandler(nullptr).SendWorldText("%s", msg.c_str());
+    ChatHandler(nullptr).SendWorldText(msg);
     }
 };
 
