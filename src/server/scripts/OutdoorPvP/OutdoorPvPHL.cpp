@@ -296,10 +296,9 @@
         // Max level gate
         if (!IsMaxLevel(player))
         {
-            Whisper(player, "You must be max level to join the Hinterland battle.");
-            // Teleport out to nearest graveyard as a soft rejection
-            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(player, player->GetTeamId()))
-                player->TeleportTo(g->Map, g->x, g->y, g->z, player->GetOrientation());
+            Whisper(player, "You must be max level to join the Hinterland battle. Teleporting to your capital city.");
+            // Teleport under-max-level players to their faction capital
+            TeleportToCapital(player);
             return; // do not register enter to PvP logic
         }
 
