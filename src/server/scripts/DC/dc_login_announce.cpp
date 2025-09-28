@@ -42,13 +42,13 @@ class DC_LoginAnnounce : public PlayerScript
 public:
     DC_LoginAnnounce() : PlayerScript("DC_LoginAnnounce") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         std::string colored = MakeClassColoredName(player);
         std::string suffix;
         if (player->IsGameMaster())
             suffix = " - |cffDF01D7[Owner]|h|r has logged in."; // matches lua color/tag
-        else if (player->IsHorde())
+        else if (player->GetTeamId(true) == TEAM_HORDE)
             suffix = " - |cff610B0B[Horde]|h|r has logged in.";
         else
             suffix = " - |cff0101DF[Alliance]|h|r has logged in.";
@@ -56,14 +56,14 @@ public:
         sWorld->SendServerMessage(SERVER_MSG_STRING, (colored + suffix).c_str());
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         // Simpler logout line like the Lua version
         std::string tag;
         if (player->IsGameMaster())
             tag = "GM";
         else
-            tag = player->IsHorde() ? "Horde" : "Alliance";
+            tag = (player->GetTeamId(true) == TEAM_HORDE) ? "Horde" : "Alliance";
 
         std::string msg = "[" + player->GetName() + " - " + tag + "] has logged out.";
         sWorld->SendServerMessage(SERVER_MSG_STRING, msg.c_str());
