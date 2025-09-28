@@ -20,6 +20,7 @@ void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp (C++ link
 void AddSC_npc_thrall_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
 void AddSC_hlbg_commandscript(); // location: scripts\DC\HinterlandBG\hlbg_commandscript.cpp (C++ linkage)
+void AddSC_dc_login_announce(); // location: scripts\DC\dc_login_announce.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -29,4 +30,5 @@ void AddDCScripts()
     AddSC_npc_thrall_hinterlandbg();
     AddSC_hinterlandbg_Varian_wrynn();
     AddSC_hlbg_commandscript();
+    AddSC_dc_login_announce();
 }
