@@ -11,15 +11,6 @@ namespace
     // Forward declaration so it can be referenced by HandleFaqNoArg
     static bool HandleFaqHelp(ChatHandler* handler, char const* args);
 
-    inline Player* GetInvokerPlayer(ChatHandler* handler)
-    {
-        if (!handler)
-            return nullptr;
-        if (WorldSession* sess = handler->GetSession())
-            return sess->GetPlayer();
-        return nullptr;
-    }
-
     inline void NotifyAndChat(ChatHandler* handler, char const* msg)
     {
         if (!handler || !msg || !*msg)
