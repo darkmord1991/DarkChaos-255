@@ -63,13 +63,20 @@ public:
         bool isTour = false;
         uint8 index = 0; // current waypoint index
 
-        // Four tour stations
-        static const Position kStations[4] = {
-            { 141.98f, 991.51f, 295.10f, 0.0f },
-            { 157.81f, 977.75f, 293.65f, 0.0f },
-            { 149.01f, 985.66f, 295.07f, 0.0f },
-            { 140.19f, 971.87f, 295.22f, 0.0f }
-        };
+        // Returns the tour station position for the given index (0..3)
+        Position GetStation(uint8 i) const
+        {
+            Position pos;
+            switch (i)
+            {
+                case 0: pos.Relocate(141.98f, 991.51f, 295.10f, 0.0f); break;
+                case 1: pos.Relocate(157.81f, 977.75f, 293.65f, 0.0f); break;
+                case 2: pos.Relocate(149.01f, 985.66f, 295.07f, 0.0f); break;
+                case 3: pos.Relocate(140.19f, 971.87f, 295.22f, 0.0f); break;
+                default: break;
+            }
+            return pos;
+        }
 
         enum : int32 { ACTION_START_TOUR = 1 };
 
@@ -111,7 +118,8 @@ public:
         {
             if (index < 4)
             {
-                me->GetMotionMaster()->MovePoint(index + 1, kStations[index]);
+                Position pos = GetStation(index);
+                me->GetMotionMaster()->MovePoint(index + 1, pos);
             }
         }
 
