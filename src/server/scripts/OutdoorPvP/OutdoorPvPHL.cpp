@@ -286,21 +286,18 @@ static inline void ClampResources(uint32 &value)
 // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // No packet.ZoneId/MapAreaId available in this core; seed unconditionally.
-    // Client DBC mapping (your WG->Hinterlands patch) governs actual rendering.
-
-    // WG HUD only (client DBC is patched only for WG frames in Hinterlands)
+    // WG HUD only (DBC patched for WG frames in Hinterlands)
     uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
-    uint32 now = GameTime::GetGameTime();
+
+    // GameTime returns Seconds; use .count()
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
     uint32 endEpoch = now + timeRemaining;
 
-    // Show WG HUD + clock (both IDs) and keep control neutral
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
 
-    // Reuse WG vehicle bars to show resources (cur/max per team)
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -471,21 +468,18 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // No packet.ZoneId/MapAreaId available in this core; seed unconditionally.
-    // Client DBC mapping (your WG->Hinterlands patch) governs actual rendering.
-
-    // WG HUD only (client DBC is patched only for WG frames in Hinterlands)
+    // WG HUD only (DBC patched for WG frames in Hinterlands)
     uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
-    uint32 now = GameTime::GetGameTime();
+
+    // GameTime returns Seconds; use .count()
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
     uint32 endEpoch = now + timeRemaining;
 
-    // Show WG HUD + clock (both IDs) and keep control neutral
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
 
-    // Reuse WG vehicle bars to show resources (cur/max per team)
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -498,9 +492,8 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
         if (!player || !player->IsInWorld() || player->GetZoneId() != HL_ZONE_ID)
             return;
 
-        // WG HUD only (SA/AB states removed)
         uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
-        uint32 now = GameTime::GetGameTime();
+        uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
         uint32 endEpoch = now + timeRemaining;
 
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
@@ -508,7 +501,6 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
 
-        // Reuse WG vehicle counters to display resources near the clock
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
@@ -587,7 +579,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Clear reward-exclusion sets for the next battle
     ClearRewardExclusions();
 
-    // Hide Wintergrasp HUD for all players in zone (SA/AB states removed)
+    // Hide Wintergrasp HUD for all players in zone
     for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
     {
         if (Player* p = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
@@ -595,7 +587,8 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
             if (!p->IsInWorld() || p->GetZoneId() != HL_ZONE_ID)
                 continue;
             p->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
-            p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
+            // Removed SA timer clear for consistency
+            // p->SendUpdateWorldState(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 0);
         }
     }
 
