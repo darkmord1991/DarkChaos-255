@@ -81,13 +81,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
     void PassengerBoarded(Unit* passenger, int8 seatId, bool apply) override
     {
-        (void)passenger; // unused
-        if (!apply || seatId != 0)
+        if (!apply)
             return;
 
-        // Start the scenic route once the player sits
-        _index = 0;
-        MoveToIndex(_index);
+        // Start the scenic route once the first player sits (any passenger seat)
+        if (!_started)
+        {
+            _started = true;
+            _index = 0;
+            if (Player* p = passenger ? passenger->ToPlayer() : nullptr)
+                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat %d. Starting at acfm1.", (int)seatId);
+            MoveToIndex(_index);
+        }
     }
 
     void MovementInform(uint32 type, uint32 id) override
@@ -118,6 +123,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (_index + 1 < kPathLength)
             {
                 ++_index;
+                // Debug: announce waypoint reached to the passenger
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Reached waypoint acfm%u.", (uint32)_index);
                 MoveToIndex(_index);
             }
             else
@@ -129,6 +137,15 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 me->UpdateGroundPositionZ(x, y, z);
                 Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
                 me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
+                // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
+                _scheduler.Schedule(10000, [this](TaskContext /*ctx*/)
+                {
+                    if (!me->IsInWorld())
+                        return;
+                    if (Player* p = GetPassengerPlayer())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                    DismountAndDespawn();
+                });
             }
         }
     }
@@ -142,8 +159,38 @@ private:
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
     }
 
+    Player* GetPassengerPlayer() const
+    {
+        if (Vehicle* kit = me->GetVehicleKit())
+        {
+            for (int i = 0; i < 8; ++i)
+                if (Unit* u = kit->GetPassenger(i))
+                    if (Player* p = u->ToPlayer())
+                        return p;
+        }
+        return nullptr;
+    }
+
+    void DismountAndDespawn()
+    {
+        if (Vehicle* kit = me->GetVehicleKit())
+        {
+            for (int i = 0; i < 8; ++i)
+                if (Unit* u = kit->GetPassenger(i))
+                {
+                    u->ExitVehicle();
+                    if (Player* p = u->ToPlayer())
+                        ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
+                }
+        }
+        me->DespawnOrUnsummon(2000);
+    }
+
     uint8 _index = 0;
     uint32 _currentPointId = 0;
+    bool _started = false;
+    TaskScheduler _scheduler;
+};
 };
 
 // Script wrapper for the gryphon taxi AI
@@ -201,8 +248,9 @@ public:
             return true;
         }
 
-        // Board the player into seat 0
-        player->EnterVehicle(taxi, 0);
+        // Board the player, auto-select a suitable passenger seat (-1)
+        player->EnterVehicle(taxi, -1);
+        ChatHandler(player->GetSession()).SendSysMessage("[Flight Debug] Attempting to board gryphon (auto-seat). If you don't move, VehicleId/seat config may be wrong.");
         return true;
     }
 };
