@@ -22,6 +22,7 @@
     #include "ObjectAccessor.h"
     #include "DBCStores.h"
     #include "Misc/GameGraveyard.h"
+    #include "Time/GameTime.h"
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
@@ -60,7 +61,7 @@
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
     {
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-        uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
+    uint32 endEpoch = uint32(GameTime::GetGameTime().count()) + GetTimeRemainingSeconds();
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -75,7 +76,7 @@
         if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
             return;
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-        uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
+    uint32 endEpoch = uint32(GameTime::GetGameTime().count()) + GetTimeRemainingSeconds();
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -177,7 +178,7 @@
     {
         if (_matchEndTime == 0)
             return 0u;
-        uint32 now = sWorld->GetGameTime();
+    uint32 now = uint32(GameTime::GetGameTime().count());
         if (now >= _matchEndTime)
             return 0u;
         return _matchEndTime - now;
@@ -282,7 +283,7 @@
         // entering the zone clears AFK flagged edge state
     _afkFlagged.erase(player->GetGUID().GetCounter());
     // seed last-move trackers
-    _playerLastMove[player->GetGUID()] = sWorld->GetGameTime();
+    _playerLastMove[player->GetGUID()] = uint32(GameTime::GetGameTime().count());
     _playerWarnedBeforeTeleport[player->GetGUID()] = false;
     _playerLastPos[player->GetGUID()] = player->GetPosition();
 
@@ -352,7 +353,7 @@
         float dist2d = std::sqrt(dx*dx + dy*dy);
         if (dist2d > 0.5f || std::fabs(dz) > 0.5f)
         {
-            _playerLastMove[player->GetGUID()] = sWorld->GetGameTime();
+            _playerLastMove[player->GetGUID()] = uint32(GameTime::GetGameTime().count());
             _playerWarnedBeforeTeleport[player->GetGUID()] = false; // reset warn once they move
             last = cur;
             // If previously flagged AFK due to inactivity, clear the edge flag so next AFK is a new infraction only when idle again
@@ -405,7 +406,7 @@
         limit_resources_message_H = 0;
 
         // seed a fresh timer window from now
-        _matchEndTime = sWorld->GetGameTime() + HL_MATCH_DURATION_SECONDS;
+    _matchEndTime = uint32(GameTime::GetGameTime().count()) + HL_MATCH_DURATION_SECONDS;
         //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     }
@@ -495,7 +496,7 @@
             }
                 
             if (_matchEndTime == 0)
-                _matchEndTime = sWorld->GetGameTime() + HL_MATCH_DURATION_SECONDS;
+                _matchEndTime = uint32(GameTime::GetGameTime().count()) + HL_MATCH_DURATION_SECONDS;
             _FirstLoad = true;
         }
 
@@ -514,7 +515,7 @@
 
         // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
         {
-            uint32 nowSec = sWorld->GetGameTime();
+            uint32 nowSec = uint32(GameTime::GetGameTime().count());
             // Mark newly offline members & clear marks for those who returned
             for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
             {
@@ -601,7 +602,7 @@
                 uint32 low = p->GetGUID().GetCounter();
                 bool wasAfk = _afkFlagged.count(low) > 0;
                 // movement-based check
-                uint32 nowSec = sWorld->GetGameTime();
+                uint32 nowSec = uint32(GameTime::GetGameTime().count());
                 auto itLast = _playerLastMove.find(p->GetGUID());
                 if (itLast == _playerLastMove.end())
                 {
