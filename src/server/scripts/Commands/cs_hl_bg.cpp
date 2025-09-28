@@ -89,24 +89,6 @@ public:
         if (!player)
             return false;
 
-        // Print high-level status: active, time, resources
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-        {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-            {
-                const bool active = hl->BattleActive();
-                const uint32 tRemain = hl->GetMatchTimeRemainingSeconds();
-                const uint32 tElapsed = hl->GetMatchTimeElapsedSeconds();
-                const char* last = hl->GetLastWinner() == ALLIANCE ? "Alliance" : (hl->GetLastWinner() == HORDE ? "Horde" : "None");
-                handler->PSendSysMessage("Hinterland BG status: active={} | lastWinner={} | time elapsed={}s | time remaining={}s", active ? "yes" : "no", last, tElapsed, tRemain);
-                uint32 aCur = hl->GetResources(TEAM_ALLIANCE);
-                uint32 hCur = hl->GetResources(TEAM_HORDE);
-                uint32 aMax = hl->GetPermanentResources(TEAM_ALLIANCE);
-                uint32 hMax = hl->GetPermanentResources(TEAM_HORDE);
-                handler->PSendSysMessage("Resources: Alliance {}/{} | Horde {}/{}", aCur, aMax, hCur, hMax);
-            }
-        }
-
         handler->PSendSysMessage("Hinterland BG raid groups:");
 
         for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
