@@ -186,6 +186,8 @@
             void BroadcastStatusToZone();
             // Chat cosmetics: clickable item link prefix for BG notifications
             std::string GetBgChatPrefix() const;
+            // Config loader
+            void LoadConfig();
 
         private:
             // helpers
@@ -215,6 +217,26 @@
     uint32 _hudRefreshTimerMs;
         uint32 _statusBroadcastTimerMs;
         bool _zoneWasEmpty; // track empty-zone periods to help diagnose NPC despawn window
+    // Configurable settings (loaded from hinterlandbg.conf)
+    uint32 _matchDurationSeconds;
+    uint32 _afkWarnSeconds;
+    uint32 _afkTeleportSeconds;
+    bool   _statusBroadcastEnabled;
+    uint32 _statusBroadcastPeriodMs;
+    uint32 _initialResourcesAlliance;
+    uint32 _initialResourcesHorde;
+    uint32 _rewardMatchHonor;
+    std::vector<uint32> _killHonorValues; // CSV-configured
+    uint32 _rewardKillItemId;
+    uint32 _rewardKillItemCount;
+    // Configurable NPC reward entries (up to ~10 per team) and token item
+    std::vector<uint32> _npcRewardEntriesAlliance;
+    std::vector<uint32> _npcRewardEntriesHorde;
+    uint32 _rewardNpcTokenItemId;
+    uint32 _rewardNpcTokenCount;
+    // Optional per-NPC token counts (entry -> count), per opposite team
+    std::unordered_map<uint32, uint32> _npcRewardCountsAlliance; // rewarded when Horde kills these Alliance entries
+    std::unordered_map<uint32, uint32> _npcRewardCountsHorde;    // rewarded when Alliance kills these Horde entries
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
             // Movement-based AFK tracking

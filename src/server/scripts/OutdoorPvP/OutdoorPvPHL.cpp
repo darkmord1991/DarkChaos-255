@@ -34,6 +34,7 @@
     #include "DBCStores.h"
     #include "Misc/GameGraveyard.h"
     #include "Time/GameTime.h"
+    #include "Config.h"
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
@@ -44,9 +45,29 @@
     OutdoorPvPHL::OutdoorPvPHL()
     {
         _typeId = OUTDOOR_PVP_HL;
+        // Set defaults for configurable values (can be overridden by LoadConfig)
+        _matchDurationSeconds = HL_MATCH_DURATION_SECONDS;
+        _afkWarnSeconds = 120;
+        _afkTeleportSeconds = 180;
+        _statusBroadcastEnabled = true;
+        _statusBroadcastPeriodMs = 60 * IN_MILLISECONDS;
+        _initialResourcesAlliance = HL_RESOURCES_A;
+        _initialResourcesHorde = HL_RESOURCES_H;
+        _rewardMatchHonor = 1500;
+        _killHonorValues = { 17, 11, 19, 22 };
+    _rewardKillItemId = 40752;
+    _rewardKillItemCount = 1;
+    _rewardNpcTokenItemId = 40752; // default to same token as kill item
+    _rewardNpcTokenCount = 1;
+    _npcRewardEntriesAlliance.clear();
+    _npcRewardEntriesHorde.clear();
+    _npcRewardCountsAlliance.clear();
+    _npcRewardCountsHorde.clear();
+        // Load overrides from config if available
+        LoadConfig();
 
-        _ally_gathered = HL_RESOURCES_A;
-        _horde_gathered = HL_RESOURCES_H;
+        _ally_gathered = _initialResourcesAlliance;
+        _horde_gathered = _initialResourcesHorde;
         _LastWin = 0;
         _matchEndTime = 0;
 
@@ -79,6 +100,8 @@
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             RegisterZone(OutdoorPvPHLBuffZones[i]);
         SetMapFromZone(OutdoorPvPHLBuffZones[0]);
+        // Re-load configuration on setup
+        LoadConfig();
         return true;
     }
 
@@ -505,8 +528,8 @@
 
     void OutdoorPvPHL::HandleReset()
     {
-        _ally_gathered = HL_RESOURCES_A;
-        _horde_gathered = HL_RESOURCES_H;
+            _ally_gathered = _initialResourcesAlliance;
+            _horde_gathered = _initialResourcesHorde;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
@@ -521,7 +544,7 @@
         limit_resources_message_H = 0;
 
         // seed a fresh timer window from now
-    _matchEndTime = uint32(GameTime::GetGameTime().count()) + HL_MATCH_DURATION_SECONDS;
+        _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
         //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     // Push fresh HUD state to any players already in the zone
@@ -581,9 +604,7 @@
         HandleWinMessage(msg);
     }
 
-    // Movement-based AFK thresholds (in seconds)
-    static constexpr uint32 HL_AFK_WARN_SECONDS = 120;     // warn after 120s idle
-    static constexpr uint32 HL_AFK_TELEPORT_SECONDS = 180; // act after 180s idle
+    // AFK thresholds are configurable via LoadConfig()
 
     bool OutdoorPvPHL::Update(uint32 diff)
     {
@@ -606,7 +627,7 @@
             }
                 
             if (_matchEndTime == 0)
-                _matchEndTime = uint32(GameTime::GetGameTime().count()) + HL_MATCH_DURATION_SECONDS;
+                _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
             _FirstLoad = true;
         }
 
@@ -757,7 +778,7 @@
                     _playerLastPos[p->GetGUID()] = p->GetPosition();
                 }
                 uint32 idleSec = nowSec - _playerLastMove[p->GetGUID()];
-                if (idleSec >= HL_AFK_TELEPORT_SECONDS)
+                if (idleSec >= _afkTeleportSeconds)
                 {
                     if (!wasAfk)
                     {
@@ -777,11 +798,11 @@
                         }
                     }
                 }
-                else if (idleSec >= HL_AFK_WARN_SECONDS)
+                else if (idleSec >= _afkWarnSeconds)
                 {
                     if (!_playerWarnedBeforeTeleport[p->GetGUID()])
                     {
-                        uint32 secondsLeft = HL_AFK_TELEPORT_SECONDS - idleSec;
+                        uint32 secondsLeft = (_afkTeleportSeconds > idleSec) ? (_afkTeleportSeconds - idleSec) : 0u;
                         Whisper(p, "You seem AFK. Move now or you'll be teleported in " + std::to_string(secondsLeft) + "s.");
                         _playerWarnedBeforeTeleport[p->GetGUID()] = true;
                     }
@@ -827,13 +848,13 @@
             }
         }
 
-        // Periodic status broadcast (every 60s) only if there are players in the zone
-        if (_playersInZone > 0)
+        // Periodic status broadcast only if enabled and there are players in the zone
+        if (_playersInZone > 0 && _statusBroadcastEnabled)
         {
             if (_statusBroadcastTimerMs <= diff)
             {
                 BroadcastStatusToZone();
-                _statusBroadcastTimerMs = 60 * IN_MILLISECONDS;
+                _statusBroadcastTimerMs = _statusBroadcastPeriodMs;
             }
             else
             {
@@ -938,7 +959,7 @@
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r").c_str());
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cffff0000For the HORDE!|r");
-                            HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
+                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
                             
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
@@ -967,7 +988,7 @@
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r").c_str());
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
-                            HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
+                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
                                 case TEAM_ALLIANCE:
@@ -1019,16 +1040,28 @@
         switch(urand(0, 4))
         {
             case 0:
-                HandleRewards(player, 17, true, false, false); // Anpassen?
+            {
+                uint32 v = (_killHonorValues.size() > 0 ? _killHonorValues[0] : 17);
+                HandleRewards(player, v, true, false, false);
+            }
                 break;
             case 1:
-                HandleRewards(player, 11, true, false, false); // Anpassen?
+            {
+                uint32 v = (_killHonorValues.size() > 1 ? _killHonorValues[1] : 11);
+                HandleRewards(player, v, true, false, false);
+            }
                 break;
             case 2:
-                HandleRewards(player, 19, true, false, false); // Anpassen?
+            {
+                uint32 v = (_killHonorValues.size() > 2 ? _killHonorValues[2] : 19);
+                HandleRewards(player, v, true, false, false);
+            }
                 break;
             case 3:
-                HandleRewards(player, 22, true, false, false); // Anpassen?
+            {
+                uint32 v = (_killHonorValues.size() > 3 ? _killHonorValues[3] : 22);
+                HandleRewards(player, v, true, false, false);
+            }
                 break;
         }
     }
@@ -1068,6 +1101,8 @@
                         {
 					        player->AddItem(40752, 1);
                             Randomizer(player);
+                            if (_rewardKillItemId && _rewardKillItemCount)
+                                player->AddItem(_rewardKillItemId, _rewardKillItemCount);
                         }
                     }
                     break;
@@ -1082,7 +1117,8 @@
                         else
                         {
                             Randomizer(player);
-					        player->AddItem(40752, 1);
+                            if (_rewardKillItemId && _rewardKillItemCount)
+                                player->AddItem(_rewardKillItemId, _rewardKillItemCount);
                         }
                     }
                     break;
@@ -1092,9 +1128,48 @@
         }
         else // If is something besides a player
         {
+            uint32 entry = killed->GetEntry();
+            // Configured NPC token rewards (up to 10 entries per team via config)
+            if (player->GetTeamId() == TEAM_ALLIANCE)
+            {
+                if (!_npcRewardEntriesHorde.empty() && std::find(_npcRewardEntriesHorde.begin(), _npcRewardEntriesHorde.end(), entry) != _npcRewardEntriesHorde.end())
+                {
+                    if (_rewardNpcTokenItemId)
+                    {
+                        uint32 count = _rewardNpcTokenCount;
+                        auto itc = _npcRewardCountsHorde.find(entry);
+                        if (itc != _npcRewardCountsHorde.end())
+                            count = itc->second;
+                        if (count)
+                        {
+                            player->AddItem(_rewardNpcTokenItemId, count);
+                            Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                        }
+                    }
+                }
+            }
+            else // TEAM_HORDE
+            {
+                if (!_npcRewardEntriesAlliance.empty() && std::find(_npcRewardEntriesAlliance.begin(), _npcRewardEntriesAlliance.end(), entry) != _npcRewardEntriesAlliance.end())
+                {
+                    if (_rewardNpcTokenItemId)
+                    {
+                        uint32 count = _rewardNpcTokenCount;
+                        auto itc = _npcRewardCountsAlliance.find(entry);
+                        if (itc != _npcRewardCountsAlliance.end())
+                            count = itc->second;
+                        if (count)
+                        {
+                            player->AddItem(_rewardNpcTokenItemId, count);
+                            Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                        }
+                    }
+                }
+            }
+
             if(player->GetTeamId() == TEAM_ALLIANCE)
             {
-                switch(killed->GetEntry()) // Alliance killing horde guards
+                switch(entry) // Alliance killing horde guards
                 {
                     case Horde_Infantry:
                         _horde_gathered -= PointsLoseOnPvPKill;
@@ -1138,7 +1213,7 @@
             }
             else // Team Horde
             {
-                switch(killed->GetEntry()) // Horde killing alliance guards
+                switch(entry) // Horde killing alliance guards
                 {
                     case Alliance_Healer:
                         _ally_gathered -= PointsLoseOnPvPKill;
@@ -1197,6 +1272,94 @@
             return new OutdoorPvPHL();
         }
     };
+
+    void OutdoorPvPHL::LoadConfig()
+    {
+        // Load overrides from an optional separate file (conf/hinterlandbg.conf) if present
+        // and from worldserver.conf values under the same keys. Missing keys keep defaults.
+        if (sConfigMgr)
+        {
+            // Load from standard config dir
+            sConfigMgr->LoadMore("hinterlandbg.conf");
+            // Also allow placing the config under a modules subfolder (common pattern for modules)
+            sConfigMgr->LoadMore("modules/hinterlandbg.conf");
+            sConfigMgr->LoadMore("modules/hinterlandbg/hinterlandbg.conf");
+            _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
+            _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
+            _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
+            _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);
+            uint32 periodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Broadcast.Period", _statusBroadcastPeriodMs / IN_MILLISECONDS);
+            _statusBroadcastPeriodMs = periodSec * IN_MILLISECONDS;
+            _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
+            _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
+            _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
+            _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
+            _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
+            _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
+            _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
+            std::string csv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
+            if (!csv.empty())
+            {
+                std::vector<uint32> parsed;
+                size_t start = 0;
+                while (start < csv.size())
+                {
+                    size_t comma = csv.find(',', start);
+                    std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                    try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); } catch (...) {}
+                    if (comma == std::string::npos) break; else start = comma + 1;
+                }
+                if (!parsed.empty())
+                    _killHonorValues = std::move(parsed);
+            }
+        }
+            // Parse Alliance NPC reward entries (CSV of entry IDs)
+            auto parseCsvU32 = [](std::string const& in) -> std::vector<uint32>
+            {
+                std::vector<uint32> out;
+                size_t start = 0;
+                while (start < in.size())
+                {
+                    size_t comma = in.find(',', start);
+                    std::string token = in.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                    try { if (!token.empty()) out.push_back(static_cast<uint32>(std::stoul(token))); } catch (...) {}
+                    if (comma == std::string::npos) break; else start = comma + 1;
+                }
+                return out;
+            };
+            std::string aList = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesAlliance", "");
+            std::string hList = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesHorde", "");
+            if (!aList.empty()) _npcRewardEntriesAlliance = parseCsvU32(aList);
+            if (!hList.empty()) _npcRewardEntriesHorde = parseCsvU32(hList);
+
+            // Optional per-NPC token counts: CSV "entry:count" pairs per team
+            auto parseEntryCounts = [](std::string const& in) -> std::unordered_map<uint32, uint32>
+            {
+                std::unordered_map<uint32, uint32> out;
+                size_t start = 0;
+                while (start < in.size())
+                {
+                    size_t comma = in.find(',', start);
+                    std::string pair = in.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                    size_t colon = pair.find(':');
+                    if (colon != std::string::npos)
+                    {
+                        try {
+                            uint32 entry = static_cast<uint32>(std::stoul(pair.substr(0, colon)));
+                            uint32 count = static_cast<uint32>(std::stoul(pair.substr(colon + 1)));
+                            if (entry && count)
+                                out[entry] = count;
+                        } catch (...) {}
+                    }
+                    if (comma == std::string::npos) break; else start = comma + 1;
+                }
+                return out;
+            };
+            std::string aCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsAlliance", "");
+            std::string hCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsHorde", "");
+            if (!aCounts.empty()) _npcRewardCountsAlliance = parseEntryCounts(aCounts);
+            if (!hCounts.empty()) _npcRewardCountsHorde = parseEntryCounts(hCounts);
+    }
 
     // Movement hook to feed movement-based AFK tracking
     class HLMovementHandlerScript : public MovementHandlerScript
