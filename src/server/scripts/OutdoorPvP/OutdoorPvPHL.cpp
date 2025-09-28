@@ -55,7 +55,8 @@
         _afkCheckTimerMs = 0;
     _hudRefreshTimerMs = 0;
         _statusBroadcastTimerMs = 0;
-        _memberOfflineSince.clear();
+    _memberOfflineSince.clear();
+    _zoneWasEmpty = false;
 
     }
 
@@ -324,9 +325,16 @@
             return; // do not register enter to PvP logic
         }
 
-        // Welcome and current standing whisper
-        Whisper(player, "Welcome to Hinterland BG!");
-        Whisper(player, "Current standing — Alliance: " + std::to_string(_ally_gathered) + ", Horde: " + std::to_string(_horde_gathered) + ".");
+    // If we are the first player after an empty-zone period, note it for NPC checks
+    if (_playersInZone == 0 && _npcCheckTimerMs == 0 && _zoneWasEmpty)
+    {
+        LOG_INFO("misc", "[OutdoorPvPHL]: First player entered after ~1 minute of emptiness. Verify NPCs are present.");
+        _zoneWasEmpty = false; // reset flag
+    }
+
+    // Welcome and current standing whisper (colored)
+    Whisper(player, "|cffffd700Welcome to Hinterland BG!|r");
+    Whisper(player, "Current standing — |cff1e90ffAlliance|r: " + std::to_string(_ally_gathered) + ", |cffff0000Horde|r: " + std::to_string(_horde_gathered) + ".");
 
     ++_playersInZone;
         // entering the zone clears AFK flagged edge state
@@ -351,7 +359,10 @@
          {
              --_playersInZone;
              if (_playersInZone == 0)
+             {
                  _npcCheckTimerMs = 60 * IN_MILLISECONDS; // start 1-minute empty-zone timer
+                 _zoneWasEmpty = true;
+             }
          }
          // clear AFK tracking on leave
          ClearAfkState(player);
@@ -371,17 +382,51 @@
                                     (std::find(_teamRaidGroups[TEAM_HORDE].begin(), _teamRaidGroups[TEAM_HORDE].end(), gid) != _teamRaidGroups[TEAM_HORDE].end());
                      if (tracked)
                      {
-                         // Remove this player from the raid
-                         g->RemoveMember(player->GetGUID());
-                         // If empty afterwards, disband immediately and untrack
-                         if (g->GetMembersCount() == 0)
-                         {
-                             g->Disband(true /*hideDestroy*/);
-                             for (auto& vec : _teamRaidGroups)
-                             {
-                                 vec.erase(std::remove(vec.begin(), vec.end(), gid), vec.end());
-                             }
-                         }
+                        // If the group has exactly 2 members, remember the other member so we can keep their raid alive after removal
+                        ObjectGuid otherGuid;
+                        if (g->GetMembersCount() == 2)
+                        {
+                            for (auto const& slot : g->GetMemberSlots())
+                                if (slot.guid != player->GetGUID()) { otherGuid = slot.guid; break; }
+                        }
+
+                        // Remove this player from the raid
+                        g->RemoveMember(player->GetGUID());
+
+                        // If group is now empty, disband and untrack
+                        if (g->GetMembersCount() == 0)
+                        {
+                            g->Disband(true /*hideDestroy*/);
+                            for (auto& vec : _teamRaidGroups)
+                                vec.erase(std::remove(vec.begin(), vec.end(), gid), vec.end());
+                        }
+                        else if (g->GetMembersCount() == 1 && !otherGuid.IsEmpty())
+                        {
+                            // Core may auto-disband groups that shrink to 1. Ensure the remaining player stays in a BG raid by recreating it.
+                            if (Player* other = ObjectAccessor::FindPlayer(otherGuid))
+                            {
+                                // If the remaining player lost their group or it is no longer a raid, create a fresh raid for them
+                                Group* og = other->GetGroup();
+                                if (!og || !og->isRaidGroup())
+                                {
+                                    Group* ng = new Group();
+                                    if (ng->Create(other))
+                                    {
+                                        ng->ConvertToRaid();
+                                        sGroupMgr->AddGroup(ng);
+                                        _teamRaidGroups[other->GetTeamId()].push_back(ng->GetGUID());
+                                        Whisper(other, "|cffffd700Your battleground raid remains active.|r");
+                                    }
+                                    else
+                                    {
+                                        delete ng;
+                                    }
+                                }
+                            }
+                            // Untrack the old group (it will be auto-disbanded by core when shrinking to 1)
+                            for (auto& vec : _teamRaidGroups)
+                                vec.erase(std::remove(vec.begin(), vec.end(), gid), vec.end());
+                        }
                      }
                  }
              }
@@ -482,25 +527,16 @@
     {
         if (!IsEligibleForRewards(player))
         {
-            Whisper(player, "You are not eligible for rewards (deserter).");
+            Whisper(player, "|cffff0000You are not eligible for rewards (Deserter).|r");
+            return;
+        }
+        // Deny any rewards if the player has at least one AFK infraction this match
+        if (player && GetAfkCount(player) >= 1)
+        {
+            Whisper(player, "|cffff0000AFK penalty: you receive no rewards.|r");
             return;
         }
         uint32 amount = honorpointsorarena;
-        // Apply AFK reward policy based on infraction count (movement or chat-based)
-        if (player)
-        {
-            uint8 count = GetAfkCount(player);
-            if (count >= 2)
-            {
-                Whisper(player, "AFK penalty: no rewards.");
-                return;
-            }
-            else if (count == 1)
-            {
-                amount = honorpointsorarena / 2;
-                Whisper(player, "AFK penalty applied: half rewards.");
-            }
-        }
         char msg[250];
         uint32 _GetHonorPoints = player->GetHonorPoints();
         uint32 _GetArenaPoints = player->GetArenaPoints();
@@ -508,18 +544,18 @@
         if(honor)
         {
             player->SetHonorPoints(_GetHonorPoints + amount);
-            snprintf(msg, 250, "You got %u bonus honor!", amount);
+            snprintf(msg, 250, "|cffffd700You got %u bonus honor!|r", amount);
         }
         else if(arena)
         {
             player->SetArenaPoints(_GetArenaPoints + amount);
-            snprintf(msg, 250, "You got amount of %u additional arena points!", amount);
+            snprintf(msg, 250, "|cffffd700You got %u additional arena points!|r", amount);
         }
         else if(both)
         {
             player->SetHonorPoints(_GetHonorPoints + amount);
             player->SetArenaPoints(_GetArenaPoints + amount);
-            snprintf(msg, 250, "You got amount of %u additional arena points and bonus honor!", amount);
+            snprintf(msg, 250, "|cffffd700You got %u additional arena points and bonus honor!|r", amount);
         }
         HandleWinMessage(msg);
     }
@@ -560,7 +596,7 @@
             if (diff >= _npcCheckTimerMs)
             {
                 _npcCheckTimerMs = 0;
-                LOG_INFO("misc", "[OutdoorPvPHL]: Zone empty for ~60s. Check NPC presence on next join.");
+                LOG_INFO("misc", "[OutdoorPvPHL]: Zone empty for ~60s. Check NPC presence on next join (possible 1 min despawn window).");
             }
             else
                 _npcCheckTimerMs -= diff;
@@ -621,7 +657,7 @@
             }
         }
 
-        // Stricter group lifecycle: remove empty raid groups promptly
+        // Stricter group lifecycle: remove empty raid groups promptly, but keep raids alive for a single remaining member
         for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
         {
             auto& vec = _teamRaidGroups[tid];
@@ -633,6 +669,36 @@
                     // Disband group if it still exists to avoid leaving empty raids hanging around
                     if (g)
                         g->Disband(true /*hideDestroy*/);
+                    it = vec.erase(it);
+                }
+                else if (g->GetMembersCount() == 1)
+                {
+                    // Ensure the last player retains a BG raid
+                    ObjectGuid lastGuid;
+                    for (auto const& slot : g->GetMemberSlots()) { lastGuid = slot.guid; break; }
+                    if (!lastGuid.IsEmpty())
+                    {
+                        if (Player* last = ObjectAccessor::FindPlayer(lastGuid))
+                        {
+                            Group* lg = last->GetGroup();
+                            if (!lg || !lg->isRaidGroup())
+                            {
+                                Group* ng = new Group();
+                                if (ng->Create(last))
+                                {
+                                    ng->ConvertToRaid();
+                                    sGroupMgr->AddGroup(ng);
+                                    _teamRaidGroups[tid].push_back(ng->GetGUID());
+                                    Whisper(last, "|cffffd700Your battleground raid remains active.|r");
+                                }
+                                else
+                                {
+                                    delete ng;
+                                }
+                            }
+                        }
+                    }
+                    // Untrack the old group; let core handle its lifecycle
                     it = vec.erase(it);
                 }
                 else
@@ -673,13 +739,13 @@
                         uint8 count = GetAfkCount(p);
                         if (count == 1)
                         {
-                            Whisper(p, "AFK detected due to inactivity. You receive half rewards. You'll be moved back to the starting area.");
+                            Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to the starting area.");
                             if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(p, p->GetTeamId()))
                                 p->TeleportTo(g->Map, g->x, g->y, g->z, p->GetOrientation());
                         }
                         else if (count >= 2)
                         {
-                            Whisper(p, "Repeated AFK detected. You will be teleported to your capital and will not receive rewards anymore.");
+                            Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
                             TeleportToCapital(p);
                         }
                     }
@@ -702,10 +768,10 @@
                     IncrementAfk(p);
                     uint8 count = GetAfkCount(p);
                     if (count == 1)
-                        Whisper(p, "AFK detected. While AFK you receive half rewards. A second AFK will teleport you to your capital and forfeit rewards.");
+                        Whisper(p, "|cffff0000AFK detected. You will not receive rewards.|r A second AFK will teleport you to your capital.");
                     else if (count >= 2)
                     {
-                        Whisper(p, "Repeated AFK detected. You will be teleported to your capital and will not receive rewards anymore.");
+                        Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
                         TeleportToCapital(p);
                     }
                 }
@@ -826,25 +892,25 @@
                 {
                     if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
                     {
-                        itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
+                        itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r");
                     }
                     else if(limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
                     {
-                        itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");
+                        itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has resources left!|r");
                     }
      
                     if(IS_RESOURCE_MESSAGE_A == true)
                     {
                         if(limit_A == 1)
                         {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
+                            itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r");
                             IS_RESOURCE_MESSAGE_A = false; // Reset
                         }
                         else if(limit_A == 2)
                         {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got no more resources left! Horde wins!");
+                            itr->second->GetPlayer()->TextEmote("|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r");
                             //itr->second->GetPlayer()->GetGUID();
-                            HandleWinMessage("For the HORDE!");
+                            HandleWinMessage("|cffff0000For the HORDE!|r");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
                             
                             switch(itr->second->GetPlayer()->GetTeamId())
@@ -866,14 +932,14 @@
                     {
                         if(limit_H == 1)
                         {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde got %u resources left!");
+                            itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has resources left!|r");
                             IS_RESOURCE_MESSAGE_H = false; // Reset
                         }
                         else if(limit_H == 2)
                         {
-                            itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Horde has no more resources left! Alliance wins!");
+                            itr->second->GetPlayer()->TextEmote("|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r");
                             //itr->second->GetPlayer()->GetGUID();
-                            HandleWinMessage("For the Alliance!");
+                            HandleWinMessage("|cff1e90ffFor the Alliance!|r");
                             HandleRewards(itr->second->GetPlayer(), 1500, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
@@ -907,12 +973,12 @@
         uint32 h = GetResources(TEAM_HORDE);
 
         // Compose strings
-        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], "Hinterland BG status:");
+        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], "|cffffd700Hinterland BG status:|r");
         char line1[64];
         snprintf(line1, sizeof(line1), "  Time remaining: %02u:%02u", (unsigned)min, (unsigned)sec);
         sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line1);
         char line2[96];
-        snprintf(line2, sizeof(line2), "  Resources: Alliance=%u, Horde=%u", (unsigned)a, (unsigned)h);
+        snprintf(line2, sizeof(line2), "  Resources: |cff1e90ffAlliance|r=%u, |cffff0000Horde|r=%u", (unsigned)a, (unsigned)h);
         sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line2);
 
         // Optional: log for server visibility
@@ -967,9 +1033,9 @@
                     _ally_gathered -= PointsLoseOnPvPKill;
                     if (IsEligibleForRewards(player))
                     {
-                        if (GetAfkCount(player) >= 2)
+                        if (GetAfkCount(player) >= 1)
                         {
-                            Whisper(player, "AFK penalty: no rewards for kills.");
+                            Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
                         }
                         else
                         {
@@ -982,9 +1048,9 @@
                     _horde_gathered -= PointsLoseOnPvPKill;
                     if (IsEligibleForRewards(player))
                     {
-                        if (GetAfkCount(player) >= 2)
+                        if (GetAfkCount(player) >= 1)
                         {
-                            Whisper(player, "AFK penalty: no rewards for kills.");
+                            Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
                         }
                         else
                         {

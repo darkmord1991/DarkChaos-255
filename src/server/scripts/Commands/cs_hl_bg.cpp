@@ -78,7 +78,7 @@ public:
         // Show current match timer/resources and active raid groups for both factions.
         // This command works from anywhere (no zone restriction).
 
-        handler->PSendSysMessage("Hinterland BG status:");
+    handler->PSendSysMessage("|cffffd700Hinterland BG status:|r");
 
         // Fetch the HL controller
         OutdoorPvPHL* hl = nullptr;
@@ -93,7 +93,7 @@ public:
             uint32 a = hl->GetResources(TEAM_ALLIANCE);
             uint32 h = hl->GetResources(TEAM_HORDE);
             handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
-            handler->PSendSysMessage("  Resources: Alliance={}, Horde={}", a, h);
+            handler->PSendSysMessage("  Resources: |cff1e90ffAlliance|r={}, |cffff0000Horde|r={}", a, h);
         }
         else
         {
@@ -104,7 +104,7 @@ public:
 
         for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
         {
-            std::string teamName = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
+            std::string teamName = (team == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
             handler->PSendSysMessage("    Team: {}", teamName);
 
             // Query the OutdoorPvP manager for the Hinterland instance.
@@ -162,7 +162,8 @@ public:
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
                 res = hl->GetResources(tid);
         }
-    handler->PSendSysMessage("{} resources: {}", team, res);
+        std::string colored = (tid == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
+        handler->PSendSysMessage("{} resources: {}", colored, res);
         return true;
     }
 
@@ -207,7 +208,8 @@ public:
         // as a compact identity marker.
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
             LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) set %s resources from %u -> %u", admin->GetName().c_str(), admin->GetGUID().GetCounter(), teamStr.c_str(), prev, amount);
-    handler->PSendSysMessage("Set {} resources to {}", teamStr, amount);
+        std::string colored = (tid == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
+        handler->PSendSysMessage("Set {} resources to {}", colored, amount);
         return true;
     }
 
