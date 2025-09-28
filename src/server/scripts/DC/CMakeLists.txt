@@ -13,3 +13,8 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_AC}
     ${SCRIPTS_DC_HinterlandBG}
 )
+
+# Expose module config to the modules installer
+set(MODULE_CONFIG_PATH ${CMAKE_CURRENT_SOURCE_DIR}/HinterlandBG)
+set(configFileName hinterlandbg.conf.dist)
+CopyModuleConfig("${MODULE_CONFIG_PATH}/${configFileName}")

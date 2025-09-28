@@ -1,0 +1,39 @@
+# Hinterland BG configuration (source template)
+# This file is installed to configs/modules as hinterlandbg.conf.dist
+# Copy/edit as configs/modules/hinterlandbg.conf
+
+# Match window duration (seconds)
+HinterlandBG.MatchDuration = 3600
+
+# AFK policy (seconds)
+HinterlandBG.AFK.WarnSeconds = 120
+HinterlandBG.AFK.TeleportSeconds = 180
+
+# Periodic status broadcast
+HinterlandBG.Broadcast.Enabled = 1
+# Period in seconds between broadcasts
+HinterlandBG.Broadcast.Period = 60
+
+# Starting resources per faction
+HinterlandBG.Resources.Alliance = 450
+HinterlandBG.Resources.Horde = 450
+
+# Rewards
+# Honor for winning when enemy reaches 0 (used by HandleRewards on win)
+HinterlandBG.Reward.MatchHonor = 1500
+# Item granted on player kill (0 to disable)
+HinterlandBG.Reward.KillItemId = 40752
+HinterlandBG.Reward.KillItemCount = 1
+# CSV list for random honor per kill (Randomizer): index 0..3 used
+HinterlandBG.Reward.KillHonorValues = 17,11,19,22
+
+# NPC token rewards (up to 10 entries per team); when a player kills a configured enemy NPC
+# they receive the configured token item. Leave lists empty to disable.
+HinterlandBG.Reward.NPCTokenItemId = 40752
+HinterlandBG.Reward.NPCTokenItemCount = 1
+# Example lists (comma-separated creature entry IDs)
+HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810000,600011
+HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810001,810002
+# Optional: specific counts per entry (entry:count, comma-separated)
+HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
+HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810001:3

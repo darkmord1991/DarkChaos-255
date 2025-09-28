@@ -1279,11 +1279,11 @@
         // and from worldserver.conf values under the same keys. Missing keys keep defaults.
         if (sConfigMgr)
         {
-            // Load from standard config dir
-            sConfigMgr->LoadMore("hinterlandbg.conf");
-            // Also allow placing the config under a modules subfolder (common pattern for modules)
-            sConfigMgr->LoadMore("modules/hinterlandbg.conf");
-            sConfigMgr->LoadMore("modules/hinterlandbg/hinterlandbg.conf");
+            // Try multiple locations relative to the configs directory
+            std::string base = sConfigMgr->GetConfigPath();
+            sConfigMgr->LoadAdditionalFile(base + "hinterlandbg.conf", true, false);
+            sConfigMgr->LoadAdditionalFile(base + "modules/hinterlandbg.conf", true, false);
+            sConfigMgr->LoadAdditionalFile(base + "modules/hinterlandbg/hinterlandbg.conf", true, false);
             _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
             _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
             _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
