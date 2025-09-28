@@ -52,7 +52,9 @@
         _playersInZone = 0;
         _npcCheckTimerMs = 0;
         _afkCheckTimerMs = 0;
-            _memberOfflineSince.clear();
+        _memberOfflineSince.clear();
+
+    }
 
     // Initialize the WG-like HUD states when a client first loads the worldstates
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
@@ -128,61 +130,6 @@
         uint32 low = player->GetGUID().GetCounter();
         auto it = _afkInfractions.find(low);
         if (it == _afkInfractions.end())
-            // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
-            {
-                uint32 nowSec = sWorld->GetGameTime();
-                // Mark newly offline members & clear marks for those who returned
-                for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
-                {
-                    for (ObjectGuid gid : _teamRaidGroups[tid])
-                    {
-                        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                        if (!g || !g->IsRaidGroup())
-                            continue;
-                        for (auto const& slot : g->GetMemberSlots())
-                        {
-                            Player* m = ObjectAccessor::FindPlayer(slot.guid);
-                            if (m && m->IsInWorld())
-                            {
-                                _memberOfflineSince.erase(slot.guid);
-                            }
-                            else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
-                            {
-                                _memberOfflineSince[slot.guid] = nowSec; // first seen offline
-                            }
-                        }
-                    }
-                }
-                // Collect removals
-                static constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
-                std::vector<std::pair<ObjectGuid/*group*/, ObjectGuid/*member*/>> offlineRemovals;
-                for (auto const& kv : _memberOfflineSince)
-                {
-                    if (nowSec - kv.second < HL_OFFLINE_GRACE_SECONDS)
-                        continue;
-                    for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
-                    {
-                        for (ObjectGuid gid : _teamRaidGroups[tid])
-                        {
-                            Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                            if (!g || !g->IsRaidGroup())
-                                continue;
-                            if (g->IsMember(kv.first))
-                            {
-                                offlineRemovals.emplace_back(gid, kv.first);
-                                break;
-                            }
-                        }
-                    }
-                }
-                for (auto const& rem : offlineRemovals)
-                {
-                    if (Group* g = sGroupMgr->GetGroupByGUID(rem.first.GetCounter()))
-                        g->RemoveMember(rem.second);
-                    _memberOfflineSince.erase(rem.second);
-                }
-            }
-
             return 0;
         return it->second;
     }
@@ -559,6 +506,61 @@
             }
             else
                 _npcCheckTimerMs -= diff;
+        }
+
+        // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
+        {
+            uint32 nowSec = sWorld->GetGameTime();
+            // Mark newly offline members & clear marks for those who returned
+            for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+            {
+                for (ObjectGuid gid : _teamRaidGroups[tid])
+                {
+                    Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                    if (!g || !g->IsRaidGroup())
+                        continue;
+                    for (auto const& slot : g->GetMemberSlots())
+                    {
+                        Player* m = ObjectAccessor::FindPlayer(slot.guid);
+                        if (m && m->IsInWorld())
+                        {
+                            _memberOfflineSince.erase(slot.guid);
+                        }
+                        else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
+                        {
+                            _memberOfflineSince[slot.guid] = nowSec; // first seen offline
+                        }
+                    }
+                }
+            }
+            // Collect removals
+            static constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
+            std::vector<std::pair<ObjectGuid/*group*/, ObjectGuid/*member*/>> offlineRemovals;
+            for (auto const& kv : _memberOfflineSince)
+            {
+                if (nowSec - kv.second < HL_OFFLINE_GRACE_SECONDS)
+                    continue;
+                for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+                {
+                    for (ObjectGuid gid : _teamRaidGroups[tid])
+                    {
+                        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                        if (!g || !g->IsRaidGroup())
+                            continue;
+                        if (g->IsMember(kv.first))
+                        {
+                            offlineRemovals.emplace_back(gid, kv.first);
+                            break;
+                        }
+                    }
+                }
+            }
+            for (auto const& rem : offlineRemovals)
+            {
+                if (Group* g = sGroupMgr->GetGroupByGUID(rem.first.GetCounter()))
+                    g->RemoveMember(rem.second);
+                _memberOfflineSince.erase(rem.second);
+            }
         }
 
         // Stricter group lifecycle: remove empty raid groups promptly
