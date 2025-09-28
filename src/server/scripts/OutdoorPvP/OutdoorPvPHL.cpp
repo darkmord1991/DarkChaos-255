@@ -294,7 +294,6 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1u);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0u);
 
     // Reuse WG vehicle bars for resource counters
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
@@ -474,11 +473,10 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
         uint32 endEpoch = now + timeRemaining;
 
-        // WG-only HUD with absolute end time on both clocks; control neutral
+    // WG-only HUD with absolute end time on both clocks; no control indicator
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
 
         // Resource bars via WG vehicle states
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
