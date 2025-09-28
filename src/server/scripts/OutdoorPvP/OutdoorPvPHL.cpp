@@ -103,7 +103,7 @@
     {
         if (!player)
             return false;
-        return player->getLevel() >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+        return player->GetLevel() >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
     }
 
     bool OutdoorPvPHL::IsEligibleForRewards(Player* player) const
