@@ -1,0 +1,130 @@
+-- Generate a curated list of normal (non-elite) combat NPCs from your AzerothCore world DB
+-- grouped by level ranges for Vanilla/TBC/WotLK (max level 80).
+--
+-- Output columns: entry, name, minlevel, maxlevel, wowhead_wotlk_url
+--
+-- Notes:
+-- - Filters to rank = 0 (normal) and npcflag = 0 (non-vendor/guard/questgiver) to bias toward combat mobs.
+-- - Adjust WHERE clauses if you want to include vendors/questgivers or elites.
+-- - ORDER BY favors lower minlevel and alphabetical names; tweak as desired.
+-- - LIMIT per range can be adjusted for more/less results.
+--
+-- How to use:
+--   1) Switch to your world database (e.g., `USE acore_world;`).
+--   2) Run this script.
+--   3) Copy the results for each section. The wowhead URLs point to WotLK database pages.
+
+-- Helper: common selection projection
+-- We duplicate the projection across ranges for compatibility with MySQL console.
+
+-- Range: 1-10
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 1 AND 10
+  AND maxlevel <= 10
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 11-20
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 11 AND 20
+  AND maxlevel <= 20
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 21-30
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 21 AND 30
+  AND maxlevel <= 30
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 31-40
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 31 AND 40
+  AND maxlevel <= 40
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 41-50
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 41 AND 50
+  AND maxlevel <= 50
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 51-60
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 51 AND 60
+  AND maxlevel <= 60
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 61-70
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 61 AND 70
+  AND maxlevel <= 70
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;
+
+-- Range: 71-80
+SELECT entry,
+       name,
+       minlevel,
+       maxlevel,
+       CONCAT('https://www.wowhead.com/wotlk/npc=', entry) AS wowhead_wotlk_url
+FROM creature_template
+WHERE minlevel BETWEEN 71 AND 80
+  AND maxlevel <= 80
+  AND rank = 0
+  AND npcflag = 0
+ORDER BY minlevel ASC, name ASC
+LIMIT 30;

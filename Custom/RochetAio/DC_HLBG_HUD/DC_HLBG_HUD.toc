@@ -1,0 +1,8 @@
+## Interface: 30402
+## Title: DC HLBG HUD
+## Notes: Client HUD for DarkChaos Hinterland BG via Rochet2/AIO
+## Author: DarkChaos Team
+## Version: 0.1.0
+## SavedVariables: DCHLBGHUDDB
+
+DC_HLBG_HUD.lua
