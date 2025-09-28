@@ -124,6 +124,8 @@
             bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
             // Movement tracking API used by movement handler
             void NotePlayerMovement(Player* player);
+            // Periodic status broadcast (matches .hlbg status output)
+            void BroadcastStatusToZone();
 
         private:
             // helpers
@@ -150,6 +152,7 @@
             int32 _playersInZone;
         uint32 _npcCheckTimerMs;
         uint32 _afkCheckTimerMs;
+        uint32 _statusBroadcastTimerMs;
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
             // Movement-based AFK tracking

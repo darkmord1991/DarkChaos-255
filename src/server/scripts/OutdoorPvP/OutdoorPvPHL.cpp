@@ -53,6 +53,7 @@
         _playersInZone = 0;
         _npcCheckTimerMs = 0;
         _afkCheckTimerMs = 0;
+        _statusBroadcastTimerMs = 0;
         _memberOfflineSince.clear();
 
     }
@@ -438,6 +439,8 @@
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     // Push fresh HUD state to any players already in the zone
     UpdateWorldStatesAllPlayers();
+    // Kick off immediate status broadcast after reset
+    _statusBroadcastTimerMs = 1; // broadcast on next update tick
     }
 
     void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
@@ -696,6 +699,20 @@
             _afkCheckTimerMs -= diff;
         }
 
+        // Periodic status broadcast (every 60s) only if there are players in the zone
+        if (_playersInZone > 0)
+        {
+            if (_statusBroadcastTimerMs <= diff)
+            {
+                BroadcastStatusToZone();
+                _statusBroadcastTimerMs = 60 * IN_MILLISECONDS;
+            }
+            else
+            {
+                _statusBroadcastTimerMs -= diff;
+            }
+        }
+
         if(_ally_gathered <= 50 && limit_A == 0)
         {
             IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
@@ -843,6 +860,28 @@
 
         IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
         return false;
+    }
+
+    void OutdoorPvPHL::BroadcastStatusToZone()
+    {
+        // Build lines that mirror .hlbg status
+        uint32 secs = GetTimeRemainingSeconds();
+        uint32 min = secs / 60u;
+        uint32 sec = secs % 60u;
+        uint32 a = GetResources(TEAM_ALLIANCE);
+        uint32 h = GetResources(TEAM_HORDE);
+
+        // Compose strings
+        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], "Hinterland BG status:");
+        char line1[64];
+        snprintf(line1, sizeof(line1), "  Time remaining: %02u:%02u", (unsigned)min, (unsigned)sec);
+        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line1);
+        char line2[96];
+        snprintf(line2, sizeof(line2), "  Resources: Alliance=%u, Horde=%u", (unsigned)a, (unsigned)h);
+        sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line2);
+
+        // Optional: log for server visibility
+        LOG_DEBUG("misc", "[HLBG] Broadcast status: %02u:%02u A=%u H=%u", (unsigned)min, (unsigned)sec, (unsigned)a, (unsigned)h);
     }
     
 
