@@ -18,11 +18,9 @@ namespace
 
     inline void NotifyAndChat(ChatHandler* handler, char const* msg)
     {
-        if (!msg || !*msg)
+        if (!handler || !msg || !*msg)
             return;
-        if (Player* p = GetInvokerPlayer(handler))
-            if (WorldSession* s = p->GetSession())
-                s->SendNotification("%s", msg);
+        handler->SendNotification("%s", msg);
         handler->PSendSysMessage("%s", msg);
     }
 
