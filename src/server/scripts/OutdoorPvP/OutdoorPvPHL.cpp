@@ -1,122 +1,42 @@
 /*
 ================================================================================
-// Forward declaration: the player movement script registration function is
-// defined later in this file. Declare it here so AddSC_outdoorpvp_hl can call
-// it without requiring the function to be defined earlier in the translation
-// unit.
-static void RegisterOutdoorPvPHLPlayerMoveScript();
-
-                OutdoorPvPHL.cpp - Hinterland Outdoor PvP Battleground (zone 47)
+  OutdoorPvPHL.cpp — Hinterland Outdoor PvP (zone 47)
 ================================================================================
 
-Purpose
--------
-Implements a persistent, zone-wide Alliance vs Horde open-world battleground for
-Hinterland (default zone id 47). Responsibilities include automatic battleground
-raid-group management, a simple resource-scoring system, periodic status
-announcements, AFK detection and handling, award/buff distribution, and basic
-teleportation and end-of-match logic.
+Overview
+--------
+Open-world Alliance vs Horde battleground for Hinterlands (zone 47):
+- Auto-group players into battleground-style raid groups per faction.
+- Resource scoring with thresholds → warnings, sounds, and win/lose.
+- AFK handling via movement hook (warn, then teleport to start, exclude from rewards).
+- WG-style HUD only (client DBC patched): show, clock, resources; control forced neutral.
+- Periodic zone announcements and per-player worldstate updates.
 
-Recent notable changes (developer summary)
-------------------------------------------
-- Replaced unsafe printf-style calls with a safe PlayerTextEmoteFmt helper.
-- Centralized configuration constants (timers, thresholds) near the top of the file.
-- Added AFK movement tracking using a PlayerScript movement hook and
-    `TouchPlayerLastMove(ObjectGuid)` so we can reliably warn and teleport idle players.
-- Prevented unsigned underflow on resource counters (`ClampResources`).
-- Split `Update()` into focused helpers: `ProcessMatchTimer`,
-    `ProcessPeriodicMessage`, `ProcessAFK`, `CheckResourceThresholds`,
-    `BroadcastResourceMessages`, and `ClampResourceCounters` for easier maintenance.
-- Distinct victory/defeat sounds are played for winners/losers via `PlaySounds`.
-- Added automatic creation of multiple battleground raid groups per faction
-    when existing raid groups reach server-side limits (logged via `LOG_INFO`).
+Latest changes
+--------------
+- Switched HUD to Wintergrasp worldstates only; removed SA/AB worldstates.
+- HUD timer now uses absolute end time on both WG clock states for correct “Time left”.
+- Control indicator is forced neutral to avoid tie ambiguity; resources are authoritative.
+- Added safe PlayerTextEmoteFmt, AFK stamping on movement, and resource clamping.
+- Extended reset path to hide WG HUD and clear AFK/deserter exclusions.
 
-High-level feature overview
----------------------------
-- Auto-grouping / raid creation: players entering the zone are auto-added into
-    battleground-style raid groups for their faction. New groups are created when
-    current groups fill (e.g. 40 players).
-- Resource scoring: each faction has a resource counter. Player/NPC deaths reduce
-    the counter; hit thresholds cause announcements, warnings, and eventual loss.
-- Periodic announcements: every `MESSAGE_INTERVAL_MS` the script broadcasts
-    resource and approximate player counts, and time-left information.
-- AFK handling: players idle for `AFK_TIMEOUT_MS` are warned and then
-    teleported to a safe start location to prevent camping/griefing.
-- Rewards: winners receive honor/arena point gains, buffs, and item rewards.
+Notes & safety
+--------------
+- Resource counters are clamped to avoid unsigned wraparound.
+- Teleports are guarded by basic liveness checks; more guards can be added.
+- Group management prefers battleground-raid groups and ignores unrelated groups.
 
-Quality & safety notes
+Roadmap (nice-to-have)
 ----------------------
-- Resource counters are clamped to prevent unsigned wraparound on deductions.
-- Movement-based AFK detection is implemented via a PlayerScript hook; this is
-    more reliable than relying solely on zone-enter timestamps.
-- Teleportation and reward paths are conservative: basic alive checks are done
-    before teleporting, and group creation failures are handled gracefully.
+- Deterministic tiebreaker (e.g., last kill time) for exact resource ties.
+- Configurable rewards on draw (none/split/both) and tunable timers/thresholds.
+- Optional audit logging for admin commands; lightweight unit tests for counters/timer.
 
-Prioritized TODO / Enhancements
--------------------------------
-1) Configuration: move hardcoded values (zone id, timers, thresholds, coords,
-     sound IDs) into `acore.json` or module config to allow server owners to
-     tune behavior without recompilation.
+Testing
+-------
+- Use `.hlbg status/get/set/reset` and watch zone 47 while starting/ending matches.
+- Verify WG HUD shows with correct countdown and resource bars; SA/AB elements absent.
 
-2) Deterministic tiebreak (recommended): implement last-kill timestamp tracking
-     (`_ally_last_kill_time`, `_horde_last_kill_time`) updated in `HandleKill()` and
-     used in `ProcessMatchTimer()` to break exact resource ties. This is fair and
-     predictable — the side with the most recent kill wins.
-
-3) Draw reward policy: decide whether a draw should reward both sides, split
-     rewards, or grant no reward. Add configuration to control the chosen policy.
-
-4) Admin tooling & audit: add optional DB-backed audit logging for `.hlbg set`
-     and `.hlbg reset` (current logs go to `admin.hlbg`) and add an optional
-     `reason` parameter to `.hlbg set` to capture admin intent.
-
-5) Teleport safety & UX: add additional teleport guards (e.g. avoid teleporting
-     players in combat, during mounts, or inside certain phases) and provide
-     clearer area-trigger messages describing why the teleport happened.
-
-6) AFK heuristics: debounce small positional jitter, treat orientation-only
-     changes as non-activity, and allow staff/roles to mark players exempt.
-
-7) Tests & CI: add unit/integration tests for resource clamping, group creation
-     behavior, and match-end handling. Add CI checks to run script compilation and
-     basic static analysis during PRs.
-
-8) Telemetry/metrics: optionally collect counters (matches started/ended,
-     raids created, AFK teleports) and publish to a metrics sink for ops.
-
-9) Sound & DBC validation: ensure used sound IDs exist in the target DBC set
-     and add a startup warning if IDs are missing; document the mapping in config.
-
-10) Refactor: consider moving battleground-specific files into
-     `src/server/scripts/DC/HinterlandBG/` and create a small test harness to make
-     iterative development and testing simpler.
-
-Match timeout / draw behavior notes
-----------------------------------
-- Current implementation: when the match timer expires the code compares
-    remaining resources. If one side has strictly more resources, that side is
-    declared the winner (rewards, buffs and sounds applied). If both sides have
-    exactly the same resources the match is declared a draw: no `_LastWin` is set
-    and no win-specific rewards are granted.
-
-- Alternatives recorded for maintainers:
-    * Reward both sides: simplest, but may be considered unfair for competitive play.
-    * Split rewards: both sides receive scaled rewards (e.g. half), acknowledging
-        a close finish while avoiding double full-win payouts.
-    * Deterministic tiebreak: break ties using last-kill timestamps, total kills,
-        or another deterministic metric; this requires a small amount of extra state
-        but produces a single winner for every match.
-
-How to test quickly
--------------------
-- Build server, start instance, create test accounts and join zone 47.
-- Use `.hlbg get/set/reset/status` (GM) to validate admin tooling and audit
-    logging. Test draw behavior by setting equal resources for both sides and
-    allowing the timer to expire.
-- Fill a raid group to the server limit and ensure the 41st player triggers
-    creation of an additional battleground raid group (watch logs for creation).
-
-For maintainers: update this header when adding/removing major features.
 ================================================================================
 */
     #include "OutdoorPvPHL.h"
@@ -138,9 +58,8 @@ For maintainers: update this header when adding/removing major features.
 #include <cstdint>
 #include <algorithm>
 
-// Forward declaration: registration function for the player movement script used
-// for AFK tracking. The function is defined later in this file but is called
-// from AddSC_outdoorpvp_hl(), so we must declare it beforehand.
+// Forward declaration: movement script registration used for AFK tracking.
+// Defined later; declared here so AddSC_outdoorpvp_hl() can invoke it.
 static void RegisterOutdoorPvPHLPlayerMoveScript();
 
 // OutdoorPvPHL.cpp: Main logic for Hinterland Outdoor PvP Battleground (zone 47)
@@ -156,7 +75,7 @@ static constexpr int RESOURCE_THRESHOLD_WARN_2 = 200;
 static constexpr int RESOURCE_THRESHOLD_WARN_3 = 100;
 static constexpr int RESOURCE_THRESHOLD_LOW = 50;
 
-// Small helper to call TextEmote with printf-style formatting
+// Helper: safe printf-style TextEmote sender
 static inline void PlayerTextEmoteFmt(Player* player, const char* fmt, ...)
 {
     if (!player) return;
@@ -168,7 +87,7 @@ static inline void PlayerTextEmoteFmt(Player* player, const char* fmt, ...)
     player->TextEmote(buf);
 }
 
-// Helper: Teleport all players in the Hinterland zone to their faction start
+// Helper: teleport all players in Hinterlands to their faction start
 static inline void TeleportAllPlayersInZoneToStart()
 {
     WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
@@ -184,27 +103,18 @@ static inline void TeleportAllPlayersInZoneToStart()
     }
 }
 
-// Note: TeleportAllPlayersInZoneToStart is intentionally broad — it iterates
-// all world sessions and teleports any player currently in the Hinterland
-// zone to their faction start coordinates. This helper is used both on
-// resource-victory conditions and when the match is force-reset. Consider
-// adding additional safety checks (combat state, flight/mount checks, or
-// phase handling) if the teleport should be restricted in future.
+// Used on win and force-reset. Consider adding combat/flight/mount guards if needed.
 
-// Ensure resource counters do not underflow (they're unsigned)
+// Clamp resource counters (unsigned underflow guard)
 static inline void ClampResources(uint32 &value)
 {
     if ((int32)value < 0)
         value = 0;
 }
 
-// Explanation: Resource counters are stored as unsigned integers. When
-// resource deductions occur we clamp negative values to zero to avoid
-// unsigned wraparound. The cast-to-int32 checks for negative semantics
-// while avoiding UB for normal positive values.
+// Cast to int32 so negative semantics clamp to zero and avoid wraparound.
 
-    // Constructor: Initializes battleground state, resource counters, timers, and AFK tracking.
-    // Sets up all initial values for resources, timers, and player movement tracking.
+    // Constructor: initialize state, resources, timers, and AFK tracking
     OutdoorPvPHL::OutdoorPvPHL()
     {
         _typeId = OUTDOOR_PVP_HL;
@@ -234,15 +144,9 @@ static inline void ClampResources(uint32 &value)
         _playerWarnedBeforeTeleport.clear();
     }
 
-    // Constructor notes:
-    // - The constructor intentionally leaves most timers at zero. `_FirstLoad`
-    //   controls the initial-start announcement which is emitted on the first
-    //   Update() call. Permanent resources are initialized from HL_RESOURCES_*.
-    // - `_playerWarnedBeforeTeleport` tracks whether we already warned a
-    //   particular player of imminent AFK teleport so the warning isn't spammed.
+    // `_FirstLoad` gates the initial announce; permanent resources mirror HL_RESOURCES_*.
 
-    // Setup: Registers the Hinterland zone for OutdoorPvP events.
-    // Registers zone 47 for battleground logic and event handling.
+    // Register Hinterlands for OutdoorPvP
     bool OutdoorPvPHL::SetupOutdoorPvP()
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
@@ -250,12 +154,9 @@ static inline void ClampResources(uint32 &value)
         return true;
     }
 
-// Setup notes:
-// - RegisterZone wires this OutdoorPvP script into the server for the
-//   configured buff zones so `sOutdoorPvPMgr` will own and update it.
+// `RegisterZone` wires this script so `sOutdoorPvPMgr` owns/updates it.
 
-    // Called when a player enters the Hinterland zone.
-    // Handles auto-invite to raid group, welcome message, and AFK tracking initialization.
+    // Player enters Hinterlands: auto-invite, welcome, AFK stamp, seed HUD
     void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     {
         // Auto-invite logic
@@ -283,7 +184,7 @@ static inline void ClampResources(uint32 &value)
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
-// Provide initial worldstates so clients see the HUD as soon as they load the zone
+// Seed WG HUD worldstates on client init (WG-only mapping)
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
     // WG HUD only (DBC patched for WG frames in Hinterlands)
