@@ -283,37 +283,37 @@ static inline void ClampResources(uint32 &value)
         OutdoorPvP::HandlePlayerEnterZone(player, zone);
     }
 
-// Provide initial worldstates so clients see the HUD as soon as they load the zone
-void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
-{
-    // Only apply to our zone id
-    if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID)
-        return;
+    // Initialize the WG HUD worldstates for clients in Hinterlands.
+    // Note: InitWorldStates in this core has no MapAreaId field.
+    // Either check ZoneId only or skip filtering entirely and let the client DBC mapping decide.
+    void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) const
+    {
+        // Old (invalid): if (packet.MapAreaId != HL_ZONE_ID && packet.ZoneId != HL_ZONE_ID) return;
 
-    // Enable WG HUD and SA timer, and seed counters
-    uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0 : (MATCH_DURATION_MS - _matchTimer) / 1000;
-    uint32 minutes = timeRemaining / 60;
-    uint32 seconds = timeRemaining % 60;
-    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+        // Option A: keep a minimal guard on ZoneId (Hinterlands = OutdoorPvPHLBuffZones[0])
+        if (packet.ZoneId != OutdoorPvPHLBuffZones[0])
+            return;
 
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, now + timeRemaining);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_ENABLE_TIMER, 1);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_MINUTES, minutes);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_FIRST_DIGIT, seconds / 10);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_SA_TIMER_SECONDS_SECOND_DIGIT, seconds % 10);
+        // Seed WG HUD only (you said SA/AB entries were not used in your DBC patch)
+        // SHOW
+        packet.Worldstates.emplace_back(3710 /*WG_SHOW*/, IsBattleActive() ? 1 : 0);
 
-    // AB resources
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_ALLIANCE, _ally_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_HORDE, _horde_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AB_RESOURCES_MAX, std::max(_ally_permanent_resources, _horde_permanent_resources));
+        // CLOCK (both IDs → same absolute end time so it matches “time left”)
+        uint32 now = GameTime::GetGameTime();
+        uint32 timeLeft = GetMatchTimeRemainingSeconds(); // your existing getter
+        uint32 endEpoch = now + timeLeft;
+        packet.Worldstates.emplace_back(3781 /*WG_CLOCK*/, endEpoch);
+        packet.Worldstates.emplace_back(4354 /*WG_CLOCK_TEXTS*/, endEpoch);
 
-    // WG vehicle bars repurposed as resource bars
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, _ally_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, _ally_permanent_resources);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, _horde_gathered);
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, _horde_permanent_resources);
-}
+        // CONTROL → neutral (avoid misleading emblem)
+        packet.Worldstates.emplace_back(3801 /*WG_CONTROL*/, 0);
+
+        // Reuse vehicle bars for resources (A cur/max, H cur/max)
+        packet.Worldstates.emplace_back(3680 /*A cur*/, GetResources(TEAM_ALLIANCE));
+        packet.Worldstates.emplace_back(3681 /*A max*/, GetResourcesMax(TEAM_ALLIANCE)); // or a constant if you don’t expose this
+        packet.Worldstates.emplace_back(3490 /*H cur*/, GetResources(TEAM_HORDE));
+        packet.Worldstates.emplace_back(3491 /*H max*/, GetResourcesMax(TEAM_HORDE));    // or a constant
+    }
 
     // Finds a non-full raid group for the given team in zone 47.
     // Ensures only one raid group per faction is used for auto-invite.
