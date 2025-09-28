@@ -80,6 +80,12 @@
         uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
+        // Ensure unrelated Wintergrasp map control/icon states are hidden in Hinterlands
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, 0);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, 0);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
@@ -95,6 +101,12 @@
         uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
+        // Hide Wintergrasp control/icon states for this player while in Hinterlands
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, 0);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, 0);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
@@ -206,6 +218,8 @@
             _ally_gathered = amount;
         else
             _horde_gathered = amount;
+        // Reflect changes on clients in-zone
+        UpdateWorldStatesAllPlayers();
     }
 
     
@@ -422,6 +436,8 @@
     _matchEndTime = uint32(GameTime::GetGameTime().count()) + HL_MATCH_DURATION_SECONDS;
         //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
+    // Push fresh HUD state to any players already in the zone
+    UpdateWorldStatesAllPlayers();
     }
 
     void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
@@ -756,7 +772,6 @@
      
                 if(itr->second->GetPlayer()->GetZoneId() == 47)
                 {
-                    char msg[250];
                     if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
                     {
                         itr->second->GetPlayer()->TextEmote("[Hinterland Defence]: The Alliance got %u resources left!");
@@ -905,6 +920,8 @@
                     }
                     break;
             }
+            // Update HUD for all participants after resource change
+            UpdateWorldStatesAllPlayers();
         }
         else // If is something besides a player
         {
@@ -996,6 +1013,8 @@
                     */
                 }
             }
+            // Update HUD for all participants after resource change
+            UpdateWorldStatesAllPlayers();
         }
     }
     
