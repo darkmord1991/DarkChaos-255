@@ -59,26 +59,30 @@
     // Initialize the WG-like HUD states when a client first loads the worldstates
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
     {
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_SHOW, 1);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
         uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_CLOCK, endEpoch);
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_CLOCK_TEXTS, endEpoch);
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_VEHICLE_H, GetResources(TEAM_HORDE));
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_VEHICLE_A, GetResources(TEAM_ALLIANCE));
-        packet.Worldstates.emplace_back(WS_WINTERGRASP_MAX_VEHICLE, std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE)));
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, GetResources(TEAM_ALLIANCE));
+        uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
+        packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
     {
         if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
             return;
-        player->SendUpdateWorldState(WS_WINTERGRASP_SHOW, 1);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
         uint32 endEpoch = sWorld->GetGameTime() + GetTimeRemainingSeconds();
-        player->SendUpdateWorldState(WS_WINTERGRASP_CLOCK, endEpoch);
-        player->SendUpdateWorldState(WS_WINTERGRASP_CLOCK_TEXTS, endEpoch);
-        player->SendUpdateWorldState(WS_WINTERGRASP_VEHICLE_H, GetResources(TEAM_HORDE));
-        player->SendUpdateWorldState(WS_WINTERGRASP_VEHICLE_A, GetResources(TEAM_ALLIANCE));
-        player->SendUpdateWorldState(WS_WINTERGRASP_MAX_VEHICLE, std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE)));
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, GetResources(TEAM_ALLIANCE));
+        uint32 maxVal = std::max(GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE));
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal);
+        player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal);
     }
 
     void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
