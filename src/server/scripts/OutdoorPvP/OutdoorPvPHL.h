@@ -42,7 +42,7 @@
     const uint32 HL_RESOURCES_A         = 450;
     const uint32 HL_RESOURCES_H         = 450;
     // Default match duration used for the status timer (in seconds)
-    static constexpr uint32 HL_MATCH_DURATION_SECONDS = 30u * 60u;
+    static constexpr uint32 HL_MATCH_DURATION_SECONDS = 60u * 60u; // 60 minutes
 
     enum Sounds
     {
