@@ -97,14 +97,11 @@ public:
 
     // Called when a player interacts with the NPC
     bool OnGossipHello(Player* player, Creature* creature) override {
-        // Prefix shown POI names with area context and add each POI as a gossip
-        // menu item with "Teleport to" prefix. This makes it clear to players
-        // which zone the POI belongs to when multiple maps are supported.
-        const std::string poiPrefix = "Ashzara Crater - ";
         // Build the gossip menu by iterating the static POI list. We intentionally
         // show a friendly label instead of raw coordinates to reduce UI noise.
         for (size_t i = 0; i < sizeof(ac_guard_pois)/sizeof(ACGuardPOI); ++i) {
-            std::string label = std::string("Teleport to ") + poiPrefix + ac_guard_pois[i].name;
+            // Do NOT include the zone prefix in the gossip label; keep it concise.
+            std::string label = std::string("Teleport to ") + ac_guard_pois[i].name;
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, label, GOSSIP_SENDER_MAIN, static_cast<uint32>(i));
         }
         // Show the gossip menu to the player
