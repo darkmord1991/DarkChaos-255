@@ -286,9 +286,8 @@ static inline void ClampResources(uint32 &value)
 // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // Only apply to our zone id (InitWorldStates in this core has no MapAreaId)
-    if (packet.ZoneId != HL_ZONE_ID)
-        return;
+    // No packet.ZoneId/MapAreaId available in this core; seed unconditionally.
+    // Client DBC mapping (your WG->Hinterlands patch) governs actual rendering.
 
     // WG HUD only (client DBC is patched only for WG frames in Hinterlands)
     uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
@@ -472,9 +471,8 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Provide initial worldstates so clients see the HUD as soon as they load the zone
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
-    // Only apply to our zone id (InitWorldStates in this core has no MapAreaId)
-    if (packet.ZoneId != HL_ZONE_ID)
-        return;
+    // No packet.ZoneId/MapAreaId available in this core; seed unconditionally.
+    // Client DBC mapping (your WG->Hinterlands patch) governs actual rendering.
 
     // WG HUD only (client DBC is patched only for WG frames in Hinterlands)
     uint32 timeRemaining = (_matchTimer >= MATCH_DURATION_MS) ? 0u : (MATCH_DURATION_MS - _matchTimer) / 1000u;
@@ -589,7 +587,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Clear reward-exclusion sets for the next battle
     ClearRewardExclusions();
 
-    // Hide Wintergrasp HUD and SA timer for all players in zone
+    // Hide Wintergrasp HUD for all players in zone (SA/AB states removed)
     for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
     {
         if (Player* p = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
