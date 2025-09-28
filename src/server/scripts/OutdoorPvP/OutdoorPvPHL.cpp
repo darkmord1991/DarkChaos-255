@@ -1033,6 +1033,13 @@ void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)
     else if (team == TEAM_HORDE) _horde_gathered = amount;
 }
 
+uint32 OutdoorPvPHL::GetTimeRemainingSeconds() const
+{
+    if (_matchTimer >= MATCH_DURATION_MS)
+        return 0u;
+    return (MATCH_DURATION_MS - _matchTimer) / 1000u;
+}
+
 void OutdoorPvPHL::ForceReset()
 {
     HandleReset();

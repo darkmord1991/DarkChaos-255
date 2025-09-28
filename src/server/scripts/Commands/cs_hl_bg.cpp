@@ -75,26 +75,37 @@ public:
 
     static bool HandleHLBGStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
-        // Purpose: show all battleground-style raid groups tracked for the
-        // Hinterland (zone defined by `OutdoorPvPHLBuffZones[0]`) and their
-        // member counts. This helps GMs inspect which auto-created raid
-        // groups are currently active for each faction.
-        //
-        // Inputs: Chat handler for the GM invoking the command. No arguments
-        // are expected.
-        // Outputs: multiple `PSendSysMessage` calls to the GM with group info.
-        // Error modes: returns false if no player is associated with the handler.
+        // Show current match timer/resources and active raid groups for both factions.
+        // This command works from anywhere (no zone restriction).
 
-        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
-        if (!player)
-            return false;
+        handler->PSendSysMessage("Hinterland BG status:");
 
-        handler->PSendSysMessage("Hinterland BG raid groups:");
+        // Fetch the HL controller
+        OutdoorPvPHL* hl = nullptr;
+        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+            hl = dynamic_cast<OutdoorPvPHL*>(out);
+
+        if (hl)
+        {
+            uint32 secs = hl->GetTimeRemainingSeconds();
+            uint32 min = secs / 60u;
+            uint32 sec = secs % 60u;
+            uint32 a = hl->GetResources(TEAM_ALLIANCE);
+            uint32 h = hl->GetResources(TEAM_HORDE);
+            handler->PSendSysMessage("  Time remaining: %02u:%02u", min, sec);
+            handler->PSendSysMessage("  Resources: Alliance=%u, Horde=%u", a, h);
+        }
+        else
+        {
+            handler->PSendSysMessage("  (Hinterland controller not active)");
+        }
+
+        handler->PSendSysMessage("  Raid groups:");
 
         for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
         {
             std::string teamName = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-            handler->PSendSysMessage("Team: {}", teamName);
+            handler->PSendSysMessage("    Team: %s", teamName.c_str());
 
             // Query the OutdoorPvP manager for the Hinterland instance.
             // We look it up by the buff-zone constant exported from
@@ -110,7 +121,7 @@ public:
 
             if (groups.empty())
             {
-                handler->PSendSysMessage("  (no battleground raid groups)");
+                handler->PSendSysMessage("      (no battleground raid groups)");
                 continue;
             }
 
@@ -119,10 +130,10 @@ public:
                 Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
                 if (!g)
                 {
-                    handler->PSendSysMessage("  Group {}: (stale)", gid.GetCounter());
+                    handler->PSendSysMessage("      Group %u: (stale)", gid.GetCounter());
                     continue;
                 }
-                handler->PSendSysMessage("  Group {}: members={}", g->GetGUID().GetCounter(), g->GetMembersCount());
+                handler->PSendSysMessage("      Group %u: members=%u", g->GetGUID().GetCounter(), g->GetMembersCount());
             }
         }
         return true;

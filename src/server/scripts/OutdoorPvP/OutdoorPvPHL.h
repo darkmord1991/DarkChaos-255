@@ -208,6 +208,8 @@
     // Admin helpers: inspect and modify resource counters and force a reset
     uint32 GetResources(TeamId team) const;
     void SetResources(TeamId team, uint32 amount);
+    // Time remaining (seconds) for current match; if not started, returns full duration
+    uint32 GetTimeRemainingSeconds() const;
     void ForceReset();
     // Teleport all players in the Hinterland zone to their faction start
     void TeleportPlayersToStart();
