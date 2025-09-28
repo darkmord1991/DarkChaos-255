@@ -2,6 +2,7 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Player.h"
+#include <string>
 
 using namespace Acore::ChatCommands;
 
@@ -23,8 +24,39 @@ namespace
     {
         if (!handler || !msg || !*msg)
             return;
-        handler->SendNotification("%s", msg);
-        handler->PSendSysMessage("%s", msg);
+        handler->SendNotification(msg);
+        handler->SendSysMessage(msg);
+    }
+
+    static void PrintFaqList(ChatHandler* handler)
+    {
+        if (!handler)
+            return;
+        static char const* topics[] = {
+            "buff", "leveling", "teleporter", "source",
+            "progression", "discord", "maxlevel", "hinterland",
+            "dungeons", "t11", "t12"
+        };
+
+        handler->SendSysMessage("This is a list of all commands related to FAQ. - use .faq <topic>");
+
+        std::string line = " - ";
+        int perLine = 0;
+        for (char const* t : topics)
+        {
+            if (perLine > 0)
+                line += "    "; // spacer between entries
+            line += t;
+            ++perLine;
+            if (perLine == 4)
+            {
+                handler->SendSysMessage(line);
+                line = " - ";
+                perLine = 0;
+            }
+        }
+        if (perLine != 0 && line.size() > 3)
+            handler->SendSysMessage(line);
     }
 
     static bool HandleFaqNoArg(ChatHandler* handler, char const* /*args*/)
@@ -35,18 +67,7 @@ namespace
 
     static bool HandleFaqHelp(ChatHandler* handler, char const* /*args*/)
     {
-        NotifyAndChat(handler, "This is a list of all commands related to FAQ. - use .faq <topic>");
-        handler->PSendSysMessage("- buff");
-        handler->PSendSysMessage("- leveling");
-        handler->PSendSysMessage("- teleporter");
-        handler->PSendSysMessage("- source");
-        handler->PSendSysMessage("- progression");
-        handler->PSendSysMessage("- discord");
-        handler->PSendSysMessage("- maxlevel");
-        handler->PSendSysMessage("- hinterland");
-        handler->PSendSysMessage("- dungeons");
-        handler->PSendSysMessage("- t11");
-        handler->PSendSysMessage("- t12");
+        PrintFaqList(handler);
         return true;
     }
 
