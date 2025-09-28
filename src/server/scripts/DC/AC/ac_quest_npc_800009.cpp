@@ -38,6 +38,7 @@
 #include "TemporarySummon.h"
 #include "ScriptedCreature.h"
 #include "TaskScheduler.h"
+#include "ObjectAccessor.h"
 
 namespace
 {
@@ -63,7 +64,7 @@ public:
         uint8 index = 0; // current waypoint index
 
         // Four tour stations
-        static constexpr Position kStations[4] = {
+        static const Position kStations[4] = {
             { 141.98f, 991.51f, 295.10f, 0.0f },
             { 157.81f, 977.75f, 293.65f, 0.0f },
             { 149.01f, 985.66f, 295.07f, 0.0f },
