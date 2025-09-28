@@ -92,8 +92,8 @@ public:
             uint32 sec = secs % 60u;
             uint32 a = hl->GetResources(TEAM_ALLIANCE);
             uint32 h = hl->GetResources(TEAM_HORDE);
-            handler->PSendSysMessage("  Time remaining: %02u:%02u", min, sec);
-            handler->PSendSysMessage("  Resources: Alliance=%u, Horde=%u", a, h);
+            handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
+            handler->PSendSysMessage("  Resources: Alliance={}, Horde={}", a, h);
         }
         else
         {
@@ -105,7 +105,7 @@ public:
         for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
         {
             std::string teamName = (team == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-            handler->PSendSysMessage("    Team: %s", teamName.c_str());
+            handler->PSendSysMessage("    Team: {}", teamName);
 
             // Query the OutdoorPvP manager for the Hinterland instance.
             // We look it up by the buff-zone constant exported from
@@ -130,10 +130,10 @@ public:
                 Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
                 if (!g)
                 {
-                    handler->PSendSysMessage("      Group %u: (stale)", gid.GetCounter());
+                    handler->PSendSysMessage("      Group {}: (stale)", gid.GetCounter());
                     continue;
                 }
-                handler->PSendSysMessage("      Group %u: members=%u", g->GetGUID().GetCounter(), g->GetMembersCount());
+                    handler->PSendSysMessage("      Group {}: members={}", g->GetGUID().GetCounter(), g->GetMembersCount());
             }
         }
         return true;
