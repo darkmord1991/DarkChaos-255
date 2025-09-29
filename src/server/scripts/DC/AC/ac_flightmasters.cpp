@@ -356,18 +356,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dy = me->GetPositionY() - kPath[topIdx].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat %d. Level 40+ → Camp route.", (int)seatId);
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ → Camp route.", (int)seatId);
                 if (dist2d < 80.0f)
                 {
                     _index = static_cast<uint8>(topIdx - 1);
                     if (p)
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near %s. Departing immediately to %s.", NodeLabel(topIdx).c_str(), NodeLabel(_index).c_str());
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(topIdx), NodeLabel(_index));
                     MoveToIndex(_index);
                     return;
                 }
                 _index = topIdx;
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to %s to start the Level 40+ → Camp path.", NodeLabel(_index).c_str());
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the Level 40+ → Camp path.", NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
             }
@@ -492,6 +492,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             return;
         }
 
+        // If we are aiming at a custom smoothing target, intercept arrival and proceed to real waypoint
+        if (_movingToCustom && id == _currentPointId)
+        {
+            _movingToCustom = false;
+            _awaitingArrival = false;
+            // After the smoothing hop, continue to the already planned real index
+            MoveToIndex(_index);
+            return;
+        }
+
         if (id == _currentPointId)
         {
             HandleArriveAtCurrentNode(false /*isProximity*/);
@@ -569,9 +579,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             _hopElapsedMs += diff; // watchdog for per-hop timeouts
             if (_sinceMoveMs > 300) // small debounce
             {
-                float dx = me->GetPositionX() - kPath[_index].GetPositionX();
-                float dy = me->GetPositionY() - kPath[_index].GetPositionY();
-                float dz = fabs(me->GetPositionZ() - kPath[_index].GetPositionZ());
+                // Choose current target (either a custom smoothing point or the real path node)
+                float tx = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
+                float ty = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
+                float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
+                float dx = me->GetPositionX() - tx;
+                float dy = me->GetPositionY() - ty;
+                float dz = fabs(me->GetPositionZ() - tz);
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 float near2d = (_index >= kIndex_acfm40) ? 10.0f : 6.0f; // allow a bit more tolerance on the 40+ segment
                 // Known anchor: acfm19 can be sticky when descending from 40+ → Camp; accept a wider proximity
@@ -579,7 +593,17 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     near2d = 12.0f;
                 if (dist2d < near2d && dz < 18.0f)
                 {
-                    HandleArriveAtCurrentNode(true /*isProximity*/);
+                    // If we were aiming at a custom smoothing target, chain to the real index
+                    if (_movingToCustom)
+                    {
+                        _movingToCustom = false;
+                        _awaitingArrival = false;
+                        MoveToIndex(_index);
+                    }
+                    else
+                    {
+                        HandleArriveAtCurrentNode(true /*isProximity*/);
+                    }
                 }
                 else
                 {
@@ -587,13 +611,15 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
                     {
                         if (Player* p = GetPassengerPlayer())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor %s timeout. Skipping to %s.", NodeLabel(_index).c_str(), NodeLabel(kIndex_acfm15).c_str());
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
                         _awaitingArrival = false;
                         _index = kIndex_acfm15;
                         MoveToIndex(_index);
                         return;
                     }
                     uint32 hopTimeout = (_routeMode == ROUTE_L40_SCENIC ? 5000u : 8000u);
+                    if (_movingToCustom)
+                        hopTimeout = 3000u; // short smoothing hop should resolve quickly
                     if (_hopElapsedMs > hopTimeout && !_isLanding)
                     {
                         // Hop timeout: try to reissue movement, a few times; then hard-snap to target to avoid loops
@@ -605,23 +631,35 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             me->SetDisableGravity(true);
                             me->SetHover(true);
                             me->GetMotionMaster()->Clear();
-                            me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
+                            if (_movingToCustom)
+                                me->GetMotionMaster()->MovePoint(_currentPointId, _customTarget);
+                            else
+                                me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
                             _hopElapsedMs = 0;
                         }
                         else
                         {
                             // Hard fallback: snap to target node and continue the route
                             if (Player* p = GetPassengerPlayer())
-                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at %s. Snapping to target to continue.", NodeLabel(_index));
-                            float tx = kPath[_index].GetPositionX();
-                            float ty = kPath[_index].GetPositionY();
-                            float tz = kPath[_index].GetPositionZ();
+                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                            float tx = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
+                            float ty = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
+                            float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
                             me->UpdateGroundPositionZ(tx, ty, tz);
                             me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
                             _hopElapsedMs = 0;
                             _hopRetries = 0;
-                            // Consider this as arrival by proximity to advance the route
-                            HandleArriveAtCurrentNode(true /*isProximity*/);
+                            if (_movingToCustom)
+                            {
+                                _movingToCustom = false;
+                                _awaitingArrival = false;
+                                MoveToIndex(_index);
+                            }
+                            else
+                            {
+                                // Consider this as arrival by proximity to advance the route
+                                HandleArriveAtCurrentNode(true /*isProximity*/);
+                            }
                             return;
                         }
                     }
@@ -630,7 +668,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             // Final-hop watchdog: if we are aiming at the final node of this route and it's taking too long,
             // snap to the node and immediately start landing to prevent loops/spam.
-            if (!_isLanding && IsFinalNodeOfCurrentRoute(_index))
+            if (!_isLanding && !_movingToCustom && IsFinalNodeOfCurrentRoute(_index))
             {
                 uint32 finalTimeout = 6000u;
                 if (_routeMode == ROUTE_L25_TO_40 || _routeMode == ROUTE_L40_DIRECT)
@@ -638,7 +676,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (_hopElapsedMs > finalTimeout)
                 {
                     if (Player* p = GetPassengerPlayer())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at %s. Landing now.", NodeLabel(_index).c_str());
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at {}. Landing now.", NodeLabel(_index));
                     float fx = kPath[_index].GetPositionX();
                     float fy = kPath[_index].GetPositionY();
                     float fz = kPath[_index].GetPositionZ();
@@ -764,6 +802,21 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _lastDepartIdx = idx;
     }
 
+    void MoveToCustom(Position const& pos)
+    {
+        _customTarget = pos;
+        _movingToCustom = true;
+        _currentPointId = 20000u + (++_customPointSeq); // unique id for custom targets
+        me->SetCanFly(true);
+        me->SetDisableGravity(true);
+        me->SetHover(true);
+        me->GetMotionMaster()->MovePoint(_currentPointId, _customTarget);
+        _awaitingArrival = true;
+        _sinceMoveMs = 0;
+        _hopElapsedMs = 0;
+        _hopRetries = 0;
+    }
+
     Player* GetPassengerPlayer() const
     {
         if (Vehicle* kit = me->GetVehicleKit())
@@ -810,6 +863,10 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
     bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
     uint8 _lastDepartIdx = 255;
+    // Corner smoothing state
+    bool _movingToCustom = false;
+    Position _customTarget;
+    uint32 _customPointSeq = 0;
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
@@ -831,7 +888,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dist40 = sqrtf(dx40 * dx40 + dy40 * dy40);
                 uint8 start = (dist40 < 80.0f) ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -851,7 +908,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // Choose anchor: acfm20 if near acfm19, otherwise start from acfm1 (skip anchor)
                 uint8 start = IsNearIndex(kIndex_acfm19, 80.0f) ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -881,7 +938,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                     start = 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _l25to40ResetApplied = true;
                 _index = start;
@@ -1078,6 +1135,43 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             _index = nextIdx; // move to next index
             if (Player* p = GetPassengerPlayer())
                 ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
+            // Corner smoothing: if the turn is sharp, perform a short micro-hop along the outgoing direction
+            // to allow smoother orientation before the long hop.
+            {
+                // Recompute turn using prevIdx/arrivedIdx/nextIdx from the smoothing block above
+                bool ascending = _index > arrivedIdx;
+                uint8 prevIdx = arrivedIdx;
+                if (ascending)
+                {
+                    if (arrivedIdx > 0)
+                        prevIdx = static_cast<uint8>(arrivedIdx - 1);
+                }
+                else
+                {
+                    if (arrivedIdx + 1 < kPathLength)
+                        prevIdx = static_cast<uint8>(arrivedIdx + 1);
+                }
+                float angleDeg = ComputeTurnAngleDeg(prevIdx, arrivedIdx, _index);
+                float r = 0.0f;
+                if (angleDeg > 75.0f) r = 18.0f; else if (angleDeg > 35.0f) r = 12.0f; else r = 0.0f;
+                if (r > 0.0f)
+                {
+                    // Create a point a short distance along the outgoing direction from the corner node
+                    const Position& pc = kPath[arrivedIdx];
+                    const Position& pn = kPath[_index];
+                    float vx = pn.GetPositionX() - pc.GetPositionX();
+                    float vy = pn.GetPositionY() - pc.GetPositionY();
+                    float vz = pn.GetPositionZ() - pc.GetPositionZ();
+                    float len = sqrtf(vx*vx + vy*vy);
+                    if (len > 0.001f)
+                    {
+                        vx /= len; vy /= len;
+                        Position corner = { pc.GetPositionX() + vx * r, pc.GetPositionY() + vy * r, pc.GetPositionZ() + (vz>0? std::min(vz, r*0.2f): std::max(vz, -r*0.2f)), me->GetOrientation() };
+                        MoveToCustom(corner);
+                        return;
+                    }
+                }
+            }
             MoveToIndex(_index);
             return;
         }
