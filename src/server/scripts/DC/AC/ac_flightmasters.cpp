@@ -62,6 +62,7 @@ enum FlightRouteMode : uint32
     ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
     ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
     ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: acfm57 -> ... -> acfm0
+    ,ROUTE_L40_RETURN0  = 11  // Level 40+ to Camp: acfm35 -> ... -> acfm0
 };
 
 // Gossip action IDs for readability
@@ -80,6 +81,7 @@ enum GossipAction : uint32
     // Level 40+
     GA_L40_BACK_TO_25       = 7,  // Level 40+ to Level 25+
     GA_L40_SCENIC_40_TO_57  = 8,  // Level 40+ to Level 60+
+    GA_L40_BACK_TO_0        = 12, // Level 40+ to Camp
 
     // Level 60+
     GA_L60_BACK_TO_40       = 9,  // Level 60+ to Level 40+
@@ -205,6 +207,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _routeMode = ROUTE_L40_DIRECT;
             else if (value == ROUTE_L40_RETURN25)
                 _routeMode = ROUTE_L40_RETURN25;
+            else if (value == ROUTE_L40_RETURN0)
+                _routeMode = ROUTE_L40_RETURN0;
             else if (value == ROUTE_L40_SCENIC)
                 _routeMode = ROUTE_L40_SCENIC;
             else if (value == ROUTE_L60_RETURN40)
@@ -344,13 +348,38 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 return;
             }
 
+            if (_routeMode == ROUTE_L40_RETURN0)
+            {
+                // Level 40+ to Camp: if near acfm35, step down immediately; else go to acfm35 first
+                uint8 topIdx = kIndex_acfm35;
+                float dx = me->GetPositionX() - kPath[topIdx].GetPositionX();
+                float dy = me->GetPositionY() - kPath[topIdx].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat %d. Level 40+ → Camp route.", (int)seatId);
+                if (dist2d < 80.0f)
+                {
+                    _index = static_cast<uint8>(topIdx - 1);
+                    if (p)
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near %s. Departing immediately to %s.", NodeLabel(topIdx).c_str(), NodeLabel(_index).c_str());
+                    MoveToIndex(_index);
+                    return;
+                }
+                _index = topIdx;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to %s to start the Level 40+ → Camp path.", NodeLabel(_index).c_str());
+                MoveToIndex(_index);
+                return;
+            }
+
             if (_routeMode == ROUTE_L40_SCENIC)
             {
                 // Prefer to start at acfm40 if we're already nearby, otherwise traverse forward from acfm1 to acfm40 first
                 float dx = me->GetPositionX() - kPath[kIndex_acfm40].GetPositionX();
                 float dy = me->GetPositionY() - kPath[kIndex_acfm40].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                _index = (dist2d < 80.0f) ? kIndex_acfm40 : 0;
+                // If already near the anchor (acfm40), skip it and start at acfm41 to avoid start-of-route stalls
+                _index = (dist2d < 80.0f) ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ scenic: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
@@ -396,7 +425,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dx = me->GetPositionX() - kPath[kIndex_acfm19].GetPositionX();
                 float dy = me->GetPositionY() - kPath[kIndex_acfm19].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                _index = (dist2d < 80.0f) ? kIndex_acfm19 : 0;
+                // If already near the anchor (acfm19), skip it and start at acfm20 to avoid start-of-route stalls
+                _index = (dist2d < 80.0f) ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
                 // If the request is specifically 25 -> 40 and we are already very close to the endpoint (acfm35),
                 // start one node earlier (acfm34) to avoid a single long hop and ensure proper sequencing.
                 if (_routeMode == ROUTE_L25_TO_40)
@@ -782,11 +812,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             float dist57 = sqrtf(dx57 * dx57 + dy57 * dy57);
             if (dist57 > 80.0f)
             {
-                // Decide anchor: if near acfm40, start there; otherwise start from acfm1
+                // Decide anchor: if near acfm40, start at acfm41 (skip anchor); otherwise start from acfm1
                 float dx40 = me->GetPositionX() - kPath[kIndex_acfm40].GetPositionX();
                 float dy40 = me->GetPositionY() - kPath[kIndex_acfm40].GetPositionY();
                 float dist40 = sqrtf(dx40 * dx40 + dy40 * dy40);
-                uint8 start = (dist40 < 80.0f) ? kIndex_acfm40 : 0;
+                uint8 start = (dist40 < 80.0f) ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
                 _awaitingArrival = false;
@@ -805,8 +835,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             float dist57b = sqrtf(dx57b * dx57b + dy57b * dy57b);
             if (dist57b > 80.0f)
             {
-                // Choose anchor: acfm19 if within 80y, otherwise start from acfm1
-                uint8 start = IsNearIndex(kIndex_acfm19, 80.0f) ? kIndex_acfm19 : 0;
+                // Choose anchor: acfm20 if near acfm19, otherwise start from acfm1 (skip anchor)
+                uint8 start = IsNearIndex(kIndex_acfm19, 80.0f) ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
                 _awaitingArrival = false;
@@ -939,6 +969,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             else if (_routeMode == ROUTE_L60_RETURN0)
             {
                 if (_index > 0 && _index <= kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index - 1);
+                }
+                else if (_index == 0)
+                {
+                    hasNext = true;
+                    nextIdx = kIndex_startcamp; // final hop to Startcamp
+                }
+                else
+                {
+                    hasNext = false; // at Startcamp -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L40_RETURN0)
+            {
+                if (_index > 0 && _index <= kIndex_acfm35)
                 {
                     hasNext = true;
                     nextIdx = static_cast<uint8>(_index - 1);
@@ -1088,6 +1135,8 @@ private:
                 return idx == kIndex_acfm19;
             case ROUTE_L60_RETURN0:
                 return idx == 0 || idx == kIndex_startcamp;
+            case ROUTE_L40_RETURN0:
+                return idx == 0 || idx == kIndex_startcamp;
             default:
                 return false;
         }
@@ -1186,6 +1235,7 @@ public:
     // Level 40+
     AddGossipItemFor(player, 0, "Level 40+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
     AddGossipItemFor(player, 0, "Level 40+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
+    AddGossipItemFor(player, 0, "Level 40+ to Camp", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_0);
     // Level 60+
     AddGossipItemFor(player, 0, "Level 60+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
     AddGossipItemFor(player, 0, "Level 60+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_25);
@@ -1199,7 +1249,7 @@ public:
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
 
-        if (action < GA_TOUR_25 || action > GA_L60_BACK_TO_0)
+        if (action < GA_TOUR_25 || action > GA_L40_BACK_TO_0)
             return true;
 
         // Summon gryphon slightly above ground near the flightmaster
@@ -1222,7 +1272,7 @@ public:
         // Route mapping by start location (low → high)
         // Camp (acfm0): GA_TOUR_25, GA_L40_DIRECT, GA_L0_TO_57
         // Level 25+: GA_RETURN_STARTCAMP (from acfm15), GA_L25_TO_40, GA_L25_TO_60
-        // Level 40+: GA_L40_BACK_TO_25 (from acfm35), GA_L40_SCENIC_40_TO_57
+    // Level 40+: GA_L40_BACK_TO_25 (from acfm35), GA_L40_SCENIC_40_TO_57, GA_L40_BACK_TO_0
         // Level 60+: GA_L60_BACK_TO_40, GA_L60_BACK_TO_25, GA_L60_BACK_TO_0
         if (CreatureAI* ai = taxi->AI())
         {
@@ -1238,6 +1288,7 @@ public:
             // Level 40+
             else if (action == GA_L40_BACK_TO_25) mode = ROUTE_L40_RETURN25;       // Level 40+ to Level 25+
             else if (action == GA_L40_SCENIC_40_TO_57) mode = ROUTE_L40_SCENIC;    // Level 40+ to Level 60+
+            else if (action == GA_L40_BACK_TO_0) mode = ROUTE_L40_RETURN0;         // Level 40+ to Camp
             // Level 60+
             else if (action == GA_L60_BACK_TO_40) mode = ROUTE_L60_RETURN40; // Level 60+ to Level 40+
             else if (action == GA_L60_BACK_TO_25) mode = ROUTE_L60_RETURN19; // Level 60+ to Level 25+
