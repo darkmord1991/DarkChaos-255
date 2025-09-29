@@ -26,6 +26,7 @@
 #include "TaskScheduler.h"
 #include "Vehicle.h"
 #include "Chat.h"
+#include "SharedDefines.h"
 #include <type_traits>
 #include <chrono>
 #include <string>
@@ -245,12 +246,32 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     void PassengerBoarded(Unit* passenger, int8 seatId, bool apply) override
     {
         if (!apply)
+        {
+            // If the last passenger disembarked, clean up quickly
+            if (_started && !GetPassengerPlayer())
+            {
+                me->SetHover(false);
+                me->SetDisableGravity(false);
+                me->SetCanFly(false);
+                DismountAndDespawn();
+            }
             return;
+        }
 
         // Start the scenic route once the first player sits (any passenger seat)
         if (!_started)
         {
             _started = true;
+            // Record flight start position (snap to ground Z), used for stuck recovery
+            {
+                _flightStartPos = me->GetPosition();
+                float gz = _flightStartPos.GetPositionZ();
+                me->UpdateGroundPositionZ(_flightStartPos.GetPositionX(), _flightStartPos.GetPositionY(), gz);
+                _flightStartPos.m_positionZ = gz;
+                _lastPosX = me->GetPositionX();
+                _lastPosY = me->GetPositionY();
+                _stuckMs = 0;
+            }
             // Ensure we are in flying mode when starting the route
             me->SetCanFly(true);
             me->SetDisableGravity(true);
@@ -376,6 +397,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dy = me->GetPositionY() - kPath[kIndex_acfm19].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 _index = (dist2d < 80.0f) ? kIndex_acfm19 : 0;
+                // If the request is specifically 25 -> 40 and we are already very close to the endpoint (acfm35),
+                // start one node earlier (acfm34) to avoid a single long hop and ensure proper sequencing.
+                if (_routeMode == ROUTE_L25_TO_40)
+                {
+                    float dx35 = me->GetPositionX() - kPath[kIndex_acfm35].GetPositionX();
+                    float dy35 = me->GetPositionY() - kPath[kIndex_acfm35].GetPositionY();
+                    float d35 = sqrtf(dx35 * dx35 + dy35 * dy35);
+                    if (d35 < 80.0f)
+                        _index = static_cast<uint8>(kIndex_acfm35 - 1);
+                }
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 25+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), _routeMode == ROUTE_L25_TO_40 ? NodeLabel(kIndex_acfm35) : NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
@@ -416,6 +447,57 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
 
+    // Allow the passenger to trigger an early exit by emote (/wave or /salute)
+    void ReceiveEmote(Player* player, uint32 emoteId) override
+    {
+        if (!_started || _isLanding)
+            return;
+        Player* passenger = GetPassengerPlayer();
+        if (!passenger || passenger->GetGUID() != player->GetGUID())
+            return;
+        // Accept both text and animation emotes for wave/salute
+        bool wantsExit = (emoteId == TEXT_EMOTE_WAVE || emoteId == TEXT_EMOTE_SALUTE
+                       || emoteId == EMOTE_ONESHOT_WAVE || emoteId == EMOTE_ONESHOT_SALUTE);
+        if (!wantsExit)
+            return;
+
+        ChatHandler(player->GetSession()).SendSysMessage("[Flight] Early exit requested. Landing now.");
+        // Stop following waypoints and attempt a smooth land at current XY
+        _awaitingArrival = false;
+        _landingScheduled = false;
+        _isLanding = true;
+        me->GetMotionMaster()->Clear();
+
+        float x = me->GetPositionX();
+        float y = me->GetPositionY();
+        float z = me->GetPositionZ();
+        me->UpdateGroundPositionZ(x, y, z);
+        Position landPos = { x, y, z + 0.5f, me->GetOrientation() };
+        me->SetSpeedRate(MOVE_FLIGHT, 1.0f);
+        me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
+        // Fallback in 5s in case land inform is missed
+        _scheduler.Schedule(std::chrono::milliseconds(5000), [this](TaskContext /*ctx*/)
+        {
+            if (!me->IsInWorld())
+                return;
+            if (_isLanding)
+            {
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Early-exit landing fallback.");
+                float fx = me->GetPositionX();
+                float fy = me->GetPositionY();
+                float fz = me->GetPositionZ();
+                me->UpdateGroundPositionZ(fx, fy, fz);
+                me->NearTeleportTo(fx, fy, fz + 0.5f, me->GetOrientation());
+                me->SetHover(false);
+                me->SetDisableGravity(false);
+                me->SetCanFly(false);
+                _isLanding = false;
+                DismountAndDespawn();
+            }
+        });
+    }
+
     void UpdateAI(uint32 diff) override
     {
         // Drive scheduled tasks
@@ -433,6 +515,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (_awaitingArrival)
         {
             _sinceMoveMs += diff;
+            _hopElapsedMs += diff; // watchdog for per-hop timeouts
             if (_sinceMoveMs > 300) // small debounce
             {
                 float dx = me->GetPositionX() - kPath[_index].GetPositionX();
@@ -443,7 +526,94 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 {
                     HandleArriveAtCurrentNode(true /*isProximity*/);
                 }
+                else if (_hopElapsedMs > 8000 && !_isLanding)
+                {
+                    // Hop timeout: try to reissue movement, a few times; then hard-snap to target to avoid loops
+                    if (_hopRetries < 2)
+                    {
+                        ++_hopRetries;
+                        // Reassert flight and reissue the same MovePoint without spamming chat
+                        me->SetCanFly(true);
+                        me->SetDisableGravity(true);
+                        me->SetHover(true);
+                        me->GetMotionMaster()->Clear();
+                        me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
+                        _hopElapsedMs = 0;
+                    }
+                    else
+                    {
+                        // Hard fallback: snap to target node and continue the route
+                        if (Player* p = GetPassengerPlayer())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at %s. Snapping to target to continue.", NodeLabel(_index));
+                        float tx = kPath[_index].GetPositionX();
+                        float ty = kPath[_index].GetPositionY();
+                        float tz = kPath[_index].GetPositionZ();
+                        me->UpdateGroundPositionZ(tx, ty, tz);
+                        me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
+                        _hopElapsedMs = 0;
+                        _hopRetries = 0;
+                        // Consider this as arrival by proximity to advance the route
+                        HandleArriveAtCurrentNode(true /*isProximity*/);
+                        return;
+                    }
+                }
             }
+        }
+
+        // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
+        if (_started && !_isLanding)
+        {
+            float cX = me->GetPositionX();
+            float cY = me->GetPositionY();
+            float move2d = sqrtf((cX - _lastPosX) * (cX - _lastPosX) + (cY - _lastPosY) * (cY - _lastPosY));
+            if (move2d < 0.5f)
+            {
+                if (_stuckMs < 60000) // cap to avoid overflow
+                    _stuckMs += diff;
+            }
+            else
+            {
+                _stuckMs = 0;
+                _lastPosX = cX;
+                _lastPosY = cY;
+            }
+            if (_stuckMs >= 20000)
+            {
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Returning to start location and dismounting.");
+                // Teleport to recorded flight start position, snap to ground, and safely dismount
+                float sx = _flightStartPos.GetPositionX();
+                float sy = _flightStartPos.GetPositionY();
+                float sz = _flightStartPos.GetPositionZ();
+                me->UpdateGroundPositionZ(sx, sy, sz);
+                me->NearTeleportTo(sx, sy, sz + 0.5f, _flightStartPos.GetOrientation());
+                me->SetHover(false);
+                me->SetDisableGravity(false);
+                me->SetCanFly(false);
+                _isLanding = false;
+                _awaitingArrival = false;
+                _landingScheduled = false;
+                DismountAndDespawn();
+                return;
+            }
+        }
+
+        // If no passenger remains at any time, land here and despawn immediately
+        if (_started && !_isLanding && !GetPassengerPlayer())
+        {
+            float x = me->GetPositionX();
+            float y = me->GetPositionY();
+            float z = me->GetPositionZ();
+            me->UpdateGroundPositionZ(x, y, z);
+            me->NearTeleportTo(x, y, z + 0.5f, me->GetOrientation());
+            me->SetHover(false);
+            me->SetDisableGravity(false);
+            me->SetCanFly(false);
+            _awaitingArrival = false;
+            _isLanding = false;
+            _landingScheduled = false;
+            DismountAndDespawn();
+            return;
         }
     }
 
@@ -457,6 +627,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
         _awaitingArrival = true;
         _sinceMoveMs = 0;
+        _hopElapsedMs = 0;
+        _hopRetries = 0;
         if (Player* p = GetPassengerPlayer())
             ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
     }
@@ -497,6 +669,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool _isLanding = false;
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
+    uint32 _hopElapsedMs = 0; // time since last hop started
+    uint8 _hopRetries = 0;    // reissues before hard snap
+    // Stuck detection
+    float _lastPosX = 0.0f;
+    float _lastPosY = 0.0f;
+    uint32 _stuckMs = 0;
+    Position _flightStartPos;
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
@@ -519,6 +698,35 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 uint8 start = (dist40 < 80.0f) ? kIndex_acfm40 : 0;
                 if (Player* p = GetPassengerPlayer())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index), NodeLabel(start));
+                _awaitingArrival = false;
+                _index = start;
+                MoveToIndex(_index);
+                return;
+            }
+        }
+
+        // Sanity guard: if Level 25+ → 40 route somehow targets the final node (acfm35)
+        // while we are NOT near acfm35, reset to an earlier anchor (acfm34 if near, else acfm19 or acfm1).
+        if (_routeMode == ROUTE_L25_TO_40 && _index == kIndex_acfm35)
+        {
+            float dx35s = me->GetPositionX() - kPath[kIndex_acfm35].GetPositionX();
+            float dy35s = me->GetPositionY() - kPath[kIndex_acfm35].GetPositionY();
+            float dist35s = sqrtf(dx35s * dx35s + dy35s * dy35s);
+            if (dist35s > 80.0f)
+            {
+                // Prefer stepping from acfm34 if near; otherwise anchor from acfm19; else from acfm1
+                float dx34 = me->GetPositionX() - kPath[kIndex_acfm35 - 1].GetPositionX();
+                float dy34 = me->GetPositionY() - kPath[kIndex_acfm35 - 1].GetPositionY();
+                float d34 = sqrtf(dx34 * dx34 + dy34 * dy34);
+                uint8 start = 0;
+                if (d34 < 80.0f)
+                    start = static_cast<uint8>(kIndex_acfm35 - 1);
+                else if (IsNearIndex(kIndex_acfm19, 80.0f))
+                    start = kIndex_acfm19;
+                else
+                    start = 0;
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from %s to %s.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -727,7 +935,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_landingScheduled)
         {
             _landingScheduled = true;
-            _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+            _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext /*ctx*/)
             {
                 if (!me->IsInWorld())
                     return;
