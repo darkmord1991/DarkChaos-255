@@ -140,7 +140,7 @@ static Position const kPath[] = {
     { 1070.5100f,  86.2029f, 351.1760f, 4.25813f  }, // acfm54
     { 1051.0700f,  39.0495f, 334.1950f, 4.45447f  }, // acfm55
     { 1049.7600f,  13.1380f, 330.9040f, 4.90214f  }, // acfm56
-    { 1068.2100f, -21.4253f, 331.4710f, 5.18095f  }, // acfm57
+    { 1070.1400f, -23.4705f, 330.2390f, 3.66827f  }, // acfm57
     {   73.2833f, 938.1900f, 341.0360f, 3.309180f }   // acfm0 (Startcamp, final)
 };
 
@@ -584,6 +584,52 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     }
                 }
             }
+
+            // Final-hop watchdog: if we are aiming at the final node of this route and it's taking too long,
+            // snap to the node and immediately start landing to prevent loops/spam.
+            if (!_isLanding && IsFinalNodeOfCurrentRoute(_index))
+            {
+                uint32 finalTimeout = 6000u;
+                if (_routeMode == ROUTE_L25_TO_40 || _routeMode == ROUTE_L40_DIRECT)
+                    finalTimeout = 4000u;
+                if (_hopElapsedMs > finalTimeout)
+                {
+                    if (Player* p = GetPassengerPlayer())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at %s. Landing now.", NodeLabel(_index).c_str());
+                    float fx = kPath[_index].GetPositionX();
+                    float fy = kPath[_index].GetPositionY();
+                    float fz = kPath[_index].GetPositionZ();
+                    me->UpdateGroundPositionZ(fx, fy, fz);
+                    me->NearTeleportTo(fx, fy, fz + 0.5f, kPath[_index].GetOrientation());
+                    _awaitingArrival = false;
+                    // Begin landing without waiting for another arrival event
+                    me->SetSpeedRate(MOVE_FLIGHT, 1.0f);
+                    _isLanding = true;
+                    me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, { fx, fy, fz + 0.5f, kPath[_index].GetOrientation() }, 7.0f);
+                    if (!_landingScheduled)
+                    {
+                        _landingScheduled = true;
+                        _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext /*ctx*/)
+                        {
+                            if (!me->IsInWorld())
+                                return;
+                            if (Player* p = GetPassengerPlayer())
+                                ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                            float gx = me->GetPositionX();
+                            float gy = me->GetPositionY();
+                            float gz = me->GetPositionZ();
+                            me->UpdateGroundPositionZ(gx, gy, gz);
+                            me->NearTeleportTo(gx, gy, gz + 0.5f, me->GetOrientation());
+                            me->SetHover(false);
+                            me->SetDisableGravity(false);
+                            me->SetCanFly(false);
+                            _isLanding = false;
+                            DismountAndDespawn();
+                        });
+                    }
+                    return;
+                }
+            }
         }
 
         // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
@@ -668,7 +714,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _hopElapsedMs = 0;
         _hopRetries = 0;
         if (Player* p = GetPassengerPlayer())
-            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
+        {
+            if (_lastDepartIdx != idx)
+                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
+        }
+        _lastDepartIdx = idx;
     }
 
     Player* GetPassengerPlayer() const
@@ -716,6 +766,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     Position _flightStartPos;
     uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
     bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
+    uint8 _lastDepartIdx = 255;
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
@@ -1019,6 +1070,28 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     }
 
 private:
+    // Is the given index the terminal node for the current route?
+    bool IsFinalNodeOfCurrentRoute(uint8 idx) const
+    {
+        switch (_routeMode)
+        {
+            case ROUTE_L25_TO_40:
+            case ROUTE_L40_DIRECT:
+                return idx == kIndex_acfm35;
+            case ROUTE_L25_TO_60:
+            case ROUTE_L40_SCENIC:
+            case ROUTE_L0_TO_57:
+                return idx == kIndex_acfm57;
+            case ROUTE_L60_RETURN40:
+                return idx == kIndex_acfm40;
+            case ROUTE_L60_RETURN19:
+                return idx == kIndex_acfm19;
+            case ROUTE_L60_RETURN0:
+                return idx == 0 || idx == kIndex_startcamp;
+            default:
+                return false;
+        }
+    }
     // Utility: quick 2D proximity check to a path index
     bool IsNearIndex(uint8 idx, float max2d) const
     {
