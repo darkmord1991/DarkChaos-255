@@ -126,13 +126,42 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_started)
         {
             _started = true;
-            // Determine starting node based on route mode
-            _index = (_routeMode == ROUTE_RETURN) ? kIndex_acfm15 : 0;
             // Ensure we are in flying mode when starting the route
             me->SetCanFly(true);
             me->SetDisableGravity(true);
             me->SetHover(true);
-            if (Player* p = passenger ? passenger->ToPlayer() : nullptr)
+
+            Player* p = passenger ? passenger->ToPlayer() : nullptr;
+
+            if (_routeMode == ROUTE_RETURN)
+            {
+                // If we are already near acfm15 (e.g., you took the tour and are at the end), start going backward immediately.
+                float dx = me->GetPositionX() - kPath[kIndex_acfm15].GetPositionX();
+                float dy = me->GetPositionY() - kPath[kIndex_acfm15].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting return route.", (int)seatId);
+
+                if (dist2d < 80.0f)
+                {
+                    // We are at (or very close to) acfm15; go to acfm14 first
+                    _index = static_cast<uint8>(kIndex_acfm15 - 1);
+                    if (p)
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(kIndex_acfm15), NodeLabel(_index));
+                    MoveToIndex(_index);
+                    return;
+                }
+                // Otherwise, head to acfm15 to begin the reverse path
+                _index = kIndex_acfm15;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the return path.", NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            // TOUR route: start from acfm1
+            _index = 0;
+            if (p)
                 ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting at {}.", (int)seatId, NodeLabel(_index));
             MoveToIndex(_index);
         }
@@ -233,7 +262,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
                 }
         }
-    me->DespawnOrUnsummon(2000);
+    // Faster cleanup after dismount
+    me->DespawnOrUnsummon(500);
     }
 
     uint8 _index = 0;
@@ -294,11 +324,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         Position landPos = { x, y, z + 0.5f, kPath[_index].GetOrientation() };
         _isLanding = true;
         me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
-        // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
+        // Fallback: if landing inform does not trigger, force dismount/despawn quickly
         if (!_landingScheduled)
         {
             _landingScheduled = true;
-            _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+            _scheduler.Schedule(std::chrono::milliseconds(4000), [this](TaskContext /*ctx*/)
             {
                 if (!me->IsInWorld())
                     return;
