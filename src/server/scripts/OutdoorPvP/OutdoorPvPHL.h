@@ -31,7 +31,7 @@
 
 
     /*
-     * Hinterland BG — Feature Overview (2025-09-28)
+     * Hinterland BG — Feature Overview (2025-09-29)
      * ------------------------------------------------
      * Core gameplay and systems implemented by this OutdoorPvP script:
      * - Participation gate:
@@ -46,6 +46,7 @@
      *     to keep timer/resources visible in Hinterlands.
     * - Match window:
     *   - 60-minute duration tracked as an absolute end time for the clock; on expiry the BG auto-resets and restarts.
+    *     Auto-reset sequence: Teleport in-zone players to faction start GYs, then respawn NPCs/GOs and refresh HUD.
     * - Status broadcasting:
     *   - Optional zone-wide status broadcast every N seconds (configurable); matches the .hlbg status output.
      *   - Messages are branded with a clickable battleground-style item link prefix
@@ -62,6 +63,8 @@
     * - Reset/teleport helpers:
     *   - Admin reset and auto-reset on timer expiry respawn NPCs/GOs, refresh HUD/timer, and (by default)
     *     teleport players in-zone to their faction start graveyards with a confirmation message.
+    *   - Respawn iteration uses per-map object-store visitors (MapStoredObjectTypesContainer); this avoids
+    *     relying on global HashMapHolder<Creature/GameObject> containers which are not instantiated on this core.
      * - Resource thresholds and alerts:
      *   - Emote-style notices at 300/200/100 and when a side hits 50 and 0; win shouts are colored.
      * - Diagnostics for NPCs missing after empty zone:
@@ -155,12 +158,20 @@
             void HandleWinMessage(const char * msg);
 
             /* Reset */
+            // Resets resources, clears AFK state, respawns all creatures and gameobjects in the Hinterlands,
+            // seeds a fresh match end time based on configuration, updates the HUD for all in-zone players,
+            // and schedules an immediate status broadcast on the next update tick.
             void HandleReset();
 
             /* Rewards */
             void HandleRewards(Player * player, uint32 honorpointsorarena, bool honor, bool arena, bool both);
 
             /* Updates */
+            // Main periodic tick. Handles:
+            // - Auto-reset when the match timer expires (teleport to start GYs then HandleReset)
+            // - AFK detection and policy enforcement
+            // - BG-like raid lifecycle maintenance
+            // - Periodic HUD refresh and optional status broadcasts
             bool Update(uint32 diff) override;
 
             /* Sounds */
@@ -230,12 +241,18 @@
     uint32 _afkTeleportSeconds;
     bool   _statusBroadcastEnabled;
     uint32 _statusBroadcastPeriodMs;
+    bool   _autoResetTeleport;    // teleport players to starts on auto-reset (default true)
+    bool   _expiryUseTiebreaker;  // declare winner at expiry by higher resources (default true)
     uint32 _initialResourcesAlliance;
     uint32 _initialResourcesHorde;
-    uint32 _rewardMatchHonor;
+    uint32 _rewardMatchHonor;               // legacy default
+    uint32 _rewardMatchHonorDepletion;      // when win happens by enemy reaching 0
+    uint32 _rewardMatchHonorTiebreaker;     // when win happens via timer-expiry tiebreaker
     std::vector<uint32> _killHonorValues; // CSV-configured
     uint32 _rewardKillItemId;
     uint32 _rewardKillItemCount;
+    bool   _worldAnnounceOnExpiry;          // send world announcement with final scores at expiry
+    bool   _worldAnnounceOnDepletion;       // send world announcement when a team reaches 0 resources
     // Configurable NPC reward entries (up to ~10 per team) and token item
     std::vector<uint32> _npcRewardEntriesAlliance;
     std::vector<uint32> _npcRewardEntriesHorde;

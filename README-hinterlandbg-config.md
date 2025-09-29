@@ -15,9 +15,13 @@ Available keys (with defaults):
 - HinterlandBG.AFK.TeleportSeconds = 180
 - HinterlandBG.Broadcast.Enabled = 1
 - HinterlandBG.Broadcast.Period = 60
+- HinterlandBG.AutoReset.Teleport = 1
+- HinterlandBG.Expiry.Tiebreaker = 1
 - HinterlandBG.Resources.Alliance = 450
 - HinterlandBG.Resources.Horde = 450
 - HinterlandBG.Reward.MatchHonor = 1500
+- HinterlandBG.Reward.MatchHonorDepletion = 1500
+- HinterlandBG.Reward.MatchHonorTiebreaker = 750
 - HinterlandBG.Reward.KillItemId = 40752
 - HinterlandBG.Reward.KillItemCount = 1
 - HinterlandBG.Reward.KillHonorValues = 17,11,19,22
@@ -31,6 +35,11 @@ Available keys (with defaults):
 Notes:
 - Broadcast.Enabled can be set to 0 to silence periodic zone status.
 - Broadcast.Period is in seconds.
+- AutoReset.Teleport controls whether players in-zone are teleported to faction start graveyards during auto-reset when the timer expires.
+- Expiry.Tiebreaker determines behavior at 0:00: when enabled, the side with higher resources is announced winner and rewarded; if disabled, it’s treated as a draw (no rewards/buffs).
+- Reward.MatchHonorDepletion applies when victory happens by bringing the enemy to 0 resources before the timer ends.
+- Reward.MatchHonorTiebreaker applies when victory happens via timer-expiry tiebreaker.
+- Announce.ExpiryWorld (1/0) controls a global announcement when the timer expires, including final scores.
 - If KillItemId is set to 0 the item reward for player kills is disabled.
 - KillHonorValues is a CSV string; the first 4 values are used (fallbacks: 17,11,19,22).
 - NPCEntriesAlliance/Horde are CSV creature entry IDs; when killed by the opposite team, the killer receives NPCTokenItem.

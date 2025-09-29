@@ -14,6 +14,12 @@ HinterlandBG.Broadcast.Enabled = 1
 # Period in seconds between broadcasts
 HinterlandBG.Broadcast.Period = 60
 
+# Auto-reset options
+# Teleport players to faction start graveyards when the timer expires and a reset happens (1=yes, 0=no)
+HinterlandBG.AutoReset.Teleport = 1
+# At timer expiry, declare a winner by higher resources (1) or treat as always-draw (0)
+HinterlandBG.Expiry.Tiebreaker = 1
+
 # Starting resources per faction
 HinterlandBG.Resources.Alliance = 450
 HinterlandBG.Resources.Horde = 450
@@ -21,6 +27,9 @@ HinterlandBG.Resources.Horde = 450
 # Rewards
 # Honor for winning when enemy reaches 0 (used by HandleRewards on win)
 HinterlandBG.Reward.MatchHonor = 1500
+# Optional split reward amounts depending on win condition
+HinterlandBG.Reward.MatchHonorDepletion = 1500
+HinterlandBG.Reward.MatchHonorTiebreaker = 750
 # Item granted on player kill (0 to disable)
 HinterlandBG.Reward.KillItemId = 40752
 HinterlandBG.Reward.KillItemCount = 1
@@ -37,3 +46,6 @@ HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810001,810002
 # Optional: specific counts per entry (entry:count, comma-separated)
 HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
 HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810001:3
+
+# Global announcement when timer expires (final scores)
+HinterlandBG.Announce.ExpiryWorld = 1

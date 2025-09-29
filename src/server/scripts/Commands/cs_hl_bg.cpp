@@ -16,11 +16,11 @@
  * Provides GM/admin commands to inspect and manage the Hinterland (zone 47)
  * outdoor battleground state.
  *
- * Commands:
- *   .hlbg status            -- show battleground raid groups and sizes
- *   .hlbg get <alliance|horde> -- show resources for a team
- *   .hlbg set <team> <amt>  -- set resources for a team (GM-only); action is audited
- *   .hlbg reset             -- force-reset the Hinterland match state; action is audited
+ * Commands (quick reference):
+ *   .hlbg status               Show timer/resources + raid groups
+ *   .hlbg get <alliance|horde> Show resources for a team
+ *   .hlbg set <team> <amt>     Set resources for a team (GM-only); action is audited
+ *   .hlbg reset                Force-reset the Hinterland match; action is audited
  *
  * Audit logging: administrative actions (.hlbg set/.hlbg reset) are logged to
  * the server log under the `admin.hlbg` category with the GM name and GUID.
@@ -28,7 +28,7 @@
  * lightweight operational audit trails; maintainers may redirect or persist
  * these messages to a centralized logging system if desired.
  *
- * Note: On timer expiry the match auto-resets and restarts. If you’d like a
+ * Note: On timer expiry the match auto-resets (teleport to start GYs, then respawn and HUD refresh) and restarts. If you’d like a
  * tiebreaker or special rewards for equal resources at expiry, see
  * `OutdoorPvPHL.cpp` for where to inject that logic.
  */

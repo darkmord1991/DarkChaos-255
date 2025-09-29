@@ -4,19 +4,51 @@
         [__)\_|    |  (_)[ | )[ | )\_|
                         ._|                    ._|
 
-        Hinterland BG (OutdoorPvP HL)
-        ------------------------------
-        - Participation gate: under-max players are teleported to capitals with a whisper.
-        - Join UX: colored welcome + current standing as whispers; no zone broadcast on join.
-        - HUD: Wintergrasp-like worldstates (SHOW/context/timer/resources) with periodic refresh.
-        - Match timer: 60-minute window; on expiry, the battleground auto-resets and restarts.
-        - Broadcasts: optional zone-wide status every N seconds, branded with an item-link prefix.
-        - AFK/deserter: deserters get no rewards; AFK warn at 120s, action at 180s; any AFK infraction
-            denies rewards; first AFK teleports to start GY, repeated AFK teleports to capital; GMs exempt.
-        - Groups: per-faction BG-like raids; prune empties/offline. When raids shrink 2→1, keep the
-            remaining player in a new raid so they don’t lose context.
-        - Reset helpers: admin reset + automatic on timer expiry; both respawn GOs/NPCs and refresh HUD.
-        - Diagnostics: logs around a ~60s empty-zone window to help verify NPC presence post-emptiness.
+                Hinterland BG (OutdoorPvP HL)
+                ------------------------------
+                Feature summary
+                - Participation gate: under-max players are teleported to capitals with a whisper.
+                - Join UX: colored welcome + current standing as whispers; no zone broadcast on join.
+                - HUD: Wintergrasp-like worldstates (SHOW/context/timer/resources) with periodic refresh so
+                    clients always show timer and resource bars in Hinterlands.
+                - Match timer: 60-minute window; when the clock reaches 0:00 the battleground auto-resets and
+                    restarts (players teleported to faction graveyards, NPCs/GOs respawn, HUD refreshed).
+                - Broadcasts: optional zone-wide status every N seconds, branded with a clickable item-link
+                    prefix for easy recognition.
+                - AFK/deserter policy: deserters get no rewards. AFK warn at 120s, action at 180s; any AFK
+                    infraction denies rewards. First AFK teleports to start GY, repeated AFK teleports to capital.
+                    GMs are exempt from AFK.
+                - Groups: per-faction BG-like raids; prune empties/offline. When raids shrink 2→1, keep the
+                    remaining player in a new raid so they don’t lose context.
+                - Resets: admin reset and timer-expiry auto-reset respawn GOs/NPCs, refresh HUD/timer, and by
+                    default teleport players in-zone to their faction start graveyards.
+                - Diagnostics: logs around a ~60s empty-zone period to help verify NPC presence post-emptiness.
+
+                Quick reference
+                - Commands (see cs_hl_bg.cpp):
+                        .hlbg status  -> show time/resources + raid groups
+                        .hlbg get <alliance|horde>
+                        .hlbg set <team> <amount>  (GM; audit-logged)
+                        .hlbg reset                 (GM; audit-logged)
+                - Configuration keys (worldserver.conf or modules configs), with defaults:
+                        HinterlandBG.MatchDuration           = 3600
+                        HinterlandBG.AFK.WarnSeconds         = 120
+                        HinterlandBG.AFK.TeleportSeconds     = 180
+                        HinterlandBG.Broadcast.Enabled       = 1
+                        HinterlandBG.Broadcast.Period        = 60
+                        HinterlandBG.Resources.Alliance      = 450
+                        HinterlandBG.Resources.Horde         = 450
+                        HinterlandBG.Reward.MatchHonor       = 1500
+                        HinterlandBG.Reward.KillItemId       = 40752
+                        HinterlandBG.Reward.KillItemCount    = 1
+                        HinterlandBG.Reward.NPCTokenItemId   = 40752
+                        HinterlandBG.Reward.NPCTokenItemCount= 1
+                        HinterlandBG.Reward.KillHonorValues  = "17,11,19,22"
+                        HinterlandBG.Reward.NPCEntriesAlliance = ""        # CSV of entry IDs
+                        HinterlandBG.Reward.NPCEntriesHorde    = ""
+                        HinterlandBG.Reward.NPCEntryCountsAlliance = ""     # CSV of entry:count
+                        HinterlandBG.Reward.NPCEntryCountsHorde    = ""
+                    Note: if desired, a future toggle could control teleport-on-auto-reset.
 */
     #include "OutdoorPvPHL.h"
     #include "Player.h"
@@ -45,6 +77,59 @@
     #include <cmath>
     #include <cstdio>
 
+// Local visitor used to reset all creatures and gameobjects in Hinterlands across map instances
+namespace {
+    struct HLZoneResetWorker
+    {
+        uint32 zoneId;
+        uint32 creatureCount = 0;
+        uint32 goCount = 0;
+
+        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
+        {
+            for (auto const& p : creatureMap)
+            {
+                Creature* c = p.second;
+                if (!c || !c->IsInWorld())
+                    continue;
+                if (c->GetZoneId() != zoneId)
+                    continue;
+                // Skip non-world NPCs
+                if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
+                    continue;
+
+                c->CombatStop(true);
+                c->GetThreatMgr().ClearAllThreat();
+                c->RemoveAllAuras();
+                float x, y, z, o;
+                c->GetRespawnPosition(x, y, z, &o);
+                c->NearTeleportTo(x, y, z, o, false);
+                if (!c->IsAlive())
+                    c->Respawn(true);
+                c->SetFullHealth();
+                ++creatureCount;
+            }
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, GameObject*>& goMap)
+        {
+            for (auto const& p : goMap)
+            {
+                GameObject* go = p.second;
+                if (!go || !go->IsInWorld())
+                    continue;
+                if (go->GetZoneId() != zoneId)
+                    continue;
+                go->Respawn();
+                ++goCount;
+            }
+        }
+
+        template<class T>
+        void Visit(std::unordered_map<ObjectGuid, T*>&) { /* ignore other object types */ }
+    };
+}
+
     OutdoorPvPHL::OutdoorPvPHL()
     {
         _typeId = OUTDOOR_PVP_HL;
@@ -54,9 +139,15 @@
         _afkTeleportSeconds = 180;
         _statusBroadcastEnabled = true;
         _statusBroadcastPeriodMs = 60 * IN_MILLISECONDS;
+    _autoResetTeleport = true;
+    _expiryUseTiebreaker = true;
         _initialResourcesAlliance = HL_RESOURCES_A;
         _initialResourcesHorde = HL_RESOURCES_H;
         _rewardMatchHonor = 1500;
+        _rewardMatchHonorDepletion = 1500;
+        _rewardMatchHonorTiebreaker = 750;
+    _worldAnnounceOnExpiry = true;
+    _worldAnnounceOnDepletion = true;
         _killHonorValues = { 17, 11, 19, 22 };
     _rewardKillItemId = 40752;
     _rewardKillItemCount = 1;
@@ -559,57 +650,6 @@
 
                 sMapMgr->DoForAllMapsWithMapId(mapId, [zoneId, &totalCreatureCount, &totalGoCount](Map* map)
                 {
-                    // Visitor worker that will traverse the map's object stores
-                    struct HLZoneResetWorker
-                    {
-                        uint32 zoneId;
-                        uint32 creatureCount = 0;
-                        uint32 goCount = 0;
-
-                        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
-                        {
-                            for (auto const& p : creatureMap)
-                            {
-                                Creature* c = p.second;
-                                if (!c || !c->IsInWorld())
-                                    continue;
-                                if (c->GetZoneId() != zoneId)
-                                    continue;
-                                // Skip non-world NPCs
-                                if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
-                                    continue;
-
-                                c->CombatStop(true);
-                                c->GetThreatMgr().ClearAllThreat();
-                                c->RemoveAllAuras();
-                                float x, y, z, o;
-                                c->GetRespawnPosition(x, y, z, &o);
-                                c->NearTeleportTo(x, y, z, o, false);
-                                if (!c->IsAlive())
-                                    c->Respawn(true);
-                                c->SetFullHealth();
-                                ++creatureCount;
-                            }
-                        }
-
-                        void Visit(std::unordered_map<ObjectGuid, GameObject*>& goMap)
-                        {
-                            for (auto const& p : goMap)
-                            {
-                                GameObject* go = p.second;
-                                if (!go || !go->IsInWorld())
-                                    continue;
-                                if (go->GetZoneId() != zoneId)
-                                    continue;
-                                go->Respawn();
-                                ++goCount;
-                            }
-                        }
-
-                        template<class T>
-                        void Visit(std::unordered_map<ObjectGuid, T*>&) { /* ignore other object types */ }
-                    };
-
                     HLZoneResetWorker worker{ zoneId };
                     TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
                     visitor.Visit(map->GetObjectsStore());
@@ -725,8 +765,72 @@
         if (_matchEndTime != 0 && NowSec() >= _matchEndTime)
         {
             LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
+            // Optional tiebreaker: declare winner by higher resources (equal => draw) and reward/buff accordingly
+            if (_expiryUseTiebreaker)
+            {
+                TeamId winner = TEAM_NEUTRAL;
+                if (_ally_gathered > _horde_gathered)
+                    winner = TEAM_ALLIANCE;
+                else if (_horde_gathered > _ally_gathered)
+                    winner = TEAM_HORDE;
+
+                if (winner == TEAM_ALLIANCE)
+                {
+                    HandleWinMessage("|cff1e90ffFor the Alliance!|r");
+                    PlaySounds(true);
+                }
+                else if (winner == TEAM_HORDE)
+                {
+                    HandleWinMessage("|cffff0000For the HORDE!|r");
+                    PlaySounds(false);
+                }
+                else
+                {
+                    sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "Time's up — it's a draw!").c_str());
+                }
+
+                // Optional global announcement with final scores
+                if (_worldAnnounceOnExpiry)
+                {
+                    char announce[200];
+                    snprintf(announce, sizeof(announce), "[Hinterland BG] Time's up! Final score: Alliance %u — Horde %u%s", (unsigned)_ally_gathered, (unsigned)_horde_gathered, winner==TEAM_ALLIANCE?" (Alliance win)":winner==TEAM_HORDE?" (Horde win)":" (Draw)");
+                    ChatHandler(nullptr).SendGlobalSysMessage(announce);
+                }
+
+                if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
+                {
+                    // Reward winning team members in-zone and apply win/lose buffs
+                    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+                    for (auto const& it : sessionMap)
+                    {
+                        Player* p = it.second ? it.second->GetPlayer() : nullptr;
+                        if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
+                            continue;
+                        bool isWinner = (p->GetTeamId() == winner);
+                        // Buffs: winners get WinBuffs, losers get LoseBuffs
+                        HandleBuffs(p, !isWinner);
+                        // Rewards: only winners and not AFK/Deserter unless GM
+                        if (isWinner)
+                        {
+                            if (IsEligibleForRewards(p))
+                            {
+                                if (!p->IsGameMaster() && GetAfkCount(p) >= 1)
+                                {
+                                    Whisper(p, "|cffff0000AFK penalty: you receive no rewards.|r");
+                                }
+                                else
+                                {
+                                    HandleRewards(p, _rewardMatchHonorTiebreaker, true, false, false);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Optionally move everyone to start points before respawning NPCs/GOs
-            TeleportPlayersToStart();
+            if (_autoResetTeleport)
+                TeleportPlayersToStart();
             HandleReset();
             return false; // avoid further processing this tick with stale state
         }
@@ -1057,6 +1161,13 @@
                         else if(limit_A == 2)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r").c_str());
+                            // Global world announcement if enabled
+                            if (_worldAnnounceOnDepletion)
+                            {
+                                char announce[200];
+                                snprintf(announce, sizeof(announce), "[Hinterland BG] Horde victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                                ChatHandler(nullptr).SendGlobalSysMessage(announce);
+                            }
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cffff0000For the HORDE!|r");
                             HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
@@ -1066,7 +1177,7 @@
                                 case TEAM_ALLIANCE:
                                     HandleBuffs(itr->second->GetPlayer(), true);
                                     break;
-     
+                            
                                 default: //Horde
                                     HandleBuffs(itr->second->GetPlayer(), false);
                                     break;
@@ -1086,6 +1197,13 @@
                         else if(limit_H == 2)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r").c_str());
+                            // Global world announcement if enabled
+                            if (_worldAnnounceOnDepletion)
+                            {
+                                char announce[200];
+                                snprintf(announce, sizeof(announce), "[Hinterland BG] Alliance victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                                ChatHandler(nullptr).SendGlobalSysMessage(announce);
+                            }
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
                             HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
@@ -1094,7 +1212,7 @@
                                 case TEAM_ALLIANCE:
                                     HandleBuffs(itr->second->GetPlayer(), false);
                                     break;
-     
+                            
                                 default: //Horde
                                     HandleBuffs(itr->second->GetPlayer(), true);
                                     break;
@@ -1386,9 +1504,15 @@
             _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);
             uint32 periodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Broadcast.Period", _statusBroadcastPeriodMs / IN_MILLISECONDS);
             _statusBroadcastPeriodMs = periodSec * IN_MILLISECONDS;
+            _autoResetTeleport = sConfigMgr->GetOption<bool>("HinterlandBG.AutoReset.Teleport", _autoResetTeleport);
+            _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
             _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
             _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
             _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
+            _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
+            _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
+            _worldAnnounceOnExpiry = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.ExpiryWorld", _worldAnnounceOnExpiry);
+            _worldAnnounceOnDepletion = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.DepletionWorld", _worldAnnounceOnDepletion);
             _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
             _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
             _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
@@ -1458,20 +1582,6 @@
     }
 
     // Movement hook to feed movement-based AFK tracking
-    class HLMovementHandlerScript : public MovementHandlerScript
-    {
-    public:
-        HLMovementHandlerScript() : MovementHandlerScript("hl_movement_handler", { MOVEMENTHOOK_ON_PLAYER_MOVE }) {}
-
-        void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
-        {
-            if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
-                return;
-            if (OutdoorPvP* pvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-            {
-                if (auto* hl = dynamic_cast<OutdoorPvPHL*>(pvp))
-                    hl->NotePlayerMovement(player);
-            }
         }
     };
 
