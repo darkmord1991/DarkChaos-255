@@ -641,6 +641,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             uint8 arrivedIdx = _index; // index we just reached
             _awaitingArrival = false;
+            // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
+            {
+                bool ascending = nextIdx > arrivedIdx;
+                uint8 prevIdx = arrivedIdx;
+                if (ascending)
+                {
+                    if (arrivedIdx > 0)
+                        prevIdx = static_cast<uint8>(arrivedIdx - 1);
+                }
+                else
+                {
+                    if (arrivedIdx + 1 < kPathLength)
+                        prevIdx = static_cast<uint8>(arrivedIdx + 1);
+                }
+                float angleDeg = ComputeTurnAngleDeg(prevIdx, arrivedIdx, nextIdx);
+                AdjustSpeedForTurn(angleDeg);
+            }
             _index = nextIdx; // move to next index
             if (Player* p = GetPassengerPlayer())
                 ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
@@ -656,16 +673,22 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         Position landPos = { x, y, z + 0.5f, kPath[_index].GetOrientation() };
         _isLanding = true;
         me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
-        // Fallback: if landing inform does not trigger, force dismount/despawn quickly
+        // Fallback: if landing inform does not trigger, snap to ground and dismount safely
         if (!_landingScheduled)
         {
             _landingScheduled = true;
-            _scheduler.Schedule(std::chrono::milliseconds(4000), [this](TaskContext /*ctx*/)
+            _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
             {
                 if (!me->IsInWorld())
                     return;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                // Snap the gryphon to ground at the final node before dismounting passengers
+                float fx = kPath[_index].GetPositionX();
+                float fy = kPath[_index].GetPositionY();
+                float fz = kPath[_index].GetPositionZ();
+                me->UpdateGroundPositionZ(fx, fy, fz);
+                me->NearTeleportTo(fx, fy, fz + 0.5f, kPath[_index].GetOrientation());
                 me->SetHover(false);
                 me->SetDisableGravity(false);
                 me->SetCanFly(false);
@@ -675,6 +698,41 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
     };
+
+private:
+    // Compute the angle between (prev->curr) and (curr->next) in degrees
+    float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const
+    {
+        const Position& p0 = kPath[prevIdx];
+        const Position& p1 = kPath[currIdx];
+        const Position& p2 = kPath[nextIdx];
+        float v1x = p1.GetPositionX() - p0.GetPositionX();
+        float v1y = p1.GetPositionY() - p0.GetPositionY();
+        float v2x = p2.GetPositionX() - p1.GetPositionX();
+        float v2y = p2.GetPositionY() - p1.GetPositionY();
+        float len1 = sqrtf(v1x * v1x + v1y * v1y);
+        float len2 = sqrtf(v2x * v2x + v2y * v2y);
+        if (len1 < 0.001f || len2 < 0.001f)
+            return 0.0f;
+        float dot = (v1x * v2x + v1y * v2y) / (len1 * len2);
+        if (dot > 1.0f) dot = 1.0f; else if (dot < -1.0f) dot = -1.0f;
+        float rad = acosf(dot);
+        return rad * 180.0f / 3.14159265f;
+    }
+
+    void AdjustSpeedForTurn(float angleDeg)
+    {
+        float rate = _baseFlightSpeed;
+        if (angleDeg > 75.0f)
+            rate = 1.2f;
+        else if (angleDeg > 35.0f)
+            rate = 1.6f;
+        else
+            rate = _baseFlightSpeed;
+        me->SetSpeedRate(MOVE_FLIGHT, rate);
+    }
+
+    float _baseFlightSpeed = 2.0f;
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
 {
