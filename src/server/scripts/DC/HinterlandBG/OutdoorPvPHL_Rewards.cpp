@@ -1,4 +1,4 @@
-#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "OutdoorPvPHL.h"            // use the local DC/HinterlandBG header, not OutdoorPvP/...
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "World.h"
