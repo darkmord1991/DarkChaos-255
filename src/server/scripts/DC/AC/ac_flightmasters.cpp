@@ -43,14 +43,47 @@ enum : uint32
 // Route selection for the flight
 enum FlightRouteMode : uint32
 {
-    ROUTE_TOUR = 0,     // acfm1 -> acfm15 (land at acfm15)
-    ROUTE_RETURN = 1,   // acfm15 -> Startcamp (acfm0)
-    ROUTE_L40_DIRECT = 2, // Startcamp (acfm0) -> acfm35 (direct)
-    ROUTE_L40_RETURN25 = 3, // acfm35 -> acfm19 (reverse, land at acfm19)
-    ROUTE_L40_SCENIC = 4,   // acfm40 -> acfm57 (ascending)
-    ROUTE_L60_RETURN40 = 5, // acfm57 -> acfm40 (descending)
-    ROUTE_L60_RETURN0  = 6, // acfm57 -> Startcamp (full descend to 0 then Startcamp)
-    ROUTE_L60_RETURN19 = 7  // acfm57 -> acfm19 (descending)
+    // Camp (acfm0) starts
+    ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> acfm15
+    ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> acfm35
+    ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> acfm57
+
+    // Level 25+ starts
+    ROUTE_RETURN        = 3,  // Level 25+ to Camp: acfm15 -> ... -> acfm0
+    ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: acfm19 -> ... -> acfm35
+    ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: acfm19 -> ... -> acfm57
+
+    // Level 40+ starts
+    ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: acfm35 -> ... -> acfm19
+    ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: acfm40 -> ... -> acfm57
+
+    // Level 60+ starts
+    ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
+    ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
+    ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: acfm57 -> ... -> acfm0
+};
+
+// Gossip action IDs for readability
+enum GossipAction : uint32
+{
+    // Camp (acfm0)
+    GA_TOUR_25              = 1,  // Camp to Level 25+ (acfm1 -> acfm15)
+    GA_L40_DIRECT           = 2,  // Camp to Level 40+ (to acfm35)
+    GA_L0_TO_57             = 3,  // Camp to Level 60+ (to acfm57)
+
+    // Level 25+
+    GA_RETURN_STARTCAMP     = 4,  // Level 25+ to Camp
+    GA_L25_TO_40            = 5,  // Level 25+ to Level 40+
+    GA_L25_TO_60            = 6,  // Level 25+ to Level 60+
+
+    // Level 40+
+    GA_L40_BACK_TO_25       = 7,  // Level 40+ to Level 25+
+    GA_L40_SCENIC_40_TO_57  = 8,  // Level 40+ to Level 60+
+
+    // Level 60+
+    GA_L60_BACK_TO_40       = 9,  // Level 60+ to Level 40+
+    GA_L60_BACK_TO_25       = 10, // Level 60+ to Level 25+
+    GA_L60_BACK_TO_0        = 11  // Level 60+ to Camp
 };
 
 // Simple scenic route in Azshara Crater (map 37) for levels 1-25+
@@ -179,6 +212,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _routeMode = ROUTE_L60_RETURN0;
             else if (value == ROUTE_L60_RETURN19)
                 _routeMode = ROUTE_L60_RETURN19;
+            else if (value == ROUTE_L25_TO_40)
+                _routeMode = ROUTE_L25_TO_40;
+            else if (value == ROUTE_L25_TO_60)
+                _routeMode = ROUTE_L25_TO_60;
+            else if (value == ROUTE_L0_TO_57)
+                _routeMode = ROUTE_L0_TO_57;
             else
                 _routeMode = ROUTE_TOUR;
         }
@@ -247,10 +286,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             if (_routeMode == ROUTE_L40_DIRECT)
             {
-                // Level 40+ direct: fly straight to acfm35 from Startcamp
-                _index = kIndex_acfm35;
+                // Level 40+ (option 3): Start at acfm1 and traverse forward to acfm35
+                // This avoids a long single hop and guarantees proper waypoint sequencing.
+                _index = 0;
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ route to {}.", (int)seatId, NodeLabel(_index));
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm35));
                 MoveToIndex(_index);
                 return;
             }
@@ -289,6 +329,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 return;
             }
 
+            if (_routeMode == ROUTE_L0_TO_57)
+            {
+                // Startcamp -> step through all nodes up to acfm57
+                _index = 0; // acfm1 is first scenic node; we will traverse forward up to acfm57
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Startcamp to 60+: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm57));
+                MoveToIndex(_index);
+                return;
+            }
+
             if (_routeMode == ROUTE_L60_RETURN40 || _routeMode == ROUTE_L60_RETURN19 || _routeMode == ROUTE_L60_RETURN0)
             {
                 // Ensure we start from acfm57 or immediately step down if already there
@@ -308,6 +358,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _index = kIndex_acfm57;
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the Level 60+ return.", NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            if (_routeMode == ROUTE_L25_TO_40 || _routeMode == ROUTE_L25_TO_60)
+            {
+                // Start at acfm19 and go up to acfm35/acfm57
+                _index = kIndex_acfm19;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 25+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), _routeMode == ROUTE_L25_TO_40 ? NodeLabel(kIndex_acfm35) : NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
                 return;
             }
@@ -463,7 +523,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             if (_routeMode == ROUTE_L40_DIRECT)
             {
-                hasNext = false; // land at acfm35
+                // Ascend from acfm1 to acfm35 inclusively
+                if (_index < kIndex_acfm35)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index + 1);
+                }
+                else
+                {
+                    hasNext = false; // at acfm35 -> land
+                }
             }
             else if (_routeMode == ROUTE_L40_RETURN25)
             {
@@ -528,6 +597,42 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                 {
                     hasNext = false; // at Startcamp -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L0_TO_57)
+            {
+                if (_index < kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index + 1);
+                }
+                else
+                {
+                    hasNext = false; // at acfm57 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L25_TO_40)
+            {
+                if (_index < kIndex_acfm35)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index + 1);
+                }
+                else
+                {
+                    hasNext = false; // at acfm35 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L25_TO_60)
+            {
+                if (_index < kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index + 1);
+                }
+                else
+                {
+                    hasNext = false; // at acfm57 -> land
                 }
             }
         }
@@ -595,14 +700,38 @@ public:
         // if (player->getLevel() > 25 && !player->IsGameMaster())
         //     AddGossipItemFor(player, 0, "This flight is designed for newer adventurers.", GOSSIP_SENDER_MAIN, 0);
 
-    AddGossipItemFor(player, 0, "Take the gryphon tour (levels 1-25+)", GOSSIP_SENDER_MAIN, 1);
-    AddGossipItemFor(player, 0, "Return flight to Startcamp", GOSSIP_SENDER_MAIN, 2);
-    AddGossipItemFor(player, 0, "Level 40+", GOSSIP_SENDER_MAIN, 3);
-    AddGossipItemFor(player, 0, "Back to Level 25+", GOSSIP_SENDER_MAIN, 4);
-    AddGossipItemFor(player, 0, "Level 40+ scenic (acfm40 → acfm57)", GOSSIP_SENDER_MAIN, 5);
-    AddGossipItemFor(player, 0, "Level 60+: back to 40+ (acfm57 → acfm40)", GOSSIP_SENDER_MAIN, 6);
-    AddGossipItemFor(player, 0, "Level 60+: back to 25+ (acfm57 → acfm19)", GOSSIP_SENDER_MAIN, 7);
-    AddGossipItemFor(player, 0, "Level 60+: back to Startcamp (acfm57 → acfm0)", GOSSIP_SENDER_MAIN, 8);
+    // Gossip menu overview (sorted/grouped by start location from low to high)
+    // Camp (acfm0):
+    //   - Camp to Level 25+ (acfm1 → acfm15)
+    //   - Camp to Level 40+ (→ acfm35)
+    //   - Camp to Level 60+ (→ acfm57)
+    // Level 25+:
+    //   - Level 25+ to Camp (acfm15 → ... → acfm0)
+    //   - Level 25+ to Level 40+ (acfm19 → ... → acfm35)
+    //   - Level 25+ to Level 60+ (acfm19 → ... → acfm57)
+    // Level 40+:
+    //   - Level 40+ to Level 25+ (acfm35 → ... → acfm19)
+    //   - Level 40+ to Level 60+ (acfm40 → ... → acfm57)
+    // Level 60+:
+    //   - Level 60+ to Level 40+ (acfm57 → ... → acfm40)
+    //   - Level 60+ to Level 25+ (acfm57 → ... → acfm19)
+    //   - Level 60+ to Camp (acfm57 → ... → acfm0 → Startcamp)
+
+    // Camp (acfm0)
+    AddGossipItemFor(player, 0, "Camp to Level 25+", GOSSIP_SENDER_MAIN, GA_TOUR_25);
+    AddGossipItemFor(player, 0, "Camp to Level 40+", GOSSIP_SENDER_MAIN, GA_L40_DIRECT);
+    AddGossipItemFor(player, 0, "Camp to Level 60+", GOSSIP_SENDER_MAIN, GA_L0_TO_57);
+    // Level 25+
+    AddGossipItemFor(player, 0, "Level 25+ to Camp", GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
+    AddGossipItemFor(player, 0, "Level 25+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L25_TO_40);
+    AddGossipItemFor(player, 0, "Level 25+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L25_TO_60);
+    // Level 40+
+    AddGossipItemFor(player, 0, "Level 40+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
+    AddGossipItemFor(player, 0, "Level 40+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
+    // Level 60+
+    AddGossipItemFor(player, 0, "Level 60+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
+    AddGossipItemFor(player, 0, "Level 60+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_25);
+    AddGossipItemFor(player, 0, "Level 60+ to Camp", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_0);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -612,7 +741,7 @@ public:
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
 
-        if (action < 1 || action > 8)
+        if (action < GA_TOUR_25 || action > GA_L60_BACK_TO_0)
             return true;
 
         // Summon gryphon slightly above ground near the flightmaster
@@ -632,17 +761,29 @@ public:
             return true;
         }
 
-        // Select route mode: 1=tour, 2=return, 3=Level 40+ direct, 4=Level 40+ back to 25+, 5=40 scenic to 57, 6=57->40, 7=57->19, 8=57->0
+        // Route mapping by start location (low → high)
+        // Camp (acfm0): GA_TOUR_25, GA_L40_DIRECT, GA_L0_TO_57
+        // Level 25+: GA_RETURN_STARTCAMP (from acfm15), GA_L25_TO_40, GA_L25_TO_60
+        // Level 40+: GA_L40_BACK_TO_25 (from acfm35), GA_L40_SCENIC_40_TO_57
+        // Level 60+: GA_L60_BACK_TO_40, GA_L60_BACK_TO_25, GA_L60_BACK_TO_0
         if (CreatureAI* ai = taxi->AI())
         {
             uint32 mode = ROUTE_TOUR;
-            if (action == 2) mode = ROUTE_RETURN;
-            else if (action == 3) mode = ROUTE_L40_DIRECT;
-            else if (action == 4) mode = ROUTE_L40_RETURN25;
-            else if (action == 5) mode = ROUTE_L40_SCENIC;
-            else if (action == 6) mode = ROUTE_L60_RETURN40;
-            else if (action == 7) mode = ROUTE_L60_RETURN19;
-            else if (action == 8) mode = ROUTE_L60_RETURN0;
+            // Camp
+            if (action == GA_TOUR_25) mode = ROUTE_TOUR;                // Camp to Level 25+
+            else if (action == GA_L40_DIRECT) mode = ROUTE_L40_DIRECT;  // Camp to Level 40+
+            else if (action == GA_L0_TO_57) mode = ROUTE_L0_TO_57;      // Camp to Level 60+
+            // Level 25+
+            else if (action == GA_RETURN_STARTCAMP) mode = ROUTE_RETURN; // Level 25+ to Camp
+            else if (action == GA_L25_TO_40) mode = ROUTE_L25_TO_40;     // Level 25+ to Level 40+
+            else if (action == GA_L25_TO_60) mode = ROUTE_L25_TO_60;     // Level 25+ to Level 60+
+            // Level 40+
+            else if (action == GA_L40_BACK_TO_25) mode = ROUTE_L40_RETURN25;       // Level 40+ to Level 25+
+            else if (action == GA_L40_SCENIC_40_TO_57) mode = ROUTE_L40_SCENIC;    // Level 40+ to Level 60+
+            // Level 60+
+            else if (action == GA_L60_BACK_TO_40) mode = ROUTE_L60_RETURN40; // Level 60+ to Level 40+
+            else if (action == GA_L60_BACK_TO_25) mode = ROUTE_L60_RETURN19; // Level 60+ to Level 25+
+            else if (action == GA_L60_BACK_TO_0) mode = ROUTE_L60_RETURN0;   // Level 60+ to Camp
             ai->SetData(1, mode);
         }
 
