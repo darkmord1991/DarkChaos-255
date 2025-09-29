@@ -94,7 +94,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             me->SetDisableGravity(true);
             me->SetHover(true);
             if (Player* p = passenger ? passenger->ToPlayer() : nullptr)
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat %d. Starting at acfm1.", (int)seatId);
+                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting at acfm1.", (int)seatId);
             MoveToIndex(_index);
         }
     }
@@ -116,40 +116,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
         if (id == _currentPointId)
         {
-            // Reached a path node; continue to next or start landing sequence at the last
-            if (_index + 1 < kPathLength)
-            {
-                uint8 arrivedIdx = _index; // index we just reached
-                _awaitingArrival = false;
-                ++_index; // move to next index
-                // Debug: announce waypoint reached to the passenger (human-friendly: acfm1..acfmN)
-                if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Reached waypoint acfm%u.", (uint32)(arrivedIdx + 1));
-                MoveToIndex(_index);
-            }
-            else
-            {
-                // Final node reached: initiate a safe landing, then dismount at ground
-                float x = kPath[_index].GetPositionX();
-                float y = kPath[_index].GetPositionY();
-                float z = kPath[_index].GetPositionZ();
-                me->UpdateGroundPositionZ(x, y, z);
-                Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
-                me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
-                // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
-                if (!_landingScheduled)
-                {
-                    _landingScheduled = true;
-                    _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
-                    {
-                        if (!me->IsInWorld())
-                            return;
-                        if (Player* p = GetPassengerPlayer())
-                            ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
-                        DismountAndDespawn();
-                    });
-                }
-            }
+            HandleArriveAtCurrentNode(false /*isProximity*/);
         }
     }
 
@@ -157,6 +124,31 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     {
         VehicleAI::UpdateAI(diff);
         _scheduler.Update(diff);
+
+        // Keep flight flags asserted during the whole route to avoid gravity glitches
+        if (_started)
+        {
+            me->SetCanFly(true);
+            me->SetDisableGravity(true);
+            me->SetHover(true);
+        }
+
+        // Proximity-based arrival fallback in case MovementInform is flaky
+        if (_awaitingArrival && _started)
+        {
+            _sinceMoveMs += diff;
+            // avoid instant triggers; require a minimal travel time
+            static constexpr uint32 kMinTravelForProxMs = 400;
+            static constexpr float kArriveRadius = 6.0f; // yards
+            if (_sinceMoveMs > kMinTravelForProxMs)
+            {
+                float dist = me->GetDistance(kPath[_index].GetPositionX(), kPath[_index].GetPositionY(), kPath[_index].GetPositionZ());
+                if (dist <= kArriveRadius)
+                {
+                    HandleArriveAtCurrentNode(true /*isProximity*/);
+                }
+            }
+        }
     }
 
 private:
@@ -171,8 +163,9 @@ private:
         me->SetHover(true);
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
         _awaitingArrival = true;
+        _sinceMoveMs = 0;
         if (Player* p = GetPassengerPlayer())
-            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to acfm%u (idx %u).", (uint32)(idx + 1), (uint32)idx);
+            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to acfm{} (idx {}).", (uint32)(idx + 1), (uint32)idx);
     }
 
     Player* GetPassengerPlayer() const
@@ -207,7 +200,49 @@ private:
     bool _started = false;
     bool _awaitingArrival = false;
     bool _landingScheduled = false;
-        TaskScheduler _scheduler;
+    TaskScheduler _scheduler;
+    uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
+
+    void HandleArriveAtCurrentNode(bool isProximity)
+    {
+        if (!_awaitingArrival)
+            return; // already handled
+
+        // Reached a path node; continue to next or start landing sequence at the last
+        if (_index + 1 < kPathLength)
+        {
+            uint8 arrivedIdx = _index; // index we just reached
+            _awaitingArrival = false;
+            ++_index; // move to next index
+            // Debug: announce waypoint reached to the passenger (human-friendly: acfm1..acfmN)
+            if (Player* p = GetPassengerPlayer())
+                ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint acfm{} (proximity)." : "[Flight Debug] Reached waypoint acfm{}.", (uint32)(arrivedIdx + 1));
+            MoveToIndex(_index);
+        }
+        else
+        {
+            // Final node reached: initiate a safe landing, then dismount at ground
+            float x = kPath[_index].GetPositionX();
+            float y = kPath[_index].GetPositionY();
+            float z = kPath[_index].GetPositionZ();
+            me->UpdateGroundPositionZ(x, y, z);
+            Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
+            me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
+            // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
+            if (!_landingScheduled)
+            {
+                _landingScheduled = true;
+                _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+                {
+                    if (!me->IsInWorld())
+                        return;
+                    if (Player* p = GetPassengerPlayer())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                    DismountAndDespawn();
+                });
+            }
+        }
+    }
     };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
