@@ -258,50 +258,39 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             }
         }
 
-        if (player->GetTeamId() == TEAM_ALLIANCE)
+        auto applyLoss = [&](TeamId victimTeam)
         {
-            switch (entry) // Alliance killing horde guards
+            // Determine normal vs boss by victim team classification sets
+            bool isBoss = false;
+            bool isNormal = false;
+            if (victimTeam == TEAM_HORDE)
             {
-                case Horde_Infantry:
-                    _horde_gathered -= _resourcesLossNpcNormal; // normal infantry
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
-                case Horde_Squadleader: // 2?
-                    _horde_gathered -= _resourcesLossNpcNormal;
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
-                case Horde_Boss:
-                    _horde_gathered -= _resourcesLossNpcBoss;   // boss
-                    /*BossReward(player); */
-                    break;
-                case Horde_Heal:
-                    _horde_gathered -= _resourcesLossNpcNormal;
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
+                isBoss   = _npcBossEntriesHorde.count(entry) > 0;
+                isNormal = _npcNormalEntriesHorde.count(entry) > 0;
+                if (isBoss)
+                    _horde_gathered = (_horde_gathered > _resourcesLossNpcBoss) ? (_horde_gathered - _resourcesLossNpcBoss) : 0u;
+                else if (isNormal)
+                    _horde_gathered = (_horde_gathered > _resourcesLossNpcNormal) ? (_horde_gathered - _resourcesLossNpcNormal) : 0u;
             }
-        }
-        else // Team Horde
-        {
-            switch (entry) // Horde killing alliance guards
+            else if (victimTeam == TEAM_ALLIANCE)
             {
-                case Alliance_Healer:
-                    _ally_gathered -= _resourcesLossNpcNormal;
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
-                case Alliance_Boss:
-                    _ally_gathered -= _resourcesLossNpcBoss;     // boss
-                    /*BossReward(player); <- NEU? */
-                    break;
-                case Alliance_Infantry:
-                    _ally_gathered -= _resourcesLossNpcNormal;  // normal infantry
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
-                case Alliance_Squadleader: // Wrong?
-                    _ally_gathered -= _resourcesLossNpcNormal;
-                    Randomizer(player); // Randomizes the honor reward
-                    break;
+                isBoss   = _npcBossEntriesAlliance.count(entry) > 0;
+                isNormal = _npcNormalEntriesAlliance.count(entry) > 0;
+                if (isBoss)
+                    _ally_gathered = (_ally_gathered > _resourcesLossNpcBoss) ? (_ally_gathered - _resourcesLossNpcBoss) : 0u;
+                else if (isNormal)
+                    _ally_gathered = (_ally_gathered > _resourcesLossNpcNormal) ? (_ally_gathered - _resourcesLossNpcNormal) : 0u;
             }
-        }
+            // Award random honor when a configured NPC type is killed
+            if (isBoss || isNormal)
+                Randomizer(player);
+        };
+
+        // Decide victim team by entry (Alliance list vs Horde list)
+        if (_npcBossEntriesHorde.count(entry) || _npcNormalEntriesHorde.count(entry))
+            applyLoss(TEAM_HORDE);
+        else if (_npcBossEntriesAlliance.count(entry) || _npcNormalEntriesAlliance.count(entry))
+            applyLoss(TEAM_ALLIANCE);
         // Update HUD for all participants after resource change
         UpdateWorldStatesAllPlayers();
     }

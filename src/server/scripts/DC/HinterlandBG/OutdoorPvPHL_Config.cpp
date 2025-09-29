@@ -118,4 +118,18 @@ void OutdoorPvPHL::LoadConfig()
     std::string hCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsHorde", "");
     if (!aCounts.empty()) _npcRewardCountsAlliance = parseEntryCounts(aCounts);
     if (!hCounts.empty()) _npcRewardCountsHorde = parseEntryCounts(hCounts);
+
+    // NPC classification for resource loss (CSV lists of entries)
+    auto parseCsvSet = [&](char const* key, std::unordered_set<uint32>& outSet)
+    {
+        std::string list = sConfigMgr->GetOption<std::string>(key, "");
+        if (list.empty()) return;
+        auto v = parseCsvU32(list);
+        outSet.clear();
+        outSet.insert(v.begin(), v.end());
+    };
+    parseCsvSet("HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance", _npcBossEntriesAlliance);
+    parseCsvSet("HinterlandBG.ResourcesLoss.NPCBossEntriesHorde",    _npcBossEntriesHorde);
+    parseCsvSet("HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance", _npcNormalEntriesAlliance);
+    parseCsvSet("HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde",    _npcNormalEntriesHorde);
 }

@@ -71,6 +71,14 @@ HinterlandBG.ResourcesLoss.PlayerKill     = 5       ; player kills
 HinterlandBG.ResourcesLoss.NpcNormal      = 5       ; infantry/squadleaders/healers
 HinterlandBG.ResourcesLoss.NpcBoss        = 200     ; boss NPCs
 
+; NPC classification for resource loss (CSV of creature entry IDs)
+; Alliance (killed by Horde)
+HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance   = 810003
+HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810000,600011
+; Horde (killed by Alliance)
+HinterlandBG.ResourcesLoss.NPCBossEntriesHorde      = 810002
+HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde    = 600004,810001,600008
+
 ; --- Per-NPC token rewards (optional) ---
 ; CSV lists of NPC entries per team that grant tokens when killed by the opposing team.
 ; Optional counts maps: "entry:count" pairs (CSV).

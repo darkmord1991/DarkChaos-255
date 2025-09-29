@@ -305,6 +305,11 @@
     // Optional per-NPC token counts (entry -> count), per opposite team
     std::unordered_map<uint32, uint32> _npcRewardCountsAlliance; // rewarded when Horde kills these Alliance entries
     std::unordered_map<uint32, uint32> _npcRewardCountsHorde;    // rewarded when Alliance kills these Horde entries
+    // Configurable NPC classification for resource loss logic
+    std::unordered_set<uint32> _npcBossEntriesAlliance;   // alliance NPC entries considered bosses
+    std::unordered_set<uint32> _npcBossEntriesHorde;      // horde NPC entries considered bosses
+    std::unordered_set<uint32> _npcNormalEntriesAlliance; // alliance NPC entries considered normal
+    std::unordered_set<uint32> _npcNormalEntriesHorde;    // horde NPC entries considered normal
     // Configurable resource loss amounts
     uint32 _resourcesLossPlayerKill;   // e.g., 5
     uint32 _resourcesLossNpcNormal;    // e.g., 5

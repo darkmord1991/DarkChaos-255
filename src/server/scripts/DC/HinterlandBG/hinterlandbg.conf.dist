@@ -60,6 +60,15 @@ HinterlandBG.ResourcesLoss.PlayerKill = 5
 HinterlandBG.ResourcesLoss.NpcNormal = 5
 HinterlandBG.ResourcesLoss.NpcBoss = 200
 
+# NPC classification for resource loss (CSV of creature entry IDs)
+# These lists determine whether an NPC is treated as a boss or normal unit for resource deductions.
+# Alliance NPC entry lists (killed by Horde):
+HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance = 810003
+HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810000,600011
+# Horde NPC entry lists (killed by Alliance):
+HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
+HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810001,600008
+
 ## Token rewards (optional)
 # If both are > 0, the winning team also receives this token on match end
 HinterlandBG.Reward.NPCTokenItemId = 0
