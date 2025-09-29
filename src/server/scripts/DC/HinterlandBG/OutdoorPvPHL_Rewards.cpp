@@ -25,7 +25,7 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
             return;
 
         // OutdoorPvP base tracks participating players by team.
-        for (auto const& guid : m_players[team])
+        for (auto const& guid : _players[team])
         {
             if (Player* plr = ObjectAccessor::FindPlayer(guid))
             {
