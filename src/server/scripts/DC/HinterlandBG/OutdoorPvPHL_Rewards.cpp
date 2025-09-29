@@ -114,3 +114,175 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
         }
     }
 }
+
+// marks the height of honour given for each NPC kill
+void OutdoorPvPHL::Randomizer(Player* player)
+{
+    switch (urand(0, 4))
+    {
+        case 0:
+        {
+            uint32 v = (_killHonorValues.size() > 0 ? _killHonorValues[0] : 17);
+            HandleRewards(player, v, true, false, false);
+        }
+        break;
+        case 1:
+        {
+            uint32 v = (_killHonorValues.size() > 1 ? _killHonorValues[1] : 11);
+            HandleRewards(player, v, true, false, false);
+        }
+        break;
+        case 2:
+        {
+            uint32 v = (_killHonorValues.size() > 2 ? _killHonorValues[2] : 19);
+            HandleRewards(player, v, true, false, false);
+        }
+        break;
+        case 3:
+        {
+            uint32 v = (_killHonorValues.size() > 3 ? _killHonorValues[3] : 22);
+            HandleRewards(player, v, true, false, false);
+        }
+        break;
+    }
+}
+
+void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
+{
+    if (!player || !killed)
+        return;
+
+    if (killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
+    {
+        // prevent self-kill manipulation and ensure victim differs from killer
+        if (player->GetGUID() == killed->GetGUID())
+            return;
+
+        switch (killed->ToPlayer()->GetTeamId())
+        {
+            case TEAM_ALLIANCE:
+                _ally_gathered -= PointsLoseOnPvPKill;
+                if (IsEligibleForRewards(player))
+                {
+                    if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
+                    {
+                        Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
+                    }
+                    else
+                    {
+                        player->AddItem(40752, 1);
+                        Randomizer(player);
+                        if (_rewardKillItemId && _rewardKillItemCount)
+                            player->AddItem(_rewardKillItemId, _rewardKillItemCount);
+                    }
+                }
+                break;
+            default: // Horde
+                _horde_gathered -= PointsLoseOnPvPKill;
+                if (IsEligibleForRewards(player))
+                {
+                    if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
+                    {
+                        Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
+                    }
+                    else
+                    {
+                        Randomizer(player);
+                        if (_rewardKillItemId && _rewardKillItemCount)
+                            player->AddItem(_rewardKillItemId, _rewardKillItemCount);
+                    }
+                }
+                break;
+        }
+        // Update HUD for all participants after resource change
+        UpdateWorldStatesAllPlayers();
+    }
+    else // If is something besides a player
+    {
+        uint32 entry = killed->GetEntry();
+        // Configured NPC token rewards (up to 10 entries per team via config)
+        if (player->GetTeamId() == TEAM_ALLIANCE)
+        {
+            if (!_npcRewardEntriesHorde.empty() && std::find(_npcRewardEntriesHorde.begin(), _npcRewardEntriesHorde.end(), entry) != _npcRewardEntriesHorde.end())
+            {
+                if (_rewardNpcTokenItemId)
+                {
+                    uint32 count = _rewardNpcTokenCount;
+                    auto itc = _npcRewardCountsHorde.find(entry);
+                    if (itc != _npcRewardCountsHorde.end())
+                        count = itc->second;
+                    if (count)
+                    {
+                        player->AddItem(_rewardNpcTokenItemId, count);
+                        Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                    }
+                }
+            }
+        }
+        else // TEAM_HORDE
+        {
+            if (!_npcRewardEntriesAlliance.empty() && std::find(_npcRewardEntriesAlliance.begin(), _npcRewardEntriesAlliance.end(), entry) != _npcRewardEntriesAlliance.end())
+            {
+                if (_rewardNpcTokenItemId)
+                {
+                    uint32 count = _rewardNpcTokenCount;
+                    auto itc = _npcRewardCountsAlliance.find(entry);
+                    if (itc != _npcRewardCountsAlliance.end())
+                        count = itc->second;
+                    if (count)
+                    {
+                        player->AddItem(_rewardNpcTokenItemId, count);
+                        Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                    }
+                }
+            }
+        }
+
+        if (player->GetTeamId() == TEAM_ALLIANCE)
+        {
+            switch (entry) // Alliance killing horde guards
+            {
+                case Horde_Infantry:
+                    _horde_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+                case Horde_Squadleader: // 2?
+                    _horde_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+                case Horde_Boss:
+                    _horde_gathered -= PointsLoseOnPvPKill;
+                    /*BossReward(player); */
+                    break;
+                case Horde_Heal:
+                    _horde_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+            }
+        }
+        else // Team Horde
+        {
+            switch (entry) // Horde killing alliance guards
+            {
+                case Alliance_Healer:
+                    _ally_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+                case Alliance_Boss:
+                    _ally_gathered -= PointsLoseOnPvPKill;
+                    /*BossReward(player); <- NEU? */
+                    break;
+                case Alliance_Infantry:
+                    _ally_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+                case Alliance_Squadleader: // Wrong?
+                    _ally_gathered -= PointsLoseOnPvPKill;
+                    Randomizer(player); // Randomizes the honor reward
+                    break;
+            }
+        }
+        // Update HUD for all participants after resource change
+        UpdateWorldStatesAllPlayers();
+    }
+}

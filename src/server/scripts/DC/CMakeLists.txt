@@ -13,6 +13,12 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Rewards.cpp
     HinterlandBG/OutdoorPvPHL_Reset.cpp
     HinterlandBG/OutdoorPvPHL_AFK.cpp
+    HinterlandBG/OutdoorPvPHL_Announce.cpp
+    HinterlandBG/OutdoorPvPHL_Groups.cpp
+    HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
+    HinterlandBG/OutdoorPvPHL_Thresholds.cpp
+    HinterlandBG/OutdoorPvPHL_Worldstates.cpp
+    HinterlandBG/OutdoorPvPHL_Admin.cpp
 )
 
 # Add sources to AzerothCore scripts
