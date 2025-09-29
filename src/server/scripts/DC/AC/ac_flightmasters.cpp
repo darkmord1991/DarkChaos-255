@@ -503,6 +503,29 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_awaitingArrival)
             return; // already handled
 
+        // Sanity guard: if Level 40+ → 60+ route somehow starts at the final node (acfm57)
+        // while we are NOT near acfm57, reset to a proper starting anchor (acfm40 if nearby, else acfm1).
+        if (_routeMode == ROUTE_L40_SCENIC && _index == kIndex_acfm57)
+        {
+            float dx57 = me->GetPositionX() - kPath[kIndex_acfm57].GetPositionX();
+            float dy57 = me->GetPositionY() - kPath[kIndex_acfm57].GetPositionY();
+            float dist57 = sqrtf(dx57 * dx57 + dy57 * dy57);
+            if (dist57 > 80.0f)
+            {
+                // Decide anchor: if near acfm40, start there; otherwise start from acfm1
+                float dx40 = me->GetPositionX() - kPath[kIndex_acfm40].GetPositionX();
+                float dy40 = me->GetPositionY() - kPath[kIndex_acfm40].GetPositionY();
+                float dist40 = sqrtf(dx40 * dx40 + dy40 * dy40);
+                uint8 start = (dist40 < 80.0f) ? kIndex_acfm40 : 0;
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index), NodeLabel(start));
+                _awaitingArrival = false;
+                _index = start;
+                MoveToIndex(_index);
+                return;
+            }
+        }
+
         // Compute next index based on selected route
         bool hasNext = false;
         uint8 nextIdx = _index;
@@ -726,6 +749,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     }
 
 private:
+    // Utility: quick 2D proximity check to a path index
+    bool IsNearIndex(uint8 idx, float max2d) const
+    {
+        float dx = me->GetPositionX() - kPath[idx].GetPositionX();
+        float dy = me->GetPositionY() - kPath[idx].GetPositionY();
+        return sqrtf(dx * dx + dy * dy) < max2d;
+    }
     // Compute the angle between (prev->curr) and (curr->next) in degrees
     float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const
     {
