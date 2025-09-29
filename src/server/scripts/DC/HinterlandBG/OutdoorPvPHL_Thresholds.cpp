@@ -9,6 +9,7 @@
 #include "HinterlandBG.h"
 #include "Chat.h"
 #include "WorldSessionMgr.h"
+#include <cstdio>
 
 // Periodic announcement tick for resource thresholds and depletion.
 void OutdoorPvPHL::_tickThresholdAnnouncements()
@@ -90,20 +91,32 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
             if(itr->second->GetPlayer()->GetZoneId() == 47)
             {
                 if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
-                    itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
+                {
+                    char line[160];
+                    snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
+                }
                 else if(limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
-                    itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
+                {
+                    char line[160];
+                    snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
+                }
 
                 if(IS_RESOURCE_MESSAGE_A == true)
                 {
                     if(limit_A == 1)
                     {
-                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
+                        char line[160];
+                        snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                         IS_RESOURCE_MESSAGE_A = false;
                     }
                     else if(limit_A == 2)
                     {
-                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r").c_str());
+                        char line[200];
+                        snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left! (Alliance=%u, Horde=%u)|r |cffff0000Horde wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                         if (_worldAnnounceOnDepletion)
                         {
                             char announce[200];
@@ -129,12 +142,16 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                 {
                     if(limit_H == 1)
                     {
-                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
+                        char line[160];
+                        snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                         IS_RESOURCE_MESSAGE_H = false;
                     }
                     else if(limit_H == 2)
                     {
-                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r").c_str());
+                        char line[200];
+                        snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has no more resources left! (Alliance=%u, Horde=%u)|r |cff1e90ffAlliance wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                        itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                         if (_worldAnnounceOnDepletion)
                         {
                             char announce[200];

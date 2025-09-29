@@ -64,10 +64,10 @@ HinterlandBG.ResourcesLoss.NpcBoss = 200
 # These lists determine whether an NPC is treated as a boss or normal unit for resource deductions.
 # Alliance NPC entry lists (killed by Horde):
 HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance = 810003
-HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810000,600011
+HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810001,600011
 # Horde NPC entry lists (killed by Alliance):
 HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
-HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810001,600008
+HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
 
 ## Token rewards (optional)
 # If both are > 0, the winning team also receives this token on match end
@@ -76,11 +76,11 @@ HinterlandBG.Reward.NPCTokenItemCount = 0
 # Per-NPC token rewards (up to ~10 entries per team); when a player kills a configured enemy NPC
 # they receive the configured token item. Leave lists empty to disable.
 # Example lists (comma-separated creature entry IDs)
-HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810000,600011
-HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810001,810002
+HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810001,600011
+HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810000,810002
 # Optional: specific counts per entry (entry:count, comma-separated)
 HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
-HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810001:3
+HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
 
 # Global announcement when timer expires (final scores)
 HinterlandBG.Announce.ExpiryWorld = 1
