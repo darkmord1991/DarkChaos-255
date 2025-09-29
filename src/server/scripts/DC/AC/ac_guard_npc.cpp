@@ -75,12 +75,7 @@ struct ACGuardPOI {
 // candidate for being moved to a configuration file in a future change.
 static const ACGuardPOI ac_guard_pois[] = {
     {"Startcamp", 37, 131.000f, 1012.000f, 295.000f, 5.000f},           // Main camp
-    {"Level 15 - 20", 37, -117.003f, 850.815f, 294.579f, 5.585f},       // Leveling area 15-20
-    {"Level 35", 37, 147.987f, 269.417f, 273.524f, 1.227f},             // Level 35 area
-    {"Level 40 - 45", 37, 902.614f, 154.535f, 285.419f, 3.561f},        // Leveling area 40-45
-    {"Level 45", 37, 865.102f, 438.741f, 281.501f, 3.796f},             // Level 45 area
-    {"Level 50 - 70", 37, 896.217f, 142.282f, 285.359f, 4.090f},        // Leveling area 50-70
-    {"Level 70", 37, 1035.750f, 216.876f, 367.189f, 4.269f},            // Level 70 area
+    {"Flight Master", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f},  // Flight master
     {"Inkeeper", 37, 100.973f, 1037.9f, 297.107f, 2.56106f},            // Inkeeper location
     {"Auctionhouse", 37, 117.113f, 1051.78f, 297.107f, 0.92979f},       // Auctionhouse location
     {"Stable Master", 37, 95.3867f, 1027.84f, 297.107f, 2.5163f},       // Stable Master location

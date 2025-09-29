@@ -28,6 +28,7 @@
 #include "Chat.h"
 #include <type_traits>
 #include <chrono>
+#include <string>
 
 namespace DC_AC_Flight
 {
@@ -54,7 +55,8 @@ static Position const kPath[] = {
     {  36.7813f, 383.8160f, 320.9390f, 3.294960f },  // acfm12
     {   4.0747f, 388.9040f, 310.3970f, 2.729470f },  // acfm13
     { -12.7592f, 405.7640f, 307.0690f, 2.060310f },  // acfm14
-    { -18.4005f, 416.3530f, 307.4260f, 2.060310f }   // acfm15 (final)
+    { -18.4005f, 416.3530f, 307.4260f, 2.060310f },  // acfm15
+    {  73.2833f, 938.1900f, 341.0360f, 3.309180f }   // acfm0 (Startcamp, final)
 };
 
 // Robust path length (avoid toolchain issues with std::extent)
@@ -164,6 +166,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 private:
     enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
 
+    static std::string NodeLabel(uint8 idx)
+    {
+        if (idx == kPathLength - 1)
+            return std::string("Startcamp");
+        return std::string("acfm") + std::to_string(static_cast<uint32>(idx + 1));
+    }
+
     void MoveToIndex(uint8 idx)
     {
         _currentPointId = 10000u + idx; // unique id per node
@@ -175,7 +184,7 @@ private:
         _awaitingArrival = true;
         _sinceMoveMs = 0;
         if (Player* p = GetPassengerPlayer())
-            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to acfm{} (idx {}).", (uint32)(idx + 1), (uint32)idx);
+            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
     }
 
     Player* GetPassengerPlayer() const
@@ -227,7 +236,7 @@ private:
             ++_index; // move to next index
             // Debug: announce waypoint reached to the passenger (human-friendly: acfm1..acfmN)
             if (Player* p = GetPassengerPlayer())
-                ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint acfm{} (proximity)." : "[Flight Debug] Reached waypoint acfm{}.", (uint32)(arrivedIdx + 1));
+                ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
             MoveToIndex(_index);
         }
         else
