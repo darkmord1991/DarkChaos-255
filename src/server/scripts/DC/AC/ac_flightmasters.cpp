@@ -260,26 +260,30 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             if (_routeMode == ROUTE_RETURN)
             {
-                // If we are already near acfm15 (e.g., you took the tour and are at the end), start going backward immediately.
-                float dx = me->GetPositionX() - kPath[kIndex_acfm15].GetPositionX();
-                float dy = me->GetPositionY() - kPath[kIndex_acfm15].GetPositionY();
-                float dist2d = sqrtf(dx * dx + dy * dy);
+                // Start the return path from the nearest scenic node at or below acfm15
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting return route.", (int)seatId);
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting Level 25+ → Camp return.", (int)seatId);
 
-                if (dist2d < 80.0f)
+                // Find the nearest kPath index
+                uint8 nearest = 0;
+                float bestD2 = std::numeric_limits<float>::max();
+                for (uint8 i = 0; i < kPathLength - 1; ++i) // exclude Startcamp index
                 {
-                    // We are at (or very close to) acfm15; go to acfm14 first
-                    _index = static_cast<uint8>(kIndex_acfm15 - 1);
-                    if (p)
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(kIndex_acfm15), NodeLabel(_index));
-                    MoveToIndex(_index);
-                    return;
+                    float dx = me->GetPositionX() - kPath[i].GetPositionX();
+                    float dy = me->GetPositionY() - kPath[i].GetPositionY();
+                    float d2 = dx * dx + dy * dy;
+                    if (d2 < bestD2)
+                    {
+                        bestD2 = d2;
+                        nearest = i;
+                    }
                 }
-                // Otherwise, head to acfm15 to begin the reverse path
-                _index = kIndex_acfm15;
+                // Clamp to at most acfm15, so we descend the classic section
+                uint8 startIdx = nearest > kIndex_acfm15 ? kIndex_acfm15 : nearest;
+                // We want to move to the next lower node first (if possible)
+                _index = (startIdx > 0) ? static_cast<uint8>(startIdx - 1) : 0;
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the return path.", NodeLabel(_index));
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Nearest node is {}. Beginning descent at {}.", NodeLabel(nearest), NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
             }
@@ -321,10 +325,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             if (_routeMode == ROUTE_L40_SCENIC)
             {
-                // Start at acfm40 and go to acfm57
-                _index = kIndex_acfm40;
+                // Prefer to start at acfm40 if we're already nearby, otherwise traverse forward from acfm1 to acfm40 first
+                float dx = me->GetPositionX() - kPath[kIndex_acfm40].GetPositionX();
+                float dy = me->GetPositionY() - kPath[kIndex_acfm40].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                _index = (dist2d < 80.0f) ? kIndex_acfm40 : 0;
                 if (p)
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ scenic: starting at {}.", (int)seatId, NodeLabel(_index));
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ scenic: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
                 return;
             }
@@ -364,8 +371,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             if (_routeMode == ROUTE_L25_TO_40 || _routeMode == ROUTE_L25_TO_60)
             {
-                // Start at acfm19 and go up to acfm35/acfm57
-                _index = kIndex_acfm19;
+                // Prefer to start at acfm19 if we're already nearby, otherwise traverse forward from acfm1 up to acfm19 first
+                float dx = me->GetPositionX() - kPath[kIndex_acfm19].GetPositionX();
+                float dy = me->GetPositionY() - kPath[kIndex_acfm19].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                _index = (dist2d < 80.0f) ? kIndex_acfm19 : 0;
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 25+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), _routeMode == ROUTE_L25_TO_40 ? NodeLabel(kIndex_acfm35) : NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
@@ -666,6 +676,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
 
         // Final node reached: initiate a safe landing, then dismount at ground
+        // Guard: ensure we are truly close to the final spot; if not, do one more MovePoint to the exact node
+        {
+            float dx = me->GetPositionX() - kPath[_index].GetPositionX();
+            float dy = me->GetPositionY() - kPath[_index].GetPositionY();
+            float dz = fabs(me->GetPositionZ() - kPath[_index].GetPositionZ());
+            float dist2d = sqrtf(dx * dx + dy * dy);
+            if (dist2d > 8.0f || dz > 18.0f)
+            {
+                // Snap one more hop to the exact final location before landing
+                _awaitingArrival = true;
+                MoveToIndex(_index);
+                return;
+            }
+        }
+
+        // Bleed speed before landing to avoid overshoot
+        me->SetSpeedRate(MOVE_FLIGHT, 1.0f);
         float x = kPath[_index].GetPositionX();
         float y = kPath[_index].GetPositionY();
         float z = kPath[_index].GetPositionZ();
