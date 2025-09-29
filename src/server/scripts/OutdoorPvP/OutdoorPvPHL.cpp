@@ -553,7 +553,7 @@
                 uint32 creatureCount = 0;
                 uint32 goCount = 0;
                 // Reset creatures (NPCs) in-zone
-                for (auto const& kv : Acore::HashMapHolder<Creature>::GetContainer())
+                for (auto const& kv : HashMapHolder<Creature>::GetContainer())
                 {
                     Creature* c = kv.second;
                     if (!c || !c->IsInWorld())
@@ -576,7 +576,7 @@
                     ++creatureCount;
                 }
                 // Reset gameobjects in-zone
-                for (auto const& kv : Acore::HashMapHolder<GameObject>::GetContainer())
+                for (auto const& kv : HashMapHolder<GameObject>::GetContainer())
                 {
                     GameObject* go = kv.second;
                     if (!go || !go->IsInWorld())
