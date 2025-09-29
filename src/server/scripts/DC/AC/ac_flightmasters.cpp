@@ -110,6 +110,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (id == POINT_LAND_FINAL)
         {
             // Landed: dismount any passengers and despawn gently
+            // Allow gravity and disable hover so the creature settles properly
+            me->SetHover(false);
+            me->SetDisableGravity(false);
+            me->SetCanFly(false);
+            _isLanding = false;
             DismountAndDespawn();
             return;
         }
@@ -126,7 +131,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _scheduler.Update(diff);
 
         // Keep flight flags asserted during the whole route to avoid gravity glitches
-        if (_started)
+        if (_started && !_isLanding)
         {
             me->SetCanFly(true);
             me->SetDisableGravity(true);
@@ -138,8 +143,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             _sinceMoveMs += diff;
             // avoid instant triggers; require a minimal travel time
-            static constexpr uint32 kMinTravelForProxMs = 400;
-            static constexpr float kArriveRadius = 6.0f; // yards
+            static constexpr uint32 kMinTravelForProxMs = 1200; // wait a bit to avoid cutting corners
+            static constexpr float kArriveRadius = 3.0f; // tighter radius to reduce early triggers
             if (_sinceMoveMs > kMinTravelForProxMs)
             {
                 float dist = me->GetDistance(kPath[_index].GetPositionX(), kPath[_index].GetPositionY(), kPath[_index].GetPositionZ());
@@ -226,7 +231,8 @@ private:
             float y = kPath[_index].GetPositionY();
             float z = kPath[_index].GetPositionZ();
             me->UpdateGroundPositionZ(x, y, z);
-            Position landPos = { x, y, z + 2.0f, kPath[_index].GetOrientation() };
+            Position landPos = { x, y, z + 0.5f, kPath[_index].GetOrientation() };
+            _isLanding = true;
             me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
             // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
             if (!_landingScheduled)
@@ -238,6 +244,10 @@ private:
                         return;
                     if (Player* p = GetPassengerPlayer())
                         ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                    me->SetHover(false);
+                    me->SetDisableGravity(false);
+                    me->SetCanFly(false);
+                    _isLanding = false;
                     DismountAndDespawn();
                 });
             }
