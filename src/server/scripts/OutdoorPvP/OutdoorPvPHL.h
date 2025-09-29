@@ -27,8 +27,8 @@
     #include <string>
     #include <vector>
     #include <map>
+    #include "Position.h"
 
-    using namespace std;
 
     /*
      * Hinterland BG — Feature Overview (2025-09-28)

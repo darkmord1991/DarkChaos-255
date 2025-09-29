@@ -42,6 +42,7 @@
     #include "ScriptDefines/MovementHandlerScript.h"
     #include <algorithm>
     #include <cmath>
+    #include <cstdio>
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
@@ -565,7 +566,6 @@
                         continue;
                     // Clear combat and auras, move back to respawn location, and ensure alive
                     c->CombatStop(true);
-                    c->DeleteThreatList();
                     c->RemoveAllAuras();
                     float x, y, z, o;
                     c->GetRespawnPosition(x, y, z, &o);
