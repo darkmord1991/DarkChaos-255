@@ -49,3 +49,5 @@ HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810001:3
 
 # Global announcement when timer expires (final scores)
 HinterlandBG.Announce.ExpiryWorld = 1
+# Global announcement when a side reaches 0 resources (final scores)
+HinterlandBG.Announce.DepletionWorld = 1

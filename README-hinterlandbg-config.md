@@ -40,6 +40,7 @@ Notes:
 - Reward.MatchHonorDepletion applies when victory happens by bringing the enemy to 0 resources before the timer ends.
 - Reward.MatchHonorTiebreaker applies when victory happens via timer-expiry tiebreaker.
 - Announce.ExpiryWorld (1/0) controls a global announcement when the timer expires, including final scores.
+ - Announce.DepletionWorld (1/0) controls a global announcement when a side reaches 0 resources, including final scores.
 - If KillItemId is set to 0 the item reward for player kills is disabled.
 - KillHonorValues is a CSV string; the first 4 values are used (fallbacks: 17,11,19,22).
 - NPCEntriesAlliance/Horde are CSV creature entry IDs; when killed by the opposite team, the killer receives NPCTokenItem.

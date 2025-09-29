@@ -1170,7 +1170,8 @@ namespace {
                             }
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cffff0000For the HORDE!|r");
-                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
+                            // Use depletion-specific honor reward
+                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonorDepletion, true, false, false);
                             
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
@@ -1206,7 +1207,8 @@ namespace {
                             }
                             //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
-                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonor, true, false, false);
+                            // Use depletion-specific honor reward
+                            HandleRewards(itr->second->GetPlayer(), _rewardMatchHonorDepletion, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
                                 case TEAM_ALLIANCE:
@@ -1582,10 +1584,24 @@ namespace {
     }
 
     // Movement hook to feed movement-based AFK tracking
+    class HLMovementHandlerScript : public MovementHandlerScript
+    {
+    public:
+        HLMovementHandlerScript()
+            : MovementHandlerScript("HLMovementHandlerScript", { MOVEMENTHOOK_ON_PLAYER_MOVE }) {}
+
+        void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
+        {
+            if (!player)
+                return;
+            OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+            if (!opvp)
+                return;
+            if (auto* hl = dynamic_cast<OutdoorPvPHL*>(opvp))
+                hl->NotePlayerMovement(player);
         }
     };
 
-     
     void AddSC_outdoorpvp_hl()
     {
         new OutdoorPvP_hinterland;

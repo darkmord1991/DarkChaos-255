@@ -252,7 +252,7 @@
     uint32 _rewardKillItemId;
     uint32 _rewardKillItemCount;
     bool   _worldAnnounceOnExpiry;          // send world announcement with final scores at expiry
-    bool   _worldAnnounceOnDepletion;       // send world announcement when a team reaches 0 resources
+    bool   _worldAnnounceOnDepletion;       // send world announcement when a side reaches 0 resources
     // Configurable NPC reward entries (up to ~10 per team) and token item
     std::vector<uint32> _npcRewardEntriesAlliance;
     std::vector<uint32> _npcRewardEntriesHorde;
