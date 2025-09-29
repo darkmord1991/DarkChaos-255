@@ -1,7 +1,16 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Thresholds.cpp
+// -----------------------------------------------------------------------------
+// Resource threshold announcements and win shouts:
+// - Emits emote-style notices at 300/200/100 and 50/0 thresholds per team.
+// - On depletion (0 resources), announces zone + optional world message and
+//   applies rewards/buffs via legacy APIs.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "Chat.h"
 #include "WorldSessionMgr.h"
 
+// Periodic announcement tick for resource thresholds and depletion.
 void OutdoorPvPHL::_tickThresholdAnnouncements()
 {
     if(_ally_gathered <= 50 && limit_A == 0)

@@ -1,6 +1,13 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_AFK.cpp
+// -----------------------------------------------------------------------------
+// Movement-based AFK tracker helper (NotePlayerMovement). Called by
+// HLMovementHandlerScript on player movement to reset AFK timers.
+// -----------------------------------------------------------------------------
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include <cmath>
 
+// Update last-move timestamps for AFK detection when player meaningfully moves.
 void OutdoorPvPHL::NotePlayerMovement(Player* player)
 {
     if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])

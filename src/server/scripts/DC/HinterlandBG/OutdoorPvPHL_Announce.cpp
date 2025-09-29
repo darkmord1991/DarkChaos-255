@@ -1,3 +1,11 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Announce.cpp
+// -----------------------------------------------------------------------------
+// Announcement helpers:
+// - GetBgChatPrefix(): provides a battleground-style link prefix for messages.
+// - HandleWinMessage(): zone broadcast for win shout with prefix.
+// - BroadcastStatusToZone(): periodic status mirrors .hlbg output.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "WorldSessionMgr.h"
 #include "Chat.h"

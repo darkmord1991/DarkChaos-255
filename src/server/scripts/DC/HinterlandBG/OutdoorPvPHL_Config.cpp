@@ -1,9 +1,17 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Config.cpp
+// -----------------------------------------------------------------------------
+// Loads configuration values for Hinterland BG from worldserver.conf or
+// configs/modules/hinterlandbg.conf(.dist). All values have sensible defaults
+// in the constructor; this function overrides them if keys are present.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "Config.h"
 #include <unordered_map>
 #include <string>
 #include <vector>
 
+// Entry point called during SetupOutdoorPvP() and constructor to refresh settings.
 void OutdoorPvPHL::LoadConfig()
 {
     // Read options that may come from worldserver.conf or modules configs.
@@ -44,6 +52,10 @@ void OutdoorPvPHL::LoadConfig()
         _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
         _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
         _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
+    // Resource loss amounts
+    _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);
+    _resourcesLossNpcNormal  = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcNormal",  _resourcesLossNpcNormal);
+    _resourcesLossNpcBoss    = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcBoss",    _resourcesLossNpcBoss);
         std::string csv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
         if (!csv.empty())
         {

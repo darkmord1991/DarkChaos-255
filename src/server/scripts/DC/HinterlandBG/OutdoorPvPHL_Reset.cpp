@@ -1,8 +1,19 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Reset.cpp
+// -----------------------------------------------------------------------------
+// Zone reset and teleport helpers:
+// - HandleReset(): resets resources, clears AFK states, respawns NPCs/GOs, and
+//   seeds a new match window + HUD updates.
+// - TeleportPlayersToStart(): sends all players in the zone to their faction
+//   base coordinates, then posts a zone text summary.
+// - TeleportToTeamBase(): helper used by resets and AFK handling.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "MapMgr.h"
 #include "WorldSessionMgr.h"
 #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"
 
+// Reset match state and respawn zone actors (creatures/GOs) within the zone.
 void OutdoorPvPHL::HandleReset()
 {
     // Reset match state to defaults and respawn NPCs and GOs in the Hinterlands zone.
@@ -49,6 +60,7 @@ void OutdoorPvPHL::HandleReset()
     _statusBroadcastTimerMs = 1;
 }
 
+// Teleport all players currently inside the Hinterlands to their faction bases.
 void OutdoorPvPHL::TeleportPlayersToStart()
 {
     uint32 const zoneId = OutdoorPvPHLBuffZones[0];
@@ -63,6 +75,7 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     sWorldSessionMgr->SendZoneText(zoneId, msg);
 }
 
+// Teleport a single player to his/her faction base location.
 void OutdoorPvPHL::TeleportToTeamBase(Player* player) const
 {
     if (!player) return;

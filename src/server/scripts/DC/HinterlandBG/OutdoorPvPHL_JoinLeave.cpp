@@ -1,8 +1,19 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_JoinLeave.cpp
+// -----------------------------------------------------------------------------
+// Player zone entry/exit handlers for Hinterland BG:
+// - HandlePlayerEnterZone: max-level gate, welcome whispers, AFK tracker seed,
+//   auto-join faction raid, and HUD seed.
+// - HandlePlayerLeaveZone: emote warning, decrement counts, AFK cleanup, and
+//   raid membership maintenance (preserve 2→1 by re-creating a raid).
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "ObjectAccessor.h"
 #include "GroupMgr.h"
 #include <algorithm>
+#include <algorithm>
 
+// Called when a player enters the Hinterlands zone managed by this OutdoorPvP.
 void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 {
     // Max level gate
@@ -41,6 +52,7 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     OutdoorPvP::HandlePlayerEnterZone(player, zone);
 }
 
+// Called when a player leaves the Hinterlands zone.
 void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
 {
      player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");

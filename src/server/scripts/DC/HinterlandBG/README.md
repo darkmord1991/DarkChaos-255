@@ -23,7 +23,7 @@ HinterlandBG.AFK.TeleportSeconds      = 180
 
 ; --- Status broadcasting (zone-wide) ---
 HinterlandBG.Broadcast.Enabled        = 1
-HinterlandBG.Broadcast.Period         = 60      ; seconds
+HinterlandBG.Broadcast.Period         = 180     ; seconds
 
 ; --- Auto reset options ---
 HinterlandBG.AutoReset.Teleport       = 1       ; teleport players to starts on auto-reset
@@ -64,6 +64,12 @@ HinterlandBG.Reward.KillItemId            = 0
 HinterlandBG.Reward.KillItemCount         = 0
 ; Comma-separated honor values that may be used contextually by kill logic
 HinterlandBG.Reward.KillHonorValues       = 5,8,10
+
+; --- Resource loss amounts ---
+; How many resources are removed from the opposing team for each type of kill
+HinterlandBG.ResourcesLoss.PlayerKill     = 5       ; player kills
+HinterlandBG.ResourcesLoss.NpcNormal      = 5       ; infantry/squadleaders/healers
+HinterlandBG.ResourcesLoss.NpcBoss        = 200     ; boss NPCs
 
 ; --- Per-NPC token rewards (optional) ---
 ; CSV lists of NPC entries per team that grant tokens when killed by the opposing team.

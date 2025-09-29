@@ -35,7 +35,7 @@
                         HinterlandBG.AFK.WarnSeconds         = 120
                         HinterlandBG.AFK.TeleportSeconds     = 180
                         HinterlandBG.Broadcast.Enabled       = 1
-                        HinterlandBG.Broadcast.Period        = 60
+                        HinterlandBG.Broadcast.Period        = 180
                         HinterlandBG.Resources.Alliance      = 450
                         HinterlandBG.Resources.Horde         = 450
                         HinterlandBG.Reward.MatchHonor       = 1500
@@ -49,6 +49,29 @@
                         HinterlandBG.Reward.NPCEntryCountsAlliance = ""     # CSV of entry:count
                         HinterlandBG.Reward.NPCEntryCountsHorde    = ""
                     Note: if desired, a future toggle could control teleport-on-auto-reset.
+*/
+
+/*
+        Developer map (split implementation)
+        ------------------------------------
+        This file holds the core orchestration for Hinterland BG. Many helper
+        implementations are split into DC files for clarity and modularity:
+            - Config loader:           src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Config.cpp
+            - Rewards & combat:        src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
+                                                                    (includes Randomizer and HandleKill)
+            - Resets & teleports:      src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Reset.cpp
+            - AFK tracking helper:     src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_AFK.cpp
+            - Announcements:           src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
+            - Raid lifecycle:          src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Groups.cpp
+            - Threshold announcements:  src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Thresholds.cpp
+            - WG-style HUD worldstates: src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Worldstates.cpp
+            - Admin/inspection helpers: src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Admin.cpp
+            - Join/Leave handlers:      src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
+            - Movement hook (AFK):      src/server/scripts/DC/HinterlandBG/HLMovementHandlerScript.h
+            - DC registration wrapper:  src/server/scripts/DC/HinterlandBG/outdoorpvp_hl_registration.cpp
+
+        Tip: Search this file for lines beginning with "moved to DC/HinterlandBG" to
+        jump to the corresponding split source.
 */
     #include "OutdoorPvPHL.h"
     #include "Player.h"
@@ -88,8 +111,8 @@
         _matchDurationSeconds = HL_MATCH_DURATION_SECONDS;
         _afkWarnSeconds = 120;
         _afkTeleportSeconds = 180;
-        _statusBroadcastEnabled = true;
-        _statusBroadcastPeriodMs = 60 * IN_MILLISECONDS;
+    _statusBroadcastEnabled = true;
+    _statusBroadcastPeriodMs = 180 * IN_MILLISECONDS;
     _autoResetTeleport = true;
     _expiryUseTiebreaker = true;
         _initialResourcesAlliance = HL_RESOURCES_A;
@@ -111,6 +134,10 @@
     _npcRewardEntriesHorde.clear();
     _npcRewardCountsAlliance.clear();
     _npcRewardCountsHorde.clear();
+    // Resource loss defaults
+    _resourcesLossPlayerKill = PointsLoseOnPvPKill; // 5
+    _resourcesLossNpcNormal = 5;
+    _resourcesLossNpcBoss = 200;
         // Load overrides from config if available
         LoadConfig();
 

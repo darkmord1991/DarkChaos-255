@@ -12,7 +12,7 @@ HinterlandBG.AFK.TeleportSeconds = 180
 # Periodic status broadcast
 HinterlandBG.Broadcast.Enabled = 1
 # Period in seconds between broadcasts
-HinterlandBG.Broadcast.Period = 60
+HinterlandBG.Broadcast.Period = 180
 
 # Auto-reset options
 # Teleport players to faction start graveyards when the timer expires and a reset happens (1=yes, 0=no)
@@ -53,6 +53,12 @@ HinterlandBG.Reward.KillItemId = 40752
 HinterlandBG.Reward.KillItemCount = 1
 # CSV list for random honor per kill (Randomizer): index 0..3 used
 HinterlandBG.Reward.KillHonorValues = 17,11,19,22
+
+# Resource loss amounts
+# How many resources are removed from the opposing team in each case
+HinterlandBG.ResourcesLoss.PlayerKill = 5
+HinterlandBG.ResourcesLoss.NpcNormal = 5
+HinterlandBG.ResourcesLoss.NpcBoss = 200
 
 ## Token rewards (optional)
 # If both are > 0, the winning team also receives this token on match end

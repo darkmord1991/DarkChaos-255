@@ -1,7 +1,16 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Groups.cpp
+// -----------------------------------------------------------------------------
+// Battleground-like raid lifecycle maintenance:
+// - Track last-seen offline times for members and prune after a grace period.
+// - Remove empty raids; when a raid shrinks to a single member, keep their
+//   raid context by creating a new raid to avoid core auto-disband side effects.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "GroupMgr.h"
 #include "ObjectAccessor.h"
 
+// Periodic maintenance of faction raid groups used by the Hinterland BG.
 void OutdoorPvPHL::_tickRaidLifecycle()
 {
     // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects

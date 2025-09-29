@@ -1,4 +1,9 @@
-// Registration file for Hinterland OutdoorPvP scripts (DC module wrapper)
+// -----------------------------------------------------------------------------
+// outdoorpvp_hl_registration.cpp
+// -----------------------------------------------------------------------------
+// DC wrapper for registering the Hinterland OutdoorPvP script with the server.
+// Forwards to the canonical AddSC_outdoorpvp_hl() function.
+// -----------------------------------------------------------------------------
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include "ScriptMgr.h"
 

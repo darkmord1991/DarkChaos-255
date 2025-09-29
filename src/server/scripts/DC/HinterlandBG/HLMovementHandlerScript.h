@@ -1,3 +1,9 @@
+// -----------------------------------------------------------------------------
+// HLMovementHandlerScript.h
+// -----------------------------------------------------------------------------
+// MovementHandlerScript hook that forwards player movement events to the
+// OutdoorPvPHL AFK tracker (NotePlayerMovement) when in the Hinterlands zone.
+// -----------------------------------------------------------------------------
 #pragma once
 
 #include "ScriptDefines/MovementHandlerScript.h"

@@ -305,6 +305,10 @@
     // Optional per-NPC token counts (entry -> count), per opposite team
     std::unordered_map<uint32, uint32> _npcRewardCountsAlliance; // rewarded when Horde kills these Alliance entries
     std::unordered_map<uint32, uint32> _npcRewardCountsHorde;    // rewarded when Alliance kills these Horde entries
+    // Configurable resource loss amounts
+    uint32 _resourcesLossPlayerKill;   // e.g., 5
+    uint32 _resourcesLossNpcNormal;    // e.g., 5
+    uint32 _resourcesLossNpcBoss;      // e.g., 200
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
             // Movement-based AFK tracking

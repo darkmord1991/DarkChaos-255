@@ -1,9 +1,18 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Worldstates.cpp
+// -----------------------------------------------------------------------------
+// WG-style HUD helpers:
+// - FillInitialWorldStates(): initial packet to prime client HUD state.
+// - UpdateWorldStatesForPlayer(): refresh states for a specific player.
+// - UpdateWorldStatesAllPlayers(): refresh for all participants in zone.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "WorldSessionMgr.h"
 #include "WorldPacket.h"
 #include <algorithm>
 
 // Initialize the WG-like HUD states when a client first loads the worldstates
+// Seed initial worldstates so clients render the Wintergrasp-like HUD elements.
 void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
@@ -24,6 +33,7 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
 }
 
+// Update HUD indicators (timer/resources) for a single player.
 void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
 {
     if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
@@ -46,6 +56,7 @@ void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
 }
 
+// Refresh HUD for all players currently in the Hinterlands zone.
 void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
 {
     WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();

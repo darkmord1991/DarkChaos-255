@@ -1,15 +1,29 @@
+// -----------------------------------------------------------------------------
+// OutdoorPvPHL_Rewards.cpp
+// -----------------------------------------------------------------------------
+// Rewards and combat helpers:
+// - Legacy per-player HandleRewards/HandleBuffs compatibility APIs.
+// - Team-based end-of-match rewards with optional token grant.
+// - Randomizer(): assigns variable honor on applicable kills.
+// - HandleKill(): player and NPC kill handling with HUD refresh.
+// -----------------------------------------------------------------------------
 #include "HinterlandBG.h"            // DC wrapper to the canonical OutdoorPvPHL
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "SharedDefines.h"
+#include <algorithm>
+#include <cstdio>
+
+// Resource adjustments are configurable via hinterlandbg.conf
 
 // Honor amounts are now driven by config fields on OutdoorPvPHL; no local constants needed.
 
 // Legacy per-player reward entrypoint kept for compatibility with calls in OutdoorPvPHL.cpp
 // honorpointsorarena: amount to grant (used for honor in this core);
 // honor/arena/both: original flags from older script versions. We grant honor when (honor || both) is set.
+// Legacy per-player reward entrypoint used by older code paths.
 void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool honor, bool /*arena*/, bool both)
 {
     if (!player)
@@ -28,6 +42,7 @@ void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool
 }
 
 // Legacy per-player buff application (winner/loser) used by OutdoorPvPHL.cpp
+// Legacy per-player buff application based on win/lose state.
 void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
 {
     if (!player)
@@ -45,6 +60,7 @@ void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
     }
 }
 
+// Grant match-end rewards based on winning team; optional token to winners.
 void OutdoorPvPHL::HandleRewards(TeamId winner)
 {
     if (winner != TEAM_ALLIANCE && winner != TEAM_HORDE)
@@ -80,11 +96,13 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
     rewardTeam(loser,  loseHonor);
 }
 
+// Team-wide buff application hook (placeholder if needed by future logic).
 void OutdoorPvPHL::HandleBuffs(TeamId /*winner*/)
 {
     // Placeholder: existing buff logic remains in main file if any; this stub keeps the symbol during split.
 }
 
+// Global server-announcement helper for final scores; controlled via config.
 void OutdoorPvPHL::HandleWinMessage(TeamId winner)
 {
     // Broadcast a world announcement when configured, with final scores.
@@ -116,6 +134,7 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
 }
 
 // marks the height of honour given for each NPC kill
+// Assign a random honor amount for a kill using KillHonorValues config.
 void OutdoorPvPHL::Randomizer(Player* player)
 {
     switch (urand(0, 4))
@@ -147,6 +166,7 @@ void OutdoorPvPHL::Randomizer(Player* player)
     }
 }
 
+// Handle kills affecting BG resources and rewards; refresh HUD afterwards.
 void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
 {
     if (!player || !killed)
@@ -161,7 +181,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         switch (killed->ToPlayer()->GetTeamId())
         {
             case TEAM_ALLIANCE:
-                _ally_gathered -= PointsLoseOnPvPKill;
+                _ally_gathered -= _resourcesLossPlayerKill;
                 if (IsEligibleForRewards(player))
                 {
                     if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
@@ -178,7 +198,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 }
                 break;
             default: // Horde
-                _horde_gathered -= PointsLoseOnPvPKill;
+                _horde_gathered -= _resourcesLossPlayerKill;
                 if (IsEligibleForRewards(player))
                 {
                     if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
@@ -243,19 +263,19 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             switch (entry) // Alliance killing horde guards
             {
                 case Horde_Infantry:
-                    _horde_gathered -= PointsLoseOnPvPKill;
+                    _horde_gathered -= _resourcesLossNpcNormal; // normal infantry
                     Randomizer(player); // Randomizes the honor reward
                     break;
                 case Horde_Squadleader: // 2?
-                    _horde_gathered -= PointsLoseOnPvPKill;
+                    _horde_gathered -= _resourcesLossNpcNormal;
                     Randomizer(player); // Randomizes the honor reward
                     break;
                 case Horde_Boss:
-                    _horde_gathered -= PointsLoseOnPvPKill;
+                    _horde_gathered -= _resourcesLossNpcBoss;   // boss
                     /*BossReward(player); */
                     break;
                 case Horde_Heal:
-                    _horde_gathered -= PointsLoseOnPvPKill;
+                    _horde_gathered -= _resourcesLossNpcNormal;
                     Randomizer(player); // Randomizes the honor reward
                     break;
             }
@@ -265,19 +285,19 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             switch (entry) // Horde killing alliance guards
             {
                 case Alliance_Healer:
-                    _ally_gathered -= PointsLoseOnPvPKill;
+                    _ally_gathered -= _resourcesLossNpcNormal;
                     Randomizer(player); // Randomizes the honor reward
                     break;
                 case Alliance_Boss:
-                    _ally_gathered -= PointsLoseOnPvPKill;
+                    _ally_gathered -= _resourcesLossNpcBoss;     // boss
                     /*BossReward(player); <- NEU? */
                     break;
                 case Alliance_Infantry:
-                    _ally_gathered -= PointsLoseOnPvPKill;
+                    _ally_gathered -= _resourcesLossNpcNormal;  // normal infantry
                     Randomizer(player); // Randomizes the honor reward
                     break;
                 case Alliance_Squadleader: // Wrong?
-                    _ally_gathered -= PointsLoseOnPvPKill;
+                    _ally_gathered -= _resourcesLossNpcNormal;
                     Randomizer(player); // Randomizes the honor reward
                     break;
             }
