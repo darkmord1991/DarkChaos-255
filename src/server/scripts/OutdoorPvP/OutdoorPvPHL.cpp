@@ -401,11 +401,11 @@ namespace {
             return;
         // Base locations during an active battle (zone 47 Hinterlands, map 0 Eastern Kingdoms)
         // Horde base:    -676.702; -4534.57; 7.79739; 0.999724; map 0
-        // Alliance base: 116.216;  -4691.38; 12.3154; 1.64925;  map 0
+    // Alliance base: 62.083;   -4714.99; 11.7937; 2.50765;  map 0 (hlbgallistart)
         if (player->GetTeamId() == TEAM_HORDE)
             player->TeleportTo(0, -676.702f, -4534.57f, 7.79739f, 0.999724f);
         else
-            player->TeleportTo(0, 116.216f, -4691.38f, 12.3154f, 1.64925f);
+            player->TeleportTo(0, 62.083f, -4714.99f, 11.7937f, 2.50765f);
     }
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
