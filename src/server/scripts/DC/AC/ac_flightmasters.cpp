@@ -155,45 +155,62 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     }
 
     void UpdateAI(uint32 diff) override
-    {
-        VehicleAI::UpdateAI(diff);
-        _scheduler.Update(diff);
-
-        // Keep flight flags asserted during the whole route to avoid gravity glitches
-        if (_started && !_isLanding)
-        {
-            me->SetCanFly(true);
-            me->SetDisableGravity(true);
-            me->SetHover(true);
-        }
-
-        // Proximity-based arrival fallback in case MovementInform is flaky
-        if (_awaitingArrival && _started)
-        {
-            _sinceMoveMs += diff;
-            // avoid instant triggers; require a minimal travel time
-            static constexpr uint32 kMinTravelForProxMs = 1200; // wait a bit to avoid cutting corners
-            static constexpr float kArriveRadius = 3.0f; // tighter radius to reduce early triggers
-            if (_sinceMoveMs > kMinTravelForProxMs)
-            {
-                float dist = me->GetDistance(kPath[_index].GetPositionX(), kPath[_index].GetPositionY(), kPath[_index].GetPositionZ());
-                if (dist <= kArriveRadius)
+                // Decide next index based on selected route
+                auto computeNextIndex = [this]() -> std::pair<bool, uint8>
                 {
-                    HandleArriveAtCurrentNode(true /*isProximity*/);
+                    if (_routeMode == ROUTE_TOUR)
+                    {
+                        if (_index < kIndex_acfm15)
+                            return { true, static_cast<uint8>(_index + 1) };
+                        // at acfm15: no further nodes; land here
+                        return { false, _index };
+                    }
+                    // ROUTE_RETURN: walk back through all nodes to acfm1 (index 0), then to Startcamp (kIndex_startcamp)
+                    if (_index > 0 && _index <= kIndex_acfm15)
+                        return { true, static_cast<uint8>(_index - 1) };
+                    if (_index == 0)
+                        return { true, kIndex_startcamp };
+                    // at Startcamp already -> land
+                    return { false, _index };
+                };
+
+                auto [hasNext, nextIdx] = computeNextIndex();
+                if (hasNext)
+                {
+                    uint8 arrivedIdx = _index; // we just reached this index
+                    _awaitingArrival = false;
+                    _index = nextIdx;
+                    if (Player* p = GetPassengerPlayer())
+                        ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
+                    MoveToIndex(_index);
+                    return;
                 }
-            }
-        }
-    }
 
-private:
-    enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
-
-    static std::string NodeLabel(uint8 idx)
-    {
-        if (idx == kPathLength - 1)
-            return std::string("Startcamp");
-        return std::string("acfm") + std::to_string(static_cast<uint32>(idx + 1));
-    }
+                // No next: initiate landing at current node
+                float x = kPath[_index].GetPositionX();
+                float y = kPath[_index].GetPositionY();
+                float z = kPath[_index].GetPositionZ();
+                me->UpdateGroundPositionZ(x, y, z);
+                Position landPos = { x, y, z + 0.5f, kPath[_index].GetOrientation() };
+                _isLanding = true;
+                me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
+                // Fallback: if landing inform does not trigger, force dismount/despawn after 10s
+                if (!_landingScheduled)
+                {
+                    _landingScheduled = true;
+                    _scheduler.Schedule(std::chrono::milliseconds(10000), [this](TaskContext /*ctx*/)
+                    {
+                        if (!me->IsInWorld())
+                            return;
+                        if (Player* p = GetPassengerPlayer())
+                            ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Forcing dismount and despawn.");
+                        me->SetHover(false);
+                        me->SetDisableGravity(false);
+                        me->SetCanFly(false);
+                        _isLanding = false;
+                        DismountAndDespawn();
+                    });
+                }
 
     void MoveToIndex(uint8 idx)
     {
