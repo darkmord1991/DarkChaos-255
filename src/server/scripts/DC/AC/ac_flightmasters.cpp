@@ -1,18 +1,27 @@
 /*
- * DarkChaos Custom: Flight masters (Option 2)
+ * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
  *
- * ScriptName: ACFM1
- * DB bind: creature_template.entry = 800010 -> ScriptName = "ACFM1"
+ * ScriptNames:
+ *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
+ *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
+ *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
+ *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
+ *   - ac_gryphon_taxi_800011 (vehicle AI)
  *
  * Behavior:
- * - Gossip offers a scenic gryphon flight for low levels (1-25+) in Azshara Crater (map 37).
- * - When selected, the NPC summons a temporary gryphon vehicle and auto-boards the player.
- * - The gryphon flies through predefined waypoints, then lands and dismounts the player.
+ * - Each flightmaster offers routes appropriate for its tier:
+ *   Camp:         to Level 25+, to Level 40+, to Level 60+
+ *   Level 25+:    to Camp, to Level 40+, to Level 60+
+ *   Level 40+:    to Camp, to Level 25+, to Level 60+
+ *   Level 60+:    to Camp, to Level 25+, to Level 40+
+ * - Selecting a route summons a temporary gryphon vehicle and auto-boards the player.
+ * - The gryphon follows predefined waypoints with stability features: proximity arrival fallback,
+ *   hop/final-hop watchdogs, stuck detection, turn-aware speed, and corner smoothing.
+ * - Debug lines prefixed with "[Flight Debug]" are shown to Game Masters only.
  *
  * Vehicle creature template required:
- * - Create a vehicle-capable gryphon template in DB (suggested entry 800011) with VehicleId set
- *   to a gryphon seat layout (1+ passenger seats). Set ScriptName = "ac_gryphon_taxi_800011".
- * - You can clone an existing gryphon vehicle from your DB (see notes at file end).
+ * - Create/clone a vehicle-capable gryphon template in DB (suggested entry 800011) with VehicleId set
+ *   to a gryphon seat layout. Set ScriptName = "ac_gryphon_taxi_800011".
  */
 
 #include "Creature.h"
@@ -37,7 +46,10 @@ namespace DC_AC_Flight
 // NPCs
 enum : uint32
 {
-    NPC_FLIGHTMASTER       = 800010,  // DB: ScriptName = ACFM1
+    NPC_FLIGHTMASTER_CAMP  = 800010,  // DB: ScriptName = acflightmaster0
+    NPC_FLIGHTMASTER_L25   = 800012,  // DB: ScriptName = acflightmaster25
+    NPC_FLIGHTMASTER_L40   = 800013,  // DB: ScriptName = acflightmaster40
+    NPC_FLIGHTMASTER_L60   = 800014,  // DB: ScriptName = acflightmaster60
     NPC_AC_GRYPHON_TAXI    = 800011   // DB: vehicle-capable gryphon, ScriptName = ac_gryphon_taxi_800011
 };
 
@@ -286,7 +298,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (_routeMode == ROUTE_RETURN)
             {
                 // Start the return path from the nearest scenic node at or below acfm15
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting Level 25+ → Camp return.", (int)seatId);
 
                 // Find the nearest kPath index
@@ -307,7 +319,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 uint8 startIdx = nearest > kIndex_acfm15 ? kIndex_acfm15 : nearest;
                 // We want to move to the next lower node first (if possible)
                 _index = (startIdx > 0) ? static_cast<uint8>(startIdx - 1) : 0;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Nearest node is {}. Beginning descent at {}.", NodeLabel(nearest), NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
@@ -318,7 +330,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // Level 40+ (option 3): Start at acfm1 and traverse forward to acfm35
                 // This avoids a long single hop and guarantees proper waypoint sequencing.
                 _index = 0;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm35));
                 MoveToIndex(_index);
                 return;
@@ -331,18 +343,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dx = me->GetPositionX() - kPath[topIdx].GetPositionX();
                 float dy = me->GetPositionY() - kPath[topIdx].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Return to Level 25+ route.", (int)seatId);
                 if (dist2d < 80.0f)
                 {
                     _index = static_cast<uint8>(topIdx - 1);
-                    if (p)
+                    if (p && p->IsGameMaster())
                         ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(topIdx), NodeLabel(_index));
                     MoveToIndex(_index);
                     return;
                 }
                 _index = topIdx;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the return-to-25+ path.", NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
@@ -355,18 +367,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dx = me->GetPositionX() - kPath[topIdx].GetPositionX();
                 float dy = me->GetPositionY() - kPath[topIdx].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ → Camp route.", (int)seatId);
                 if (dist2d < 80.0f)
                 {
                     _index = static_cast<uint8>(topIdx - 1);
-                    if (p)
+                    if (p && p->IsGameMaster())
                         ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(topIdx), NodeLabel(_index));
                     MoveToIndex(_index);
                     return;
                 }
                 _index = topIdx;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the Level 40+ → Camp path.", NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
@@ -380,7 +392,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 // If already near the anchor (acfm40), skip it and start at acfm41 to avoid start-of-route stalls
                 _index = (dist2d < 80.0f) ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ scenic: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
                 return;
@@ -390,7 +402,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             {
                 // Startcamp -> step through all nodes up to acfm57
                 _index = 0; // acfm1 is first scenic node; we will traverse forward up to acfm57
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Startcamp to 60+: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm57));
                 MoveToIndex(_index);
                 return;
@@ -402,18 +414,18 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dx = me->GetPositionX() - kPath[kIndex_acfm57].GetPositionX();
                 float dy = me->GetPositionY() - kPath[kIndex_acfm57].GetPositionY();
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 60+ return.", (int)seatId);
                 if (dist2d < 80.0f)
                 {
                     _index = static_cast<uint8>(kIndex_acfm57 - 1);
-                    if (p)
+                    if (p && p->IsGameMaster())
                         ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(kIndex_acfm57), NodeLabel(_index));
                     MoveToIndex(_index);
                     return;
                 }
                 _index = kIndex_acfm57;
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the Level 60+ return.", NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
@@ -438,7 +450,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (d35 < 80.0f)
                         _index = static_cast<uint8>(kIndex_acfm35 - 1);
                 }
-                if (p)
+                if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 25+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), _routeMode == ROUTE_L25_TO_40 ? NodeLabel(kIndex_acfm35) : NodeLabel(kIndex_acfm57));
                 // Clear any pre-flight motion and perform a small vertical lift if far, to prevent start stalls
                 me->GetMotionMaster()->Clear();
@@ -466,7 +478,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             // TOUR route: start from acfm1
             _index = 0;
-            if (p)
+            if (p && p->IsGameMaster())
                 ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting at {}.", (int)seatId, NodeLabel(_index));
             MoveToIndex(_index);
         }
@@ -544,7 +556,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (_isLanding)
             {
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Early-exit landing fallback.");
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Early-exit landing fallback.");
                 float fx = me->GetPositionX();
                 float fy = me->GetPositionY();
                 float fz = me->GetPositionZ();
@@ -611,7 +624,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
                     {
                         if (Player* p = GetPassengerPlayer())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
+                            if (p->IsGameMaster())
+                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
                         _awaitingArrival = false;
                         _index = kIndex_acfm15;
                         MoveToIndex(_index);
@@ -641,7 +655,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         {
                             // Hard fallback: snap to target node and continue the route
                             if (Player* p = GetPassengerPlayer())
-                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                                if (p->IsGameMaster())
+                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
                             float tx = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
                             float ty = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
                             float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
@@ -676,7 +691,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (_hopElapsedMs > finalTimeout)
                 {
                     if (Player* p = GetPassengerPlayer())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at {}. Landing now.", NodeLabel(_index));
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at {}. Landing now.", NodeLabel(_index));
                     float fx = kPath[_index].GetPositionX();
                     float fy = kPath[_index].GetPositionY();
                     float fz = kPath[_index].GetPositionZ();
@@ -695,7 +711,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             if (!me->IsInWorld())
                                 return;
                             if (Player* p = GetPassengerPlayer())
-                                ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                                if (p->IsGameMaster())
+                                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
                             float gx = me->GetPositionX();
                             float gy = me->GetPositionY();
                             float gz = me->GetPositionZ();
@@ -733,7 +750,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (_stuckMs >= 20000)
             {
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Returning to start location and dismounting.");
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Returning to start location and dismounting.");
                 // Teleport to recorded flight start position, snap to ground, and safely dismount
                 float sx = _flightStartPos.GetPositionX();
                 float sy = _flightStartPos.GetPositionY();
@@ -797,7 +815,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (Player* p = GetPassengerPlayer())
         {
             if (_lastDepartIdx != idx)
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
         }
         _lastDepartIdx = idx;
     }
@@ -888,7 +907,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dist40 = sqrtf(dx40 * dx40 + dy40 * dy40);
                 uint8 start = (dist40 < 80.0f) ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -908,7 +928,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // Choose anchor: acfm20 if near acfm19, otherwise start from acfm1 (skip anchor)
                 uint8 start = IsNearIndex(kIndex_acfm19, 80.0f) ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -938,7 +959,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                     start = 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _l25to40ResetApplied = true;
                 _index = start;
@@ -1134,7 +1156,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             }
             _index = nextIdx; // move to next index
             if (Player* p = GetPassengerPlayer())
-                ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
             // Corner smoothing: if the turn is sharp, perform a short micro-hop along the outgoing direction
             // to allow smoother orientation before the long hop.
             {
@@ -1210,7 +1233,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (!me->IsInWorld())
                     return;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
                 // Snap the gryphon to ground at the final node before dismounting passengers
                 float fx = kPath[_index].GetPositionX();
                 float fy = kPath[_index].GetPositionY();
@@ -1303,53 +1327,44 @@ public:
     }
 };
 
-class ACFM1 : public CreatureScript
+// Shared helper to summon the gryphon taxi and start with a given route mode
+static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMode mode)
+{
+    Position where = creature->GetPosition();
+    where.m_positionZ += 3.0f;
+    Creature* taxi = creature->SummonCreature(NPC_AC_GRYPHON_TAXI, where, TEMPSUMMON_TIMED_DESPAWN, 300000);
+    if (!taxi)
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry %u).", static_cast<uint32>(NPC_AC_GRYPHON_TAXI));
+        return false;
+    }
+    if (!taxi->GetVehicleKit())
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
+        taxi->DespawnOrUnsummon(1000);
+        return false;
+    }
+    if (CreatureAI* ai = taxi->AI())
+        ai->SetData(1, static_cast<uint32>(mode));
+    player->EnterVehicle(taxi, -1);
+    if (player->IsGameMaster())
+        ChatHandler(player->GetSession()).SendSysMessage("[Flight Debug] Attempting to board gryphon (auto-seat). If you don't move, VehicleId/seat config may be wrong.");
+    return true;
+}
+
+// Camp flightmaster (NPC 800010)
+class acflightmaster0 : public CreatureScript
 {
 public:
-    ACFM1() : CreatureScript("ACFM1") { }
+    acflightmaster0() : CreatureScript("acflightmaster0") {}
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
-
-        // Optional level gate (1-25+): currently available to all; uncomment to enforce <=25
-        // if (player->getLevel() > 25 && !player->IsGameMaster())
-        //     AddGossipItemFor(player, 0, "This flight is designed for newer adventurers.", GOSSIP_SENDER_MAIN, 0);
-
-    // Gossip menu overview (sorted/grouped by start location from low to high)
-    // Camp (acfm0):
-    //   - Camp to Level 25+ (acfm1 → acfm15)
-    //   - Camp to Level 40+ (→ acfm35)
-    //   - Camp to Level 60+ (→ acfm57)
-    // Level 25+:
-    //   - Level 25+ to Camp (acfm15 → ... → acfm0)
-    //   - Level 25+ to Level 40+ (acfm19 → ... → acfm35)
-    //   - Level 25+ to Level 60+ (acfm19 → ... → acfm57)
-    // Level 40+:
-    //   - Level 40+ to Level 25+ (acfm35 → ... → acfm19)
-    //   - Level 40+ to Level 60+ (acfm40 → ... → acfm57)
-    // Level 60+:
-    //   - Level 60+ to Level 40+ (acfm57 → ... → acfm40)
-    //   - Level 60+ to Level 25+ (acfm57 → ... → acfm19)
-    //   - Level 60+ to Camp (acfm57 → ... → acfm0 → Startcamp)
-
-    // Camp (acfm0)
-    AddGossipItemFor(player, 0, "Camp to Level 25+", GOSSIP_SENDER_MAIN, GA_TOUR_25);
-    AddGossipItemFor(player, 0, "Camp to Level 40+", GOSSIP_SENDER_MAIN, GA_L40_DIRECT);
-    AddGossipItemFor(player, 0, "Camp to Level 60+", GOSSIP_SENDER_MAIN, GA_L0_TO_57);
-    // Level 25+
-    AddGossipItemFor(player, 0, "Level 25+ to Camp", GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
-    AddGossipItemFor(player, 0, "Level 25+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L25_TO_40);
-    AddGossipItemFor(player, 0, "Level 25+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L25_TO_60);
-    // Level 40+
-    AddGossipItemFor(player, 0, "Level 40+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
-    AddGossipItemFor(player, 0, "Level 40+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
-    AddGossipItemFor(player, 0, "Level 40+ to Camp", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_0);
-    // Level 60+
-    AddGossipItemFor(player, 0, "Level 60+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
-    AddGossipItemFor(player, 0, "Level 60+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_25);
-    AddGossipItemFor(player, 0, "Level 60+ to Camp", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_0);
+        AddGossipItemFor(player, 0, "Camp to Level 25+", GOSSIP_SENDER_MAIN, GA_TOUR_25);
+        AddGossipItemFor(player, 0, "Camp to Level 40+", GOSSIP_SENDER_MAIN, GA_L40_DIRECT);
+        AddGossipItemFor(player, 0, "Camp to Level 60+", GOSSIP_SENDER_MAIN, GA_L0_TO_57);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -1358,57 +1373,105 @@ public:
     {
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
+        FlightRouteMode mode = ROUTE_TOUR;
+        if (action == GA_TOUR_25) mode = ROUTE_TOUR;
+        else if (action == GA_L40_DIRECT) mode = ROUTE_L40_DIRECT;
+        else if (action == GA_L0_TO_57) mode = ROUTE_L0_TO_57;
+        else return true;
+        SummonTaxiAndStart(player, creature, mode);
+        return true;
+    }
+};
 
-        if (action < GA_TOUR_25 || action > GA_L40_BACK_TO_0)
-            return true;
+// Level 25+ flightmaster (NPC 800012)
+class acflightmaster25 : public CreatureScript
+{
+public:
+    acflightmaster25() : CreatureScript("acflightmaster25") {}
 
-        // Summon gryphon slightly above ground near the flightmaster
-        Position where = creature->GetPosition();
-        where.m_positionZ += 3.0f;
-    TempSummon* taxi = creature->SummonCreature(NPC_AC_GRYPHON_TAXI, where, TEMPSUMMON_TIMED_DESPAWN, 300000); // 5 minutes
-        if (!taxi)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry %u).", static_cast<uint32>(NPC_AC_GRYPHON_TAXI));
-            return true;
-        }
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (creature->IsQuestGiver())
+            player->PrepareQuestMenu(creature->GetGUID());
+        AddGossipItemFor(player, 0, "Level 25+ to Camp", GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
+        AddGossipItemFor(player, 0, "Level 25+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L25_TO_40);
+        AddGossipItemFor(player, 0, "Level 25+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L25_TO_60);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
 
-        if (!taxi->GetVehicleKit())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
-            taxi->DespawnOrUnsummon(1000);
-            return true;
-        }
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        ClearGossipMenuFor(player);
+        CloseGossipMenuFor(player);
+        FlightRouteMode mode = ROUTE_RETURN;
+        if (action == GA_RETURN_STARTCAMP) mode = ROUTE_RETURN;
+        else if (action == GA_L25_TO_40) mode = ROUTE_L25_TO_40;
+        else if (action == GA_L25_TO_60) mode = ROUTE_L25_TO_60;
+        else return true;
+        SummonTaxiAndStart(player, creature, mode);
+        return true;
+    }
+};
 
-        // Route mapping by start location (low → high)
-        // Camp (acfm0): GA_TOUR_25, GA_L40_DIRECT, GA_L0_TO_57
-        // Level 25+: GA_RETURN_STARTCAMP (from acfm15), GA_L25_TO_40, GA_L25_TO_60
-    // Level 40+: GA_L40_BACK_TO_25 (from acfm35), GA_L40_SCENIC_40_TO_57, GA_L40_BACK_TO_0
-        // Level 60+: GA_L60_BACK_TO_40, GA_L60_BACK_TO_25, GA_L60_BACK_TO_0
-        if (CreatureAI* ai = taxi->AI())
-        {
-            uint32 mode = ROUTE_TOUR;
-            // Camp
-            if (action == GA_TOUR_25) mode = ROUTE_TOUR;                // Camp to Level 25+
-            else if (action == GA_L40_DIRECT) mode = ROUTE_L40_DIRECT;  // Camp to Level 40+
-            else if (action == GA_L0_TO_57) mode = ROUTE_L0_TO_57;      // Camp to Level 60+
-            // Level 25+
-            else if (action == GA_RETURN_STARTCAMP) mode = ROUTE_RETURN; // Level 25+ to Camp
-            else if (action == GA_L25_TO_40) mode = ROUTE_L25_TO_40;     // Level 25+ to Level 40+
-            else if (action == GA_L25_TO_60) mode = ROUTE_L25_TO_60;     // Level 25+ to Level 60+
-            // Level 40+
-            else if (action == GA_L40_BACK_TO_25) mode = ROUTE_L40_RETURN25;       // Level 40+ to Level 25+
-            else if (action == GA_L40_SCENIC_40_TO_57) mode = ROUTE_L40_SCENIC;    // Level 40+ to Level 60+
-            else if (action == GA_L40_BACK_TO_0) mode = ROUTE_L40_RETURN0;         // Level 40+ to Camp
-            // Level 60+
-            else if (action == GA_L60_BACK_TO_40) mode = ROUTE_L60_RETURN40; // Level 60+ to Level 40+
-            else if (action == GA_L60_BACK_TO_25) mode = ROUTE_L60_RETURN19; // Level 60+ to Level 25+
-            else if (action == GA_L60_BACK_TO_0) mode = ROUTE_L60_RETURN0;   // Level 60+ to Camp
-            ai->SetData(1, mode);
-        }
+// Level 40+ flightmaster (NPC 800013)
+class acflightmaster40 : public CreatureScript
+{
+public:
+    acflightmaster40() : CreatureScript("acflightmaster40") {}
 
-        // Board the player, auto-select a suitable passenger seat (-1)
-        player->EnterVehicle(taxi, -1);
-        ChatHandler(player->GetSession()).SendSysMessage("[Flight Debug] Attempting to board gryphon (auto-seat). If you don't move, VehicleId/seat config may be wrong.");
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (creature->IsQuestGiver())
+            player->PrepareQuestMenu(creature->GetGUID());
+        AddGossipItemFor(player, 0, "Level 40+ to Camp", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_0);
+        AddGossipItemFor(player, 0, "Level 40+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
+        AddGossipItemFor(player, 0, "Level 40+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        ClearGossipMenuFor(player);
+        CloseGossipMenuFor(player);
+        FlightRouteMode mode = ROUTE_L40_RETURN0;
+        if (action == GA_L40_BACK_TO_0) mode = ROUTE_L40_RETURN0;
+        else if (action == GA_L40_BACK_TO_25) mode = ROUTE_L40_RETURN25;
+        else if (action == GA_L40_SCENIC_40_TO_57) mode = ROUTE_L40_SCENIC;
+        else return true;
+        SummonTaxiAndStart(player, creature, mode);
+        return true;
+    }
+};
+
+// Level 60+ flightmaster (NPC 800014)
+class acflightmaster60 : public CreatureScript
+{
+public:
+    acflightmaster60() : CreatureScript("acflightmaster60") {}
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (creature->IsQuestGiver())
+            player->PrepareQuestMenu(creature->GetGUID());
+        AddGossipItemFor(player, 0, "Level 60+ to Camp", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_0);
+        AddGossipItemFor(player, 0, "Level 60+ to Level 25+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_25);
+        AddGossipItemFor(player, 0, "Level 60+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        ClearGossipMenuFor(player);
+        CloseGossipMenuFor(player);
+        FlightRouteMode mode = ROUTE_L60_RETURN0;
+        if (action == GA_L60_BACK_TO_0) mode = ROUTE_L60_RETURN0;
+        else if (action == GA_L60_BACK_TO_25) mode = ROUTE_L60_RETURN19;
+        else if (action == GA_L60_BACK_TO_40) mode = ROUTE_L60_RETURN40;
+        else return true;
+        SummonTaxiAndStart(player, creature, mode);
         return true;
     }
 };
@@ -1417,7 +1480,11 @@ public:
 
 void AddSC_flightmasters()
 {
-    new DC_AC_Flight::ACFM1();
+    // Register the four dedicated flightmaster scripts and the gryphon taxi
+    new DC_AC_Flight::acflightmaster0();
+    new DC_AC_Flight::acflightmaster25();
+    new DC_AC_Flight::acflightmaster40();
+    new DC_AC_Flight::acflightmaster60();
     new DC_AC_Flight::ac_gryphon_taxi_800011();
 }
 
@@ -1446,6 +1513,10 @@ REPLACE INTO creature_template_movement (CreatureId, Ground, Swim, Flight, Roote
 VALUES (800011, 0, 0, 1, 0, 0, 0);
 
 -- Bind the flightmaster NPC to this script (entry 800010 must exist in your DB)
-UPDATE creature_template SET ScriptName = 'ACFM1' WHERE entry = 800010;
+-- Bind each flightmaster NPC to its dedicated script
+UPDATE creature_template SET ScriptName = 'acflightmaster0'  WHERE entry = 800010; -- Camp
+UPDATE creature_template SET ScriptName = 'acflightmaster25' WHERE entry = 800012; -- Level 25+
+UPDATE creature_template SET ScriptName = 'acflightmaster40' WHERE entry = 800013; -- Level 40+
+UPDATE creature_template SET ScriptName = 'acflightmaster60' WHERE entry = 800014; -- Level 60+
 
 */
