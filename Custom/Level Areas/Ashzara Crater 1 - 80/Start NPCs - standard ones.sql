@@ -112,3 +112,24 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 INSERT INTO creature_template_movement (CreatureId, Ground, Swim, Flight, Rooted, Chase, Random)
 VALUES (800011, 0, 0, 1, 0, 0, 0);
 
+-- flightmaster 2
+DELETE FROM `creature_template` WHERE (`entry` = 800012);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(800012, 0, 0, 0, 0, 0, 'Ashzara Flightmaster', 'DC-WoW', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'ACFM1', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800012);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(800012, 0, 7102, 1, 1, 12340),
+(800012, 1, 7103, 1, 1, 12340),
+(800012, 2, 7104, 1, 1, 12340);
+
+-- flightmaster 3
+DELETE FROM `creature_template` WHERE (`entry` = 800013);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(800013, 0, 0, 0, 0, 0, 'Ashzara Flightmaster', 'DC-WoW', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'ACFM1', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800013);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(800013, 0, 7102, 1, 1, 12340),
+(800013, 1, 7103, 1, 1, 12340),
+(800013, 2, 7104, 1, 1, 12340);

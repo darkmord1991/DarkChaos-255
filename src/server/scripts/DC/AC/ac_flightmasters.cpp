@@ -74,6 +74,9 @@ static constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 struct ac_gryphon_taxi_800011AI : public VehicleAI
 {
+    // Route mode declared early to ensure visibility in all in-class method bodies
+    FlightRouteMode _routeMode = ROUTE_TOUR; // default to tour unless overridden by gossip
+
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
 
     void SetData(uint32 id, uint32 value) override
@@ -241,7 +244,6 @@ private:
     bool _isLanding = false;
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
-    FlightRouteMode _routeMode = ROUTE_TOUR; // default to tour unless overridden by gossip
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
