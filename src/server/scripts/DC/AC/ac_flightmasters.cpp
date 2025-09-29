@@ -39,6 +39,13 @@ enum : uint32
     NPC_AC_GRYPHON_TAXI    = 800011   // DB: vehicle-capable gryphon, ScriptName = ac_gryphon_taxi_800011
 };
 
+// Route selection for the flight
+enum FlightRouteMode : uint32
+{
+    ROUTE_TOUR = 0,     // acfm1 -> acfm15 (land at acfm15)
+    ROUTE_RETURN = 1    // acfm15 -> Startcamp (acfm0)
+};
+
 // Simple scenic route in Azshara Crater (map 37) for levels 1-25+
 static Position const kPath[] = {
     { 137.1860f, 954.9300f, 327.5140f, 0.327798f },  // acfm1
@@ -61,11 +68,22 @@ static Position const kPath[] = {
 
 // Robust path length (avoid toolchain issues with std::extent)
 static constexpr uint8 kPathLength = static_cast<uint8>(sizeof(kPath) / sizeof(kPath[0]));
+static constexpr uint8 kIndex_acfm15 = 14; // 0-based index
+static constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
 
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 struct ac_gryphon_taxi_800011AI : public VehicleAI
 {
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
+
+    void SetData(uint32 id, uint32 value) override
+    {
+        // id 1: route mode
+        if (id == 1)
+        {
+            _routeMode = (value == ROUTE_RETURN) ? ROUTE_RETURN : ROUTE_TOUR;
+        }
+    }
 
     void IsSummonedBy(WorldObject* summoner) override
     {
@@ -95,13 +113,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_started)
         {
             _started = true;
-            _index = 0;
+            // Determine starting node based on route mode
+            _index = (_routeMode == ROUTE_RETURN) ? kIndex_acfm15 : 0;
             // Ensure we are in flying mode when starting the route
             me->SetCanFly(true);
             me->SetDisableGravity(true);
             me->SetHover(true);
             if (Player* p = passenger ? passenger->ToPlayer() : nullptr)
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting at acfm1.", (int)seatId);
+                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Starting at {}.", (int)seatId, NodeLabel(_index));
             MoveToIndex(_index);
         }
     }
@@ -228,8 +247,11 @@ private:
         if (!_awaitingArrival)
             return; // already handled
 
+        // Determine logical last index based on route mode
+        uint8 lastIndex = (_routeMode == ROUTE_RETURN) ? kIndex_startcamp : kIndex_acfm15;
+
         // Reached a path node; continue to next or start landing sequence at the last
-        if (_index + 1 < kPathLength)
+        if (_index < lastIndex)
         {
             uint8 arrivedIdx = _index; // index we just reached
             _awaitingArrival = false;
@@ -295,6 +317,7 @@ public:
         //     AddGossipItemFor(player, 0, "This flight is designed for newer adventurers.", GOSSIP_SENDER_MAIN, 0);
 
         AddGossipItemFor(player, 0, "Take the gryphon tour (levels 1-25+)", GOSSIP_SENDER_MAIN, 1);
+        AddGossipItemFor(player, 0, "Return flight to Startcamp", GOSSIP_SENDER_MAIN, 2);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -304,7 +327,7 @@ public:
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
 
-        if (action != 1)
+        if (action != 1 && action != 2)
             return true;
 
         // Summon gryphon slightly above ground near the flightmaster
@@ -323,6 +346,10 @@ public:
             taxi->DespawnOrUnsummon(1000);
             return true;
         }
+
+        // Select route mode: 1=tour, 2=return
+        if (CreatureAI* ai = taxi->AI())
+            ai->SetData(1, action == 2 ? ROUTE_RETURN : ROUTE_TOUR);
 
         // Board the player, auto-select a suitable passenger seat (-1)
         player->EnterVehicle(taxi, -1);
