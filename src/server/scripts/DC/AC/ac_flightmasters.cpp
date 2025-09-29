@@ -44,7 +44,13 @@ enum : uint32
 enum FlightRouteMode : uint32
 {
     ROUTE_TOUR = 0,     // acfm1 -> acfm15 (land at acfm15)
-    ROUTE_RETURN = 1    // acfm15 -> Startcamp (acfm0)
+    ROUTE_RETURN = 1,   // acfm15 -> Startcamp (acfm0)
+    ROUTE_L40_DIRECT = 2, // Startcamp (acfm0) -> acfm35 (direct)
+    ROUTE_L40_RETURN25 = 3, // acfm35 -> acfm19 (reverse, land at acfm19)
+    ROUTE_L40_SCENIC = 4,   // acfm40 -> acfm57 (ascending)
+    ROUTE_L60_RETURN40 = 5, // acfm57 -> acfm40 (descending)
+    ROUTE_L60_RETURN0  = 6, // acfm57 -> Startcamp (full descend to 0 then Startcamp)
+    ROUTE_L60_RETURN19 = 7  // acfm57 -> acfm19 (descending)
 };
 
 // Simple scenic route in Azshara Crater (map 37) for levels 1-25+
@@ -64,20 +70,85 @@ static Position const kPath[] = {
     {   4.0747f, 388.9040f, 310.3970f, 2.729470f },  // acfm13
     { -12.7592f, 405.7640f, 307.0690f, 2.060310f },  // acfm14
     { -18.4005f, 416.3530f, 307.4260f, 2.060310f },  // acfm15
-    {  73.2833f, 938.1900f, 341.0360f, 3.309180f }   // acfm0 (Startcamp, final)
+    // Additional nodes
+    {  -20.3265f, 419.0570f, 308.2240f, 5.91598f  }, // acfm19
+    {    0.70243f,403.3250f, 313.2740f, 5.59253f  }, // acfm20
+    {   69.2940f, 343.8420f, 308.4380f, 5.55719f  }, // acfm21
+    {  139.4370f, 304.9340f, 302.6710f, 5.87920f  }, // acfm22
+    {  197.2580f, 251.1890f, 294.5420f, 5.32078f  }, // acfm23
+    {  253.7330f, 174.3900f, 275.8360f, 5.54068f  }, // acfm24
+    {  250.0990f, 108.0630f, 266.0210f, 5.06001f  }, // acfm25
+    {  288.0720f,  35.7399f, 288.2950f, 5.28778f  }, // acfm26
+    {  339.6580f, -39.0153f, 299.9640f, 5.07650f  }, // acfm27
+    {  348.2650f, -99.4286f, 298.4710f, 4.86836f  }, // acfm28
+    {  369.2020f,-154.2740f, 299.7370f, 5.45034f  }, // acfm29
+    {  417.6860f,-179.9230f, 300.9320f, 6.21375f  }, // acfm30
+    {  474.4610f,-156.4080f, 302.2410f, 0.538461f }, // acfm31
+    {  530.1590f, -71.5742f, 295.4710f, 1.32386f  }, // acfm32
+    {  563.7880f,  51.9529f, 288.2520f, 1.23747f  }, // acfm33
+    {  601.5580f, 112.9140f, 282.8300f, 0.852621f }, // acfm34
+    {  620.9780f, 126.0180f, 282.5800f, 4.24868f  }, // acfm35
+    // Newly added extended waypoints
+    {  623.2570f, 125.9740f, 282.3190f, 5.18330f  }, // acfm40
+    {  626.1070f, 115.0240f, 284.6130f, 5.26654f  }, // acfm41
+    {  656.0900f, 107.7920f, 282.0520f, 0.0719209f}, // acfm42
+    {  684.2030f, 109.8170f, 283.2330f, 0.0719209f}, // acfm43
+    {  702.2520f, 111.1180f, 292.5510f, 0.342098f }, // acfm44
+    {  733.9850f, 135.3200f, 294.2670f, 1.05367f  }, // acfm45
+    {  741.5040f, 164.3300f, 295.5340f, 1.39060f  }, // acfm46
+    {  767.9480f, 227.9190f, 298.4810f, 1.08823f  }, // acfm47
+    {  813.1940f, 285.8880f, 301.7320f, 6.21452f  }, // acfm48
+    {  897.0600f, 294.0240f, 321.7490f, 6.24751f  }, // acfm49
+    {  961.4010f, 280.4980f, 367.4450f, 5.97262f  }, // acfm50
+    { 1059.9800f, 237.4870f, 384.4350f, 5.46057f  }, // acfm51
+    { 1079.8700f, 190.0100f, 379.8740f, 4.87623f  }, // acfm52
+    { 1085.7700f, 129.3060f, 368.2810f, 4.67989f  }, // acfm53
+    { 1070.5100f,  86.2029f, 351.1760f, 4.25813f  }, // acfm54
+    { 1051.0700f,  39.0495f, 334.1950f, 4.45447f  }, // acfm55
+    { 1049.7600f,  13.1380f, 330.9040f, 4.90214f  }, // acfm56
+    { 1068.2100f, -21.4253f, 331.4710f, 5.18095f  }, // acfm57
+    {   73.2833f, 938.1900f, 341.0360f, 3.309180f }   // acfm0 (Startcamp, final)
 };
 
 // Robust path length (avoid toolchain issues with std::extent)
 static constexpr uint8 kPathLength = static_cast<uint8>(sizeof(kPath) / sizeof(kPath[0]));
-static constexpr uint8 kIndex_acfm15 = 14; // 0-based index
 static constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
+static inline uint8 LastScenicIndex()
+{
+    // Last index before Startcamp is the final scenic node
+    return static_cast<uint8>(kPathLength - 2);
+}
+// Fixed anchor for the legacy midpoint (acfm15) used by the return route
+static constexpr uint8 kIndex_acfm15 = 14; // 0-based index for acfm15
+static constexpr uint8 kIndex_acfm19 = 15; // first of the extended scenic nodes
+static constexpr uint8 kIndex_acfm35 = 31; // last node for Level 40+ route
+static constexpr uint8 kIndex_acfm40 = 32; // start of 40+ scenic sub-route
+static constexpr uint8 kIndex_acfm57 = 49; // last of extended set (60+)
 
-// Human-friendly label for a path node
+// Human-friendly label for a path node (handles the non-contiguous numbering after acfm15)
 static inline std::string NodeLabel(uint8 idx)
 {
     if (idx == kIndex_startcamp)
         return "Startcamp";
-    return std::string("acfm") + std::to_string(static_cast<unsigned>(idx + 1));
+    // 0..14 => acfm1..acfm15
+    if (idx <= 14)
+        return std::string("acfm") + std::to_string(static_cast<unsigned>(idx + 1));
+    // 15..31 => acfm19..acfm35
+    if (idx >= 15 && idx <= 31)
+    {
+        unsigned n = 19u + static_cast<unsigned>(idx - 15);
+        return std::string("acfm") + std::to_string(n);
+    }
+    // 32..48 => acfm40..acfm56, 49 => acfm57
+    if (idx >= 32 && idx <= 48)
+    {
+        unsigned n = 40u + static_cast<unsigned>(idx - 32);
+        return std::string("acfm") + std::to_string(n);
+    }
+    if (idx == 49)
+        return std::string("acfm57");
+    // Fallback
+    return std::string("acfm?");
 }
 
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
@@ -94,7 +165,22 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // id 1: route mode
         if (id == 1)
         {
-            _routeMode = (value == ROUTE_RETURN) ? ROUTE_RETURN : ROUTE_TOUR;
+            if (value == ROUTE_RETURN)
+                _routeMode = ROUTE_RETURN;
+            else if (value == ROUTE_L40_DIRECT)
+                _routeMode = ROUTE_L40_DIRECT;
+            else if (value == ROUTE_L40_RETURN25)
+                _routeMode = ROUTE_L40_RETURN25;
+            else if (value == ROUTE_L40_SCENIC)
+                _routeMode = ROUTE_L40_SCENIC;
+            else if (value == ROUTE_L60_RETURN40)
+                _routeMode = ROUTE_L60_RETURN40;
+            else if (value == ROUTE_L60_RETURN0)
+                _routeMode = ROUTE_L60_RETURN0;
+            else if (value == ROUTE_L60_RETURN19)
+                _routeMode = ROUTE_L60_RETURN19;
+            else
+                _routeMode = ROUTE_TOUR;
         }
     }
 
@@ -155,6 +241,73 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _index = kIndex_acfm15;
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the return path.", NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            if (_routeMode == ROUTE_L40_DIRECT)
+            {
+                // Level 40+ direct: fly straight to acfm35 from Startcamp
+                _index = kIndex_acfm35;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ route to {}.", (int)seatId, NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            if (_routeMode == ROUTE_L40_RETURN25)
+            {
+                // If we're near acfm35, start reverse immediately toward acfm34; otherwise head to acfm35 first
+                uint8 topIdx = kIndex_acfm35;
+                float dx = me->GetPositionX() - kPath[topIdx].GetPositionX();
+                float dy = me->GetPositionY() - kPath[topIdx].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Return to Level 25+ route.", (int)seatId);
+                if (dist2d < 80.0f)
+                {
+                    _index = static_cast<uint8>(topIdx - 1);
+                    if (p)
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(topIdx), NodeLabel(_index));
+                    MoveToIndex(_index);
+                    return;
+                }
+                _index = topIdx;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the return-to-25+ path.", NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            if (_routeMode == ROUTE_L40_SCENIC)
+            {
+                // Start at acfm40 and go to acfm57
+                _index = kIndex_acfm40;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ scenic: starting at {}.", (int)seatId, NodeLabel(_index));
+                MoveToIndex(_index);
+                return;
+            }
+
+            if (_routeMode == ROUTE_L60_RETURN40 || _routeMode == ROUTE_L60_RETURN19 || _routeMode == ROUTE_L60_RETURN0)
+            {
+                // Ensure we start from acfm57 or immediately step down if already there
+                float dx = me->GetPositionX() - kPath[kIndex_acfm57].GetPositionX();
+                float dy = me->GetPositionY() - kPath[kIndex_acfm57].GetPositionY();
+                float dist2d = sqrtf(dx * dx + dy * dy);
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 60+ return.", (int)seatId);
+                if (dist2d < 80.0f)
+                {
+                    _index = static_cast<uint8>(kIndex_acfm57 - 1);
+                    if (p)
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Near {}. Departing immediately to {}.", NodeLabel(kIndex_acfm57), NodeLabel(_index));
+                    MoveToIndex(_index);
+                    return;
+                }
+                _index = kIndex_acfm57;
+                if (p)
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Heading to {} to start the Level 60+ return.", NodeLabel(_index));
                 MoveToIndex(_index);
                 return;
             }
@@ -283,17 +436,19 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // Compute next index based on selected route
         bool hasNext = false;
         uint8 nextIdx = _index;
+        uint8 lastIdx = LastScenicIndex();
+        uint8 tourEndIdx = kIndex_acfm15; // keep the classic tour ending at acfm15
         if (_routeMode == ROUTE_TOUR)
         {
-            if (_index < kIndex_acfm15)
+            if (_index < tourEndIdx)
             {
                 hasNext = true;
                 nextIdx = static_cast<uint8>(_index + 1);
             }
         }
-        else // ROUTE_RETURN
+        else if (_routeMode == ROUTE_RETURN)
         {
-            if (_index > 0 && _index <= kIndex_acfm15)
+            if (_index > 0 && _index <= lastIdx)
             {
                 hasNext = true;
                 nextIdx = static_cast<uint8>(_index - 1);
@@ -302,6 +457,78 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             {
                 hasNext = true;
                 nextIdx = kIndex_startcamp;
+            }
+        }
+        else // other specialized routes
+        {
+            if (_routeMode == ROUTE_L40_DIRECT)
+            {
+                hasNext = false; // land at acfm35
+            }
+            else if (_routeMode == ROUTE_L40_RETURN25)
+            {
+                if (_index > kIndex_acfm19 && _index <= kIndex_acfm35)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index - 1);
+                }
+                else
+                {
+                    hasNext = false; // at or before acfm19 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L40_SCENIC)
+            {
+                if (_index < kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index + 1);
+                }
+                else
+                {
+                    hasNext = false; // at acfm57 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L60_RETURN40)
+            {
+                if (_index > kIndex_acfm40 && _index <= kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index - 1);
+                }
+                else
+                {
+                    hasNext = false; // at or before acfm40 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L60_RETURN19)
+            {
+                if (_index > kIndex_acfm19 && _index <= kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index - 1);
+                }
+                else
+                {
+                    hasNext = false; // at or before acfm19 -> land
+                }
+            }
+            else if (_routeMode == ROUTE_L60_RETURN0)
+            {
+                if (_index > 0 && _index <= kIndex_acfm57)
+                {
+                    hasNext = true;
+                    nextIdx = static_cast<uint8>(_index - 1);
+                }
+                else if (_index == 0)
+                {
+                    hasNext = true;
+                    nextIdx = kIndex_startcamp; // final hop to Startcamp
+                }
+                else
+                {
+                    hasNext = false; // at Startcamp -> land
+                }
             }
         }
 
@@ -368,8 +595,14 @@ public:
         // if (player->getLevel() > 25 && !player->IsGameMaster())
         //     AddGossipItemFor(player, 0, "This flight is designed for newer adventurers.", GOSSIP_SENDER_MAIN, 0);
 
-        AddGossipItemFor(player, 0, "Take the gryphon tour (levels 1-25+)", GOSSIP_SENDER_MAIN, 1);
-        AddGossipItemFor(player, 0, "Return flight to Startcamp", GOSSIP_SENDER_MAIN, 2);
+    AddGossipItemFor(player, 0, "Take the gryphon tour (levels 1-25+)", GOSSIP_SENDER_MAIN, 1);
+    AddGossipItemFor(player, 0, "Return flight to Startcamp", GOSSIP_SENDER_MAIN, 2);
+    AddGossipItemFor(player, 0, "Level 40+", GOSSIP_SENDER_MAIN, 3);
+    AddGossipItemFor(player, 0, "Back to Level 25+", GOSSIP_SENDER_MAIN, 4);
+    AddGossipItemFor(player, 0, "Level 40+ scenic (acfm40 → acfm57)", GOSSIP_SENDER_MAIN, 5);
+    AddGossipItemFor(player, 0, "Level 60+: back to 40+ (acfm57 → acfm40)", GOSSIP_SENDER_MAIN, 6);
+    AddGossipItemFor(player, 0, "Level 60+: back to 25+ (acfm57 → acfm19)", GOSSIP_SENDER_MAIN, 7);
+    AddGossipItemFor(player, 0, "Level 60+: back to Startcamp (acfm57 → acfm0)", GOSSIP_SENDER_MAIN, 8);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -379,7 +612,7 @@ public:
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
 
-        if (action != 1 && action != 2)
+        if (action < 1 || action > 8)
             return true;
 
         // Summon gryphon slightly above ground near the flightmaster
@@ -399,9 +632,19 @@ public:
             return true;
         }
 
-        // Select route mode: 1=tour, 2=return
+        // Select route mode: 1=tour, 2=return, 3=Level 40+ direct, 4=Level 40+ back to 25+, 5=40 scenic to 57, 6=57->40, 7=57->19, 8=57->0
         if (CreatureAI* ai = taxi->AI())
-            ai->SetData(1, action == 2 ? ROUTE_RETURN : ROUTE_TOUR);
+        {
+            uint32 mode = ROUTE_TOUR;
+            if (action == 2) mode = ROUTE_RETURN;
+            else if (action == 3) mode = ROUTE_L40_DIRECT;
+            else if (action == 4) mode = ROUTE_L40_RETURN25;
+            else if (action == 5) mode = ROUTE_L40_SCENIC;
+            else if (action == 6) mode = ROUTE_L60_RETURN40;
+            else if (action == 7) mode = ROUTE_L60_RETURN19;
+            else if (action == 8) mode = ROUTE_L60_RETURN0;
+            ai->SetData(1, mode);
+        }
 
         // Board the player, auto-select a suitable passenger seat (-1)
         player->EnterVehicle(taxi, -1);
