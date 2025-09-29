@@ -205,6 +205,7 @@ private:
     bool _started = false;
     bool _awaitingArrival = false;
     bool _landingScheduled = false;
+    bool _isLanding = false;
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
 
