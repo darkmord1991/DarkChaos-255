@@ -7,6 +7,44 @@
 
 // Honor amounts are now driven by config fields on OutdoorPvPHL; no local constants needed.
 
+// Legacy per-player reward entrypoint kept for compatibility with calls in OutdoorPvPHL.cpp
+// honorpointsorarena: amount to grant (used for honor in this core);
+// honor/arena/both: original flags from older script versions. We grant honor when (honor || both) is set.
+void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool honor, bool /*arena*/, bool both)
+{
+    if (!player)
+        return;
+    // Deny rewards for deserters or AFK (unless GM); callers already check in most paths, but be defensive
+    if (!IsEligibleForRewards(player))
+        return;
+    if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
+    {
+        Whisper(player, "|cffff0000AFK penalty: you receive no rewards.|r");
+        return;
+    }
+
+    if ((honor || both) && honorpointsorarena > 0)
+        player->RewardHonor(nullptr, 0, float(honorpointsorarena));
+}
+
+// Legacy per-player buff application (winner/loser) used by OutdoorPvPHL.cpp
+void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
+{
+    if (!player)
+        return;
+
+    if (loser)
+    {
+        for (uint8 i = 0; i < LoseBuffsNum; ++i)
+            player->AddAura(LoseBuffs[i], player);
+    }
+    else
+    {
+        for (uint8 i = 0; i < WinBuffsNum; ++i)
+            player->AddAura(WinBuffs[i], player);
+    }
+}
+
 void OutdoorPvPHL::HandleRewards(TeamId winner)
 {
     if (winner != TEAM_ALLIANCE && winner != TEAM_HORDE)

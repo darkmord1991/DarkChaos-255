@@ -7,6 +7,14 @@ set(SCRIPTS_DC_AC
     HinterlandBG/outdoorpvp_hl_registration.cpp
 )
 
+# DC HinterlandBG split implementations (config, rewards, reset, afk)
+set(SCRIPTS_DC_HinterlandBG
+    HinterlandBG/OutdoorPvPHL_Config.cpp
+    HinterlandBG/OutdoorPvPHL_Rewards.cpp
+    HinterlandBG/OutdoorPvPHL_Reset.cpp
+    HinterlandBG/OutdoorPvPHL_AFK.cpp
+)
+
 # Add sources to AzerothCore scripts
 set(SCRIPTS_WORLD
     ${SCRIPTS_WORLD}
