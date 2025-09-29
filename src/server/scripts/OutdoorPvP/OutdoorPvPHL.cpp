@@ -96,7 +96,7 @@
         _initialResourcesHorde = HL_RESOURCES_H;
         // Default base coordinates
         _baseAlliance = { /*map*/0u, /*x*/62.083f, /*y*/-4714.99f, /*z*/11.7937f, /*o*/2.50765f };
-        _baseHorde    = { /*map*/0u, /*x*/-676.702f, /*y*/-4534.57f, /*z*/7.79739f, /*o*/0.999724f };
+    _baseHorde    = { /*map*/0u, /*x*/-628.484f, /*y*/-4684.51f, /*z*/5.14442f, /*o*/1.12528f };
         _rewardMatchHonor = 1500;
         _rewardMatchHonorDepletion = 1500;
         _rewardMatchHonorTiebreaker = 750;

@@ -33,10 +33,10 @@ HinterlandBG.Base.Alliance.Z = 11.7937
 HinterlandBG.Base.Alliance.O = 2.50765
 # Horde base
 HinterlandBG.Base.Horde.Map = 0
-HinterlandBG.Base.Horde.X = -676.702
-HinterlandBG.Base.Horde.Y = -4534.57
-HinterlandBG.Base.Horde.Z = 7.79739
-HinterlandBG.Base.Horde.O = 0.999724
+HinterlandBG.Base.Horde.X = -628.484
+HinterlandBG.Base.Horde.Y = -4684.51
+HinterlandBG.Base.Horde.Z = 5.14442
+HinterlandBG.Base.Horde.O = 1.12528
 
 # Rewards (match end)
 # Legacy total honor amount (may be used by legacy paths)
