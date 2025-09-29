@@ -697,7 +697,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             });
         }
     }
-    };
 
 private:
     // Compute the angle between (prev->curr) and (curr->next) in degrees
@@ -733,6 +732,7 @@ private:
     }
 
     float _baseFlightSpeed = 2.0f;
+    };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
 {
