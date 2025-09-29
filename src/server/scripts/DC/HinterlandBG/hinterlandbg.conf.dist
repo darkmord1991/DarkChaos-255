@@ -38,22 +38,28 @@ HinterlandBG.Base.Horde.Y = -4534.57
 HinterlandBG.Base.Horde.Z = 7.79739
 HinterlandBG.Base.Horde.O = 0.999724
 
-# Rewards
-# Honor for winning when enemy reaches 0 (used by HandleRewards on win)
-HinterlandBG.Reward.MatchHonor = 1500
-# Optional split reward amounts depending on win condition
-HinterlandBG.Reward.MatchHonorDepletion = 1500
-HinterlandBG.Reward.MatchHonorTiebreaker = 750
+# Rewards (match end)
+# Legacy total honor amount (may be used by legacy paths)
+HinterlandBG.Reward.MatchHonor = 50
+# Config-driven split amounts for HandleRewards(TeamId)
+# Winner honor when loser reaches 0 resources
+HinterlandBG.Reward.MatchHonorDepletion = 120
+# Winner honor when win is by expiry/tiebreaker (higher resources)
+HinterlandBG.Reward.MatchHonorTiebreaker = 70
+# Consolation honor for the losing team
+HinterlandBG.Reward.MatchHonorLoser = 20
 # Item granted on player kill (0 to disable)
 HinterlandBG.Reward.KillItemId = 40752
 HinterlandBG.Reward.KillItemCount = 1
 # CSV list for random honor per kill (Randomizer): index 0..3 used
 HinterlandBG.Reward.KillHonorValues = 17,11,19,22
 
-# NPC token rewards (up to 10 entries per team); when a player kills a configured enemy NPC
+## Token rewards (optional)
+# If both are > 0, the winning team also receives this token on match end
+HinterlandBG.Reward.NPCTokenItemId = 0
+HinterlandBG.Reward.NPCTokenItemCount = 0
+# Per-NPC token rewards (up to ~10 entries per team); when a player kills a configured enemy NPC
 # they receive the configured token item. Leave lists empty to disable.
-HinterlandBG.Reward.NPCTokenItemId = 40752
-HinterlandBG.Reward.NPCTokenItemCount = 1
 # Example lists (comma-separated creature entry IDs)
 HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810000,600011
 HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810001,810002

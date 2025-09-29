@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ScriptDefines/MovementHandlerScript.h"
-#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "HinterlandBG.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 
 class HLMovementHandlerScript : public MovementHandlerScript

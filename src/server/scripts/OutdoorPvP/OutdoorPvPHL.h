@@ -165,6 +165,10 @@
 
             /* Rewards */
             void HandleRewards(Player * player, uint32 honorpointsorarena, bool honor, bool arena, bool both);
+            // DC extension: match-end helpers by winning team (implemented in DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp)
+            void HandleRewards(TeamId winner);
+            void HandleBuffs(TeamId winner);
+            void HandleWinMessage(TeamId winner);
 
             /* Updates */
             // Main periodic tick. Handles:
@@ -287,6 +291,7 @@
     uint32 _rewardMatchHonor;               // legacy default
     uint32 _rewardMatchHonorDepletion;      // when win happens by enemy reaching 0
     uint32 _rewardMatchHonorTiebreaker;     // when win happens via timer-expiry tiebreaker
+    uint32 _rewardMatchHonorLoser;          // consolation for losing team
     std::vector<uint32> _killHonorValues; // CSV-configured
     uint32 _rewardKillItemId;
     uint32 _rewardKillItemCount;

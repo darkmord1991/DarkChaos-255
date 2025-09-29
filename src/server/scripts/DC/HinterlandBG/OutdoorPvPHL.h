@@ -1,3 +1,11 @@
+// DC/HinterlandBG wrapper header for OutdoorPvPHL
+// Use the canonical OutdoorPvP header to keep a single source of truth for the class.
+#ifndef DC_HINTERLANDBG_OUTDOORPVPHL_WRAPPER_H
+#define DC_HINTERLANDBG_OUTDOORPVPHL_WRAPPER_H
+
+#include "OutdoorPvP/OutdoorPvPHL.h"
+
+#endif // DC_HINTERLANDBG_OUTDOORPVPHL_WRAPPER_H
 // OutdoorPvPHL.h
 
 #ifndef OUTDOOR_PVP_HL_H

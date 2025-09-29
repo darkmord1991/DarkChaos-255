@@ -1,4 +1,4 @@
-#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "HinterlandBG.h"
 #include "MapMgr.h"
 #include "WorldSessionMgr.h"
 #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"

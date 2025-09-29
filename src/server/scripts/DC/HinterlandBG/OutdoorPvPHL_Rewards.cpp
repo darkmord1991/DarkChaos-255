@@ -1,16 +1,10 @@
-#include "OutdoorPvPHL.h"            // use the local DC/HinterlandBG header, not OutdoorPvP/...
+#include "HinterlandBG.h"            // DC wrapper to the canonical OutdoorPvPHL
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "World.h"
 #include "SharedDefines.h"
 
-namespace
-{
-    // Honor amounts (tune as needed)
-    constexpr uint32 HONOR_WIN_DEPLETION = 120;   // winner when resources depleted
-    constexpr uint32 HONOR_WIN_EXPIRY    = 70;    // winner on time expiry / tiebreaker
-    constexpr uint32 HONOR_LOSE_GENERIC  = 20;    // consolation for the losing side
-}
+// Honor amounts are now driven by config fields on OutdoorPvPHL; no local constants needed.
 
 void OutdoorPvPHL::HandleRewards(TeamId winner)
 {
@@ -20,8 +14,10 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
     TeamId loser = (winner == TEAM_ALLIANCE) ? TEAM_HORDE : TEAM_ALLIANCE;
 
     // Pick amounts by win condition.
-    const uint32 winHonor  = _winConditionWasDepletion ? HONOR_WIN_DEPLETION : HONOR_WIN_EXPIRY;
-    const uint32 loseHonor = HONOR_LOSE_GENERIC;
+    // Infer depletion when the loser reached 0 resources.
+    bool depletion = (winner == TEAM_ALLIANCE) ? (_horde_gathered == 0) : (_ally_gathered == 0);
+    const uint32 winHonor  = depletion ? _rewardMatchHonorDepletion : _rewardMatchHonorTiebreaker;
+    const uint32 loseHonor = _rewardMatchHonorLoser;
 
     auto rewardTeam = [&](TeamId team, uint32 honor)
     {
@@ -32,7 +28,12 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
         for (auto const& guid : m_players[team])
         {
             if (Player* plr = ObjectAccessor::FindPlayer(guid))
+            {
                 plr->RewardHonor(nullptr, 0, float(honor));
+                // Optional: token reward for match participation/victory
+                if (_rewardNpcTokenItemId && _rewardNpcTokenCount && team == winner)
+                    plr->AddItem(_rewardNpcTokenItemId, _rewardNpcTokenCount);
+            }
         }
     };
 
@@ -51,7 +52,9 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
     if (winner == TEAM_NEUTRAL)
         return;
 
-    if (_winConditionWasDepletion)
+    // Infer again for messages
+    bool depletion = (winner == TEAM_ALLIANCE) ? (_horde_gathered == 0) : (_ally_gathered == 0);
+    if (depletion)
     {
         if (_worldAnnounceOnDepletion)
         {

@@ -1,4 +1,4 @@
-#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "HinterlandBG.h"
 #include "Config.h"
 #include <unordered_map>
 #include <string>
@@ -37,8 +37,9 @@ void OutdoorPvPHL::LoadConfig()
         _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
         _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
         _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
-        _worldAnnounceOnExpiry = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.ExpiryWorld", _worldAnnounceOnExpiry);
+    _worldAnnounceOnExpiry = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.ExpiryWorld", _worldAnnounceOnExpiry);
         _worldAnnounceOnDepletion = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.DepletionWorld", _worldAnnounceOnDepletion);
+    _rewardMatchHonorLoser = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorLoser", _rewardMatchHonorLoser);
         _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
         _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
         _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
