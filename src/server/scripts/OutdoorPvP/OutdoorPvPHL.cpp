@@ -376,8 +376,7 @@ namespace {
 
     void OutdoorPvPHL::TeleportPlayersToStart()
     {
-        // Teleport all players in Hinterlands to their team startpoints.
-        // We use the team-specific nearest graveyard as the start location.
+        // Teleport all players in Hinterlands to their team base locations.
         uint32 const zoneId = OutdoorPvPHLBuffZones[0];
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
         uint32 countA = 0, countH = 0;
@@ -387,16 +386,26 @@ namespace {
             if (!p || !p->IsInWorld() || p->GetZoneId() != zoneId)
                 continue;
             TeamId team = p->GetTeamId();
-            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(p, team))
-            {
-                p->TeleportTo(g->Map, g->x, g->y, g->z, p->GetOrientation());
-                if (team == TEAM_ALLIANCE) ++countA; else ++countH;
-            }
+            TeleportToTeamBase(p);
+            if (team == TEAM_ALLIANCE) ++countA; else ++countH;
         }
         // Inform the zone
         char msg[128];
-        snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — teleported %u Alliance and %u Horde to start.", (unsigned)countA, (unsigned)countH);
+        snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
         sWorldSessionMgr->SendZoneText(zoneId, msg);
+    }
+
+    void OutdoorPvPHL::TeleportToTeamBase(Player* player) const
+    {
+        if (!player)
+            return;
+        // Base locations during an active battle (zone 47 Hinterlands, map 0 Eastern Kingdoms)
+        // Horde base:    -676.702; -4534.57; 7.79739; 0.999724; map 0
+        // Alliance base: 116.216;  -4691.38; 12.3154; 1.64925;  map 0
+        if (player->GetTeamId() == TEAM_HORDE)
+            player->TeleportTo(0, -676.702f, -4534.57f, 7.79739f, 0.999724f);
+        else
+            player->TeleportTo(0, 116.216f, -4691.38f, 12.3154f, 1.64925f);
     }
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
@@ -991,9 +1000,8 @@ namespace {
                         uint8 count = GetAfkCount(p);
                         if (count == 1)
                         {
-                            Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to the starting area.");
-                            if (GraveyardStruct const* g = sGraveyard->GetClosestGraveyard(p, p->GetTeamId()))
-                                p->TeleportTo(g->Map, g->x, g->y, g->z, p->GetOrientation());
+                            Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to your base.");
+                            TeleportToTeamBase(p);
                         }
                         else if (count >= 2)
                         {

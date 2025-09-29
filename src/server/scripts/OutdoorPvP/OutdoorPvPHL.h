@@ -184,7 +184,8 @@
             // Return a const reference to avoid copying large vectors on status queries
             std::vector<ObjectGuid> const& GetBattlegroundGroupGUIDs(TeamId team) const;
             void ForceReset();
-            void TeleportPlayersToStart();
+            void TeleportPlayersToStart(); // sends players to faction base locations
+            void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
 
             // Worldstate HUD helpers (timer/resources like Wintergrasp/AB-style)
             void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
