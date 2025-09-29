@@ -21,6 +21,7 @@
     #include "WorldStateDefines.h"
     #include "WorldSession.h"
     #include "WorldSessionMgr.h"
+    #include "Time/GameTime.h"
     #include <unordered_map>
     #include <unordered_set>
     #include <string>
