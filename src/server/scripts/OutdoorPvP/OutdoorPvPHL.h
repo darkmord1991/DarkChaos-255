@@ -40,14 +40,14 @@
      * - Joiner UX:
      *   - Private whisper on zone enter with a gold welcome and the current standing
      *     (Alliance/Horde resources, colored names).
-     * - Worldstate HUD (Wintergrasp-style):
+    * - Worldstate HUD (Wintergrasp-style):
      *   - Sends required WG worldstates (SHOW, ACTIVE, ATTACKER/DEFENDER, CONTROL, ICON_ACTIVE,
      *     CLOCK, CLOCK_TEXTS, VEHICLE counters as resources, MAX values) and refreshes periodically
      *     to keep timer/resources visible in Hinterlands.
-     * - Match window:
-     *   - 60-minute duration tracked as an absolute end time for the clock; resets set a new window.
-     * - Status broadcasting:
-     *   - Zone-wide status broadcast every 60s matches the .hlbg status: time remaining and resources.
+    * - Match window:
+    *   - 60-minute duration tracked as an absolute end time for the clock; on expiry the BG auto-resets and restarts.
+    * - Status broadcasting:
+    *   - Optional zone-wide status broadcast every N seconds (configurable); matches the .hlbg status output.
      *   - Messages are branded with a clickable battleground-style item link prefix
      *     (GetBgChatPrefix) for consistent chat visuals.
      * - AFK/deserter policy:
@@ -59,9 +59,9 @@
      *   - Auto-create/join per-faction raids, track and prune groups, remove offline >45s,
      *     disband empties. When a 2-person raid becomes 1, keep the remaining player in a new
      *     raid so they are not dropped from BG context.
-     * - Reset/teleport helpers:
-     *   - .hlbg reset forces a reset, updates HUD, and teleports all in-zone players to their
-     *     nearest team graveyard (start points), with a zone-wide confirmation.
+    * - Reset/teleport helpers:
+    *   - Admin reset and auto-reset on timer expiry respawn NPCs/GOs, refresh HUD/timer, and (by default)
+    *     teleport players in-zone to their faction start graveyards with a confirmation message.
      * - Resource thresholds and alerts:
      *   - Emote-style notices at 300/200/100 and when a side hits 50 and 0; win shouts are colored.
      * - Diagnostics for NPCs missing after empty zone:

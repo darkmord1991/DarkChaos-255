@@ -6,17 +6,17 @@
 
         Hinterland BG (OutdoorPvP HL)
         ------------------------------
-        - Max-level gate: under-max players are teleported to capitals with a whisper.
+        - Participation gate: under-max players are teleported to capitals with a whisper.
         - Join UX: colored welcome + current standing as whispers; no zone broadcast on join.
-        - HUD: Wintergrasp worldstates for SHOW/context/timer/resources with periodic refresh.
-        - Timer: 60-minute match window with absolute end time.
-        - Broadcasts: zone-wide status every 60s (time/resources), branded with an item-link prefix.
+        - HUD: Wintergrasp-like worldstates (SHOW/context/timer/resources) with periodic refresh.
+        - Match timer: 60-minute window; on expiry, the battleground auto-resets and restarts.
+        - Broadcasts: optional zone-wide status every N seconds, branded with an item-link prefix.
         - AFK/deserter: deserters get no rewards; AFK warn at 120s, action at 180s; any AFK infraction
-            denies rewards; first AFK teleports to start GY, repeat AFK teleports to capital; GMs exempt.
-        - Groups: per-faction BG-like raids, prune empties/offline; when raids shrink from 2→1, keep
-            the remaining player in a new raid to avoid losing BG context.
-        - Reset helper: teleports all in-zone players to their team start graveyards and refreshes HUD.
-        - Diagnostics: logs around a ~60s empty-zone window to help verify NPC presence after emptiness.
+            denies rewards; first AFK teleports to start GY, repeated AFK teleports to capital; GMs exempt.
+        - Groups: per-faction BG-like raids; prune empties/offline. When raids shrink 2→1, keep the
+            remaining player in a new raid so they don’t lose context.
+        - Reset helpers: admin reset + automatic on timer expiry; both respawn GOs/NPCs and refresh HUD.
+        - Diagnostics: logs around a ~60s empty-zone window to help verify NPC presence post-emptiness.
 */
     #include "OutdoorPvPHL.h"
     #include "Player.h"
@@ -39,6 +39,7 @@
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
+    #include "CellImpl.h" // for TypeContainerVisitor over MapStoredObjectTypesContainer
     #include "ScriptDefines/MovementHandlerScript.h"
     #include <algorithm>
     #include <cmath>
@@ -541,58 +542,85 @@
             _ally_gathered = _initialResourcesAlliance;
             _horde_gathered = _initialResourcesHorde;
             _LastWin = 0;
-            // New match window starts now
-            _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
             // Clear AFK flags and local trackers
             _afkInfractions.clear();
             _afkFlagged.clear();
             _memberOfflineSince.clear();
-            // 2) Respawn/reset all NPCs and GOs in Hinterlands
-            auto RespawnZoneObjects = [this]()
+            // 2) Respawn/reset all NPCs and GOs in Hinterlands (per-map iteration to avoid linker issues)
             {
-                uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-                uint32 creatureCount = 0;
-                uint32 goCount = 0;
-                // Reset creatures (NPCs) in-zone
-                for (auto const& kv : HashMapHolder<Creature>::GetContainer())
-                {
-                    Creature* c = kv.second;
-                    if (!c || !c->IsInWorld())
-                        continue;
-                    if (c->GetZoneId() != zoneId)
-                        continue;
-                    // Skip players/pets/guardians etc. Only true world NPCs
-                    if (c->IsPlayer() || c->IsPet() || c->IsTotem())
-                        continue;
-                    // Clear combat and auras, move back to respawn location, and ensure alive
-                    c->CombatStop(true);
-                    c->RemoveAllAuras();
-                    float x, y, z, o;
-                    c->GetRespawnPosition(x, y, z, &o);
-                    c->NearTeleportTo(x, y, z, o, false);
-                    if (!c->IsAlive())
-                        c->Respawn(true);
-                    c->SetFullHealth();
-                    ++creatureCount;
-                }
-                // Reset gameobjects in-zone
-                for (auto const& kv : HashMapHolder<GameObject>::GetContainer())
-                {
-                    GameObject* go = kv.second;
-                    if (!go || !go->IsInWorld())
-                        continue;
-                    if (go->GetZoneId() != zoneId)
-                        continue;
-                    // Force respawn to default state
-                    go->Respawn();
-                    ++goCount;
-                }
-                LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned %u creatures and %u gameobjects in zone %u", creatureCount, goCount, zoneId);
-            };
-            RespawnZoneObjects();
-            // 3) Update HUD for anyone in zone
-            UpdateWorldStatesAllPlayers();
+                uint32 const zoneId = OutdoorPvPHLBuffZones[0]; // 47 (The Hinterlands)
+                // Derive the map id dynamically from the OutdoorPvP context; fallback to Eastern Kingdoms (0)
+                uint32 mapId = 0;
+                if (Map* m = GetMap())
+                    mapId = m->GetId();
+                // Iterate all instances of this map id (base + instances)
+                uint32 totalCreatureCount = 0;
+                uint32 totalGoCount = 0;
 
+                sMapMgr->DoForAllMapsWithMapId(mapId, [zoneId, &totalCreatureCount, &totalGoCount](Map* map)
+                {
+                    // Visitor worker that will traverse the map's object stores
+                    struct HLZoneResetWorker
+                    {
+                        uint32 zoneId;
+                        uint32 creatureCount = 0;
+                        uint32 goCount = 0;
+
+                        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
+                        {
+                            for (auto const& p : creatureMap)
+                            {
+                                Creature* c = p.second;
+                                if (!c || !c->IsInWorld())
+                                    continue;
+                                if (c->GetZoneId() != zoneId)
+                                    continue;
+                                // Skip non-world NPCs
+                                if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
+                                    continue;
+
+                                c->CombatStop(true);
+                                c->GetThreatMgr().ClearAllThreat();
+                                c->RemoveAllAuras();
+                                float x, y, z, o;
+                                c->GetRespawnPosition(x, y, z, &o);
+                                c->NearTeleportTo(x, y, z, o, false);
+                                if (!c->IsAlive())
+                                    c->Respawn(true);
+                                c->SetFullHealth();
+                                ++creatureCount;
+                            }
+                        }
+
+                        void Visit(std::unordered_map<ObjectGuid, GameObject*>& goMap)
+                        {
+                            for (auto const& p : goMap)
+                            {
+                                GameObject* go = p.second;
+                                if (!go || !go->IsInWorld())
+                                    continue;
+                                if (go->GetZoneId() != zoneId)
+                                    continue;
+                                go->Respawn();
+                                ++goCount;
+                            }
+                        }
+
+                        template<class T>
+                        void Visit(std::unordered_map<ObjectGuid, T*>&) { /* ignore other object types */ }
+                    };
+
+                    HLZoneResetWorker worker{ zoneId };
+                    TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
+                    visitor.Visit(map->GetObjectsStore());
+
+                    totalCreatureCount += worker.creatureCount;
+                    totalGoCount += worker.goCount;
+                });
+
+                LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned %u creatures and %u gameobjects in zone %u", totalCreatureCount, totalGoCount, zoneId);
+            }
+            // 3) Reset local runtime flags
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
         IS_RESOURCE_MESSAGE_H = false;
@@ -605,14 +633,14 @@
         limit_resources_message_A = 0;
         limit_resources_message_H = 0;
 
-        // seed a fresh timer window from now
-        _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
+        // 4) Seed a fresh timer window from now and refresh HUD
+        _matchEndTime = NowSec() + _matchDurationSeconds;
         //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
         LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
-    // Push fresh HUD state to any players already in the zone
-    UpdateWorldStatesAllPlayers();
-    // Kick off immediate status broadcast after reset
-    _statusBroadcastTimerMs = 1; // broadcast on next update tick
+        // Push fresh HUD state to any players already in the zone
+        UpdateWorldStatesAllPlayers();
+        // Kick off immediate status broadcast after reset
+        _statusBroadcastTimerMs = 1; // broadcast on next update tick
     }
 
     void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
@@ -691,6 +719,16 @@
             if (_matchEndTime == 0)
                 _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
             _FirstLoad = true;
+        }
+
+        // End-of-match: if the clock has reached 0:00, reset and restart the battleground
+        if (_matchEndTime != 0 && NowSec() >= _matchEndTime)
+        {
+            LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
+            // Optionally move everyone to start points before respawning NPCs/GOs
+            TeleportPlayersToStart();
+            HandleReset();
+            return false; // avoid further processing this tick with stale state
         }
 
         // Note: avoid blocking sleeps here; periodic announcements are handled by timer thresholds below.

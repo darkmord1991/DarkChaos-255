@@ -28,9 +28,9 @@
  * lightweight operational audit trails; maintainers may redirect or persist
  * these messages to a centralized logging system if desired.
  *
- * Note: the Hinterland match code implements an explicit draw behavior when
- * match time expires with equal resources (no winner). See the comment in
- * `OutdoorPvPHL.cpp` for alternate tiebreak/reward approaches.
+ * Note: On timer expiry the match auto-resets and restarts. If you’d like a
+ * tiebreaker or special rewards for equal resources at expiry, see
+ * `OutdoorPvPHL.cpp` for where to inject that logic.
  */
 
 using namespace Acore::ChatCommands;
