@@ -401,6 +401,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // start one node earlier (acfm34) to avoid a single long hop and ensure proper sequencing.
                 if (_routeMode == ROUTE_L25_TO_40)
                 {
+                    _l25to40ResetApplied = false; // fresh run; allow at most one sanity reset
                     float dx35 = me->GetPositionX() - kPath[kIndex_acfm35].GetPositionX();
                     float dy35 = me->GetPositionY() - kPath[kIndex_acfm35].GetPositionY();
                     float d35 = sqrtf(dx35 * dx35 + dy35 * dy35);
@@ -714,6 +715,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint32 _stuckMs = 0;
     Position _flightStartPos;
     uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
+    bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
@@ -735,7 +737,27 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dist40 = sqrtf(dx40 * dx40 + dy40 * dy40);
                 uint8 start = (dist40 < 80.0f) ? kIndex_acfm40 : 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index), NodeLabel(start));
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
+                _awaitingArrival = false;
+                _index = start;
+                MoveToIndex(_index);
+                return;
+            }
+        }
+
+        // Sanity guard: if Level 25+ → 60 route somehow targets the final node (acfm57)
+        // while we are NOT near acfm57, reset to a proper starting anchor (acfm19 if nearby, else acfm1).
+        if (_routeMode == ROUTE_L25_TO_60 && _index == kIndex_acfm57)
+        {
+            float dx57b = me->GetPositionX() - kPath[kIndex_acfm57].GetPositionX();
+            float dy57b = me->GetPositionY() - kPath[kIndex_acfm57].GetPositionY();
+            float dist57b = sqrtf(dx57b * dx57b + dy57b * dy57b);
+            if (dist57b > 80.0f)
+            {
+                // Choose anchor: acfm19 if within 80y, otherwise start from acfm1
+                uint8 start = IsNearIndex(kIndex_acfm19, 80.0f) ? kIndex_acfm19 : 0;
+                if (Player* p = GetPassengerPlayer())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -745,12 +767,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
         // Sanity guard: if Level 25+ → 40 route somehow targets the final node (acfm35)
         // while we are NOT near acfm35, reset to an earlier anchor (acfm34 if near, else acfm19 or acfm1).
-        if (_routeMode == ROUTE_L25_TO_40 && _index == kIndex_acfm35)
+        if (_routeMode == ROUTE_L25_TO_40 && _index == kIndex_acfm35 && !_l25to40ResetApplied)
         {
             float dx35s = me->GetPositionX() - kPath[kIndex_acfm35].GetPositionX();
             float dy35s = me->GetPositionY() - kPath[kIndex_acfm35].GetPositionY();
             float dist35s = sqrtf(dx35s * dx35s + dy35s * dy35s);
-            if (dist35s > 80.0f)
+            // Only perform this reset if we're significantly far and have been on this hop for a bit
+            if (dist35s > 200.0f && _hopElapsedMs > 5000)
             {
                 // Prefer stepping from acfm34 if near; otherwise anchor from acfm19; else from acfm1
                 float dx34 = me->GetPositionX() - kPath[kIndex_acfm35 - 1].GetPositionX();
@@ -764,8 +787,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                     start = 0;
                 if (Player* p = GetPassengerPlayer())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from %s to %s.", NodeLabel(_index), NodeLabel(start));
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from %s to %s.", NodeLabel(_index).c_str(), NodeLabel(start).c_str());
                 _awaitingArrival = false;
+                _l25to40ResetApplied = true;
                 _index = start;
                 MoveToIndex(_index);
                 return;
