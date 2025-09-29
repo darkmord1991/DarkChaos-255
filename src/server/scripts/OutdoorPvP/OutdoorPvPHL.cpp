@@ -328,29 +328,7 @@
         HandleReset();
     }
 
-    void OutdoorPvPHL::TeleportPlayersToStart()
-    {
-        // Teleport all players in Hinterlands to their team base locations.
-        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-        uint32 countA = 0, countH = 0;
-        ForEachPlayerInZone([&](Player* p){
-            TeamId team = p->GetTeamId();
-            TeleportToTeamBase(p);
-            if (team == TEAM_ALLIANCE) ++countA; else ++countH;
-        });
-        // Inform the zone
-        char msg[128];
-        snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
-        sWorldSessionMgr->SendZoneText(zoneId, msg);
-    }
-
-    void OutdoorPvPHL::TeleportToTeamBase(Player* player) const
-    {
-        if (!player)
-            return;
-        HLBase const& b = (player->GetTeamId() == TEAM_HORDE) ? _baseHorde : _baseAlliance;
-        player->TeleportTo(b.map, b.x, b.y, b.z, b.o);
-    }
+    
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     {
@@ -521,26 +499,7 @@
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
     }
 
-    void OutdoorPvPHL::NotePlayerMovement(Player* player)
-    {
-        if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
-            return;
-        // Update last move time on any movement that meaningfully changes position
-        Position const& cur = player->GetPosition();
-        Position& last = _playerLastPos[player->GetGUID()];
-        float dx = last.GetPositionX() - cur.GetPositionX();
-        float dy = last.GetPositionY() - cur.GetPositionY();
-        float dz = last.GetPositionZ() - cur.GetPositionZ();
-        float dist2d = std::sqrt(dx*dx + dy*dy);
-        if (dist2d > 0.5f || std::fabs(dz) > 0.5f)
-        {
-            _playerLastMove[player->GetGUID()] = uint32(GameTime::GetGameTime().count());
-            _playerWarnedBeforeTeleport[player->GetGUID()] = false; // reset warn once they move
-            last = cur;
-            // If previously flagged AFK due to inactivity, clear the edge flag so next AFK is a new infraction only when idle again
-            _afkFlagged.erase(player->GetGUID().GetCounter());
-        }
-    }
+    
 
     void OutdoorPvPHL::HandleWinMessage(const char* message)
     {
@@ -579,113 +538,11 @@
         return "|cff0070dd|Hitem:47241:0:0:0:0:0:0:0:0|h[Hinterland Defence]|h|r ";
     }
 
-    void OutdoorPvPHL::HandleReset()
-    {
-            // Reset match state to defaults and respawn NPCs and GOs in the Hinterlands zone.
-            // 1) Reset timers/resources to initial values
-            _ally_gathered = _initialResourcesAlliance;
-            _horde_gathered = _initialResourcesHorde;
-            _LastWin = 0;
-            // Clear AFK flags and local trackers
-            _afkInfractions.clear();
-            _afkFlagged.clear();
-            _memberOfflineSince.clear();
-            // 2) Respawn/reset all NPCs and GOs in Hinterlands (per-map iteration to avoid linker issues)
-            {
-                uint32 const zoneId = OutdoorPvPHLBuffZones[0]; // 47 (The Hinterlands)
-                // Derive the map id dynamically from the OutdoorPvP context; fallback to Eastern Kingdoms (0)
-                uint32 mapId = 0;
-                if (Map* m = GetMap())
-                    mapId = m->GetId();
-                // Iterate all instances of this map id (base + instances)
-                uint32 totalCreatureCount = 0;
-                uint32 totalGoCount = 0;
+    
 
-                sMapMgr->DoForAllMapsWithMapId(mapId, [zoneId, &totalCreatureCount, &totalGoCount](Map* map)
-                {
-                    HLZoneResetWorker worker{ zoneId };
-                    TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
-                    visitor.Visit(map->GetObjectsStore());
+    
 
-                    totalCreatureCount += worker.creatureCount;
-                    totalGoCount += worker.goCount;
-                });
-
-                LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned %u creatures and %u gameobjects in zone %u", totalCreatureCount, totalGoCount, zoneId);
-            }
-            // 3) Reset local runtime flags
-        IS_ABLE_TO_SHOW_MESSAGE = false;
-        IS_RESOURCE_MESSAGE_A = false;
-        IS_RESOURCE_MESSAGE_H = false;
-
-        _FirstLoad = false;
-
-        limit_A = 0;
-        limit_H = 0;
-
-        limit_resources_message_A = 0;
-        limit_resources_message_H = 0;
-
-        // 4) Seed a fresh timer window from now and refresh HUD
-        _matchEndTime = NowSec() + _matchDurationSeconds;
-        //sLog->outMessage("[OutdoorPvPHL]: Hinterland: Reset Hinterland BG", 1,);
-        LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
-        // Push fresh HUD state to any players already in the zone
-        UpdateWorldStatesAllPlayers();
-        // Kick off immediate status broadcast after reset
-        _statusBroadcastTimerMs = 1; // broadcast on next update tick
-    }
-
-    void OutdoorPvPHL::HandleBuffs(Player* player, bool loser)
-    {
-        if(loser)
-        {
-            for(int i = 0; i < LoseBuffsNum; i++)
-                player->CastSpell(player, LoseBuffs[i], true);
-        }
-        else
-        {
-            for(int i = 0; i < WinBuffsNum; i++)
-                player->CastSpell(player, WinBuffs[i], true);
-        }
-    }
-
-    void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool honor, bool arena, bool both)
-    {
-        if (!IsEligibleForRewards(player))
-        {
-            Whisper(player, "|cffff0000You are not eligible for rewards (Deserter).|r");
-            return;
-        }
-        // Deny any rewards if the player has at least one AFK infraction this match (GMs exempt)
-        if (player && !player->IsGameMaster() && GetAfkCount(player) >= 1)
-        {
-            Whisper(player, "|cffff0000AFK penalty: you receive no rewards.|r");
-            return;
-        }
-        uint32 amount = honorpointsorarena;
-        char msg[250];
-        uint32 _GetHonorPoints = player->GetHonorPoints();
-        uint32 _GetArenaPoints = player->GetArenaPoints();
-
-        if(honor)
-        {
-            player->SetHonorPoints(_GetHonorPoints + amount);
-            snprintf(msg, 250, "|cffffd700You got %u bonus honor!|r", amount);
-        }
-        else if(arena)
-        {
-            player->SetArenaPoints(_GetArenaPoints + amount);
-            snprintf(msg, 250, "|cffffd700You got %u additional arena points!|r", amount);
-        }
-        else if(both)
-        {
-            player->SetHonorPoints(_GetHonorPoints + amount);
-            player->SetArenaPoints(_GetArenaPoints + amount);
-            snprintf(msg, 250, "|cffffd700You got %u additional arena points and bonus honor!|r", amount);
-        }
-        HandleWinMessage(msg);
-    }
+    
 
     // AFK thresholds are configurable via LoadConfig()
 
@@ -695,101 +552,105 @@
         if(_FirstLoad == false)
         {
             if(_LastWin == ALLIANCE) 
-            {
-                LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Alliance");                
-            }
-             
+                LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Alliance");
             else if(_LastWin == HORDE) 
-            {
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Horde ");
-            }
-                
             else if(_LastWin == 0) 
-            {
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
-            }
-                
+
             if (_matchEndTime == 0)
                 _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
             _FirstLoad = true;
         }
 
-        // End-of-match: if the clock has reached 0:00, reset and restart the battleground
-        if (_matchEndTime != 0 && NowSec() >= _matchEndTime)
+        // 1) Timer expiry (may reset and consume the tick)
+        if (_tickTimerExpiry())
+            return false;
+
+        // 2) Housekeeping/diagnostics while running
+        _tickEmptyZoneDiagnostics(diff);
+        _tickRaidLifecycle();
+        _tickAFK(diff);
+        _tickHudRefresh(diff);
+        _tickStatusBroadcast(diff);
+        _tickThresholdAnnouncements();
+        return false;
+    }
+
+    bool OutdoorPvPHL::_tickTimerExpiry()
+    {
+        if (_matchEndTime == 0 || NowSec() < _matchEndTime)
+            return false;
+
+        LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
+        // Optional tiebreaker: declare winner by higher resources (equal => draw) and reward/buff accordingly
+        if (_expiryUseTiebreaker)
         {
-            LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
-            // Optional tiebreaker: declare winner by higher resources (equal => draw) and reward/buff accordingly
-            if (_expiryUseTiebreaker)
+            TeamId winner = TEAM_NEUTRAL;
+            if (_ally_gathered > _horde_gathered)
+                winner = TEAM_ALLIANCE;
+            else if (_horde_gathered > _ally_gathered)
+                winner = TEAM_HORDE;
+
+            if (winner == TEAM_ALLIANCE)
             {
-                TeamId winner = TEAM_NEUTRAL;
-                if (_ally_gathered > _horde_gathered)
-                    winner = TEAM_ALLIANCE;
-                else if (_horde_gathered > _ally_gathered)
-                    winner = TEAM_HORDE;
+                HandleWinMessage("|cff1e90ffFor the Alliance!|r");
+                PlaySounds(true);
+            }
+            else if (winner == TEAM_HORDE)
+            {
+                HandleWinMessage("|cffff0000For the HORDE!|r");
+                PlaySounds(false);
+            }
+            else
+            {
+                sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "Time's up — it's a draw!").c_str());
+            }
 
-                if (winner == TEAM_ALLIANCE)
-                {
-                    HandleWinMessage("|cff1e90ffFor the Alliance!|r");
-                    PlaySounds(true);
-                }
-                else if (winner == TEAM_HORDE)
-                {
-                    HandleWinMessage("|cffff0000For the HORDE!|r");
-                    PlaySounds(false);
-                }
-                else
-                {
-                    sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "Time's up — it's a draw!").c_str());
-                }
+            // Optional global announcement with final scores
+            if (_worldAnnounceOnExpiry)
+            {
+                char announce[200];
+                snprintf(announce, sizeof(announce), "[Hinterland BG] Time's up! Final score: Alliance %u — Horde %u%s", (unsigned)_ally_gathered, (unsigned)_horde_gathered, winner==TEAM_ALLIANCE?" (Alliance win)":winner==TEAM_HORDE?" (Horde win)":" (Draw)");
+                ChatHandler(nullptr).SendGlobalSysMessage(announce);
+            }
 
-                // Optional global announcement with final scores
-                if (_worldAnnounceOnExpiry)
+            if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
+            {
+                // Reward winning team members in-zone and apply win/lose buffs
+                WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+                for (auto const& it : sessionMap)
                 {
-                    char announce[200];
-                    snprintf(announce, sizeof(announce), "[Hinterland BG] Time's up! Final score: Alliance %u — Horde %u%s", (unsigned)_ally_gathered, (unsigned)_horde_gathered, winner==TEAM_ALLIANCE?" (Alliance win)":winner==TEAM_HORDE?" (Horde win)":" (Draw)");
-                    ChatHandler(nullptr).SendGlobalSysMessage(announce);
-                }
-
-                if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
-                {
-                    // Reward winning team members in-zone and apply win/lose buffs
-                    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                    for (auto const& it : sessionMap)
+                    Player* p = it.second ? it.second->GetPlayer() : nullptr;
+                    if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
+                        continue;
+                    bool isWinner = (p->GetTeamId() == winner);
+                    // Buffs: winners get WinBuffs, losers get LoseBuffs
+                    HandleBuffs(p, !isWinner);
+                    // Rewards: only winners and not AFK/Deserter unless GM
+                    if (isWinner)
                     {
-                        Player* p = it.second ? it.second->GetPlayer() : nullptr;
-                        if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
-                            continue;
-                        bool isWinner = (p->GetTeamId() == winner);
-                        // Buffs: winners get WinBuffs, losers get LoseBuffs
-                        HandleBuffs(p, !isWinner);
-                        // Rewards: only winners and not AFK/Deserter unless GM
-                        if (isWinner)
+                        if (IsEligibleForRewards(p))
                         {
-                            if (IsEligibleForRewards(p))
-                            {
-                                if (!p->IsGameMaster() && GetAfkCount(p) >= 1)
-                                {
-                                    Whisper(p, "|cffff0000AFK penalty: you receive no rewards.|r");
-                                }
-                                else
-                                {
-                                    HandleRewards(p, _rewardMatchHonorTiebreaker, true, false, false);
-                                }
-                            }
+                            if (!p->IsGameMaster() && GetAfkCount(p) >= 1)
+                                Whisper(p, "|cffff0000AFK penalty: you receive no rewards.|r");
+                            else
+                                HandleRewards(p, _rewardMatchHonorTiebreaker, true, false, false);
                         }
                     }
                 }
             }
-
-            // Optionally move everyone to start points before respawning NPCs/GOs
-            if (_autoResetTeleport)
-                TeleportPlayersToStart();
-            HandleReset();
-            return false; // avoid further processing this tick with stale state
         }
 
-        // Note: avoid blocking sleeps here; periodic announcements are handled by timer thresholds below.
-        // If zone became empty, count down ~1 minute to help diagnose NPC respawn/cleanup cycles.
+        // Optionally move everyone to start points before respawning NPCs/GOs
+        if (_autoResetTeleport)
+            TeleportPlayersToStart();
+        HandleReset();
+        return true; // consumed this tick
+    }
+
+    void OutdoorPvPHL::_tickEmptyZoneDiagnostics(uint32 diff)
+    {
         if (_playersInZone == 0 && _npcCheckTimerMs > 0)
         {
             if (diff >= _npcCheckTimerMs)
@@ -798,13 +659,42 @@
                 LOG_INFO("misc", "[OutdoorPvPHL]: Zone empty for ~60s. Check NPC presence on next join (possible 1 min despawn window).");
             }
             else
+            {
                 _npcCheckTimerMs -= diff;
+            }
+        }
+    }
+
+    void OutdoorPvPHL::_tickRaidLifecycle()
+    {
+        // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
+        uint32 nowSec = uint32(GameTime::GetGameTime().count());
+        // Mark newly offline members & clear marks for those who returned
+        for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
+        {
+            for (ObjectGuid gid : _teamRaidGroups[tid])
+            {
+                Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
+                if (!g || !g->isRaidGroup())
+                    continue;
+                for (auto const& slot : g->GetMemberSlots())
+                {
+                    Player* m = ObjectAccessor::FindPlayer(slot.guid);
+                    if (m && m->IsInWorld())
+                        _memberOfflineSince.erase(slot.guid);
+                    else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
+                        _memberOfflineSince[slot.guid] = nowSec; // first seen offline
+                }
+            }
         }
 
-        // Offline tracking & pruning: remove raid members offline for >=45s to cover disconnects
+        // Collect removals
+        static constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
+        std::vector<std::pair<ObjectGuid/*group*/, ObjectGuid/*member*/>> offlineRemovals;
+        for (auto const& kv : _memberOfflineSince)
         {
-            uint32 nowSec = uint32(GameTime::GetGameTime().count());
-            // Mark newly offline members & clear marks for those who returned
+            if (nowSec - kv.second < HL_OFFLINE_GRACE_SECONDS)
+                continue;
             for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
             {
                 for (ObjectGuid gid : _teamRaidGroups[tid])
@@ -812,48 +702,19 @@
                     Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
                     if (!g || !g->isRaidGroup())
                         continue;
-                    for (auto const& slot : g->GetMemberSlots())
+                    if (g->IsMember(kv.first))
                     {
-                        Player* m = ObjectAccessor::FindPlayer(slot.guid);
-                        if (m && m->IsInWorld())
-                        {
-                            _memberOfflineSince.erase(slot.guid);
-                        }
-                        else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
-                        {
-                            _memberOfflineSince[slot.guid] = nowSec; // first seen offline
-                        }
+                        offlineRemovals.emplace_back(gid, kv.first);
+                        break;
                     }
                 }
             }
-            // Collect removals
-            static constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
-            std::vector<std::pair<ObjectGuid/*group*/, ObjectGuid/*member*/>> offlineRemovals;
-            for (auto const& kv : _memberOfflineSince)
-            {
-                if (nowSec - kv.second < HL_OFFLINE_GRACE_SECONDS)
-                    continue;
-                for (uint8 tid = 0; tid <= TEAM_HORDE; ++tid)
-                {
-                    for (ObjectGuid gid : _teamRaidGroups[tid])
-                    {
-                        Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                        if (!g || !g->isRaidGroup())
-                            continue;
-                        if (g->IsMember(kv.first))
-                        {
-                            offlineRemovals.emplace_back(gid, kv.first);
-                            break;
-                        }
-                    }
-                }
-            }
-            for (auto const& rem : offlineRemovals)
-            {
-                if (Group* g = sGroupMgr->GetGroupByGUID(rem.first.GetCounter()))
-                    g->RemoveMember(rem.second);
-                _memberOfflineSince.erase(rem.second);
-            }
+        }
+        for (auto const& rem : offlineRemovals)
+        {
+            if (Group* g = sGroupMgr->GetGroupByGUID(rem.first.GetCounter()))
+                g->RemoveMember(rem.second);
+            _memberOfflineSince.erase(rem.second);
         }
 
         // Stricter group lifecycle: remove empty raid groups promptly, but keep raids alive for a single remaining member
@@ -865,14 +726,12 @@
                 Group* g = sGroupMgr->GetGroupByGUID(it->GetCounter());
                 if (!g || !g->isRaidGroup() || g->GetMembersCount() == 0)
                 {
-                    // Disband group if it still exists to avoid leaving empty raids hanging around
                     if (g)
                         g->Disband(true /*hideDestroy*/);
                     it = vec.erase(it);
                 }
                 else if (g->GetMembersCount() == 1)
                 {
-                    // Ensure the last player retains a BG raid
                     ObjectGuid lastGuid;
                     for (auto const& slot : g->GetMemberSlots()) { lastGuid = slot.guid; break; }
                     if (!lastGuid.IsEmpty())
@@ -897,7 +756,6 @@
                             }
                         }
                     }
-                    // Untrack the old group; let core handle its lifecycle
                     it = vec.erase(it);
                 }
                 else
@@ -906,143 +764,150 @@
                 }
             }
         }
+    }
 
+    void OutdoorPvPHL::_tickAFK(uint32 diff)
+    {
         // AFK tracking (movement-based + chat /afk): detect transitions and apply policy
-        if (_afkCheckTimerMs <= diff)
+        if (_afkCheckTimerMs > diff)
         {
-            _afkCheckTimerMs = 2000;
-            WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (auto const& it : sessionMap)
-            {
-                Player* p = it.second ? it.second->GetPlayer() : nullptr;
-                if (!p || !p->IsInWorld() || p->GetZoneId() != 47)
-                    continue;
-                // Exempt GMs from AFK tracking entirely
-                if (p->IsGameMaster())
-                {
-                    ClearAfkState(p);
-                    continue;
-                }
-                uint32 low = p->GetGUID().GetCounter();
-                bool wasAfk = _afkFlagged.count(low) > 0;
-                // movement-based check
-                uint32 nowSec = uint32(GameTime::GetGameTime().count());
-                auto itLast = _playerLastMove.find(p->GetGUID());
-                if (itLast == _playerLastMove.end())
-                {
-                    _playerLastMove[p->GetGUID()] = nowSec;
-                    _playerWarnedBeforeTeleport[p->GetGUID()] = false;
-                    _playerLastPos[p->GetGUID()] = p->GetPosition();
-                }
-                uint32 idleSec = nowSec - _playerLastMove[p->GetGUID()];
-                if (idleSec >= _afkTeleportSeconds)
-                {
-                    if (!wasAfk)
-                    {
-                        _afkFlagged.insert(low);
-                        IncrementAfk(p);
-                        uint8 count = GetAfkCount(p);
-                        if (count == 1)
-                        {
-                            Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to your base.");
-                            TeleportToTeamBase(p);
-                        }
-                        else if (count >= 2)
-                        {
-                            Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
-                            TeleportToCapital(p);
-                        }
-                    }
-                }
-                else if (idleSec >= _afkWarnSeconds)
-                {
-                    if (!_playerWarnedBeforeTeleport[p->GetGUID()])
-                    {
-                        uint32 secondsLeft = (_afkTeleportSeconds > idleSec) ? (_afkTeleportSeconds - idleSec) : 0u;
-                        Whisper(p, "You seem AFK. Move now or you'll be teleported in " + std::to_string(secondsLeft) + "s.");
-                        _playerWarnedBeforeTeleport[p->GetGUID()] = true;
-                    }
-                }
+            _afkCheckTimerMs -= diff;
+            return;
+        }
 
-                // chat-based /afk edge tracking for those who manually toggle (kept for parity)
-                bool nowAfkChat = p->isAFK();
-                if (nowAfkChat && !wasAfk)
+        _afkCheckTimerMs = 2000;
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (auto const& it : sessionMap)
+        {
+            Player* p = it.second ? it.second->GetPlayer() : nullptr;
+            if (!p || !p->IsInWorld() || p->GetZoneId() != 47)
+                continue;
+            // Exempt GMs from AFK tracking entirely
+            if (p->IsGameMaster())
+            {
+                ClearAfkState(p);
+                continue;
+            }
+            uint32 low = p->GetGUID().GetCounter();
+            bool wasAfk = _afkFlagged.count(low) > 0;
+            // movement-based check
+            uint32 nowSec = uint32(GameTime::GetGameTime().count());
+            auto itLast = _playerLastMove.find(p->GetGUID());
+            if (itLast == _playerLastMove.end())
+            {
+                _playerLastMove[p->GetGUID()] = nowSec;
+                _playerWarnedBeforeTeleport[p->GetGUID()] = false;
+                _playerLastPos[p->GetGUID()] = p->GetPosition();
+            }
+            uint32 idleSec = nowSec - _playerLastMove[p->GetGUID()];
+            if (idleSec >= _afkTeleportSeconds)
+            {
+                if (!wasAfk)
                 {
                     _afkFlagged.insert(low);
                     IncrementAfk(p);
                     uint8 count = GetAfkCount(p);
                     if (count == 1)
-                        Whisper(p, "|cffff0000AFK detected. You will not receive rewards.|r A second AFK will teleport you to your capital.");
+                    {
+                        Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to your base.");
+                        TeleportToTeamBase(p);
+                    }
                     else if (count >= 2)
                     {
                         Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
                         TeleportToCapital(p);
                     }
                 }
-                else if (!nowAfkChat && wasAfk)
+            }
+            else if (idleSec >= _afkWarnSeconds)
+            {
+                if (!_playerWarnedBeforeTeleport[p->GetGUID()])
                 {
-                    _afkFlagged.erase(low);
+                    uint32 secondsLeft = (_afkTeleportSeconds > idleSec) ? (_afkTeleportSeconds - idleSec) : 0u;
+                    Whisper(p, "You seem AFK. Move now or you'll be teleported in " + std::to_string(secondsLeft) + "s.");
+                    _playerWarnedBeforeTeleport[p->GetGUID()] = true;
                 }
             }
+
+            // chat-based /afk edge tracking for those who manually toggle (kept for parity)
+            bool nowAfkChat = p->isAFK();
+            if (nowAfkChat && !wasAfk)
+            {
+                _afkFlagged.insert(low);
+                IncrementAfk(p);
+                uint8 count = GetAfkCount(p);
+                if (count == 1)
+                    Whisper(p, "|cffff0000AFK detected. You will not receive rewards.|r A second AFK will teleport you to your capital.");
+                else if (count >= 2)
+                {
+                    Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
+                    TeleportToCapital(p);
+                }
+            }
+            else if (!nowAfkChat && wasAfk)
+            {
+                _afkFlagged.erase(low);
+            }
+        }
+    }
+
+    void OutdoorPvPHL::_tickHudRefresh(uint32 diff)
+    {
+        if (_playersInZone <= 0)
+            return;
+        if (_hudRefreshTimerMs <= diff)
+        {
+            UpdateWorldStatesAllPlayers();
+            _hudRefreshTimerMs = 10 * IN_MILLISECONDS;
         }
         else
         {
-            _afkCheckTimerMs -= diff;
+            _hudRefreshTimerMs -= diff;
         }
+    }
 
-        // Periodic HUD refresh to keep timer/resources visible (every 10s)
-        if (_playersInZone > 0)
+    void OutdoorPvPHL::_tickStatusBroadcast(uint32 diff)
+    {
+        if (_playersInZone <= 0 || !_statusBroadcastEnabled)
+            return;
+        if (_statusBroadcastTimerMs <= diff)
         {
-            if (_hudRefreshTimerMs <= diff)
-            {
-                UpdateWorldStatesAllPlayers();
-                _hudRefreshTimerMs = 10 * IN_MILLISECONDS;
-            }
-            else
-            {
-                _hudRefreshTimerMs -= diff;
-            }
+            BroadcastStatusToZone();
+            _statusBroadcastTimerMs = _statusBroadcastPeriodMs;
         }
-
-        // Periodic status broadcast only if enabled and there are players in the zone
-        if (_playersInZone > 0 && _statusBroadcastEnabled)
+        else
         {
-            if (_statusBroadcastTimerMs <= diff)
-            {
-                BroadcastStatusToZone();
-                _statusBroadcastTimerMs = _statusBroadcastPeriodMs;
-            }
-            else
-            {
-                _statusBroadcastTimerMs -= diff;
-            }
+            _statusBroadcastTimerMs -= diff;
         }
+    }
 
+    void OutdoorPvPHL::_tickThresholdAnnouncements()
+    {
         if(_ally_gathered <= 50 && limit_A == 0)
         {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
-            limit_A = 1; // We set this to one to stop the spamming
+            IS_ABLE_TO_SHOW_MESSAGE = true;
+            IS_RESOURCE_MESSAGE_A = true;
+            limit_A = 1;
             PlaySounds(false);
         }
         else if(_horde_gathered <= 50 && limit_H == 0)
         {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
-            limit_H = 1; // Same as above
+            IS_ABLE_TO_SHOW_MESSAGE = true;
+            IS_RESOURCE_MESSAGE_H = true;
+            limit_H = 1;
             PlaySounds(true);
         }
         else if(_ally_gathered <= 0 && limit_A == 1)
         {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_A = true; // We allow the message to be shown
+            IS_ABLE_TO_SHOW_MESSAGE = true;
+            IS_RESOURCE_MESSAGE_A = true;
             limit_A = 2;
             PlaySounds(false);
         }
         else if(_horde_gathered <= 0 && limit_H == 1)
         {
-            IS_ABLE_TO_SHOW_MESSAGE = true; // We allow the message to pass
-            IS_RESOURCE_MESSAGE_H = true; // We allow the message to be shown
+            IS_ABLE_TO_SHOW_MESSAGE = true;
+            IS_RESOURCE_MESSAGE_H = true;
             limit_H = 2;
             PlaySounds(true);
         }
@@ -1082,62 +947,52 @@
             limit_resources_message_H = 3;
             PlaySounds(true);
         }
-     
-        if(IS_ABLE_TO_SHOW_MESSAGE == true) // This will limit the spam
+
+        if(IS_ABLE_TO_SHOW_MESSAGE == true)
         {
             WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr) // We're searching for all the sessions(Players)
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
             {
                 if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() ||
                     itr->second->GetPlayer()->GetZoneId() != 47)
                     continue;
-     
+
                 if(itr->second->GetPlayer()->GetZoneId() == 47)
                 {
                     if(limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
-                    {
                         itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
-                    }
                     else if(limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
-                    {
                         itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
-                    }
-     
+
                     if(IS_RESOURCE_MESSAGE_A == true)
                     {
                         if(limit_A == 1)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has resources left!|r").c_str());
-                            IS_RESOURCE_MESSAGE_A = false; // Reset
+                            IS_RESOURCE_MESSAGE_A = false;
                         }
                         else if(limit_A == 2)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left!|r |cffff0000Horde wins!|r").c_str());
-                            // Global world announcement if enabled
                             if (_worldAnnounceOnDepletion)
                             {
                                 char announce[200];
                                 snprintf(announce, sizeof(announce), "[Hinterland BG] Horde victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                                 ChatHandler(nullptr).SendGlobalSysMessage(announce);
                             }
-                            //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cffff0000For the HORDE!|r");
-                            // Use depletion-specific honor reward
                             HandleRewards(itr->second->GetPlayer(), _rewardMatchHonorDepletion, true, false, false);
-                            
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
                                 case TEAM_ALLIANCE:
                                     HandleBuffs(itr->second->GetPlayer(), true);
                                     break;
-                            
-                                default: //Horde
+                                default:
                                     HandleBuffs(itr->second->GetPlayer(), false);
                                     break;
                             }
-                            
                             _LastWin = HORDE;
-                            IS_RESOURCE_MESSAGE_A = false; // Reset
+                            IS_RESOURCE_MESSAGE_A = false;
                         }
                     }
                     else if(IS_RESOURCE_MESSAGE_H == true)
@@ -1145,42 +1000,37 @@
                         if(limit_H == 1)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has resources left!|r").c_str());
-                            IS_RESOURCE_MESSAGE_H = false; // Reset
+                            IS_RESOURCE_MESSAGE_H = false;
                         }
                         else if(limit_H == 2)
                         {
                             itr->second->GetPlayer()->TextEmote((GetBgChatPrefix() + "|cffff0000[Hinterland Defence]: The Horde has no more resources left!|r |cff1e90ffAlliance wins!|r").c_str());
-                            // Global world announcement if enabled
                             if (_worldAnnounceOnDepletion)
                             {
                                 char announce[200];
                                 snprintf(announce, sizeof(announce), "[Hinterland BG] Alliance victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                                 ChatHandler(nullptr).SendGlobalSysMessage(announce);
                             }
-                            //itr->second->GetPlayer()->GetGUID();
                             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
-                            // Use depletion-specific honor reward
                             HandleRewards(itr->second->GetPlayer(), _rewardMatchHonorDepletion, true, false, false);
                             switch(itr->second->GetPlayer()->GetTeamId())
                             {
                                 case TEAM_ALLIANCE:
                                     HandleBuffs(itr->second->GetPlayer(), false);
                                     break;
-                            
-                                default: //Horde
+                                default:
                                     HandleBuffs(itr->second->GetPlayer(), true);
                                     break;
                             }
                             _LastWin = ALLIANCE;
-                            IS_RESOURCE_MESSAGE_H = false; // Reset
+                            IS_RESOURCE_MESSAGE_H = false;
                         }
                     }
                 }
             }
         }
 
-        IS_ABLE_TO_SHOW_MESSAGE = false; // Reset
-        return false;
+        IS_ABLE_TO_SHOW_MESSAGE = false;
     }
 
     void OutdoorPvPHL::BroadcastStatusToZone()
@@ -1388,108 +1238,7 @@
         }
     };
 
-    void OutdoorPvPHL::LoadConfig()
-    {
-        // Read options that may come from worldserver.conf or modules configs.
-        // Note: The modules config loader (modules/CMakeLists CONFIG_LIST) handles copying
-        // and loading hinterlandbg.conf(.dist) under configs/modules automatically.
-        if (sConfigMgr)
-        {
-            _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
-            _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
-            _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
-            _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);
-            uint32 periodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Broadcast.Period", _statusBroadcastPeriodMs / IN_MILLISECONDS);
-            _statusBroadcastPeriodMs = periodSec * IN_MILLISECONDS;
-            _autoResetTeleport = sConfigMgr->GetOption<bool>("HinterlandBG.AutoReset.Teleport", _autoResetTeleport);
-            _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
-            _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
-            _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
-            // Optional configurable base coordinates
-            auto getf = [](char const* key, float defv){ return sConfigMgr->GetOption<float>(key, defv); };
-            auto geti = [](char const* key, uint32 defv){ return sConfigMgr->GetOption<uint32>(key, defv); };
-            _baseAlliance.map = geti("HinterlandBG.Base.Alliance.Map", _baseAlliance.map);
-            _baseAlliance.x   = getf("HinterlandBG.Base.Alliance.X",   _baseAlliance.x);
-            _baseAlliance.y   = getf("HinterlandBG.Base.Alliance.Y",   _baseAlliance.y);
-            _baseAlliance.z   = getf("HinterlandBG.Base.Alliance.Z",   _baseAlliance.z);
-            _baseAlliance.o   = getf("HinterlandBG.Base.Alliance.O",   _baseAlliance.o);
-            _baseHorde.map    = geti("HinterlandBG.Base.Horde.Map",    _baseHorde.map);
-            _baseHorde.x      = getf("HinterlandBG.Base.Horde.X",      _baseHorde.x);
-            _baseHorde.y      = getf("HinterlandBG.Base.Horde.Y",      _baseHorde.y);
-            _baseHorde.z      = getf("HinterlandBG.Base.Horde.Z",      _baseHorde.z);
-            _baseHorde.o      = getf("HinterlandBG.Base.Horde.O",      _baseHorde.o);
-            _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
-            _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
-            _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
-            _worldAnnounceOnExpiry = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.ExpiryWorld", _worldAnnounceOnExpiry);
-            _worldAnnounceOnDepletion = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.DepletionWorld", _worldAnnounceOnDepletion);
-            _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
-            _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
-            _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
-            _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
-            std::string csv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
-            if (!csv.empty())
-            {
-                std::vector<uint32> parsed;
-                size_t start = 0;
-                while (start < csv.size())
-                {
-                    size_t comma = csv.find(',', start);
-                    std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                    try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); } catch (...) {}
-                    if (comma == std::string::npos) break; else start = comma + 1;
-                }
-                if (!parsed.empty())
-                    _killHonorValues = std::move(parsed);
-            }
-        }
-            // Parse Alliance NPC reward entries (CSV of entry IDs)
-            auto parseCsvU32 = [](std::string const& in) -> std::vector<uint32>
-            {
-                std::vector<uint32> out;
-                size_t start = 0;
-                while (start < in.size())
-                {
-                    size_t comma = in.find(',', start);
-                    std::string token = in.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                    try { if (!token.empty()) out.push_back(static_cast<uint32>(std::stoul(token))); } catch (...) {}
-                    if (comma == std::string::npos) break; else start = comma + 1;
-                }
-                return out;
-            };
-            std::string aList = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesAlliance", "");
-            std::string hList = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesHorde", "");
-            if (!aList.empty()) _npcRewardEntriesAlliance = parseCsvU32(aList);
-            if (!hList.empty()) _npcRewardEntriesHorde = parseCsvU32(hList);
-
-            // Optional per-NPC token counts: CSV "entry:count" pairs per team
-            auto parseEntryCounts = [](std::string const& in) -> std::unordered_map<uint32, uint32>
-            {
-                std::unordered_map<uint32, uint32> out;
-                size_t start = 0;
-                while (start < in.size())
-                {
-                    size_t comma = in.find(',', start);
-                    std::string pair = in.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                    size_t colon = pair.find(':');
-                    if (colon != std::string::npos)
-                    {
-                        try {
-                            uint32 entry = static_cast<uint32>(std::stoul(pair.substr(0, colon)));
-                            uint32 count = static_cast<uint32>(std::stoul(pair.substr(colon + 1)));
-                            if (entry && count)
-                                out[entry] = count;
-                        } catch (...) {}
-                    }
-                    if (comma == std::string::npos) break; else start = comma + 1;
-                }
-                return out;
-            };
-            std::string aCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsAlliance", "");
-            std::string hCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsHorde", "");
-            if (!aCounts.empty()) _npcRewardCountsAlliance = parseEntryCounts(aCounts);
-            if (!hCounts.empty()) _npcRewardCountsHorde = parseEntryCounts(hCounts);
-    }
+    // LoadConfig moved to DC/HinterlandBG/OutdoorPvPHL_Config.cpp
 
     // HLMovementHandlerScript moved to DC/HinterlandBG/HLMovementHandlerScript.h
 

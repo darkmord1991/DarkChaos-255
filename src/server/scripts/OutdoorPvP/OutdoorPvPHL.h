@@ -218,6 +218,8 @@
             void LoadConfig();
 
         private:
+            // Test shim: grant unit tests limited access to private members/helpers
+            friend class OutdoorPvPHL_TestAccess;
                 // Small helper to get current epoch seconds
                 static inline uint32 NowSec()
                 {
@@ -233,6 +235,22 @@
             void IncrementAfk(Player* player);
             void ClearAfkState(Player* player);
             void TeleportToCapital(Player* player) const;
+            // Update() helpers
+            // 1) End-of-timer processing: optional tiebreak winner announcement/rewards, optional teleport-to-bases, reset match
+            // Returns true if the tick was consumed (reset executed), so Update() should early-return.
+            bool _tickTimerExpiry();
+            // 2) Logs diagnostics around empty-zone windows to help spot missing NPCs after long emptiness
+            void _tickEmptyZoneDiagnostics(uint32 diff);
+            // 3) Maintain battleground-like raid groups: prune offline, keep last member in a valid raid, remove empties
+            void _tickRaidLifecycle();
+            // 4) AFK tracking and policy enforcement (movement-based and chat /afk), with GM exemptions
+            void _tickAFK(uint32 diff);
+            // 5) Periodic HUD refresh so clients always see timer/resources
+            void _tickHudRefresh(uint32 diff);
+            // 6) Optional periodic status broadcast to the zone (mirrors .hlbg status)
+            void _tickStatusBroadcast(uint32 diff);
+            // 7) Resource threshold announcements, win shouts, depletion world announcements, and related flag handling
+            void _tickThresholdAnnouncements();
 
             uint32 _ally_gathered;
             uint32 _horde_gathered;
