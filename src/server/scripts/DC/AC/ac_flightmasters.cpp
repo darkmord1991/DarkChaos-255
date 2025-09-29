@@ -74,6 +74,7 @@ static constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 struct ac_gryphon_taxi_800011AI : public VehicleAI
 {
+    enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
     // Route mode declared early to ensure visibility in all in-class method bodies
     FlightRouteMode _routeMode = ROUTE_TOUR; // default to tour unless overridden by gossip
 
