@@ -31,6 +31,7 @@
     #include "Chat.h"
     #include "ObjectMgr.h"
     #include "ObjectAccessor.h"
+        #include "GameObject.h"
     #include "DBCStores.h"
     #include "Misc/GameGraveyard.h"
     #include "Time/GameTime.h"
@@ -109,7 +110,7 @@
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
     {
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    uint32 endEpoch = uint32(GameTime::GetGameTime().count()) + GetTimeRemainingSeconds();
+    uint32 endEpoch = NowSec() + GetTimeRemainingSeconds();
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -131,7 +132,7 @@
         if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
             return;
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    uint32 endEpoch = uint32(GameTime::GetGameTime().count()) + GetTimeRemainingSeconds();
+    uint32 endEpoch = NowSec() + GetTimeRemainingSeconds();
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -153,7 +154,10 @@
         WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
         for (auto const& it : sessionMap)
         {
-            Player* p = it.second ? it.second->GetPlayer() : nullptr;
+            WorldSession* sess = it.second;
+            if (!sess)
+                continue;
+            Player* p = sess->GetPlayer();
             if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
                 continue;
             UpdateWorldStatesForPlayer(p);
@@ -240,7 +244,7 @@
     {
         if (_matchEndTime == 0)
             return 0u;
-    uint32 now = uint32(GameTime::GetGameTime().count());
+    uint32 now = NowSec();
         if (now >= _matchEndTime)
             return 0u;
         return _matchEndTime - now;
@@ -262,10 +266,13 @@
     }
 
     
-    std::vector<ObjectGuid> OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
+    std::vector<ObjectGuid> const& OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId team) const
     {
         if (team > TEAM_HORDE)
-            return {};
+        {
+            static const std::vector<ObjectGuid> empty;
+            return empty;
+        }
         return _teamRaidGroups[team];
     }
 
@@ -340,7 +347,7 @@
                 return false;
             }
             g->ConvertToRaid();
-            sGroupMgr->AddGroup(g);
+                        _rewardKillItemId = 40752; // default to same token as kill item
             _teamRaidGroups[tid].push_back(g->GetGUID());
             return true;
         }
@@ -528,8 +535,63 @@
 
     void OutdoorPvPHL::HandleReset()
     {
+            // Reset match state to defaults and respawn NPCs and GOs in the Hinterlands zone.
+            // 1) Reset timers/resources to initial values
             _ally_gathered = _initialResourcesAlliance;
             _horde_gathered = _initialResourcesHorde;
+            _LastWin = 0;
+            // New match window starts now
+            _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
+            // Clear AFK flags and local trackers
+            _afkInfractions.clear();
+            _afkFlagged.clear();
+            _memberOfflineSince.clear();
+            // 2) Respawn/reset all NPCs and GOs in Hinterlands
+            auto RespawnZoneObjects = [this]()
+            {
+                uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+                uint32 creatureCount = 0;
+                uint32 goCount = 0;
+                // Reset creatures (NPCs) in-zone
+                for (auto const& kv : Acore::HashMapHolder<Creature>::GetContainer())
+                {
+                    Creature* c = kv.second;
+                    if (!c || !c->IsInWorld())
+                        continue;
+                    if (c->GetZoneId() != zoneId)
+                        continue;
+                    // Skip players/pets/guardians etc. Only true world NPCs
+                    if (c->IsPlayer() || c->IsPet() || c->IsTotem())
+                        continue;
+                    // Clear combat and auras, move back to respawn location, and ensure alive
+                    c->CombatStop(true);
+                    c->DeleteThreatList();
+                    c->RemoveAllAuras();
+                    float x, y, z, o;
+                    c->GetRespawnPosition(x, y, z, &o);
+                    c->NearTeleportTo(x, y, z, o, false);
+                    if (!c->IsAlive())
+                        c->Respawn(true);
+                    c->SetFullHealth();
+                    ++creatureCount;
+                }
+                // Reset gameobjects in-zone
+                for (auto const& kv : Acore::HashMapHolder<GameObject>::GetContainer())
+                {
+                    GameObject* go = kv.second;
+                    if (!go || !go->IsInWorld())
+                        continue;
+                    if (go->GetZoneId() != zoneId)
+                        continue;
+                    // Force respawn to default state
+                    go->Respawn();
+                    ++goCount;
+                }
+                LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned %u creatures and %u gameobjects in zone %u", creatureCount, goCount, zoneId);
+            };
+            RespawnZoneObjects();
+            // 3) Update HUD for anyone in zone
+            UpdateWorldStatesAllPlayers();
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;

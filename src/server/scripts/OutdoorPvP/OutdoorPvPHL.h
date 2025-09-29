@@ -169,7 +169,8 @@
             uint32 GetTimeRemainingSeconds() const; // returns 0 if no timer is tracked
             uint32 GetResources(TeamId team) const;
             void SetResources(TeamId team, uint32 amount);
-            std::vector<ObjectGuid> GetBattlegroundGroupGUIDs(TeamId team) const;
+            // Return a const reference to avoid copying large vectors on status queries
+            std::vector<ObjectGuid> const& GetBattlegroundGroupGUIDs(TeamId team) const;
             void ForceReset();
             void TeleportPlayersToStart();
 
@@ -190,6 +191,11 @@
             void LoadConfig();
 
         private:
+                // Small helper to get current epoch seconds
+                static inline uint32 NowSec()
+                {
+                    return static_cast<uint32>(GameTime::GetGameTime().count());
+                }
             // helpers
             bool IsMaxLevel(Player* player) const;
             bool IsEligibleForRewards(Player* player) const; // checks deserter only; AFK handled separately

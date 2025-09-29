@@ -112,20 +112,20 @@ public:
             // `OutdoorPvPHL.h` (the script that implements Hinterland's logic).
             // The dynamic_cast ensures we only call HL-specific helpers when
             // the zone script is present and matches the expected type.
-            std::vector<ObjectGuid> groups;
+            std::vector<ObjectGuid> const* groupsPtr = nullptr;
             if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
             {
                 if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-                    groups = hl->GetBattlegroundGroupGUIDs((TeamId)team);
+                    groupsPtr = &hl->GetBattlegroundGroupGUIDs((TeamId)team);
             }
 
-            if (groups.empty())
+            if (!groupsPtr || groupsPtr->empty())
             {
                 handler->PSendSysMessage("      (no battleground raid groups)");
                 continue;
             }
 
-            for (auto gid : groups)
+            for (auto const& gid : *groupsPtr)
             {
                 Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
                 if (!g)
