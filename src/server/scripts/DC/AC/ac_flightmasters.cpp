@@ -29,6 +29,7 @@
 #include <type_traits>
 #include <chrono>
 #include <string>
+#include <cmath>
 
 namespace DC_AC_Flight
 {
@@ -70,6 +71,14 @@ static Position const kPath[] = {
 static constexpr uint8 kPathLength = static_cast<uint8>(sizeof(kPath) / sizeof(kPath[0]));
 static constexpr uint8 kIndex_acfm15 = 14; // 0-based index
 static constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
+
+// Human-friendly label for a path node
+static inline std::string NodeLabel(uint8 idx)
+{
+    if (idx == kIndex_startcamp)
+        return "Startcamp";
+    return std::string("acfm") + std::to_string(static_cast<unsigned>(idx + 1));
+}
 
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 struct ac_gryphon_taxi_800011AI : public VehicleAI
