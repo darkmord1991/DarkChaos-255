@@ -241,6 +241,7 @@ private:
     bool _isLanding = false;
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
+    FlightRouteMode _routeMode = ROUTE_TOUR; // default to tour unless overridden by gossip
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
