@@ -574,12 +574,25 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dz = fabs(me->GetPositionZ() - kPath[_index].GetPositionZ());
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 float near2d = (_index >= kIndex_acfm40) ? 10.0f : 6.0f; // allow a bit more tolerance on the 40+ segment
+                // Known anchor: acfm19 can be sticky when descending from 40+ → Camp; accept a wider proximity
+                if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19)
+                    near2d = 12.0f;
                 if (dist2d < near2d && dz < 18.0f)
                 {
                     HandleArriveAtCurrentNode(true /*isProximity*/);
                 }
                 else
                 {
+                    // Special-case watchdog: if we're targeting acfm19 on 40+ → Camp for too long, skip directly to acfm15
+                    if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
+                    {
+                        if (Player* p = GetPassengerPlayer())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor %s timeout. Skipping to %s.", NodeLabel(_index).c_str(), NodeLabel(kIndex_acfm15).c_str());
+                        _awaitingArrival = false;
+                        _index = kIndex_acfm15;
+                        MoveToIndex(_index);
+                        return;
+                    }
                     uint32 hopTimeout = (_routeMode == ROUTE_L40_SCENIC ? 5000u : 8000u);
                     if (_hopElapsedMs > hopTimeout && !_isLanding)
                     {
@@ -989,6 +1002,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 {
                     hasNext = true;
                     nextIdx = static_cast<uint8>(_index - 1);
+                    // Skip the acfm19 anchor entirely when descending (known sticky point)
+                    if (nextIdx == kIndex_acfm19)
+                        nextIdx = kIndex_acfm15;
                 }
                 else if (_index == 0)
                 {
