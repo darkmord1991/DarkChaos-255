@@ -19,6 +19,16 @@ Available keys (with defaults):
 - HinterlandBG.Expiry.Tiebreaker = 1
 - HinterlandBG.Resources.Alliance = 450
 - HinterlandBG.Resources.Horde = 450
+ - HinterlandBG.Base.Alliance.Map = 0
+ - HinterlandBG.Base.Alliance.X = 62.083
+ - HinterlandBG.Base.Alliance.Y = -4714.99
+ - HinterlandBG.Base.Alliance.Z = 11.7937
+ - HinterlandBG.Base.Alliance.O = 2.50765
+ - HinterlandBG.Base.Horde.Map = 0
+ - HinterlandBG.Base.Horde.X = -676.702
+ - HinterlandBG.Base.Horde.Y = -4534.57
+ - HinterlandBG.Base.Horde.Z = 7.79739
+ - HinterlandBG.Base.Horde.O = 0.999724
 - HinterlandBG.Reward.MatchHonor = 1500
 - HinterlandBG.Reward.MatchHonorDepletion = 1500
 - HinterlandBG.Reward.MatchHonorTiebreaker = 750
@@ -36,6 +46,7 @@ Notes:
 - Broadcast.Enabled can be set to 0 to silence periodic zone status.
 - Broadcast.Period is in seconds.
 - AutoReset.Teleport controls whether players in-zone are teleported to faction start graveyards during auto-reset when the timer expires.
+ - Base.* coordinates define where players are sent back during resets and first AFK infraction.
 - Expiry.Tiebreaker determines behavior at 0:00: when enabled, the side with higher resources is announced winner and rewarded; if disabled, it’s treated as a draw (no rewards/buffs).
 - Reward.MatchHonorDepletion applies when victory happens by bringing the enemy to 0 resources before the timer ends.
 - Reward.MatchHonorTiebreaker applies when victory happens via timer-expiry tiebreaker.

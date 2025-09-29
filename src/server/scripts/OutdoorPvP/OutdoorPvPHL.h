@@ -186,6 +186,20 @@
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
+            // Iterate all players currently in the Hinterlands and apply a functor
+            template <typename Func>
+            void ForEachPlayerInZone(Func f)
+            {
+                uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+                WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+                for (auto const& it : sessionMap)
+                {
+                    Player* p = it.second ? it.second->GetPlayer() : nullptr;
+                    if (!p || !p->IsInWorld() || p->GetZoneId() != zoneId)
+                        continue;
+                    f(p);
+                }
+            }
 
             // Worldstate HUD helpers (timer/resources like Wintergrasp/AB-style)
             void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
@@ -209,6 +223,8 @@
                 {
                     return static_cast<uint32>(GameTime::GetGameTime().count());
                 }
+            // HUD: compute end-epoch for WG-like timer display
+            inline uint32 GetHudEndEpoch() const { return NowSec() + GetTimeRemainingSeconds(); }
             // helpers
             bool IsMaxLevel(Player* player) const;
             bool IsEligibleForRewards(Player* player) const; // checks deserter only; AFK handled separately
@@ -246,6 +262,10 @@
     bool   _expiryUseTiebreaker;  // declare winner at expiry by higher resources (default true)
     uint32 _initialResourcesAlliance;
     uint32 _initialResourcesHorde;
+            // Configurable base locations used for resets/AFK returns
+            struct HLBase { uint32 map; float x; float y; float z; float o; };
+            HLBase _baseAlliance;
+            HLBase _baseHorde;
     uint32 _rewardMatchHonor;               // legacy default
     uint32 _rewardMatchHonorDepletion;      // when win happens by enemy reaching 0
     uint32 _rewardMatchHonorTiebreaker;     // when win happens via timer-expiry tiebreaker

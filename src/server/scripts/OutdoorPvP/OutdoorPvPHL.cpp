@@ -76,59 +76,10 @@
     #include <algorithm>
     #include <cmath>
     #include <cstdio>
+    #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"
+    #include "DC/HinterlandBG/HLMovementHandlerScript.h"
 
-// Local visitor used to reset all creatures and gameobjects in Hinterlands across map instances
-namespace {
-    struct HLZoneResetWorker
-    {
-        uint32 zoneId;
-        uint32 creatureCount = 0;
-        uint32 goCount = 0;
-
-        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
-        {
-            for (auto const& p : creatureMap)
-            {
-                Creature* c = p.second;
-                if (!c || !c->IsInWorld())
-                    continue;
-                if (c->GetZoneId() != zoneId)
-                    continue;
-                // Skip non-world NPCs
-                if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
-                    continue;
-
-                c->CombatStop(true);
-                c->GetThreatMgr().ClearAllThreat();
-                c->RemoveAllAuras();
-                float x, y, z, o;
-                c->GetRespawnPosition(x, y, z, &o);
-                c->NearTeleportTo(x, y, z, o, false);
-                if (!c->IsAlive())
-                    c->Respawn(true);
-                c->SetFullHealth();
-                ++creatureCount;
-            }
-        }
-
-        void Visit(std::unordered_map<ObjectGuid, GameObject*>& goMap)
-        {
-            for (auto const& p : goMap)
-            {
-                GameObject* go = p.second;
-                if (!go || !go->IsInWorld())
-                    continue;
-                if (go->GetZoneId() != zoneId)
-                    continue;
-                go->Respawn();
-                ++goCount;
-            }
-        }
-
-        template<class T>
-        void Visit(std::unordered_map<ObjectGuid, T*>&) { /* ignore other object types */ }
-    };
-}
+// HLZoneResetWorker moved to DC/HinterlandBG/OutdoorPvPHLResetWorker.h
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
@@ -143,6 +94,9 @@ namespace {
     _expiryUseTiebreaker = true;
         _initialResourcesAlliance = HL_RESOURCES_A;
         _initialResourcesHorde = HL_RESOURCES_H;
+        // Default base coordinates
+        _baseAlliance = { /*map*/0u, /*x*/62.083f, /*y*/-4714.99f, /*z*/11.7937f, /*o*/2.50765f };
+        _baseHorde    = { /*map*/0u, /*x*/-676.702f, /*y*/-4534.57f, /*z*/7.79739f, /*o*/0.999724f };
         _rewardMatchHonor = 1500;
         _rewardMatchHonorDepletion = 1500;
         _rewardMatchHonorTiebreaker = 750;
@@ -203,7 +157,7 @@ namespace {
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
     {
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    uint32 endEpoch = NowSec() + GetTimeRemainingSeconds();
+    uint32 endEpoch = GetHudEndEpoch();
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -225,7 +179,7 @@ namespace {
         if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
             return;
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    uint32 endEpoch = NowSec() + GetTimeRemainingSeconds();
+    uint32 endEpoch = GetHudEndEpoch();
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
         player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, GetResources(TEAM_HORDE));
@@ -378,17 +332,12 @@ namespace {
     {
         // Teleport all players in Hinterlands to their team base locations.
         uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
         uint32 countA = 0, countH = 0;
-        for (auto const& it : sessionMap)
-        {
-            Player* p = it.second ? it.second->GetPlayer() : nullptr;
-            if (!p || !p->IsInWorld() || p->GetZoneId() != zoneId)
-                continue;
+        ForEachPlayerInZone([&](Player* p){
             TeamId team = p->GetTeamId();
             TeleportToTeamBase(p);
             if (team == TEAM_ALLIANCE) ++countA; else ++countH;
-        }
+        });
         // Inform the zone
         char msg[128];
         snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
@@ -399,13 +348,8 @@ namespace {
     {
         if (!player)
             return;
-        // Base locations during an active battle (zone 47 Hinterlands, map 0 Eastern Kingdoms)
-        // Horde base:    -676.702; -4534.57; 7.79739; 0.999724; map 0
-    // Alliance base: 62.083;   -4714.99; 11.7937; 2.50765;  map 0 (hlbgallistart)
-        if (player->GetTeamId() == TEAM_HORDE)
-            player->TeleportTo(0, -676.702f, -4534.57f, 7.79739f, 0.999724f);
-        else
-            player->TeleportTo(0, 62.083f, -4714.99f, 11.7937f, 2.50765f);
+        HLBase const& b = (player->GetTeamId() == TEAM_HORDE) ? _baseHorde : _baseAlliance;
+        player->TeleportTo(b.map, b.x, b.y, b.z, b.o);
     }
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
@@ -1294,19 +1238,6 @@ namespace {
         }
     }
 
-    /*
-    void outdoorPvPHL::BossReward(Player * player)
-    {
-        HandleRewards(player, 5000, true, false, false);
-        HandleRewards(player, 200, false, true, false);   <- Anpassen?
-        
-        char message[250];
-        if(player->GetTeam() == ALLIANCE)
-            snprintf(message, 250, "Der Boss der Horde wurde soeben besiegt!");
-        else
-            snprintf(message, 250, "Der Boss der Allianz wurde soeben besiegt!);
-    */
-
 	void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     {
         if(killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
@@ -1415,28 +1346,6 @@ namespace {
                         _horde_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
-                    /*
-                    case WARSONG_HONOR_GUARD:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case WARSONG_MARKSMAN:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case WARSONG_RECRUITMENT_OFFICER:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case WARSONG_SCOUT:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case WARSONG_WIND_RIDER:
-                        _horde_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    */
                 }
             }
             else // Team Horde
@@ -1459,28 +1368,6 @@ namespace {
                         _ally_gathered -= PointsLoseOnPvPKill;
                         Randomizer(player); // Randomizes the honor reward
                         break;
-                    /*
-                    case VALIANCE_KEEP_FOOTMAN_2: // 2?
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case VALIANCE_KEEP_OFFICER:
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case VALIANCE_KEEP_RIFLEMAN:
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case VALIANCE_KEEP_WORKER:
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    case DURDAN_THUNDERBEAK:
-                        _ally_gathered -= PointsLoseOnPvPKill;
-                        Randomizer(player); // Randomizes the honor reward
-                        break;
-                    */
                 }
             }
             // Update HUD for all participants after resource change
@@ -1518,6 +1405,19 @@ namespace {
             _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
             _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
             _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
+            // Optional configurable base coordinates
+            auto getf = [](char const* key, float defv){ return sConfigMgr->GetOption<float>(key, defv); };
+            auto geti = [](char const* key, uint32 defv){ return sConfigMgr->GetOption<uint32>(key, defv); };
+            _baseAlliance.map = geti("HinterlandBG.Base.Alliance.Map", _baseAlliance.map);
+            _baseAlliance.x   = getf("HinterlandBG.Base.Alliance.X",   _baseAlliance.x);
+            _baseAlliance.y   = getf("HinterlandBG.Base.Alliance.Y",   _baseAlliance.y);
+            _baseAlliance.z   = getf("HinterlandBG.Base.Alliance.Z",   _baseAlliance.z);
+            _baseAlliance.o   = getf("HinterlandBG.Base.Alliance.O",   _baseAlliance.o);
+            _baseHorde.map    = geti("HinterlandBG.Base.Horde.Map",    _baseHorde.map);
+            _baseHorde.x      = getf("HinterlandBG.Base.Horde.X",      _baseHorde.x);
+            _baseHorde.y      = getf("HinterlandBG.Base.Horde.Y",      _baseHorde.y);
+            _baseHorde.z      = getf("HinterlandBG.Base.Horde.Z",      _baseHorde.z);
+            _baseHorde.o      = getf("HinterlandBG.Base.Horde.O",      _baseHorde.o);
             _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
             _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
             _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
@@ -1591,24 +1491,7 @@ namespace {
             if (!hCounts.empty()) _npcRewardCountsHorde = parseEntryCounts(hCounts);
     }
 
-    // Movement hook to feed movement-based AFK tracking
-    class HLMovementHandlerScript : public MovementHandlerScript
-    {
-    public:
-        HLMovementHandlerScript()
-            : MovementHandlerScript("HLMovementHandlerScript", { MOVEMENTHOOK_ON_PLAYER_MOVE }) {}
-
-        void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 /*opcode*/) override
-        {
-            if (!player)
-                return;
-            OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-            if (!opvp)
-                return;
-            if (auto* hl = dynamic_cast<OutdoorPvPHL*>(opvp))
-                hl->NotePlayerMovement(player);
-        }
-    };
+    // HLMovementHandlerScript moved to DC/HinterlandBG/HLMovementHandlerScript.h
 
     void AddSC_outdoorpvp_hl()
     {

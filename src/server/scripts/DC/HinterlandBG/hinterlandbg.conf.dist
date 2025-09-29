@@ -24,6 +24,20 @@ HinterlandBG.Expiry.Tiebreaker = 1
 HinterlandBG.Resources.Alliance = 450
 HinterlandBG.Resources.Horde = 450
 
+# Base coordinates (map,x,y,z,o) for sending players back during resets/AFK
+# Alliance base
+HinterlandBG.Base.Alliance.Map = 0
+HinterlandBG.Base.Alliance.X = 62.083
+HinterlandBG.Base.Alliance.Y = -4714.99
+HinterlandBG.Base.Alliance.Z = 11.7937
+HinterlandBG.Base.Alliance.O = 2.50765
+# Horde base
+HinterlandBG.Base.Horde.Map = 0
+HinterlandBG.Base.Horde.X = -676.702
+HinterlandBG.Base.Horde.Y = -4534.57
+HinterlandBG.Base.Horde.Z = 7.79739
+HinterlandBG.Base.Horde.O = 0.999724
+
 # Rewards
 # Honor for winning when enemy reaches 0 (used by HandleRewards on win)
 HinterlandBG.Reward.MatchHonor = 1500
