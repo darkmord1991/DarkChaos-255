@@ -409,7 +409,27 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 }
                 if (p)
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 25+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), _routeMode == ROUTE_L25_TO_40 ? NodeLabel(kIndex_acfm35) : NodeLabel(kIndex_acfm57));
-                MoveToIndex(_index);
+                // Clear any pre-flight motion and perform a small vertical lift if far, to prevent start stalls
+                me->GetMotionMaster()->Clear();
+                float tdx = me->GetPositionX() - kPath[_index].GetPositionX();
+                float tdy = me->GetPositionY() - kPath[_index].GetPositionY();
+                float tdist = sqrtf(tdx * tdx + tdy * tdy);
+                if (tdist > 120.0f)
+                {
+                    Position lift = me->GetPosition();
+                    lift.m_positionZ += 18.0f;
+                    me->GetMotionMaster()->MovePoint(POINT_TAKEOFF, lift);
+                    // enqueue the first hop shortly after to avoid queuing conflicts
+                    _scheduler.Schedule(std::chrono::milliseconds(300), [this](TaskContext /*ctx*/)
+                    {
+                        if (me->IsInWorld())
+                            MoveToIndex(_index);
+                    });
+                }
+                else
+                {
+                    MoveToIndex(_index);
+                }
                 return;
             }
 
@@ -522,39 +542,44 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dy = me->GetPositionY() - kPath[_index].GetPositionY();
                 float dz = fabs(me->GetPositionZ() - kPath[_index].GetPositionZ());
                 float dist2d = sqrtf(dx * dx + dy * dy);
-                if (dist2d < 6.0f && dz < 15.0f)
+                float near2d = (_index >= kIndex_acfm40) ? 10.0f : 6.0f; // allow a bit more tolerance on the 40+ segment
+                if (dist2d < near2d && dz < 18.0f)
                 {
                     HandleArriveAtCurrentNode(true /*isProximity*/);
                 }
-                else if (_hopElapsedMs > 8000 && !_isLanding)
+                else
                 {
-                    // Hop timeout: try to reissue movement, a few times; then hard-snap to target to avoid loops
-                    if (_hopRetries < 2)
+                    uint32 hopTimeout = (_routeMode == ROUTE_L40_SCENIC ? 5000u : 8000u);
+                    if (_hopElapsedMs > hopTimeout && !_isLanding)
                     {
-                        ++_hopRetries;
-                        // Reassert flight and reissue the same MovePoint without spamming chat
-                        me->SetCanFly(true);
-                        me->SetDisableGravity(true);
-                        me->SetHover(true);
-                        me->GetMotionMaster()->Clear();
-                        me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
-                        _hopElapsedMs = 0;
-                    }
-                    else
-                    {
-                        // Hard fallback: snap to target node and continue the route
-                        if (Player* p = GetPassengerPlayer())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at %s. Snapping to target to continue.", NodeLabel(_index));
-                        float tx = kPath[_index].GetPositionX();
-                        float ty = kPath[_index].GetPositionY();
-                        float tz = kPath[_index].GetPositionZ();
-                        me->UpdateGroundPositionZ(tx, ty, tz);
-                        me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
-                        _hopElapsedMs = 0;
-                        _hopRetries = 0;
-                        // Consider this as arrival by proximity to advance the route
-                        HandleArriveAtCurrentNode(true /*isProximity*/);
-                        return;
+                        // Hop timeout: try to reissue movement, a few times; then hard-snap to target to avoid loops
+                        if (_hopRetries < 2)
+                        {
+                            ++_hopRetries;
+                            // Reassert flight and reissue the same MovePoint without spamming chat
+                            me->SetCanFly(true);
+                            me->SetDisableGravity(true);
+                            me->SetHover(true);
+                            me->GetMotionMaster()->Clear();
+                            me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
+                            _hopElapsedMs = 0;
+                        }
+                        else
+                        {
+                            // Hard fallback: snap to target node and continue the route
+                            if (Player* p = GetPassengerPlayer())
+                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at %s. Snapping to target to continue.", NodeLabel(_index));
+                            float tx = kPath[_index].GetPositionX();
+                            float ty = kPath[_index].GetPositionY();
+                            float tz = kPath[_index].GetPositionZ();
+                            me->UpdateGroundPositionZ(tx, ty, tz);
+                            me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
+                            _hopElapsedMs = 0;
+                            _hopRetries = 0;
+                            // Consider this as arrival by proximity to advance the route
+                            HandleArriveAtCurrentNode(true /*isProximity*/);
+                            return;
+                        }
                     }
                 }
             }
@@ -598,22 +623,34 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             }
         }
 
-        // If no passenger remains at any time, land here and despawn immediately
-        if (_started && !_isLanding && !GetPassengerPlayer())
+        // If no passenger remains, only despawn after a short grace (avoid transient seat updates)
+        if (_started && !_isLanding)
         {
-            float x = me->GetPositionX();
-            float y = me->GetPositionY();
-            float z = me->GetPositionZ();
-            me->UpdateGroundPositionZ(x, y, z);
-            me->NearTeleportTo(x, y, z + 0.5f, me->GetOrientation());
-            me->SetHover(false);
-            me->SetDisableGravity(false);
-            me->SetCanFly(false);
-            _awaitingArrival = false;
-            _isLanding = false;
-            _landingScheduled = false;
-            DismountAndDespawn();
-            return;
+            if (!GetPassengerPlayer())
+            {
+                if (_noPassengerMs < 60000)
+                    _noPassengerMs += diff;
+                if (_noPassengerMs >= 2000)
+                {
+                    float x = me->GetPositionX();
+                    float y = me->GetPositionY();
+                    float z = me->GetPositionZ();
+                    me->UpdateGroundPositionZ(x, y, z);
+                    me->NearTeleportTo(x, y, z + 0.5f, me->GetOrientation());
+                    me->SetHover(false);
+                    me->SetDisableGravity(false);
+                    me->SetCanFly(false);
+                    _awaitingArrival = false;
+                    _isLanding = false;
+                    _landingScheduled = false;
+                    DismountAndDespawn();
+                    return;
+                }
+            }
+            else
+            {
+                _noPassengerMs = 0;
+            }
         }
     }
 
@@ -676,6 +713,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     float _lastPosY = 0.0f;
     uint32 _stuckMs = 0;
     Position _flightStartPos;
+    uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
