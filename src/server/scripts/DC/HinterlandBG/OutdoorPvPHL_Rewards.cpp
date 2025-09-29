@@ -2,6 +2,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "SharedDefines.h"
 
 // Honor amounts are now driven by config fields on OutdoorPvPHL; no local constants needed.
@@ -58,20 +59,20 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
     {
         if (_worldAnnounceOnDepletion)
         {
-            sWorld->SendWorldText(
-                LANG_SYSTEMMESSAGE,
-                "Hinterland BG: %s win by resource depletion! Final score A:%u H:%u",
-                winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Hinterland BG: %s win by resource depletion! Final score A:%u H:%u",
+                     winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
         }
     }
     else
     {
         if (_worldAnnounceOnExpiry)
         {
-            sWorld->SendWorldText(
-                LANG_SYSTEMMESSAGE,
-                "Hinterland BG: %s win by tiebreaker at expiry! Final score A:%u H:%u",
-                winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Hinterland BG: %s win by tiebreaker at expiry! Final score A:%u H:%u",
+                     winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
         }
     }
 }
