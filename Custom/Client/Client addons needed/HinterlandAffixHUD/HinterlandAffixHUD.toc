@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: Hinterland Affix HUD
+## Notes: Shows Hinterland BG current affix under the Wintergrasp-style HUD
+## Author: DC-255
+## Version: 1.0.0
+HinterlandAffixHUD.lua

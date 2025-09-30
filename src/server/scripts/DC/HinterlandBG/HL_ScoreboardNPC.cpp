@@ -12,6 +12,7 @@
 #include "HinterlandBG.h"
 #include "DatabaseEnv.h"
 #include <algorithm>
+#include <cmath>
 
 static OutdoorPvPHL* GetHL()
 {
@@ -89,11 +90,34 @@ public:
             for (auto const& r : rows)
             {
                 const char* name = (r.tid == TEAM_ALLIANCE ? "Alliance" : (r.tid == TEAM_HORDE ? "Horde" : "Draw"));
+                // Optional friendly weather label if affix weather is enabled
+                char wbuf[48] = {0};
+                if (r.affix > 0)
+                {
+                    if (OutdoorPvPHL* hlx = GetHL())
+                    {
+                        if (hlx->IsAffixWeatherEnabled())
+                        {
+                            uint32 wtype = hlx->GetAffixWeatherType(r.affix);
+                            float wint = hlx->GetAffixWeatherIntensity(r.affix);
+                            if (wint <= 0.0f) wint = 0.50f;
+                            uint32 ipct = (uint32)std::lround(wint * 100.0f);
+                            const char* wname = "Fine";
+                            switch (wtype) {
+                                case 1: wname = "Rain"; break;
+                                case 2: wname = "Snow"; break;
+                                case 3: wname = "Storm"; break;
+                                default: wname = "Fine"; break;
+                            }
+                            snprintf(wbuf, sizeof(wbuf), ", weather: %s %u%%", wname, (unsigned)ipct);
+                        }
+                    }
+                }
                 if (!r.reason.empty())
-                    snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s%s%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h,
-                        r.reason.c_str(), r.affix ? ", affix: " : "", r.affix ? AffixName(r.affix) : "");
+                    snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s%s%s%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h,
+                        r.reason.c_str(), r.affix ? ", affix: " : "", r.affix ? AffixName(r.affix) : "", wbuf);
                 else
-                    snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h);
+                    snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u%s", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h, wbuf);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_HISTORY_PAGE_BASE + page);
             }
         }
@@ -138,7 +162,8 @@ public:
     bool includeManual = true;
     if (OutdoorPvPHL* hl = GetHL()) includeManual = hl->GetStatsIncludeManualResets();
     // Build a generic condition that can be AND-ed with other filters
-    std::string cond = includeManual ? std::string("1=1") : std::string("win_reason <> 'manual'");
+    // Important: older rows may have NULL win_reason; excluding manual must keep those (use IS NULL OR <> 'manual')
+    std::string cond = includeManual ? std::string("1=1") : std::string("(win_reason IS NULL OR win_reason <> 'manual')");
     uint64 aWins = 0, hWins = 0, draws = 0, depWins = 0, tieWins = 0, manual = 0, total = 0;
     if (QueryResult res = CharacterDatabase.Query(
         "SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual'), COUNT(*) FROM hlbg_winner_history WHERE {}",
@@ -481,6 +506,27 @@ public:
                 {
                     snprintf(line, sizeof(line), "Affix: %s", AffixName(aff));
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                    // Weather label for the current affix (friendly name + percent)
+                    if (OutdoorPvPHL* hlx = GetHL())
+                    {
+                        if (hlx->IsAffixWeatherEnabled())
+                        {
+                            uint32 wtype = hlx->GetAffixWeatherType(aff);
+                            float wint = hlx->GetAffixWeatherIntensity(aff);
+                            if (wint <= 0.0f) wint = 0.50f;
+                            const char* wname = "Fine";
+                            switch (wtype)
+                            {
+                                case 1: wname = "Rain"; break;
+                                case 2: wname = "Snow"; break;
+                                case 3: wname = "Storm"; break;
+                                default: wname = "Fine"; break;
+                            }
+                            uint32 ipct = (uint32)std::lround(wint * 100.0f);
+                            snprintf(line, sizeof(line), "Weather: %s (%u%%)", wname, (unsigned)ipct);
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                        }
+                    }
                 }
 
                 // Recent history (last 5 winners): prefer DB history, fallback to in-memory

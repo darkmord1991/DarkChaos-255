@@ -102,6 +102,26 @@ uint32 OutdoorPvPHL::GetCurrentMatchDurationSeconds() const
 bool OutdoorPvPHL::GetStatsIncludeManualResets() const { return _statsIncludeManualResets; }
 void OutdoorPvPHL::SetStatsIncludeManualResets(bool include) { _statsIncludeManualResets = include; }
 
+uint32 OutdoorPvPHL::GetAffixPlayerSpell(uint8 code) const
+{
+    return (code <= 5) ? _affixPlayerSpell[code] : 0u;
+}
+
+uint32 OutdoorPvPHL::GetAffixNpcSpell(uint8 code) const
+{
+    return (code <= 5) ? _affixNpcSpell[code] : 0u;
+}
+
+uint32 OutdoorPvPHL::GetAffixWeatherType(uint8 code) const
+{
+    return (code <= 5) ? _affixWeatherType[code] : 0u;
+}
+
+float OutdoorPvPHL::GetAffixWeatherIntensity(uint8 code) const
+{
+    return (code <= 5) ? _affixWeatherIntensity[code] : 0.0f;
+}
+
 // Private helper: keep an in-memory ring buffer of last ~10 winners
 void OutdoorPvPHL::_recordWinner(TeamId winner)
 {

@@ -166,9 +166,9 @@
         _killSpellOnPlayerKillAlliance = 0;
         _killSpellOnPlayerKillHorde = 0;
         _killSpellOnNpcKill = 0;
-        // Affix defaults
-        _affixEnabled = false;
-        _affixWeatherEnabled = false;
+        // Affix defaults (enabled by default, weather relation on, random on start)
+        _affixEnabled = true;
+        _affixWeatherEnabled = true;
         _affixPeriodSec = 0;
         _affixTimerMs = 0;
         _activeAffix = AFFIX_NONE;
@@ -178,6 +178,7 @@
         _affixSpellReducedHealing = 0;
         _affixSpellReducedArmor = 0;
         _affixSpellBossEnrage = 0;
+        _affixRandomOnStart = true;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
@@ -197,7 +198,7 @@
         _statusBroadcastTimerMs = 0;
     _memberOfflineSince.clear();
     _zoneWasEmpty = false;
-        _statsIncludeManualResets = false;
+    _statsIncludeManualResets = true;
 
     }
 
@@ -809,6 +810,9 @@
     {
         if (!_affixEnabled)
             return;
+        // If no period is set, we only change affix on reset/match start.
+        if (_affixPeriodSec == 0)
+            return;
         if (_lockEnabled && _isLocked)
             return; // pause affix rotation during lock
         if (_affixTimerMs > diff)
@@ -816,8 +820,8 @@
             _affixTimerMs -= diff;
             return;
         }
-    _affixTimerMs = std::max<uint32>(10, _affixPeriodSec) * IN_MILLISECONDS;
-    _affixNextChangeEpoch = NowSec() + std::max<uint32>(10, _affixPeriodSec);
+    _affixTimerMs = _affixPeriodSec * IN_MILLISECONDS;
+    _affixNextChangeEpoch = NowSec() + _affixPeriodSec;
         // Rotate affix randomly
         _clearAffixEffects();
         uint32 roll = urand(1, 5);
@@ -915,6 +919,12 @@
                 return;
             ForEachPlayerInZone([&](Player* p){ p->CastSpell(p, spellId, true); });
         };
+        auto applyVisualAll = [&](uint32 kit)
+        {
+            if (!kit)
+                return;
+            ForEachPlayerInZone([&](Player* p){ p->SendPlaySpellVisual(kit); });
+        };
         auto applyNpcAuraAll = [&](uint32 spellId)
         {
             if (!spellId)
@@ -947,9 +957,23 @@
                 });
             }
         };
-        // Player auras
+        // Player auras (or subtle visual kits if no aura configured)
         if (uint32 pspell = GetPlayerSpellForAffix(_activeAffix))
             applyAuraAll(pspell);
+        else
+        {
+            // Use gentle built-in kits: 406 (FOOD sparkles), 438 (DRINK bubbles)
+            uint32 kit = 0;
+            switch (_activeAffix)
+            {
+                case AFFIX_HASTE_BUFF:      kit = 406; break;
+                case AFFIX_SLOW:            kit = 438; break;
+                case AFFIX_REDUCED_HEALING: kit = 438; break;
+                case AFFIX_REDUCED_ARMOR:   kit = 406; break;
+                default: break;
+            }
+            applyVisualAll(kit);
+        }
         // NPC auras
         if (uint32 nspell = GetNpcSpellForAffix(_activeAffix))
         {
@@ -1013,6 +1037,7 @@
                 });
             }
         }
+        // Note: SendPlaySpellVisual kits are one-shot client visuals; nothing to clear here.
     }
 
     void OutdoorPvPHL::_setAffixWeather()

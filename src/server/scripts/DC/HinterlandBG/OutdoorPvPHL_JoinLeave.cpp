@@ -57,6 +57,31 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 
     // Seed HUD worldstates for the player entering
     UpdateWorldStatesForPlayer(player);
+    // Also seed the affix worldstate for HUD/addon, and apply the affix effect to late joiners
+    if (_affixEnabled)
+    {
+        UpdateAffixWorldstateForPlayer(player);
+        if (_activeAffix != AFFIX_NONE)
+        {
+            if (uint32 pspell = GetPlayerSpellForAffix(_activeAffix))
+                player->CastSpell(player, pspell, true);
+            else
+            {
+                // Subtle one-shot visual hint so they notice the active affix
+                uint32 kit = 0; // FOOD sparkles 406, DRINK bubbles 438
+                switch (_activeAffix)
+                {
+                    case AFFIX_HASTE_BUFF:      kit = 406; break;
+                    case AFFIX_SLOW:            kit = 438; break;
+                    case AFFIX_REDUCED_HEALING: kit = 438; break;
+                    case AFFIX_REDUCED_ARMOR:   kit = 406; break;
+                    default: break;
+                }
+                if (kit)
+                    player->SendPlaySpellVisual(kit);
+            }
+        }
+    }
     OutdoorPvP::HandlePlayerEnterZone(player, zone);
 }
 

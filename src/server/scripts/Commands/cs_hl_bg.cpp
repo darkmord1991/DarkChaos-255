@@ -10,6 +10,7 @@
 #include <sstream>
 #include <algorithm>
 #include "DatabaseEnv.h"
+#include <cmath>
 
 /*
  * hlbg_commandscript
@@ -66,6 +67,7 @@ public:
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
             { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
             { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
+            { "affix",  HandleHLBGAffixCommand,  SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =
@@ -119,6 +121,22 @@ public:
             uint32 h = hl->GetResources(TEAM_HORDE);
             handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
             handler->PSendSysMessage("  Resources: |cff1e90ffAlliance|r={}, |cffff0000Horde|r={}", a, h);
+            // Show current affix for clarity regardless of announcement toggles
+            uint8 aff = hl->GetActiveAffixCode();
+            if (aff > 0)
+            {
+                const char* aname = "None";
+                switch (aff)
+                {
+                    case 1: aname = "Haste"; break;
+                    case 2: aname = "Slow"; break;
+                    case 3: aname = "Reduced Healing"; break;
+                    case 4: aname = "Reduced Armor"; break;
+                    case 5: aname = "Boss Enrage"; break;
+                    default: aname = "None"; break;
+                }
+                handler->PSendSysMessage("  Affix: {}", aname);
+            }
         }
         else
         {
@@ -305,6 +323,60 @@ public:
             handler->PSendSysMessage("  [{}] {}  A:{} H:{}  ({})", ts, name, a, h, reason);
         }
         while (res->NextRow());
+        return true;
+    }
+
+    static bool HandleHLBGAffixCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        OutdoorPvPHL* hl = nullptr;
+        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+            hl = dynamic_cast<OutdoorPvPHL*>(out);
+        if (!hl)
+        {
+            handler->PSendSysMessage("Hinterland BG instance not found.");
+            return false;
+        }
+
+        uint8 code = hl->GetActiveAffixCode();
+        const char* name = "None";
+        switch (code)
+        {
+            case 1: name = "Haste"; break;
+            case 2: name = "Slow"; break;
+            case 3: name = "Reduced Healing"; break;
+            case 4: name = "Reduced Armor"; break;
+            case 5: name = "Boss Enrage"; break;
+            default: break;
+        }
+        handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r %s (%u)", name, (unsigned)code);
+        handler->PSendSysMessage("  Enabled: %s  Weather: %s  Worldstate: %s  Announce: %s",
+            hl->IsAffixEnabled()?"on":"off",
+            hl->IsAffixWeatherEnabled()?"on":"off",
+            hl->IsAffixWorldstateEnabled()?"on":"off",
+            hl->IsAffixAnnounceEnabled()?"on":"off");
+        handler->PSendSysMessage("  Random on start: %s  Periodic rotation: %us  Next change at epoch: %u",
+            hl->IsAffixRandomOnStart()?"on":"off", (unsigned)hl->GetAffixPeriodSec(), (unsigned)hl->GetAffixNextChangeEpoch());
+        // Show configured spells and weather for the current code
+        if (code > 0)
+        {
+            uint32 pspell = hl->GetAffixPlayerSpell(code);
+            uint32 nspell = hl->GetAffixNpcSpell(code);
+            uint32 wtype  = hl->GetAffixWeatherType(code);
+            float  wint   = hl->GetAffixWeatherIntensity(code);
+            // Friendly weather label (0 Fine, 1 Rain, 2 Snow, 3 Storm); default intensity 0.50 when unset
+            const char* wname = "Fine";
+            switch (wtype)
+            {
+                case 1: wname = "Rain"; break;
+                case 2: wname = "Snow"; break;
+                case 3: wname = "Storm"; break;
+                default: wname = "Fine"; break;
+            }
+            if (wint <= 0.0f) wint = 0.50f;
+            uint32 ipct = (uint32)std::lround(wint * 100.0f);
+            handler->PSendSysMessage("  Player spell: %u  NPC spell: %u  Weather: %s (%u, %u%%)",
+                (unsigned)pspell, (unsigned)nspell, wname, (unsigned)wtype, (unsigned)ipct);
+        }
         return true;
     }
 };

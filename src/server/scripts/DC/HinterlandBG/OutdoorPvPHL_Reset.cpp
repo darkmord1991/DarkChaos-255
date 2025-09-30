@@ -68,9 +68,17 @@ void OutdoorPvPHL::HandleReset()
         _activeAffix = static_cast<AffixType>(roll);
         _applyAffixEffects();
         if (_affixWeatherEnabled)
-            _setAffixWeather();
-        _affixTimerMs = std::max<uint32>(10, _affixPeriodSec) * IN_MILLISECONDS;
-        _affixNextChangeEpoch = NowSec() + std::max<uint32>(10, _affixPeriodSec);
+            ApplyAffixWeather();
+        if (_affixPeriodSec > 0)
+        {
+            _affixTimerMs = _affixPeriodSec * IN_MILLISECONDS;
+            _affixNextChangeEpoch = NowSec() + _affixPeriodSec;
+        }
+        else
+        {
+            _affixTimerMs = 0;
+            _affixNextChangeEpoch = 0;
+        }
         // Start announcement with affix name
         if (_affixAnnounce)
         {

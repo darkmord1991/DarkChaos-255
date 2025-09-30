@@ -205,6 +205,18 @@
             // Runtime toggle for stats pages to include manual resets in aggregates
             bool GetStatsIncludeManualResets() const;
             void SetStatsIncludeManualResets(bool include);
+            // Affix/weather inspection helpers for UI/commands
+            bool IsAffixEnabled() const { return _affixEnabled; }
+            bool IsAffixWeatherEnabled() const { return _affixWeatherEnabled; }
+            bool IsAffixWorldstateEnabled() const { return _affixWorldstateEnabled; }
+            bool IsAffixAnnounceEnabled() const { return _affixAnnounce; }
+            bool IsAffixRandomOnStart() const { return _affixRandomOnStart; }
+            uint32 GetAffixPeriodSec() const { return _affixPeriodSec; }
+            uint32 GetAffixNextChangeEpoch() const { return _affixNextChangeEpoch; }
+            uint32 GetAffixPlayerSpell(uint8 code) const;
+            uint32 GetAffixNpcSpell(uint8 code) const;
+            uint32 GetAffixWeatherType(uint8 code) const;
+            float  GetAffixWeatherIntensity(uint8 code) const;
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
