@@ -102,3 +102,6 @@ local.properties
 #  !modules/yourmodule
 #
 # ==================
+/.vscode/tasks.json
+/apps/git_tools/sync-and-build.ps1
+/apps/git_tools/sync-changed.ps1
