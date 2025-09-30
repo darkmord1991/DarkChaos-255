@@ -306,6 +306,8 @@
             void _applyAffixEffects();
             void _clearAffixEffects();
             void _setAffixWeather();
+            // Returns true if player is in one of our tracked BG raid groups for their team
+            bool _isPlayerInBGRaid(Player* p) const;
             // Affix mapping helpers
             uint32 GetPlayerSpellForAffix(AffixType a) const;
             uint32 GetNpcSpellForAffix(AffixType a) const;

@@ -61,7 +61,7 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     if (_affixEnabled)
     {
         UpdateAffixWorldstateForPlayer(player);
-        if (_activeAffix != AFFIX_NONE)
+        if (_activeAffix != AFFIX_NONE && _isPlayerInBGRaid(player))
         {
             if (uint32 pspell = GetPlayerSpellForAffix(_activeAffix))
                 player->CastSpell(player, pspell, true);

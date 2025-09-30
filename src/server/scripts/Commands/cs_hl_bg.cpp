@@ -348,13 +348,13 @@ public:
             case 5: name = "Boss Enrage"; break;
             default: break;
         }
-        handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r %s (%u)", name, (unsigned)code);
-        handler->PSendSysMessage("  Enabled: %s  Weather: %s  Worldstate: %s  Announce: %s",
+        handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r {} ({})", name, (unsigned)code);
+        handler->PSendSysMessage("  Enabled: {}  Weather: {}  Worldstate: {}  Announce: {}",
             hl->IsAffixEnabled()?"on":"off",
             hl->IsAffixWeatherEnabled()?"on":"off",
             hl->IsAffixWorldstateEnabled()?"on":"off",
             hl->IsAffixAnnounceEnabled()?"on":"off");
-        handler->PSendSysMessage("  Random on start: %s  Periodic rotation: %us  Next change at epoch: %u",
+        handler->PSendSysMessage("  Random on start: {}  Periodic rotation: {}s  Next change at epoch: {}",
             hl->IsAffixRandomOnStart()?"on":"off", (unsigned)hl->GetAffixPeriodSec(), (unsigned)hl->GetAffixNextChangeEpoch());
         // Show configured spells and weather for the current code
         if (code > 0)
@@ -374,7 +374,7 @@ public:
             }
             if (wint <= 0.0f) wint = 0.50f;
             uint32 ipct = (uint32)std::lround(wint * 100.0f);
-            handler->PSendSysMessage("  Player spell: %u  NPC spell: %u  Weather: %s (%u, %u%%)",
+            handler->PSendSysMessage("  Player spell: {}  NPC spell: {}  Weather: {} ({}, {}%)",
                 (unsigned)pspell, (unsigned)nspell, wname, (unsigned)wtype, (unsigned)ipct);
         }
         return true;

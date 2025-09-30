@@ -917,13 +917,13 @@
         {
             if (!spellId)
                 return;
-            ForEachPlayerInZone([&](Player* p){ p->CastSpell(p, spellId, true); });
+            ForEachPlayerInZone([&](Player* p){ if (_isPlayerInBGRaid(p)) p->CastSpell(p, spellId, true); });
         };
         auto applyVisualAll = [&](uint32 kit)
         {
             if (!kit)
                 return;
-            ForEachPlayerInZone([&](Player* p){ p->SendPlaySpellVisual(kit); });
+            ForEachPlayerInZone([&](Player* p){ if (_isPlayerInBGRaid(p)) p->SendPlaySpellVisual(kit); });
         };
         auto applyNpcAuraAll = [&](uint32 spellId)
         {
@@ -988,11 +988,35 @@
         {
             const char* aff = "Unknown"; // label only for text
             switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
-            char line[128];
-            snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s", aff);
+            char line[160];
+            // Append weather line for consistency with addon fallback
+            const char* wname = "Fine"; uint32 pct = 50;
+            if (_affixWeatherEnabled)
+            {
+                uint32 wtype = GetAffixWeatherType(_activeAffix);
+                float wint = GetAffixWeatherIntensity(_activeAffix);
+                if (wint <= 0.0f) wint = 0.50f; pct = uint32(std::lround(wint * 100.0f));
+                switch (wtype) { case 1: wname = "Rain"; break; case 2: wname = "Snow"; break; case 3: wname = "Storm"; break; default: wname = "Fine"; break; }
+                snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s — Weather: %s (%u%%)", aff, wname, pct);
+            }
+            else
+                snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s", aff);
             if (Map* m = GetMap())
                 m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
         }
+    }
+
+    bool OutdoorPvPHL::_isPlayerInBGRaid(Player* p) const
+    {
+        if (!p)
+            return false;
+        Group* g = p->GetGroup();
+        if (!g || !g->isRaidGroup())
+            return false;
+        ObjectGuid gid = g->GetGUID();
+        TeamId tid = p->GetTeamId();
+        auto const& vec = _teamRaidGroups[tid];
+        return std::find(vec.begin(), vec.end(), gid) != vec.end();
     }
 
     void OutdoorPvPHL::_clearAffixEffects()
