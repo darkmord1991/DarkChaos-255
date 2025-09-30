@@ -15,28 +15,53 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp (C++ linkage)
-void AddSC_npc_thrall_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
-void AddSC_hinterlandbg_Varian_wrynn(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
-void AddSC_hlbg_commandscript(); // location: scripts\DC\HinterlandBG\hlbg_commandscript.cpp (C++ linkage)
-void AddSC_dc_login_announce(); // location: scripts\DC\dc_login_announce.cpp
-void AddSC_ac_quest_npc_800009(); // location: scripts\DC\AC\ac_quest_npc_800009.cpp
-void AddSC_aio_bridge(); // location: scripts\DC\AIO\aio_bridge.cpp
-void AddSC_flightmasters(); // location: scripts\DC\AC\ac_flightmasters.cpp
-void AddSC_hl_scoreboard(); // location: scripts\DC\HinterlandBG\HL_ScoreboardNPC.cpp
+// This is where scripts' loading functions should be declared:
+void AddSC_areatrigger_scripts();
+void AddSC_emerald_dragons();
+void AddSC_generic_creature();
+void AddSC_go_scripts();
+void AddSC_guards();
+void AddSC_item_scripts();
+void AddSC_npc_professions();
+void AddSC_npc_innkeeper();
+void AddSC_npcs_special();
+void AddSC_npc_taxi();
+void AddSC_achievement_scripts();
+void AddSC_chat_log(); // location: scripts\World\chat_log.cpp
+void AddSC_action_ip_logger(); // location: scripts\World\action_ip_logger.cpp
+void AddSC_player_scripts();
+void AddSC_npc_stave_of_ancients();
+void AddSC_server_mail();
+void AddSC_transport_zeppelins();
+void AddSC_suns_reach_reclamation();
+void AddSC_scourge_invasion();
+void AddSC_ac_guard_npc(); // location: scripts\World\ac_guard_npc.cpp
+void AddSC_hl_scoreboard(); // location: scripts\\DC\\HinterlandBG\\HL_ScoreboardNPC.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
-void AddDCScripts()
+void AddWorldScripts()
 {
+    AddSC_areatrigger_scripts();
+    AddSC_emerald_dragons();
+    AddSC_generic_creature();
+    AddSC_go_scripts();
+    AddSC_guards();
+    AddSC_item_scripts();
+    AddSC_npc_professions();
+    AddSC_npc_innkeeper();
+    AddSC_npcs_special();
+    AddSC_npc_taxi();
+    AddSC_achievement_scripts();
+    AddSC_chat_log(); // location: scripts\World\chat_log.cpp
+    AddSC_action_ip_logger(); // location: scripts\World\action_ip_logger.cpp
+    AddSC_player_scripts();
+    AddSC_npc_stave_of_ancients();
+    AddSC_server_mail();
+    AddSC_transport_zeppelins();
+    AddSC_suns_reach_reclamation();
+    AddSC_scourge_invasion();
     AddSC_ac_guard_npc();
-    AddSC_npc_thrall_hinterlandbg();
-    AddSC_hinterlandbg_Varian_wrynn();
-    AddSC_hlbg_commandscript();
-    AddSC_dc_login_announce();
-    AddSC_ac_quest_npc_800009();
-    AddSC_aio_bridge();
-    AddSC_flightmasters();
+    // DC additions
     AddSC_hl_scoreboard();
 }

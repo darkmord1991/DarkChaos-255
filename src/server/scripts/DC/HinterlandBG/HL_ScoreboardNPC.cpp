@@ -48,6 +48,12 @@ public:
                 uint32 sec = hl->GetTimeRemainingSeconds();
                 uint32 mm = sec / 60u;
                 uint32 ss = sec % 60u;
+                // Compute current players per team using the raid group GUID sets
+                auto const& aRaid = hl->GetBattlegroundGroupGUIDs(TEAM_ALLIANCE);
+                auto const& hRaid = hl->GetBattlegroundGroupGUIDs(TEAM_HORDE);
+                uint32 aCount = 0, hCount = 0;
+                for (ObjectGuid const& g : aRaid) if (!g.IsEmpty()) ++aCount;
+                for (ObjectGuid const& g : hRaid) if (!g.IsEmpty()) ++hCount;
 
                 ClearGossipMenuFor(player);
                 // Header (non-interactive info lines)
@@ -58,6 +64,38 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                 snprintf(line, sizeof(line), "Time left: %02u:%02u", (unsigned)mm, (unsigned)ss);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                snprintf(line, sizeof(line), "Players — A:%u  H:%u", (unsigned)aCount, (unsigned)hCount);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+
+                // Recent history (last 5 winners)
+                auto recent = hl->GetRecentWinners(5);
+                if (!recent.empty())
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Recent results:", GOSSIP_SENDER_MAIN, 1);
+                    uint32 idx = 1;
+                    for (auto const& w : recent)
+                    {
+                        const char* name = (w == TEAM_ALLIANCE ? "Alliance" : (w == TEAM_HORDE ? "Horde" : "Draw"));
+                        snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                    }
+                }
+                else
+                {
+                    // Fallback to last persisted winner if any; helps after server restarts
+                    TeamId last = hl->GetLastWinnerTeamId();
+                    if (last == TEAM_ALLIANCE || last == TEAM_HORDE)
+                    {
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Last result:", GOSSIP_SENDER_MAIN, 1);
+                        const char* name = (last == TEAM_ALLIANCE ? "Alliance" : "Horde");
+                        snprintf(line, sizeof(line), "%s", name);
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                    }
+                    else
+                    {
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No results yet.", GOSSIP_SENDER_MAIN, 1);
+                    }
+                }
 
                 // Controls
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Refresh", GOSSIP_SENDER_MAIN, 1);
