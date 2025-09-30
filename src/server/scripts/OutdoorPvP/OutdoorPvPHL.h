@@ -229,6 +229,8 @@
             void LoadConfig();
             // Save and restore persistent state across restarts (resources, timers, lock)
             void SaveRequiredWorldStates() const;
+            // Classification queries (safe accessors so helpers outside the class don't need private access)
+            bool IsBossNpcEntry(uint32 entry) const;
 
         private:
             // Test shim: grant unit tests limited access to private members/helpers

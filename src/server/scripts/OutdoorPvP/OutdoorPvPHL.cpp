@@ -288,6 +288,11 @@
         }
     }
 
+    bool OutdoorPvPHL::IsBossNpcEntry(uint32 entry) const
+    {
+        return _npcBossEntriesAlliance.count(entry) > 0 || _npcBossEntriesHorde.count(entry) > 0;
+    }
+
     uint8 OutdoorPvPHL::GetAfkCount(Player* player) const
     {
         if (!player)
@@ -848,7 +853,7 @@
                     if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
                         continue;
                     uint32 entry = c->GetEntry();
-                    if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                    if (self->IsBossNpcEntry(entry))
                         c->CastSpell(c, self->_affixSpellBossEnrage, true);
                 }
             }
@@ -867,7 +872,7 @@
                     if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
                         continue;
                     uint32 entry = c->GetEntry();
-                    if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                    if (self->IsBossNpcEntry(entry))
                         c->RemoveAurasDueToSpell(self->_affixSpellBossEnrage);
                 }
             }
