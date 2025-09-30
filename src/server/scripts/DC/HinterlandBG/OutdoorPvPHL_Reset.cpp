@@ -102,6 +102,7 @@ void OutdoorPvPHL::HandleReset()
     UpdateAffixWorldstateAll();
     // Deterministic client HUD update via addon whisper
     SendAffixAddonToZone();
+    SendStatusAddonToZone();
     _statusBroadcastTimerMs = 1;
 }
 

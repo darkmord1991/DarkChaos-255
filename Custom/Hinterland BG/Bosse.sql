@@ -1,7 +1,7 @@
 -- using Thrall from OG ID = 810002 -> Old ID 4949
 DELETE FROM `creature_template` WHERE (`entry` = 810002);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810002, 0, 0, 0, 0, 0, 'Thrall Warchief', 'HinterlandBG Boss', NULL, 3664, 255, 255, 2, 1734, 3, 1, 1.14286, 1, 1, 20, 1, 3, 0, 35, 2000, 2000, 1, 1, 2, 64, 2048, 0, 0, 0, 0, 0, 0, 7, 12, 0, 0, 0, 0, 0, 700000, 750000, '', 0, 1, 600, 30, 1, 1, 1, 0, 1, 617299835, 0, 0, 'npc_thrall_hinterlandbg', 12340);
+(810002, 0, 0, 0, 0, 0, 'Thrall Warchief', 'HinterlandBG Boss', NULL, 3664, 80, 80, 2, 1734, 1, 1, 1.14286, 1, 1, 20, 1, 3, 0, 35, 2000, 2000, 1, 1, 2, 64, 2048, 0, 0, 0, 0, 0, 0, 7, 12, 0, 0, 0, 0, 0, 700000, 750000, '', 0, 1, 600, 30, 1, 1, 1, 0, 1, 617299835, 0, 0, 'npc_thrall_hinterlandbg', 12340);
 
 
 -- Using King Varian Wrynn from SW ID = 810003 -> Old ID 34990

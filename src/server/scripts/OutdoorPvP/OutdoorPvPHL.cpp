@@ -729,6 +729,8 @@
         {
             UpdateWorldStatesAllPlayers();
             _hudRefreshTimerMs = 10 * IN_MILLISECONDS;
+            // Also feed the addon HUD (pure addon mode)
+            SendStatusAddonToZone();
         }
         else
         {

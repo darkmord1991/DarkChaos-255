@@ -245,6 +245,9 @@
             // Addon messaging: send current affix (and optional weather) to a player or all players in zone
             void SendAffixAddonToPlayer(Player* player) const;
             void SendAffixAddonToZone() const;
+            // Addon messaging: send current resources and timer status to client HUD
+            void SendStatusAddonToPlayer(Player* player) const;
+            void SendStatusAddonToZone() const;
 
             // Group auto-invite helpers (battleground-like raid management)
             bool AddOrSetPlayerToCorrectBfGroup(Player* plr);

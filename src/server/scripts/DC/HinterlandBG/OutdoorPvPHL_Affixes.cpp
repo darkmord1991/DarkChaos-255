@@ -87,6 +87,30 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
     ForEachPlayerInZone([&](Player* p){ SendAffixAddonToPlayer(p); });
 }
 
+void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
+{
+    if (!player)
+        return;
+    // LOCK=1 when in lock window (timer should show remaining lock time instead of match end)
+    uint32 endEpoch = GetHudEndEpoch();
+    uint32 lock = (_lockEnabled && _isLocked) ? 1u : 0u;
+    std::string message = "HLBG\tSTATUS|A=" + std::to_string(_ally_gathered)
+                        + "|H=" + std::to_string(_horde_gathered)
+                        + "|END=" + std::to_string(endEpoch)
+                        + "|LOCK=" + std::to_string(lock);
+    if (WorldSession* s = player->GetSession())
+    {
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
+        s->SendPacket(&data);
+    }
+}
+
+void OutdoorPvPHL::SendStatusAddonToZone() const
+{
+    ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p); });
+}
+
 // Compute effective spells/weather, preferring per-affix overrides
 uint32 OutdoorPvPHL::GetPlayerSpellForAffix(AffixType a) const
 {
