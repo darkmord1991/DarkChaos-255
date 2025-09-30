@@ -113,6 +113,28 @@ public:
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Hinterland BG statistics:", GOSSIP_SENDER_MAIN, ACTION_STATS);
 
+        // Detect (once per call) whether DB supports window functions for median
+        static bool sWindowFns = [](){
+            bool supported = false;
+            if (QueryResult v = CharacterDatabase.Query("SELECT VERSION()"))
+            {
+                std::string ver = v->Fetch()[0].Get<std::string>();
+                // crude check: MySQL 8.x or MariaDB 10.2+
+                if (ver.find("MariaDB") != std::string::npos)
+                {
+                    // find 10.x
+                    size_t p = ver.find("10.");
+                    if (p != std::string::npos)
+                        supported = true; // window functions since 10.2
+                }
+                else if (!ver.empty() && ver[0] >= '8')
+                {
+                    supported = true;
+                }
+            }
+            return supported;
+        }();
+
     bool includeManual = true;
     if (OutdoorPvPHL* hl = GetHL()) includeManual = hl->GetStatsIncludeManualResets();
     // Build a generic condition that can be AND-ed with other filters
@@ -358,28 +380,31 @@ public:
             } while (rrb->NextRow());
         }
 
-        // Median margin per affix using window functions (MySQL 8+)
-    if (QueryResult rmed = CharacterDatabase.Query(
-        "WITH ranked AS (\n"
-        "  SELECT affix, ABS(score_alliance - score_horde) AS m,\n"
-        "         ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn,\n"
-        "         COUNT(*)     OVER (PARTITION BY affix) AS cnt\n"
-        "  FROM hlbg_winner_history WHERE {}\n"
-        ")\n"
-        "SELECT affix, AVG(m) AS med FROM ranked\n"
-        "WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2))\n"
-        "GROUP BY affix ORDER BY med DESC",
-        cond))
+        // Median margin per affix using window functions (guarded by DB capability)
+        if (sWindowFns)
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Median margin per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            if (QueryResult rmed = CharacterDatabase.Query(
+                "WITH ranked AS (\n"
+                "  SELECT affix, ABS(score_alliance - score_horde) AS m,\n"
+                "         ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn,\n"
+                "         COUNT(*)     OVER (PARTITION BY affix) AS cnt\n"
+                "  FROM hlbg_winner_history WHERE {}\n"
+                ")\n"
+                "SELECT affix, AVG(m) AS med FROM ranked\n"
+                "WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2))\n"
+                "GROUP BY affix ORDER BY med DESC",
+                cond))
             {
-                Field* f = rmed->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                double med = f[1].Get<double>();
-                snprintf(line, sizeof(line), "- %s: median %.1f", AffixName(aff), med);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rmed->NextRow());
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Median margin per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                do
+                {
+                    Field* f = rmed->Fetch();
+                    uint8 aff = f[0].Get<uint8>();
+                    double med = f[1].Get<double>();
+                    snprintf(line, sizeof(line), "- %s: median %.1f", AffixName(aff), med);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                } while (rmed->NextRow());
+            }
         }
 
         // Average duration per affix (if populated)
@@ -417,7 +442,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
         if (action == ACTION_CLOSE)
         {

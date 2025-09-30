@@ -102,16 +102,6 @@ uint32 OutdoorPvPHL::GetCurrentMatchDurationSeconds() const
 bool OutdoorPvPHL::GetStatsIncludeManualResets() const { return _statsIncludeManualResets; }
 void OutdoorPvPHL::SetStatsIncludeManualResets(bool include) { _statsIncludeManualResets = include; }
 
-bool OutdoorPvPHL::GetStatsIncludeManualResets() const
-{
-    return _statsIncludeManualResets;
-}
-
-void OutdoorPvPHL::SetStatsIncludeManualResets(bool include)
-{
-    _statsIncludeManualResets = include;
-}
-
 // Private helper: keep an in-memory ring buffer of last ~10 winners
 void OutdoorPvPHL::_recordWinner(TeamId winner)
 {
