@@ -69,20 +69,21 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
 
                 // Recent history (last 5 winners): prefer DB history, fallback to in-memory
-                struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; };
+                struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; };
                 std::vector<HistRow> rows;
                 {
-                    QueryResult res = CharacterDatabase.Query("SELECT winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT 5");
+                    QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT 5");
                     if (res)
                     {
                         do
                         {
                             Field* f = res->Fetch();
                             HistRow r;
-                            r.tid = static_cast<TeamId>(f[0].GetUInt8());
-                            r.a = f[1].GetUInt32();
-                            r.h = f[2].GetUInt32();
-                            r.reason = f[3].Get<std::string>();
+                            r.ts = f[0].Get<std::string>();
+                            r.tid = static_cast<TeamId>(f[1].Get<uint8>());
+                            r.a = f[2].Get<uint32>();
+                            r.h = f[3].Get<uint32>();
+                            r.reason = f[4].Get<std::string>();
                             rows.push_back(std::move(r));
                         } while (res->NextRow());
                     }
@@ -91,7 +92,7 @@ public:
                 {
                     auto recent = hl->GetRecentWinners(5);
                     for (auto const& t : recent)
-                        rows.push_back(HistRow{t, 0u, 0u, std::string()});
+                        rows.push_back(HistRow{t, 0u, 0u, std::string(), std::string()});
                 }
                 if (!rows.empty())
                 {
@@ -100,10 +101,21 @@ public:
                     for (auto const& r : rows)
                     {
                         const char* name = (r.tid == TEAM_ALLIANCE ? "Alliance" : (r.tid == TEAM_HORDE ? "Horde" : "Draw"));
+                        bool hasTs = !r.ts.empty();
                         if (!r.reason.empty())
-                            snprintf(line, sizeof(line), "%u) %s  A:%u H:%u  (%s)", (unsigned)idx++, name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                        {
+                            if (hasTs)
+                                snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                            else
+                                snprintf(line, sizeof(line), "%u) %s  A:%u H:%u  (%s)", (unsigned)idx++, name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                        }
                         else
-                            snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
+                        {
+                            if (hasTs)
+                                snprintf(line, sizeof(line), "%u) [%s] %s", (unsigned)idx++, r.ts.c_str(), name);
+                            else
+                                snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
+                        }
                         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     }
                 }
