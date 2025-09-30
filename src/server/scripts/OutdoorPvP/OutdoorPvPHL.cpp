@@ -95,6 +95,7 @@
     #include "Config.h"
     #include "WorldState.h"
     #include "WeatherMgr.h"
+    #include "Weather.h"
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
