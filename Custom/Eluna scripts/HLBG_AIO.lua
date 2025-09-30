@@ -95,17 +95,9 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir)
             local sa = res:GetUInt32(6)
             local sh = res:GetUInt32(7)
             local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
-            table.insert(rows, {
-                id = tostring(id),
-                ts = ts,
-                winner = winner,
-                reason = reason,
-                affix = tostring(affix),
-                weather = nil,
-                duration = duration,
-                score_alliance = sa,
-                score_horde = sh,
-            })
+            -- Compact row to reduce payload size for AIO serialization:
+            -- { id, timestamp, winner, affix, reason }
+            table.insert(rows, { tostring(id), ts, winner, tostring(affix), reason or "-" })
         until not res:NextRow()
     end
     local total = 0
@@ -172,12 +164,29 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
         local rows, total, col, dir = FetchHistoryPage(page, per, sortKey, sortDir)
         print(string.format("[HLBG_AIO] HISTORY page=%d per=%d -> rows=%d total=%s sort=%s %s", page, per, (rows and #rows or 0), tostring(total), tostring(col), tostring(dir)))
         if okAIO and AIO and AIO.Handle then
+            -- Send as table (preferred)
             AIO.Handle(player, "HLBG", "History", rows, page, per, total, col, dir)
+            -- Also send a compact TSV string fallback for older AIO builds
+            local buf = {}
+            for i=1,#rows do
+                local r = rows[i]
+                -- r = { id, ts, winner, affix, reason }
+                table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+            end
+            local tsv = table.concat(buf, "\n")
+            AIO.Handle(player, "HLBG", "HistoryStr", tsv, page, per, total, col, dir)
+            -- Debug ping to confirm client receive path
+            AIO.Handle(player, "HLBG", "PONG")
+            -- Lightweight debug string (avoid large tables) so client can confirm receipt
+            AIO.Handle(player, "HLBG", "DBG", string.format("HISTORY_N=%d TOTAL=%s", rows and #rows or 0, tostring(total)))
         end
     elseif what == "STATS" then
         local stats = FetchStats()
         if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "Stats", stats)
+            -- Debug ping to confirm client receive path
+            AIO.Handle(player, "HLBG", "PONG")
+            AIO.Handle(player, "HLBG", "DBG", "STATS_OK")
         end
     elseif what == "PING" then
         if okAIO and AIO and AIO.Handle then

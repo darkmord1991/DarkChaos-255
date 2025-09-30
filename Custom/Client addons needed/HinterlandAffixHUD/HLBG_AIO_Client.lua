@@ -1,30 +1,6 @@
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
--- Bind AIO handlers early if AIO is already loaded; otherwise, bind when AIO_Client loads
-if _G.AIO and _G.AIO.AddHandlers then
-    HLBG = _G.AIO.AddHandlers("HLBG", HLBG)
-    _G.HLBG = HLBG
-    DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers registered (early)")
-do
-    local f = CreateFrame("Frame")
-    f:RegisterEvent("PLAYER_LOGIN")
-    f:SetScript("OnEvent", function()
-        if not HLBG._registered and _G.AIO and _G.AIO.AddHandlers then
-            local reg = _G.AIO.AddHandlers("HLBG", {})
-            for k,v in pairs(HLBG) do reg[k] = v end
-            _G.HLBG = reg
-            HLBG = reg
-            HLBG._registered = true
-            DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers registered (History/Stats)")
-        end
-        f:UnregisterAllEvents()
-        f:SetScript("OnEvent", nil)
-    end)
-end
-            _late:SetScript("OnEvent", nil)
-        end
-    end)
-end
+-- Note: AIO handlers are registered after all functions are defined (see bottom)
 
 -- Early bootstrap: ensure slash commands exist even if later init fails
 do
@@ -67,6 +43,24 @@ HinterlandAffixHUDDB.scaleHud = HinterlandAffixHUDDB.scaleHud or 1.0
 HinterlandAffixHUDDB.anchorHud = HinterlandAffixHUDDB.anchorHud or { point = "TOPRIGHT", rel = "UIParent", relPoint = "TOPRIGHT", x = -30, y = -150 }
 HinterlandAffixHUDDB.lastPvPTab = HinterlandAffixHUDDB.lastPvPTab or 1
 HinterlandAffixHUDDB.lastInnerTab = HinterlandAffixHUDDB.lastInnerTab or 1
+
+-- Affix code -> friendly name mapping (edit as needed to your server's rotation)
+local AFFIX_NAMES = _G.HLBG_AFFIX_NAMES or {
+    -- ["1"] = "Bloodlust",
+    -- ["2"] = "Storms",
+    -- ["3"] = "Frenzy",
+    -- ["4"] = "Plague",
+    -- ["5"] = "Blight",
+}
+_G.HLBG_AFFIX_NAMES = AFFIX_NAMES
+local function GetAffixName(code)
+    if code == nil then return "-" end
+    local s = tostring(code)
+    local name = AFFIX_NAMES[s]
+    return name or s -- fall back to the code when unknown
+end
+-- optionally expose for other addons, but keep mapping local (AddHandlers requires only functions)
+HLBG.GetAffixName = GetAffixName
 
 local function SecondsToClock(sec)
     if sec < 0 then sec = 0 end
@@ -170,6 +164,8 @@ end)
 UI.Frame = CreateFrame("Frame", "HLBG_Main", PVPParentFrame or PVPFrame)
 UI.Frame:SetSize(512, 350)
 UI.Frame:Hide()
+-- Ensure our panel stays above world overlays on 3.3.5
+if UI.Frame.SetFrameStrata then UI.Frame:SetFrameStrata("DIALOG") end
 UI.Frame:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 16, insets = { left=4, right=4, top=4, bottom=4 } })
 UI.Frame:SetBackdropColor(0,0,0,0.5)
 UI.Frame:ClearAllPoints()
@@ -239,8 +235,15 @@ UI.History.Scroll = CreateFrame("ScrollFrame", "HLBG_HistoryScroll", UI.History,
 UI.History.Scroll:SetPoint("TOPLEFT", 16, -40)
 UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
 UI.History.Content = CreateFrame("Frame", nil, UI.History.Scroll)
-UI.History.Content:SetSize(440, 300)
+-- Width roughly equals visible scroll area (512 frame - 16 left - 36 right = 460)
+UI.History.Content:SetSize(460, 300)
 UI.History.Scroll:SetScrollChild(UI.History.Content)
+UI.History.rows = UI.History.rows or {}
+-- Empty-state label
+UI.History.EmptyText = UI.History:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+UI.History.EmptyText:SetPoint("TOPLEFT", 16, -64)
+UI.History.EmptyText:SetText("No data yet…")
+UI.History.EmptyText:Hide()
 
 UI.Stats = CreateFrame("Frame", nil, UI.Frame)
 UI.Stats:SetAllPoints(UI.Frame)
@@ -251,7 +254,14 @@ UI.Stats.Text:SetText("Stats will appear here.")
 
 -- History controls: columns, pagination
 UI.History.Columns = {}
-local headers = { {text="ID", w=40}, {text="Timestamp", w=140}, {text="Winner", w=80}, {text="Affix", w=100}, {text="Reason", w=80} }
+-- Keep total <= ~460 width (including spacing)
+local headers = {
+    {text="ID", w=50},
+    {text="Timestamp", w=156},
+    {text="Winner", w=80},
+    {text="Affix", w=90},
+    {text="Reason", w=60},
+}
 local x = 0
 for i,col in ipairs(headers) do
     local h = CreateFrame("Button", nil, UI.History.Content)
@@ -264,7 +274,7 @@ for i,col in ipairs(headers) do
     h:SetScript("OnLeave", function() GameTooltip:Hide() end)
     h:SetScript("OnClick", function() UI.History.sortKey = col.text; if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25) end end)
     UI.History.Columns[i] = h
-    x = x + col.w + 8
+    x = x + col.w + 6
 end
 
 UI.History.Nav = CreateFrame("Frame", nil, UI.History)
@@ -282,11 +292,11 @@ UI.History.Nav.PageText = UI.History.Nav:CreateFontString(nil, "OVERLAY", "GameF
 UI.History.Nav.PageText:SetPoint("LEFT", UI.History.Nav.Next, "RIGHT", 8, 0)
 UI.History.Nav.Prev:SetScript("OnClick", function()
     local p = (UI.History.page or 1); if p>1 then p=p-1 end
-    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", p, UI.History.per or 25) end
+    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", p, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC") end
 end)
 UI.History.Nav.Next:SetScript("OnClick", function()
     local p = (UI.History.page or 1) + 1
-    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", p, UI.History.per or 25) end
+    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", p, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC") end
 end)
 
 for i=1,3 do UI.Tabs[i]:SetScript("OnClick", function() ShowTab(i) end) end
@@ -300,6 +310,7 @@ local function EnsurePvPTab()
     local lastIdx = _pvp.numTabs or 2
     local lastTab = _G[baseName.."Tab"..lastIdx]
     local tab = CreateFrame("Button", "PVPFrameTabHLBG", _pvp, "CharacterFrameTabButtonTemplate")
+    tab:SetText("HLBG")
     tab:SetID((lastIdx or 2) + 1)
     if lastTab then
         tab:SetPoint("LEFT", lastTab, "RIGHT", -15, 0)
@@ -312,7 +323,7 @@ local function EnsurePvPTab()
         UI.Frame:Show()
         ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
         if _G.AIO and _G.AIO.Handle then
-              _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
         end
     end)
@@ -327,9 +338,11 @@ local function EnsurePvPHeaderButton()
     -- place near top-right but leave space for close button if any
     btn:SetPoint("TOPRIGHT", _pvp, "TOPRIGHT", -40, -28)
     btn:SetText("HLBG")
+    btn:SetScript("OnClick", function()
         UI.Frame:Show()
         ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+        if _G.AIO and _G.AIO.Handle then
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
         end
     end)
@@ -337,6 +350,8 @@ local function EnsurePvPHeaderButton()
     _pvp:HookScript("OnHide", function()
         if UI.Frame and UI.Frame:GetParent() == _pvp then UI.Frame:Hide() end
     end)
+
+end
 
 -- Create PvP tab lazily when UI exists
 local pvpWatcher = CreateFrame("Frame")
@@ -375,43 +390,110 @@ function HLBG.OpenUI()
 end
 DEFAULT_CHAT_FRAME:AddMessage("HLBG client: main OpenUI bound")
 
-function HLBG.History(rows, page, per, total, col, dir)
-    -- clear previous
-    for i,child in ipairs({UI.History.Content:GetRegions()}) do if child.SetText then child:SetText("") end end
-    if UI.History.NoData then UI.History.NoData:Hide() end
-    UI.History.page = page or 1
-    UI.History.per = per or 25
-        UI.History.per = per or UI.History.per or 5
-    UI.History.total = total or 0
+function HLBG.History(a, b, c, d, e, f, g)
+    -- Accept both signatures:
+    -- 1) History(rows, page, per, total, col, dir)
+    -- 2) History(player, rows, page, per, total, col, dir)
+    local rows, page, per, total, col, dir
+    if type(a) == "table" then
+        rows, page, per, total, col, dir = a, b, c, d, e, f
+    else
+        rows, page, per, total, col, dir = b, c, d, e, f, g
+    end
+    -- debug trace
+    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+        local t = type(rows)
+        local n = (t == "table" and #rows) or 0
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History handler invoked (rowsType=%s, n=%d)", t, n))
+    end
+    if type(rows) ~= "table" then rows = {} end
+    UI.History.page = page or UI.History.page or 1
+    UI.History.per = per or UI.History.per or 25
+    UI.History.total = total or UI.History.total or 0
     UI.History.sortKey = col or UI.History.sortKey or "id"
     UI.History.sortDir = dir or UI.History.sortDir or "DESC"
-    local y = -22
-    rows = rows or {}
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History received rows=%d total=%s", #rows, tostring(total)))
-    if #rows == 0 then
-        if not UI.History.NoData then
-            UI.History.NoData = UI.History.Content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-            UI.History.NoData:SetPoint("TOPLEFT", 0, y)
+
+    -- Render with a simple row widget pool
+    local function getRow(i)
+        local r = UI.History.rows[i]
+        if not r then
+            r = CreateFrame("Frame", nil, UI.History.Content)
+            r:SetSize(420, 14)
+            r.id = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            -- layout mirrors headers: ID(50), TS(156), WIN(80), AFF(90), REASON(60) with 6px spacing
+            r.id:SetPoint("LEFT", r, "LEFT", 0, 0)
+            r.id:SetWidth(50); r.id:SetJustifyH("LEFT")
+            r.ts:SetPoint("LEFT", r.id, "RIGHT", 6, 0)
+            r.ts:SetWidth(156); r.ts:SetJustifyH("LEFT")
+            r.win:SetPoint("LEFT", r.ts, "RIGHT", 6, 0)
+            r.win:SetWidth(80); r.win:SetJustifyH("LEFT")
+            r.aff:SetPoint("LEFT", r.win, "RIGHT", 6, 0)
+            r.aff:SetWidth(90); r.aff:SetJustifyH("LEFT")
+            r.rea:SetPoint("LEFT", r.aff, "RIGHT", 6, 0)
+            r.rea:SetWidth(60); r.rea:SetJustifyH("LEFT")
+            UI.History.rows[i] = r
         end
-        UI.History.NoData:SetText("No matches recorded yet")
-        UI.History.NoData:Show()
+        return r
     end
-    for _, row in ipairs(rows) do
-        local fs = UI.History.Content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        local who = (row.winner == "Alliance" or row.winner == "ALLIANCE") and "|cff1e90ffAlliance|r" or (row.winner == "Horde" or row.winner == "HORDE") and "|cffff0000Horde|r" or "|cffffff00Draw|r"
-        local aff = row.affix or "-"
-        local reason = row.reason or "-"
-        fs:SetPoint("TOPLEFT", 0, y)
-        fs:SetText(string.format("%s    %s    %s    %s    %s", tostring(row.id or "-"), row.ts or "", who, aff, reason))
+
+    -- hide all previously visible rows
+    for i=1,#UI.History.rows do UI.History.rows[i]:Hide() end
+
+    local y = -22
+    local hadRows = false
+    for i, row in ipairs(rows) do
+        local r = getRow(i)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", UI.History.Content, "TOPLEFT", 0, y)
+        -- Support both compact array rows {id, ts, winner, affix, reason} and map rows
+        local id    = (type(row[1]) ~= "nil") and row[1] or row.id
+        local ts    = row[2] or row.ts
+        local win   = row[3] or row.winner
+        local affix = row[4] or row.affix
+        local reas  = row[5] or row.reason
+        local who = (win == "Alliance" or win == "ALLIANCE") and "|cff1e90ffAlliance|r" or (win == "Horde" or win == "HORDE") and "|cffff0000Horde|r" or "|cffffff00Draw|r"
+        r.id:SetText(tostring(tonumber(id) or 0))
+        r.ts:SetText(ts or "")
+        r.win:SetText(who)
+        r.aff:SetText(GetAffixName(affix))
+        r.rea:SetText(reas or "-")
+        r:Show()
         y = y - 14
+        hadRows = true
     end
+
     local maxPage = (UI.History.total and UI.History.total > 0) and math.max(1, math.ceil(UI.History.total/(UI.History.per or 25))) or (UI.History.page or 1)
     UI.History.Nav.PageText:SetText(string.format("Page %d / %d", UI.History.page, maxPage))
-    if UI.History.Nav.Prev then UI.History.Nav.Prev:SetEnabled((UI.History.page or 1) > 1) end
-    if UI.History.Nav.Next then UI.History.Nav.Next:SetEnabled((UI.History.page or 1) < maxPage) end
+    local hasPrev = (UI.History.page or 1) > 1
+    local hasNext = (UI.History.page or 1) < maxPage
+    if UI.History.Nav.Prev then if hasPrev then UI.History.Nav.Prev:Enable() else UI.History.Nav.Prev:Disable() end end
+    if UI.History.Nav.Next then if hasNext then UI.History.Nav.Next:Enable() else UI.History.Nav.Next:Disable() end end
+
+    -- Resize scroll child to the content and reset scroll to top
+    local visibleCount = (type(rows) == "table" and #rows) or 0
+    local base = 22 -- header area height used above
+    local rowH = 14
+    local minH = 300
+    local newH = math.max(minH, base + visibleCount * rowH + 8)
+    UI.History.Content:SetHeight(newH)
+    if UI.History.Scroll and UI.History.Scroll.SetVerticalScroll then UI.History.Scroll:SetVerticalScroll(0) end
+    if UI.History.EmptyText then
+        if hadRows then UI.History.EmptyText:Hide() else UI.History.EmptyText:Show() end
+    end
+
+    -- optional debug
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History received rows=%d total=%s", visibleCount, tostring(UI.History.total)))
 end
 
-function HLBG.Stats(stats)
+function HLBG.Stats(player, stats)
+    if type(player) ~= "string" and type(player) ~= "userdata" then
+        stats = player
+    end
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: Stats(raw) type=%s", type(stats)))
     stats = stats or {}
     local counts = stats.counts or {}
     local a = (counts["Alliance"] or counts["ALLIANCE"] or 0)
@@ -443,6 +525,31 @@ function HLBG.Stats(stats)
     UI.Stats.Text:SetText(table.concat(lines, "\n"))
 end
 
+-- Provide uppercase aliases in case the dispatcher normalizes names
+HLBG.HISTORY = function(...) return HLBG.History(...) end
+HLBG.STATS = function(...) return HLBG.Stats(...) end
+function HLBG.DBG(msg)
+    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: "..tostring(msg)) end
+end
+
+-- Fallback: parse History from TSV string payload
+function HLBG.HistoryStr(a, b, c, d, e, f, g)
+    local tsv, page, per, total, col, dir
+    if type(a) == "string" then
+        tsv, page, per, total, col, dir = a, b, c, d, e, f
+    else
+        tsv, page, per, total, col, dir = b, c, d, e, f, g
+    end
+    local rows = {}
+    if type(tsv) == "string" and tsv ~= "" then
+        for line in tsv:gmatch("[^\n]+") do
+            local id, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+            table.insert(rows, { id or "", ts or "", win or "", aff or "", rea or "" })
+        end
+    end
+    return HLBG.History(rows, page, per, total, col, dir)
+end
+
 -- Support addon-channel STATUS & AFFIX messages to drive HUD
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
@@ -465,7 +572,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local aff = msg:match("AFFIX|([^|]+)")
         if aff then
             if InHinterlands() then
-                UI.Affix.Text:SetText("Affix: " .. aff)
+                UI.Affix.Text:SetText("Affix: " .. GetAffixName(aff))
                 UI.Affix:Show()
             else
                 UI.Affix:Hide()
@@ -539,7 +646,7 @@ SlashCmdList["HLBG"] = function(msg)
     EnsurePvPTab(); EnsurePvPHeaderButton()
     HLBG.OpenUI()
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 5, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "Request", "STATS")
     end
 end
@@ -555,4 +662,54 @@ end
 SLASH_HLBGUI1 = "/hlbgui"
 SlashCmdList["HLBGUI"] = SlashCmdList["HLBG"]
 
--- (registration handled at top or on AIO add-on load)
+-- Register handlers once all functions exist; bind when AIO loads (or immediately if already loaded)
+do
+    local function register()
+        if not (_G.AIO and _G.AIO.AddHandlers) then return false end
+        -- Request a fresh table and then assign handlers for maximum compatibility
+        local reg = _G.AIO.AddHandlers("HLBG", {})
+    reg.OpenUI     = HLBG.OpenUI
+    reg.History    = HLBG.History
+    reg.Stats      = HLBG.Stats
+    reg.PONG       = HLBG.PONG
+    reg.DBG        = HLBG.DBG
+    reg.HistoryStr = HLBG.HistoryStr
+    reg.HISTORY    = reg.History
+    reg.STATS      = reg.Stats
+        _G.HLBG = reg; HLBG = reg
+        DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers registered (History/Stats)")
+        DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO.AddHandlers returned new table")
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "HLBG: Registered handlers -> History=%s, Stats=%s, PONG=%s, OpenUI=%s",
+            tostring(type(HLBG.History)), tostring(type(HLBG.Stats)), tostring(type(HLBG.PONG)), tostring(type(HLBG.OpenUI))
+        ))
+        -- Prime first page
+        if _G.AIO and _G.AIO.Handle then
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG and HLBG.History and (UI and UI.History and UI.History.per or 5) or 5, "id", "DESC")
+            _G.AIO.Handle("HLBG", "Request", "STATS")
+        end
+        return true
+    end
+    if not register() then
+        local fr = CreateFrame("Frame")
+        fr:RegisterEvent("ADDON_LOADED")
+        fr:SetScript("OnEvent", function(_, _, name)
+            if name == "AIO_Client" or name == "AIO" or name == "RochetAio" then
+                register()
+                -- keep the handler in case AIO defers parts; but also stop spamming after success
+                fr:UnregisterAllEvents(); fr:SetScript("OnEvent", nil)
+            end
+        end)
+    end
+end
+
+-- Debug: local fake data to validate rendering path without server
+SLASH_HLBGFAKE1 = "/hlbgfake"
+SlashCmdList["HLBGFAKE"] = function()
+    local fakeRows = {
+        { id = "101", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Alliance", affix = "3", reason = "Score", duration = 1200 },
+        { id = "100", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Horde", affix = "5", reason = "Timer", duration = 900 },
+    }
+    HLBG.History(fakeRows, 1, 3, 11, "id", "DESC")
+    UI.Frame:Show(); ShowTab(2)
+end
