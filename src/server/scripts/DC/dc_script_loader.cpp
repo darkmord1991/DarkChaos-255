@@ -24,6 +24,7 @@ void AddSC_dc_login_announce(); // location: scripts\DC\dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009(); // location: scripts\DC\AC\ac_quest_npc_800009.cpp
 void AddSC_aio_bridge(); // location: scripts\DC\AIO\aio_bridge.cpp
 void AddSC_flightmasters(); // location: scripts\DC\AC\ac_flightmasters.cpp
+void AddSC_hl_scoreboard(); // location: scripts\DC\HinterlandBG\HL_ScoreboardNPC.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -37,4 +38,5 @@ void AddDCScripts()
     AddSC_ac_quest_npc_800009();
     AddSC_aio_bridge();
     AddSC_flightmasters();
+    AddSC_hl_scoreboard();
 }

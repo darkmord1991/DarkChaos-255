@@ -46,15 +46,31 @@ public:
                 uint32 a = hl->GetResources(TEAM_ALLIANCE);
                 uint32 h = hl->GetResources(TEAM_HORDE);
                 uint32 sec = hl->GetTimeRemainingSeconds();
-                bool locked = false;
-                // crude access: using status broadcast as a text
-                char msg[256];
-                snprintf(msg, sizeof(msg), "Alliance: %u, Horde: %u, Time left: %us", (unsigned)a, (unsigned)h, (unsigned)sec);
+                uint32 mm = sec / 60u;
+                uint32 ss = sec % 60u;
+
+                ClearGossipMenuFor(player);
+                // Header (non-interactive info lines)
+                char line[128];
+                snprintf(line, sizeof(line), "Alliance: %u", (unsigned)a);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                snprintf(line, sizeof(line), "Horde: %u", (unsigned)h);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+                snprintf(line, sizeof(line), "Time left: %02u:%02u", (unsigned)mm, (unsigned)ss);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
+
+                // Controls
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Refresh", GOSSIP_SENDER_MAIN, 1);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 100);
                 SendGossipMenuFor(player, 1, creature->GetGUID());
-                ChatHandler(player->GetSession()).SendNotification("{}", msg);
                 return true;
             }
-            ChatHandler(player->GetSession()).SendNotification("Hinterland BG is not active.");
+            // Not active: show message inside gossip
+            ClearGossipMenuFor(player);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Hinterland BG is not active.", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 100);
+            SendGossipMenuFor(player, 1, creature->GetGUID());
+            return true;
         }
         CloseGossipMenuFor(player);
         return true;
