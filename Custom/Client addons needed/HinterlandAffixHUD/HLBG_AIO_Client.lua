@@ -4,6 +4,10 @@
 local AIO = AIO or {}
 
 local HLBG = (AIO.AddHandlers and AIO.AddHandlers("HLBG", {})) or {}
+do
+    local ver = GetAddOnMetadata and GetAddOnMetadata("HinterlandAffixHUD", "Version") or "?"
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG AIO client active (HinterlandAffixHUD v%s)", tostring(ver)))
+end
 
 local UI = {}
 local RES = { A = 0, H = 0, END = 0, LOCK = 0 }
@@ -108,7 +112,7 @@ zoneWatcher:SetScript("OnEvent", function()
     if InHinterlands() then
         UpdateHUD(); if HinterlandAffixHUDDB.useAddonHud then HideBlizzHUDDeep() end
     else
-        UI.HUD:Hide(); UnhideBlizzHUDDeep()
+        UI.HUD:Hide(); UI.Affix:Hide(); UnhideBlizzHUDDeep()
     end
 end)
 
@@ -320,6 +324,17 @@ function HLBG.Stats(stats)
     end
     if stats.byAffix and next(stats.byAffix) then table.insert(lines, "Top Affixes: "..top3(stats.byAffix)) end
     if stats.byWeather and next(stats.byWeather) then table.insert(lines, "Top Weather: "..top3(stats.byWeather)) end
+    -- show top 3 average durations per affix and weather
+    local function top3avg(map)
+        local arr = {}
+        for k,v in pairs(map or {}) do table.insert(arr, {k=k, v=tonumber(v.avg or 0)}) end
+        table.sort(arr, function(x,y) return x.v>y.v end)
+        local out = {}
+        for i=1,math.min(3,#arr) do table.insert(out, string.format("%s:%d min", arr[i].k, math.floor((arr[i].v or 0)/60))) end
+        return table.concat(out, ", ")
+    end
+    if stats.affixDur and next(stats.affixDur) then table.insert(lines, "Slowest Affixes (avg): "..top3avg(stats.affixDur)) end
+    if stats.weatherDur and next(stats.weatherDur) then table.insert(lines, "Slowest Weather (avg): "..top3avg(stats.weatherDur)) end
     UI.Stats.Text:SetText(table.concat(lines, "\n"))
 end
 
@@ -412,3 +427,5 @@ SlashCmdList["HLBG"] = function(msg)
         AIO.Handle("HLBG", "Request", "STATS")
     end
 end
+SLASH_HLBGUI1 = "/hlbgui"
+SlashCmdList["HLBGUI"] = SlashCmdList["HLBG"]

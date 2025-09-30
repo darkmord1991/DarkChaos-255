@@ -17,9 +17,12 @@ if not okAIO or not AIO then
     end
 end
 if not okAIO or not AIO or not AIO.IsMainState or not AIO.IsMainState() then
-    -- AIO not available; keep command fallback but skip handlers registration
+    print("[HLBG_AIO] AIO not available or not main state; handlers will not be registered.")
 end
 local Handlers = okAIO and AIO and AIO.AddHandlers and AIO.AddHandlers("HLBG", {}) or {}
+if Handlers and next(Handlers) ~= nil then
+    print("[HLBG_AIO] Handlers registered.")
+end
 
 local function safeQuery(dbfunc, sql)
     local ok, res = pcall(dbfunc, sql)
@@ -47,14 +50,39 @@ local function sanitizeDir(dir)
     return dir
 end
 
+local function splitCSV(s)
+    local t = {}
+    if not s or s == "" then return t end
+    for part in tostring(s):gmatch("[^,]+") do
+        table.insert(t, (part:gsub("^%s+", ""):gsub("%s+$", "")))
+    end
+    return t
+end
+
+local function buildOrderClause(sortKeys, sortDirs)
+    local keys = splitCSV(sortKeys)
+    local dirs = splitCSV(sortDirs)
+    local parts = {}
+    for i,k in ipairs(keys) do
+        local col = sanitizeSort(k)
+        local dir = sanitizeDir(dirs[i] or dirs[1] or "DESC")
+        table.insert(parts, string.format("%s %s", col, dir))
+    end
+    -- always add id DESC as a final stable tie-breaker if not present
+    local hasId = false
+    for _,p in ipairs(parts) do if p:match("^id ") then hasId = true break end end
+    if not hasId then table.insert(parts, "id DESC") end
+    if #parts == 0 then return "id DESC" end
+    return table.concat(parts, ", ")
+end
+
 local function FetchHistoryPage(page, perPage, sortKey, sortDir)
     page = tonumber(page) or 1
     perPage = tonumber(perPage) or 25
     if page < 1 then page = 1 end
     local offset = (page - 1) * perPage
-    local col = sanitizeSort(sortKey)
-    local dir = sanitizeDir(sortDir)
-    local sql = string.format("SELECT id, ts, winner, margin, reason, affix, weather, duration FROM hlbg_winner_history ORDER BY %s %s LIMIT %d OFFSET %d", col, dir, perPage, offset)
+    local orderBy = buildOrderClause(sortKey, sortDir)
+    local sql = string.format("SELECT id, ts, winner, margin, reason, affix, weather, duration FROM hlbg_winner_history ORDER BY %s LIMIT %d OFFSET %d", orderBy, perPage, offset)
     local res = safeQuery(CharDBQuery, sql)
     local rows = {}
     if res then
@@ -74,11 +102,14 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir)
     local total = 0
     local cnt = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history")
     if cnt then total = cnt:GetUInt64(0) or cnt:GetUInt32(0) or 0 end
-    return rows, total, col, dir
+    -- Return the primary col/dir (first pair), for client display
+    local firstCol = sanitizeSort(splitCSV(sortKey)[1] or "id")
+    local firstDir = sanitizeDir(splitCSV(sortDir)[1] or "DESC")
+    return rows, total, firstCol, firstDir
 end
 
 local function FetchStats()
-    local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, byWeather = {} }
+    local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, byWeather = {}, affixDur = {}, weatherDur = {} }
     local res = safeQuery(CharDBQuery, "SELECT winner, COUNT(*) FROM hlbg_winner_history GROUP BY winner")
     if res then
         repeat
@@ -120,6 +151,28 @@ local function FetchStats()
             else stats.byWeather[wth].DRAW = c end
         until not res4:NextRow()
     end
+    -- Duration aggregates per affix
+    local res5 = safeQuery(CharDBQuery, "SELECT COALESCE(affix,'(none)'), COUNT(*), SUM(duration), AVG(duration) FROM hlbg_winner_history WHERE duration IS NOT NULL GROUP BY affix")
+    if res5 then
+        repeat
+            local aff = res5:GetString(0)
+            local c = res5:GetUInt32(1)
+            local s = res5:IsNull(2) and 0 or res5:GetUInt64(2)
+            local a = res5:IsNull(3) and 0 or res5:GetFloat(3)
+            stats.affixDur[aff] = { count = c, sum = s, avg = a }
+        until not res5:NextRow()
+    end
+    -- Duration aggregates per weather
+    local res6 = safeQuery(CharDBQuery, "SELECT COALESCE(weather,'(none)'), COUNT(*), SUM(duration), AVG(duration) FROM hlbg_winner_history WHERE duration IS NOT NULL GROUP BY weather")
+    if res6 then
+        repeat
+            local wth = res6:GetString(0)
+            local c = res6:GetUInt32(1)
+            local s = res6:IsNull(2) and 0 or res6:GetUInt64(2)
+            local a = res6:IsNull(3) and 0 or res6:GetFloat(3)
+            stats.weatherDur[wth] = { count = c, sum = s, avg = a }
+        until not res6:NextRow()
+    end
     return stats
 end
 
@@ -157,3 +210,4 @@ local function OnCommand(event, player, command)
     end
 end
 RegisterPlayerEvent(42, OnCommand)
+print("[HLBG_AIO] OnCommand hook registered (.hlbgui)")

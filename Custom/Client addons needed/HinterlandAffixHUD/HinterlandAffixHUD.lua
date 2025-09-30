@@ -31,8 +31,24 @@ local HIDE_DEFAULT_HUD = false
 local affixNames = {}
 local affixIcons = {}
 
+local function InHinterlands()
+  local z = GetRealZoneText() or ""
+  return z == "The Hinterlands"
+end
+
 local function applyHideHUD()
-  if not HIDE_DEFAULT_HUD then return end
+  if not HIDE_DEFAULT_HUD then
+    -- ensure Blizzard HUD is visible when toggle is OFF
+    if WorldStateAlwaysUpFrame then WorldStateAlwaysUpFrame:Show() end
+    if AlwaysUpFrame then AlwaysUpFrame:Show() end
+    return
+  end
+  -- Only hide Blizzard HUD inside The Hinterlands
+  if not InHinterlands() then
+    if WorldStateAlwaysUpFrame then WorldStateAlwaysUpFrame:Show() end
+    if AlwaysUpFrame then AlwaysUpFrame:Show() end
+    return
+  end
   local function hideFrame(fr)
     if not fr then return end
     if fr.Hide then fr:Hide() end
@@ -97,6 +113,14 @@ local function setAffixByName(name)
 end
 
 local function update()
+  -- Only show our affix line inside The Hinterlands
+  if not InHinterlands() then
+    f:Hide()
+    -- also restore Blizzard HUD when we leave the zone
+    if WorldStateAlwaysUpFrame then WorldStateAlwaysUpFrame:Show() end
+    if AlwaysUpFrame then AlwaysUpFrame:Show() end
+    return
+  end
   local count = GetNumWorldStateUI() or 0
   local label = ""
   local icon  = nil
@@ -149,7 +173,7 @@ local function update()
   AnchorUnderAlwaysUp()
 end
 
-local HLAFFIXHUD_VERSION = "1.1.0"
+local HLAFFIXHUD_VERSION = "1.3.0"
 
 local function onEvent(self, event, ...)
   if event == "ADDON_LOADED" then
@@ -240,6 +264,9 @@ f:RegisterEvent("CHAT_MSG_BATTLEGROUND_LEADER")
 f:RegisterEvent("UPDATE_WORLD_STATES")
 f:RegisterEvent("WORLD_STATE_UI_TIMER_UPDATE")
 f:RegisterEvent("CHAT_MSG_ADDON")
+f:RegisterEvent("ZONE_CHANGED")
+f:RegisterEvent("ZONE_CHANGED_INDOORS")
+f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 -- Some cores rarely fire worldstate events on 3.3.5a; poll as a safety net
 do
