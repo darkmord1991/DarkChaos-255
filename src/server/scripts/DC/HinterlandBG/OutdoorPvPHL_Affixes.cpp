@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "WeatherMgr.h"
+#include "Weather.h"
 
 // Return a short code for affix to show via worldstate or announcements
 static const char* HL_AffixName(OutdoorPvPHL::AffixType a)
