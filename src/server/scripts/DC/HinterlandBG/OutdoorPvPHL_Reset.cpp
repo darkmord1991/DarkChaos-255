@@ -86,7 +86,8 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     });
     char msg[128];
     snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
-    sWorldSessionMgr->SendZoneText(zoneId, msg);
+    if (Map* m = GetMap())
+        m->SendZoneText(zoneId, msg);
 }
 
 // Teleport a single player to his/her faction base location.

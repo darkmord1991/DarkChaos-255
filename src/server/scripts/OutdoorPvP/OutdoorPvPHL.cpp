@@ -525,7 +525,8 @@
             }
             else
             {
-                sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "Time's up — it's a draw!").c_str());
+                if (Map* m = GetMap())
+                    m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "Time's up — it's a draw!").c_str());
             }
 
             // Optional global announcement with final scores
@@ -910,7 +911,8 @@
             switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
             char line[128];
             snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s", aff);
-            sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line);
+            if (Map* m = GetMap())
+                m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
         }
     }
 
