@@ -222,7 +222,7 @@
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
             // Iterate all players currently in the Hinterlands and apply a functor
             template <typename Func>
-            void ForEachPlayerInZone(Func f)
+            void ForEachPlayerInZone(Func f) const
             {
                 uint32 const zoneId = OutdoorPvPHLBuffZones[0];
                 WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
