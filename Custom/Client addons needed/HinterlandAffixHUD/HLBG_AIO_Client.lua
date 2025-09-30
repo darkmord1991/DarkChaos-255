@@ -3,7 +3,7 @@
 
 local AIO = AIO or {}
 
-local HLBG = AIO.AddHandlers("HLBG", {})
+local HLBG = (AIO.AddHandlers and AIO.AddHandlers("HLBG", {})) or {}
 
 local UI = {}
 local RES = { A = 0, H = 0, END = 0, LOCK = 0 }
@@ -12,6 +12,7 @@ HinterlandAffixHUDDB.useAddonHud = (HinterlandAffixHUDDB.useAddonHud ~= false) -
 HinterlandAffixHUDDB.scaleHud = HinterlandAffixHUDDB.scaleHud or 1.0
 HinterlandAffixHUDDB.anchorHud = HinterlandAffixHUDDB.anchorHud or { point = "TOPRIGHT", rel = "UIParent", relPoint = "TOPRIGHT", x = -30, y = -150 }
 HinterlandAffixHUDDB.lastPvPTab = HinterlandAffixHUDDB.lastPvPTab or 1
+HinterlandAffixHUDDB.lastInnerTab = HinterlandAffixHUDDB.lastInnerTab or 1
 
 local function SecondsToClock(sec)
     if sec < 0 then sec = 0 end
@@ -80,6 +81,24 @@ local function InHinterlands()
     return z == "The Hinterlands"
 end
 
+local function HideBlizzHUDDeep()
+    local w = _G["WorldStateAlwaysUpFrame"]
+    if not w then return end
+    w:Hide()
+    if not w._hlbgHooked then
+        w._hlbgHooked = true
+        w:HookScript("OnShow", function(self)
+            if HinterlandAffixHUDDB.useAddonHud and InHinterlands() then self:Hide() end
+        end)
+    end
+end
+
+local function UnhideBlizzHUDDeep()
+    local w = _G["WorldStateAlwaysUpFrame"]
+    if not w then return end
+    w:Show()
+end
+
 local zoneWatcher = CreateFrame("Frame")
 zoneWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 zoneWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -87,9 +106,9 @@ zoneWatcher:RegisterEvent("ZONE_CHANGED")
 zoneWatcher:RegisterEvent("ZONE_CHANGED_INDOORS")
 zoneWatcher:SetScript("OnEvent", function()
     if InHinterlands() then
-        UpdateHUD()
+        UpdateHUD(); if HinterlandAffixHUDDB.useAddonHud then HideBlizzHUDDeep() end
     else
-        UI.HUD:Hide(); local w = _G["WorldStateAlwaysUpFrame"]; if w then w:Show() end
+        UI.HUD:Hide(); UnhideBlizzHUDDeep()
     end
 end)
 
@@ -124,6 +143,7 @@ local function ShowTab(i)
     UI.Live:SetShown(i == 1)
     UI.History:SetShown(i == 2)
     UI.Stats:SetShown(i == 3)
+    HinterlandAffixHUDDB.lastInnerTab = i
 end
 
 UI.Live = CreateFrame("Frame", nil, UI.Frame)
@@ -192,9 +212,9 @@ end)
 for i=1,3 do UI.Tabs[i]:SetScript("OnClick", function() ShowTab(i) end) end
 
 -- Add a tab to PvP Frame
-local PvPFrame = PVPParentFrame or PVPFrame
-local _pvp = PVPParentFrame or PVPFrame
-if _pvp then
+local function EnsurePvPTab()
+    local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
+    if not _pvp or _G["PVPFrameTabHLBG"] then return end
     local idx = (_pvp.numTabs or 2) + 1
     local tab = CreateFrame("Button", "PVPFrameTabHLBG", _pvp, "CharacterFrameTabButtonTemplate")
     tab:SetText("HLBG")
@@ -204,44 +224,67 @@ if _pvp then
     tab:SetPoint("LEFT", _G[ _pvp:GetName() .. "Tab" .. (idx-1) ], "RIGHT", -15, 0)
     tab:SetScript("OnClick", function()
         PanelTemplates_SetTab(_pvp, idx)
-                HinterlandAffixHUDDB.lastPvPTab = idx
-                -- hide default panes and show our frame
+        HinterlandAffixHUDDB.lastPvPTab = idx
+        if PVPFrameLeft then PVPFrameLeft:Hide() end
+        if PVPFrameRight then PVPFrameRight:Hide() end
+        UI.Frame:Show()
+        ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+        if AIO and AIO.Handle then
+            AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+            AIO.Handle("HLBG", "Request", "STATS")
+        end
+    end)
+    local toggler = _G["PVPParentFrame_ToggleFrame"] or _G["TogglePVPFrame"]
+    if type(toggler) == "function" then
+        hooksecurefunc(type(_G["PVPParentFrame_ToggleFrame"])=="function" and "PVPParentFrame_ToggleFrame" or "TogglePVPFrame", function()
+            if HinterlandAffixHUDDB.lastPvPTab == idx then
+                PanelTemplates_SetTab(_pvp, idx)
                 if PVPFrameLeft then PVPFrameLeft:Hide() end
                 if PVPFrameRight then PVPFrameRight:Hide() end
                 UI.Frame:Show()
-                ShowTab(1)
-                -- request initial data
-                AIO.Handle("HLBG", "Request", "HISTORY", 1, 25)
-                AIO.Handle("HLBG", "Request", "STATS")
+                ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+            else
+                UI.Frame:Hide()
+            end
+        end)
+    end
+end
+
+-- Create PvP tab lazily when UI exists
+local pvpWatcher = CreateFrame("Frame")
+pvpWatcher:RegisterEvent("PLAYER_LOGIN")
+pvpWatcher:RegisterEvent("ADDON_LOADED")
+pvpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+pvpWatcher:SetScript("OnEvent", function(_, ev, name)
+    if ev == "ADDON_LOADED" and name and name ~= "Blizzard_PvPUI" then -- classic WotLK loads FrameXML, still try
+        EnsurePvPTab()
+    else
+        EnsurePvPTab()
+    end
+end)
+-- Also retry a few times after login in case of delayed creation
+do
+    local tries, t = 0, 0
+    UI.Frame:SetScript("OnUpdate", function(self, elapsed)
+        t = t + (elapsed or 0)
+        if t > 1.0 then t = 0; tries = tries + 1; EnsurePvPTab(); if _G["PVPFrameTabHLBG"] or tries > 5 then UI.Frame:SetScript("OnUpdate", nil) end end
     end)
-        -- Restore last selected tab if it was HLBG (hook available toggle)
-        local toggler = _G["PVPParentFrame_ToggleFrame"] or _G["TogglePVPFrame"]
-        if type(toggler) == "function" then
-                    hooksecurefunc(type(_G["PVPParentFrame_ToggleFrame"])=="function" and "PVPParentFrame_ToggleFrame" or "TogglePVPFrame", function()
-                        if HinterlandAffixHUDDB.lastPvPTab == idx then
-                            PanelTemplates_SetTab(_pvp, idx)
-                    if PVPFrameLeft then PVPFrameLeft:Hide() end
-                    if PVPFrameRight then PVPFrameRight:Hide() end
-                    UI.Frame:Show()
-                    ShowTab(1)
-                else
-                    UI.Frame:Hide()
-                end
-            end)
-        end
 end
 
 -- Handlers from server
 function HLBG.OpenUI()
     UI.Frame:Show()
-    ShowTab(1)
+    ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
 end
 
-function HLBG.History(rows, page, per)
+function HLBG.History(rows, page, per, total, col, dir)
     -- clear previous
     for i,child in ipairs({UI.History.Content:GetRegions()}) do if child.SetText then child:SetText("") end end
     UI.History.page = page or 1
     UI.History.per = per or 25
+    UI.History.total = total or 0
+    UI.History.sortKey = col or UI.History.sortKey or "id"
+    UI.History.sortDir = dir or UI.History.sortDir or "DESC"
     local y = -22
     rows = rows or {}
     for _, row in ipairs(rows) do
@@ -253,7 +296,10 @@ function HLBG.History(rows, page, per)
         fs:SetText(string.format("%4d  %s  %s  %s  %s", tonumber(row.id) or 0, row.ts or "", who, aff, reason))
         y = y - 14
     end
-    UI.History.Nav.PageText:SetText(string.format("Page %d", UI.History.page))
+    local maxPage = (UI.History.total and UI.History.total > 0) and math.max(1, math.ceil(UI.History.total/(UI.History.per or 25))) or (UI.History.page or 1)
+    UI.History.Nav.PageText:SetText(string.format("Page %d / %d", UI.History.page, maxPage))
+    if UI.History.Nav.Prev then UI.History.Nav.Prev:SetEnabled((UI.History.page or 1) > 1) end
+    if UI.History.Nav.Next then UI.History.Nav.Next:SetEnabled((UI.History.page or 1) < maxPage) end
 end
 
 function HLBG.Stats(stats)
@@ -262,7 +308,19 @@ function HLBG.Stats(stats)
     local a = (counts["Alliance"] or counts["ALLIANCE"] or 0)
     local h = (counts["Horde"] or counts["HORDE"] or 0)
     local d = stats.draws or 0
-    UI.Stats.Text:SetText(string.format("Alliance: %d  Horde: %d  Draws: %d  Avg duration: %d min", a, h, d, math.floor((stats.avgDuration or 0)/60)))
+    local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min", a, h, d, math.floor((stats.avgDuration or 0)/60)) }
+    -- append top 3 affix and weather splits if present
+    local function top3(map)
+        local arr = {}
+        for k,v in pairs(map or {}) do table.insert(arr, {k=k, v=(v.Alliance or 0)+(v.Horde or 0)+(v.DRAW or 0)}) end
+        table.sort(arr, function(x,y) return x.v>y.v end)
+        local out = {}
+        for i=1,math.min(3,#arr) do table.insert(out, arr[i].k..":"..arr[i].v) end
+        return table.concat(out, ", ")
+    end
+    if stats.byAffix and next(stats.byAffix) then table.insert(lines, "Top Affixes: "..top3(stats.byAffix)) end
+    if stats.byWeather and next(stats.byWeather) then table.insert(lines, "Top Weather: "..top3(stats.byWeather)) end
+    UI.Stats.Text:SetText(table.concat(lines, "\n"))
 end
 
 -- Support addon-channel STATUS & AFFIX messages to drive HUD
@@ -293,6 +351,34 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- Add a simple Refresh button on the History and Stats panes
+UI.Refresh = CreateFrame("Button", nil, UI.Frame, "UIPanelButtonTemplate")
+UI.Refresh:SetSize(80, 22)
+UI.Refresh:SetPoint("TOPRIGHT", UI.Frame, "TOPRIGHT", -18, -10)
+UI.Refresh:SetText("Refresh")
+UI.Refresh:SetScript("OnClick", function()
+    if AIO and AIO.Handle then
+        AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+        AIO.Handle("HLBG", "Request", "STATS")
+    end
+end)
+
+-- Make column headers actually sort (toggle ASC/DESC)
+for i,h in ipairs(UI.History.Columns) do
+    h:SetScript("OnClick", function()
+        local keyMap = { ID = "id", Timestamp = "ts", Winner = "winner", Affix = "affix", Reason = "reason" }
+        local sk = keyMap[h.Text:GetText()] or "id"
+        if UI.History.sortKey == sk then
+            UI.History.sortDir = (UI.History.sortDir == "ASC") and "DESC" or "ASC"
+        else
+            UI.History.sortKey = sk; UI.History.sortDir = "DESC"
+        end
+        if AIO and AIO.Handle then
+            AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey, UI.History.sortDir)
+        end
+    end)
+end
+
 -- Options in Interface panel to control addon HUD usage
 local opt = CreateFrame("Frame", "HLBG_AIO_Options", InterfaceOptionsFramePanelContainer)
 opt.name = "HLBG HUD"
@@ -314,3 +400,15 @@ opt:SetScript("OnShow", function(self)
   scale:SetScript("OnValueChanged", function(s,val) HinterlandAffixHUDDB.scaleHud = tonumber(string.format("%.2f", val)); UI.HUD:SetScale(HinterlandAffixHUDDB.scaleHud) end)
 end)
 InterfaceOptions_AddCategory(opt)
+
+-- Slash to open HLBG window even if server AIO command isn't available
+SLASH_HLBG1 = "/hlbg"
+SlashCmdList["HLBG"] = function(msg)
+    EnsurePvPTab()
+    UI.Frame:Show()
+    ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+    if AIO and AIO.Handle then
+        AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+        AIO.Handle("HLBG", "Request", "STATS")
+    end
+end
