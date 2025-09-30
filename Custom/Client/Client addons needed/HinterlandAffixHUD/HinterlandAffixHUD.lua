@@ -30,6 +30,36 @@ local HIDE_DEFAULT_HUD = false
 local affixNames = {}
 local affixIcons = {}
 
+local function applyHideHUD()
+  if not HIDE_DEFAULT_HUD then return end
+  local function hideFrame(fr)
+    if not fr then return end
+    if fr.Hide then fr:Hide() end
+    if fr.HookedByHLAffixHUD then return end
+    fr.HookedByHLAffixHUD = true
+    if fr:HasScript("OnShow") then
+      fr:HookScript("OnShow", function(self) self:Hide() end)
+    end
+  end
+  hideFrame(_G["WorldStateAlwaysUpFrame"])  -- common in 3.3.5
+  hideFrame(_G["AlwaysUpFrame"])            -- just in case
+end
+
+local function AnchorUnderAlwaysUp()
+  HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+  if not HinterlandAffixHUDDB.anchorUnder then return end
+  local line = _G["WorldStateAlwaysUpFrame1"] or _G["AlwaysUpFrame1"]
+  local base = _G["WorldStateAlwaysUpFrame"] or _G["AlwaysUpFrame"]
+  f:ClearAllPoints()
+  if line then
+    f:SetPoint("TOPLEFT", line, "BOTTOMLEFT", 0, -4)
+  elseif base then
+    f:SetPoint("TOPLEFT", base, "BOTTOMLEFT", 0, -4)
+  else
+    f:SetPoint("CENTER")
+  end
+end
+
 local function ApplySavedPositionAndScale()
   HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
   f:ClearAllPoints()
@@ -97,11 +127,8 @@ local function update()
   end
   f:SetShown((label ~= "") or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.lastAffix))
 
-  if HIDE_DEFAULT_HUD then
-    if WorldStateAlwaysUpFrame then
-      WorldStateAlwaysUpFrame:Hide()
-    end
-  end
+  applyHideHUD()
+  AnchorUnderAlwaysUp()
 end
 
 local function onEvent(self, event, ...)
@@ -115,7 +142,12 @@ local function onEvent(self, event, ...)
       if type(HinterlandAffixHUDDB.hideDefault) == "boolean" then
         HIDE_DEFAULT_HUD = HinterlandAffixHUDDB.hideDefault
       end
-      ApplySavedPositionAndScale()
+      if HinterlandAffixHUDDB.anchorUnder == nil then HinterlandAffixHUDDB.anchorUnder = true end
+      if HinterlandAffixHUDDB.anchorUnder then
+        AnchorUnderAlwaysUp()
+      else
+        if ApplySavedPositionAndScale then ApplySavedPositionAndScale() end
+      end
     end
     return
   end
@@ -159,6 +191,9 @@ f:RegisterEvent("CHAT_MSG_SAY")
 f:RegisterEvent("CHAT_MSG_RAID_WARNING")
 f:RegisterEvent("CHAT_MSG_BATTLEGROUND")
 f:RegisterEvent("CHAT_MSG_BATTLEGROUND_LEADER")
+-- also listen to worldstate updates so the hide toggle can re-apply
+f:RegisterEvent("UPDATE_WORLD_STATES")
+f:RegisterEvent("WORLD_STATE_UI_TIMER_UPDATE")
 
 -- slash command registration (needed for WotLK clients)
 SLASH_HLAFFIX1 = "/hlaffix"
@@ -189,7 +224,7 @@ SlashCmdList["HLAFFIX"] = function(msg)
     HIDE_DEFAULT_HUD = true
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     HinterlandAffixHUDDB.hideDefault = true
-    update()
+    applyHideHUD(); update()
     print("HinterlandAffixHUD: hiding default HUD")
     return
   elseif msg == "hide off" or msg == "hide 0" then
@@ -197,8 +232,24 @@ SlashCmdList["HLAFFIX"] = function(msg)
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     HinterlandAffixHUDDB.hideDefault = false
     if WorldStateAlwaysUpFrame then WorldStateAlwaysUpFrame:Show() end
+    if AlwaysUpFrame then AlwaysUpFrame:Show() end
     update()
     print("HinterlandAffixHUD: showing default HUD")
+    return
+  elseif msg:find("^anchor ") then
+    local mode = msg:match("^anchor%s+(%w+)")
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    if mode == "under" then
+      HinterlandAffixHUDDB.anchorUnder = true
+      AnchorUnderAlwaysUp()
+      print("HinterlandAffixHUD: anchored under WG HUD line 1")
+    elseif mode == "free" then
+      HinterlandAffixHUDDB.anchorUnder = false
+      if ApplySavedPositionAndScale then ApplySavedPositionAndScale() end
+      print("HinterlandAffixHUD: free positioning enabled (drag to move)")
+    else
+      print("Usage: /hlaffix anchor under|free")
+    end
     return
   elseif msg == "dump" then
     local n = GetNumWorldStateUI() or 0
@@ -209,11 +260,21 @@ SlashCmdList["HLAFFIX"] = function(msg)
       print(i, string.format("0x%X", id or 0), txt or "", val or 0)
     end
     return
+  elseif msg:find("^test ") then
+    local name = msg:match("^test%s+(.+)$")
+    if name and name ~= "" then
+      setAffixByName(name)
+      print("HinterlandAffixHUD: test affix set to", name)
+    else
+      print("Usage: /hlaffix test <name>")
+    end
+    return
   end
   print("HinterlandAffixHUD commands:")
   print("/hlaffix id <number|0xHEX> - set worldstate id (default 0xDD1010)")
   print("/hlaffix hide on|off - hide Blizzard WG HUD")
   print("/hlaffix dump - list current worldstates")
+  print("/hlaffix anchor under|free - anchor under WG HUD or use free drag position")
   print("/hlaffix scale <0.5..1.5> - set HUD scale")
   print("/hlaffix lock on|off - lock/unlock frame")
   print("/hlaffix resetpos - reset frame position")
