@@ -844,7 +844,7 @@
 
         struct HL_EnrageWorker
         {
-            OutdoorPvPHL* self; uint32 zone;
+            OutdoorPvPHL* self; uint32 zone; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
@@ -854,7 +854,7 @@
                         continue;
                     uint32 entry = c->GetEntry();
                     if (self->IsBossNpcEntry(entry))
-                        c->CastSpell(c, self->_affixSpellBossEnrage, true);
+                        c->CastSpell(c, spell, true);
                 }
             }
             template<class T>
@@ -863,7 +863,7 @@
 
         struct HL_ClearEnrageWorker
         {
-            OutdoorPvPHL* self; uint32 zone;
+            OutdoorPvPHL* self; uint32 zone; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
@@ -873,7 +873,7 @@
                         continue;
                     uint32 entry = c->GetEntry();
                     if (self->IsBossNpcEntry(entry))
-                        c->RemoveAurasDueToSpell(self->_affixSpellBossEnrage);
+                        c->RemoveAurasDueToSpell(spell);
                 }
             }
             template<class T>
@@ -882,7 +882,7 @@
 
         struct HL_ClearNpcBuffWorker
         {
-            OutdoorPvPHL* self; uint32 zone;
+            OutdoorPvPHL* self; uint32 zone; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
@@ -892,7 +892,7 @@
                         continue;
                     if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
                         continue;
-                    c->RemoveAurasDueToSpell(self->_affixSpellBadWeatherNpcBuff);
+                    c->RemoveAurasDueToSpell(spell);
                 }
             }
             template<class T>
@@ -933,7 +933,7 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_EnrageWorker worker{ this, zoneId };
+                HL_EnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     TypeContainerVisitor<HL_EnrageWorker, MapStoredObjectTypesContainer> v(worker);
@@ -984,7 +984,7 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_ClearEnrageWorker worker{ this, zoneId };
+                HL_ClearEnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     TypeContainerVisitor<HL_ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
@@ -999,7 +999,7 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_ClearNpcBuffWorker worker{ this, zoneId };
+                HL_ClearNpcBuffWorker worker{ this, zoneId, _affixSpellBadWeatherNpcBuff };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     TypeContainerVisitor<HL_ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
