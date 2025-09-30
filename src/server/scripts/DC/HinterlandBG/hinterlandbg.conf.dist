@@ -86,3 +86,24 @@ HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
 HinterlandBG.Announce.ExpiryWorld = 1
 # Global announcement when a side reaches 0 resources (final scores)
 HinterlandBG.Announce.DepletionWorld = 1
+
+# Persistence and lock (optional)
+HinterlandBG.Persistence.Enabled = 1            # Save/restore resources, timer, last winner, lock window across restarts
+HinterlandBG.Lock.Enabled = 0                   # Enable lock window after a win
+HinterlandBG.Lock.Duration = 0                  # Lock duration in seconds (0 disables)
+
+# Per-kill spell feedback (optional visual/audio)
+HinterlandBG.KillSpell.PlayerKillAlliance = 0   # Spell cast on Alliance player killing a Horde player
+HinterlandBG.KillSpell.PlayerKillHorde    = 0   # Spell cast on Horde player killing an Alliance player
+HinterlandBG.KillSpell.NpcKill            = 0   # Spell cast when killing a configured NPC
+
+# Affix system (optional): rotate zone-wide buffs/debuffs and optional weather
+HinterlandBG.Affix.Enabled = 0
+HinterlandBG.Affix.WeatherEnabled = 0
+HinterlandBG.Affix.Period = 600                 # seconds between affix rotations
+# Affix spells (provide your own IDs or leave 0 to disable)
+HinterlandBG.Affix.Spell.Haste = 0
+HinterlandBG.Affix.Spell.Slow = 0
+HinterlandBG.Affix.Spell.ReducedHealing = 0
+HinterlandBG.Affix.Spell.ReducedArmor = 0
+HinterlandBG.Affix.Spell.BossEnrage = 0

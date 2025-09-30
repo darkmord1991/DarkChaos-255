@@ -31,6 +31,9 @@ void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSta
     // Some clients require CONTROL and ICON_ACTIVE to be present for full HUD render
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
+    // Optional affix code worldstate for addon display
+    if (_affixWorldstateEnabled)
+        packet.Worldstates.emplace_back(WORLD_STATE_HL_AFFIX_TEXT, static_cast<uint32>(_activeAffix));
 }
 
 // Update HUD indicators (timer/resources) for a single player.
@@ -54,6 +57,8 @@ void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
     // Include CONTROL and ICON states to match WG expectations
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0);
+    if (_affixWorldstateEnabled)
+        player->SendUpdateWorldState(WORLD_STATE_HL_AFFIX_TEXT, static_cast<uint32>(_activeAffix));
 }
 
 // Refresh HUD for all players currently in the Hinterlands zone.

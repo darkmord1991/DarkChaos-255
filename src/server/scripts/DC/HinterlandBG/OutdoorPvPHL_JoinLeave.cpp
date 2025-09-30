@@ -16,6 +16,14 @@
 // Called when a player enters the Hinterlands zone managed by this OutdoorPvP.
 void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 {
+    // If zone is locked, redirect entrants to base and inform them
+    if (_lockEnabled && _isLocked)
+    {
+        uint32 remaining = (_lockUntilEpoch > NowSec()) ? (_lockUntilEpoch - NowSec()) : 0u;
+        Whisper(player, "Hinterland BG is currently locked between matches. Next battle begins in " + std::to_string(remaining) + "s.");
+        TeleportToTeamBase(player);
+        return;
+    }
     // Max level gate
     if (!IsMaxLevel(player))
     {
@@ -55,6 +63,12 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 // Called when a player leaves the Hinterlands zone.
 void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
 {
+    if (_lockEnabled && _isLocked)
+    {
+        // During lock, just pass through default leave handling without emote spam
+        OutdoorPvP::HandlePlayerLeaveZone(player, zone);
+        return;
+    }
      player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
      if (_playersInZone > 0)
      {

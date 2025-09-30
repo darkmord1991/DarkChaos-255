@@ -171,6 +171,8 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
 {
     if (!player || !killed)
         return;
+    if (_lockEnabled && _isLocked)
+        return; // ignore combat effects during lock
 
     if (killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
     {
@@ -178,41 +180,56 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         if (player->GetGUID() == killed->GetGUID())
             return;
 
-        switch (killed->ToPlayer()->GetTeamId())
+        TeamId victimTeam = killed->ToPlayer()->GetTeamId();
+        switch (victimTeam)
         {
             case TEAM_ALLIANCE:
                 _ally_gathered -= _resourcesLossPlayerKill;
-                if (IsEligibleForRewards(player))
-                {
-                    if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
-                    {
-                        Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
-                    }
-                    else
-                    {
-                        player->AddItem(40752, 1);
-                        Randomizer(player);
-                        if (_rewardKillItemId && _rewardKillItemCount)
-                            player->AddItem(_rewardKillItemId, _rewardKillItemCount);
-                    }
-                }
+                // Per-kill spell feedback (optional)
+                if (_killSpellOnPlayerKillHorde)
+                    player->CastSpell(player, _killSpellOnPlayerKillHorde, true);
                 break;
             default: // Horde
                 _horde_gathered -= _resourcesLossPlayerKill;
-                if (IsEligibleForRewards(player))
-                {
-                    if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
-                    {
-                        Whisper(player, "|cffff0000AFK penalty: no rewards for kills.|r");
-                    }
-                    else
-                    {
-                        Randomizer(player);
-                        if (_rewardKillItemId && _rewardKillItemCount)
-                            player->AddItem(_rewardKillItemId, _rewardKillItemCount);
-                    }
-                }
+                if (_killSpellOnPlayerKillAlliance)
+                    player->CastSpell(player, _killSpellOnPlayerKillAlliance, true);
                 break;
+        }
+
+        auto rewardToMember = [&](Player* plr)
+        {
+            if (!plr)
+                return;
+            if (!IsEligibleForRewards(plr))
+                return;
+            if (!plr->IsGameMaster() && GetAfkCount(plr) >= 1)
+            {
+                Whisper(plr, "|cffff0000AFK penalty: no rewards for kills.|r");
+                return;
+            }
+            Randomizer(plr);
+            if (_rewardKillItemId && _rewardKillItemCount)
+                plr->AddItem(_rewardKillItemId, _rewardKillItemCount);
+        };
+
+        // Group-range reward distribution similar to Nagrand (Halaa)
+        if (Group* group = player->GetGroup())
+        {
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* mate = itr->GetSource();
+                if (!mate)
+                    continue;
+                if (!mate->IsAtGroupRewardDistance(killed) && player != mate)
+                    continue;
+                // Only count if active in HL zone
+                if (mate->IsOutdoorPvPActive() && mate->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                    rewardToMember(mate);
+            }
+        }
+        else
+        {
+            rewardToMember(player);
         }
         // Update HUD for all participants after resource change
         UpdateWorldStatesAllPlayers();
@@ -291,6 +308,9 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             applyLoss(TEAM_HORDE);
         else if (_npcBossEntriesAlliance.count(entry) || _npcNormalEntriesAlliance.count(entry))
             applyLoss(TEAM_ALLIANCE);
+        // Per-kill NPC spell feedback (optional)
+        if (_killSpellOnNpcKill)
+            player->CastSpell(player, _killSpellOnNpcKill, true);
         // Update HUD for all participants after resource change
         UpdateWorldStatesAllPlayers();
     }

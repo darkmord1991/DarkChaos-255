@@ -52,6 +52,53 @@ void OutdoorPvPHL::LoadConfig()
         _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
         _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
         _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
+    // Persistence and lock
+    _persistenceEnabled   = sConfigMgr->GetOption<bool>("HinterlandBG.Persistence.Enabled", true);
+    _lockEnabled          = sConfigMgr->GetOption<bool>("HinterlandBG.Lock.Enabled", false);
+    _lockDurationSeconds  = sConfigMgr->GetOption<uint32>("HinterlandBG.Lock.Duration", 0u);
+    _lockDurationExpirySec    = sConfigMgr->GetOption<uint32>("HinterlandBG.Lock.Duration.Expiry", _lockDurationSeconds);
+    _lockDurationDepletionSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Lock.Duration.Depletion", _lockDurationSeconds);
+    // Per-kill spell feedback (optional)
+    _killSpellOnPlayerKillAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.PlayerKillAlliance", _killSpellOnPlayerKillAlliance);
+    _killSpellOnPlayerKillHorde    = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.PlayerKillHorde", _killSpellOnPlayerKillHorde);
+    _killSpellOnNpcKill            = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.NpcKill", _killSpellOnNpcKill);
+    // Affix system (optional)
+    _affixEnabled         = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Enabled", _affixEnabled);
+    _affixWeatherEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WeatherEnabled", _affixWeatherEnabled);
+    _affixPeriodSec       = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Period", _affixPeriodSec);
+    _affixSpellHaste      = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.Haste", _affixSpellHaste);
+    _affixSpellSlow       = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.Slow", _affixSpellSlow);
+    _affixSpellReducedHealing = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.ReducedHealing", _affixSpellReducedHealing);
+    _affixSpellReducedArmor   = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.ReducedArmor", _affixSpellReducedArmor);
+    _affixSpellBossEnrage     = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.BossEnrage", _affixSpellBossEnrage);
+    _affixSpellBadWeatherNpcBuff = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.BadWeatherNpcBuff", _affixSpellBadWeatherNpcBuff);
+    _affixRandomOnStart      = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnBattleStart", _affixRandomOnStart);
+    _affixAnnounce           = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
+    _affixWorldstateEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WorldstateEnabled", _affixWorldstateEnabled);
+    // Per-affix overrides: player/npc spells and weather
+    auto loadAffixArrayU32 = [&](char const* base, uint32 arr[6])
+    {
+        // keys like base.0 .. base.5 (or by name)
+        for (uint32 i = 0; i <= 5; ++i)
+        {
+            char key[128];
+            snprintf(key, sizeof(key), "%s.%u", base, i);
+            arr[i] = sConfigMgr->GetOption<uint32>(key, arr[i]);
+        }
+    };
+    auto loadAffixArrayFloat = [&](char const* base, float arr[6])
+    {
+        for (uint32 i = 0; i <= 5; ++i)
+        {
+            char key[128];
+            snprintf(key, sizeof(key), "%s.%u", base, i);
+            arr[i] = sConfigMgr->GetOption<float>(key, arr[i]);
+        }
+    };
+    loadAffixArrayU32("HinterlandBG.Affix.PlayerSpell", _affixPlayerSpell);
+    loadAffixArrayU32("HinterlandBG.Affix.NpcSpell", _affixNpcSpell);
+    loadAffixArrayU32("HinterlandBG.Affix.WeatherType", _affixWeatherType);
+    loadAffixArrayFloat("HinterlandBG.Affix.WeatherIntensity", _affixWeatherIntensity);
     // Resource loss amounts
     _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);
     _resourcesLossNpcNormal  = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcNormal",  _resourcesLossNpcNormal);

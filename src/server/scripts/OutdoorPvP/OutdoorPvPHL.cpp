@@ -81,6 +81,8 @@
     #include "WorldPacket.h"
     #include "OutdoorPvPScript.h"
     #include "CreatureScript.h"
+    #include "Creature.h"
+    #include <unordered_map>
     #include "WorldSession.h"
     #include "WorldSessionMgr.h"
     #include "Chat.h"
@@ -91,6 +93,8 @@
     #include "Misc/GameGraveyard.h"
     #include "Time/GameTime.h"
     #include "Config.h"
+    #include "WorldState.h"
+    #include "WeatherMgr.h"
     
     #include "GroupMgr.h"
     #include "MapMgr.h"
@@ -150,6 +154,28 @@
         _horde_gathered = _initialResourcesHorde;
         _LastWin = 0;
         _matchEndTime = 0;
+        // Persistence and lock defaults
+        _persistenceEnabled = true;
+        _lockEnabled = false;
+        _lockDurationSeconds = 0;
+        _isLocked = false;
+        _lockUntilEpoch = 0;
+        // Per-kill spell feedback defaults
+        _killSpellOnPlayerKillAlliance = 0;
+        _killSpellOnPlayerKillHorde = 0;
+        _killSpellOnNpcKill = 0;
+        // Affix defaults
+        _affixEnabled = false;
+        _affixWeatherEnabled = false;
+        _affixPeriodSec = 0;
+        _affixTimerMs = 0;
+        _activeAffix = AFFIX_NONE;
+    _affixNextChangeEpoch = 0;
+        _affixSpellHaste = 0;
+        _affixSpellSlow = 0;
+        _affixSpellReducedHealing = 0;
+        _affixSpellReducedArmor = 0;
+        _affixSpellBossEnrage = 0;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
@@ -180,8 +206,49 @@
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             RegisterZone(OutdoorPvPHLBuffZones[i]);
         SetMapFromZone(OutdoorPvPHLBuffZones[0]);
-        // Re-load configuration on setup
+        // Re-load configuration on setup and restore persisted state if enabled
         LoadConfig();
+    if (_persistenceEnabled)
+        {
+            // Restore state similar to TF: read worldstate keys if present
+            uint32 savedAlly = uint32(sWorldState->getWorldState(0xDD0001));
+            uint32 savedHorde = uint32(sWorldState->getWorldState(0xDD0002));
+            uint32 savedEnd   = uint32(sWorldState->getWorldState(0xDD0003));
+            uint32 savedWin   = uint32(sWorldState->getWorldState(0xDD0004));
+            uint32 savedLock  = uint32(sWorldState->getWorldState(0xDD0005));
+            uint32 savedLockUntil = uint32(sWorldState->getWorldState(0xDD0006));
+            uint32 savedAffix      = uint32(sWorldState->getWorldState(0xDD0007));
+            uint32 savedAffixEpoch = uint32(sWorldState->getWorldState(0xDD0008));
+            if (savedAlly && savedHorde && savedEnd)
+            {
+                _ally_gathered = savedAlly;
+                _horde_gathered = savedHorde;
+                _matchEndTime = savedEnd;
+                _LastWin = savedWin;
+            }
+            if (_lockEnabled && savedLockUntil)
+            {
+                _isLocked = savedLock != 0;
+                _lockUntilEpoch = savedLockUntil;
+                if (_isLocked && NowSec() >= _lockUntilEpoch)
+                {
+                    _isLocked = false;
+                    _lockUntilEpoch = 0;
+                }
+            }
+            // Restore affix state
+            if (_affixEnabled && savedAffix)
+            {
+                _activeAffix = static_cast<AffixType>(savedAffix);
+                _affixNextChangeEpoch = savedAffixEpoch;
+                // Set a remaining timer based on epoch
+                uint32 now = NowSec();
+                if (_affixNextChangeEpoch > now)
+                    _affixTimerMs = (_affixNextChangeEpoch - now) * IN_MILLISECONDS;
+                else
+                    _affixTimerMs = 0; // trigger immediate rotation
+            }
+        }
         return true;
     }
 
@@ -376,7 +443,12 @@
             if (_matchEndTime == 0)
                 _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
             _FirstLoad = true;
+            _persistState();
         }
+
+        // 0) While locked, hold interactions except HUD/status; exit early
+        if (_tickLock(diff))
+            return false;
 
         // 1) Timer expiry (may reset and consume the tick)
         if (_tickTimerExpiry())
@@ -389,6 +461,40 @@
         _tickHudRefresh(diff);
         _tickStatusBroadcast(diff);
         _tickThresholdAnnouncements();
+        // If depletion win scheduled a lock/reset, handle it before affix tick
+        if (_pendingLockFromDepletion)
+        {
+            _pendingLockFromDepletion = false;
+            if (_lockEnabled)
+            {
+                _isLocked = true;
+                uint32 dur = _lockDurationDepletionSec ? _lockDurationDepletionSec : (_lockDurationSeconds ? _lockDurationSeconds : 0);
+                if (dur > 0)
+                    _lockUntilEpoch = NowSec() + dur;
+                else
+                {
+                    // if zero duration configured, clear lock flags
+                    _isLocked = false;
+                    _lockUntilEpoch = 0;
+                }
+            }
+            if (_autoResetTeleport)
+                TeleportPlayersToStart();
+            HandleReset();
+            if (_isLocked)
+                _matchEndTime = 0;
+            // Optionally pick a fresh affix for the next battle immediately when not locked
+            if (!_isLocked)
+            {
+                _tickAffix(0);
+                UpdateAffixWorldstateAll();
+                ApplyAffixWeather();
+            }
+            _persistState();
+            return false;
+        }
+        _tickAffix(diff);
+        _persistState();
         return false;
     }
 
@@ -457,11 +563,46 @@
             }
         }
 
+        // If lock is enabled, set a lock window now
+        if (_lockEnabled)
+        {
+            _isLocked = true;
+            uint32 dur = _lockDurationExpirySec ? _lockDurationExpirySec : _lockDurationSeconds;
+            _lockUntilEpoch = NowSec() + dur;
+        }
+
         // Optionally move everyone to start points before respawning NPCs/GOs
         if (_autoResetTeleport)
             TeleportPlayersToStart();
         HandleReset();
+        // While locked, freeze the match timer so expiry logic pauses until lock ends
+        if (_isLocked)
+            _matchEndTime = 0;
+        _persistState();
         return true; // consumed this tick
+    }
+
+    bool OutdoorPvPHL::_tickLock(uint32 /*diff*/)
+    {
+        if (!_lockEnabled || !_isLocked)
+            return false; // not locked, proceed normally
+        uint32 now = NowSec();
+        if (_lockUntilEpoch > 0 && now >= _lockUntilEpoch)
+        {
+            // Lock expired: open the battleground and start a fresh window
+            _isLocked = false;
+            _lockUntilEpoch = 0;
+            // Seed a fresh match timer and refresh HUD; actors were already reset at lock start
+            _matchEndTime = NowSec() + _matchDurationSeconds;
+            UpdateWorldStatesAllPlayers();
+            _persistState();
+            return false; // proceed after reset on next tick
+        }
+        // While locked, keep HUD refreshed and status broadcast running, but do not run other progression ticks
+        _tickHudRefresh(1000);
+        _tickStatusBroadcast(1000);
+        _persistState();
+        return true; // signal Update() to early-return while locked
     }
 
     void OutdoorPvPHL::_tickEmptyZoneDiagnostics(uint32 diff)
@@ -628,3 +769,248 @@
         new OutdoorPvP_hinterland;
         new HLMovementHandlerScript();
 	}
+
+    // --- Persistence ---
+    void OutdoorPvPHL::SaveRequiredWorldStates() const
+    {
+        // Choose reserved worldstate keys for HLBG persistence (unlikely to collide)
+        // 0xDD0001..0xDD0006 are arbitrary private keys.
+        sWorldState->setWorldState(0xDD0001, _ally_gathered);
+        sWorldState->setWorldState(0xDD0002, _horde_gathered);
+        sWorldState->setWorldState(0xDD0003, _matchEndTime);
+        sWorldState->setWorldState(0xDD0004, _LastWin);
+        sWorldState->setWorldState(0xDD0005, _isLocked ? 1u : 0u);
+        sWorldState->setWorldState(0xDD0006, _lockUntilEpoch);
+        // Affix persistence
+        sWorldState->setWorldState(0xDD0007, static_cast<uint32>(_activeAffix));
+        sWorldState->setWorldState(0xDD0008, _affixNextChangeEpoch);
+    }
+
+    void OutdoorPvPHL::_persistState() const
+    {
+        if (_persistenceEnabled)
+            SaveRequiredWorldStates();
+    }
+
+    // --- Affix system (scaffolding) ---
+    void OutdoorPvPHL::_tickAffix(uint32 diff)
+    {
+        if (!_affixEnabled)
+            return;
+        if (_lockEnabled && _isLocked)
+            return; // pause affix rotation during lock
+        if (_affixTimerMs > diff)
+        {
+            _affixTimerMs -= diff;
+            return;
+        }
+    _affixTimerMs = std::max<uint32>(10, _affixPeriodSec) * IN_MILLISECONDS;
+    _affixNextChangeEpoch = NowSec() + std::max<uint32>(10, _affixPeriodSec);
+        // Rotate affix randomly
+        _clearAffixEffects();
+        uint32 roll = urand(1, 5);
+        _activeAffix = static_cast<AffixType>(roll);
+        _applyAffixEffects();
+        ApplyAffixWeather();
+        UpdateAffixWorldstateAll();
+    }
+
+    void OutdoorPvPHL::_applyAffixEffects()
+    {
+        // Apply team-wide aura effects depending on affix
+        auto applyAuraAll = [&](uint32 spellId)
+        {
+            if (!spellId)
+                return;
+            ForEachPlayerInZone([&](Player* p){ p->CastSpell(p, spellId, true); });
+        };
+        auto applyNpcAuraAll = [&](uint32 spellId)
+        {
+            if (!spellId)
+                return;
+            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            if (Map* map = GetMap())
+            {
+                uint32 mapId = map->GetId();
+                struct NpcAuraWorker
+                {
+                    uint32 zone; uint32 spell;
+                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+                    {
+                        for (auto const& pr : cmap)
+                        {
+                            Creature* c = pr.second;
+                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                                continue;
+                            if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
+                                continue;
+                            c->CastSpell(c, spell, true);
+                        }
+                    }
+                    template<class T>
+                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+                } worker{ zoneId, spellId };
+                sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
+                {
+                    TypeContainerVisitor<NpcAuraWorker, MapStoredObjectTypesContainer> v(worker);
+                    v.Visit(m->GetObjectsStore());
+                });
+            }
+        };
+        auto enrageBosses = [&]()
+        {
+            if (_affixSpellBossEnrage == 0)
+                return;
+            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            if (Map* map = GetMap())
+            {
+                uint32 mapId = map->GetId();
+                struct EnrageWorker
+                {
+                    OutdoorPvPHL* self;
+                    uint32 zone;
+                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+                    {
+                        for (auto const& p : cmap)
+                        {
+                            Creature* c = p.second;
+                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                                continue;
+                            uint32 entry = c->GetEntry();
+                            if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                                c->CastSpell(c, self->_affixSpellBossEnrage, true);
+                        }
+                    }
+                    template<class T>
+                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+                } worker{ this, zoneId };
+                sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
+                {
+                    TypeContainerVisitor<EnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                    v.Visit(m->GetObjectsStore());
+                });
+            }
+        };
+        // Player auras
+        if (uint32 pspell = GetPlayerSpellForAffix(_activeAffix))
+            applyAuraAll(pspell);
+        // NPC auras
+        if (uint32 nspell = GetNpcSpellForAffix(_activeAffix))
+        {
+            if (_activeAffix == AFFIX_BOSS_ENRAGE)
+                enrageBosses();
+            else
+                applyNpcAuraAll(nspell);
+        }
+        // For "bad" affixes, give NPCs a buff (or debuff players handled above). This keeps it in sync with weather.
+        // Optional: zone announce affix
+        if (_affixAnnounce)
+        {
+            const char* aff = "Unknown"; // label only for text
+            switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
+            char line[128];
+            snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s", aff);
+            sWorldSessionMgr->SendZoneText(OutdoorPvPHLBuffZones[0], line);
+        }
+    }
+
+    void OutdoorPvPHL::_clearAffixEffects()
+    {
+        auto removeAuraAll = [&](uint32 spellId)
+        {
+            if (!spellId)
+                return;
+            ForEachPlayerInZone([&](Player* p){ p->RemoveAurasDueToSpell(spellId); });
+        };
+        removeAuraAll(_affixSpellHaste);
+        removeAuraAll(_affixSpellSlow);
+        removeAuraAll(_affixSpellReducedHealing);
+        removeAuraAll(_affixSpellReducedArmor);
+        // Clear enrage from boss NPCs if any: iterate zone creatures
+        if (_affixSpellBossEnrage)
+        {
+            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            if (Map* map = GetMap())
+            {
+                uint32 mapId = map->GetId();
+                struct ClearEnrageWorker
+                {
+                    OutdoorPvPHL* self;
+                    uint32 zone;
+                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+                    {
+                        for (auto const& p : cmap)
+                        {
+                            Creature* c = p.second;
+                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                                continue;
+                            uint32 entry = c->GetEntry();
+                            if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                                c->RemoveAurasDueToSpell(self->_affixSpellBossEnrage);
+                        }
+                    }
+                    template<class T>
+                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+                } worker{ this, zoneId };
+                sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
+                {
+                    TypeContainerVisitor<ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                    v.Visit(m->GetObjectsStore());
+                });
+            }
+        }
+        // Clear NPC bad-weather buff
+        if (_affixSpellBadWeatherNpcBuff)
+        {
+            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            if (Map* map = GetMap())
+            {
+                uint32 mapId = map->GetId();
+                struct ClearNpcBuffWorker
+                {
+                    OutdoorPvPHL* self; uint32 zone;
+                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+                    {
+                        for (auto const& p : cmap)
+                        {
+                            Creature* c = p.second;
+                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                                continue;
+                            if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
+                                continue;
+                            c->RemoveAurasDueToSpell(self->_affixSpellBadWeatherNpcBuff);
+                        }
+                    }
+                    template<class T>
+                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+                } worker{ this, zoneId };
+                sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
+                {
+                    TypeContainerVisitor<ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
+                    v.Visit(m->GetObjectsStore());
+                });
+            }
+        }
+    }
+
+    void OutdoorPvPHL::_setAffixWeather()
+    {
+        // Simple weather mapping per affix for ambience (optional)
+        // Note: Weather API availability may vary; keep minimal.
+        // 0: Fine, 1: Rain, 2: Snow, 3: Storm (example codes)
+        uint32 weather = 0;
+        switch (_activeAffix)
+        {
+            case AFFIX_HASTE_BUFF: weather = 0; break;
+            case AFFIX_SLOW: weather = 1; break;
+            case AFFIX_REDUCED_HEALING: weather = 3; break;
+            case AFFIX_REDUCED_ARMOR: weather = 2; break;
+            case AFFIX_BOSS_ENRAGE: weather = 3; break;
+            default: weather = 0; break;
+        }
+        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+        if (Weather* w = WeatherMgr::FindWeather(zoneId))
+            w->SetWeather(static_cast<WeatherType>(weather), 0.5f);
+        else if (Weather* w2 = WeatherMgr::AddWeather(zoneId))
+            w2->SetWeather(static_cast<WeatherType>(weather), 0.5f);
+    }

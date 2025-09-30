@@ -14,6 +14,8 @@
 // Periodic announcement tick for resource thresholds and depletion.
 void OutdoorPvPHL::_tickThresholdAnnouncements()
 {
+    if (_lockEnabled && _isLocked)
+        return;
     if(_ally_gathered <= 50 && limit_A == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
@@ -135,6 +137,9 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                                 break;
                         }
                         _LastWin = HORDE;
+                        // Schedule lock/reset processing in Update()
+                        _pendingLockFromDepletion = true;
+                        _pendingDepletionWinner = TEAM_HORDE;
                         IS_RESOURCE_MESSAGE_A = false;
                     }
                 }
@@ -170,6 +175,8 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                                 break;
                         }
                         _LastWin = ALLIANCE;
+                        _pendingLockFromDepletion = true;
+                        _pendingDepletionWinner = TEAM_ALLIANCE;
                         IS_RESOURCE_MESSAGE_H = false;
                     }
                 }

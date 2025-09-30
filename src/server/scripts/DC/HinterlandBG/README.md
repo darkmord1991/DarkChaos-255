@@ -87,6 +87,26 @@ HinterlandBG.Reward.NPCEntriesHorde       =
 HinterlandBG.Reward.NPCEntryCountsAlliance=
 HinterlandBG.Reward.NPCEntryCountsHorde   =
 
+; --- Persistence and lock (optional) ---
+HinterlandBG.Persistence.Enabled          = 1       ; save/restore resources, timer, last winner
+HinterlandBG.Lock.Enabled                 = 0       ; lock HLBG after a win (cooldown window)
+HinterlandBG.Lock.Duration                = 0       ; seconds
+
+; --- Per-kill spell feedback (optional) ---
+HinterlandBG.KillSpell.PlayerKillAlliance = 0
+HinterlandBG.KillSpell.PlayerKillHorde    = 0
+HinterlandBG.KillSpell.NpcKill            = 0
+
+; --- Affix system (optional) ---
+HinterlandBG.Affix.Enabled                = 0
+HinterlandBG.Affix.WeatherEnabled         = 0
+HinterlandBG.Affix.Period                 = 600     ; seconds
+HinterlandBG.Affix.Spell.Haste            = 0
+HinterlandBG.Affix.Spell.Slow             = 0
+HinterlandBG.Affix.Spell.ReducedHealing   = 0
+HinterlandBG.Affix.Spell.ReducedArmor     = 0
+HinterlandBG.Affix.Spell.BossEnrage       = 0
+
 Notes
 - End-of-match rewards are granted via `HandleRewards(TeamId winner)`:
   - Winner gets `_rewardMatchHonorDepletion` if the loser’s resources reached 0, otherwise `_rewardMatchHonorTiebreaker`.

@@ -209,6 +209,9 @@
             void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
             void UpdateWorldStatesForPlayer(Player* player);
             void UpdateWorldStatesAllPlayers();
+            // Affix worldstate helper (optional label via worldstate value)
+            void UpdateAffixWorldstateForPlayer(Player* player);
+            void UpdateAffixWorldstateAll();
 
             // Group auto-invite helpers (battleground-like raid management)
             bool AddOrSetPlayerToCorrectBfGroup(Player* plr);
@@ -220,6 +223,8 @@
             std::string GetBgChatPrefix() const;
             // Config loader
             void LoadConfig();
+            // Save and restore persistent state across restarts (resources, timers, lock)
+            void SaveRequiredWorldStates() const;
 
         private:
             // Test shim: grant unit tests limited access to private members/helpers
@@ -229,8 +234,17 @@
                 {
                     return static_cast<uint32>(GameTime::GetGameTime().count());
                 }
-            // HUD: compute end-epoch for WG-like timer display
-            inline uint32 GetHudEndEpoch() const { return NowSec() + GetTimeRemainingSeconds(); }
+            // HUD: compute end-epoch for WG-like timer display; show lock countdown when locked
+            inline uint32 GetHudEndEpoch() const {
+                uint32 now = NowSec();
+                if (_lockEnabled && _isLocked && _lockUntilEpoch > now)
+                    return _lockUntilEpoch;
+                if (_matchEndTime > now)
+                    return _matchEndTime;
+                return now;
+            }
+            // Optional worldstate for affix label/code (client addon can render a label)
+            static constexpr uint32 WORLD_STATE_HL_AFFIX_TEXT = 0xDD1010;
             // helpers
             bool IsMaxLevel(Player* player) const;
             bool IsEligibleForRewards(Player* player) const; // checks deserter only; AFK handled separately
@@ -255,6 +269,23 @@
             void _tickStatusBroadcast(uint32 diff);
             // 7) Resource threshold announcements, win shouts, depletion world announcements, and related flag handling
             void _tickThresholdAnnouncements();
+            // 8) Optional affix system (zone-wide buffs/debuffs and optional weather)
+            void _tickAffix(uint32 diff);
+            void _applyAffixEffects();
+            void _clearAffixEffects();
+            void _setAffixWeather();
+            // Affix mapping helpers
+            uint32 GetPlayerSpellForAffix(AffixType a) const;
+            uint32 GetNpcSpellForAffix(AffixType a) const;
+            void   ApplyAffixWeather();
+            // 9) Optional lock window between matches (if enabled in config)
+            // Returns true if the tick was consumed (e.g., lock expired and reset executed),
+            // otherwise returns true as a signal to early-return from Update while locked.
+            bool _tickLock(uint32 /*diff*/);
+            // 10) Affix helpers for battle-start randomization and category queries
+            void _selectAffixForNewBattle();
+            inline bool _isBadAffix() const { return _activeAffix == AFFIX_SLOW || _activeAffix == AFFIX_REDUCED_HEALING || _activeAffix == AFFIX_REDUCED_ARMOR || _activeAffix == AFFIX_BOSS_ENRAGE; }
+            void _persistState() const; // helper that checks toggle and calls SaveRequiredWorldStates
 
             uint32 _ally_gathered;
             uint32 _horde_gathered;
@@ -314,6 +345,43 @@
     uint32 _resourcesLossPlayerKill;   // e.g., 5
     uint32 _resourcesLossNpcNormal;    // e.g., 5
     uint32 _resourcesLossNpcBoss;      // e.g., 200
+    // Persistence and lock configuration
+    bool   _persistenceEnabled;        // save/restore match state across restarts
+    bool   _lockEnabled;               // enable lock window after win
+    uint32 _lockDurationSeconds;       // lock duration
+    uint32 _lockDurationExpirySec;     // optional override for expiry lock duration
+    uint32 _lockDurationDepletionSec;  // optional override for depletion lock duration
+    bool   _isLocked;                  // currently locked
+    uint32 _lockUntilEpoch;            // unix epoch when lock ends
+    bool   _pendingLockFromDepletion = false; // schedule lock/reset after resource depletion
+    TeamId _pendingDepletionWinner = TEAM_NEUTRAL;
+    // Per-kill feedback spells (optional)
+    uint32 _killSpellOnPlayerKillAlliance;
+    uint32 _killSpellOnPlayerKillHorde;
+    uint32 _killSpellOnNpcKill;
+    // Affix system (optional)
+    bool   _affixEnabled;
+    bool   _affixWeatherEnabled;
+    uint32 _affixPeriodSec;
+    uint32 _affixTimerMs;
+    enum AffixType { AFFIX_NONE=0, AFFIX_HASTE_BUFF=1, AFFIX_SLOW=2, AFFIX_REDUCED_HEALING=3, AFFIX_REDUCED_ARMOR=4, AFFIX_BOSS_ENRAGE=5 };
+    AffixType _activeAffix;
+    uint32 _affixNextChangeEpoch; // persistence of next rotation time
+    // Affix spell IDs
+    uint32 _affixSpellHaste;
+    uint32 _affixSpellSlow;
+    uint32 _affixSpellReducedHealing;
+    uint32 _affixSpellReducedArmor;
+    uint32 _affixSpellBossEnrage;
+    uint32 _affixSpellBadWeatherNpcBuff; // optional NPC buff applied during "bad" affixes
+    bool   _affixRandomOnStart;          // pick random affix at battle start
+    bool   _affixAnnounce;               // announce affix changes in zone
+    bool   _affixWorldstateEnabled;      // send affix code as worldstate
+    // Per-affix granular config (override single-spell/weather defaults when non-zero)
+    uint32 _affixPlayerSpell[6] = {0};   // index by AffixType
+    uint32 _affixNpcSpell[6]    = {0};
+    uint32 _affixWeatherType[6] = {0};   // WeatherType per affix
+    float  _affixWeatherIntensity[6] = {0.0f};
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
             // Movement-based AFK tracking

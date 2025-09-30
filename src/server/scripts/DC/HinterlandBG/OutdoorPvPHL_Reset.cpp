@@ -56,6 +56,20 @@ void OutdoorPvPHL::HandleReset()
 
     _matchEndTime = NowSec() + _matchDurationSeconds;
     LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
+    // If configured, pick a random affix for the new battle immediately
+    // (weather will be synced if enabled)
+    if (_affixEnabled && _affixRandomOnStart)
+    {
+        // clear any previous effects and choose a new one
+        _clearAffixEffects();
+        uint32 roll = urand(1, 5);
+        _activeAffix = static_cast<AffixType>(roll);
+        _applyAffixEffects();
+        if (_affixWeatherEnabled)
+            _setAffixWeather();
+        _affixTimerMs = std::max<uint32>(10, _affixPeriodSec) * IN_MILLISECONDS;
+        _affixNextChangeEpoch = NowSec() + std::max<uint32>(10, _affixPeriodSec);
+    }
     UpdateWorldStatesAllPlayers();
     _statusBroadcastTimerMs = 1;
 }
