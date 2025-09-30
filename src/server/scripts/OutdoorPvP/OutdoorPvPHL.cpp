@@ -545,6 +545,8 @@
 
             if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
             {
+                _recordWinner(winner);
+                _LastWin = (winner == TEAM_ALLIANCE) ? ALLIANCE : HORDE;
                 // Reward winning team members in-zone and apply win/lose buffs
                 WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
                 for (auto const& it : sessionMap)

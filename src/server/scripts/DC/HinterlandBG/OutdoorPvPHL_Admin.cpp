@@ -51,3 +51,56 @@ void OutdoorPvPHL::ForceReset()
 {
     HandleReset();
 }
+
+// Return up to maxCount most recent winners in most-recent-first order.
+std::vector<TeamId> OutdoorPvPHL::GetRecentWinners(size_t maxCount) const
+{
+    std::vector<TeamId> out;
+    if (maxCount == 0 || _recentWinners.empty())
+        return out;
+    size_t n = std::min(maxCount, _recentWinners.size());
+    out.reserve(n);
+    size_t i = 0;
+    for (TeamId t : _recentWinners)
+    {
+        if (i++ >= n) break;
+        out.push_back(t);
+    }
+    return out;
+}
+
+// Map legacy _LastWin integer to TeamId for external consumers.
+TeamId OutdoorPvPHL::GetLastWinnerTeamId() const
+{
+    if (_LastWin == ALLIANCE)
+        return TEAM_ALLIANCE;
+    if (_LastWin == HORDE)
+        return TEAM_HORDE;
+    return TEAM_NEUTRAL;
+}
+
+// Private helper: keep an in-memory ring buffer of last ~10 winners
+void OutdoorPvPHL::_recordWinner(TeamId winner)
+{
+    if (winner != TEAM_ALLIANCE && winner != TEAM_HORDE)
+        return;
+    // push front, unique-consecutive not required; keep last 10
+    _recentWinners.push_front(winner);
+    while (_recentWinners.size() > 10)
+        _recentWinners.pop_back();
+
+    // Persist a row in characters DB for history
+    // Note: CharacterDatabase is available globally; keep SQL minimal and safe.
+    uint32 zone = OutdoorPvPHLBuffZones[0];
+    uint32 mapId = 0;
+    if (Map* m = GetMap())
+        mapId = m->GetId();
+    uint8 winnerTid = static_cast<uint8>(winner);
+    uint32 a = _ally_gathered;
+    uint32 h = _horde_gathered;
+    const char* reason = (_horde_gathered == 0 || _ally_gathered == 0) ? "depletion" : "tiebreaker";
+    uint8 aff = static_cast<uint8>(_activeAffix);
+    CharacterDatabase.Execute(
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, winner_tid, score_alliance, score_horde, win_reason, affix) VALUES({}, {}, {}, {}, {}, '{}', {})",
+        zone, mapId, winnerTid, a, h, reason, aff);
+}

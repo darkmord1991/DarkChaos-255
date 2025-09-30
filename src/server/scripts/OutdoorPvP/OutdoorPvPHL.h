@@ -27,6 +27,7 @@
     #include <string>
     #include <vector>
     #include <map>
+    #include <deque>
     #include "Position.h"
 
 
@@ -191,6 +192,11 @@
             void SetResources(TeamId team, uint32 amount);
             // Return a const reference to avoid copying large vectors on status queries
             std::vector<ObjectGuid> const& GetBattlegroundGroupGUIDs(TeamId team) const;
+            // DC helpers for status displays (scoreboard NPC, commands)
+            // Return up to maxCount most recent winners (most recent first). Empty if none recorded.
+            std::vector<TeamId> GetRecentWinners(size_t maxCount) const;
+            // Return the last winner as TeamId mapping (TEAM_NEUTRAL if unknown/none)
+            TeamId GetLastWinnerTeamId() const;
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
@@ -292,6 +298,8 @@
             void _selectAffixForNewBattle();
             inline bool _isBadAffix() const { return _activeAffix == AFFIX_SLOW || _activeAffix == AFFIX_REDUCED_HEALING || _activeAffix == AFFIX_REDUCED_ARMOR || _activeAffix == AFFIX_BOSS_ENRAGE; }
             void _persistState() const; // helper that checks toggle and calls SaveRequiredWorldStates
+            // Track recent winners for scoreboard UX
+            void _recordWinner(TeamId winner);
 
             uint32 _ally_gathered;
             uint32 _horde_gathered;
@@ -361,6 +369,8 @@
     uint32 _lockUntilEpoch;            // unix epoch when lock ends
     bool   _pendingLockFromDepletion = false; // schedule lock/reset after resource depletion
     TeamId _pendingDepletionWinner = TEAM_NEUTRAL;
+    // In-memory circular buffer of recent winners (most recent first)
+    std::deque<TeamId> _recentWinners;
     // Per-kill feedback spells (optional)
     uint32 _killSpellOnPlayerKillAlliance;
     uint32 _killSpellOnPlayerKillHorde;

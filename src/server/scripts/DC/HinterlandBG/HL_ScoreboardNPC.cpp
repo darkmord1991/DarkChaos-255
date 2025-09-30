@@ -10,6 +10,7 @@
 #include "GossipDef.h"
 #include "Chat.h"
 #include "HinterlandBG.h"
+#include "DatabaseEnv.h"
 
 static OutdoorPvPHL* GetHL()
 {
@@ -67,16 +68,42 @@ public:
                 snprintf(line, sizeof(line), "Players — A:%u  H:%u", (unsigned)aCount, (unsigned)hCount);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
 
-                // Recent history (last 5 winners)
-                auto recent = hl->GetRecentWinners(5);
-                if (!recent.empty())
+                // Recent history (last 5 winners): prefer DB history, fallback to in-memory
+                struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; };
+                std::vector<HistRow> rows;
+                {
+                    QueryResult res = CharacterDatabase.Query("SELECT winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT 5");
+                    if (res)
+                    {
+                        do
+                        {
+                            Field* f = res->Fetch();
+                            HistRow r;
+                            r.tid = static_cast<TeamId>(f[0].GetUInt8());
+                            r.a = f[1].GetUInt32();
+                            r.h = f[2].GetUInt32();
+                            r.reason = f[3].GetString();
+                            rows.push_back(std::move(r));
+                        } while (res->NextRow());
+                    }
+                }
+                if (rows.empty())
+                {
+                    auto recent = hl->GetRecentWinners(5);
+                    for (auto const& t : recent)
+                        rows.push_back(HistRow{t, 0u, 0u, std::string()});
+                }
+                if (!rows.empty())
                 {
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Recent results:", GOSSIP_SENDER_MAIN, 1);
                     uint32 idx = 1;
-                    for (auto const& w : recent)
+                    for (auto const& r : rows)
                     {
-                        const char* name = (w == TEAM_ALLIANCE ? "Alliance" : (w == TEAM_HORDE ? "Horde" : "Draw"));
-                        snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
+                        const char* name = (r.tid == TEAM_ALLIANCE ? "Alliance" : (r.tid == TEAM_HORDE ? "Horde" : "Draw"));
+                        if (!r.reason.empty())
+                            snprintf(line, sizeof(line), "%u) %s  A:%u H:%u  (%s)", (unsigned)idx++, name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                        else
+                            snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
                         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     }
                 }

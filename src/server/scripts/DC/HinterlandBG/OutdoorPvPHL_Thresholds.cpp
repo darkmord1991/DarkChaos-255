@@ -137,6 +137,7 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                                 break;
                         }
                         _LastWin = HORDE;
+                        _recordWinner(TEAM_HORDE);
                         // Schedule lock/reset processing in Update()
                         _pendingLockFromDepletion = true;
                         _pendingDepletionWinner = TEAM_HORDE;
@@ -175,6 +176,7 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                                 break;
                         }
                         _LastWin = ALLIANCE;
+                        _recordWinner(TEAM_ALLIANCE);
                         _pendingLockFromDepletion = true;
                         _pendingDepletionWinner = TEAM_ALLIANCE;
                         IS_RESOURCE_MESSAGE_H = false;

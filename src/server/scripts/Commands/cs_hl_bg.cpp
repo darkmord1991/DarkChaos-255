@@ -9,6 +9,7 @@
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include <sstream>
 #include <algorithm>
+#include "DatabaseEnv.h"
 
 /*
  * hlbg_commandscript
@@ -63,6 +64,7 @@ public:
             { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
+            { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =
@@ -238,6 +240,38 @@ public:
         }
         handler->PSendSysMessage("Hinterland BG instance not found.");
         return false;
+    }
+
+    static bool HandleHLBGHistoryCommand(ChatHandler* handler, char const* args)
+    {
+        // Usage: .hlbg history [count]
+        // Default count = 10, max = 50
+        uint32 count = 10;
+        if (args && *args)
+        {
+            uint32 v = Acore::StringTo<uint32>(args).value_or(10);
+            count = std::max<uint32>(1, std::min<uint32>(50, v));
+        }
+        QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
+        if (!res)
+        {
+            handler->PSendSysMessage("No history found (did you apply hlbg_winner_history.sql to characters DB?)");
+            return true;
+        }
+        handler->PSendSysMessage("|cffffd700Hinterland BG recent results (latest {}):|r", count);
+        do
+        {
+            Field* f = res->Fetch();
+            std::string ts = f[0].GetString();
+            uint8 tid = f[1].GetUInt8();
+            uint32 a = f[2].GetUInt32();
+            uint32 h = f[3].GetUInt32();
+            std::string reason = f[4].GetString();
+            const char* name = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
+            handler->PSendSysMessage("  [{}] {}  A:{} H:{}  ({})", ts, name, a, h, reason);
+        }
+        while (res->NextRow());
+        return true;
     }
 };
 
