@@ -829,6 +829,8 @@
         _applyAffixEffects();
         ApplyAffixWeather();
         UpdateAffixWorldstateAll();
+        // Deterministic HUD update for clients listening via addon channel
+        SendAffixAddonToZone();
     }
 
     // Worker structs for map object traversal (must be non-local to allow member templates)

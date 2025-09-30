@@ -242,6 +242,9 @@
             // Affix worldstate helper (optional label via worldstate value)
             void UpdateAffixWorldstateForPlayer(Player* player);
             void UpdateAffixWorldstateAll();
+            // Addon messaging: send current affix (and optional weather) to a player or all players in zone
+            void SendAffixAddonToPlayer(Player* player) const;
+            void SendAffixAddonToZone() const;
 
             // Group auto-invite helpers (battleground-like raid management)
             bool AddOrSetPlayerToCorrectBfGroup(Player* plr);

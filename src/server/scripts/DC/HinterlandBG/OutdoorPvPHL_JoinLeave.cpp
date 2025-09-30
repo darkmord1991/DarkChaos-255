@@ -81,6 +81,8 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
                     player->SendPlaySpellVisual(kit);
             }
         }
+        // Deterministic HUD update: whisper addon message
+        SendAffixAddonToPlayer(player);
     }
     OutdoorPvP::HandlePlayerEnterZone(player, zone);
 }
