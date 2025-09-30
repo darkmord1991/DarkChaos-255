@@ -122,6 +122,14 @@ UI.Frame:SetSize(512, 350)
 UI.Frame:Hide()
 UI.Frame:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 16, insets = { left=4, right=4, top=4, bottom=4 } })
 UI.Frame:SetBackdropColor(0,0,0,0.5)
+UI.Frame:ClearAllPoints()
+UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+UI.Frame:EnableMouse(true)
+UI.Frame:SetMovable(true)
+UI.Frame:RegisterForDrag("LeftButton")
+UI.Frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+UI.Frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+UIParent:HookScript("OnKeyDown", function(_, key) if key == "ESCAPE" and UI.Frame:IsShown() then UI.Frame:Hide() end end)
 
 UI.Frame.Title = UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 UI.Frame.Title:SetPoint("TOPLEFT", 16, -12)
@@ -359,8 +367,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         end
         local aff = msg:match("AFFIX|([^|]+)")
         if aff then
-            UI.Affix.Text:SetText("Affix: " .. aff)
-            UI.Affix:Show()
+            if InHinterlands() then
+                UI.Affix.Text:SetText("Affix: " .. aff)
+                UI.Affix:Show()
+            else
+                UI.Affix:Hide()
+            end
             return
         end
     end

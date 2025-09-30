@@ -3,7 +3,7 @@
 ## Notes: Shows Hinterland BG current affix under the Wintergrasp-style HUD
 ## Author: DC-255
 ## Version: 1.3.0
-## OptionalDeps: AIO, AIO_Client
+## Deps: AIO_Client
 ## SavedVariables: HinterlandAffixHUDDB
 HinterlandAffixHUD.lua
 HLBG_AIO_Client.lua

@@ -16,12 +16,11 @@ if not okAIO or not AIO then
         if ok and _G.AIO then AIO = _G.AIO break end
     end
 end
-if not okAIO or not AIO or not AIO.IsMainState or not AIO.IsMainState() then
-    print("[HLBG_AIO] AIO not available or not main state; handlers will not be registered.")
-end
+local isMain = (okAIO and AIO and AIO.IsMainState and AIO.IsMainState()) and true or false
+print(string.format("[HLBG_AIO] AIO available: %s | main state: %s", okAIO and (AIO and "yes" or "no") or "no", isMain and "yes" or "no"))
 local Handlers = okAIO and AIO and AIO.AddHandlers and AIO.AddHandlers("HLBG", {}) or {}
-if Handlers and next(Handlers) ~= nil then
-    print("[HLBG_AIO] Handlers registered.")
+if Handlers then
+    print("[HLBG_AIO] AddHandlers returned table (size="..tostring(#Handlers or 0)..")")
 end
 
 local function safeQuery(dbfunc, sql)
@@ -200,11 +199,14 @@ end
 
 -- Optional helper so GMs can open the UI via command
 local function OnCommand(event, player, command)
-    if command == "hlbgui" then
+    if command == "hlbgui" or command == ".hlbgui" then
+        print("[HLBG_AIO] OnCommand received: "..tostring(command))
         if okAIO and AIO and AIO.Handle then
+            print("[HLBG_AIO] Sending OpenUI to client via AIO.Handle")
             AIO.Handle(player, "HLBG", "OpenUI")
         else
             player:SendBroadcastMessage("HLBG: UI command received, but AIO is not available. Open PvP (H) and click the HLBG tab.")
+            print("[HLBG_AIO] AIO unavailable for Handle()")
         end
         return false
     end
