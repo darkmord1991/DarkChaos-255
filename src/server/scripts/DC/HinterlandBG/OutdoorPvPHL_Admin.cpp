@@ -79,6 +79,39 @@ TeamId OutdoorPvPHL::GetLastWinnerTeamId() const
     return TEAM_NEUTRAL;
 }
 
+uint8 OutdoorPvPHL::GetActiveAffixCode() const
+{
+    return static_cast<uint8>(_activeAffix);
+}
+
+uint32 OutdoorPvPHL::GetMatchStartEpoch() const
+{
+    return _matchStartTime;
+}
+
+uint32 OutdoorPvPHL::GetCurrentMatchDurationSeconds() const
+{
+    if (_matchStartTime == 0)
+        return 0;
+    uint32 now = NowSec();
+    if (now < _matchStartTime)
+        return 0;
+    return now - _matchStartTime;
+}
+
+bool OutdoorPvPHL::GetStatsIncludeManualResets() const { return _statsIncludeManualResets; }
+void OutdoorPvPHL::SetStatsIncludeManualResets(bool include) { _statsIncludeManualResets = include; }
+
+bool OutdoorPvPHL::GetStatsIncludeManualResets() const
+{
+    return _statsIncludeManualResets;
+}
+
+void OutdoorPvPHL::SetStatsIncludeManualResets(bool include)
+{
+    _statsIncludeManualResets = include;
+}
+
 // Private helper: keep an in-memory ring buffer of last ~10 winners
 void OutdoorPvPHL::_recordWinner(TeamId winner)
 {
@@ -100,7 +133,8 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     uint32 h = _horde_gathered;
     const char* reason = (_horde_gathered == 0 || _ally_gathered == 0) ? "depletion" : "tiebreaker";
     uint8 aff = static_cast<uint8>(_activeAffix);
+    uint32 dur = GetCurrentMatchDurationSeconds();
     CharacterDatabase.Execute(
-        "INSERT INTO hlbg_winner_history (zone_id, map_id, winner_tid, score_alliance, score_horde, win_reason, affix) VALUES({}, {}, {}, {}, {}, '{}', {})",
-        zone, mapId, winnerTid, a, h, reason, aff);
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, '{}', {}, {})",
+        zone, mapId, winnerTid, a, h, reason, aff, dur);
 }

@@ -197,6 +197,14 @@
             std::vector<TeamId> GetRecentWinners(size_t maxCount) const;
             // Return the last winner as TeamId mapping (TEAM_NEUTRAL if unknown/none)
             TeamId GetLastWinnerTeamId() const;
+            // Expose current active affix code for UI/status (0=None, 1..5 valid affixes)
+            uint8 GetActiveAffixCode() const;
+            // Match timing helpers
+            uint32 GetMatchStartEpoch() const;                 // absolute epoch seconds when current match started (0 if unknown)
+            uint32 GetCurrentMatchDurationSeconds() const;     // elapsed seconds since start (0 if unknown)
+            // Runtime toggle for stats pages to include manual resets in aggregates
+            bool GetStatsIncludeManualResets() const;
+            void SetStatsIncludeManualResets(bool include);
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
@@ -304,7 +312,8 @@
             uint32 _ally_gathered;
             uint32 _horde_gathered;
             uint32 _LastWin;
-            uint32 _matchEndTime; // absolute epoch seconds when match ends (for status timer)
+            uint32 _matchEndTime;   // absolute epoch seconds when match ends (for status timer)
+            uint32 _matchStartTime; // absolute epoch seconds when match started
             bool IS_ABLE_TO_SHOW_MESSAGE;
             bool IS_RESOURCE_MESSAGE_A;
             bool IS_RESOURCE_MESSAGE_H;
@@ -316,6 +325,8 @@
             int32 _playersInZone;
         uint32 _npcCheckTimerMs;
         uint32 _afkCheckTimerMs;
+    // UI options
+    bool _statsIncludeManualResets;
     uint32 _hudRefreshTimerMs;
         uint32 _statusBroadcastTimerMs;
         bool _zoneWasEmpty; // track empty-zone periods to help diagnose NPC despawn window

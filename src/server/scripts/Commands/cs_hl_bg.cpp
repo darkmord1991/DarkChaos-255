@@ -65,6 +65,7 @@ public:
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
             { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
+            { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =
@@ -73,6 +74,28 @@ public:
         };
 
         return commandTable;
+    }
+    static bool HandleHLBGStatsManualCommand(ChatHandler* handler, char const* args)
+    {
+        // Usage: .hlbg statsmanual on|off
+        bool set = true; // default on if unspecified
+        if (args && *args)
+        {
+            std::string v(args);
+            std::transform(v.begin(), v.end(), v.begin(), ::tolower);
+            set = (v == "on" || v == "1" || v == "true");
+        }
+        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        {
+            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
+            {
+                hl->SetStatsIncludeManualResets(set);
+                handler->PSendSysMessage("Stats will %sinclude manual resets.", set ? "" : "not ");
+                return true;
+            }
+        }
+        handler->PSendSysMessage("Hinterland BG instance not found.");
+        return false;
     }
 
     static bool HandleHLBGStatusCommand(ChatHandler* handler, char const* /*args*/)
@@ -228,6 +251,17 @@ public:
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
+                // Before resetting, persist a 'manual' reset entry (no winner, capture current scores)
+                uint32 a = hl->GetResources(TEAM_ALLIANCE);
+                uint32 h = hl->GetResources(TEAM_HORDE);
+                uint32 mapId = 0;
+                if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+                    if (Map* m = admin->GetMap()) mapId = m->GetId();
+                uint32 dur = hl->GetCurrentMatchDurationSeconds();
+                CharacterDatabase.Execute(
+                    "INSERT INTO hlbg_winner_history (zone_id, map_id, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, '{}', {}, {})",
+                    OutdoorPvPHLBuffZones[0], mapId, uint8(TEAM_NEUTRAL), a, h, "manual", 0, dur);
+
                 hl->ForceReset();
                 // Teleport players back to start positions configured in the OutdoorPvP script
                 hl->TeleportPlayersToStart();

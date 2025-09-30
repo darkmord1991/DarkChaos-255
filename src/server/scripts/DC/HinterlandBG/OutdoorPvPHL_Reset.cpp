@@ -9,6 +9,7 @@
 // - TeleportToTeamBase(): helper used by resets and AFK handling.
 // -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
+#include "Chat.h"
 #include "MapMgr.h"
 #include "WorldSessionMgr.h"
 #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"
@@ -54,7 +55,8 @@ void OutdoorPvPHL::HandleReset()
     limit_resources_message_A = 0;
     limit_resources_message_H = 0;
 
-    _matchEndTime = NowSec() + _matchDurationSeconds;
+    _matchStartTime = NowSec();
+    _matchEndTime = _matchStartTime + _matchDurationSeconds;
     LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     // If configured, pick a random affix for the new battle immediately
     // (weather will be synced if enabled)
@@ -69,8 +71,27 @@ void OutdoorPvPHL::HandleReset()
             _setAffixWeather();
         _affixTimerMs = std::max<uint32>(10, _affixPeriodSec) * IN_MILLISECONDS;
         _affixNextChangeEpoch = NowSec() + std::max<uint32>(10, _affixPeriodSec);
+        // Start announcement with affix name
+        if (_affixAnnounce)
+        {
+            const char* aff = "None";
+            switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
+            if (Map* m = GetMap())
+            {
+                char line[160];
+                snprintf(line, sizeof(line), "%sBattle restarted — current affix: %s", GetBgChatPrefix().c_str(), aff);
+                m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
+            }
+            // Global start-of-run announcement with affix
+            {
+                char gmsg[180];
+                snprintf(gmsg, sizeof(gmsg), "[Hinterland BG] Battle restarted — current affix: %s", aff);
+                ChatHandler(nullptr).SendGlobalSysMessage(gmsg);
+            }
+        }
     }
     UpdateWorldStatesAllPlayers();
+    UpdateAffixWorldstateAll();
     _statusBroadcastTimerMs = 1;
 }
 
@@ -88,6 +109,8 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
     if (Map* m = GetMap())
         m->SendZoneText(zoneId, msg);
+    // Optional global heads-up for the reset start (affix is chosen during HandleReset)
+    ChatHandler(nullptr).SendGlobalSysMessage("[Hinterland BG] Resetting — teleporting players to their bases...");
 }
 
 // Teleport a single player to his/her faction base location.

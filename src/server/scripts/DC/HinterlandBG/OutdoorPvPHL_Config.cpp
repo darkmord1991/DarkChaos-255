@@ -75,6 +75,7 @@ void OutdoorPvPHL::LoadConfig()
     _affixRandomOnStart      = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnBattleStart", _affixRandomOnStart);
     _affixAnnounce           = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
     _affixWorldstateEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WorldstateEnabled", _affixWorldstateEnabled);
+    _statsIncludeManualResets = sConfigMgr->GetOption<bool>("HinterlandBG.Stats.IncludeManual", _statsIncludeManualResets);
     // Per-affix overrides: player/npc spells and weather
     auto loadAffixArrayU32 = [&](char const* base, uint32 arr[6])
     {

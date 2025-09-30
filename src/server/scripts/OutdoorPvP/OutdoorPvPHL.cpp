@@ -155,6 +155,7 @@
         _horde_gathered = _initialResourcesHorde;
         _LastWin = 0;
         _matchEndTime = 0;
+    _matchStartTime = 0;
         // Persistence and lock defaults
         _persistenceEnabled = true;
         _lockEnabled = false;
@@ -196,6 +197,7 @@
         _statusBroadcastTimerMs = 0;
     _memberOfflineSince.clear();
     _zoneWasEmpty = false;
+        _statsIncludeManualResets = false;
 
     }
 
@@ -225,6 +227,7 @@
                 _ally_gathered = savedAlly;
                 _horde_gathered = savedHorde;
                 _matchEndTime = savedEnd;
+                // match start cannot be reliably restored; leave 0 until next reset
                 _LastWin = savedWin;
             }
             if (_lockEnabled && savedLockUntil)

@@ -45,4 +45,13 @@ void OutdoorPvPHL::BroadcastStatusToZone()
     snprintf(line2, sizeof(line2), "  Resources: |cff1e90ffAlliance|r=%u, |cffff0000Horde|r=%u", (unsigned)a, (unsigned)h);
     if (Map* m = GetMap())
         m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line2)).c_str());
+    if (_affixAnnounce && _affixEnabled)
+    {
+        const char* aff = "None";
+        switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
+        char line3[96];
+        snprintf(line3, sizeof(line3), "  Affix: %s", aff);
+        if (Map* m = GetMap())
+            m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line3)).c_str());
+    }
 }
