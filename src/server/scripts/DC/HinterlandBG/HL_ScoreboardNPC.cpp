@@ -8,6 +8,7 @@
 #include "Creature.h"
 #include "Player.h"
 #include "GossipDef.h"
+#include "Chat.h"
 #include "HinterlandBG.h"
 
 static OutdoorPvPHL* GetHL()
@@ -50,10 +51,10 @@ public:
                 char msg[256];
                 snprintf(msg, sizeof(msg), "Alliance: %u, Horde: %u, Time left: %us", (unsigned)a, (unsigned)h, (unsigned)sec);
                 SendGossipMenuFor(player, 1, creature->GetGUID());
-                player->GetSession()->SendNotification("%s", msg);
+                ChatHandler(player->GetSession()).SendNotification("{}", msg);
                 return true;
             }
-            player->GetSession()->SendNotification("Hinterland BG is not active.");
+            ChatHandler(player->GetSession()).SendNotification("Hinterland BG is not active.");
         }
         CloseGossipMenuFor(player);
         return true;
