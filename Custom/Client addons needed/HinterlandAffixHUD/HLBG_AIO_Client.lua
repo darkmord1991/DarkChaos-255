@@ -7,15 +7,28 @@ do
     local ver = GetAddOnMetadata and GetAddOnMetadata("HinterlandAffixHUD", "Version") or "?"
     DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG AIO client active (HinterlandAffixHUD v%s)", tostring(ver)))
     -- Minimal OpenUI so /hlbg always works for debugging
-    if type(HLBG.OpenUI) ~= "function" then
-        HLBG.OpenUI = function()
-            DEFAULT_CHAT_FRAME:AddMessage("HLBG.OpenUI invoked (bootstrap)")
+        if type(HLBG.OpenUI) ~= "function" then
+            HLBG.OpenUI = function()
+                DEFAULT_CHAT_FRAME:AddMessage("HLBG.OpenUI invoked (bootstrap)")
+                if UI and UI.Frame then UI.Frame:Show() end
+                if type(ShowTab) == "function" then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
+            end
         end
-    end
     -- Minimal PONG handler so /hlbgping can verify round-trip
     if type(HLBG.PONG) ~= "function" then
         HLBG.PONG = function() DEFAULT_CHAT_FRAME:AddMessage("HLBG: PONG from server") end
     end
+        if type(HLBG.History) ~= "function" then
+            HLBG.History = function(rows, page, per, total)
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: HISTORY rows=%s page=%s total=%s", tostring(rows and #rows or 0), tostring(page or "?"), tostring(total or "?")))
+            end
+        end
+        if type(HLBG.Stats) ~= "function" then
+            HLBG.Stats = function(stats)
+                local counts = (stats and stats.counts) or {}
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: STATS A=%s H=%s D=%s", tostring(counts.Alliance or 0), tostring(counts.Horde or 0), tostring((stats and stats.draws) or 0)))
+            end
+        end
     -- Register slash commands now
     SLASH_HLBG1 = "/hlbg"
     SlashCmdList["HLBG"] = function(msg)
@@ -58,6 +71,75 @@ local function GetAffixName(code)
     local s = tostring(code)
     local name = AFFIX_NAMES[s]
     return name or s -- fall back to the code when unknown
+end
+
+-- Temporary: listen for raw CAIO/AIO addon messages (debug only)
+do
+    local rawDbg = CreateFrame("Frame")
+    rawDbg:RegisterEvent("CHAT_MSG_ADDON")
+    rawDbg:SetScript("OnEvent", function(_, event, prefix, message, channel, sender)
+        if not prefix then return end
+        if prefix == "CAIO" or prefix == "AIO" or prefix == "HLBG" then
+            local s = tostring(message or "")
+            local snip = s:sub(1, 200)
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG RAW AIO from=%s prefix=%s len=%d sample=%s", tostring(sender), tostring(prefix), #s, snip))
+            end
+                -- Try to decode server-sent table-literal responses for HISTORY/HistoryStr and dispatch to handlers.
+                if type(message) == "string" and (message:find("HISTORY") or message:find("History") or message:find("HistoryStr")) then
+                    local s = message
+                    -- strip surrounding whitespace
+                    s = s:match("^%s*(.-)%s*$")
+                    -- only attempt if it looks like a Lua table literal
+                    if s:sub(1,1) == "{" and s:sub(-1,-1) == "}" then
+                        local ok, fn = pcall(function() return (loadstring and loadstring("return "..s)) or (load and load("return "..s)) end)
+                        if ok and type(fn) == "function" then
+                            local ok2, val = pcall(fn)
+                            if ok2 and type(val) == "table" then
+                                -- Normalize possible shapes. Some transports send: { rowsTable, page, per, total, col, dir }
+                                -- Others may send nested tables or different positions. Try common patterns.
+                                local rows, page, per, total, col, dir
+                                if type(val[1]) == "table" and (#val[1] > 0 or next(val[1])) then
+                                    rows, page, per, total, col, dir = val[1], val[2], val[3], val[4], val[5], val[6]
+                                elseif type(val[2]) == "table" then
+                                    rows, page, per, total, col, dir = val[2], val[3], val[4], val[5], val[6], val[7]
+                                else
+                                    -- fallback: try to find first table value
+                                    for i=1,#val do if type(val[i])=="table" then rows=val[i]; break end end
+                                end
+                                if rows and type(HLBG.History) == "function" then
+                                    HLBG.History(rows, tonumber(page) or nil, tonumber(per) or nil, tonumber(total) or nil, col, dir)
+                                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: Dispatched HISTORY from raw CAIO payload") end
+                                else
+                                    -- If the decoded value looks like TSV string inside table, handle HistoryStr
+                                    if type(val[1]) == "string" and HLBG.HistoryStr then
+                                        HLBG.HistoryStr(val[1], val[2], val[3], val[4], val[5], val[6], val[7])
+                                        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: Dispatched HistoryStr from raw CAIO payload") end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+    end)
+end
+
+-- Listen for server debug broadcasts and dumps so we can populate History even if AIO fails
+do
+    local chatDbg = CreateFrame("Frame")
+    local events = { "CHAT_MSG_SYSTEM", "CHAT_MSG_SAY", "CHAT_MSG_PARTY", "CHAT_MSG_RAID", "CHAT_MSG_GUILD", "CHAT_MSG_WHISPER", "CHAT_MSG_CHANNEL" }
+    for _, ev in ipairs(events) do chatDbg:RegisterEvent(ev) end
+    chatDbg:SetScript("OnEvent", function(self, event, msg, sender, ...)
+        if type(msg) ~= "string" then return end
+        local tsv = msg:match("^%[HLBG_DBG_TSV%]%s*(.*)") or msg:match("^%[HLBG_DUMP%]%s*(.*)")
+        if tsv and tsv ~= "" then
+            -- Received TSV sample from server; convert our safe '||' delimiter back to newlines and parse with HistoryStr
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: Received server TSV broadcast; attempting parse") end
+            local fixed = tsv:gsub("%|%|", "\n")
+            pcall(function() HLBG.HistoryStr(fixed, 1, UI.History.per or 5, UI.History.total or 0, UI.History.sortKey or "id", UI.History.sortDir or "DESC") end)
+        end
+    end)
 end
 -- optionally expose for other addons, but keep mapping local (AddHandlers requires only functions)
 HLBG.GetAffixName = GetAffixName
@@ -237,6 +319,8 @@ UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
 UI.History.Content = CreateFrame("Frame", nil, UI.History.Scroll)
 -- Width roughly equals visible scroll area (512 frame - 16 left - 36 right = 460)
 UI.History.Content:SetSize(460, 300)
+-- Ensure content is above other UI elements during testing
+if UI.History.Content.SetFrameStrata then UI.History.Content:SetFrameStrata("DIALOG") end
 UI.History.Scroll:SetScrollChild(UI.History.Content)
 UI.History.rows = UI.History.rows or {}
 -- Empty-state label
@@ -395,10 +479,41 @@ function HLBG.History(a, b, c, d, e, f, g)
     -- 1) History(rows, page, per, total, col, dir)
     -- 2) History(player, rows, page, per, total, col, dir)
     local rows, page, per, total, col, dir
-    if type(a) == "table" then
+    -- robust detection: check which argument looks like an array of rows
+    local function looksLikeRows(v)
+        if type(v) ~= "table" then return false end
+        -- array-like with at least one numeric entry
+        if #v and #v > 0 then return true end
+        -- sometimes single-row payloads may be a map; detect common keys
+        if v.id or v.ts or v.timestamp or v.winner or v.affix or v.reason then return true end
+        return false
+    end
+    if looksLikeRows(a) then
         rows, page, per, total, col, dir = a, b, c, d, e, f
-    else
+    elseif looksLikeRows(b) then
         rows, page, per, total, col, dir = b, c, d, e, f, g
+    else
+        -- fallback: try to coerce b (common case where first arg is player userdata/string)
+        rows, page, per, total, col, dir = b, c, d, e, f, g
+    end
+    -- small debug to surface incoming argument shapes when things go wrong
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        local function shortType(v) if v == nil then return "nil" end return type(v) end
+        local sampleInfo = ""
+        if type(rows) == "table" then
+            local n = #rows
+            if n > 0 and type(rows[1]) == "table" then
+                local first = rows[1]
+                local keys = {}
+                for k,_ in pairs(first) do table.insert(keys, tostring(k)) end
+                sampleInfo = string.format(" sampleRowKeys=%s", table.concat(keys, ","))
+            elseif n > 0 then
+                sampleInfo = string.format(" sampleRow0=%s", tostring(rows[1]))
+            end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG DBG: History args types a=%s b=%s c=%s d=%s e=%s f=%s g=%s -> rowsType=%s n=%d%s", shortType(a), shortType(b), shortType(c), shortType(d), shortType(e), shortType(f), shortType(g), type(rows), #rows, sampleInfo))
+        else
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG DBG: History args types a=%s b=%s c=%s d=%s e=%s f=%s g=%s -> rows not table (%s)", shortType(a), shortType(b), shortType(c), shortType(d), shortType(e), shortType(f), shortType(g), type(rows)))
+        end
     end
     -- debug trace
     if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
@@ -406,7 +521,18 @@ function HLBG.History(a, b, c, d, e, f, g)
         local n = (t == "table" and #rows) or 0
         DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History handler invoked (rowsType=%s, n=%d)", t, n))
     end
-    if type(rows) ~= "table" then rows = {} end
+    -- If rows is not a table but we received a TSV string in one of the args, try the TSV fallback parser
+    if type(rows) ~= "table" then
+        -- detect a TSV payload among args (usually first or second arg)
+        local tsv = nil
+        if type(a) == "string" and a:find("\t") then tsv = a end
+        if not tsv and type(b) == "string" and b:find("\t") then tsv = b end
+        if tsv and type(HLBG.HistoryStr) == "function" then
+            DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: No table rows received, attempting TSV fallback")
+            return HLBG.HistoryStr(a,b,c,d,e,f,g)
+        end
+        rows = {}
+    end
     UI.History.page = page or UI.History.page or 1
     UI.History.per = per or UI.History.per or 25
     UI.History.total = total or UI.History.total or 0
@@ -418,12 +544,19 @@ function HLBG.History(a, b, c, d, e, f, g)
         local r = UI.History.rows[i]
         if not r then
             r = CreateFrame("Frame", nil, UI.History.Content)
+                if r.SetFrameStrata then r:SetFrameStrata("DIALOG") end
             r:SetSize(420, 14)
             r.id = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                -- force visible text color for debugging
+                if r.id.SetTextColor then r.id:SetTextColor(1,1,1,1) end
+                if r.ts.SetTextColor then r.ts:SetTextColor(1,1,1,1) end
+                if r.win.SetTextColor then r.win:SetTextColor(1,1,1,1) end
+                if r.aff.SetTextColor then r.aff:SetTextColor(1,1,1,1) end
+                if r.rea.SetTextColor then r.rea:SetTextColor(1,1,1,1) end
             -- layout mirrors headers: ID(50), TS(156), WIN(80), AFF(90), REASON(60) with 6px spacing
             r.id:SetPoint("LEFT", r, "LEFT", 0, 0)
             r.id:SetWidth(50); r.id:SetJustifyH("LEFT")
@@ -676,6 +809,11 @@ do
     reg.HistoryStr = HLBG.HistoryStr
     reg.HISTORY    = reg.History
     reg.STATS      = reg.Stats
+    -- Also register some lowercase/alternate aliases; some AIO builds normalize names differently
+    reg.history = reg.History
+    reg.historystr = reg.HistoryStr
+    reg.stats = reg.Stats
+    reg.pong = reg.PONG
         _G.HLBG = reg; HLBG = reg
         DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers registered (History/Stats)")
         DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO.AddHandlers returned new table")

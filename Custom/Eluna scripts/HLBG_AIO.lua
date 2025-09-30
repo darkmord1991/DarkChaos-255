@@ -175,6 +175,14 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
             end
             local tsv = table.concat(buf, "\n")
             AIO.Handle(player, "HLBG", "HistoryStr", tsv, page, per, total, col, dir)
+            -- DEBUG: also send a short plain chat broadcast to the player with a TSV sample so clients
+            -- that don't decode AIO properly still receive a visible sample for debugging.
+            local ok, err = pcall(function()
+                if player and player.SendBroadcastMessage then
+                    local sample = (tsv and #tsv>200) and tsv:sub(1,200) or tsv
+                    player:SendBroadcastMessage("[HLBG_DBG_TSV] "..tostring(sample or ""))
+                end
+            end)
             -- Debug ping to confirm client receive path
             AIO.Handle(player, "HLBG", "PONG")
             -- Lightweight debug string (avoid large tables) so client can confirm receipt
@@ -211,3 +219,34 @@ local function OnCommand(event, player, command)
 end
 RegisterPlayerEvent(42, OnCommand)
 print("[HLBG_AIO] OnCommand hook registered (.hlbgui)")
+
+-- GM helper: broadcast a TSV dump of the current first page so clients can receive a visible sample
+local function DumpHistoryToPlayer(player, page, per, sortKey, sortDir)
+    page = tonumber(page) or 1; per = tonumber(per) or 5
+    local rows, total, col, dir = FetchHistoryPage(page, per, sortKey, sortDir)
+    -- build TSV
+    local buf = {}
+    if rows and #rows>0 then
+        for i=1,#rows do
+            local r = rows[i]
+            table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+        end
+    end
+    -- join rows with a safe delimiter '||' so chat doesn't collapse newlines; client will convert back
+    local tsv = table.concat(buf, "||")
+    if player and player.SendBroadcastMessage then
+        player:SendBroadcastMessage("[HLBG_DUMP] "..(tsv or ""))
+    end
+    return rows, total
+end
+
+-- Extend OnCommand to support .hlbgdump
+local function OnCommandExtended(event, player, command)
+    if command == "hlbgdump" or command == ".hlbgdump" then
+        print("[HLBG_AIO] OnCommand received dump request: "..tostring(command))
+        DumpHistoryToPlayer(player, 1, 5, "id", "DESC")
+        return false
+    end
+    return true
+end
+RegisterPlayerEvent(42, OnCommandExtended)
