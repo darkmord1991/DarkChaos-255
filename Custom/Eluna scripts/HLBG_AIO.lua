@@ -96,7 +96,7 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir)
             local sh = res:GetUInt32(7)
             local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
             table.insert(rows, {
-                id = id,
+                id = tostring(id),
                 ts = ts,
                 winner = winner,
                 reason = reason,
@@ -170,6 +170,7 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
         local sortKey = arg3 or "id"
         local sortDir = arg4 or "DESC"
         local rows, total, col, dir = FetchHistoryPage(page, per, sortKey, sortDir)
+        print(string.format("[HLBG_AIO] HISTORY page=%d per=%d -> rows=%d total=%s sort=%s %s", page, per, (rows and #rows or 0), tostring(total), tostring(col), tostring(dir)))
         if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "History", rows, page, per, total, col, dir)
         end
