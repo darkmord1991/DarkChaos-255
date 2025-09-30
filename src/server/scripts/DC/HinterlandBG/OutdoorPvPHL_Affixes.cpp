@@ -80,8 +80,13 @@ void OutdoorPvPHL::ApplyAffixWeather()
             intensity = _affixWeatherIntensity[_activeAffix];
     }
     uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-    if (Weather* w = WeatherMgr::FindWeather(zoneId))
-        w->SetWeather(static_cast<WeatherType>(weatherType), intensity);
-    else if (Weather* w2 = WeatherMgr::AddWeather(zoneId))
-        w2->SetWeather(static_cast<WeatherType>(weatherType), intensity);
+    // Apply on all active maps where players are present in the zone
+    ForEachPlayerInZone([&](Player* p)
+    {
+        if (Map* m = p->GetMap())
+        {
+            if (Weather* w = m->GetOrGenerateZoneDefaultWeather(zoneId))
+                w->SetWeather(static_cast<WeatherType>(weatherType), intensity);
+        }
+    });
 }

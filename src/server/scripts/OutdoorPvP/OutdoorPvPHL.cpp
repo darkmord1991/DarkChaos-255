@@ -1009,8 +1009,10 @@
             default: weather = 0; break;
         }
         uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-        if (Weather* w = WeatherMgr::FindWeather(zoneId))
-            w->SetWeather(static_cast<WeatherType>(weather), 0.5f);
-        else if (Weather* w2 = WeatherMgr::AddWeather(zoneId))
-            w2->SetWeather(static_cast<WeatherType>(weather), 0.5f);
+        ForEachPlayerInZone([&](Player* p)
+        {
+            if (Map* m = p->GetMap())
+                if (Weather* w = m->GetOrGenerateZoneDefaultWeather(zoneId))
+                    w->SetWeather(static_cast<WeatherType>(weather), 0.5f);
+        });
     }
