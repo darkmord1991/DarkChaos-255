@@ -135,6 +135,10 @@
             OutdoorPvPHL();
             ~OutdoorPvPHL() override; // ensure key function for vtable emission
 
+            // Public affix enum (used by DC helper sources and tests)
+            // Declared early so it is visible to all subsequent member declarations
+            enum AffixType { AFFIX_NONE=0, AFFIX_HASTE_BUFF=1, AFFIX_SLOW=2, AFFIX_REDUCED_HEALING=3, AFFIX_REDUCED_ARMOR=4, AFFIX_BOSS_ENRAGE=5 };
+
             bool SetupOutdoorPvP() override;
 
             /* Handle Player Action */
@@ -229,8 +233,6 @@
         private:
             // Test shim: grant unit tests limited access to private members/helpers
             friend class OutdoorPvPHL_TestAccess;
-            // Affix enum must be declared before any usage in method prototypes or inline helpers
-            enum AffixType { AFFIX_NONE=0, AFFIX_HASTE_BUFF=1, AFFIX_SLOW=2, AFFIX_REDUCED_HEALING=3, AFFIX_REDUCED_ARMOR=4, AFFIX_BOSS_ENRAGE=5 };
                 // Small helper to get current epoch seconds
                 static inline uint32 NowSec()
                 {
