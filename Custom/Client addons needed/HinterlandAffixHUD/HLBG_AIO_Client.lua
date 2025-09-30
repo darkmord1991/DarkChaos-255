@@ -4,10 +4,40 @@
 local AIO = AIO or {}
 
 local HLBG = (AIO.AddHandlers and AIO.AddHandlers("HLBG", {})) or {}
+_G.HLBG = HLBG
+
+-- Early bootstrap: ensure slash commands exist even if later init fails
 do
     local ver = GetAddOnMetadata and GetAddOnMetadata("HinterlandAffixHUD", "Version") or "?"
     DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG AIO client active (HinterlandAffixHUD v%s)", tostring(ver)))
+    -- Minimal OpenUI so /hlbg always works for debugging
+    if type(HLBG.OpenUI) ~= "function" then
+        HLBG.OpenUI = function()
+            DEFAULT_CHAT_FRAME:AddMessage("HLBG.OpenUI invoked (bootstrap)")
+        end
+    end
+    -- Minimal PONG handler so /hlbgping can verify round-trip
+    if type(HLBG.PONG) ~= "function" then
+        HLBG.PONG = function() DEFAULT_CHAT_FRAME:AddMessage("HLBG: PONG from server") end
+    end
+    -- Register slash commands now
+    SLASH_HLBG1 = "/hlbg"
+    SlashCmdList["HLBG"] = function(msg)
+        local ok, err = pcall(function()
+            HLBG.OpenUI()
+            if AIO and AIO.Handle then
+                AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, "id", "DESC")
+                AIO.Handle("HLBG", "Request", "STATS")
+            end
+        end)
+        if not ok then DEFAULT_CHAT_FRAME:AddMessage("HLBG error (/hlbg): "..tostring(err)) end
+    end
+    SLASH_HLBGPING1 = "/hlbgping"
+    SlashCmdList["HLBGPING"] = function()
+        if AIO and AIO.Handle then AIO.Handle("HLBG", "Request", "PING") else DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO client not available") end
+    end
 end
+-- (moved startup message to early bootstrap above)
 
 local UI = {}
 local RES = { A = 0, H = 0, END = 0, LOCK = 0 }
@@ -129,7 +159,9 @@ UI.Frame:SetMovable(true)
 UI.Frame:RegisterForDrag("LeftButton")
 UI.Frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
 UI.Frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-UIParent:HookScript("OnKeyDown", function(_, key) if key == "ESCAPE" and UI.Frame:IsShown() then UI.Frame:Hide() end end)
+-- Close button instead of hooking UIParent OnKeyDown (not reliable on 3.3.5)
+local close = CreateFrame("Button", nil, UI.Frame, "UIPanelCloseButton")
+close:SetPoint("TOPRIGHT", UI.Frame, "TOPRIGHT", 0, 0)
 
 UI.Frame.Title = UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 UI.Frame.Title:SetPoint("TOPLEFT", 16, -12)
@@ -137,14 +169,14 @@ UI.Frame.Title:SetText("Hinterland Battleground")
 
 -- Tabs inside window: Live / History / Stats
 UI.Tabs = {}
-UI.Tabs[1] = CreateFrame("Button", "HLBGTab1", UI.Frame, "OptionsFrameTabButtonTemplate")
+UI.Tabs[1] = CreateFrame("Button", UI.Frame:GetName().."Tab1", UI.Frame, "OptionsFrameTabButtonTemplate")
 UI.Tabs[1]:SetPoint("TOPLEFT", UI.Frame, "BOTTOMLEFT", 10, 7)
 UI.Tabs[1]:SetText("Live")
-UI.Tabs[2] = CreateFrame("Button", "HLBGTab2", UI.Frame, "OptionsFrameTabButtonTemplate")
-UI.Tabs[2]:SetPoint("LEFT", HLBGTab1, "RIGHT")
+UI.Tabs[2] = CreateFrame("Button", UI.Frame:GetName().."Tab2", UI.Frame, "OptionsFrameTabButtonTemplate")
+UI.Tabs[2]:SetPoint("LEFT", UI.Tabs[1], "RIGHT")
 UI.Tabs[2]:SetText("History")
-UI.Tabs[3] = CreateFrame("Button", "HLBGTab3", UI.Frame, "OptionsFrameTabButtonTemplate")
-UI.Tabs[3]:SetPoint("LEFT", HLBGTab2, "RIGHT")
+UI.Tabs[3] = CreateFrame("Button", UI.Frame:GetName().."Tab3", UI.Frame, "OptionsFrameTabButtonTemplate")
+UI.Tabs[3]:SetPoint("LEFT", UI.Tabs[2], "RIGHT")
 UI.Tabs[3]:SetText("Stats")
 
 PanelTemplates_SetNumTabs(UI.Frame, 3)
@@ -152,9 +184,9 @@ PanelTemplates_SetTab(UI.Frame, 1)
 
 local function ShowTab(i)
     PanelTemplates_SetTab(UI.Frame, i)
-    UI.Live:SetShown(i == 1)
-    UI.History:SetShown(i == 2)
-    UI.Stats:SetShown(i == 3)
+    if i == 1 then UI.Live:Show() else UI.Live:Hide() end
+    if i == 2 then UI.History:Show() else UI.History:Hide() end
+    if i == 3 then UI.Stats:Show() else UI.Stats:Hide() end
     HinterlandAffixHUDDB.lastInnerTab = i
 end
 
@@ -227,16 +259,19 @@ for i=1,3 do UI.Tabs[i]:SetScript("OnClick", function() ShowTab(i) end) end
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
     if not _pvp or _G["PVPFrameTabHLBG"] then return end
-    local idx = (_pvp.numTabs or 2) + 1
+    -- Create a tab-like button anchored to the last existing tab without changing numTabs
+    local baseName = _pvp:GetName() or "PVPFrame"
+    local lastIdx = _pvp.numTabs or 2
+    local lastTab = _G[baseName.."Tab"..lastIdx]
     local tab = CreateFrame("Button", "PVPFrameTabHLBG", _pvp, "CharacterFrameTabButtonTemplate")
     tab:SetText("HLBG")
-    tab:SetID(idx)
-    if _pvp.numTabs then _pvp.numTabs = idx end
-    PanelTemplates_SetNumTabs(_pvp, idx)
-    tab:SetPoint("LEFT", _G[ _pvp:GetName() .. "Tab" .. (idx-1) ], "RIGHT", -15, 0)
+    tab:SetID((lastIdx or 2) + 1)
+    if lastTab then
+        tab:SetPoint("LEFT", lastTab, "RIGHT", -15, 0)
+    else
+        tab:SetPoint("TOPLEFT", _pvp, "BOTTOMLEFT", 10, 7)
+    end
     tab:SetScript("OnClick", function()
-        PanelTemplates_SetTab(_pvp, idx)
-        HinterlandAffixHUDDB.lastPvPTab = idx
         if PVPFrameLeft then PVPFrameLeft:Hide() end
         if PVPFrameRight then PVPFrameRight:Hide() end
         UI.Frame:Show()
@@ -246,20 +281,29 @@ local function EnsurePvPTab()
             AIO.Handle("HLBG", "Request", "STATS")
         end
     end)
-    local toggler = _G["PVPParentFrame_ToggleFrame"] or _G["TogglePVPFrame"]
-    if type(toggler) == "function" then
-        hooksecurefunc(type(_G["PVPParentFrame_ToggleFrame"])=="function" and "PVPParentFrame_ToggleFrame" or "TogglePVPFrame", function()
-            if HinterlandAffixHUDDB.lastPvPTab == idx then
-                PanelTemplates_SetTab(_pvp, idx)
-                if PVPFrameLeft then PVPFrameLeft:Hide() end
-                if PVPFrameRight then PVPFrameRight:Hide() end
-                UI.Frame:Show()
-                ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
-            else
-                UI.Frame:Hide()
-            end
-        end)
-    end
+end
+
+-- Lightweight fallback: a small header button inside PvP frame to open HLBG
+local function EnsurePvPHeaderButton()
+    local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
+    if not _pvp or _G["PVPFrameHLBGButton"] then return end
+    local btn = CreateFrame("Button", "PVPFrameHLBGButton", _pvp, "UIPanelButtonTemplate")
+    btn:SetSize(56, 20)
+    -- place near top-right but leave space for close button if any
+    btn:SetPoint("TOPRIGHT", _pvp, "TOPRIGHT", -40, -28)
+    btn:SetText("HLBG")
+    btn:SetScript("OnClick", function()
+        UI.Frame:Show()
+        ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+        if AIO and AIO.Handle then
+            AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
+            AIO.Handle("HLBG", "Request", "STATS")
+        end
+    end)
+    -- hide our inner frame when PvP frame hides
+    _pvp:HookScript("OnHide", function()
+        if UI.Frame and UI.Frame:GetParent() == _pvp then UI.Frame:Hide() end
+    end)
 end
 
 -- Create PvP tab lazily when UI exists
@@ -269,9 +313,9 @@ pvpWatcher:RegisterEvent("ADDON_LOADED")
 pvpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 pvpWatcher:SetScript("OnEvent", function(_, ev, name)
     if ev == "ADDON_LOADED" and name and name ~= "Blizzard_PvPUI" then -- classic WotLK loads FrameXML, still try
-        EnsurePvPTab()
+        EnsurePvPTab(); EnsurePvPHeaderButton()
     else
-        EnsurePvPTab()
+        EnsurePvPTab(); EnsurePvPHeaderButton()
     end
 end)
 -- Also retry a few times after login in case of delayed creation
@@ -279,15 +323,25 @@ do
     local tries, t = 0, 0
     UI.Frame:SetScript("OnUpdate", function(self, elapsed)
         t = t + (elapsed or 0)
-        if t > 1.0 then t = 0; tries = tries + 1; EnsurePvPTab(); if _G["PVPFrameTabHLBG"] or tries > 5 then UI.Frame:SetScript("OnUpdate", nil) end end
+        if t > 1.0 then
+            t = 0; tries = tries + 1; EnsurePvPTab(); EnsurePvPHeaderButton()
+            if _G["PVPFrameTabHLBG"] or _G["PVPFrameHLBGButton"] or tries > 5 then UI.Frame:SetScript("OnUpdate", nil) end
+        end
     end)
 end
 
 -- Handlers from server
 function HLBG.OpenUI()
+    local pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
+    if pvp and pvp:IsShown() then
+        if UI.Frame:GetParent() ~= pvp then UI.Frame:SetParent(pvp) end
+    else
+        if UI.Frame:GetParent() ~= UIParent then UI.Frame:SetParent(UIParent) end
+    end
     UI.Frame:Show()
     ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
 end
+DEFAULT_CHAT_FRAME:AddMessage("HLBG client: main OpenUI bound")
 
 function HLBG.History(rows, page, per, total, col, dir)
     -- clear previous
@@ -415,14 +469,22 @@ opt:SetScript("OnShow", function(self)
   local title = self:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge"); title:SetPoint("TOPLEFT", 16, -16); title:SetText("HLBG HUD")
   local cb = CreateFrame("CheckButton", nil, self, "InterfaceOptionsCheckButtonTemplate")
   cb:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-  cb.Text:SetText("Use addon HUD instead of Blizzard WG HUD")
+    -- 3.3.5: InterfaceOptionsCheckButtonTemplate may not expose .Text reliably; create our own label
+    local cbLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    cbLabel:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+    cbLabel:SetText("Use addon HUD instead of Blizzard WG HUD")
+    cb._label = cbLabel
   cb:SetChecked(HinterlandAffixHUDDB.useAddonHud)
     cb:SetScript("OnClick", function(s)
         HinterlandAffixHUDDB.useAddonHud = s:GetChecked() and true or false
         UpdateHUD()
     end)
-  local scale = CreateFrame("Slider", nil, self, "OptionsSliderTemplate"); scale:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -24)
-  scale:SetMinMaxValues(0.8, 1.6); scale:SetValueStep(0.05); scale.Low:SetText("0.8"); scale.High:SetText("1.6"); scale.Text:SetText("HUD Scale")
+    local scale = CreateFrame("Slider", nil, self, "OptionsSliderTemplate"); scale:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -24)
+    scale:SetMinMaxValues(0.8, 1.6); if scale.SetValueStep then scale:SetValueStep(0.05) end
+    if scale.SetObeyStepOnDrag then scale:SetObeyStepOnDrag(true) end
+    if scale.Low then scale.Low:SetText("0.8") end
+    if scale.High then scale.High:SetText("1.6") end
+    if scale.Text then scale.Text:SetText("HUD Scale") end
   scale:SetValue(HinterlandAffixHUDDB.scaleHud or 1.0)
   scale:SetScript("OnValueChanged", function(s,val) HinterlandAffixHUDDB.scaleHud = tonumber(string.format("%.2f", val)); UI.HUD:SetScale(HinterlandAffixHUDDB.scaleHud) end)
 end)
@@ -431,13 +493,21 @@ InterfaceOptions_AddCategory(opt)
 -- Slash to open HLBG window even if server AIO command isn't available
 SLASH_HLBG1 = "/hlbg"
 SlashCmdList["HLBG"] = function(msg)
-    EnsurePvPTab()
-    UI.Frame:Show()
-    ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+    EnsurePvPTab(); EnsurePvPHeaderButton()
+    HLBG.OpenUI()
     if AIO and AIO.Handle then
         AIO.Handle("HLBG", "Request", "HISTORY", UI.History.page or 1, UI.History.per or 25, UI.History.sortKey or "id", UI.History.sortDir or "DESC")
         AIO.Handle("HLBG", "Request", "STATS")
     end
+end
+
+-- Round-trip ping test
+function HLBG.PONG()
+    DEFAULT_CHAT_FRAME:AddMessage("HLBG: PONG from server")
+end
+SLASH_HLBGPING1 = "/hlbgping"
+SlashCmdList["HLBGPING"] = function()
+    if AIO and AIO.Handle then AIO.Handle("HLBG", "Request", "PING") else DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO client not available") end
 end
 SLASH_HLBGUI1 = "/hlbgui"
 SlashCmdList["HLBGUI"] = SlashCmdList["HLBG"]

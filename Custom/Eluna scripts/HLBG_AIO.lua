@@ -33,12 +33,12 @@ local function sanitizeSort(key)
     key = tostring(key or "")
     local map = {
         id = "id",
-        ts = "ts",
-        winner = "winner",
-        reason = "reason",
+        ts = "occurred_at",
+        winner = "winner_tid",
+        reason = "win_reason",
         affix = "affix",
-        weather = "weather",
-        duration = "duration",
+        weather = "affix", -- no weather column; map to affix for stability
+        duration = "duration_seconds",
     }
     return map[key] or "id"
 end
@@ -81,20 +81,30 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir)
     if page < 1 then page = 1 end
     local offset = (page - 1) * perPage
     local orderBy = buildOrderClause(sortKey, sortDir)
-    local sql = string.format("SELECT id, ts, winner, margin, reason, affix, weather, duration FROM hlbg_winner_history ORDER BY %s LIMIT %d OFFSET %d", orderBy, perPage, offset)
+    local sql = string.format("SELECT id, occurred_at, winner_tid, win_reason, affix, duration_seconds, score_alliance, score_horde FROM hlbg_winner_history ORDER BY %s LIMIT %d OFFSET %d", orderBy, perPage, offset)
     local res = safeQuery(CharDBQuery, sql)
     local rows = {}
     if res then
         repeat
+            local id = res:GetUInt64(0)
+            local ts = res:GetString(1)
+            local tid = res:GetUInt32(2)
+            local reason = res:IsNull(3) and nil or res:GetString(3)
+            local affix = res:GetUInt32(4)
+            local duration = res:GetUInt32(5)
+            local sa = res:GetUInt32(6)
+            local sh = res:GetUInt32(7)
+            local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
             table.insert(rows, {
-                id = res:GetUInt32(0),
-                ts = res:GetString(1),
-                winner = res:GetString(2),
-                margin = res:IsNull(3) and nil or res:GetInt32(3),
-                reason = res:IsNull(4) and nil or res:GetString(4),
-                affix = res:IsNull(5) and nil or res:GetString(5),
-                weather = res:IsNull(6) and nil or res:GetString(6),
-                duration = res:IsNull(7) and nil or res:GetUInt32(7),
+                id = id,
+                ts = ts,
+                winner = winner,
+                reason = reason,
+                affix = tostring(affix),
+                weather = nil,
+                duration = duration,
+                score_alliance = sa,
+                score_horde = sh,
             })
         until not res:NextRow()
     end
@@ -109,69 +119,47 @@ end
 
 local function FetchStats()
     local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, byWeather = {}, affixDur = {}, weatherDur = {} }
-    local res = safeQuery(CharDBQuery, "SELECT winner, COUNT(*) FROM hlbg_winner_history GROUP BY winner")
+    -- winner_tid: 0 Alliance, 1 Horde, 2 Neutral/Draw
+    local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM hlbg_winner_history GROUP BY winner_tid")
     if res then
         repeat
-            local w = res:GetString(0)
+            local tid = res:GetUInt32(0)
             local c = res:GetUInt32(1)
-            if w == "DRAW" or w == "Neutral" or w == "NEUTRAL" then
-                stats.draws = c
-            else
-                stats.counts[w] = c
-            end
+            if tid == 0 then stats.counts["Alliance"] = c
+            elseif tid == 1 then stats.counts["Horde"] = c
+            else stats.draws = c end
         until not res:NextRow()
     end
-    local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration) FROM hlbg_winner_history WHERE duration IS NOT NULL")
+    local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE duration_seconds IS NOT NULL")
     if res2 then
         stats.avgDuration = res2:IsNull(0) and 0 or res2:GetFloat(0)
     end
-    -- By affix and by weather splits
-    local res3 = safeQuery(CharDBQuery, "SELECT COALESCE(affix,'(none)'), COALESCE(winner,'DRAW'), COUNT(*) FROM hlbg_winner_history GROUP BY affix, winner")
+    -- By affix splits
+    local res3 = safeQuery(CharDBQuery, "SELECT affix, winner_tid, COUNT(*) FROM hlbg_winner_history GROUP BY affix, winner_tid")
     if res3 then
         repeat
-            local aff = res3:GetString(0)
-            local win = res3:GetString(1)
+            local aff = tostring(res3:GetUInt32(0))
+            local tid = res3:GetUInt32(1)
             local c = res3:GetUInt32(2)
             stats.byAffix[aff] = stats.byAffix[aff] or { Alliance = 0, Horde = 0, DRAW = 0 }
-            if win == "Alliance" or win == "ALLIANCE" then stats.byAffix[aff].Alliance = c
-            elseif win == "Horde" or win == "HORDE" then stats.byAffix[aff].Horde = c
+            if tid == 0 then stats.byAffix[aff].Alliance = c
+            elseif tid == 1 then stats.byAffix[aff].Horde = c
             else stats.byAffix[aff].DRAW = c end
         until not res3:NextRow()
     end
-    local res4 = safeQuery(CharDBQuery, "SELECT COALESCE(weather,'(none)'), COALESCE(winner,'DRAW'), COUNT(*) FROM hlbg_winner_history GROUP BY weather, winner")
-    if res4 then
-        repeat
-            local wth = res4:GetString(0)
-            local win = res4:GetString(1)
-            local c = res4:GetUInt32(2)
-            stats.byWeather[wth] = stats.byWeather[wth] or { Alliance = 0, Horde = 0, DRAW = 0 }
-            if win == "Alliance" or win == "ALLIANCE" then stats.byWeather[wth].Alliance = c
-            elseif win == "Horde" or win == "HORDE" then stats.byWeather[wth].Horde = c
-            else stats.byWeather[wth].DRAW = c end
-        until not res4:NextRow()
-    end
+    -- No weather column in schema; leave byWeather empty
     -- Duration aggregates per affix
-    local res5 = safeQuery(CharDBQuery, "SELECT COALESCE(affix,'(none)'), COUNT(*), SUM(duration), AVG(duration) FROM hlbg_winner_history WHERE duration IS NOT NULL GROUP BY affix")
+    local res5 = safeQuery(CharDBQuery, "SELECT affix, COUNT(*), SUM(duration_seconds), AVG(duration_seconds) FROM hlbg_winner_history WHERE duration_seconds IS NOT NULL GROUP BY affix")
     if res5 then
         repeat
-            local aff = res5:GetString(0)
+            local aff = tostring(res5:GetUInt32(0))
             local c = res5:GetUInt32(1)
             local s = res5:IsNull(2) and 0 or res5:GetUInt64(2)
             local a = res5:IsNull(3) and 0 or res5:GetFloat(3)
             stats.affixDur[aff] = { count = c, sum = s, avg = a }
         until not res5:NextRow()
     end
-    -- Duration aggregates per weather
-    local res6 = safeQuery(CharDBQuery, "SELECT COALESCE(weather,'(none)'), COUNT(*), SUM(duration), AVG(duration) FROM hlbg_winner_history WHERE duration IS NOT NULL GROUP BY weather")
-    if res6 then
-        repeat
-            local wth = res6:GetString(0)
-            local c = res6:GetUInt32(1)
-            local s = res6:IsNull(2) and 0 or res6:GetUInt64(2)
-            local a = res6:IsNull(3) and 0 or res6:GetFloat(3)
-            stats.weatherDur[wth] = { count = c, sum = s, avg = a }
-        until not res6:NextRow()
-    end
+    -- No weather duration aggregates (column absent)
     return stats
 end
 

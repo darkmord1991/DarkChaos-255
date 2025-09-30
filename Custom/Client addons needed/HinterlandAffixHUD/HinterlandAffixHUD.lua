@@ -167,7 +167,7 @@ local function update()
   else
     f.icon:Hide()
   end
-  f:SetShown(true)
+  f:Show()
 
   applyHideHUD()
   AnchorUnderAlwaysUp()
@@ -406,7 +406,9 @@ local function CreateOptionsPanel()
 
   local hide = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
   hide:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
-  hide.Text:SetText("Hide Blizzard WG HUD")
+  local hideLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  hideLabel:SetPoint("LEFT", hide, "RIGHT", 4, 0)
+  hideLabel:SetText("Hide Blizzard WG HUD")
   hide:SetScript("OnClick", function(self)
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     HinterlandAffixHUDDB.hideDefault = self:GetChecked() and true or false
@@ -418,10 +420,11 @@ local function CreateOptionsPanel()
   scale:SetPoint("TOPLEFT", hide, "BOTTOMLEFT", 0, -24)
   scale:SetMinMaxValues(0.5, 1.5)
   scale:SetValueStep(0.05)
-  scale:SetObeyStepOnDrag(true)
-  scale.Low:SetText("0.5")
-  scale.High:SetText("1.5")
-  scale.Text:SetText("Scale")
+  -- 3.3.5: SetObeyStepOnDrag is not available; guard optional fields too
+  if scale.SetObeyStepOnDrag then scale:SetObeyStepOnDrag(true) end
+  if scale.Low then scale.Low:SetText("0.5") end
+  if scale.High then scale.High:SetText("1.5") end
+  if scale.Text then scale.Text:SetText("Scale") end
   scale:SetScript("OnValueChanged", function(self, val)
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     HinterlandAffixHUDDB.scale = tonumber(string.format("%.2f", val))
@@ -451,7 +454,9 @@ local function CreateOptionsPanel()
 
   local lock = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
   lock:SetPoint("TOPLEFT", eb, "BOTTOMLEFT", 0, -24)
-  lock.Text:SetText("Lock frame position")
+  local lockLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  lockLabel:SetPoint("LEFT", lock, "RIGHT", 4, 0)
+  lockLabel:SetText("Lock frame position")
   lock:SetScript("OnClick", function(self)
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     HinterlandAffixHUDDB.locked = self:GetChecked() and true or false
