@@ -816,6 +816,85 @@
         UpdateAffixWorldstateAll();
     }
 
+    // Worker structs for map object traversal (must be non-local to allow member templates)
+    namespace {
+        struct HL_NpcAuraWorker
+        {
+            uint32 zone; uint32 spell;
+            void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+            {
+                for (auto const& pr : cmap)
+                {
+                    Creature* c = pr.second;
+                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                        continue;
+                    if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
+                        continue;
+                    c->CastSpell(c, spell, true);
+                }
+            }
+            template<class T>
+            void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+        };
+
+        struct HL_EnrageWorker
+        {
+            OutdoorPvPHL* self; uint32 zone;
+            void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+            {
+                for (auto const& p : cmap)
+                {
+                    Creature* c = p.second;
+                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                        continue;
+                    uint32 entry = c->GetEntry();
+                    if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                        c->CastSpell(c, self->_affixSpellBossEnrage, true);
+                }
+            }
+            template<class T>
+            void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+        };
+
+        struct HL_ClearEnrageWorker
+        {
+            OutdoorPvPHL* self; uint32 zone;
+            void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+            {
+                for (auto const& p : cmap)
+                {
+                    Creature* c = p.second;
+                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                        continue;
+                    uint32 entry = c->GetEntry();
+                    if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
+                        c->RemoveAurasDueToSpell(self->_affixSpellBossEnrage);
+                }
+            }
+            template<class T>
+            void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+        };
+
+        struct HL_ClearNpcBuffWorker
+        {
+            OutdoorPvPHL* self; uint32 zone;
+            void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
+            {
+                for (auto const& p : cmap)
+                {
+                    Creature* c = p.second;
+                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                        continue;
+                    if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
+                        continue;
+                    c->RemoveAurasDueToSpell(self->_affixSpellBadWeatherNpcBuff);
+                }
+            }
+            template<class T>
+            void Visit(std::unordered_map<ObjectGuid, T*>&) {}
+        };
+    }
+
     void OutdoorPvPHL::_applyAffixEffects()
     {
         // Apply team-wide aura effects depending on affix
@@ -833,27 +912,10 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                struct NpcAuraWorker
-                {
-                    uint32 zone; uint32 spell;
-                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
-                    {
-                        for (auto const& pr : cmap)
-                        {
-                            Creature* c = pr.second;
-                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
-                                continue;
-                            if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
-                                continue;
-                            c->CastSpell(c, spell, true);
-                        }
-                    }
-                    template<class T>
-                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
-                } worker{ zoneId, spellId };
+                HL_NpcAuraWorker worker{ zoneId, spellId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<NpcAuraWorker, MapStoredObjectTypesContainer> v(worker);
+                    TypeContainerVisitor<HL_NpcAuraWorker, MapStoredObjectTypesContainer> v(worker);
                     v.Visit(m->GetObjectsStore());
                 });
             }
@@ -866,28 +928,10 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                struct EnrageWorker
-                {
-                    OutdoorPvPHL* self;
-                    uint32 zone;
-                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
-                    {
-                        for (auto const& p : cmap)
-                        {
-                            Creature* c = p.second;
-                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
-                                continue;
-                            uint32 entry = c->GetEntry();
-                            if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
-                                c->CastSpell(c, self->_affixSpellBossEnrage, true);
-                        }
-                    }
-                    template<class T>
-                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
-                } worker{ this, zoneId };
+                HL_EnrageWorker worker{ this, zoneId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<EnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                    TypeContainerVisitor<HL_EnrageWorker, MapStoredObjectTypesContainer> v(worker);
                     v.Visit(m->GetObjectsStore());
                 });
             }
@@ -935,28 +979,10 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                struct ClearEnrageWorker
-                {
-                    OutdoorPvPHL* self;
-                    uint32 zone;
-                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
-                    {
-                        for (auto const& p : cmap)
-                        {
-                            Creature* c = p.second;
-                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
-                                continue;
-                            uint32 entry = c->GetEntry();
-                            if (self->_npcBossEntriesAlliance.count(entry) || self->_npcBossEntriesHorde.count(entry))
-                                c->RemoveAurasDueToSpell(self->_affixSpellBossEnrage);
-                        }
-                    }
-                    template<class T>
-                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
-                } worker{ this, zoneId };
+                HL_ClearEnrageWorker worker{ this, zoneId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                    TypeContainerVisitor<HL_ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
                     v.Visit(m->GetObjectsStore());
                 });
             }
@@ -968,27 +994,10 @@
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                struct ClearNpcBuffWorker
-                {
-                    OutdoorPvPHL* self; uint32 zone;
-                    void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
-                    {
-                        for (auto const& p : cmap)
-                        {
-                            Creature* c = p.second;
-                            if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
-                                continue;
-                            if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
-                                continue;
-                            c->RemoveAurasDueToSpell(self->_affixSpellBadWeatherNpcBuff);
-                        }
-                    }
-                    template<class T>
-                    void Visit(std::unordered_map<ObjectGuid, T*>&) {}
-                } worker{ this, zoneId };
+                HL_ClearNpcBuffWorker worker{ this, zoneId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
+                    TypeContainerVisitor<HL_ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
                     v.Visit(m->GetObjectsStore());
                 });
             }
