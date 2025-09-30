@@ -262,11 +262,11 @@ public:
         do
         {
             Field* f = res->Fetch();
-            std::string ts = f[0].GetString();
+            std::string ts = f[0].Get<std::string>();
             uint8 tid = f[1].GetUInt8();
             uint32 a = f[2].GetUInt32();
             uint32 h = f[3].GetUInt32();
-            std::string reason = f[4].GetString();
+            std::string reason = f[4].Get<std::string>();
             const char* name = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
             handler->PSendSysMessage("  [{}] {}  A:{} H:{}  ({})", ts, name, a, h, reason);
         }

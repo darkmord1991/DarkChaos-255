@@ -82,7 +82,7 @@ public:
                             r.tid = static_cast<TeamId>(f[0].GetUInt8());
                             r.a = f[1].GetUInt32();
                             r.h = f[2].GetUInt32();
-                            r.reason = f[3].GetString();
+                            r.reason = f[3].Get<std::string>();
                             rows.push_back(std::move(r));
                         } while (res->NextRow());
                     }
