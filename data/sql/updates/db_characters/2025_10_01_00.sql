@@ -1,0 +1,3 @@
+-- Deprecated: HLBG addon DB updates are maintained under
+--   Custom/Hinterland BG/CharDB/migrations
+-- This file is intentionally left as a no-op to avoid core updater side-effects.

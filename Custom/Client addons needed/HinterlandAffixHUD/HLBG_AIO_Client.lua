@@ -1065,8 +1065,9 @@ function HLBG.History(a, b, c, d, e, f, g)
         r:ClearAllPoints()
         r:SetPoint("TOPLEFT", HLBG.UI.History.Content, "TOPLEFT", 0, y)
         -- Prefer named fields; fallback to compact array rows {id, [season], ts, winner, affix, reason}
-        local id    = row.id or row[1]
-        local sea   = row.season or row[2]
+    local id    = row.id or row[1]
+    local sea   = row.season or row[2]
+    local sname = row.seasonName or row.sname or nil
         -- if season present at [2], ts may be at [3]; otherwise [2]
         local ts    = row.ts or row[3] or row[2]
         local win   = row.winner or row[4] or row[3]
@@ -1074,7 +1075,11 @@ function HLBG.History(a, b, c, d, e, f, g)
         local reas  = row.reason or row[6] or row[5]
         local who = (win == "Alliance" or win == "ALLIANCE") and "|cff1e90ffAlliance|r" or (win == "Horde" or win == "HORDE") and "|cffff0000Horde|r" or "|cffffff00Draw|r"
     r.id:SetText(tostring(tonumber(id) or 0))
-    r.sea:SetText(tostring(tonumber(sea or row.season or 0) or 0))
+    if sname and sname ~= "" then
+        r.sea:SetText(tostring(sname))
+    else
+        r.sea:SetText(tostring(tonumber(sea or row.season or 0) or 0))
+    end
     r.ts:SetText(ts or "")
     r.win:SetText(who)
     r.aff:SetText(HLBG.GetAffixName(affix))
@@ -1118,7 +1123,15 @@ function HLBG.Stats(player, stats)
     local h = (counts["Horde"] or counts["HORDE"] or 0)
     local d = stats.draws or 0
     local ssz = tonumber(stats.season or stats.Season or 0) or 0
-    local seasonStr = (ssz and ssz > 0) and ("  Season: "..tostring(ssz)) or ""
+    local sname = stats.seasonName or stats.SeasonName
+    local seasonStr
+    if sname and sname ~= "" then
+        seasonStr = "  Season: "..tostring(sname)
+    elseif ssz and ssz > 0 then
+        seasonStr = "  Season: "..tostring(ssz)
+    else
+        seasonStr = ""
+    end
     local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min%s", a, h, d, math.floor((stats.avgDuration or 0)/60), seasonStr) }
     -- append top 3 affix and weather splits if present
     local function top3(map)
@@ -1225,14 +1238,20 @@ function HLBG.HistoryStr(a, b, c, d, e, f, g)
     local rows = {}
     if type(tsv) == "string" and tsv ~= "" then
         for line in tsv:gmatch("[^\n]+") do
-            -- Prefer new format with season column: id\tseason\tts\twinner\taffix\treason
-            local id, season, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-            if id and ts and win and aff and rea then
-                table.insert(rows, { id or "", ts or "", win or "", aff or "", rea or "", season = season })
+            -- Newest 7-column format: id\tseason\tseasonName\tts\twinner\taffix\treason
+            local id7, season7, sname7, ts7, win7, aff7, rea7 = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+            if id7 and ts7 and win7 and aff7 and rea7 then
+                table.insert(rows, { id = id7 or "", season = tonumber(season7) or season7, seasonName = sname7, ts = ts7 or "", winner = win7 or "", affix = aff7 or "", reason = rea7 or "" })
             else
-                -- Legacy 5-column format: id\tts\twinner\taffix\treason
-                local lid, lts, lwin, laff, lrea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-                if lid then table.insert(rows, { lid or "", lts or "", lwin or "", laff or "", lrea or "" }) end
+                -- Prior 6-column format: id\tseason\tts\twinner\taffix\treason
+                local id, season, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+                if id and ts and win and aff and rea then
+                    table.insert(rows, { id = id or "", season = tonumber(season) or season, ts = ts or "", winner = win or "", affix = aff or "", reason = rea or "" })
+                else
+                    -- Legacy 5-column format: id\tts\twinner\taffix\treason
+                    local lid, lts, lwin, laff, lrea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+                    if lid then table.insert(rows, { id = lid or "", ts = lts or "", winner = lwin or "", affix = laff or "", reason = lrea or "" }) end
+                end
             end
         end
     end

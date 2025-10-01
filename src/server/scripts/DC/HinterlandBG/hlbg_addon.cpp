@@ -89,7 +89,7 @@ namespace HLBGAddon
         return ss.str();
     }
 
-    // Build TSV string for history rows (id\tseason\tts\twinner\taffix\treason) with lines joined by "||" for safe transport
+    // Build TSV string for history rows (id\tseason\tseasonName\tts\twinner\taffix\treason) with lines joined by "||" for safe transport
     static std::string BuildHistoryTsv(QueryResult& rs)
     {
         std::ostringstream ss;
@@ -99,13 +99,14 @@ namespace HLBGAddon
             Field* f = rs->Fetch();
             uint64 id = f[0].Get<uint64>();
             uint32 season = f[1].Get<uint32>();
-            std::string ts = f[2].Get<std::string>();
-            uint32 winnerTid = f[3].Get<uint32>();
-            std::string reason = f[4].Get<std::string>();
-            uint32 affix = f[5].Get<uint32>();
+            std::string sname = f[2].IsNull() ? std::string("") : f[2].Get<std::string>();
+            std::string ts = f[3].Get<std::string>();
+            uint32 winnerTid = f[4].Get<uint32>();
+            std::string reason = f[5].Get<std::string>();
+            uint32 affix = f[6].Get<uint32>();
             const char* win = (winnerTid == 0 ? "Alliance" : (winnerTid == 1 ? "Horde" : "Draw"));
             if (!first) ss << "||"; first = false;
-            ss << id << '\t' << season << '\t' << ts << '\t' << win << '\t' << affix << '\t' << reason;
+            ss << id << '\t' << season << '\t' << HLBGAddon::EscapeJson(sname) << '\t' << ts << '\t' << win << '\t' << affix << '\t' << reason;
         }
         return ss.str();
     }
@@ -127,8 +128,9 @@ public:
     ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable queueSub = {
-            { "join", HandleHLBGQueueJoin,   SEC_PLAYER, Console::No },
-            { "qstatus", HandleHLBGQueueStatus, SEC_PLAYER, Console::No },
+            { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
+            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+            { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No }, // alias for compatibility
         };
 
         static ChatCommandTable uiSub = {
@@ -153,6 +155,7 @@ public:
 
         static ChatCommandTable root = {
             { "hlbg", merged },
+            { "queue", queueSub }, // optional direct root alias so addon can call ".queue join" if desired
         };
         return root;
     }
@@ -283,13 +286,16 @@ public:
 
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = hl ? hl->GetSeason() : 0u;
-        // id, season, occurred_at, winner_tid, win_reason, affix
+        // id, season, seasonName, occurred_at, winner_tid, win_reason, affix
         // Build SQL safely (whitelisted sort/dir), avoiding printf-style placeholders
         std::ostringstream qss;
-        qss << "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM hlbg_winner_history";
+        qss << "SELECT h.id, h.season, s.name AS seasonName, h.occurred_at, h.winner_tid, h.win_reason, h.affix FROM hlbg_winner_history h LEFT JOIN hlbg_seasons s ON h.season=s.season";
         if (season > 0)
-            qss << " WHERE season=" << season;
-        qss << " ORDER BY " << sort << ' ' << odir;
+            qss << " WHERE h.season=" << season;
+        // Whitelist sort field mapping to avoid ambiguous column in join
+        std::string sortCol = sort;
+        if (sort == "id") sortCol = "h.id"; else if (sort == "occurred_at") sortCol = "h.occurred_at"; else if (sort == "season") sortCol = "h.season"; else sortCol = "h.id";
+        qss << " ORDER BY " << sortCol << ' ' << odir;
         qss << " LIMIT " << per << " OFFSET " << offset;
         QueryResult rs = CharacterDatabase.Query(qss.str());
         if (!rs)
@@ -310,7 +316,7 @@ public:
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
 
-        uint32 winA=0, winH=0, draws=0; uint32 avgDur=0;
+        uint32 winA=0, winH=0, draws=0; uint32 avgDur=0; std::string seasonName;
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = hl ? hl->GetSeason() : 0u;
         if (season > 0)
@@ -323,6 +329,10 @@ public:
             if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE season=" + std::to_string(season) + " AND duration_seconds > 0"))
             {
                 Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
+            }
+            if (QueryResult r3 = CharacterDatabase.Query("SELECT name FROM hlbg_seasons WHERE season=" + std::to_string(season)))
+            {
+                Field* f = r3->Fetch(); seasonName = f[0].Get<std::string>();
             }
         }
         else
@@ -339,7 +349,8 @@ public:
         }
         std::ostringstream ss;
         ss << "{\"counts\":{\"Alliance\":" << winA << ",\"Horde\":" << winH << "},";
-        ss << "\"draws\":" << draws << ",\"avgDuration\":" << avgDur << ",\"season\":" << season << '}';
+        ss << "\"draws\":" << draws << ",\"avgDuration\":" << avgDur << ",\"season\":" << season << ",";
+        ss << "\"seasonName\":\"" << HLBGAddon::EscapeJson(seasonName) << "\"}";
         std::string msg = std::string("[HLBG_STATS_JSON] ") + ss.str();
         ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
         return true;
