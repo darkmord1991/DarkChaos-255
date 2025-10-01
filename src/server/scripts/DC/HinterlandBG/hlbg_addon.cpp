@@ -27,6 +27,7 @@
 #include <vector>
 #include <ctime>
 #include <algorithm>
+#include <iterator>
 
 using namespace Acore::ChatCommands;
 
@@ -141,9 +142,10 @@ public:
         static ChatCommandTable merged;
         if (merged.empty())
         {
-            // Copy uiSub then append queueSub entries
-            merged = uiSub;
-            merged.insert(merged.end(), queueSub.begin(), queueSub.end());
+            merged.reserve(uiSub.size() + queueSub.size());
+            // Move to avoid copying non-copyable ChatCommandBuilder
+            merged.insert(merged.end(), std::make_move_iterator(uiSub.begin()), std::make_move_iterator(uiSub.end()));
+            merged.insert(merged.end(), std::make_move_iterator(queueSub.begin()), std::make_move_iterator(queueSub.end()));
         }
 
         static ChatCommandTable root = {
