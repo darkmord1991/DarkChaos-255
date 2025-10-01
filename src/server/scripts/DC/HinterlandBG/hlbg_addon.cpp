@@ -28,6 +28,7 @@
 #include <ctime>
 #include <algorithm>
 #include <iterator>
+#include <cctype>
 
 using namespace Acore::ChatCommands;
 
@@ -213,7 +214,8 @@ public:
         bool wantPlayers = false;
         if (args && *args)
         {
-            std::string s(args); Acore::StringToLower(s);
+            std::string s(args);
+            std::transform(s.begin(), s.end(), s.begin(), ::tolower);
             wantPlayers = (s.find("players") != std::string::npos);
         }
         if (wantPlayers)
