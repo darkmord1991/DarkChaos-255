@@ -284,19 +284,14 @@ public:
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = hl ? hl->GetSeason() : 0u;
         // id, season, occurred_at, winner_tid, win_reason, affix
-        QueryResult rs;
+        // Build SQL safely (whitelisted sort/dir), avoiding printf-style placeholders
+        std::ostringstream qss;
+        qss << "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM hlbg_winner_history";
         if (season > 0)
-        {
-            rs = CharacterDatabase.Query(
-                "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM hlbg_winner_history WHERE season=%u ORDER BY %s %s LIMIT %u OFFSET %u",
-                season, sort.c_str(), odir.c_str(), per, offset);
-        }
-        else
-        {
-            rs = CharacterDatabase.Query(
-                "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM hlbg_winner_history ORDER BY %s %s LIMIT %u OFFSET %u",
-                sort.c_str(), odir.c_str(), per, offset);
-        }
+            qss << " WHERE season=" << season;
+        qss << " ORDER BY " << sort << ' ' << odir;
+        qss << " LIMIT " << per << " OFFSET " << offset;
+        QueryResult rs = CharacterDatabase.Query(qss.str());
         if (!rs)
         {
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_HISTORY_TSV] ");
@@ -320,12 +315,12 @@ public:
         uint32 season = hl ? hl->GetSeason() : 0u;
         if (season > 0)
         {
-            if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history WHERE season=%u", season))
+            if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history WHERE season=" + std::to_string(season)))
             {
                 Field* f = r->Fetch();
                 winA = f[0].Get<uint64>(); winH = f[1].Get<uint64>(); draws = f[2].Get<uint64>();
             }
-            if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE season=%u AND duration_seconds > 0", season))
+            if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE season=" + std::to_string(season) + " AND duration_seconds > 0"))
             {
                 Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
             }
