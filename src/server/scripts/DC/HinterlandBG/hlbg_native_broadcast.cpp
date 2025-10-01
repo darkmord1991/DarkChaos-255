@@ -92,21 +92,9 @@ public:
             { "native", HandleHLBGLiveNativeCommand, SEC_GAMEMASTER, Console::No },
         };
 
-        static ChatCommandTable queueSub = {
-            { "join", HandleHLBGQueueJoin, SEC_PLAYER, Console::No },
-            { "status", HandleHLBGQueueStatus, SEC_PLAYER, Console::No },
-        };
-
-        static ChatCommandTable hlbgSub = {
-            { "live", liveSub },
-            { "warmup", HandleHLBGWarmup, SEC_GAMEMASTER, Console::No },
-            { "queue", queueSub },
-            { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
-        };
-
+        // Only expose a separate root to avoid conflicts with other HLBG command trees
         static ChatCommandTable root = {
             { "hlbglive", liveSub },
-            { "hlbg", hlbgSub },
         };
         return root;
     }
@@ -149,130 +137,7 @@ public:
 
         uint32 a = hl->GetResources(TEAM_ALLIANCE);
         uint32 h = hl->GetResources(TEAM_HORDE);
-        // Use match start epoch as part of id if available
-        uint32 matchStart = hl->GetMatchStartEpoch();
-        std::ostringstream ida; ida << matchStart << "-A";
-        std::ostringstream idh; idh << matchStart << "-H";
-
-        rows.emplace_back(ida.str(), ts, std::string("Alliance"), std::string("Alliance"), static_cast<int>(a));
-        rows.emplace_back(idh.str(), ts, std::string("Horde"), std::string("Horde"), static_cast<int>(h));
-
-        // Build JSON first and prefer it if under safe limit
-        const size_t maxJsonLen = 1000; // keep in sync with HLBG_AIO.lua default
-        std::string json = BuildJsonRows(rows);
-        if (json.size() <= maxJsonLen)
-        {
-            std::string msg = std::string("[HLBG_LIVE_JSON] ") + json;
-            ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-            handler->PSendSysMessage("Sent HLBG live JSON payload to you.");
-            return true;
-        }
-
-        // Fallback to TSV with '||' delimiter
-    std::string tsv = BuildTsvRows(rows);
-    std::string msg = std::string("[HLBG_LIVE] ") + tsv;
-    ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-    handler->PSendSysMessage("Sent HLBG live TSV payload to you.");
-        return true;
-    }
-
-    static OutdoorPvPHL* GetHL()
-    {
-        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!out)
-            return nullptr;
-        return dynamic_cast<OutdoorPvPHL*>(out);
-    }
-
-    // .hlbg warmup [text]
-    static bool HandleHLBGWarmup(ChatHandler* handler, char const* args)
-    {
-        if (!handler || !handler->GetSession())
-            return false;
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-        std::string text = args ? std::string(args) : std::string();
-        if (text.empty()) text = "Warmup has begun!";
-        std::string msg = std::string("[HLBG_WARMUP] ") + text;
-        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-        handler->PSendSysMessage("Sent HLBG warmup notice to you.");
-        return true;
-    }
-
-    // .hlbg queue join
-    static bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
-    {
-        if (!handler || !handler->GetSession())
-            return false;
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
-            handler->PSendSysMessage("HLBG: Hinterland BG controller not available.");
-            return true;
-        }
-
-        // Basic eligibility checks
-        // 1) Level requirement: max level
-        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] too_low_level");
-            handler->PSendSysMessage("HLBG: You must be max level to join.");
-            return true;
-        }
-        // 2) Deserter debuff denies entry
-        static constexpr uint32 BG_DESERTER_SPELL = 26013; // Deserter
-        if (player->HasAura(BG_DESERTER_SPELL))
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] deserter");
-            handler->PSendSysMessage("HLBG: You have Deserter. Try again later.");
-            return true;
-        }
-        // 3) No joining while dead or in combat
-        if (!player->IsAlive())
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] dead");
-            handler->PSendSysMessage("HLBG: You are dead. Release or resurrect first.");
-            return true;
-        }
-        if (player->IsInCombat())
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] in_combat");
-            handler->PSendSysMessage("HLBG: Cannot join while in combat.");
-            return true;
-        }
-        // 4) Basic safe-area rule: do not allow from dungeons/raids/battlegrounds
-        if (Map* m = player->GetMap())
-        {
-            if (m->IsDungeon() || m->IsRaid() || m->IsBattlegroundOrArena())
-            {
-                ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_in_safe_area");
-                handler->PSendSysMessage("HLBG: Leave dungeon/raid/bg to join the Hinterland battle.");
-                return true;
-            }
-        }
-
-        // Treat no remaining time (0) as a locked/paused state (HL holds timer at 0 during lock)
-        uint32 remaining = hl->GetTimeRemainingSeconds();
-        if (remaining == 0)
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] locked");
-            handler->PSendSysMessage("HLBG: Battleground is currently locked between matches. Please wait.");
-            return true;
-        }
-
-        // If already in the Hinterlands, just ensure they are in the faction raid
-        if (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
-        {
-            // Auto-join faction raid group managed by HL
-            (void)hl->AddOrSetPlayerToCorrectBfGroup(player);
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] joined");
-            handler->PSendSysMessage("HLBG: You are in the Hinterlands — joined the faction raid (if available).");
-            return true;
+        static bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
         }
 
         // Otherwise, teleport to team base in Hinterlands; On zone enter, HL will auto-invite to the raid

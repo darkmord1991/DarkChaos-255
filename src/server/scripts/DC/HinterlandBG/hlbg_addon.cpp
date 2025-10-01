@@ -128,7 +128,7 @@ public:
     {
         static ChatCommandTable queueSub = {
             { "join", HandleHLBGQueueJoin,   SEC_PLAYER, Console::No },
-            { "status", HandleHLBGQueueStatus, SEC_PLAYER, Console::No },
+            { "qstatus", HandleHLBGQueueStatus, SEC_PLAYER, Console::No },
         };
 
         static ChatCommandTable uiSub = {
