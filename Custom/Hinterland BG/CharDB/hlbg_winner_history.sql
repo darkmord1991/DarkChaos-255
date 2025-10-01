@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS `hlbg_winner_history` (
   `occurred_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `zone_id` INT UNSIGNED NOT NULL DEFAULT 47,
   `map_id` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `season` INT UNSIGNED NOT NULL DEFAULT 1,
   `winner_tid` TINYINT UNSIGNED NOT NULL, -- 0=Alliance,1=Horde,2=Neutral (TeamId)
   `score_alliance` INT UNSIGNED NOT NULL DEFAULT 0,
   `score_horde` INT UNSIGNED NOT NULL DEFAULT 0,
@@ -14,5 +15,6 @@ CREATE TABLE IF NOT EXISTS `hlbg_winner_history` (
   PRIMARY KEY (`id`),
   INDEX `idx_time` (`occurred_at`),
   INDEX `idx_winner` (`winner_tid`),
-  INDEX `idx_affix` (`affix`)
+  INDEX `idx_affix` (`affix`),
+  INDEX `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

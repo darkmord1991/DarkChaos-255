@@ -29,6 +29,7 @@ void OutdoorPvPHL::LoadConfig()
         _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
         _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
         _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
+    _season = sConfigMgr->GetOption<uint32>("HinterlandBG.Season", _season);
         // Optional configurable base coordinates
         auto getf = [](char const* key, float defv){ return sConfigMgr->GetOption<float>(key, defv); };
         auto geti = [](char const* key, uint32 defv){ return sConfigMgr->GetOption<uint32>(key, defv); };

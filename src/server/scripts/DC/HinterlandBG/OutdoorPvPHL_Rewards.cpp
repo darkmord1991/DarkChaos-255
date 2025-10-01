@@ -15,6 +15,45 @@
 #include "SharedDefines.h"
 #include <algorithm>
 #include <cstdio>
+// Scoreboard helpers ---------------------------------------------------------
+uint32 OutdoorPvPHL::GetPlayerScore(ObjectGuid const& guid) const
+{
+    auto it = _playerScores.find(guid);
+    if (it == _playerScores.end())
+        return 0u;
+    return it->second;
+}
+
+void OutdoorPvPHL::AddPlayerScore(ObjectGuid const& guid, uint32 points)
+{
+    if (!guid)
+        return;
+    if (points == 0)
+        return;
+    _playerScores[guid] += points;
+}
+
+void OutdoorPvPHL::ClearPlayerScores()
+{
+    _playerScores.clear();
+}
+
+uint32 OutdoorPvPHL::GetPlayerHKDelta(Player* player)
+{
+    if (!player)
+        return 0u;
+    ObjectGuid g = player->GetGUID();
+    uint32 current = player->GetUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS);
+    auto it = _playerHKBaseline.find(g);
+    if (it == _playerHKBaseline.end())
+    {
+        _playerHKBaseline[g] = current;
+        return 0u;
+    }
+    uint32 base = it->second;
+    return (current > base) ? (current - base) : 0u;
+}
+
 
 // Resource adjustments are configurable via hinterlandbg.conf
 
@@ -181,16 +220,19 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             return;
 
         TeamId victimTeam = killed->ToPlayer()->GetTeamId();
+        uint32 scorePoints = 0;
         switch (victimTeam)
         {
             case TEAM_ALLIANCE:
                 _ally_gathered -= _resourcesLossPlayerKill;
+                scorePoints = _resourcesLossPlayerKill;
                 // Per-kill spell feedback (optional)
                 if (_killSpellOnPlayerKillHorde)
                     player->CastSpell(player, _killSpellOnPlayerKillHorde, true);
                 break;
             default: // Horde
                 _horde_gathered -= _resourcesLossPlayerKill;
+                scorePoints = _resourcesLossPlayerKill;
                 if (_killSpellOnPlayerKillAlliance)
                     player->CastSpell(player, _killSpellOnPlayerKillAlliance, true);
                 break;
@@ -210,6 +252,9 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             Randomizer(plr);
             if (_rewardKillItemId && _rewardKillItemCount)
                 plr->AddItem(_rewardKillItemId, _rewardKillItemCount);
+            // Add scoreboard points if member is in zone
+            if (plr->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                AddPlayerScore(plr->GetGUID(), scorePoints);
         };
 
         // Group-range reward distribution similar to Nagrand (Halaa)
@@ -285,18 +330,18 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 isBoss   = _npcBossEntriesHorde.count(entry) > 0;
                 isNormal = _npcNormalEntriesHorde.count(entry) > 0;
                 if (isBoss)
-                    _horde_gathered = (_horde_gathered > _resourcesLossNpcBoss) ? (_horde_gathered - _resourcesLossNpcBoss) : 0u;
+                { _horde_gathered = (_horde_gathered > _resourcesLossNpcBoss) ? (_horde_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); }
                 else if (isNormal)
-                    _horde_gathered = (_horde_gathered > _resourcesLossNpcNormal) ? (_horde_gathered - _resourcesLossNpcNormal) : 0u;
+                { _horde_gathered = (_horde_gathered > _resourcesLossNpcNormal) ? (_horde_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); }
             }
             else if (victimTeam == TEAM_ALLIANCE)
             {
                 isBoss   = _npcBossEntriesAlliance.count(entry) > 0;
                 isNormal = _npcNormalEntriesAlliance.count(entry) > 0;
                 if (isBoss)
-                    _ally_gathered = (_ally_gathered > _resourcesLossNpcBoss) ? (_ally_gathered - _resourcesLossNpcBoss) : 0u;
+                { _ally_gathered = (_ally_gathered > _resourcesLossNpcBoss) ? (_ally_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); }
                 else if (isNormal)
-                    _ally_gathered = (_ally_gathered > _resourcesLossNpcNormal) ? (_ally_gathered - _resourcesLossNpcNormal) : 0u;
+                { _ally_gathered = (_ally_gathered > _resourcesLossNpcNormal) ? (_ally_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); }
             }
             // Award random honor when a configured NPC type is killed
             if (isBoss || isNormal)

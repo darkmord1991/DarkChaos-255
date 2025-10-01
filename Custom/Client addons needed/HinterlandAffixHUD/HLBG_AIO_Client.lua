@@ -38,6 +38,10 @@ do
                 _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, "id", "DESC")
                 _G.AIO.Handle("HLBG", "Request", "STATS")
             end
+                -- Chat fallbacks so UI works without AIO server handlers
+                SendChatCommand(".hlbg live players")
+                SendChatCommand(".hlbg historyui 1 5 id DESC")
+                SendChatCommand(".hlbg statsui")
         end)
         if not ok then DEFAULT_CHAT_FRAME:AddMessage("HLBG error (/hlbg): "..tostring(err)) end
     end
@@ -283,6 +287,16 @@ local function UpdateHUD()
     UpdateLiveHeader()
 end
 
+-- Lightweight helper to send a chat command (dot command) to the server
+-- Useful as a fallback when no AIO server handler exists
+local function SendChatCommand(cmd)
+    if type(cmd) ~= 'string' or cmd == '' then return end
+    -- Using SAY is sufficient to trigger server-side command parsing for .commands
+    if type(SendChatMessage) == 'function' then
+        pcall(SendChatMessage, cmd, 'SAY')
+    end
+end
+
 local function InHinterlands()
     local z = GetRealZoneText() or ""
     return z == "The Hinterlands"
@@ -400,6 +414,9 @@ HLBG.UI.Live:SetAllPoints(HLBG.UI.Frame)
 HLBG.UI.Live.Text = HLBG.UI.Live:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Live.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Live.Text:SetText("Live status shows resources, timer and affix. Use the HUD on the world view.")
+HLBG.UI.Live:SetScript("OnShow", function()
+    SendChatCommand(".hlbg live players")
+end)
 
 -- Live scoreboard: scrollable player list
 HLBG.UI.Live.Scroll = CreateFrame("ScrollFrame", "HLBG_LiveScroll", HLBG.UI.Live, "UIPanelScrollFrameTemplate")
@@ -422,7 +439,7 @@ local function liveGetRow(i)
         r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         -- Primary score (aligned right)
         r.score = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        -- Secondary metadata line: team/id
+    -- Secondary metadata line: team/HK/class/subgroup
         r.meta = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         -- Secondary timestamp (right-aligned)
         r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -488,6 +505,12 @@ function HLBG.Live(rows)
             local bx = tonumber(b.score or b[5] or b[2]) or 0
             if sd == "ASC" then return ax < bx else return ax > bx end
         end)
+    elseif sk == "hk" then
+        table.sort(sorted, function(a,b)
+            local ax = tonumber(a.hk or a[6] or 0) or 0
+            local bx = tonumber(b.hk or b[6] or 0) or 0
+            if sd == "ASC" then return ax < bx else return ax > bx end
+        end)
     elseif sk == "name" then
         table.sort(sorted, function(a,b)
             local an = tostring(a.name or a[3] or a[1] or "")
@@ -505,8 +528,29 @@ function HLBG.Live(rows)
         r:SetPoint("TOPLEFT", HLBG.UI.Live.Content, "TOPLEFT", 0, y)
         local name = row.name or row[3] or row[1] or "?"
         local score = row.score or row[5] or row[2] or 0
+        -- Extra metrics (optional): hk, class, subgroup, team
+        local hk = tonumber(row.hk or row.HK or row[6]) or 0
+        local cls = tonumber(row[7] or row.class or row.Class) or nil
+        local subgroup = (type(row.subgroup) ~= 'nil' and tonumber(row.subgroup)) or nil
+        local team = tostring(row.team or row.Team or "")
         r.name:SetText(tostring(name))
         r.score:SetText(tostring(score))
+        -- Build meta text if we have details
+        local function ClassName(id)
+            if type(id) ~= 'number' then return nil end
+            local map = {
+                [1] = 'Warrior', [2] = 'Paladin', [3] = 'Hunter', [4] = 'Rogue', [5] = 'Priest',
+                [6] = 'Death Knight', [7] = 'Shaman', [8] = 'Mage', [9] = 'Warlock', [11] = 'Druid'
+            }
+            return map[id]
+        end
+        local parts = {}
+        if team ~= '' then table.insert(parts, team) end
+        table.insert(parts, string.format('HK:+%d', math.max(0, hk)))
+        local cname = ClassName(cls)
+        if cname then table.insert(parts, 'Class:'..cname) end
+        if subgroup and subgroup >= 0 then table.insert(parts, 'Group:'..tostring(subgroup)) end
+        r.meta:SetText(table.concat(parts, '  '))
         r:Show()
         y = y - 18
     end
@@ -525,6 +569,10 @@ local function ensureLiveHeader()
     HLBG.UI.Live.Header.Name = HLBG.UI.Live.Header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     HLBG.UI.Live.Header.Name:SetPoint("LEFT", HLBG.UI.Live.Header, "LEFT", 2, 0)
     HLBG.UI.Live.Header.Name:SetText("Players")
+    -- Optional HK header in the middle
+    HLBG.UI.Live.Header.HK = HLBG.UI.Live.Header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    HLBG.UI.Live.Header.HK:SetPoint("CENTER", HLBG.UI.Live.Header, "CENTER", 0, 0)
+    HLBG.UI.Live.Header.HK:SetText("HK")
     HLBG.UI.Live.Header.Score = HLBG.UI.Live.Header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     HLBG.UI.Live.Header.Score:SetPoint("RIGHT", HLBG.UI.Live.Header, "RIGHT", -2, 0)
     HLBG.UI.Live.Header.Score:SetText("Score")
@@ -537,6 +585,13 @@ local function ensureLiveHeader()
     btnName:SetScript("OnClick", function()
         HLBG.UI.Live.sortKey = "name"
         HLBG.UI.Live.sortDir = (HLBG.UI.Live.sortKey == "name" and (HLBG.UI.Live.sortDir == "ASC" and "DESC" or "ASC") ) or "DESC"
+        if HLBG.UI.Live.lastRows then HLBG.Live(HLBG.UI.Live.lastRows) end
+    end)
+    local btnHK = CreateFrame("Button", nil, HLBG.UI.Live.Header)
+    btnHK:SetAllPoints(HLBG.UI.Live.Header.HK)
+    btnHK:SetScript("OnClick", function()
+        HLBG.UI.Live.sortKey = "hk"
+        HLBG.UI.Live.sortDir = (HLBG.UI.Live.sortKey == "hk" and (HLBG.UI.Live.sortDir == "ASC" and "DESC" or "ASC") ) or "DESC"
         if HLBG.UI.Live.lastRows then HLBG.Live(HLBG.UI.Live.lastRows) end
     end)
     local btnScore = CreateFrame("Button", nil, HLBG.UI.Live.Header)
@@ -611,7 +666,18 @@ HLBG.UI.Queue.Join:SetScript("OnClick", function()
     if _G.AIO and _G.AIO.Handle then
         _G.AIO.Handle("HLBG", "Request", "QUEUE", "JOIN")
     end
+    -- Fallback to server chat command so it works even without AIO server handlers
+    SendChatCommand(".hlbg queue join")
     DEFAULT_CHAT_FRAME:AddMessage("HLBG: Queue join requested")
+end)
+
+-- When showing the Queue tab, proactively request a status update
+HLBG.UI.Queue:SetScript("OnShow", function()
+    if HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.Status then
+        HLBG.UI.Queue.Status:SetText("Queue status: checking…")
+    end
+    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS") end
+    SendChatCommand(".hlbg queue status")
 end)
 
 -- Info tab: overview/features/settings/rewards
@@ -664,15 +730,15 @@ HLBG.UI.Results.Text:SetJustifyH("LEFT")
 HLBG.UI.Results.Text:SetWidth(460)
 HLBG.UI.Results.Text:SetText("Results will appear after each match.")
 
--- History controls: columns, pagination
 HLBG.UI.History.Columns = {}
 -- Keep total <= ~460 width (including spacing)
 local headers = {
     {text="ID", w=50},
-    {text="Timestamp", w=156},
+    {text="Season", w=50},
+    {text="Timestamp", w=120},
     {text="Winner", w=80},
-    {text="Affix", w=90},
-    {text="Reason", w=60},
+    {text="Affix", w=70},
+    {text="Reason", w=50},
 }
 local x = 0
 for i,col in ipairs(headers) do
@@ -738,6 +804,9 @@ local function EnsurePvPTab()
             _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or "id", HLBG.UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
         end
+    SendChatCommand(".hlbg live players")
+        SendChatCommand(".hlbg historyui 1 5 id DESC")
+        SendChatCommand(".hlbg statsui")
     end)
 end
 
@@ -757,6 +826,9 @@ local function EnsurePvPHeaderButton()
             _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or "id", HLBG.UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
         end
+    SendChatCommand(".hlbg live players")
+        SendChatCommand(".hlbg historyui 1 5 id DESC")
+        SendChatCommand(".hlbg statsui")
     end)
     -- hide our inner frame when PvP frame hides
     _pvp:HookScript("OnHide", function()
@@ -799,6 +871,10 @@ function HLBG.OpenUI()
     end
     HLBG.UI.Frame:Show()
     ShowTab(HinterlandAffixHUDDB.lastInnerTab or 1)
+    -- Prime queries through chat as well in case server AIO isn't available
+    SendChatCommand(".hlbg live players")
+    SendChatCommand(".hlbg historyui 1 5 id DESC")
+    SendChatCommand(".hlbg statsui")
 end
 DEFAULT_CHAT_FRAME:AddMessage("HLBG client: main OpenUI bound")
 
@@ -949,27 +1025,31 @@ function HLBG.History(a, b, c, d, e, f, g)
                 if r.SetFrameStrata then r:SetFrameStrata("DIALOG") end
             r:SetSize(420, 14)
             r.id = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.sea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 -- force visible text color for debugging
                 if r.id.SetTextColor then r.id:SetTextColor(1,1,1,1) end
+                if r.sea.SetTextColor then r.sea:SetTextColor(1,1,1,1) end
                 if r.ts.SetTextColor then r.ts:SetTextColor(1,1,1,1) end
                 if r.win.SetTextColor then r.win:SetTextColor(1,1,1,1) end
                 if r.aff.SetTextColor then r.aff:SetTextColor(1,1,1,1) end
                 if r.rea.SetTextColor then r.rea:SetTextColor(1,1,1,1) end
-            -- layout mirrors headers: ID(50), TS(156), WIN(80), AFF(90), REASON(60) with 6px spacing
+            -- layout mirrors headers: ID(50), SEASON(50), TS(120), WIN(80), AFF(70), REASON(50) with 6px spacing
             r.id:SetPoint("LEFT", r, "LEFT", 0, 0)
             r.id:SetWidth(50); r.id:SetJustifyH("LEFT")
-            r.ts:SetPoint("LEFT", r.id, "RIGHT", 6, 0)
-            r.ts:SetWidth(156); r.ts:SetJustifyH("LEFT")
+            r.sea:SetPoint("LEFT", r.id, "RIGHT", 6, 0)
+            r.sea:SetWidth(50); r.sea:SetJustifyH("LEFT")
+            r.ts:SetPoint("LEFT", r.sea, "RIGHT", 6, 0)
+            r.ts:SetWidth(120); r.ts:SetJustifyH("LEFT")
             r.win:SetPoint("LEFT", r.ts, "RIGHT", 6, 0)
             r.win:SetWidth(80); r.win:SetJustifyH("LEFT")
             r.aff:SetPoint("LEFT", r.win, "RIGHT", 6, 0)
-            r.aff:SetWidth(90); r.aff:SetJustifyH("LEFT")
+            r.aff:SetWidth(70); r.aff:SetJustifyH("LEFT")
             r.rea:SetPoint("LEFT", r.aff, "RIGHT", 6, 0)
-            r.rea:SetWidth(60); r.rea:SetJustifyH("LEFT")
+            r.rea:SetWidth(50); r.rea:SetJustifyH("LEFT")
             HLBG.UI.History.rows[i] = r
         end
         return r
@@ -984,14 +1064,17 @@ function HLBG.History(a, b, c, d, e, f, g)
         local r = getRow(i)
         r:ClearAllPoints()
         r:SetPoint("TOPLEFT", HLBG.UI.History.Content, "TOPLEFT", 0, y)
-        -- Support both compact array rows {id, ts, winner, affix, reason} and map rows
-        local id    = (type(row[1]) ~= "nil") and row[1] or row.id
-        local ts    = row[2] or row.ts
-        local win   = row[3] or row.winner
-        local affix = row[4] or row.affix
-        local reas  = row[5] or row.reason
+        -- Prefer named fields; fallback to compact array rows {id, [season], ts, winner, affix, reason}
+        local id    = row.id or row[1]
+        local sea   = row.season or row[2]
+        -- if season present at [2], ts may be at [3]; otherwise [2]
+        local ts    = row.ts or row[3] or row[2]
+        local win   = row.winner or row[4] or row[3]
+        local affix = row.affix or row[5] or row[4]
+        local reas  = row.reason or row[6] or row[5]
         local who = (win == "Alliance" or win == "ALLIANCE") and "|cff1e90ffAlliance|r" or (win == "Horde" or win == "HORDE") and "|cffff0000Horde|r" or "|cffffff00Draw|r"
     r.id:SetText(tostring(tonumber(id) or 0))
+    r.sea:SetText(tostring(tonumber(sea or row.season or 0) or 0))
     r.ts:SetText(ts or "")
     r.win:SetText(who)
     r.aff:SetText(HLBG.GetAffixName(affix))
@@ -1034,7 +1117,9 @@ function HLBG.Stats(player, stats)
     local a = (counts["Alliance"] or counts["ALLIANCE"] or 0)
     local h = (counts["Horde"] or counts["HORDE"] or 0)
     local d = stats.draws or 0
-    local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min", a, h, d, math.floor((stats.avgDuration or 0)/60)) }
+    local ssz = tonumber(stats.season or stats.Season or 0) or 0
+    local seasonStr = (ssz and ssz > 0) and ("  Season: "..tostring(ssz)) or ""
+    local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min%s", a, h, d, math.floor((stats.avgDuration or 0)/60), seasonStr) }
     -- append top 3 affix and weather splits if present
     local function top3(map)
         local arr = {}
@@ -1140,8 +1225,15 @@ function HLBG.HistoryStr(a, b, c, d, e, f, g)
     local rows = {}
     if type(tsv) == "string" and tsv ~= "" then
         for line in tsv:gmatch("[^\n]+") do
-            local id, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-            table.insert(rows, { id or "", ts or "", win or "", aff or "", rea or "" })
+            -- Prefer new format with season column: id\tseason\tts\twinner\taffix\treason
+            local id, season, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+            if id and ts and win and aff and rea then
+                table.insert(rows, { id or "", ts or "", win or "", aff or "", rea or "", season = season })
+            else
+                -- Legacy 5-column format: id\tts\twinner\taffix\treason
+                local lid, lts, lwin, laff, lrea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+                if lid then table.insert(rows, { lid or "", lts or "", lwin or "", laff or "", lrea or "" }) end
+            end
         end
     end
     return HLBG.History(rows, page, per, total, col, dir)
@@ -1176,7 +1268,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             end
             return
         end
-        -- LIVE payload handling: support multiple transports
+    -- LIVE payload handling: support multiple transports
         -- 1) Addon message: LIVE|<payload> (payload can be TSV or JSON)
         -- 2) Chat broadcast: messages prefixed with [HLBG_LIVE_JSON] (JSON) or [HLBG_LIVE] (TSV)
         local livePayload = msg:match("LIVE|(.*)")
@@ -1281,6 +1373,23 @@ chatListener:SetScript('OnEvent', function(self, event, msg, ...)
         if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
         return
     end
+
+    -- History TSV fallback
+    local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
+    if htsv then
+        -- Convert our '||' line placeholders back to real newlines and reuse HistoryStr
+        htsv = htsv:gsub('%|%|', '\n')
+        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, 5, 0, 'id', 'DESC') end
+        return
+    end
+
+    -- Stats JSON fallback
+    local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
+    if sj then
+        local ok, decoded = pcall(function() return json_decode(sj) end)
+        if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        return
+    end
 end)
 
 -- Add a simple Refresh button on the History and Stats panes
@@ -1293,12 +1402,15 @@ HLBG.UI.Refresh:SetScript("OnClick", function()
         _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or "id", HLBG.UI.History.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "Request", "STATS")
     end
+    -- Also use chat fallbacks so refresh works without server-side AIO
+    SendChatCommand(string.format(".hlbg historyui %d %d %s %s", HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or "id", HLBG.UI.History.sortDir or "DESC"))
+    SendChatCommand(".hlbg statsui")
 end)
 
 -- Make column headers actually sort (toggle ASC/DESC)
 for i,h in ipairs(HLBG.UI.History.Columns) do
     h:SetScript("OnClick", function()
-        local keyMap = { ID = "id", Timestamp = "ts", Winner = "winner", Affix = "affix", Reason = "reason" }
+    local keyMap = { ID = "id", Season = "season", Timestamp = "occurred_at", Winner = "winner", Affix = "affix", Reason = "reason" }
         local sk = keyMap[h.Text:GetText()] or "id"
         if HLBG.UI.History.sortKey == sk then
             HLBG.UI.History.sortDir = (HLBG.UI.History.sortDir == "ASC") and "DESC" or "ASC"
@@ -1308,6 +1420,8 @@ for i,h in ipairs(HLBG.UI.History.Columns) do
         if _G.AIO and _G.AIO.Handle then
             _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey, HLBG.UI.History.sortDir)
         end
+        -- Fallback: ask server via chat endpoints too
+        SendChatCommand(string.format(".hlbg historyui %d %d %s %s", HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey, HLBG.UI.History.sortDir))
     end)
 end
 

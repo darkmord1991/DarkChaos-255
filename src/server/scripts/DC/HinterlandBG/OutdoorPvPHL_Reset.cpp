@@ -57,6 +57,9 @@ void OutdoorPvPHL::HandleReset()
 
     _matchStartTime = NowSec();
     _matchEndTime = _matchStartTime + _matchDurationSeconds;
+    // Clear per-player scoreboard for new match
+    _playerScores.clear();
+    _playerHKBaseline.clear();
     LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     // If configured, pick a random affix for the new battle immediately
     // (weather will be synced if enabled)

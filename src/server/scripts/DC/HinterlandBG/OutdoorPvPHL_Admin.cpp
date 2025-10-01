@@ -145,6 +145,6 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     uint8 aff = static_cast<uint8>(_activeAffix);
     uint32 dur = GetCurrentMatchDurationSeconds();
     CharacterDatabase.Execute(
-        "INSERT INTO hlbg_winner_history (zone_id, map_id, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, '{}', {}, {})",
-        zone, mapId, winnerTid, a, h, reason, aff, dur);
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, '{}', {}, {}, {})",
+        zone, mapId, _season, winnerTid, a, h, reason, aff, dur);
 }

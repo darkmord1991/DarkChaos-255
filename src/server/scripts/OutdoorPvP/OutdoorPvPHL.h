@@ -205,6 +205,10 @@
             // Runtime toggle for stats pages to include manual resets in aggregates
             bool GetStatsIncludeManualResets() const;
             void SetStatsIncludeManualResets(bool include);
+            // Current competitive season for HLBG (from config)
+            uint32 GetSeason() const { return _season; }
+            // Per-player session metrics (computed since match start)
+            uint32 GetPlayerHKDelta(Player* player);
             // Affix/weather inspection helpers for UI/commands
             bool IsAffixEnabled() const { return _affixEnabled; }
             bool IsAffixWeatherEnabled() const { return _affixWeatherEnabled; }
@@ -261,6 +265,11 @@
             void LoadConfig();
             // Save and restore persistent state across restarts (resources, timers, lock)
             void SaveRequiredWorldStates() const;
+            // Scoreboard: lightweight per-player contribution score (reset each match)
+            // Score increases when a player contributes to resource loss (PVP/NPC kills), measured in resource points.
+            uint32 GetPlayerScore(ObjectGuid const& guid) const;
+            void   AddPlayerScore(ObjectGuid const& guid, uint32 points);
+            void   ClearPlayerScores();
             // Classification queries (safe accessors so helpers outside the class don't need private access)
             bool IsBossNpcEntry(uint32 entry) const;
 
@@ -360,6 +369,7 @@
     bool   _expiryUseTiebreaker;  // declare winner at expiry by higher resources (default true)
     uint32 _initialResourcesAlliance;
     uint32 _initialResourcesHorde;
+    uint32 _season; // current season number for history/stats attribution
             // Configurable base locations used for resets/AFK returns
             struct HLBase { uint32 map; float x; float y; float z; float o; };
             HLBase _baseAlliance;
@@ -438,5 +448,10 @@
             std::vector<ObjectGuid> _teamRaidGroups[2];
         // Track when a member of a tracked raid group went offline (epoch seconds)
         std::map<ObjectGuid, uint32> _memberOfflineSince;
+        // Per-player scoreboard for current match. Uses resource-point contribution as score.
+        // std::map is used for portability without relying on a custom hasher for ObjectGuid.
+        std::map<ObjectGuid, uint32> _playerScores;
+        // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
+        std::map<ObjectGuid, uint32> _playerHKBaseline;
     };
     #endif
