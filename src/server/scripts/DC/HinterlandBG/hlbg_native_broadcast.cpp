@@ -2,9 +2,9 @@
  * hlbg_native_broadcast.cpp
  *
  * GM helper to broadcast an authoritative LIVE payload for Hinterland BG using
- * native runtime getters. Sends a chat fallback JSON when compact, otherwise
- * TSV with '||' newline placeholder. This avoids requiring mod-eluna linkage
- * and is safe to compile into the server as a small CommandScript.
+ * native runtime getters. Sends a compact chat JSON (or TSV if needed).
+ * This avoids requiring mod-eluna linkage and is safe to compile into the
+ * server as a small CommandScript.
  */
 #include "ScriptMgr.h"
 #include "Chat.h"
@@ -17,6 +17,8 @@
 #include <string>
 #include <sstream>
 #include <ctime>
+#include <vector>
+#include <tuple>
 
 using namespace Acore::ChatCommands;
 
@@ -137,82 +139,15 @@ public:
 
         uint32 a = hl->GetResources(TEAM_ALLIANCE);
         uint32 h = hl->GetResources(TEAM_HORDE);
-        static bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
-        }
 
-        // Otherwise, teleport to team base in Hinterlands; On zone enter, HL will auto-invite to the raid
-        hl->TeleportToTeamBase(player);
-        ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] teleporting");
-        handler->PSendSysMessage("HLBG: Teleporting you to your Hinterlands base…");
-        return true;
-    }
+        rows.emplace_back("A", ts, "Alliance", "Alliance", static_cast<int>(a));
+        rows.emplace_back("H", ts, "Horde", "Horde", static_cast<int>(h));
 
-    // .hlbg queue status [text]
-    static bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args)
-    {
-        if (!handler || !handler->GetSession())
-            return false;
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-        // If an explicit text was provided, just echo it; otherwise compute a basic status
-        if (args && *args)
-        {
-            std::string msg = std::string("[HLBG_QUEUE] ") + std::string(args);
-            ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-            handler->PSendSysMessage("HLBG: queue status (echo) sent.");
-            return true;
-        }
-
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
-            handler->PSendSysMessage("HLBG: controller not available.");
-            return true;
-        }
-
-        bool inZone = (player->GetZoneId() == OutdoorPvPHLBuffZones[0]);
-        const char* s = inZone ? "in_zone" : "away";
-        std::string msg = std::string("[HLBG_QUEUE] ") + s;
+        // Always compact for two rows
+        std::string json = BuildJsonRows(rows);
+        std::string msg = std::string("[HLBG_LIVE_JSON] ") + json;
         ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-        handler->PSendSysMessage("HLBG: queue status reported.");
-        return true;
-    }
-
-    // .hlbg results -> build a compact JSON summary and send to client
-    static bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
-    {
-        if (!handler || !handler->GetSession())
-            return false;
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        OutdoorPvPHL* hl = GetHL();
-        std::string winner = "Draw";
-        uint32 a = 0, h = 0;
-        uint32 dur = 0;
-        uint32 affix = 0;
-        if (hl)
-        {
-            a = hl->GetResources(TEAM_ALLIANCE);
-            h = hl->GetResources(TEAM_HORDE);
-            if (a > h) winner = "Alliance"; else if (h > a) winner = "Horde"; else winner = "Draw";
-            dur = hl->GetCurrentMatchDurationSeconds();
-            affix = hl->GetActiveAffixCode();
-        }
-
-        std::ostringstream ss;
-        ss << "{";
-        ss << "\"winner\":\"" << winner << "\",";
-        ss << "\"affix\":" << affix << ",";
-        ss << "\"duration\":" << dur;
-        ss << "}";
-        std::string json = ss.str();
-        std::string msg = std::string("[HLBG_RESULTS_JSON] ") + json;
-        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
-        handler->PSendSysMessage("Sent HLBG results JSON to you.");
+        handler->PSendSysMessage("HLBG: native LIVE rows sent to you.");
         return true;
     }
 };
