@@ -144,7 +144,10 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     const char* reason = (_horde_gathered == 0 || _ally_gathered == 0) ? "depletion" : "tiebreaker";
     uint8 aff = static_cast<uint8>(_activeAffix);
     uint32 dur = GetCurrentMatchDurationSeconds();
+    // Weather info at the moment of result
+    uint32 weather = GetAffixWeatherType(aff);
+    float wint = GetAffixWeatherIntensity(aff);
     CharacterDatabase.Execute(
-        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, '{}', {}, {}, {})",
-        zone, mapId, _season, winnerTid, a, h, reason, aff, dur);
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
+        zone, mapId, _season, winnerTid, a, h, reason, aff, weather, wint, dur);
 }

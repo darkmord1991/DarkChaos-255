@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <iterator>
 #include <cctype>
+#include <map>
 
 using namespace Acore::ChatCommands;
 
@@ -60,6 +61,18 @@ namespace HLBGAddon
         OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
         if (!out) return nullptr;
         return dynamic_cast<OutdoorPvPHL*>(out);
+    }
+
+    static const char* WeatherName(uint32 w)
+    {
+        switch (w)
+        {
+            case 0: return "Fine";
+            case 1: return "Rain";
+            case 2: return "Snow";
+            case 3: return "Storm";
+            default: return "Unknown";
+        }
     }
 
     static std::string NowTimestamp()
@@ -155,7 +168,6 @@ public:
 
         static ChatCommandTable root = {
             { "hlbg", merged },
-            { "queue", queueSub }, // optional direct root alias so addon can call ".queue join" if desired
         };
         return root;
     }
@@ -319,38 +331,112 @@ public:
         uint32 winA=0, winH=0, draws=0; uint32 avgDur=0; std::string seasonName;
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = hl ? hl->GetSeason() : 0u;
-        if (season > 0)
+        // Common WHERE clause by season
+        std::string where = (season > 0) ? (" WHERE season=" + std::to_string(season)) : std::string();
+        auto whereAnd = [&](std::string const& cond) -> std::string {
+            if (where.empty()) return std::string(" WHERE ") + cond;
+            return where + " AND " + cond;
+        };
+
+        // Basic counts
+        if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history" + where))
         {
-            if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history WHERE season=" + std::to_string(season)))
-            {
-                Field* f = r->Fetch();
-                winA = f[0].Get<uint64>(); winH = f[1].Get<uint64>(); draws = f[2].Get<uint64>();
-            }
-            if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE season=" + std::to_string(season) + " AND duration_seconds > 0"))
-            {
-                Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
-            }
-            if (QueryResult r3 = CharacterDatabase.Query("SELECT name FROM hlbg_seasons WHERE season=" + std::to_string(season)))
-            {
-                Field* f = r3->Fetch(); seasonName = f[0].Get<std::string>();
-            }
+            Field* f = r->Fetch();
+            winA = f[0].Get<uint64>(); winH = f[1].Get<uint64>(); draws = f[2].Get<uint64>();
         }
-        else
+        if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history" + whereAnd("duration_seconds > 0")))
         {
-            if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history"))
-            {
-                Field* f = r->Fetch();
-                winA = f[0].Get<uint64>(); winH = f[1].Get<uint64>(); draws = f[2].Get<uint64>();
-            }
-            if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE duration_seconds > 0"))
-            {
-                Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
-            }
+            Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
         }
+        if (QueryResult r3 = CharacterDatabase.Query("SELECT name FROM hlbg_seasons WHERE season=" + std::to_string(season)))
+        {
+            Field* f = r3->Fetch(); seasonName = f[0].Get<std::string>();
+        }
+
+        // Reasons breakdown
+        uint32 rDepl=0, rTie=0, rDraw=0, rMan=0;
+        if (QueryResult rr = CharacterDatabase.Query("SELECT win_reason, COUNT(*) FROM hlbg_winner_history" + where + " GROUP BY win_reason"))
+        {
+            do {
+                Field* f = rr->Fetch();
+                std::string reason = f[0].Get<std::string>();
+                uint32 c = f[1].Get<uint32>();
+                if (reason == "depletion") rDepl = c; else if (reason == "tiebreaker") rTie = c; else if (reason == "draw") rDraw = c; else if (reason == "manual") rMan = c;
+            } while (rr->NextRow());
+        }
+
+        // Largest and average win margin (exclude draws)
+        uint32 avgMargin = 0; uint32 largestMargin = 0; uint8 largestTeam = TEAM_NEUTRAL; uint32 lmA=0, lmH=0; std::string lmTs; uint64 lmId=0;
+        if (QueryResult q = CharacterDatabase.Query(
+            "SELECT id, occurred_at, winner_tid, score_alliance, score_horde, ABS(score_alliance - score_horde) AS margin FROM hlbg_winner_history" + whereAnd("winner_tid IN (0,1)") + " ORDER BY margin DESC, id DESC LIMIT 1"))
+        {
+            Field* f = q->Fetch();
+            lmId = f[0].Get<uint64>(); lmTs = f[1].Get<std::string>(); largestTeam = f[2].Get<uint8>(); lmA = f[3].Get<uint32>(); lmH = f[4].Get<uint32>(); largestMargin = f[5].Get<uint32>();
+        }
+        if (QueryResult q2 = CharacterDatabase.Query("SELECT AVG(ABS(score_alliance - score_horde)) FROM hlbg_winner_history" + whereAnd("winner_tid IN (0,1)")))
+        {
+            Field* f = q2->Fetch(); avgMargin = (uint32)f[0].Get<double>();
+        }
+
+        // Per-affix splits (top 8 by total rows)
+        struct AffixRow { uint32 affix; uint32 a; uint32 h; uint32 d; uint32 avgd; };
+        std::vector<AffixRow> affixRows;
+        if (QueryResult qa = CharacterDatabase.Query(
+            "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM hlbg_winner_history" + where + " GROUP BY affix ORDER BY COUNT(*) DESC LIMIT 8"))
+        {
+            do {
+                Field* f = qa->Fetch(); AffixRow ar; ar.affix = f[0].Get<uint32>(); ar.a = f[1].Get<uint64>(); ar.h = f[2].Get<uint64>(); ar.d = f[3].Get<uint64>(); ar.avgd = (uint32)f[4].Get<double>(); affixRows.push_back(ar);
+            } while (qa->NextRow());
+        }
+
+        // Exact per-weather splits from DB (season-filtered)
+        struct WeatherRow { uint32 weather; uint32 a; uint32 h; uint32 d; uint32 avgd; };
+        std::vector<WeatherRow> weatherRows;
+        if (QueryResult qw = CharacterDatabase.Query(
+            "SELECT weather, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM hlbg_winner_history" + where + " GROUP BY weather ORDER BY COUNT(*) DESC"))
+        {
+            do {
+                Field* f = qw->Fetch(); WeatherRow wr; wr.weather = f[0].Get<uint32>(); wr.a = f[1].Get<uint64>(); wr.h = f[2].Get<uint64>(); wr.d = f[3].Get<uint64>(); wr.avgd = (uint32)f[4].Get<double>(); weatherRows.push_back(wr);
+            } while (qw->NextRow());
+        }
+
+        // Streaks (compute in code from chronological winners)
+        uint32 longestLen = 0; uint8 longestTeam = TEAM_NEUTRAL; uint32 currentLen = 0; uint8 currentTeam = TEAM_NEUTRAL;
+        if (QueryResult qs = CharacterDatabase.Query("SELECT winner_tid FROM hlbg_winner_history" + where + " ORDER BY occurred_at ASC, id ASC"))
+        {
+            do {
+                Field* f = qs->Fetch(); uint8 tid = f[0].Get<uint8>();
+                if (tid > 1) { // draw or neutral breaks streak
+                    currentLen = 0; currentTeam = TEAM_NEUTRAL;
+                } else {
+                    if (currentLen == 0 || currentTeam != tid) { currentTeam = tid; currentLen = 1; } else { ++currentLen; }
+                    if (currentLen > longestLen) { longestLen = currentLen; longestTeam = currentTeam; }
+                }
+            } while (qs->NextRow());
+        }
+
+        // Build JSON
         std::ostringstream ss;
         ss << "{\"counts\":{\"Alliance\":" << winA << ",\"Horde\":" << winH << "},";
         ss << "\"draws\":" << draws << ",\"avgDuration\":" << avgDur << ",\"season\":" << season << ",";
-        ss << "\"seasonName\":\"" << HLBGAddon::EscapeJson(seasonName) << "\"}";
+        ss << "\"seasonName\":\"" << HLBGAddon::EscapeJson(seasonName) << "\",";
+        ss << "\"reasons\":{\"depletion\":" << rDepl << ",\"tiebreaker\":" << rTie << ",\"draw\":" << rDraw << ",\"manual\":" << rMan << "},";
+        ss << "\"margins\":{\"avg\":" << avgMargin << ",\"largest\":{\"team\":\"" << (largestTeam==0?"Alliance":(largestTeam==1?"Horde":"")) << "\",\"margin\":" << largestMargin << ",\"a\":" << lmA << ",\"h\":" << lmH << ",\"ts\":\"" << HLBGAddon::EscapeJson(lmTs) << "\",\"id\":" << lmId << "}},";
+        ss << "\"streaks\":{\"longest\":{\"team\":\"" << (longestTeam==0?"Alliance":(longestTeam==1?"Horde":"")) << "\",\"len\":" << longestLen << "},\"current\":{\"team\":\"" << (currentTeam==0?"Alliance":(currentTeam==1?"Horde":"")) << "\",\"len\":" << currentLen << "}},";
+        ss << "\"byAffix\":[";
+        for (size_t i=0;i<affixRows.size();++i) {
+            if (i) ss << ',';
+            ss << "{\"affix\":" << affixRows[i].affix << ",\"Alliance\":" << affixRows[i].a << ",\"Horde\":" << affixRows[i].h << ",\"DRAW\":" << affixRows[i].d << ",\"avg\":" << affixRows[i].avgd << "}";
+        }
+        ss << "],";
+        // byWeather as array
+        ss << "\"byWeather\":[";
+        for (size_t i=0;i<weatherRows.size();++i) {
+            if (i) ss << ',';
+            ss << "{\"weather\":\"" << HLBGAddon::WeatherName(weatherRows[i].weather) << "\",\"Alliance\":" << weatherRows[i].a
+               << ",\"Horde\":" << weatherRows[i].h << ",\"DRAW\":" << weatherRows[i].d << ",\"avg\":" << weatherRows[i].avgd << "}";
+        }
+        ss << "]}";
         std::string msg = std::string("[HLBG_STATS_JSON] ") + ss.str();
         ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
         return true;

@@ -277,11 +277,11 @@ public:
                     if (Map* m = admin->GetMap()) mapId = m->GetId();
                 uint32 dur = hl->GetCurrentMatchDurationSeconds();
                 uint32 season = hl->GetSeason();
-                // Column order: zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds
-                // Ensure placeholders align so win_reason receives the quoted string 'manual'
-                CharacterDatabase.Execute(
-                    "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {})",
-                    OutdoorPvPHLBuffZones[0], mapId, season, uint8(TEAM_NEUTRAL), a, h, "manual", 0, dur);
+                    // Column order: zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds
+                    // Ensure placeholders align so win_reason receives the quoted string 'manual'
+                    CharacterDatabase.Execute(
+                        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
+                        OutdoorPvPHLBuffZones[0], mapId, season, uint8(TEAM_NEUTRAL), a, h, "manual", 0, 0, 0.0f, dur);
 
                 hl->ForceReset();
                 // Teleport players back to start positions configured in the OutdoorPvP script

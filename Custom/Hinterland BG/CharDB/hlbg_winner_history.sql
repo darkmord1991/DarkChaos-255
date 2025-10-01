@@ -11,10 +11,13 @@ CREATE TABLE IF NOT EXISTS `hlbg_winner_history` (
   `score_horde` INT UNSIGNED NOT NULL DEFAULT 0,
   `win_reason` ENUM('depletion','tiebreaker','draw','manual') NOT NULL DEFAULT 'tiebreaker',
   `affix` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `weather` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `weather_intensity` FLOAT NOT NULL DEFAULT 0,
   `duration_seconds` INT UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   INDEX `idx_time` (`occurred_at`),
   INDEX `idx_winner` (`winner_tid`),
   INDEX `idx_affix` (`affix`),
+  INDEX `idx_weather` (`weather`),
   INDEX `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
