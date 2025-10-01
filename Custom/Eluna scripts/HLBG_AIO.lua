@@ -23,6 +23,48 @@ if Handlers then
     print("[HLBG_AIO] AddHandlers returned table (size="..tostring(#Handlers or 0)..")")
 end
 
+-- Configuration: periodic LIVE broadcast and chat fallback settings
+local HLBG_Config = HLBG_Config or {}
+HLBG_Config.live_broadcast = HLBG_Config.live_broadcast or {
+    enabled = false,        -- set to true to enable periodic broadcasts
+    interval = 30,          -- seconds between broadcasts
+    scope = "zone",       -- "zone" or "world"
+    zoneId = 47,            -- zone id for The Hinterlands (override if needed)
+    max_chat_len = 1000,    -- max characters for JSON chat fallback (safe cap)
+}
+
+-- Minimal JSON encoder for simple arrays/tables containing strings/numbers
+local function json_encode_value(v)
+    local t = type(v)
+    if t == "string" then
+        -- escape quotes and backslashes
+        local s = v:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n','\\n'):gsub('\r','\\r')
+        return '"' .. s .. '"'
+    elseif t == "number" or t == "boolean" then
+        return tostring(v)
+    elseif t == "table" then
+        -- detect array-like
+        local n = 0; for k,_ in pairs(v) do if type(k) == "number" then n = n + 1 end end
+        if n > 0 then
+            local parts = {}
+            for i=1,#v do table.insert(parts, json_encode_value(v[i])) end
+            return '[' .. table.concat(parts, ',') .. ']'
+        else
+            local parts = {}
+            for k,val in pairs(v) do
+                table.insert(parts, json_encode_value(tostring(k)) .. ':' .. json_encode_value(val))
+            end
+            return '{' .. table.concat(parts, ',') .. '}'
+        end
+    else
+        return 'null'
+    end
+end
+
+local function json_encode(obj)
+    return json_encode_value(obj)
+end
+
 local function safeQuery(dbfunc, sql)
     local ok, res = pcall(dbfunc, sql)
     if not ok then return nil end
@@ -200,6 +242,28 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
         if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "PONG")
         end
+    elseif what == "CLIENTLOG" then
+        -- arg1 is a string payload from the client; append to server-side log file
+        if type(arg1) == "string" and arg1 ~= "" then
+            local line = tostring(arg1)
+            -- write to the standard server logs folder
+            local logPath = "/home/wowcore/azeroth-server/logs/hlbg_client.log"
+            local okDir, err = pcall(function()
+                -- attempt to create directory if possible (Lua in Eluna may not expose mkdir; wrap in pcall)
+                local attr = lfs and lfs.attributes or nil
+                -- no-op if lfs is not available; file open will still work if path exists
+            end)
+            -- Append to file
+            local f, ferr = io.open(logPath, "a")
+            if f then
+                f:write(line .. "\n")
+                f:close()
+            else
+                print("[HLBG_AIO] CLIENTLOG: failed to open log file: " .. tostring(ferr))
+            end
+            -- also print to console for immediate visibility
+            print("[HLBG_CLIENTLOG] " .. line)
+        end
     end
 end
 
@@ -247,6 +311,173 @@ local function OnCommandExtended(event, player, command)
         DumpHistoryToPlayer(player, 1, 5, "id", "DESC")
         return false
     end
+    if command == "hlbgtest" or command == ".hlbgtest" then
+        print("[HLBG_AIO] OnCommand received test request: "..tostring(command))
+        -- Build a guaranteed array-shaped payload
+        local now = os.date("%Y-%m-%d %H:%M:%S")
+        local rows = {
+            { "999", now, "Alliance", "3", "TestEntryA" },
+            { "998", now, "Horde", "5", "TestEntryB" },
+        }
+        if okAIO and AIO and AIO.Handle then
+            AIO.Handle(player, "HLBG", "History", rows, 1, 5, 2, "id", "DESC")
+            -- also send a TSV fallback
+            local buf = {}
+            for i=1,#rows do
+                local r = rows[i]
+                table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+            end
+            local tsv = table.concat(buf, "\n")
+            AIO.Handle(player, "HLBG", "HistoryStr", tsv, 1, 5, 2, "id", "DESC")
+                -- Also send a chat broadcast fallback so non-AIO clients still receive a sample
+                if player and player.SendBroadcastMessage then
+                    local safeTSV = tsv
+                    -- replace newlines with '||' to keep chat on a single line (client will convert back)
+                    safeTSV = safeTSV:gsub("\n", "||")
+                    player:SendBroadcastMessage("[HLBG_DUMP] "..tostring(safeTSV))
+                end
+            AIO.Handle(player, "HLBG", "PONG")
+            print("[HLBG_AIO] Sent test HISTORY array to player")
+        else
+            player:SendBroadcastMessage("HLBG: test payload prepared but AIO unavailable")
+        end
+        return false
+    end
     return true
 end
 RegisterPlayerEvent(42, OnCommandExtended)
+
+    -- GM helper: broadcast a LIVE payload (rows of {name, score}) to a player for client LIVE testing
+    local function BroadcastLiveToPlayer(player, rows)
+        rows = rows or {}
+        -- preferred: AIO Handle with table
+        if okAIO and AIO and AIO.Handle then
+            -- Preferred: send structured rows. We expect rows shaped as { id, ts, name, team, score }
+            AIO.Handle(player, "HLBG", "Live", rows)
+            -- also send a chat fallback; prefer compact JSON when safe, otherwise fall back to TSV.
+            local ok, chatPayload = pcall(function()
+                local j = json_encode(rows)
+                if type(j) == "string" and #j <= (HLBG_Config.live_broadcast.max_chat_len or 1000) then
+                    return true, j
+                end
+                -- JSON too large, fall back to TSV
+                local lines = {}
+                for i=1,#rows do
+                    local r = rows[i]
+                    local id = tostring(r.id or r[1] or i)
+                    local ts = tostring(r.ts or r[2] or os.date("%Y-%m-%d %H:%M:%S"))
+                    local n = tostring(r.name or r[3] or r[1] or "?")
+                    local team = tostring(r.team or r[4] or "?")
+                    local s = tostring(r.score or r[5] or r[2] or 0)
+                    table.insert(lines, table.concat({ id, ts, n, team, s }, "\t"))
+                end
+                return false, table.concat(lines, "||")
+            end)
+            if player and player.SendBroadcastMessage then
+                if ok and chatPayload then
+                    if type(chatPayload) == "string" then
+                        -- prefix JSON payload with marker so client can choose JSON path
+                        if ok and chatPayload:sub(1,1) == '{' or chatPayload:sub(1,1) == '[' then
+                            player:SendBroadcastMessage("[HLBG_LIVE_JSON] " .. chatPayload)
+                        else
+                            player:SendBroadcastMessage("[HLBG_LIVE] " .. chatPayload)
+                        end
+                    end
+                end
+            end
+        else
+            -- fallback: use chat-only broadcast with compact 'id:name:score' pairs
+            local parts = {}
+            for i=1,#rows do
+                local r = rows[i]
+                local id = tostring(r.id or r[1] or i)
+                local n = tostring(r.name or r[3] or r[1] or "?")
+                local s = tostring(r.score or r[5] or r[2] or 0)
+                table.insert(parts, id .. ":" .. n .. ":" .. s)
+            end
+            if player and player.SendBroadcastMessage then
+                player:SendBroadcastMessage("[HLBG_LIVE] " .. table.concat(parts, ";"))
+            end
+        end
+    end
+
+-- Collect a simple live snapshot: by default, iterate players in scope and build minimal rows
+local function GetLiveRows(scope, zoneId)
+    -- Prefer DB-backed latest-match snapshot (historical/post-match). If none found, fall back to scanning players.
+    scope = scope or "zone"
+    zoneId = tonumber(zoneId) or HLBG_Config.live_broadcast.zoneId
+
+    -- Try to query the latest entry for the zone (if zone_id exists in table)
+    local sql = string.format("SELECT id, occurred_at, score_alliance, score_horde, zone_id FROM hlbg_winner_history WHERE zone_id = %d ORDER BY occurred_at DESC LIMIT 1", tonumber(zoneId) or 0)
+    local res = safeQuery(CharDBQuery, sql)
+    if res then
+        -- found a recorded match; build two per-team rows (Alliance/Horde)
+        local id = tostring(res:GetUInt64(0) or 0)
+        local ts = res:GetString(1) or os.date("%Y-%m-%d %H:%M:%S")
+        local sa = res:IsNull(2) and 0 or res:GetUInt32(2)
+        local sh = res:IsNull(3) and 0 or res:GetUInt32(3)
+        -- Create compact rows matching the expected client shape: { id, ts, name, team, score }
+        local rows = {}
+        table.insert(rows, { id = id.."-A", ts = ts, name = "Alliance", team = "Alliance", score = tonumber(sa) or sa })
+        table.insert(rows, { id = id.."-H", ts = ts, name = "Horde", team = "Horde", score = tonumber(sh) or sh })
+        return rows
+    end
+
+    -- Fallback: iterate players in scope and provide placeholder per-player rows (score unknown)
+    local rows = {}
+    local players = {}
+    if scope == "world" then
+        players = GetPlayersInWorld() or {}
+    else
+        local all = GetPlayersInWorld() or {}
+        for _,p in ipairs(all) do
+            local ok, zid = pcall(function() return p:GetZoneId() end)
+            if ok and tonumber(zid) == zoneId then table.insert(players, p) end
+        end
+    end
+    for i,p in ipairs(players) do
+        local ok, name = pcall(function() return p:GetName() end)
+        local ok2, team = pcall(function() return p:GetTeam() end)
+        local tname = (ok2 and team == 0 and "Alliance") or (ok2 and team == 1 and "Horde") or "?"
+        table.insert(rows, { id = tostring(i), ts = os.date("%Y-%m-%d %H:%M:%S"), name = tostring(name or "?"), team = tname, score = 0 })
+    end
+    return rows
+end
+
+-- Periodic broadcaster setup using CreateLuaEvent (ms interval)
+if HLBG_Config.live_broadcast.enabled then
+    local ms = math.max(1000, (HLBG_Config.live_broadcast.interval or 30) * 1000)
+    CreateLuaEvent(function(e)
+        local rows = GetLiveRows(HLBG_Config.live_broadcast.scope, HLBG_Config.live_broadcast.zoneId)
+        -- broadcast to all players in scope
+        if HLBG_Config.live_broadcast.scope == "world" then
+            for _,pl in ipairs(GetPlayersInWorld() or {}) do pcall(function() BroadcastLiveToPlayer(pl, rows) end) end
+        else
+            for _,pl in ipairs(GetPlayersInWorld() or {}) do
+                local ok, zid = pcall(function() return pl:GetZoneId() end)
+                if ok and tonumber(zid) == (HLBG_Config.live_broadcast.zoneId or 47) then
+                    pcall(function() BroadcastLiveToPlayer(pl, rows) end)
+                end
+            end
+        end
+    end, ms, 0)
+    print(string.format("[HLBG_AIO] Periodic live broadcaster enabled (interval=%ds, scope=%s, zone=%s)", HLBG_Config.live_broadcast.interval or 30, HLBG_Config.live_broadcast.scope or "zone", tostring(HLBG_Config.live_broadcast.zoneId)))
+end
+
+    -- Extend OnCommandExtended to support .hlbglive for quick broadcasting
+    local function OnCommandLive(event, player, command)
+        if command == "hlbglive" or command == ".hlbglive" then
+            print("[HLBG_AIO] OnCommand received live request: "..tostring(command))
+            local now = os.date("%Y-%m-%d %H:%M:%S")
+            local now = os.date("%Y-%m-%d %H:%M:%S")
+            local rows = {
+                { id = "1", ts = now, name = tostring(player and player:GetName() or "GM"), team = "Alliance", score = 0 },
+                { id = "2", ts = now, name = "TestPlayerA", team = "Alliance", score = 120 },
+                { id = "3", ts = now, name = "TestPlayerB", team = "Horde", score = 80 },
+            }
+            BroadcastLiveToPlayer(player, rows)
+            return false
+        end
+        return true
+    end
+    RegisterPlayerEvent(42, OnCommandLive)
