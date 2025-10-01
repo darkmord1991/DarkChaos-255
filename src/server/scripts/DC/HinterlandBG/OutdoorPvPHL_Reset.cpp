@@ -43,7 +43,7 @@ void OutdoorPvPHL::HandleReset()
             totalGoCount += worker.goCount;
         });
 
-        LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned %u creatures and %u gameobjects in zone %u", totalCreatureCount, totalGoCount, zoneId);
+    LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned {} creatures and {} gameobjects in zone {}", totalCreatureCount, totalGoCount, zoneId);
     }
 
     IS_ABLE_TO_SHOW_MESSAGE = false;

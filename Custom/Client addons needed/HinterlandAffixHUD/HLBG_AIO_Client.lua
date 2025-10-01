@@ -1404,42 +1404,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             table.concat(affixLines, "\n")
         }
         HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
-                    -- If decoded is a table of row objects or a map with numeric keys, normalize
-                    if type(decoded) == 'table' then
-                        -- if decoded is an object with numeric keys, convert to array
-                        if #decoded == 0 then
-                            local out = {}
-                            for k,v in pairs(decoded) do table.insert(out, v) end
-                            return out
-                        end
-                        return decoded
-                    end
-                    return {}
-                else
-                    -- TSV fallback
-                    local rows = {}
-                    livePayload = livePayload:gsub('%|%|', '\n')
-                    for line in livePayload:gmatch('[^\n]+') do
-                        line = line:gsub('^%s+', ''):gsub('%s+$', '')
-                        if line ~= '' then
-                            local parts = {}
-                            for part in line:gmatch('([^\t]+)') do table.insert(parts, part) end
-                            if #parts >= 5 then
-                                table.insert(rows, { id = parts[1] or '', ts = parts[2] or '', name = parts[3] or '', team = parts[4] or '', score = tonumber(parts[5]) or parts[5] })
-                            else
-                                local name, score = line:match('^([^\t]+)\t?(%d*)$')
-                                if name then table.insert(rows, { name = name, score = tonumber(score) or score }) end
-                            end
-                        end
-                    end
-                    return rows
-                end
-            end)
-            if ok and type(rows) == 'table' and #rows > 0 and type(HLBG.Live) == 'function' then pcall(HLBG.Live, rows) end
-            return
-        end
-    end
-end)
 
 -- Global chat fallback listener for broadcast JSON/TSV messages
 local chatListener = CreateFrame('Frame')
