@@ -158,9 +158,9 @@ public:
         if (merged.empty())
         {
             merged.reserve(uiSub.size() + queueSub.size());
-            // Copy entries to avoid moved-from artifacts in static tables
-            merged.insert(merged.end(), uiSub.begin(), uiSub.end());
-            merged.insert(merged.end(), queueSub.begin(), queueSub.end());
+            // Copy entries individually to avoid operations that require assignment
+            for (auto const& c : uiSub) merged.push_back(c);
+            for (auto const& c : queueSub) merged.push_back(c);
         }
 
         static ChatCommandTable root = {

@@ -175,7 +175,8 @@ void OutdoorPvPHL::LoadConfig()
         if (list.empty()) return;
         auto v = parseCsvU32(list);
         outSet.clear();
-        outSet.insert(v.begin(), v.end());
+        for (auto const& e : v)
+            outSet.insert(e);
     };
     parseCsvSet("HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance", _npcBossEntriesAlliance);
     parseCsvSet("HinterlandBG.ResourcesLoss.NPCBossEntriesHorde",    _npcBossEntriesHorde);
