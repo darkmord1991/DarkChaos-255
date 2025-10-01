@@ -10,6 +10,8 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Player.h"
+#include "World.h"
+#include "Map.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include <string>
@@ -86,11 +88,26 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable table =
-        {
-            { "hlbglive_native", HandleHLBGLiveNativeCommand, SEC_GAMEMASTER, Console::No },
+        static ChatCommandTable liveSub = {
+            { "native", HandleHLBGLiveNativeCommand, SEC_GAMEMASTER, Console::No },
         };
-        static ChatCommandTable root = { { "hlbglive", table } };
+
+        static ChatCommandTable queueSub = {
+            { "join", HandleHLBGQueueJoin, SEC_PLAYER, Console::No },
+            { "status", HandleHLBGQueueStatus, SEC_PLAYER, Console::No },
+        };
+
+        static ChatCommandTable hlbgSub = {
+            { "live", liveSub },
+            { "warmup", HandleHLBGWarmup, SEC_GAMEMASTER, Console::No },
+            { "queue", queueSub },
+            { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
+        };
+
+        static ChatCommandTable root = {
+            { "hlbglive", liveSub },
+            { "hlbg", hlbgSub },
+        };
         return root;
     }
 
@@ -156,6 +173,181 @@ public:
     std::string msg = std::string("[HLBG_LIVE] ") + tsv;
     ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
     handler->PSendSysMessage("Sent HLBG live TSV payload to you.");
+        return true;
+    }
+
+    static OutdoorPvPHL* GetHL()
+    {
+        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+        if (!out)
+            return nullptr;
+        return dynamic_cast<OutdoorPvPHL*>(out);
+    }
+
+    // .hlbg warmup [text]
+    static bool HandleHLBGWarmup(ChatHandler* handler, char const* args)
+    {
+        if (!handler || !handler->GetSession())
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+        std::string text = args ? std::string(args) : std::string();
+        if (text.empty()) text = "Warmup has begun!";
+        std::string msg = std::string("[HLBG_WARMUP] ") + text;
+        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+        handler->PSendSysMessage("Sent HLBG warmup notice to you.");
+        return true;
+    }
+
+    // .hlbg queue join
+    static bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!handler || !handler->GetSession())
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+        OutdoorPvPHL* hl = GetHL();
+        if (!hl)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
+            handler->PSendSysMessage("HLBG: Hinterland BG controller not available.");
+            return true;
+        }
+
+        // Basic eligibility checks
+        // 1) Level requirement: max level
+        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] too_low_level");
+            handler->PSendSysMessage("HLBG: You must be max level to join.");
+            return true;
+        }
+        // 2) Deserter debuff denies entry
+        static constexpr uint32 BG_DESERTER_SPELL = 26013; // Deserter
+        if (player->HasAura(BG_DESERTER_SPELL))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] deserter");
+            handler->PSendSysMessage("HLBG: You have Deserter. Try again later.");
+            return true;
+        }
+        // 3) No joining while dead or in combat
+        if (!player->IsAlive())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] dead");
+            handler->PSendSysMessage("HLBG: You are dead. Release or resurrect first.");
+            return true;
+        }
+        if (player->IsInCombat())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] in_combat");
+            handler->PSendSysMessage("HLBG: Cannot join while in combat.");
+            return true;
+        }
+        // 4) Basic safe-area rule: do not allow from dungeons/raids/battlegrounds
+        if (Map* m = player->GetMap())
+        {
+            if (m->IsDungeon() || m->IsRaid() || m->IsBattlegroundOrArena())
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_in_safe_area");
+                handler->PSendSysMessage("HLBG: Leave dungeon/raid/bg to join the Hinterland battle.");
+                return true;
+            }
+        }
+
+        // Treat no remaining time (0) as a locked/paused state (HL holds timer at 0 during lock)
+        uint32 remaining = hl->GetTimeRemainingSeconds();
+        if (remaining == 0)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] locked");
+            handler->PSendSysMessage("HLBG: Battleground is currently locked between matches. Please wait.");
+            return true;
+        }
+
+        // If already in the Hinterlands, just ensure they are in the faction raid
+        if (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+        {
+            // Auto-join faction raid group managed by HL
+            (void)hl->AddOrSetPlayerToCorrectBfGroup(player);
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] joined");
+            handler->PSendSysMessage("HLBG: You are in the Hinterlands — joined the faction raid (if available).");
+            return true;
+        }
+
+        // Otherwise, teleport to team base in Hinterlands; On zone enter, HL will auto-invite to the raid
+        hl->TeleportToTeamBase(player);
+        ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] teleporting");
+        handler->PSendSysMessage("HLBG: Teleporting you to your Hinterlands base…");
+        return true;
+    }
+
+    // .hlbg queue status [text]
+    static bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args)
+    {
+        if (!handler || !handler->GetSession())
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+        // If an explicit text was provided, just echo it; otherwise compute a basic status
+        if (args && *args)
+        {
+            std::string msg = std::string("[HLBG_QUEUE] ") + std::string(args);
+            ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+            handler->PSendSysMessage("HLBG: queue status (echo) sent.");
+            return true;
+        }
+
+        OutdoorPvPHL* hl = GetHL();
+        if (!hl)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
+            handler->PSendSysMessage("HLBG: controller not available.");
+            return true;
+        }
+
+        bool inZone = (player->GetZoneId() == OutdoorPvPHLBuffZones[0]);
+        const char* s = inZone ? "in_zone" : "away";
+        std::string msg = std::string("[HLBG_QUEUE] ") + s;
+        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+        handler->PSendSysMessage("HLBG: queue status reported.");
+        return true;
+    }
+
+    // .hlbg results -> build a compact JSON summary and send to client
+    static bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!handler || !handler->GetSession())
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        OutdoorPvPHL* hl = GetHL();
+        std::string winner = "Draw";
+        uint32 a = 0, h = 0;
+        uint32 dur = 0;
+        uint32 affix = 0;
+        if (hl)
+        {
+            a = hl->GetResources(TEAM_ALLIANCE);
+            h = hl->GetResources(TEAM_HORDE);
+            if (a > h) winner = "Alliance"; else if (h > a) winner = "Horde"; else winner = "Draw";
+            dur = hl->GetCurrentMatchDurationSeconds();
+            affix = hl->GetActiveAffixCode();
+        }
+
+        std::ostringstream ss;
+        ss << "{";
+        ss << "\"winner\":\"" << winner << "\",";
+        ss << "\"affix\":" << affix << ",";
+        ss << "\"duration\":" << dur;
+        ss << "}";
+        std::string json = ss.str();
+        std::string msg = std::string("[HLBG_RESULTS_JSON] ") + json;
+        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+        handler->PSendSysMessage("Sent HLBG results JSON to you.");
         return true;
     }
 };

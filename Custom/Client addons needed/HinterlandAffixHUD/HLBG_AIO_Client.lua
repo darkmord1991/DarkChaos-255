@@ -57,8 +57,11 @@ do
         reg.OpenUI     = HLBG.OpenUI
         reg.History    = HLBG.History
         reg.Stats      = HLBG.Stats
-    reg.Live       = HLBG.Live
-    reg.LIVE       = reg.Live
+        reg.Live       = HLBG.Live
+        reg.LIVE       = reg.Live
+        reg.Warmup     = HLBG.Warmup
+        reg.QueueStatus= HLBG.QueueStatus
+        reg.Results    = HLBG.Results
         reg.PONG       = HLBG.PONG
         reg.DBG        = HLBG.DBG
         reg.HistoryStr = HLBG.HistoryStr
@@ -228,6 +231,19 @@ local function json_decode(s)
     return res
 end
 
+    -- Safe wrapper for GetAffixName: some client builds/frames may not provide this function
+    -- Use HLBG.GetAffixName everywhere so we can guard and fallback to the raw affix string
+    local function SafeGetAffixName(aff)
+        if not aff then return "" end
+        if type(GetAffixName) == 'function' then
+            local ok, name = pcall(GetAffixName, aff)
+            if ok and name then return tostring(name) end
+        end
+        -- Fallback: if aff is a numeric id or string, return a reasonable representation
+        return tostring(aff)
+    end
+    HLBG.GetAffixName = SafeGetAffixName
+
 -- Create fontstrings on the namespaced HUD
 HLBG.UI.HUD.A = HLBG.UI.HUD:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 HLBG.UI.HUD.A:SetPoint("TOPRIGHT", -4, -4)
@@ -354,14 +370,28 @@ HLBG.UI.Tabs[3] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab3", HLBG.UI
 HLBG.UI.Tabs[3]:SetPoint("LEFT", HLBG.UI.Tabs[2], "RIGHT")
 HLBG.UI.Tabs[3]:SetText("Stats")
 
-PanelTemplates_SetNumTabs(HLBG.UI.Frame, 3)
+-- New tabs: Queue (join next run), Info (overview), Results (post-match)
+HLBG.UI.Tabs[4] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab4", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+HLBG.UI.Tabs[4]:SetPoint("LEFT", HLBG.UI.Tabs[3], "RIGHT")
+HLBG.UI.Tabs[4]:SetText("Queue")
+HLBG.UI.Tabs[5] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab5", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+HLBG.UI.Tabs[5]:SetPoint("LEFT", HLBG.UI.Tabs[4], "RIGHT")
+HLBG.UI.Tabs[5]:SetText("Info")
+HLBG.UI.Tabs[6] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab6", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+HLBG.UI.Tabs[6]:SetPoint("LEFT", HLBG.UI.Tabs[5], "RIGHT")
+HLBG.UI.Tabs[6]:SetText("Results")
+
+PanelTemplates_SetNumTabs(HLBG.UI.Frame, 6)
 PanelTemplates_SetTab(HLBG.UI.Frame, 1)
 
 local function ShowTab(i)
     PanelTemplates_SetTab(HLBG.UI.Frame, i)
-    if i == 1 then HLBG.UI.Live:Show() else HLBG.UI.Live:Hide() end
-    if i == 2 then HLBG.UI.History:Show() else HLBG.UI.History:Hide() end
-    if i == 3 then HLBG.UI.Stats:Show() else HLBG.UI.Stats:Hide() end
+    if HLBG.UI.Live then if i == 1 then HLBG.UI.Live:Show() else HLBG.UI.Live:Hide() end end
+    if HLBG.UI.History then if i == 2 then HLBG.UI.History:Show() else HLBG.UI.History:Hide() end end
+    if HLBG.UI.Stats then if i == 3 then HLBG.UI.Stats:Show() else HLBG.UI.Stats:Hide() end end
+    if HLBG.UI.Queue then if i == 4 then HLBG.UI.Queue:Show() else HLBG.UI.Queue:Hide() end end
+    if HLBG.UI.Info then if i == 5 then HLBG.UI.Info:Show() else HLBG.UI.Info:Hide() end end
+    if HLBG.UI.Results then if i == 6 then HLBG.UI.Results:Show() else HLBG.UI.Results:Hide() end end
     HinterlandAffixHUDDB.lastInnerTab = i
 end
 
@@ -562,6 +592,78 @@ HLBG.UI.Stats.Text = HLBG.UI.Stats:CreateFontString(nil, "OVERLAY", "GameFontHig
 HLBG.UI.Stats.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Stats.Text:SetText("Stats will appear here.")
 
+-- Queue tab: join next run, show warmup/queue status
+HLBG.UI.Queue = CreateFrame("Frame", nil, HLBG.UI.Frame)
+HLBG.UI.Queue:SetAllPoints(HLBG.UI.Frame)
+HLBG.UI.Queue:Hide()
+HLBG.UI.Queue.Join = CreateFrame("Button", nil, HLBG.UI.Queue, "UIPanelButtonTemplate")
+HLBG.UI.Queue.Join:SetPoint("TOPLEFT", 16, -40)
+HLBG.UI.Queue.Join:SetSize(140, 24)
+HLBG.UI.Queue.Join:SetText("Join Next Run")
+HLBG.UI.Queue.Status = HLBG.UI.Queue:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+HLBG.UI.Queue.Status:SetPoint("TOPLEFT", HLBG.UI.Queue.Join, "BOTTOMLEFT", 0, -8)
+HLBG.UI.Queue.Status:SetText("Queue status: unknown")
+HLBG.UI.Queue.Join:SetScript("OnClick", function()
+    if UnitAffectingCombat and UnitAffectingCombat("player") then
+        DEFAULT_CHAT_FRAME:AddMessage("HLBG: Can't join while in combat")
+        return
+    end
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "QUEUE", "JOIN")
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("HLBG: Queue join requested")
+end)
+
+-- Info tab: overview/features/settings/rewards
+HLBG.UI.Info = CreateFrame("Frame", nil, HLBG.UI.Frame)
+HLBG.UI.Info:SetAllPoints(HLBG.UI.Frame)
+HLBG.UI.Info:Hide()
+HLBG.UI.Info.Text = HLBG.UI.Info:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+HLBG.UI.Info.Text:SetPoint("TOPLEFT", 16, -40)
+HLBG.UI.Info.Text:SetJustifyH("LEFT")
+HLBG.UI.Info.Text:SetWidth(460)
+local function BuildInfoText()
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    local minLevel = HinterlandAffixHUDDB.minLevel or 1
+    local rewards = HinterlandAffixHUDDB.rewardsText or "Honor, XP, custom tokens"
+    local settings = {
+        string.format("Addon HUD: %s", HinterlandAffixHUDDB.useAddonHud and "On" or "Off"),
+        string.format("AFK warning: %s", HinterlandAffixHUDDB.enableAFKWarning and "On" or "Off"),
+        string.format("Warmup prompt: %s", HinterlandAffixHUDDB.enableWarmupCTA and "On" or "Off"),
+    }
+    local lines = {
+        "Hinterland Battleground (HLBG)",
+        " ",
+        "Features:",
+        "- Movable worldstate HUD (resources/timer/affix)",
+        "- PvP UI integration with Live/History/Stats/Results",
+        "- Join next run via Queue tab",
+        "- AFK warning (optional)",
+        "- Warmup notice with quick-join",
+        " ",
+        string.format("Level requirement: %d", minLevel),
+        "Current settings:",
+        "  - "..table.concat(settings, "\n  - "),
+        " ",
+        "Rewards:",
+        "  - "..rewards,
+    }
+    return table.concat(lines, "\n")
+end
+HLBG.UI.Info:SetScript("OnShow", function()
+    HLBG.UI.Info.Text:SetText(BuildInfoText())
+end)
+
+-- Results tab: post-match scoreboard summary (placeholder rendering)
+HLBG.UI.Results = CreateFrame("Frame", nil, HLBG.UI.Frame)
+HLBG.UI.Results:SetAllPoints(HLBG.UI.Frame)
+HLBG.UI.Results:Hide()
+HLBG.UI.Results.Text = HLBG.UI.Results:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+HLBG.UI.Results.Text:SetPoint("TOPLEFT", 16, -40)
+HLBG.UI.Results.Text:SetJustifyH("LEFT")
+HLBG.UI.Results.Text:SetWidth(460)
+HLBG.UI.Results.Text:SetText("Results will appear after each match.")
+
 -- History controls: columns, pagination
 HLBG.UI.History.Columns = {}
 -- Keep total <= ~460 width (including spacing)
@@ -609,7 +711,7 @@ HLBG.UI.History.Nav.Next:SetScript("OnClick", function()
     if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "HISTORY", p, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or "id", HLBG.UI.History.sortDir or "DESC") end
 end)
 
-for i=1,3 do HLBG.UI.Tabs[i]:SetScript("OnClick", function() ShowTab(i) end) end
+for i=1,6 do HLBG.UI.Tabs[i]:SetScript("OnClick", function() ShowTab(i) end) end
 
 -- Add a tab to PvP Frame
 local function EnsurePvPTab()
@@ -730,44 +832,19 @@ function HLBG.History(a, b, c, d, e, f, g)
             local n = #rows
             if n > 0 and type(rows[1]) == "table" then
                 local first = rows[1]
-                local y = -6
-                for i,row in ipairs(sorted) do
+                local keys = {}
+                for k,_ in pairs(first) do table.insert(keys, tostring(k)) end
                 sampleInfo = string.format(" sampleRowKeys=%s", table.concat(keys, ","))
             elseif n > 0 then
                 sampleInfo = string.format(" sampleRow0=%s", tostring(rows[1]))
-                    local id = row.id or row[1]
-                    local ts = row.ts or row[2]
-                    local name = row.name or row[3] or row[1] or "?"
-                    local team = row.team or row[4]
-                    local score = row.score or row[5] or row[2] or 0
-                    -- primary line
-                    r.name:SetText(tostring(name))
-                    r.score:SetText(tostring(score))
-                    -- secondary meta: show team (colored) and id when available
-                    local teamText = ""
-                    if team then
-                        if team == "Alliance" or team == "ALLIANCE" then
-                            teamText = "|cff1e90ffAlliance|r"
-                        elseif team == "Horde" or team == "HORDE" then
-                            teamText = "|cffff0000Horde|r"
-                        else
-                            teamText = tostring(team)
-                        end
-                    end
-                    local idText = id and ("id=" .. tostring(id)) or ""
-                    local metaParts = {}
-                    if teamText ~= "" then table.insert(metaParts, teamText) end
-                    if idText ~= "" then table.insert(metaParts, idText) end
-                    r.meta:SetText(table.concat(metaParts, "  "))
-                    -- timestamp on the right (trim if nil)
-                    r.ts:SetText(tostring(ts or ""))
+            end
         end
-                    y = y - 28
-    -- debug trace
-    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
-                local newH = math.max(300, 8 + #rows * 28)
-        local n = (t == "table" and #rows) or 0
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History handler invoked (rowsType=%s, n=%d)", t, n))
+        -- debug trace
+        if type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+            local newH = math.max(300, 8 + #rows * 28)
+            local n = (#rows) or 0
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: History handler invoked (rowsType=%s, n=%d)%s", shortType(rows), n, sampleInfo))
+        end
     end
     -- If rows is not a table but we received a TSV string in one of the args, try the TSV fallback parser
     if type(rows) ~= "table" then
@@ -917,7 +994,7 @@ function HLBG.History(a, b, c, d, e, f, g)
     r.id:SetText(tostring(tonumber(id) or 0))
     r.ts:SetText(ts or "")
     r.win:SetText(who)
-    r.aff:SetText(GetAffixName(affix))
+    r.aff:SetText(HLBG.GetAffixName(affix))
     r.rea:SetText(reas or "-")
         r:Show()
         y = y - 14
@@ -990,6 +1067,40 @@ function HLBG.DBG(msg)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("HLBG DBG: "..tostring(msg)) end
 end
 
+-- Warmup notice handler: server can notify client warmup has begun
+function HLBG.Warmup(info)
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    if not HinterlandAffixHUDDB.enableWarmupCTA then return end
+    local txt = "Warmup has begun! Use the Queue tab to join from safe areas."
+    if type(info) == 'string' and info ~= '' then txt = info end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00HLBG|r: "..txt) end
+    if HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.Status then HLBG.UI.Queue.Status:SetText("Warmup active — join now!") end
+end
+
+-- Queue status updates (e.g., position in queue, joined, left)
+function HLBG.QueueStatus(status)
+    local s = (type(status) == 'string' and status) or (type(status) == 'table' and (status.text or status.state)) or 'Unknown'
+    if HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.Status then HLBG.UI.Queue.Status:SetText("Queue status: "..tostring(s)) end
+end
+
+-- Results payload from server after match completion
+function HLBG.Results(summary)
+    local lines = { "Results will appear after each match." }
+    if type(summary) == 'table' then
+        local win = summary.winner or summary.Win or summary.result
+        local aff = summary.affix or summary.Affix
+        local dur = summary.duration or summary.Duration
+        table.insert(lines, string.format("Winner: %s", tostring(win or "?")))
+        if aff then table.insert(lines, "Affix: "..HLBG.GetAffixName(aff)) end
+        if dur then table.insert(lines, string.format("Duration: %s", SecondsToClock(tonumber(dur) or 0))) end
+        if summary.rewards then table.insert(lines, "Rewards: "..tostring(summary.rewards)) end
+        if summary.special then table.insert(lines, "Special: "..tostring(summary.special)) end
+    end
+    if HLBG.UI and HLBG.UI.Results and HLBG.UI.Results.Text then HLBG.UI.Results.Text:SetText(table.concat(lines, "\n")) end
+    -- switch to Results tab if user has window open
+    if HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame:IsShown() then ShowTab(6) end
+end
+
 -- Send a client log line to server for file-backed logging via AIO
 -- Provide a stable global SendClientLog function so slash handlers work even if HLBG table is replaced
 local function SendClientLogLocal(msg)
@@ -1058,7 +1169,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local aff = msg:match("AFFIX|([^|]+)")
         if aff then
             if InHinterlands() then
-                HLBG.UI.Affix.Text:SetText("Affix: " .. GetAffixName(aff))
+                HLBG.UI.Affix.Text:SetText("Affix: " .. HLBG.GetAffixName(aff))
                 HLBG.UI.Affix:Show()
             else
                 HLBG.UI.Affix:Hide()
@@ -1148,6 +1259,28 @@ chatListener:SetScript('OnEvent', function(self, event, msg, ...)
         if #rows > 0 and type(HLBG.Live) == 'function' then pcall(HLBG.Live, rows) end
         return
     end
+
+    -- Warmup notice
+    local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
+    if warm then
+        if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end
+        return
+    end
+
+    -- Queue status
+    local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
+    if q then
+        if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end
+        return
+    end
+
+    -- Results JSON
+    local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
+    if rj then
+        local ok, decoded = pcall(function() return json_decode(rj) end)
+        if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
+        return
+    end
 end)
 
 -- Add a simple Refresh button on the History and Stats panes
@@ -1197,6 +1330,30 @@ opt:SetScript("OnShow", function(self)
         HinterlandAffixHUDDB.useAddonHud = s:GetChecked() and true or false
         UpdateHUD()
     end)
+
+    -- AFK warning toggle
+    local cbAFK = CreateFrame("CheckButton", nil, self, "InterfaceOptionsCheckButtonTemplate")
+    cbAFK:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -12)
+    local cbAFKLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    cbAFKLabel:SetPoint("LEFT", cbAFK, "RIGHT", 4, 0)
+    cbAFKLabel:SetText("Enable AFK warning (combat-safe)")
+    cbAFK._label = cbAFKLabel
+    cbAFK:SetChecked(HinterlandAffixHUDDB.enableAFKWarning)
+    cbAFK:SetScript("OnClick", function(s)
+        HinterlandAffixHUDDB.enableAFKWarning = s:GetChecked() and true or false
+    end)
+
+    -- Warmup CTA toggle
+    local cbWarm = CreateFrame("CheckButton", nil, self, "InterfaceOptionsCheckButtonTemplate")
+    cbWarm:SetPoint("TOPLEFT", cbAFK, "BOTTOMLEFT", 0, -12)
+    local cbWarmLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    cbWarmLabel:SetPoint("LEFT", cbWarm, "RIGHT", 4, 0)
+    cbWarmLabel:SetText("Enable warmup join prompt")
+    cbWarm._label = cbWarmLabel
+    cbWarm:SetChecked(HinterlandAffixHUDDB.enableWarmupCTA)
+    cbWarm:SetScript("OnClick", function(s)
+        HinterlandAffixHUDDB.enableWarmupCTA = s:GetChecked() and true or false
+    end)
     local scale = CreateFrame("Slider", nil, self, "OptionsSliderTemplate"); scale:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -24)
     scale:SetMinMaxValues(0.8, 1.6); if scale.SetValueStep then scale:SetValueStep(0.05) end
     if scale.SetObeyStepOnDrag then scale:SetObeyStepOnDrag(true) end
@@ -1207,6 +1364,38 @@ opt:SetScript("OnShow", function(self)
     scale:SetScript("OnValueChanged", function(s,val) HinterlandAffixHUDDB.scaleHud = tonumber(string.format("%.2f", val)); HLBG.UI.HUD:SetScale(HinterlandAffixHUDDB.scaleHud) end)
 end)
 InterfaceOptions_AddCategory(opt)
+
+-- Minimal AFK warning stub (client-side only, non-invasive)
+do
+    local afkTimer, afkAccum = nil, 0
+    local lastX, lastY, lastTime = nil, nil, 0
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(_, elapsed)
+        if not HinterlandAffixHUDDB or not HinterlandAffixHUDDB.enableAFKWarning then return end
+        afkAccum = afkAccum + (elapsed or 0)
+        if afkAccum < 5.0 then return end -- check every 5s
+        afkAccum = 0
+        local inBG = InHinterlands()
+        if not inBG then return end
+        -- approximate movement using map position if available
+        local x,y = 0,0
+        if type(GetPlayerMapPosition) == 'function' then
+            local px, py = GetPlayerMapPosition("player")
+            if px and py then x,y = px,py end
+        end
+        local moved = (lastX == nil or math.abs((x - (lastX or 0))) > 0.001 or math.abs((y - (lastY or 0))) > 0.001)
+        local now = time()
+        if moved then lastX, lastY, lastTime = x, y, now; return end
+        -- no movement; if more than N seconds, warn
+        local idleSec = now - (lastTime or now)
+        local threshold = (HinterlandAffixHUDDB.afkWarnSeconds or 120)
+        if idleSec >= threshold then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00HLBG|r: You seem AFK. Please move or you may be removed.")
+            -- reset timer to avoid spamming
+            lastTime = now - (threshold/2)
+        end
+    end)
+end
 
 -- Slash to open HLBG window even if server AIO command isn't available
 SLASH_HLBG1 = "/hlbg"
@@ -1251,6 +1440,9 @@ do
                     existing.HistoryStr = existing.HistoryStr or HLBG.HistoryStr
                     existing.HISTORY = existing.HISTORY or existing.History
                     existing.STATS = existing.STATS or existing.Stats
+                    existing.Warmup = existing.Warmup or HLBG.Warmup
+                    existing.QueueStatus = existing.QueueStatus or HLBG.QueueStatus
+                    existing.Results = existing.Results or HLBG.Results
                     _G.HLBG = existing; HLBG = existing
                     DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO name already registered; attached to existing HLBG table")
                     return true
@@ -1270,6 +1462,9 @@ do
         reg.Stats      = HLBG.Stats
         reg.Live       = HLBG.Live
         reg.LIVE       = reg.Live
+    reg.Warmup     = HLBG.Warmup
+    reg.QueueStatus= HLBG.QueueStatus
+    reg.Results    = HLBG.Results
         reg.PONG       = HLBG.PONG
         reg.DBG        = HLBG.DBG
         reg.HistoryStr = HLBG.HistoryStr
@@ -1280,7 +1475,9 @@ do
         reg.historystr = reg.HistoryStr
         reg.stats = reg.Stats
         reg.live = reg.Live
-        reg.live = reg.Live
+    reg.results = reg.Results
+    reg.warmup = reg.Warmup
+    reg.queuestatus = reg.QueueStatus
         reg.pong = reg.PONG
     -- reattach preserved helpers to the new reg table if present
     if preservedSendLog then reg.SendClientLog = preservedSendLog end
@@ -1294,6 +1491,7 @@ do
         if _G.AIO and _G.AIO.Handle then
             _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
+            _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
         end
         return true
     end
@@ -1361,4 +1559,122 @@ SlashCmdList["HLBGLIVEDUMP"] = function()
         end
     end
 end
+
+-- In-game JSON decoder test runner. Run with /hlbgjsontest to exercise the addon's json_decode implementation
+function HLBG.RunJsonDecodeTests()
+    if not DEFAULT_CHAT_FRAME or not DEFAULT_CHAT_FRAME.AddMessage then return end
+
+    -- prepare a few expanded tests: unicode escapes, malformed JSON, and a large array
+    local largeN = 200
+    local parts = {}
+    for i=1,largeN do parts[#parts+1] = tostring(i) end
+    local largeArrayStr = "[" .. table.concat(parts, ",") .. "]"
+
+    local tests = {
+        { name = 'null', input = 'null', expectError = false, expected = nil },
+        { name = 'true', input = 'true', expectError = false, expected = true },
+        { name = 'false', input = 'false', expectError = false, expected = false },
+        { name = 'number', input = '123', expectError = false, expected = 123 },
+        { name = 'string', input = '"hello"', expectError = false, expected = 'hello' },
+        { name = 'array_small', input = '[1,2,3]', expectError = false, expected = {1,2,3} },
+        { name = 'object', input = '{"a":1,"b":"x"}', expectError = false, expected = { a=1, b='x' } },
+        { name = 'nested', input = '{"nested":{"k":true}}', expectError = false, expected = { nested = { k = true } } },
+        { name = 'unicode_latin1', input = '"caf\\u00e9"', expectError = false, expected = 'café' },
+        { name = 'unicode_euro', input = '"price\\u20ac"', expectError = false, expected = 'price€' },
+        { name = 'malformed_trailing_comma', input = '{"a":1,}', expectError = true },
+        { name = 'malformed_missing_comma', input = '{"a":1 "b":2}', expectError = true },
+        { name = 'malformed_unclosed_string', input = '"unclosed', expectError = true },
+        { name = 'large_array', input = largeArrayStr, expectError = false, expectedLen = largeN },
+    }
+
+    local function deepEqual(a,b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= 'table' then return a == b end
+        local ka = {}; for k,_ in pairs(a) do ka[#ka+1]=k end
+        local kb = {}; for k,_ in pairs(b) do kb[#kb+1]=k end
+        table.sort(ka); table.sort(kb)
+        if #ka ~= #kb then return false end
+        for i=1,#ka do if ka[i] ~= kb[i] then return false end end
+        for k,_ in pairs(a) do if not deepEqual(a[k], b[k]) then return false end end
+        return true
+    end
+
+    local function shortRepr(v)
+        local t = type(v)
+        if t == 'nil' then return 'nil' end
+        if t == 'string' then return string.format('"%s"', tostring(v)) end
+        if t == 'number' or t == 'boolean' then return tostring(v) end
+        if t == 'table' then
+            if #v and #v > 0 then return string.format('<array len=%d>', #v) end
+            return '<object>'
+        end
+        return '<'..t..'>'
+    end
+
+    -- saved variable container for persisted test results
+    HinterlandAffixHUD_JsonTestResults = HinterlandAffixHUD_JsonTestResults or {}
+    local run = { ts = time(), results = {} }
+
+    local passed = 0
+    for i, t in ipairs(tests) do
+        local res, err = json_decode(t.input)
+        local ok
+        if t.expectError then
+            ok = (err ~= nil)
+        else
+            if err ~= nil then ok = false else
+                if t.expectedLen then
+                    ok = (type(res) == 'table' and #res == t.expectedLen)
+                else
+                    ok = deepEqual(res, t.expected)
+                end
+            end
+        end
+        if ok then passed = passed + 1 end
+        local out = shortRepr(res)
+        table.insert(run.results, { name = t.name, pass = ok, error = err and tostring(err) or nil, output = out, expected = t.expectedLen and ('len='..t.expectedLen) or (t.expected ~= nil and shortRepr(t.expected) or nil) })
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON Test %d (%s): %s', i, t.name, ok and 'PASS' or ('FAIL'..(err and (': '..tostring(err)) or ''))))
+    end
+
+    run.summary = string.format('%d/%d', passed, #tests)
+    table.insert(HinterlandAffixHUD_JsonTestResults, 1, run)
+    -- keep last 20 runs
+    while #HinterlandAffixHUD_JsonTestResults > 20 do table.remove(HinterlandAffixHUD_JsonTestResults) end
+
+    DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON tests finished: %s passed (saved to HinterlandAffixHUD_JsonTestResults)', run.summary))
+end
+
+SLASH_HLBGJSONTEST1 = "/hlbgjsontest"
+SlashCmdList["HLBGJSONTEST"] = function() pcall(HLBG.RunJsonDecodeTests) end
+
+-- Print saved JSON test run(s) to chat. Usage: /hlbgjsontestrun [n]
+function HLBG.PrintJsonTestRun(n)
+    n = tonumber(n) or 1
+    if not HinterlandAffixHUD_JsonTestResults or #HinterlandAffixHUD_JsonTestResults == 0 then
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG JSON tests: no saved runs found") end
+        return
+    end
+    if n < 1 then n = 1 end
+    if n > #HinterlandAffixHUD_JsonTestResults then n = #HinterlandAffixHUD_JsonTestResults end
+    local run = HinterlandAffixHUD_JsonTestResults[n]
+    if not run then
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG JSON tests: run not found") end
+        return
+    end
+    local when = (type(date) == 'function' and date("%Y-%m-%d %H:%M:%S", run.ts)) or tostring(run.ts)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG JSON Test Run #%d - %s (summary: %s)", n, when, run.summary or ""))
+        for i, r in ipairs(run.results or {}) do
+            local ok = r.pass and "PASS" or "FAIL"
+            local info = string.format("%d) %s: %s", i, r.name or "?", ok)
+            if r.error then info = info .. " - error: " .. tostring(r.error) end
+            if r.output then info = info .. " - output: " .. tostring(r.output) end
+            if r.expected then info = info .. " - expected: " .. tostring(r.expected) end
+            DEFAULT_CHAT_FRAME:AddMessage(info)
+        end
+    end
+end
+
+SLASH_HLBGJSONTestrun1 = "/hlbgjsontestrun"
+SlashCmdList["HLBGJSONTestrun"] = function(msg) pcall(HLBG.PrintJsonTestRun, (msg and msg:match("%d+")) and tonumber(msg:match("%d+")) or 1) end
 
