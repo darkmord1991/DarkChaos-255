@@ -143,7 +143,6 @@ public:
         static ChatCommandTable queueSub = {
             { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
             { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-            { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No }, // alias for compatibility
         };
 
         static ChatCommandTable uiSub = {
@@ -159,11 +158,9 @@ public:
         if (merged.empty())
         {
             merged.reserve(uiSub.size() + queueSub.size());
-            // Push elements via move construction to avoid any assignment requirements
-            for (auto& c : uiSub)
-                merged.emplace_back(std::move(c));
-            for (auto& c : queueSub)
-                merged.emplace_back(std::move(c));
+            // Copy entries to avoid moved-from artifacts in static tables
+            merged.insert(merged.end(), uiSub.begin(), uiSub.end());
+            merged.insert(merged.end(), queueSub.begin(), queueSub.end());
         }
 
         static ChatCommandTable root = {
