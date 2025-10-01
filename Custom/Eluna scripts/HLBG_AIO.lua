@@ -137,9 +137,9 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir)
             local sa = res:GetUInt32(6)
             local sh = res:GetUInt32(7)
             local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
-            -- Compact row to reduce payload size for AIO serialization:
-            -- { id, timestamp, winner, affix, reason }
-            table.insert(rows, { tostring(id), ts, winner, tostring(affix), reason or "-" })
+            -- Return named-field rows to avoid transport shape ambiguity on clients
+            -- { id = <string>, ts = <string>, winner = <string>, affix = <string>, reason = <string> }
+            table.insert(rows, { id = tostring(id), ts = ts, winner = winner, affix = tostring(affix), reason = reason or "-" })
         until not res:NextRow()
     end
     local total = 0
@@ -212,8 +212,8 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
             local buf = {}
             for i=1,#rows do
                 local r = rows[i]
-                -- r = { id, ts, winner, affix, reason }
-                table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+                -- r = { id = <>, ts = <>, winner = <>, affix = <>, reason = <> }
+                table.insert(buf, table.concat({ r.id or "", r.ts or "", r.winner or "", r.affix or "", r.reason or "" }, "\t"))
             end
             local tsv = table.concat(buf, "\n")
             AIO.Handle(player, "HLBG", "HistoryStr", tsv, page, per, total, col, dir)
@@ -243,26 +243,82 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
             AIO.Handle(player, "HLBG", "PONG")
         end
     elseif what == "CLIENTLOG" then
-        -- arg1 is a string payload from the client; append to server-side log file
+        -- arg1 is a string payload from the client; enqueue to server-side log buffer
         if type(arg1) == "string" and arg1 ~= "" then
             local line = tostring(arg1)
-            -- write to the standard server logs folder
-            local logPath = "/home/wowcore/azeroth-server/logs/hlbg_client.log"
-            local okDir, err = pcall(function()
-                -- attempt to create directory if possible (Lua in Eluna may not expose mkdir; wrap in pcall)
-                local attr = lfs and lfs.attributes or nil
-                -- no-op if lfs is not available; file open will still work if path exists
+            -- lightweight protective truncation to avoid runaway memory
+            if #line > 2000 then line = line:sub(1,2000) .. "...[truncated]" end
+            -- enqueue instead of immediate io.open per-message to reduce I/O
+            if not __hlbg_log_buffer then __hlbg_log_buffer = {} end
+            if not __hlbg_log_stats then __hlbg_log_stats = {lastFlush = os.time(), enqueued = 0} end
+            -- store structured entry with player name to enable aggregation and dedupe
+            local who = "?"
+            pcall(function()
+                if player and player.GetName then who = tostring(player:GetName()) end
             end)
-            -- Append to file
-            local f, ferr = io.open(logPath, "a")
-            if f then
-                f:write(line .. "\n")
-                f:close()
-            else
-                print("[HLBG_AIO] CLIENTLOG: failed to open log file: " .. tostring(ferr))
+            if not __hlbg_log_buffer then __hlbg_log_buffer = {} end
+            table.insert(__hlbg_log_buffer, { who = who, line = line })
+            __hlbg_log_stats.enqueued = (__hlbg_log_stats.enqueued or 0) + 1
+            -- protect against unbounded growth
+            if #__hlbg_log_buffer > 20000 then
+                -- drop oldest entries to keep memory bounded
+                local drop = #__hlbg_log_buffer - 15000
+                for i=1,drop do table.remove(__hlbg_log_buffer,1) end
             end
-            -- also print to console for immediate visibility
-            print("[HLBG_CLIENTLOG] " .. line)
+            -- create a flush timer once
+            if not __hlbg_log_flush_timer then
+                __hlbg_log_flush_timer = CreateFrame("Frame")
+                __hlbg_log_flush_timer._elapsed = 0
+                local flushInterval = 2.0 -- seconds
+                __hlbg_log_flush_timer:SetScript("OnUpdate", function(self, elapsed)
+                    self._elapsed = self._elapsed + (elapsed or 0)
+                    if self._elapsed < flushInterval then return end
+                    self._elapsed = 0
+                    if not __hlbg_log_buffer or #__hlbg_log_buffer == 0 then return end
+                    -- swap buffers to minimise time holding the active buffer
+                    local toWrite = __hlbg_log_buffer
+                    __hlbg_log_buffer = {}
+                    -- write all queued lines in one open/close
+                    local logPath = "/home/wowcore/azeroth-server/logs/hlbg_client.log"
+                    local ok, f = pcall(function() return io.open(logPath, "a") end)
+                    if ok and f then
+                        -- Aggregate by content to avoid writing repeated identical lines.
+                        local counts = {}
+                        for i=1,#toWrite do
+                            local ent = toWrite[i]
+                            local full = string.format("%s: %s", tostring(ent.who or "?"), tostring(ent.line))
+                            counts[full] = (counts[full] or 0) + 1
+                        end
+                        -- Convert to array of {line, count} and sort by count desc
+                        local items = {}
+                        for k,v in pairs(counts) do table.insert(items, { line = k, cnt = v }) end
+                        table.sort(items, function(a,b) return a.cnt > b.cnt end)
+                        local maxUnique = 50
+                        local wrote = 0
+                        for i=1,math.min(#items, maxUnique) do
+                            local it = items[i]
+                            if it.cnt > 1 then
+                                pcall(function() f:write(string.format("[%s] %s  [repeats=%d]\n", os.date("%Y-%m-%d %H:%M:%S"), it.line, it.cnt)) end)
+                            else
+                                pcall(function() f:write(string.format("[%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), it.line)) end)
+                            end
+                            wrote = wrote + 1
+                        end
+                        if #items > maxUnique then
+                            pcall(function() f:write(string.format("[%s] HLBG_AIO: %d unique lines omitted in this flush (cap=%d)\n", os.date("%Y-%m-%d %H:%M:%S"), #items - maxUnique, maxUnique)) end)
+                            print(string.format("[HLBG_AIO] CLIENTLOG: flushed %d unique lines (omitted %d) to %s", wrote, #items - maxUnique, tostring(logPath)))
+                        else
+                            print(string.format("[HLBG_AIO] CLIENTLOG: flushed %d unique lines to %s", wrote, tostring(logPath)))
+                        end
+                        f:close()
+                        __hlbg_log_stats.lastFlush = os.time()
+                    else
+                        -- if open failed, print to console to avoid silent loss
+                        for i=1,#toWrite do local ent = toWrite[i]; print("[HLBG_CLIENTLOG] " .. tostring(ent.line)) end
+                        print(string.format("[HLBG_AIO] CLIENTLOG: failed to open %s (err=%s); printed to console", tostring(logPath), tostring(f or "")))
+                    end
+                end)
+            end
         end
     end
 end
@@ -293,7 +349,7 @@ local function DumpHistoryToPlayer(player, page, per, sortKey, sortDir)
     if rows and #rows>0 then
         for i=1,#rows do
             local r = rows[i]
-            table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+            table.insert(buf, table.concat({ r.id or "", r.ts or "", r.winner or "", r.affix or "", r.reason or "" }, "\t"))
         end
     end
     -- join rows with a safe delimiter '||' so chat doesn't collapse newlines; client will convert back
@@ -316,8 +372,8 @@ local function OnCommandExtended(event, player, command)
         -- Build a guaranteed array-shaped payload
         local now = os.date("%Y-%m-%d %H:%M:%S")
         local rows = {
-            { "999", now, "Alliance", "3", "TestEntryA" },
-            { "998", now, "Horde", "5", "TestEntryB" },
+            { id = "999", ts = now, winner = "Alliance", affix = "3", reason = "TestEntryA" },
+            { id = "998", ts = now, winner = "Horde", affix = "5", reason = "TestEntryB" },
         }
         if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "History", rows, 1, 5, 2, "id", "DESC")
@@ -325,7 +381,7 @@ local function OnCommandExtended(event, player, command)
             local buf = {}
             for i=1,#rows do
                 local r = rows[i]
-                table.insert(buf, table.concat({ r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "" }, "\t"))
+                table.insert(buf, table.concat({ r.id or "", r.ts or "", r.winner or "", r.affix or "", r.reason or "" }, "\t"))
             end
             local tsv = table.concat(buf, "\n")
             AIO.Handle(player, "HLBG", "HistoryStr", tsv, 1, 5, 2, "id", "DESC")

@@ -272,7 +272,6 @@ HLBG.UI.HUD:SetScript("OnUpdate", function(self, dt)
         if left < 0 then left = 0 end
         HLBG.UI.HUD.Timer:SetText("Time Remaining: " .. SecondsToClock(left))
     end
-end)
 
 local function UpdateHUD()
     if not HinterlandAffixHUDDB.useAddonHud then
@@ -1002,6 +1001,23 @@ function HLBG.History(a, b, c, d, e, f, g)
 
     rows = normalized
 
+    -- persist last received history rows for debugging/replay
+    if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
+    HLBG.UI.History.lastRows = rows
+    -- store a compact sample line (timestamp + count + first row summary) to saved buffer
+    do
+        local sample = ""
+        if #rows > 0 and type(rows[1]) == 'table' then
+            local r = rows[1]
+            local id = tostring(r[1] or r.id or "")
+            local ts = tostring(r[2] or r.ts or "")
+            local win = tostring(r[3] or r.winner or "")
+            sample = string.format("%s\t%s\t%s\t%s", id, ts, win, tostring(r[4] or r.affix or ""))
+        end
+        table.insert(HinterlandAffixHUD_DebugLog, 1, string.format("[%s] HISTORY N=%d sample=%s", date("%Y-%m-%d %H:%M:%S"), #rows, sample))
+        while #HinterlandAffixHUD_DebugLog > 200 do table.remove(HinterlandAffixHUD_DebugLog) end
+    end
+
     -- send a compact sample to server-side log for easier debugging (if helper available)
     local okSend, sendFn = pcall(function() return _G.HLBG_SendClientLog end)
     local send = (okSend and type(_G.HLBG_SendClientLog) == "function") and _G.HLBG_SendClientLog or ((type(HLBG) == "table" and type(HLBG.SendClientLog) == "function") and HLBG.SendClientLog or nil)
@@ -1080,21 +1096,45 @@ function HLBG.History(a, b, c, d, e, f, g)
         local r = getRow(i)
         r:ClearAllPoints()
         r:SetPoint("TOPLEFT", HLBG.UI.History.Content, "TOPLEFT", 0, y)
-        -- Prefer named fields; fallback to compact array rows {id, [season], ts, winner, affix, reason}
-    local id    = row.id or row[1]
-    local sea   = row.season or row[2]
-    local sname = row.seasonName or row.sname or nil
-        -- if season present at [2], ts may be at [3]; otherwise [2]
-        local ts    = row.ts or row[3] or row[2]
-        local win   = row.winner or row[4] or row[3]
-        local affix = row.affix or row[5] or row[4]
-        local reas  = row.reason or row[6] or row[5]
+        -- Prefer named fields; fallback to compact array rows.
+        -- Common server compact shape: { id, timestamp, winner, affix, reason }
+        local id = row.id or row[1]
+        local sea = row.season
+        local sname = row.seasonName or row.sname or nil
+        -- Detect array-like compact shapes and map indices to named fields
+        local compact_len = (type(row) == 'table' and #row) or 0
+        local ts, win, affix, reas
+        if compact_len >= 5 then
+            -- server: { id, ts, winner, affix, reason }
+            ts = row[2]
+            win = row[3]
+            affix = row[4]
+            reas = row[5]
+        elseif compact_len == 4 then
+            -- maybe { id, ts, winner, affix }
+            ts = row[2]
+            win = row[3]
+            affix = row[4]
+            reas = row.reason or row[5]
+        elseif compact_len == 3 then
+            ts = row[2]
+            win = row[3]
+            affix = row.affix or row[4]
+            reas = row.reason or row[5]
+        else
+            -- fallback to existing heuristics using named fields or shifted indices
+            ts = row.ts or row[3] or row[2]
+            win = row.winner or row[4] or row[3]
+            affix = row.affix or row[5] or row[4]
+            reas = row.reason or row[6] or row[5]
+        end
         local who = (win == "Alliance" or win == "ALLIANCE") and "|cff1e90ffAlliance|r" or (win == "Horde" or win == "HORDE") and "|cffff0000Horde|r" or "|cffffff00Draw|r"
-    r.id:SetText(tostring(tonumber(id) or 0))
+    -- Show id as-is (don't coerce to 0 when it's non-numeric)
+    r.id:SetText(tostring(id or ""))
     if sname and sname ~= "" then
         r.sea:SetText(tostring(sname))
     else
-        r.sea:SetText(tostring(tonumber(sea or row.season or 0) or 0))
+        r.sea:SetText(tostring(sea or ""))
     end
     r.ts:SetText(ts or "")
     r.win:SetText(who)
@@ -1139,67 +1179,100 @@ function HLBG.History(a, b, c, d, e, f, g)
 end
 
 function HLBG.Stats(player, stats)
+    -- Accept being called as (stats) or (player, stats)
     if type(player) ~= "string" and type(player) ~= "userdata" then
         stats = player
     end
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: Stats(raw) type=%s", type(stats)))
     stats = stats or {}
-    local counts = stats.counts or {}
-    local a = (counts["Alliance"] or counts["ALLIANCE"] or 0)
-    local h = (counts["Horde"] or counts["HORDE"] or 0)
-    local d = stats.draws or 0
-    local ssz = tonumber(stats.season or stats.Season or 0) or 0
-    local sname = stats.seasonName or stats.SeasonName
-    local seasonStr
-    if sname and sname ~= "" then
-        seasonStr = "  Season: "..tostring(sname)
-    elseif ssz and ssz > 0 then
-        seasonStr = "  Season: "..tostring(ssz)
-    else
-        seasonStr = ""
-    end
-    local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min%s", a, h, d, math.floor((stats.avgDuration or 0)/60), seasonStr) }
-    -- append top 3 affix and weather splits if present (handle array or map payloads)
-    local function top3Flexible(v)
-        local items = {}
-        if type(v) == 'table' then
-            if #v > 0 then
-                -- array of rows
-                for i=1,#v do
-                    local row = v[i]
-                    local total = (tonumber(row.Alliance or row.alliance or row.A or 0) or 0)
-                                + (tonumber(row.Horde or row.horde or row.H or 0) or 0)
-                                + (tonumber(row.DRAW or row.draw or row.D or 0) or 0)
-                    local label = row.weather or (row.affix and HLBG.GetAffixName(row.affix)) or tostring(i)
-                    table.insert(items, {label=label, total=total})
-                end
+    HLBG._lastStats = stats
+
+    -- Debounce heavy formatting to avoid UI stalls when multiple updates arrive quickly.
+    -- Schedule a short deferred update (150ms). If another update arrives before the timer
+    -- fires, it will replace the pending stats and only the last will be processed.
+    local delay = 0.15
+    local pending = HLBG.UI.Stats
+    pending._pendingStats = stats
+    pending._pending = true
+    if not pending._timer then
+        pending._timer = CreateFrame("Frame")
+        pending._timer._elapsed = 0
+        pending._timer:SetScript("OnUpdate", function(self, elapsed)
+            pending._timer._elapsed = pending._timer._elapsed + (elapsed or 0)
+            if pending._timer._elapsed < delay then return end
+            -- consume the pending stats and clear timer
+            pending._timer._elapsed = 0
+            self:SetScript("OnUpdate", nil)
+            pending._pending = false
+            local s = pending._pendingStats or {}
+
+            -- Formatting logic (same output as before) but executed once after debounce
+            local counts = s.counts or {}
+            local a = (counts["Alliance"] or counts["ALLIANCE"] or 0)
+            local h = (counts["Horde"] or counts["HORDE"] or 0)
+            local d = s.draws or 0
+            local ssz = tonumber(s.season or s.Season or 0) or 0
+            local sname = s.seasonName or s.SeasonName
+            local seasonStr
+            if sname and sname ~= "" then
+                seasonStr = "  Season: "..tostring(sname)
+            elseif ssz and ssz > 0 then
+                seasonStr = "  Season: "..tostring(ssz)
             else
-                -- map keyed by label -> {Alliance,Horde,DRAW}
-                for k,row in pairs(v) do
-                    local total = (tonumber(row.Alliance or 0) or 0) + (tonumber(row.Horde or 0) or 0) + (tonumber(row.DRAW or 0) or 0)
-                    table.insert(items, {label=tostring(k), total=total})
-                end
+                seasonStr = ""
             end
-        end
-        table.sort(items, function(a,b) return a.total > b.total end)
-        local out = {}
-        for i=1,math.min(3,#items) do table.insert(out, string.format("%s:%d", items[i].label, items[i].total)) end
-        return table.concat(out, ", ")
+            local lines = { string.format("Alliance: %d  Horde: %d  Draws: %d  Avg: %d min%s", a, h, d, math.floor((s.avgDuration or 0)/60), seasonStr) }
+
+            -- local helpers
+            local safeGetAffix = HLBG.GetAffixName
+            local function top3Flexible(v)
+                local items = {}
+                if type(v) == 'table' then
+                    if #v > 0 then
+                        for i=1,#v do
+                            local row = v[i]
+                            local total = (tonumber(row.Alliance or row.alliance or row.A or 0) or 0)
+                                        + (tonumber(row.Horde or row.horde or row.H or 0) or 0)
+                                        + (tonumber(row.DRAW or row.draw or row.D or 0) or 0)
+                            local label = row.weather or (row.affix and safeGetAffix(row.affix)) or tostring(i)
+                            table.insert(items, {label=label, total=total})
+                        end
+                    else
+                        for k,row in pairs(v) do
+                            local total = (tonumber(row.Alliance or 0) or 0) + (tonumber(row.Horde or 0) or 0) + (tonumber(row.DRAW or 0) or 0)
+                            table.insert(items, {label=tostring(k), total=total})
+                        end
+                    end
+                end
+                table.sort(items, function(a,b) return a.total > b.total end)
+                local out = {}
+                for i=1,math.min(3,#items) do table.insert(out, string.format("%s:%d", items[i].label, items[i].total)) end
+                return table.concat(out, ", ")
+            end
+
+            if s.byAffix and next(s.byAffix) then table.insert(lines, "Top Affixes: "..top3Flexible(s.byAffix)) end
+            if s.byWeather and next(s.byWeather) then table.insert(lines, "Top Weather: "..top3Flexible(s.byWeather)) end
+
+            local function top3avg(map)
+                local arr = {}
+                for k,v in pairs(map or {}) do table.insert(arr, {k=k, v=tonumber(v.avg or 0)}) end
+                table.sort(arr, function(x,y) return x.v>y.v end)
+                local out = {}
+                for i=1,math.min(3,#arr) do table.insert(out, string.format("%s:%d min", arr[i].k, math.floor((arr[i].v or 0)/60))) end
+                return table.concat(out, ", ")
+            end
+            if s.affixDur and next(s.affixDur) then table.insert(lines, "Slowest Affixes (avg): "..top3avg(s.affixDur)) end
+            if s.weatherDur and next(s.weatherDur) then table.insert(lines, "Slowest Weather (avg): "..top3avg(s.weatherDur)) end
+
+            -- Single UI update
+            if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
+                HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
+            end
+        end)
+    else
+        -- reset timer (another update arrived); restart OnUpdate
+        pending._timer._elapsed = 0
+        pending._timer:SetScript("OnUpdate", pending._timer:GetScript("OnUpdate"))
     end
-    if stats.byAffix and next(stats.byAffix) then table.insert(lines, "Top Affixes: "..top3Flexible(stats.byAffix)) end
-    if stats.byWeather and next(stats.byWeather) then table.insert(lines, "Top Weather: "..top3Flexible(stats.byWeather)) end
-    -- show top 3 average durations per affix and weather
-    local function top3avg(map)
-        local arr = {}
-        for k,v in pairs(map or {}) do table.insert(arr, {k=k, v=tonumber(v.avg or 0)}) end
-        table.sort(arr, function(x,y) return x.v>y.v end)
-        local out = {}
-        for i=1,math.min(3,#arr) do table.insert(out, string.format("%s:%d min", arr[i].k, math.floor((arr[i].v or 0)/60))) end
-        return table.concat(out, ", ")
-    end
-    if stats.affixDur and next(stats.affixDur) then table.insert(lines, "Slowest Affixes (avg): "..top3avg(stats.affixDur)) end
-    if stats.weatherDur and next(stats.weatherDur) then table.insert(lines, "Slowest Weather (avg): "..top3avg(stats.weatherDur)) end
-    HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
 end
 
 -- Provide uppercase aliases in case the dispatcher normalizes names
@@ -1266,9 +1339,23 @@ _G.HLBG_SendClientLog = SendClientLogLocal
 -- Slash to send most recent saved debug line to server log
 SLASH_HLBGLOG1 = "/hlbglog"
 SlashCmdList["HLBGLOG"] = function()
-    local line = (HinterlandAffixHUD_DebugLog and HinterlandAffixHUD_DebugLog[1]) or ("HLBG log ping from client: nil")
+    local line = (HinterlandAffixHUD_DebugLog and HinterlandAffixHUD_DebugLog[1])
+    if not line then
+        -- assemble diagnostic snapshot
+        local ver = (GetAddOnMetadata and GetAddOnMetadata("HinterlandAffixHUD", "Version")) or "?"
+        local aio = (_G.AIO and _G.AIO.Handle) and "yes" or "no"
+        local lastHistN = (HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows) or 0
+        local lastStats = (HLBG and HLBG._lastStats) or nil
+        local statsJson = "{}"
+        if type(lastStats) == 'table' then
+            -- try to stringify minimal fields
+            local counts = lastStats.counts or {}
+            statsJson = string.format('{"Alliance":%d,"Horde":%d,"draws":%d}', tonumber(counts.Alliance or counts.ALLIANCE or 0) or 0, tonumber(counts.Horde or counts.HORDE or 0) or 0, tonumber(lastStats.draws or 0) or 0)
+        end
+        line = string.format("HLBG client snapshot: ver=%s aio=%s lastHistoryN=%d stats=%s", tostring(ver), tostring(aio), tonumber(lastHistN) or 0, tostring(statsJson))
+    end
     HLBG.SendClientLog(line)
-    DEFAULT_CHAT_FRAME:AddMessage("HLBG: Sent client log to server (check Custom/Logs/hlbg_client.log)")
+    DEFAULT_CHAT_FRAME:AddMessage("HLBG: Sent client log to server (check /home/wowcore/azeroth-server/logs/hlbg_client.log)")
 end
 
 -- Fallback: parse History from TSV string payload
@@ -1307,138 +1394,64 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     local prefix, msg = ...
-    if prefix == "HLBG" and type(msg) == "string" then
-        local a = msg:match("STATUS|A=(%d+)")
-        if a then
-        -- normalize args
-        if type(player) ~= "string" and type(player) ~= "userdata" then stats = player end
-        stats = stats or {}
+    -- Only care about HLBG addon channel
+    if tostring(prefix) ~= "HLBG" then return end
 
-        local counts = stats.counts or {}
-        local a = tonumber(counts.Alliance or counts.ALLIANCE or 0) or 0
-        local h = tonumber(counts.Horde or counts.HORDE or 0) or 0
-        local draws = tonumber(stats.draws or 0) or 0
-        local avgDur = tonumber(stats.avgDuration or 0) or 0
-        local seasonId = tonumber(stats.season or stats.Season or 0) or 0
-        local seasonName = tostring(stats.seasonName or stats.SeasonName or "")
-
-        local reasons = stats.reasons or {}
-        local rDepl = tonumber(reasons.depletion or 0) or 0
-        local rTie  = tonumber(reasons.tiebreaker or 0) or 0
-        local rMan  = tonumber(reasons.manual or 0) or 0
-        local rDraw = tonumber(reasons.draw or 0) or draws
-
-        local margins = stats.margins or {}
-        local avgMargin = tonumber(margins.avg or 0) or 0
-        local largest = margins.largest or {}
-        local lTeam = tostring(largest.team or "")
-        local lMargin = tonumber(largest.margin or 0) or 0
-        local lA = tonumber(largest.a or 0) or 0
-        local lH = tonumber(largest.h or 0) or 0
-        local lTs = tostring(largest.ts or "")
-        local lId = tostring(largest.id or "")
-
-        local streaks = stats.streaks or {}
-        local cur = streaks.current or {}
-        local lon = streaks.longest or {}
-        local curTeam = tostring(cur.team or "")
-        local curLen = tonumber(cur.len or 0) or 0
-        local lonTeam = tostring(lon.team or "")
-        local lonLen = tonumber(lon.len or 0) or 0
-
-        local affixRows = stats.byAffix or {}
-
-        local function icon(team)
-            if team == "Alliance" or team == "ALLIANCE" then return "|TInterface/TargetingFrame/UI-PVP-ALLIANCE:16|t" end
-            if team == "Horde" or team == "HORDE" then return "|TInterface/TargetingFrame/UI-PVP-HORDE:16|t" end
-            return ""
+    -- Forward a compact raw sample of incoming addon messages to the server-side log (throttled)
+    pcall(function()
+        local send = _G.HLBG_SendClientLog or (type(HLBG) == 'table' and HLBG.SendClientLog)
+        if type(send) == 'function' then
+            HLBG._rawSampleState = HLBG._rawSampleState or { lastSample = nil, lastTs = 0 }
+            local raw = tostring(prefix or "") .. "\t" .. tostring(msg or "")
+            local sample = raw
+            if #sample > 256 then sample = sample:sub(1,256) .. "...[truncated]" end
+            local now = time()
+            local changed = (HLBG._rawSampleState.lastSample ~= sample)
+            local elapsed = now - (HLBG._rawSampleState.lastTs or 0)
+            if changed or elapsed >= 5 then
+                HLBG._rawSampleState.lastSample = sample
+                HLBG._rawSampleState.lastTs = now
+                pcall(send, string.format("ADDON_MSG_SAMPLE prefix=%s len=%d sample=%s", tostring(prefix), (type(msg)=="string" and #msg) or 0, sample))
+            end
         end
-        local function teamColor(team, text)
-            if team == "Alliance" or team == "ALLIANCE" then return "|cff1e90ff"..text.."|r" end
-            if team == "Horde" or team == "HORDE" then return "|cffff0000"..text.."|r" end
-            return text
-        end
-        local function mm(seconds) return math.floor((tonumber(seconds) or 0)/60) end
+    end)
 
-        -- Header line: icons + counts + draws + avg + season
-        local seasonStr = ""
-        if seasonName ~= "" then seasonStr = "  Season: "..seasonName
-        elseif seasonId > 0 then seasonStr = "  Season: "..tostring(seasonId) end
-        local header = string.format("%s %d    %s %d    Draws: %d    Avg: %d min%s",
-            icon("Alliance"), a, icon("Horde"), h, draws, mm(avgDur), seasonStr)
-
-        -- Reasons line (omit draws here since already above)
-        local reasonsLine = string.format("Reasons: depletion %d, tiebreaker %d, manual %d", rDepl, rTie, rMan)
-
-        -- Streaks line
-        local streaksLine = string.format("Streaks: current %s x%d, longest %s x%d",
-            teamColor(curTeam, curTeam ~= "" and curTeam or "-"), curLen,
-            teamColor(lonTeam, lonTeam ~= "" and lonTeam or "-"), lonLen)
-
-        -- Margins line
-        local marginsLine = string.format("Margins: avg %d, largest %d (%s %d-%d, id #%s, %s)",
-            avgMargin, lMargin, teamColor(lTeam, lTeam ~= "" and lTeam or "-"), lA, lH, lId, lTs)
-
-        -- Affix table (top 5 for compactness)
-        local affixLines = {}
-        local maxAffix = math.min(5, #affixRows)
-        for i=1,maxAffix do
-            local r = affixRows[i]
-            local name = HLBG.GetAffixName(r.affix)
-            local aa = tonumber(r.Alliance or r.alliance or r.A or r.a or 0) or 0
-            local hh = tonumber(r.Horde or r.horde or r.H or r.h or 0) or 0
-            local dd = tonumber(r.DRAW or r.draw or r.D or r.d or 0) or 0
-            local ad = tonumber(r.avg or r.Avg or 0) or 0
-            affixLines[#affixLines+1] = string.format("- %s  %s %d   %s %d   D:%d   avg:%d min",
-                tostring(name), icon("Alliance"), aa, icon("Horde"), hh, dd, mm(ad))
-        end
-        if #affixLines == 0 then affixLines = { "(no per-affix data)" } end
-
-        local lines = {
-            header,
-            reasonsLine,
-            streaksLine,
-            marginsLine,
-            " ",
-            "Per-Affix (top):",
-            table.concat(affixLines, "\n")
-        }
-        HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
-
--- Global chat fallback listener for broadcast JSON/TSV messages
-local chatListener = CreateFrame('Frame')
-chatListener:RegisterEvent('CHAT_MSG_CHANNEL')
-chatListener:RegisterEvent('CHAT_MSG_SYSTEM')
-chatListener:RegisterEvent('CHAT_MSG_SAY')
-chatListener:RegisterEvent('CHAT_MSG_YELL')
-chatListener:RegisterEvent('CHAT_MSG_PARTY')
-chatListener:RegisterEvent('CHAT_MSG_GUILD')
-chatListener:SetScript('OnEvent', function(self, event, msg, ...)
     if type(msg) ~= 'string' then return end
-    -- JSON broadcast prefix
-    local jprefix = msg:match('%[HLBG_LIVE_JSON%]%s*(.*)')
-    if jprefix then
-        local ok, decoded = pcall(function() return json_decode(jprefix) end)
-        if ok and type(decoded) == 'table' then
-            local rows = nil
-            if #decoded > 0 then rows = decoded else rows = {} for k,v in pairs(decoded) do table.insert(rows, v) end end
-            if rows and #rows > 0 and type(HLBG.Live) == 'function' then pcall(HLBG.Live, rows) end
-            return
-        end
-    end
-    -- TSV broadcast prefix
-    local tprefix = msg:match('%[HLBG_LIVE%]%s*(.*)')
-    if tprefix then
-        local rows = {}
-        tprefix = tprefix:gsub('%|%|', '\n')
-        for line in tprefix:gmatch('[^\n]+') do
-            local parts = {}
-            for part in line:gmatch('([^\t]+)') do table.insert(parts, part) end
-            if #parts >= 5 then table.insert(rows, { id = parts[1], ts = parts[2], name = parts[3], team = parts[4], score = tonumber(parts[5]) or parts[5] }) end
-        end
-        if #rows > 0 and type(HLBG.Live) == 'function' then pcall(HLBG.Live, rows) end
+
+    -- STATUS messages (e.g. "STATUS|A=450|H=300|END=...|LOCK=0") -> update RES and HUD
+    if msg:match("^STATUS|") then
+        local A = tonumber(msg:match("A=(%d+)") or 0) or 0
+        local H = tonumber(msg:match("H=(%d+)") or 0) or 0
+        local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
+        local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
+        RES.A = A; RES.H = H; RES.END = ENDt; RES.LOCK = LOCK
+        pcall(UpdateHUD)
         return
     end
+
+    -- AFFIX messages (e.g. "AFFIX|Boss Enrage") -> show affix heading briefly
+    local aff = msg:match("^AFFIX|(.*)$")
+    if aff then
+        if HLBG.UI and HLBG.UI.Affix and HLBG.UI.Affix.Text then
+            pcall(function()
+                HLBG.UI.Affix.Text:SetText(tostring(aff))
+                HLBG.UI.Affix:Show()
+                -- simple hide after a few seconds using a one-shot timer frame (compat-safe)
+                local tfr = CreateFrame('Frame')
+                tfr._t = 0
+                tfr:SetScript('OnUpdate', function(self, elapsed)
+                    self._t = self._t + (elapsed or 0)
+                    if self._t >= 6 then
+                        if HLBG.UI and HLBG.UI.Affix then HLBG.UI.Affix:Hide() end
+                        self:SetScript('OnUpdate', nil)
+                        self = nil
+                    end
+                end)
+            end)
+        end
+        return
+    end
+end)
 
     -- Warmup notice
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
