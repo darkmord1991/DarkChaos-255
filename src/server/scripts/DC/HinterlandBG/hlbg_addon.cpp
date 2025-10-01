@@ -143,9 +143,11 @@ public:
         if (merged.empty())
         {
             merged.reserve(uiSub.size() + queueSub.size());
-            // Move to avoid copying non-copyable ChatCommandBuilder
-            merged.insert(merged.end(), std::make_move_iterator(uiSub.begin()), std::make_move_iterator(uiSub.end()));
-            merged.insert(merged.end(), std::make_move_iterator(queueSub.begin()), std::make_move_iterator(queueSub.end()));
+            // Push elements via move construction to avoid any assignment requirements
+            for (auto& c : uiSub)
+                merged.emplace_back(std::move(c));
+            for (auto& c : queueSub)
+                merged.emplace_back(std::move(c));
         }
 
         static ChatCommandTable root = {
