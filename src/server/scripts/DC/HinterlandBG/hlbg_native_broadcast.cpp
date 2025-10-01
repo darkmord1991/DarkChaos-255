@@ -146,16 +146,16 @@ public:
         if (json.size() <= maxJsonLen)
         {
             std::string msg = std::string("[HLBG_LIVE_JSON] ") + json;
-            player->SendBroadcastMessage(msg);
+            ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
             handler->PSendSysMessage("Sent HLBG live JSON payload to you.");
             return true;
         }
 
         // Fallback to TSV with '||' delimiter
-        std::string tsv = BuildTsvRows(rows);
-        std::string msg = std::string("[HLBG_LIVE] ") + tsv;
-        player->SendBroadcastMessage(msg);
-        handler->PSendSysMessage("Sent HLBG live TSV payload to you.");
+    std::string tsv = BuildTsvRows(rows);
+    std::string msg = std::string("[HLBG_LIVE] ") + tsv;
+    ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+    handler->PSendSysMessage("Sent HLBG live TSV payload to you.");
         return true;
     }
 };
