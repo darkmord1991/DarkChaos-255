@@ -116,6 +116,9 @@
         _matchDurationSeconds = HL_MATCH_DURATION_SECONDS;
         _afkWarnSeconds = 120;
         _afkTeleportSeconds = 180;
+    // Default HLBG season to 1 (legacy DB rows commonly use season=1). A value of 0 means "all/current".
+    // LoadConfig() can override this from HinterlandBG.Season.
+    _season = 1;
     _statusBroadcastEnabled = true;
     _statusBroadcastPeriodMs = 180 * IN_MILLISECONDS;
     _autoResetTeleport = true;

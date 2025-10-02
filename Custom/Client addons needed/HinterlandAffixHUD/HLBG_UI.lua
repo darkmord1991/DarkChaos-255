@@ -74,13 +74,13 @@ function HLBG.Live(rows)
             r.meta = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 2, -2)
-            r.name:SetWidth(300); r.name:SetJustifyH("LEFT")
+            r.name:SetWidth(300); HLBG.safeSetJustify(r.name, "LEFT")
             r.score:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -2)
-            r.score:SetWidth(100); r.score:SetJustifyH("RIGHT")
+            r.score:SetWidth(100); HLBG.safeSetJustify(r.score, "RIGHT")
             r.meta:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 2, 2)
-            r.meta:SetWidth(220); r.meta:SetJustifyH("LEFT")
+            r.meta:SetWidth(220); HLBG.safeSetJustify(r.meta, "LEFT")
             r.ts:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -2, 2)
-            r.ts:SetWidth(200); r.ts:SetJustifyH("RIGHT")
+            r.ts:SetWidth(200); HLBG.safeSetJustify(r.ts, "RIGHT")
             HLBG.UI.Live.rows[i] = r
         end
         r:ClearAllPoints()
@@ -264,7 +264,7 @@ function HLBG.History(a, b, c, d, e, f, g)
             r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            r.id:SetPoint("LEFT", r, "LEFT", 0, 0); r.id:SetWidth(50); r.id:SetJustifyH("LEFT")
+            r.id:SetPoint("LEFT", r, "LEFT", 0, 0); r.id:SetWidth(50); HLBG.safeSetJustify(r.id, "LEFT")
             r.sea:SetPoint("LEFT", r.id, "RIGHT", 6, 0); r.sea:SetWidth(50)
             r.ts:SetPoint("LEFT", r.sea, "RIGHT", 6, 0); r.ts:SetWidth(120)
             r.win:SetPoint("LEFT", r.ts, "RIGHT", 6, 0); r.win:SetWidth(80)
@@ -446,23 +446,29 @@ HLBG.UI.Tabs = {}
 HLBG.UI.Tabs[1] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab1", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[1]:SetPoint("TOPLEFT", HLBG.UI.Frame, "BOTTOMLEFT", 10, 7)
 HLBG.UI.Tabs[1]:SetText("Live")
+HLBG.UI.Tabs[1]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(1) end end)
 HLBG.UI.Tabs[2] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab2", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[2]:SetPoint("LEFT", HLBG.UI.Tabs[1], "RIGHT")
 HLBG.UI.Tabs[2]:SetText("History")
+HLBG.UI.Tabs[2]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(2) end end)
 HLBG.UI.Tabs[3] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab3", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[3]:SetPoint("LEFT", HLBG.UI.Tabs[2], "RIGHT")
 HLBG.UI.Tabs[3]:SetText("Stats")
+HLBG.UI.Tabs[3]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(3) end end)
 
 -- New tabs: Queue (join next run), Info (overview), Results (post-match)
 HLBG.UI.Tabs[4] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab4", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[4]:SetPoint("LEFT", HLBG.UI.Tabs[3], "RIGHT")
 HLBG.UI.Tabs[4]:SetText("Queue")
+HLBG.UI.Tabs[4]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(4) end end)
 HLBG.UI.Tabs[5] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab5", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[5]:SetPoint("LEFT", HLBG.UI.Tabs[4], "RIGHT")
 HLBG.UI.Tabs[5]:SetText("Info")
+HLBG.UI.Tabs[5]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(5) end end)
 HLBG.UI.Tabs[6] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab6", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[6]:SetPoint("LEFT", HLBG.UI.Tabs[5], "RIGHT")
 HLBG.UI.Tabs[6]:SetText("Results")
+HLBG.UI.Tabs[6]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(6) end end)
 
 PanelTemplates_SetNumTabs(HLBG.UI.Frame, 6)
 PanelTemplates_SetTab(HLBG.UI.Frame, 1)
@@ -484,7 +490,12 @@ HLBG.UI.Live.Text = HLBG.UI.Live:CreateFontString(nil, "OVERLAY", "GameFontHighl
 HLBG.UI.Live.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Live.Text:SetText("Live status shows resources, timer and affix. Use the HUD on the world view.")
 HLBG.UI.Live:SetScript("OnShow", function()
-    SendChatCommand(".hlbg live players")
+    if type(HLBG) == 'table' and type(HLBG.safeExecSlash) == 'function' then
+        HLBG.safeExecSlash(".hlbg live players")
+    elseif type(SendChatMessage) == 'function' then
+        -- last resort: send to /say so server-side chat handler can pick it up
+        pcall(SendChatMessage, ".hlbg live players", "SAY")
+    end
 end)
 
 -- Live scoreboard: scrollable player list
@@ -530,10 +541,83 @@ HLBG.UI.History.Content:SetSize(460, 300)
 if HLBG.UI.History.Content.SetFrameStrata then HLBG.UI.History.Content:SetFrameStrata("DIALOG") end
 HLBG.UI.History.Scroll:SetScrollChild(HLBG.UI.History.Content)
 HLBG.UI.History.rows = HLBG.UI.History.rows or {}
+-- Defaults for paging/sort
+HLBG.UI.History.page = HLBG.UI.History.page or 1
+HLBG.UI.History.per = HLBG.UI.History.per or 5
+HLBG.UI.History.total = HLBG.UI.History.total or 0
+HLBG.UI.History.sortKey = HLBG.UI.History.sortKey or "id"
+HLBG.UI.History.sortDir = HLBG.UI.History.sortDir or "DESC"
 HLBG.UI.History.EmptyText = HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 HLBG.UI.History.EmptyText:SetPoint("TOPLEFT", 16, -64)
 HLBG.UI.History.EmptyText:SetText("No data yet…")
 HLBG.UI.History.EmptyText:Hide()
+
+-- Pagination nav: Prev / Page N / Next
+HLBG.UI.History.Nav = HLBG.UI.History.Nav or CreateFrame("Frame", nil, HLBG.UI.History)
+HLBG.UI.History.Nav:SetPoint("BOTTOMLEFT", HLBG.UI.History, "BOTTOMLEFT", 16, 20)
+HLBG.UI.History.Nav:SetSize(200, 20)
+local function _btn(parent, w, txt)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(w, 20)
+    b:SetText(txt)
+    -- Some 3.3.5 skins lack SetEnabled; provide a shim
+    if not b.SetEnabled then
+        function b:SetEnabled(en)
+            if en then if self.Enable then self:Enable() end else if self.Disable then self:Disable() end end
+        end
+    end
+    return b
+end
+HLBG.UI.History.Nav.Prev = HLBG.UI.History.Nav.Prev or _btn(HLBG.UI.History.Nav, 60, "Prev")
+HLBG.UI.History.Nav.Prev:ClearAllPoints()
+HLBG.UI.History.Nav.Prev:SetPoint("LEFT", HLBG.UI.History.Nav, "LEFT", 0, 0)
+HLBG.UI.History.Nav.PageText = HLBG.UI.History.Nav.PageText or HLBG.UI.History.Nav:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+HLBG.UI.History.Nav.PageText:ClearAllPoints()
+HLBG.UI.History.Nav.PageText:SetPoint("LEFT", HLBG.UI.History.Nav.Prev, "RIGHT", 8, 0)
+HLBG.UI.History.Nav.Next = HLBG.UI.History.Nav.Next or _btn(HLBG.UI.History.Nav, 60, "Next")
+HLBG.UI.History.Nav.Next:ClearAllPoints()
+HLBG.UI.History.Nav.Next:SetPoint("LEFT", HLBG.UI.History.Nav.PageText, "RIGHT", 8, 0)
+
+HLBG.UI.History.Nav.Prev:SetScript("OnClick", function()
+    local hist = HLBG.UI.History
+    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
+    hist.page = math.max(1, (hist.page or 1) - 1)
+    HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+    end
+    do
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if type(sendDot) == 'function' then
+            sendDot(string.format(".hlbg historyui %d %d %s %s", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC"))
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+        end
+    end
+end)
+
+HLBG.UI.History.Nav.Next:SetScript("OnClick", function()
+    local hist = HLBG.UI.History
+    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
+    hist.page = math.min(maxPage, (hist.page or 1) + 1)
+    HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+    end
+    if type(HLBG.safeExecSlash) == 'function' then
+        HLBG.safeExecSlash(string.format(".hlbg historyui %d %d %s %s", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC"))
+        HLBG.safeExecSlash(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+    end
+end)
 
 HLBG.UI.Stats = CreateFrame("Frame", nil, HLBG.UI.Frame)
 HLBG.UI.Stats:SetAllPoints(HLBG.UI.Frame)
@@ -541,6 +625,26 @@ HLBG.UI.Stats:Hide()
 HLBG.UI.Stats.Text = HLBG.UI.Stats:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Stats.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Stats.Text:SetText("Stats will appear here.")
+HLBG.UI.Stats:SetScript("OnShow", function()
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "STATS")
+        _G.AIO.Handle("HLBG", "Request", "STATS", season)
+        _G.AIO.Handle("HLBG", "Stats")
+        _G.AIO.Handle("HLBG", "Stats", season)
+        _G.AIO.Handle("HLBG", "STATS")
+        _G.AIO.Handle("HLBG", "STATS", season)
+        _G.AIO.Handle("HLBG", "StatsUI")
+        _G.AIO.Handle("HLBG", "StatsUI", season)
+    end
+    do
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if type(sendDot) == 'function' then
+            sendDot(".hlbg statsui")
+            sendDot(string.format(".hlbg statsui %d", season))
+        end
+    end
+end)
 
 -- Queue tab: join next run, show warmup/queue status
 HLBG.UI.Queue = CreateFrame("Frame", nil, HLBG.UI.Frame)
@@ -553,13 +657,25 @@ HLBG.UI.Queue.Join:SetText("Join Next Run")
 HLBG.UI.Queue.Status = HLBG.UI.Queue:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Queue.Status:SetPoint("TOPLEFT", HLBG.UI.Queue.Join, "BOTTOMLEFT", 0, -8)
 HLBG.UI.Queue.Status:SetText("Queue status: unknown")
+-- Wire the join button
+HLBG.UI.Queue.Join:SetScript("OnClick", function()
+    if _G.AIO and _G.AIO.Handle then
+        -- Try multiple server-side handlers
+        _G.AIO.Handle("HLBG", "Request", "QUEUE_JOIN")
+        _G.AIO.Handle("HLBG", "QueueJoin")
+        _G.AIO.Handle("HLBG", "QUEUE", "JOIN")
+    end
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    if type(sendDot) == 'function' then sendDot(".hlbg queue join") end
+    if HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.Status then HLBG.UI.Queue.Status:SetText("Queue status: requested join…") end
+end)
 
 HLBG.UI.Info = CreateFrame("Frame", nil, HLBG.UI.Frame)
 HLBG.UI.Info:SetAllPoints(HLBG.UI.Frame)
 HLBG.UI.Info:Hide()
 HLBG.UI.Info.Text = HLBG.UI.Info:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Info.Text:SetPoint("TOPLEFT", 16, -40)
-HLBG.UI.Info.Text:SetJustifyH("LEFT")
+HLBG.safeSetJustify(HLBG.UI.Info.Text, "LEFT")
 HLBG.UI.Info.Text:SetWidth(460)
 
 local function BuildInfoText()
@@ -602,6 +718,19 @@ HLBG.UI.Results.Text = HLBG.UI.Results:CreateFontString(nil, "OVERLAY", "GameFon
 HLBG.UI.Results.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Results.Text:SetText("Results will appear here.")
 
+-- Results scroll area to mirror history layout and support future row rendering
+HLBG.UI.Results.Scroll = CreateFrame("ScrollFrame", "HLBG_ResultsScroll", HLBG.UI.Results, "UIPanelScrollFrameTemplate")
+HLBG.UI.Results.Scroll:SetPoint("TOPLEFT", 16, -64)
+HLBG.UI.Results.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
+HLBG.UI.Results.Content = CreateFrame("Frame", nil, HLBG.UI.Results.Scroll)
+HLBG.UI.Results.Content:SetSize(460, 300)
+if HLBG.UI.Results.Content.SetFrameStrata then HLBG.UI.Results.Content:SetFrameStrata("DIALOG") end
+HLBG.UI.Results.Scroll:SetScrollChild(HLBG.UI.Results.Content)
+HLBG.UI.Results.EmptyText = HLBG.UI.Results:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+HLBG.UI.Results.EmptyText:SetPoint("TOPLEFT", 16, -64)
+HLBG.UI.Results.EmptyText:SetText("No results yet…")
+HLBG.UI.Results.EmptyText:Hide()
+
 -- History header: clickable to sort by column
 HLBG.UI.History.Header = CreateFrame("Button", nil, HLBG.UI.History)
 HLBG.UI.History.Header:SetPoint("TOPLEFT", HLBG.UI.History.Scroll, "TOPLEFT", 0, 16)
@@ -613,7 +742,7 @@ HLBG.UI.History.Header:SetHighlightFontObject("GameFontHighlight")
 HLBG.UI.History.Header.Text = HLBG.UI.History.Header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 HLBG.UI.History.Header.Text:SetPoint("LEFT", 2, 0)
 HLBG.UI.History.Header.Text:SetText("Player Name          Score  Team  Time")
-if type(HLBG.UI.History.Header.Text.SetJustifyH) == 'function' then HLBG.UI.History.Header.Text:SetJustifyH("LEFT") end
+HLBG.safeSetJustify(HLBG.UI.History.Header.Text, "LEFT")
 HLBG.UI.History.Header:SetHitRectInsets(0, 0, 0, 0)
 HLBG.UI.History.Header:SetScript("OnClick", function(self)
     if not HLBG.UI.History.sortBy then HLBG.UI.History.sortBy = {} end
@@ -662,6 +791,21 @@ HLBG.UI.History:SetScript("OnShow", function(self)
     else
         self.EmptyText:Hide()
     end
+    -- Auto-request history for current paging/sort (AIO + fallback)
+    local p = self.page or 1
+    local per = self.per or 5
+    local sk = self.sortKey or "id"
+    local sd = self.sortDir or "DESC"
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "History", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "HISTORY", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sk, sd)
+    end
+    do
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if type(sendDot) == 'function' then sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd)) end
+    end
     self:Update()
 end)
 
@@ -670,7 +814,7 @@ HLBG.UI.Results.Header:SetPoint("TOPLEFT", HLBG.UI.Results, "TOPLEFT", 0, -16)
 HLBG.UI.Results.Header:SetPoint("TOPRIGHT", HLBG.UI.Results, "TOPRIGHT", 0, -16)
 HLBG.UI.Results.Header:SetHeight(24)
 HLBG.UI.Results.Header:SetText("Player Name          Score  Team  Time")
-if type(HLBG.UI.Results.Header.SetJustifyH) == 'function' then HLBG.UI.Results.Header:SetJustifyH("LEFT") end
+HLBG.safeSetJustify(HLBG.UI.Results.Header, "LEFT")
 
 HLBG.UI.Results.rows = {}
 HLBG.UI.Results.sorted = false
@@ -697,10 +841,12 @@ end
 
 HLBG.UI.Results:SetScript("OnShow", function(self)
     if not self.rows or #self.rows == 0 then
-        self.EmptyText:Show()
+        if self.EmptyText then self.EmptyText:Show() end
     else
-        self.EmptyText:Hide()
+        if self.EmptyText then self.EmptyText:Hide() end
     end
+    -- Optional: request a results snapshot
+    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "RESULTS") end
     self:Update()
 end)
 
@@ -710,7 +856,23 @@ ShowTab(1)
 -- Moved from main file: auto-open the frame in battlegrounds
 local function eventHandler(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
-        local inInstance, instanceType = IsInInstance(), GetInstanceType()
+        local inInstance = false
+        local instanceType = nil
+        if type(HLBG) == 'table' and type(HLBG.safeIsInInstance) == 'function' then
+            local okIns, okType = pcall(function() return HLBG.safeIsInInstance() end)
+            if okIns and type(okType) == 'table' then
+                inInstance = okType[1] or false
+                instanceType = okType[2]
+            elseif okIns and type(okType) ~= 'table' then
+                -- safeIsInInstance may return two values; handle both
+                inInstance, instanceType = HLBG.safeIsInInstance()
+            end
+        else
+            pcall(function() inInstance = IsInInstance() end)
+            -- Some clients or environments may not expose GetInstanceType; guard it
+            local ok, it = pcall(function() return (type(GetInstanceType) == 'function') and GetInstanceType() or nil end)
+            if ok then instanceType = it end
+        end
         if inInstance and (instanceType == "pvp" or instanceType == "arena") then
             HLBG.UI.Frame:Show()
         else
@@ -719,7 +881,21 @@ local function eventHandler(self, event, ...)
     elseif event == "PLAYER_LEAVING_WORLD" then
         HLBG.UI.Frame:Hide()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
-        local inInstance, instanceType = IsInInstance(), GetInstanceType()
+        local inInstance = false
+        local instanceType = nil
+        if type(HLBG) == 'table' and type(HLBG.safeIsInInstance) == 'function' then
+            local okIns, okType = pcall(function() return HLBG.safeIsInInstance() end)
+            if okIns and type(okType) == 'table' then
+                inInstance = okType[1] or false
+                instanceType = okType[2]
+            elseif okIns and type(okType) ~= 'table' then
+                inInstance, instanceType = HLBG.safeIsInInstance()
+            end
+        else
+            pcall(function() inInstance = IsInInstance() end)
+            local ok2, it2 = pcall(function() return (type(GetInstanceType) == 'function') and GetInstanceType() or nil end)
+            if ok2 then instanceType = it2 end
+        end
         if inInstance and (instanceType == "pvp" or instanceType == "arena") then
             HLBG.UI.Frame:Show()
         else

@@ -273,28 +273,52 @@ public:
         return true;
     }
 
-    // .hlbg historyui [page] [per] [sort=id] [dir=DESC]
+    // .hlbg historyui [page] [per] [season?] [sort=id] [dir=DESC]
+    // Notes:
+    //  - season is optional; if omitted, server's current HL season is used.
+    //  - to preserve backward compatibility, if the 3rd token is a number it is treated as season.
     static bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
 
-        // Parse args
-        uint32 page = 1, per = 5; std::string sort = "id", dir = "DESC";
+        // Parse args (supports explicit season as the 3rd token)
+        uint32 page = 1, per = 5; uint32 seasonOverride = 0; std::string sort = "id", dir = "DESC";
         if (args && *args)
         {
-            std::istringstream is(args);
-            is >> page >> per >> sort >> dir;
-            if (!is) { page = 1; per = 5; sort = "id"; dir = "DESC"; }
+            std::vector<std::string> tokens; tokens.reserve(6);
+            {
+                std::istringstream is(args);
+                std::string t; while (is >> t) tokens.push_back(t);
+            }
+            // page
+            if (tokens.size() >= 1) { try { page = std::max<uint32>(1, std::stoul(tokens[0])); } catch (...) {} }
+            // per
+            if (tokens.size() >= 2) { try { per = std::max<uint32>(1, std::stoul(tokens[1])); } catch (...) {} }
+            // season (optional if 3rd token is numeric)
+            size_t idx = 2;
+            if (tokens.size() >= 3)
+            {
+                bool numeric = !tokens[2].empty() && std::all_of(tokens[2].begin(), tokens[2].end(), ::isdigit);
+                if (numeric)
+                {
+                    try { seasonOverride = std::stoul(tokens[2]); } catch (...) { seasonOverride = 0; }
+                    idx = 3;
+                }
+            }
+            // sort
+            if (tokens.size() > idx) sort = tokens[idx++];
+            // dir
+            if (tokens.size() > idx) dir = tokens[idx++];
         }
         if (per == 0) per = 5;
         uint32 offset = (page > 0 ? (page - 1) * per : 0);
-    // Whitelist sort/dir
-    if (!(sort == "id" || sort == "occurred_at" || sort == "season")) sort = "id";
+        // Whitelist sort/dir
+        if (!(sort == "id" || sort == "occurred_at" || sort == "season")) sort = "id";
         std::string odir = (dir == "ASC" ? "ASC" : "DESC");
 
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
-        uint32 season = hl ? hl->GetSeason() : 0u;
+        uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
         // id, season, seasonName, occurred_at, winner_tid, win_reason, affix
         // Build SQL safely (whitelisted sort/dir), avoiding printf-style placeholders
         std::ostringstream qss;
@@ -319,8 +343,8 @@ public:
         return true;
     }
 
-    // .hlbg statsui -> send compact stats JSON used by client Stats()
-    static bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
+    // .hlbg statsui [season] -> send compact stats JSON used by client Stats()
+    static bool HandleHLBGStatsUI(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -328,6 +352,18 @@ public:
         uint32 winA=0, winH=0, draws=0; uint32 avgDur=0; std::string seasonName;
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = hl ? hl->GetSeason() : 0u;
+        if (args && *args)
+        {
+            // Accept a single numeric season override
+            std::string s(args);
+            // Trim
+            s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch){ return !std::isspace(ch); }));
+            s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch){ return !std::isspace(ch); }).base(), s.end());
+            if (!s.empty() && std::all_of(s.begin(), s.end(), ::isdigit))
+            {
+                try { uint32 so = std::stoul(s); if (so > 0) season = so; } catch (...) {}
+            }
+        }
         // Common WHERE clause by season
         std::string where = (season > 0) ? (" WHERE season=" + std::to_string(season)) : std::string();
         auto whereAnd = [&](std::string const& cond) -> std::string {

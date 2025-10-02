@@ -5,6 +5,14 @@ HLBG._devMode = HLBG._devMode or false
 -- If user saved a persistent devMode, honor it on load
 HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
 if HinterlandAffixHUDDB.devMode ~= nil then HLBG._devMode = HinterlandAffixHUDDB.devMode and true or false end
+-- Default to 1 to match many legacy DBs; user can change via "/hlbg season <n>"
+HinterlandAffixHUDDB.desiredSeason = HinterlandAffixHUDDB.desiredSeason or 1
+function HLBG._getSeason()
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    local s = tonumber(HinterlandAffixHUDDB.desiredSeason or 0) or 0
+    if s < 0 then s = 0 end
+    return s
+end
 
 -- Utility: safely register a SLASH_* command without stomping existing registrations.
 local function safeRegisterSlash(key, cmd, handler)
@@ -30,19 +38,96 @@ end
 
 -- expose helper so UI modules can register safely when loaded earlier/later
 HLBG.safeRegisterSlash = safeRegisterSlash
+-- Safe exec for slash-like client commands. Prefer calling registered SlashCmdList handlers
+-- (useful on older clients where SendChatCommand isn't available).
+function HLBG.safeExecSlash(cmd)
+    if type(cmd) ~= 'string' then return false end
+    local orig = cmd
+    local s = cmd:gsub('^%s+', '')
+    -- strip leading dot used in some callsites
+    if s:sub(1,1) == '.' then s = s:sub(2) end
+    -- split verb and rest
+    local verb, rest = s:match('^(%S+)%s*(.*)$')
+    if not verb then return false end
+    -- prefer direct SlashCmdList lookup
+    local key = verb:upper()
+    if SlashCmdList and type(SlashCmdList[key]) == 'function' then pcall(SlashCmdList[key], rest or '') ; return true end
+    -- try our unique token first to avoid collisions
+    if SlashCmdList and type(SlashCmdList['HLBGHUD']) == 'function' then
+        local lower = verb:lower()
+        if lower == 'hlbg' or lower == 'hinterland' or lower == 'hbg' or lower == 'hlbghud' or lower == 'zhlbg' then
+            pcall(SlashCmdList['HLBGHUD'], rest or '') ; return true
+        end
+    end
+    -- common HLBG alias
+    if verb:lower() == 'hlbg' and SlashCmdList and type(SlashCmdList['HLBG']) == 'function' then pcall(SlashCmdList['HLBG'], rest or '') ; return true end
+    -- last resort: call our main handler directly if present
+    if type(HLBG._MainSlashHandler) == 'function' and (verb:lower() == 'hlbg' or verb:lower() == 'hinterland' or verb:lower()=='hbg') then
+        pcall(HLBG._MainSlashHandler, rest or '')
+        return true
+    end
+    -- fallback: try sending as a chat message so server-side handler can catch it (e.g., .hlbg ...)
+    if type(SendChatMessage) == 'function' then
+        local ok = pcall(SendChatMessage, orig, "SAY")
+        if ok then return true end
+    end
+    -- optional: try RunScript (rarely useful for dot-commands but harmless)
+    if type(RunScript) == 'function' then pcall(RunScript, s) ; return true end
+    -- last fallback: notify user
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('HLBG: cannot execute command: '..tostring(cmd)) end
+    return false
+end
+-- Send a raw dot-command to the server without invoking our local SlashCmdList
+function HLBG.SendServerDot(cmd)
+    if type(cmd) ~= 'string' or cmd == '' then return false end
+    local out = cmd
+    if out:sub(1,1) ~= '.' then out = '.'..out end
+    if type(SendChatMessage) == 'function' then
+        local ok = pcall(SendChatMessage, out, "SAY")
+        return ok and true or false
+    end
+    return false
+end
+-- Provide a stable global alias so calls still work if the HLBG table is replaced by AIO
+_G.HLBG_SendServerDot = HLBG.SendServerDot
 -- Note: AIO handlers are registered after all functions are defined (see bottom)
+
+-- Dev helper: probe a list of WoW API globals and write availability into saved debug log
+function HLBG.RunStartupApiProbe()
+    if not HLBG._devMode then return end
+    HinterlandAffixHUD_DebugLog = HinterlandAffixHUD_DebugLog or {}
+    local apis = {
+        'IsInInstance', 'GetInstanceType', 'GetInstanceInfo', 'GetRealZoneText', 'GetZoneText',
+        'GetNumWorldStateUI', 'GetWorldStateUIInfo', 'GetPlayerMapPosition', 'SendChatMessage'
+    }
+    local out = { ts = date('%Y-%m-%d %H:%M:%S'), results = {} }
+    for _, name in ipairs(apis) do
+        local ok, available = pcall(function() return type(_G[name]) == 'function' end)
+        table.insert(out.results, { api = name, available = ok and available or false })
+    end
+    do
+        local parts = {}
+        for i, r in ipairs(out.results) do parts[#parts+1] = r.api .. '=' .. (r.available and '1' or '0') end
+        table.insert(HinterlandAffixHUD_DebugLog, 1, string.format('[%s] API_PROBE %s', out.ts, table.concat(parts, ',')))
+    end
+    while #HinterlandAffixHUD_DebugLog > 200 do table.remove(HinterlandAffixHUD_DebugLog) end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('HLBG: RunStartupApiProbe written to HinterlandAffixHUD_DebugLog') end
+end
+
+-- Run a probe at load if devMode is enabled (helps catch missing APIs quickly)
+pcall(function() if HLBG._devMode then HLBG.RunStartupApiProbe() end end)
 
 -- Attempt to load split modules early when running in a dev environment where files are present.
 -- In-game WoW loads files according to the .toc order, but this helps the VSCode workflow.
 pcall(function()
     -- UI is now extracted into HLBG_UI.lua. Provide light bridge helpers in case the module wasn't loaded yet.
-    function ShowTab(i)
-        if HLBG and HLBG.UI and HLBG.UI.Frame and type(HLBG.UI.Frame:IsShown) == 'function' then
-            if type(HLBG.UI.Frame.Show) == 'function' then HLBG.UI.Frame:Show() end
+    if type(_G.ShowTab) ~= 'function' then
+        -- Define a non-recursive bridge and assign it to the global; the real ShowTab from UI will override this later
+        local function showtab_bridge(i)
+            if HLBG and HLBG.UI and HLBG.UI.Frame and type(HLBG.UI.Frame.Show) == 'function' then HLBG.UI.Frame:Show() end
+            HinterlandAffixHUDDB.lastInnerTab = i
         end
-        -- if a more complete ShowTab exists in HLBG_UI, prefer calling that
-        if type(HLBG.ShowTab) == 'function' then pcall(HLBG.ShowTab, i) end
-        HinterlandAffixHUDDB.lastInnerTab = i
+        _G.ShowTab = showtab_bridge
     end
     local function quickRegister()
         if not (_G.AIO and _G.AIO.AddHandlers) then return false end
@@ -60,9 +145,13 @@ pcall(function()
         reg.DBG        = HLBG.DBG
         reg.HistoryStr = HLBG.HistoryStr
         reg.HISTORY    = reg.History
+    end
 
-HLBG.UI.Info.Text:SetJustifyH("LEFT")
-HLBG.UI.Info.Text:SetWidth(460)
+    -- Guarded tweak of Info text if UI is already present
+    if HLBG and HLBG.UI and HLBG.UI.Info and HLBG.UI.Info.Text then
+        HLBG.safeSetJustify(HLBG.UI.Info.Text, "LEFT")
+        HLBG.UI.Info.Text:SetWidth(460)
+    end
 local function BuildInfoText()
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     local minLevel = HinterlandAffixHUDDB.minLevel or 1
@@ -77,20 +166,19 @@ local function BuildInfoText()
         " ",
         "Features:",
         "- Movable worldstate HUD (resources/timer/affix)",
-        if HLBG._devMode then
-            SLASH_HLBGFAKE1 = "/hlbgfake"
-            SlashCmdList["HLBGFAKE"] = function()
+    }
+    if HLBG._devMode then
+            safeRegisterSlash('HLBGFAKE', '/hlbgfake', function()
                 local fakeRows = {
                     { id = "101", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Alliance", affix = "3", reason = "Score", duration = 1200 },
                     { id = "100", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Horde", affix = "5", reason = "Timer", duration = 900 },
                 }
                 HLBG.History(fakeRows, 1, 3, 11, "id", "DESC")
                 if HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end; ShowTab(2)
-            end
+            end)
 
             -- Dump last LIVE payload saved to saved-variables for offline inspection
-            SLASH_HLBGLIVEDUMP1 = "/hlbglivedump"
-            SlashCmdList["HLBGLIVEDUMP"] = function()
+            safeRegisterSlash('HLBGLIVEDUMP', '/hlbglivedump', function()
                 local dump = HinterlandAffixHUD_LastLive
                 if not dump then
                     DEFAULT_CHAT_FRAME:AddMessage("HLBG: no saved LIVE payload")
@@ -104,7 +192,7 @@ local function BuildInfoText()
                         DEFAULT_CHAT_FRAME:AddMessage(string.format("%d: %s = %s", i, tostring(name), tostring(score)))
                     end
                 end
-            end
+            end)
 
             -- In-game JSON decoder test runner. Run with /hlbgjsontest to exercise the addon's json_decode implementation
             function HLBG.RunJsonDecodeTests()
@@ -190,8 +278,7 @@ local function BuildInfoText()
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON tests finished: %s passed (saved to HinterlandAffixHUD_JsonTestResults)', run.summary))
             end
 
-            SLASH_HLBGJSONTEST1 = "/hlbgjsontest"
-            SlashCmdList["HLBGJSONTEST"] = function() pcall(HLBG.RunJsonDecodeTests) end
+            safeRegisterSlash('HLBGJSONTEST', '/hlbgjsontest', function() pcall(HLBG.RunJsonDecodeTests) end)
 
             -- Print saved JSON test run(s) to chat. Usage: /hlbgjsontestrun [n]
             function HLBG.PrintJsonTestRun(n)
@@ -221,8 +308,7 @@ local function BuildInfoText()
                 end
             end
 
-            SLASH_HLBGJSONTestrun1 = "/hlbgjsontestrun"
-            SlashCmdList["HLBGJSONTestrun"] = function(msg) pcall(HLBG.PrintJsonTestRun, (msg and msg:match("%d+")) and tonumber(msg:match("%d+")) or 1) end
+            safeRegisterSlash('HLBGJSONTestrun', '/hlbgjsontestrun', function(msg) pcall(HLBG.PrintJsonTestRun, (msg and msg:match("%d+")) and tonumber(msg:match("%d+")) or 1) end)
         end
     -- small debug to surface incoming argument shapes when things go wrong
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -380,17 +466,17 @@ local function BuildInfoText()
                 if r.rea.SetTextColor then r.rea:SetTextColor(1,1,1,1) end
             -- layout mirrors headers: ID(50), SEASON(50), TS(120), WIN(80), AFF(70), REASON(50) with 6px spacing
             r.id:SetPoint("LEFT", r, "LEFT", 0, 0)
-            r.id:SetWidth(50); r.id:SetJustifyH("LEFT")
+            r.id:SetWidth(50); HLBG.safeSetJustify(r.id, "LEFT")
             r.sea:SetPoint("LEFT", r.id, "RIGHT", 6, 0)
-            r.sea:SetWidth(50); r.sea:SetJustifyH("LEFT")
+            r.sea:SetWidth(50); HLBG.safeSetJustify(r.sea, "LEFT")
             r.ts:SetPoint("LEFT", r.sea, "RIGHT", 6, 0)
-            r.ts:SetWidth(120); r.ts:SetJustifyH("LEFT")
+            r.ts:SetWidth(120); HLBG.safeSetJustify(r.ts, "LEFT")
             r.win:SetPoint("LEFT", r.ts, "RIGHT", 6, 0)
-            r.win:SetWidth(80); r.win:SetJustifyH("LEFT")
+            r.win:SetWidth(80); HLBG.safeSetJustify(r.win, "LEFT")
             r.aff:SetPoint("LEFT", r.win, "RIGHT", 6, 0)
-            r.aff:SetWidth(70); r.aff:SetJustifyH("LEFT")
+            r.aff:SetWidth(70); HLBG.safeSetJustify(r.aff, "LEFT")
             r.rea:SetPoint("LEFT", r.aff, "RIGHT", 6, 0)
-            r.rea:SetWidth(50); r.rea:SetJustifyH("LEFT")
+            r.rea:SetWidth(50); HLBG.safeSetJustify(r.rea, "LEFT")
             HLBG.UI.History.rows[i] = r
         end
         return r
@@ -668,7 +754,7 @@ safeRegisterSlash('HLBGLOG', '/hlbglog', function()
     end
     HLBG.SendClientLog(line)
     DEFAULT_CHAT_FRAME:AddMessage("HLBG: Sent client log to server (check /home/wowcore/azeroth-server/logs/hlbg_client.log)")
-end
+end)
 -- Fallback: parse History from TSV string payload
 function HLBG.HistoryStr(a, b, c, d, e, f, g)
     if not HLBG._ensureUI('HistoryStr') then return end
@@ -757,8 +843,20 @@ do
             local per = (h and h.per) or 5
             local sk = (h and h.sortKey) or "id"
             local sd = (h and h.sortDir) or "DESC"
+            local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+            -- Try multiple server call patterns for broad compatibility
             _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sv, sk, sd)
+            _G.AIO.Handle("HLBG", "History", p, per, sk, sd)
+            _G.AIO.Handle("HLBG", "History", p, per, sv, sk, sd)
+            _G.AIO.Handle("HLBG", "HISTORY", p, per, sk, sd)
+            _G.AIO.Handle("HLBG", "HISTORY", p, per, sv, sk, sd)
             _G.AIO.Handle("HLBG", "Request", "STATS")
+            _G.AIO.Handle("HLBG", "Request", "STATS", sv)
+            _G.AIO.Handle("HLBG", "Stats")
+            _G.AIO.Handle("HLBG", "Stats", sv)
+            _G.AIO.Handle("HLBG", "STATS")
+            _G.AIO.Handle("HLBG", "STATS", sv)
         end
         -- Also use chat fallbacks so refresh works without server-side AIO
         local h = (HLBG and HLBG.UI and HLBG.UI.History) or nil
@@ -766,8 +864,12 @@ do
         local per = (h and h.per) or 5
         local sk = (h and h.sortKey) or "id"
         local sd = (h and h.sortDir) or "DESC"
-        SendChatCommand(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd))
-        SendChatCommand(".hlbg statsui")
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    if sendDot then sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd)) end
+    if sendDot then sendDot(string.format(".hlbg historyui %d %d %d %s %s", p, per, sv, sk, sd)) end
+    if sendDot then sendDot(".hlbg statsui") end
+    if sendDot then sendDot(string.format(".hlbg statsui %d", sv)) end
     end)
 end
 
@@ -783,10 +885,15 @@ if HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.Columns then
                 hist.sortKey = sk; hist.sortDir = "DESC"
             end
             if _G.AIO and _G.AIO.Handle then
+                local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
                 _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page or 1, hist.per or 5, hist.sortKey, hist.sortDir)
+                _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page or 1, hist.per or 5, sv, hist.sortKey, hist.sortDir)
             end
             -- Fallback: ask server via chat endpoints too
-            SendChatCommand(string.format(".hlbg historyui %d %d %s %s", hist.page or 1, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC"))
+            local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+            local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+            if sendDot then sendDot(string.format(".hlbg historyui %d %d %s %s", hist.page or 1, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")) end
+            if sendDot then sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page or 1, hist.per or 5, sv, hist.sortKey or "id", hist.sortDir or "DESC")) end
         end)
     end
 end
@@ -853,6 +960,14 @@ opt:SetScript("OnShow", function(self)
             DEFAULT_CHAT_FRAME:AddMessage("HLBG: devmode disabled.")
         end
     end)
+    -- Dev: button to run API probe
+    local btnProbe = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnProbe:SetSize(180, 22)
+    btnProbe:SetPoint("TOPLEFT", cbDev, "BOTTOMLEFT", 0, -16)
+    btnProbe:SetText("Run API probe (dev)")
+    btnProbe:SetScript("OnClick", function()
+        if type(HLBG.RunStartupApiProbe) == 'function' then pcall(HLBG.RunStartupApiProbe) end
+    end)
     local scale = CreateFrame("Slider", nil, self, "OptionsSliderTemplate"); scale:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -24)
     scale:SetMinMaxValues(0.8, 1.6); if scale.SetValueStep then scale:SetValueStep(0.05) end
     if scale.SetObeyStepOnDrag then scale:SetObeyStepOnDrag(true) end
@@ -861,6 +976,132 @@ opt:SetScript("OnShow", function(self)
     if scale.Text then scale.Text:SetText("HUD Scale") end
     scale:SetValue(HinterlandAffixHUDDB.scaleHud or 1.0)
     scale:SetScript("OnValueChanged", function(s,val) HinterlandAffixHUDDB.scaleHud = tonumber(string.format("%.2f", val)); HLBG.UI.HUD:SetScale(HinterlandAffixHUDDB.scaleHud) end)
+    -- Debug log preview (last 5 lines)
+    local dbgTitle = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    dbgTitle:SetPoint("TOPLEFT", scale, "BOTTOMLEFT", 0, -12)
+    dbgTitle:SetText("Recent Debug Log (last 5):")
+    local dbgBox = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    dbgBox:SetPoint("TOPLEFT", dbgTitle, "BOTTOMLEFT", 0, -6)
+    dbgBox:SetWidth(520)
+    dbgBox:SetHeight(100)
+    HLBG.safeSetJustify(dbgBox, "LEFT")
+    self.debugPreview = dbgBox
+    -- Timestamp under preview
+    local dbgTs = self:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    dbgTs:SetPoint("TOPLEFT", dbgBox, "BOTTOMLEFT", 0, -2)
+    dbgTs:SetText("(last refresh: -)")
+    self.debugPreviewTs = dbgTs
+    -- Auto-refresh controls
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    if HinterlandAffixHUDDB.debugAutoRefresh == nil then HinterlandAffixHUDDB.debugAutoRefresh = true end
+    if not tonumber(HinterlandAffixHUDDB.debugAutoRefreshInterval) then HinterlandAffixHUDDB.debugAutoRefreshInterval = 0.5 end
+    local cbAuto = CreateFrame("CheckButton", nil, self, "InterfaceOptionsCheckButtonTemplate")
+    cbAuto:SetPoint("TOPLEFT", dbgBox, "BOTTOMLEFT", 0, -8)
+    local cbAutoLabel = self:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    cbAutoLabel:SetPoint("LEFT", cbAuto, "RIGHT", 4, 0)
+    cbAutoLabel:SetText("Auto refresh debug preview")
+    cbAuto._label = cbAutoLabel
+    cbAuto:SetChecked(HinterlandAffixHUDDB.debugAutoRefresh)
+    cbAuto:SetScript("OnClick", function(s)
+        HinterlandAffixHUDDB.debugAutoRefresh = s:GetChecked() and true or false
+    end)
+    local slAuto = CreateFrame("Slider", nil, self, "OptionsSliderTemplate")
+    slAuto:SetPoint("TOPLEFT", cbAuto, "BOTTOMLEFT", 0, -16)
+    slAuto:SetMinMaxValues(0.2, 5.0)
+    if slAuto.SetValueStep then slAuto:SetValueStep(0.1) end
+    if slAuto.SetObeyStepOnDrag then slAuto:SetObeyStepOnDrag(true) end
+    if slAuto.Low then slAuto.Low:SetText("0.2s") end
+    if slAuto.High then slAuto.High:SetText("5.0s") end
+    if slAuto.Text then slAuto.Text:SetText("Refresh interval (seconds)") end
+    slAuto:SetValue(HinterlandAffixHUDDB.debugAutoRefreshInterval)
+    local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi else return v end end
+    slAuto:SetScript("OnValueChanged", function(_, val)
+        HinterlandAffixHUDDB.debugAutoRefreshInterval = tonumber(string.format("%.1f", clamp(val or 0.5, 0.2, 5.0)))
+    end)
+    -- Refresh preview when panel shown
+    local function refreshDebugPreview()
+        if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
+        local lines = {}
+        for i=1, math.min(5, #HinterlandAffixHUD_DebugLog) do table.insert(lines, HinterlandAffixHUD_DebugLog[i]) end
+        if #lines == 0 then dbgBox:SetText("(no debug entries yet)") else dbgBox:SetText(table.concat(lines, "\n")) end
+        if dbgTs and type(date) == 'function' then dbgTs:SetText(string.format("(last refresh: %s)", date("%Y-%m-%d %H:%M:%S"))) end
+    end
+    self:SetScript("OnShow", function(s) pcall(refreshDebugPreview) end)
+    -- Copy-to-chat button: try to insert into chat edit box, otherwise print to chat frame
+    local btnCopy = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnCopy:SetSize(120, 20)
+    btnCopy:SetPoint("TOPLEFT", dbgBox, "BOTTOMLEFT", 0, -8)
+    btnCopy:SetText("Copy to chat")
+    btnCopy:SetScript("OnClick", function()
+        pcall(function()
+            if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
+            local lines = {}
+            for i=1, math.min(5, #HinterlandAffixHUD_DebugLog) do table.insert(lines, HinterlandAffixHUD_DebugLog[i]) end
+            local text = (#lines == 0) and "(no debug entries)" or table.concat(lines, " \n ")
+            -- Prefer inserting into chat edit when available so user can edit before sending
+            if type(ChatEdit_ActivateChat) == 'function' and type(ChatEdit_InsertText) == 'function' then
+                pcall(function()
+                    ChatEdit_ActivateChat(false)
+                    ChatEdit_InsertText(text)
+                end)
+                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG: debug preview inserted into chat edit box") end
+                return
+            end
+            -- Fallback: print to chat frame as separate lines for manual copy
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage("HLBG: debug preview:")
+                for i=1, math.min(5, #HinterlandAffixHUD_DebugLog) do DEFAULT_CHAT_FRAME:AddMessage(HinterlandAffixHUD_DebugLog[i]) end
+            end
+        end)
+    end)
+    -- Refresh now button
+    local btnRefreshNow = CreateFrame("Button", nil, self, "UIPanelButtonTemplate")
+    btnRefreshNow:SetSize(100, 20)
+    btnRefreshNow:SetPoint("LEFT", btnCopy, "RIGHT", 8, 0)
+    btnRefreshNow:SetText("Refresh now")
+    -- Runtime status section (AIO + slash registrations)
+    local statusTitle = self:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    statusTitle:SetPoint("TOPLEFT", btnCopy, "BOTTOMLEFT", 0, -14)
+    statusTitle:SetText("Runtime Status:")
+    local statusLine = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    statusLine:SetPoint("TOPLEFT", statusTitle, "BOTTOMLEFT", 0, -4)
+    statusLine:SetWidth(520)
+    HLBG.safeSetJustify(statusLine, "LEFT")
+    local slashesLine = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    slashesLine:SetPoint("TOPLEFT", statusLine, "BOTTOMLEFT", 0, -2)
+    slashesLine:SetWidth(520)
+    HLBG.safeSetJustify(slashesLine, "LEFT")
+    local function refreshRuntimeStatus()
+        local haveAIO = (_G.AIO and _G.AIO.AddHandlers) and true or false
+        local handlersBound = (type(HLBG) == 'table' and (type(HLBG.History) == 'function' or type(HLBG.HISTORY) == 'function')) and true or false
+        local uiPresent = (type(HLBG) == 'table' and type(HLBG.UI) == 'table') or false
+        statusLine:SetText(string.format("AIO: %s   Handlers: %s   UI: %s", tostring(haveAIO), tostring(handlersBound), tostring(uiPresent)))
+        local regs, skips = {}, {}
+        if HLBG._registered_slashes then for _,s in ipairs(HLBG._registered_slashes) do table.insert(regs, tostring(s.cmd)) end end
+        if HLBG._skipped_slashes then for _,s in ipairs(HLBG._skipped_slashes) do table.insert(skips, string.format("%s (%s)", tostring(s.cmd), tostring(s.reason))) end end
+        local regTxt = (#regs > 0) and ("Registered: "..table.concat(regs, ", ")) or "Registered: (none)"
+        local skipTxt = (#skips > 0) and ("  |  Skipped: "..table.concat(skips, ", ")) or ""
+        slashesLine:SetText(regTxt .. skipTxt)
+    end
+    btnRefreshNow:SetScript("OnClick", function()
+        pcall(refreshDebugPreview)
+        pcall(refreshRuntimeStatus)
+    end)
+    -- Initial status
+    pcall(refreshRuntimeStatus)
+    -- Auto-refresh the debug preview while the panel is visible (every 0.5s)
+    local acc = 0
+    self:SetScript('OnUpdate', function(_, elapsed)
+        if not self:IsShown() then return end
+        if not HinterlandAffixHUDDB or not HinterlandAffixHUDDB.debugAutoRefresh then return end
+        acc = acc + (elapsed or 0)
+        local period = tonumber(HinterlandAffixHUDDB.debugAutoRefreshInterval or 0.5) or 0.5
+        if period < 0.2 then period = 0.2 end
+        if period > 5.0 then period = 5.0 end
+        if acc < period then return end
+        acc = 0
+        pcall(refreshDebugPreview)
+    end)
 end)
 InterfaceOptions_AddCategory(opt)
 
@@ -876,10 +1117,10 @@ do
         afkAccum = 0
         local inBG = InHinterlands()
         if not inBG then return end
-        -- approximate movement using map position if available
+        -- approximate movement using map position if available (use safe wrapper when present)
         local x,y = 0,0
-        if type(GetPlayerMapPosition) == 'function' then
-            local px, py = GetPlayerMapPosition("player")
+        if type(HLBG) == 'table' and type(HLBG.safeGetPlayerMapPosition) == 'function' then
+            local px, py = HLBG.safeGetPlayerMapPosition("player")
             if px and py then x,y = px,py end
         end
         local moved = (lastX == nil or math.abs((x - (lastX or 0))) > 0.001 or math.abs((y - (lastY or 0))) > 0.001)
@@ -897,49 +1138,135 @@ do
 end
 
 -- Slash to open HLBG window even if server AIO command isn't available
-safeRegisterSlash('HLBG', '/hlbg', function(msg)
+-- Provide a minimal OpenUI fallback if not defined by UI module
+if type(HLBG.OpenUI) ~= 'function' then
+    function HLBG.OpenUI()
+        if HLBG and HLBG.UI and HLBG.UI.Frame and type(HLBG.UI.Frame.Show) == 'function' then HLBG.UI.Frame:Show() end
+        local last = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.lastInnerTab) or 1
+        if type(_G.ShowTab) == 'function' then pcall(_G.ShowTab, last) end
+    end
+end
+
+-- Unified main slash handler (parses subcommands like 'devmode')
+function HLBG._MainSlashHandler(msg)
+    msg = tostring(msg or ""):gsub("^%s+","")
+    local sub = msg:match("^(%S+)")
+    -- season selector: /hlbg season <n|0>
+    if sub and sub:lower() == 'season' then
+        local arg = tonumber(msg:match('^%S+%s+(%S+)') or '')
+        if not arg then
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG: season is %s (0 = all/current). Usage: /hlbg season <n>', tostring(HinterlandAffixHUDDB.desiredSeason or 0))) end
+        else
+            HinterlandAffixHUDDB.desiredSeason = arg
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG: season set to %d', arg)) end
+        end
+        return
+    end
+    if sub and sub:lower() == "devmode" then
+        local arg = msg:match("^%S+%s+(%S+)")
+        if arg and arg:lower() == 'on' then
+            HLBG._devMode = true
+            HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+            HinterlandAffixHUDDB.devMode = true
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage('HLBG: devmode enabled') end
+        elseif arg and arg:lower() == 'off' then
+            HLBG._devMode = false
+            HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+            HinterlandAffixHUDDB.devMode = false
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage('HLBG: devmode disabled') end
+        else
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG: devmode is %s (use /hlbg devmode on|off)', HLBG._devMode and 'ON' or 'OFF')) end
+        end
+        return
+    end
+
+    -- queue subcommands: /hlbg queue join|leave
+    if sub and sub:lower() == 'queue' then
+        local act = (msg:match('^%S+%s+(%S+)') or ''):lower()
+        if act == 'join' or act == 'leave' then
+            if _G.AIO and _G.AIO.Handle then
+                _G.AIO.Handle('HLBG', 'Request', act == 'join' and 'QUEUE_JOIN' or 'QUEUE_LEAVE')
+                _G.AIO.Handle('HLBG', act == 'join' and 'QueueJoin' or 'QueueLeave')
+                _G.AIO.Handle('HLBG', 'QUEUE', act:upper())
+            end
+            local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+            if sendDot then
+                if act == 'join' then sendDot('.hlbg queue join'); sendDot('.hlbg join') else sendDot('.hlbg queue leave'); sendDot('.hlbg leave') end
+            end
+            if HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.Status then HLBG.UI.Queue.Status:SetText('Queue status: requested '..act..'…') end
+            return
+        end
+    end
+
     -- call helpers defensively: prefer HLBG.* then global fallback
     if type(HLBG.EnsurePvPTab) == 'function' then pcall(HLBG.EnsurePvPTab) elseif type(_G.EnsurePvPTab) == 'function' then pcall(_G.EnsurePvPTab) end
     if type(HLBG.EnsurePvPHeaderButton) == 'function' then pcall(HLBG.EnsurePvPHeaderButton) elseif type(_G.EnsurePvPHeaderButton) == 'function' then pcall(_G.EnsurePvPHeaderButton) end
     HLBG.OpenUI()
+    local hist = (HLBG and HLBG.UI and HLBG.UI.History) or nil
+    local p = (hist and hist.page) or 1
+    local per = (hist and hist.per) or 5
+    local sk = (hist and hist.sortKey) or "id"
+    local sd = (hist and hist.sortDir) or "DESC"
+    local sv = HLBG._getSeason()
     if _G.AIO and _G.AIO.Handle then
-        local hist = (HLBG and HLBG.UI and HLBG.UI.History) or nil
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", (hist and hist.page) or 1, (hist and hist.per) or 5, (hist and hist.sortKey) or "id", (hist and hist.sortDir) or "DESC")
+        -- Broad calls for compatibility
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sv, sk, sd)
+        _G.AIO.Handle("HLBG", "History", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "History", p, per, sv, sk, sd)
+        _G.AIO.Handle("HLBG", "HISTORY", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "HISTORY", p, per, sv, sk, sd)
         _G.AIO.Handle("HLBG", "Request", "STATS")
+        _G.AIO.Handle("HLBG", "Stats")
+        _G.AIO.Handle("HLBG", "STATS")
+        -- Some servers expose *UI variants
+        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sk, sd)
+        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sv, sk, sd)
+        _G.AIO.Handle("HLBG", "StatsUI")
+    else
+        -- chat-dot fallbacks so data loads even if AIO client is missing
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if sendDot then
+            sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd))
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", p, per, sv, sk, sd))
+            sendDot(string.format(".hlbg history %d %d %s %s", p, per, sk, sd))
+            sendDot(string.format(".hlbg history %d %d %d %s %s", p, per, sv, sk, sd))
+            sendDot(".hlbg statsui")
+            sendDot(".hlbg stats")
+        end
     end
 end
+
+-- Primary unique token to avoid collisions with other addons
+SlashCmdList = SlashCmdList or {}
+SLASH_HLBGHUD1 = "/hlbg"; _G.SLASH_HLBGHUD1 = SLASH_HLBGHUD1
+SLASH_HLBGHUD2 = "/hinterland"; _G.SLASH_HLBGHUD2 = SLASH_HLBGHUD2
+SLASH_HLBGHUD3 = "/hbg"; _G.SLASH_HLBGHUD3 = SLASH_HLBGHUD3
+SlashCmdList["HLBGHUD"] = HLBG._MainSlashHandler
+-- Backup aliases under a different key to avoid any table-key collisions
+SLASH_ZHLBG1 = "/hlbghud"; _G.SLASH_ZHLBG1 = SLASH_ZHLBG1
+SLASH_ZHLBG2 = "/zhlbg"; _G.SLASH_ZHLBG2 = SLASH_ZHLBG2
+SlashCmdList["ZHLBG"] = HLBG._MainSlashHandler
+
+-- Also try our safeRegisterSlash for redundancy (won't overwrite existing)
+pcall(function() if not SlashCmdList['HLBGHUD'] then safeRegisterSlash('HLBGHUD', '/hlbg', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['HINTERLAND'] then safeRegisterSlash('HINTERLAND', '/hinterland', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['HBG'] then safeRegisterSlash('HBG', '/hbg', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['ZHLBG'] then safeRegisterSlash('ZHLBG', '/hlbghud', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['ZZHLBG'] then safeRegisterSlash('ZZHLBG', '/zhlbg', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['HLBGHUD'] then safeRegisterSlash('HLBGHUD', '/hlbghud', HLBG._MainSlashHandler) end end)
+pcall(function() if not SlashCmdList['ZHLBG'] then safeRegisterSlash('ZHLBG', '/zhlbg', HLBG._MainSlashHandler) end end)
 
 -- Round-trip ping test
 function HLBG.PONG()
     DEFAULT_CHAT_FRAME:AddMessage("HLBG: PONG from server")
 end
-SLASH_HLBGPING1 = "/hlbgping"
 safeRegisterSlash('HLBGPING', '/hlbgping', function()
     if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "PING") else DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO client not available") end
 end)
-safeRegisterSlash('HLBGUI', '/hlbgui', function(msg) if SlashCmdList and SlashCmdList['HLBG'] then SlashCmdList['HLBG'](msg) end end)
+safeRegisterSlash('HLBGUI', '/hlbgui', function(msg) if SlashCmdList and SlashCmdList['HLBG'] then SlashCmdList['HLBG'](msg) else HLBG._MainSlashHandler(msg) end end)
 
--- /hlbg devmode on|off - persistent developer mode toggle
-safeRegisterSlash('HLBGDEVMODE', '/hlbg devmode', function(msg)
-    local arg = msg and msg:match('(%w+)') or nil
-    if not arg then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG: devmode is %s', HLBG._devMode and 'ON' or 'OFF'))
-        return
-    end
-    if arg:lower() == 'on' then
-        HLBG._devMode = true
-        HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-        HinterlandAffixHUDDB.devMode = true
-        DEFAULT_CHAT_FRAME:AddMessage('HLBG: devmode enabled')
-    elseif arg:lower() == 'off' then
-        HLBG._devMode = false
-        HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-        HinterlandAffixHUDDB.devMode = false
-        DEFAULT_CHAT_FRAME:AddMessage('HLBG: devmode disabled')
-    else
-        DEFAULT_CHAT_FRAME:AddMessage('HLBG: usage: /hlbg devmode on|off')
-    end
-end)
+-- Note: devmode is now parsed inside the main /hlbg handler (use: /hlbg devmode on|off)
 
 -- Register handlers once all functions exist; bind when AIO loads (or immediately if already loaded)
 do
@@ -980,6 +1307,16 @@ do
     -- preserve some helper functions and UI from the current HLBG table so we don't lose pointers
     local preservedSendLog = (type(HLBG) == "table" and type(HLBG.SendClientLog) == "function") and HLBG.SendClientLog or nil
     local preservedUI = (type(HLBG) == "table" and type(HLBG.UI) == "table") and HLBG.UI or nil
+    -- preserve safe helpers that UI and handlers rely on (these can be lost when HLBG table is swapped by AIO)
+    local preservedSafe = {}
+    if type(HLBG) == "table" then
+        for _, k in ipairs({
+            'safeExecSlash','safeRegisterSlash','safeSetJustify','safeIsInInstance',
+            'safeGetRealZoneText','safeGetNumWorldStateUI','safeGetWorldStateUIInfo','safeGetPlayerMapPosition'
+        }) do
+            if type(HLBG[k]) == 'function' then preservedSafe[k] = HLBG[k] end
+        end
+    end
     reg.OpenUI     = HLBG.OpenUI
         reg.History    = HLBG.History
         reg.Stats      = HLBG.Stats
@@ -1005,6 +1342,7 @@ do
     -- reattach preserved helpers to the new reg table if present
     if preservedSendLog then reg.SendClientLog = preservedSendLog end
     if preservedUI then reg.UI = preservedUI end
+    for k, fn in pairs(preservedSafe) do reg[k] = reg[k] or fn end
     _G.HLBG = reg; HLBG = reg
         DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers successfully registered (History/Stats/PONG/OpenUI)")
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -1056,33 +1394,10 @@ do
 end
 
 -- Debug: local fake data to validate rendering path without server
-SLASH_HLBGFAKE1 = "/hlbgfake"
-SlashCmdList["HLBGFAKE"] = function()
-    local fakeRows = {
-        { id = "101", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Alliance", affix = "3", reason = "Score", duration = 1200 },
-        { id = "100", ts = date("%Y-%m-%d %H:%M:%S"), winner = "Horde", affix = "5", reason = "Timer", duration = 900 },
-    }
-    HLBG.History(fakeRows, 1, 3, 11, "id", "DESC")
-    HLBG.UI.Frame:Show(); ShowTab(2)
-end
+-- (dev) /hlbgfake registered above via safeRegisterSlash
 
 -- Dump last LIVE payload saved to saved-variables for offline inspection
-SLASH_HLBGLIVEDUMP1 = "/hlbglivedump"
-SlashCmdList["HLBGLIVEDUMP"] = function()
-    local dump = HinterlandAffixHUD_LastLive
-    if not dump then
-        DEFAULT_CHAT_FRAME:AddMessage("HLBG: no saved LIVE payload")
-        return
-    end
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: LastLive ts=%s rows=%d", tostring(dump.ts or "?"), tonumber(dump.rows and #dump.rows or 0) or 0))
-    if dump.rows and type(dump.rows) == "table" then
-        for i,row in ipairs(dump.rows) do
-            local name = row.name or row[3] or row[1] or "?"
-            local score = row.score or row[5] or row[2] or 0
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("%d: %s = %s", i, tostring(name), tostring(score)))
-        end
-    end
-end
+-- (dev) /hlbglivedump registered above via safeRegisterSlash
 
 -- In-game JSON decoder test runner. Run with /hlbgjsontest to exercise the addon's json_decode implementation
 function HLBG.RunJsonDecodeTests()
@@ -1168,8 +1483,7 @@ function HLBG.RunJsonDecodeTests()
     DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON tests finished: %s passed (saved to HinterlandAffixHUD_JsonTestResults)', run.summary))
 end
 
-SLASH_HLBGJSONTEST1 = "/hlbgjsontest"
-SlashCmdList["HLBGJSONTEST"] = function() pcall(HLBG.RunJsonDecodeTests) end
+-- /hlbgjsontest registered above via safeRegisterSlash
 
 -- Print saved JSON test run(s) to chat. Usage: /hlbgjsontestrun [n]
 function HLBG.PrintJsonTestRun(n)
@@ -1199,8 +1513,7 @@ function HLBG.PrintJsonTestRun(n)
     end
 end
 
-SLASH_HLBGJSONTestrun1 = "/hlbgjsontestrun"
-SlashCmdList["HLBGJSONTestrun"] = function(msg) pcall(HLBG.PrintJsonTestRun, (msg and msg:match("%d+")) and tonumber(msg:match("%d+")) or 1) end
+-- /hlbgjsontestrun registered above via safeRegisterSlash
 
 -- Startup diagnostic: print a compact status line so it's easy to see what initialized
 do

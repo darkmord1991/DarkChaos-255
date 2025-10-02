@@ -32,7 +32,7 @@ local affixNames = {}
 local affixIcons = {}
 
 local function InHinterlands()
-  local z = GetRealZoneText() or ""
+  local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function') and HLBG.safeGetRealZoneText() or (GetRealZoneText and GetRealZoneText() or "")
   return z == "The Hinterlands"
 end
 
@@ -121,11 +121,16 @@ local function update()
     if AlwaysUpFrame then AlwaysUpFrame:Show() end
     return
   end
-  local count = GetNumWorldStateUI() or 0
+  local count = (type(HLBG) == 'table' and type(HLBG.safeGetNumWorldStateUI) == 'function') and HLBG.safeGetNumWorldStateUI() or (type(GetNumWorldStateUI) == 'function' and GetNumWorldStateUI() or 0)
   local label = ""
   local icon  = nil
   for i=1,count do
-    local txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+    local txt, val, a, b, c, id
+    if type(HLBG) == 'table' and type(HLBG.safeGetWorldStateUIInfo) == 'function' then
+      txt, val, a, b, c, id = HLBG.safeGetWorldStateUIInfo(i)
+    elseif type(GetWorldStateUIInfo) == 'function' then
+      txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+    end
     -- Prefer numeric ID when available
     if id == AFFIX_WS then
       local name = affixNames[val or 0] or ("Affix "..tostring(val or 0))
@@ -337,11 +342,16 @@ SlashCmdList["HLAFFIX"] = function(msg)
     end
     return
   elseif msg == "dump" then
-    local n = GetNumWorldStateUI() or 0
+    local n = (type(HLBG) == 'table' and type(HLBG.safeGetNumWorldStateUI) == 'function') and HLBG.safeGetNumWorldStateUI() or (GetNumWorldStateUI and GetNumWorldStateUI() or 0)
     print("HinterlandAffixHUD: worldstates:")
     print("count:", n)
     for i=1,n do
-      local txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+      local txt, val, a, b, c, id
+      if type(HLBG) == 'table' and type(HLBG.safeGetWorldStateUIInfo) == 'function' then
+        txt, val, a, b, c, id = HLBG.safeGetWorldStateUIInfo(i)
+      elseif GetWorldStateUIInfo then
+        txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+      end
       print(i, string.format("0x%X", id or 0), txt or "", val or 0)
     end
     return

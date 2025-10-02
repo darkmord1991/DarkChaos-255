@@ -8,7 +8,7 @@ HLBG.RES = HLBG.RES or RES
 
 -- Zone watcher: show/hide HUD when entering Hinterlands
 local function InHinterlands()
-    local z = GetRealZoneText() or ""
+    local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function') and HLBG.safeGetRealZoneText() or (GetRealZoneText and GetRealZoneText() or "")
     return z == "The Hinterlands"
 end
 
@@ -45,16 +45,21 @@ local function EnsurePvPTab()
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
         if type(ShowTab) == 'function' then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
         if _G.AIO and _G.AIO.Handle then
+            local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
+            _G.AIO.Handle("HLBG", "Request", "STATS", season)
         end
-        -- chat fallbacks
-        if type(SendChatMessage) == 'function' then
-            pcall(function()
-                SendChatMessage('.hlbg live players', 'SAY')
-                SendChatMessage('.hlbg historyui 1 5 id DESC', 'SAY')
-                SendChatMessage('.hlbg statsui', 'SAY')
-            end)
+        -- chat fallbacks (use raw dot to server)
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+        if type(sendDot) == 'function' then
+            sendDot('.hlbg live players')
+            sendDot('.hlbg historyui 1 5 id DESC')
+            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 5, season, 'id', 'DESC'))
+            sendDot('.hlbg statsui')
+            sendDot(string.format('.hlbg statsui %d', season))
         end
     end)
 end
@@ -70,15 +75,20 @@ local function EnsurePvPHeaderButton()
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
         if type(ShowTab) == 'function' then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
         if _G.AIO and _G.AIO.Handle then
+            local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
+            _G.AIO.Handle("HLBG", "Request", "STATS", season)
         end
-        if type(SendChatMessage) == 'function' then
-            pcall(function()
-                SendChatMessage('.hlbg live players', 'SAY')
-                SendChatMessage('.hlbg historyui 1 5 id DESC', 'SAY')
-                SendChatMessage('.hlbg statsui', 'SAY')
-            end)
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+        if type(sendDot) == 'function' then
+            sendDot('.hlbg live players')
+            sendDot('.hlbg historyui 1 5 id DESC')
+            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 5, season, 'id', 'DESC'))
+            sendDot('.hlbg statsui')
+            sendDot(string.format('.hlbg statsui %d', season))
         end
     end)
     _pvp:HookScript("OnHide", function()
@@ -93,6 +103,16 @@ pvpWatcher:RegisterEvent("ADDON_LOADED")
 pvpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 pvpWatcher:SetScript("OnEvent", function(_, ev, name)
     EnsurePvPTab(); EnsurePvPHeaderButton()
+    -- When the PvP UI is shown, try to prime data if AIO is missing
+    if type(HLBG) == 'table' and type(HLBG.safeExecSlash) == 'function' then
+        local hist = (HLBG and HLBG.UI and HLBG.UI.History) or nil
+        local p = (hist and hist.page) or 1
+        local per = (hist and hist.per) or 5
+        local sk = (hist and hist.sortKey) or 'id'
+        local sd = (hist and hist.sortDir) or 'DESC'
+        HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %s %s', p, per, sk, sd))
+        HLBG.safeExecSlash('.hlbg statsui')
+    end
 end)
 
 -- Also retry a few times after login in case of delayed creation
@@ -180,7 +200,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
-        local ok, decoded = pcall(function() return HLBG.json_decode and HLBG.json_decode(rj) or nil end)
+        local ok, decoded = pcall(function()
+            return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
+        end)
         if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
         return
     end
@@ -196,7 +218,55 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- Stats JSON fallback
     local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
-        local ok, decoded = pcall(function() return HLBG.json_decode and HLBG.json_decode(sj) or nil end)
+        local ok, decoded = pcall(function()
+            return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
+        end)
+        if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        return
+    end
+end)
+
+-- Some servers send HLBG payloads to regular chat (not addon channel). Listen broadly
+local chatFrame = CreateFrame('Frame')
+chatFrame:RegisterEvent('CHAT_MSG_SAY')
+chatFrame:RegisterEvent('CHAT_MSG_YELL')
+chatFrame:RegisterEvent('CHAT_MSG_GUILD')
+chatFrame:RegisterEvent('CHAT_MSG_PARTY')
+chatFrame:RegisterEvent('CHAT_MSG_PARTY_LEADER')
+chatFrame:RegisterEvent('CHAT_MSG_RAID')
+chatFrame:RegisterEvent('CHAT_MSG_RAID_LEADER')
+chatFrame:RegisterEvent('CHAT_MSG_SYSTEM')
+chatFrame:RegisterEvent('CHAT_MSG_WHISPER')
+chatFrame:SetScript('OnEvent', function(_, ev, msg)
+    if type(msg) ~= 'string' then return end
+    -- Warmup
+    local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
+    if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end return end
+    -- Queue
+    local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
+    if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end return end
+    -- Results JSON
+    local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
+    if rj then
+        local ok, decoded = pcall(function()
+            return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
+        end)
+        if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
+        return
+    end
+    -- History TSV
+    local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
+    if htsv then
+        htsv = htsv:gsub('%|%|', '\n')
+        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, 5, 0, 'id', 'DESC') end
+        return
+    end
+    -- Stats JSON
+    local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
+    if sj then
+        local ok, decoded = pcall(function()
+            return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
+        end)
         if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
         return
     end
