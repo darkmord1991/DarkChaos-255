@@ -239,6 +239,29 @@ chatFrame:RegisterEvent('CHAT_MSG_SYSTEM')
 chatFrame:RegisterEvent('CHAT_MSG_WHISPER')
 chatFrame:SetScript('OnEvent', function(_, ev, msg)
     if type(msg) ~= 'string' then return end
+    -- STATUS (chat fallback)
+    local b = msg:match('%[HLBG_STATUS%]%s*(.*)')
+    if b then
+        RES = RES or {}
+        local A = tonumber(b:match('%f[%w]A=(%d+)') or 0) or 0
+        local H = tonumber(b:match('%f[%w]H=(%d+)') or 0) or 0
+        local ENDTS = tonumber(b:match('%f[%w]END=(%d+)') or 0) or 0
+        local LOCK = tonumber(b:match('%f[%w]LOCK=(%d+)') or 0) or 0
+        local AFF = b:match('%f[%w]AFF=([^|]+)') or b:match('%f[%w]AFFIX=([^|]+)')
+        RES.A = A; RES.H = H; RES.END = ENDTS; RES.LOCK = LOCK
+        if AFF then HLBG._affixText = AFF end
+        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
+        -- Also mirror to Live tab as two rows if available
+        pcall(function()
+            if type(HLBG.UpdateLiveFromStatus) == 'function' then HLBG.UpdateLiveFromStatus() else
+                if type(HLBG.Live) == 'function' then
+                    local nowts = (type(date)=="function" and date("%Y-%m-%d %H:%M:%S")) or ""
+                    HLBG.Live({ { id = 'A', ts = nowts, name = 'Alliance', team = 'Alliance', score = A }, { id = 'H', ts = nowts, name = 'Horde', team = 'Horde', score = H } })
+                end
+            end
+        end)
+        return
+    end
     -- Warmup
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end return end
@@ -258,10 +281,29 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
         local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
-        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
-        htsv = htsv:gsub('%|%|', '\n')
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
-        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
+        -- Strip TOTAL prefix
+        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
+        -- If multi-row separator exists, convert to newlines for HistoryStr
+        if htsv:find('%|%|') then htsv = htsv:gsub('%|%|','\n') end
+        if htsv:find('\t') and type(HLBG.HistoryStr) == 'function' then
+            pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+        else
+            -- Tabs missing (some servers strip them in chat). Try flexible single-line parser per row.
+            local rows = {}
+            for line in htsv:gmatch('[^\n]+') do
+                if type(HLBG._parseHistLineFlexible) == 'function' then
+                    local row = HLBG._parseHistLineFlexible(line)
+                    if row then table.insert(rows, row) end
+                end
+            end
+            if #rows > 0 and type(HLBG.History) == 'function' then
+                pcall(HLBG.History, rows, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or #rows, total, 'id', 'DESC')
+            elseif type(HLBG.HistoryStr) == 'function' then
+                -- Fall back to whatever the UI parser can do
+                pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+            end
+        end
         return
     end
     -- Stats JSON

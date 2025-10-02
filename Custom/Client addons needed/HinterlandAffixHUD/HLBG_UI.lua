@@ -591,11 +591,18 @@ HLBG.UI.Live.Text = HLBG.UI.Live:CreateFontString(nil, "OVERLAY", "GameFontHighl
 HLBG.UI.Live.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Live.Text:SetText("Live status shows resources, timer and affix. Use the HUD on the world view.")
 HLBG.UI.Live:SetScript("OnShow", function()
-    if type(HLBG) == 'table' and type(HLBG.safeExecSlash) == 'function' then
-        HLBG.safeExecSlash(".hlbg live players")
-    elseif type(SendChatMessage) == 'function' then
-        -- last resort: send to /say so server-side chat handler can pick it up
-        pcall(SendChatMessage, ".hlbg live players", "SAY")
+    -- Always mirror current STATUS into the Live tab, even outside zone 47
+    pcall(function() if type(HLBG.UpdateLiveFromStatus) == 'function' then HLBG.UpdateLiveFromStatus() end end)
+    -- Also request a fresh STATUS from the server via AIO if available
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "STATUS")
+    else
+        -- As a last resort, ask server via chat to populate status
+        if type(HLBG) == 'table' and type(HLBG.safeExecSlash) == 'function' then
+            HLBG.safeExecSlash(".hlbgstatus")
+        elseif type(SendChatMessage) == 'function' then
+            pcall(SendChatMessage, ".hlbgstatus", "SAY")
+        end
     end
 end)
 
@@ -954,6 +961,56 @@ HLBG.UI.Results:SetScript("OnShow", function(self)
     if _G.AIO and _G.AIO.Handle then _G.AIO.Handle("HLBG", "Request", "RESULTS") end
     self:Update()
 end)
+
+-- Minimal Results handler: saves last results per character and renders a basic list
+if not HLBG.Results then
+function HLBG.Results(payload)
+    HLBG._ensureUI('Results')
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    HinterlandAffixHUDDB.results = HinterlandAffixHUDDB.results or {}
+    local name = UnitName and UnitName('player') or 'me'
+    local bucket = HinterlandAffixHUDDB.results
+    table.insert(bucket, 1, { ts = time(), data = payload })
+    while #bucket > 20 do table.remove(bucket) end
+    -- Very small renderer: show winner, affix, reason if provided
+    local rows = {}
+    if type(payload) == 'table' then
+        local w = payload.winner or payload.Winner or '-'
+        local a = payload.affix or payload.Affix or '-'
+        local r = payload.reason or payload.Reason or '-'
+        table.insert(rows, { id = '1', ts = date('%Y-%m-%d %H:%M:%S'), name = tostring(w), team = tostring(HLBG.GetAffixName and HLBG.GetAffixName(a) or a), score = tostring(r) })
+    end
+    -- draw using Live-style rows for simplicity
+    if HLBG.UI and HLBG.UI.Results then
+        for i=1, #rows do
+            local r = HLBG.UI.Results.rows[i]
+            if not r then
+                r = CreateFrame('Frame', nil, HLBG.UI.Results.Content)
+                r:SetSize(440, 28)
+                r.name = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+                r.score = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+                r.team = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+                r.ts = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+                r.name:SetPoint('LEFT', r, 'LEFT', 2, 0)
+                r.name:SetWidth(220)
+                r.score:SetPoint('LEFT', r.name, 'RIGHT', 6, 0); r.score:SetWidth(60)
+                r.team:SetPoint('LEFT', r.score, 'RIGHT', 6, 0); r.team:SetWidth(80)
+                r.ts:SetPoint('LEFT', r.team, 'RIGHT', 6, 0); r.ts:SetWidth(80)
+                HLBG.UI.Results.rows[i] = r
+            end
+            r:ClearAllPoints(); r:SetPoint('TOPLEFT', HLBG.UI.Results.Content, 'TOPLEFT', 0, -16 - (i-1)*28)
+            r.name:SetText(rows[i].name)
+            r.score:SetText(rows[i].score)
+            r.team:SetText(rows[i].team)
+            r.ts:SetText(rows[i].ts)
+            r:Show()
+        end
+        HLBG.UI.Results.Content:SetHeight(32 + #rows * 28)
+        if HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end
+        ShowTab(6)
+    end
+end
+end
 
 -- Initialize with live tab shown
 ShowTab(1)

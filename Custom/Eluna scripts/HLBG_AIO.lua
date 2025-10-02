@@ -75,6 +75,35 @@ local function safeQuery(dbfunc, sql)
     return res
 end
 
+-- Coerce Eluna DB api return values (which can be userdata for UInt64) into Lua numbers
+local function asNumber(v)
+    if type(v) == "userdata" then
+        local s = tostring(v)
+        local n = tonumber(s)
+        if n then return n end
+        return 0
+    end
+    return tonumber(v) or 0
+end
+
+-- Small cache for information_schema lookups so we don't spam queries
+local __hlbg_col_cache = {}
+local function hasColumn(tableName, columnName)
+    if not tableName or not columnName then return false end
+    local key = tostring(tableName).."|"..tostring(columnName)
+    if __hlbg_col_cache[key] ~= nil then return __hlbg_col_cache[key] end
+    local q = string.format("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='%s' AND COLUMN_NAME='%s'", tostring(tableName):gsub("'","''"), tostring(columnName):gsub("'","''"))
+    local r = safeQuery(CharDBQuery, q)
+    local ok = false
+    if r then
+        local raw = (r.GetUInt64 and r:GetUInt64(0)) or (r.GetUInt32 and r:GetUInt32(0)) or 0
+        local n = asNumber(raw)
+        ok = (n > 0)
+    end
+    __hlbg_col_cache[key] = ok
+    return ok
+end
+
 local function sanitizeSort(key)
     key = tostring(key or "")
     local map = {
@@ -85,6 +114,7 @@ local function sanitizeSort(key)
         affix = "affix",
         weather = "affix", -- no weather column; map to affix for stability
         duration = "duration_seconds",
+        season = "season",
     }
     return map[key] or "id"
 end
@@ -121,61 +151,150 @@ local function buildOrderClause(sortKeys, sortDirs)
     return table.concat(parts, ", ")
 end
 
-local function FetchHistoryPage(page, perPage, sortKey, sortDir)
+-- Build WHERE clause parts for HISTORY filters
+-- Resolve affix name to id using CharDB table hlbg_affixes, preferring a specific season when provided
+local function resolveAffixToken(token, seasonId)
+    if not token or token == '' then return nil end
+    if tonumber(token) then return math.floor(tonumber(token)) end
+    local name = tostring(token)
+    local sql
+    if seasonId and hasColumn('hlbg_affixes','season_id') then
+        sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' AND season_id = %d LIMIT 1", name:gsub("'","''"), tonumber(seasonId) or 0)
+    else
+        if hasColumn('hlbg_affixes','season_id') then
+            sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' ORDER BY season_id IS NULL ASC LIMIT 1", name:gsub("'","''"))
+        else
+            sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' LIMIT 1", name:gsub("'","''"))
+        end
+    end
+    local res = safeQuery(CharDBQuery, sql)
+    if res then
+        local id = res:GetUInt32(0)
+        if id and id > 0 then return id end
+    end
+    return nil
+end
+
+local function buildHistoryWhereClause(winnerFilter, affixFilter, seasonId)
+    local where = {}
+    -- winnerFilter can be a comma-separated list of 'Alliance','Horde','DRAW' or 0/1/2
+    if winnerFilter and tostring(winnerFilter) ~= "" and tostring(winnerFilter):lower() ~= "all" then
+        local tids = {}
+        for _,w in ipairs(splitCSV(winnerFilter)) do
+            w = tostring(w):lower()
+            if w == "alliance" or w == "a" or w == "0" then table.insert(tids, 0)
+            elseif w == "horde" or w == "h" or w == "1" then table.insert(tids, 1)
+            elseif w == "draw" or w == "d" or w == "2" then table.insert(tids, 2) end
+        end
+        if #tids > 0 then
+            local parts = {}
+            for i=1,#tids do parts[i] = tostring(math.floor(tonumber(tids[i]) or 0)) end
+            table.insert(where, string.format("winner_tid IN (%s)", table.concat(parts, ",")))
+        end
+    end
+    -- affixFilter can be CSV of numbers or names; support server-side name resolution via hlbg_affixes
+    if affixFilter and tostring(affixFilter) ~= "" and tostring(affixFilter):lower() ~= "all" then
+        local ids = {}
+        for _,a in ipairs(splitCSV(affixFilter)) do
+            local n = tonumber(a)
+            if n then
+                table.insert(ids, tostring(math.floor(n)))
+            else
+                local rid = resolveAffixToken(a, seasonId)
+                if rid then table.insert(ids, tostring(rid)) end
+            end
+        end
+        if #ids > 0 then
+            table.insert(where, string.format("affix IN (%s)", table.concat(ids, ",")))
+        end
+    end
+    -- Optional: if a seasonId > 0 was provided, filter by season column in history (only if column exists)
+    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('hlbg_winner_history','season') then
+        table.insert(where, string.format("(season = %d)", tonumber(seasonId)))
+    end
+    if #where > 0 then return " WHERE " .. table.concat(where, " AND ") else return "" end
+end
+
+local function FetchHistoryPage(page, perPage, sortKey, sortDir, winnerFilter, affixFilter, seasonId)
     page = tonumber(page) or 1
     perPage = tonumber(perPage) or 25
     if page < 1 then page = 1 end
     local offset = (page - 1) * perPage
     local orderBy = buildOrderClause(sortKey, sortDir)
-    local sql = string.format("SELECT id, occurred_at, winner_tid, win_reason, affix, duration_seconds, score_alliance, score_horde FROM hlbg_winner_history ORDER BY %s LIMIT %d OFFSET %d", orderBy, perPage, offset)
+    -- Build WHERE using optional filters (winner/affix/season)
+    local where = buildHistoryWhereClause(winnerFilter, affixFilter, seasonId)
+    -- Include season column if available
+    local haveSeason = hasColumn('hlbg_winner_history','season')
+    local seasonSel = haveSeason and ", season" or ""
+    local sql = string.format("SELECT id, occurred_at, winner_tid, win_reason, affix%s FROM hlbg_winner_history%s ORDER BY %s LIMIT %d OFFSET %d", seasonSel, where, orderBy, perPage, offset)
     local res = safeQuery(CharDBQuery, sql)
     local rows = {}
     if res then
-        repeat
+        while res:NextRow() do
             local id = res:GetUInt64(0)
             local ts = res:GetString(1)
             local tid = res:GetUInt32(2)
             local reason = res:IsNull(3) and nil or res:GetString(3)
             local affix = res:GetUInt32(4)
-            local duration = res:GetUInt32(5)
-            local sa = res:GetUInt32(6)
-            local sh = res:GetUInt32(7)
             local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
             -- Return named-field rows to avoid transport shape ambiguity on clients
             -- { id = <string>, ts = <string>, winner = <string>, affix = <string>, reason = <string> }
-            table.insert(rows, { id = tostring(id), ts = ts, winner = winner, affix = tostring(affix), reason = reason or "-" })
-        until not res:NextRow()
+            local row = { id = tostring(id), ts = ts, winner = winner, affix = tostring(affix), reason = reason or "-" }
+            if haveSeason then
+                -- season column index 5 when selected
+                local sv = res:GetUInt32(5) or 0
+                row.season = sv
+            end
+            table.insert(rows, row)
+        end
     end
     local total = 0
-    local cnt = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history")
-    if cnt then total = cnt:GetUInt64(0) or cnt:GetUInt32(0) or 0 end
+    local cnt = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history" .. where)
+    if cnt then total = asNumber((cnt.GetUInt64 and cnt:GetUInt64(0)) or (cnt.GetUInt32 and cnt:GetUInt32(0)) or 0) end
     -- Return the primary col/dir (first pair), for client display
     local firstCol = sanitizeSort(splitCSV(sortKey)[1] or "id")
     local firstDir = sanitizeDir(splitCSV(sortDir)[1] or "DESC")
     return rows, total, firstCol, firstDir
 end
 
-local function FetchStats()
+local function FetchStats(seasonId)
     local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, byWeather = {}, affixDur = {}, weatherDur = {} }
+    local whereParts = {}
+    -- Treat seasonId=0 as "current/all" (no filter). Only filter when > 0 and column exists.
+    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('hlbg_winner_history','season') then
+        table.insert(whereParts, string.format("season = %d", tonumber(seasonId)))
+    end
+    local where = (#whereParts>0) and (" WHERE "..table.concat(whereParts, " AND ")) or ""
+    -- total
+    do
+        local t = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history"..where)
+    if t then stats.total = asNumber((t.GetUInt64 and t:GetUInt64(0)) or (t.GetUInt32 and t:GetUInt32(0)) or 0) end
+    end
     -- winner_tid: 0 Alliance, 1 Horde, 2 Neutral/Draw
-    local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM hlbg_winner_history GROUP BY winner_tid")
+    local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY winner_tid")
     if res then
-        repeat
+        while res:NextRow() do
             local tid = res:GetUInt32(0)
             local c = res:GetUInt32(1)
             if tid == 0 then stats.counts["Alliance"] = c
             elseif tid == 1 then stats.counts["Horde"] = c
             else stats.draws = c end
-        until not res:NextRow()
+        end
     end
-    local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration_seconds) FROM hlbg_winner_history WHERE duration_seconds IS NOT NULL")
-    if res2 then
-        stats.avgDuration = res2:IsNull(0) and 0 or res2:GetFloat(0)
+    if hasColumn('hlbg_winner_history','duration_seconds') then
+        -- Include the base WHERE clause (if any) before appending additional predicates
+        local sep = (where ~= "" and " AND ") or " WHERE "
+        local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration_seconds) FROM hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL")
+        if res2 then
+            stats.avgDuration = res2:IsNull(0) and 0 or res2:GetFloat(0)
+        end
+    else
+        stats.avgDuration = 0
     end
-    -- By affix splits
-    local res3 = safeQuery(CharDBQuery, "SELECT affix, winner_tid, COUNT(*) FROM hlbg_winner_history GROUP BY affix, winner_tid")
+    -- Minimal by-affix split (optional)
+    local res3 = safeQuery(CharDBQuery, "SELECT affix, winner_tid, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix, winner_tid")
     if res3 then
-        repeat
+        while res3:NextRow() do
             local aff = tostring(res3:GetUInt32(0))
             local tid = res3:GetUInt32(1)
             local c = res3:GetUInt32(2)
@@ -183,31 +302,282 @@ local function FetchStats()
             if tid == 0 then stats.byAffix[aff].Alliance = c
             elseif tid == 1 then stats.byAffix[aff].Horde = c
             else stats.byAffix[aff].DRAW = c end
-        until not res3:NextRow()
+        end
     end
     -- No weather column in schema; leave byWeather empty
     -- Duration aggregates per affix
-    local res5 = safeQuery(CharDBQuery, "SELECT affix, COUNT(*), SUM(duration_seconds), AVG(duration_seconds) FROM hlbg_winner_history WHERE duration_seconds IS NOT NULL GROUP BY affix")
-    if res5 then
-        repeat
-            local aff = tostring(res5:GetUInt32(0))
-            local c = res5:GetUInt32(1)
-            local s = res5:IsNull(2) and 0 or res5:GetUInt64(2)
-            local a = res5:IsNull(3) and 0 or res5:GetFloat(3)
-            stats.affixDur[aff] = { count = c, sum = s, avg = a }
-        until not res5:NextRow()
+    if hasColumn('hlbg_winner_history','duration_seconds') then
+        -- Include the base WHERE clause (if any) before appending additional predicates
+        local sep = (where ~= "" and " AND ") or " WHERE "
+        local res5 = safeQuery(CharDBQuery, "SELECT affix, COUNT(*), SUM(duration_seconds), AVG(duration_seconds) FROM hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL GROUP BY affix")
+        if res5 then
+            while res5:NextRow() do
+                local aff = tostring(res5:GetUInt32(0))
+                local c = res5:GetUInt32(1)
+                local s = res5:IsNull(2) and 0 or asNumber(res5:GetUInt64(2))
+                local a = res5:IsNull(3) and 0 or tonumber(res5:GetFloat(3)) or 0
+                stats.affixDur[aff] = { count = c, sum = s, avg = a }
+            end
+        end
     end
     -- No weather duration aggregates (column absent)
     return stats
 end
 
-function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
+-- Lightweight match state and queue management
+local HLBG_State = HLBG_State or {
+    phase = "idle",     -- idle | warmup | active | ended
+    affix = 0,
+    startTs = 0,         -- os.time() when started (warmup or active)
+    endTs = 0,           -- os.time() when current phase ends
+    duration = 0,        -- seconds for the current phase (for convenience)
+    scoreA = 0,
+    scoreH = 0,
+    locked = false,
+}
+
+local HLBG_Queue = HLBG_Queue or { Alliance = {}, Horde = {} }
+
+HLBG_Config.queue = HLBG_Config.queue or {
+    teleport_on_reset = false,
+    map = 0, -- Eastern Kingdoms
+    Alliance = { x = -45.0, y = -45.0, z = 0.5, o = 0.0 }, -- sample placeholders, change to safe coords
+    Horde = { x = -35.0, y = -35.0, z = 0.5, o = 0.0 },
+}
+
+local function teamNameFromId(tid)
+    if tid == 0 then return "Alliance" elseif tid == 1 then return "Horde" else return "Neutral" end
+end
+
+local function playerTeamName(player)
+    local t = 2
+    pcall(function() t = player:GetTeam() end)
+    return teamNameFromId(t)
+end
+
+local function inQueue(tbl, guid)
+    for i=1,#tbl do if tbl[i] == guid then return i end end
+    return nil
+end
+
+local function joinQueue(player)
+    if not player or not player.GetGUIDLow then return end
+    local guid = player:GetGUIDLow()
+    local team = playerTeamName(player)
+    local q = HLBG_Queue[team]
+    if not q then HLBG_Queue[team] = {}; q = HLBG_Queue[team] end
+    local pos = inQueue(q, guid)
+    if not pos then table.insert(q, guid); pos = #q end
+    return team, pos, #q
+end
+
+local function leaveQueue(player)
+    if not player or not player.GetGUIDLow then return end
+    local guid = player:GetGUIDLow()
+    local team = playerTeamName(player)
+    local q = HLBG_Queue[team]
+    if q then
+        local idx = inQueue(q, guid)
+        if idx then table.remove(q, idx) end
+    end
+    return team, (q and #q or 0)
+end
+
+local function queuePosition(player)
+    if not player or not player.GetGUIDLow then return nil, nil, nil end
+    local guid = player:GetGUIDLow()
+    local team = playerTeamName(player)
+    local q = HLBG_Queue[team]
+    local pos = q and inQueue(q, guid) or nil
+    return team, pos, (q and #q or 0)
+end
+
+local function secondsRemaining()
+    local now = os.time()
+    local rem = (HLBG_State.endTs or 0) - now
+    if rem < 0 then rem = 0 end
+    return rem
+end
+
+local function BuildStatusPayload()
+    return {
+        A = HLBG_State.scoreA or 0,
+        H = HLBG_State.scoreH or 0,
+        END = HLBG_State.endTs or 0,
+        LOCK = HLBG_State.locked and 1 or 0,
+        AFF = HLBG_State.affix or 0,
+        DURATION = HLBG_State.duration or 0,
+        PHASE = HLBG_State.phase or "idle",
+    }
+end
+
+local function BroadcastStatus(toPlayer)
+    local payload = BuildStatusPayload()
+    if okAIO and AIO and AIO.Handle then
+        if toPlayer then
+            AIO.Handle(toPlayer, "HLBG", "Status", payload)
+        else
+            for _,pl in ipairs(GetPlayersInWorld() or {}) do pcall(function() AIO.Handle(pl, "HLBG", "Status", payload) end) end
+        end
+    end
+    -- Chat fallback
+    local msg = string.format("[HLBG_STATUS] A=%d|H=%d|END=%d|LOCK=%d|AFF=%d|DURATION=%d|PHASE=%s",
+        payload.A, payload.H, payload.END, payload.LOCK, payload.AFF, payload.DURATION, tostring(payload.PHASE))
+    if toPlayer and toPlayer.SendBroadcastMessage then
+        toPlayer:SendBroadcastMessage(msg)
+    else
+        for _,pl in ipairs(GetPlayersInWorld() or {}) do pcall(function() pl:SendBroadcastMessage(msg) end) end
+    end
+end
+
+local function BroadcastWarmup(seconds)
+    local sec = tonumber(seconds) or 0
+    local msg = string.format("[HLBG_WARMUP] seconds=%d|affix=%d", sec, HLBG_State.affix or 0)
+    for _,pl in ipairs(GetPlayersInWorld() or {}) do pcall(function() pl:SendBroadcastMessage(msg) end) end
+end
+
+local function SendQueueMessage(player, action, data)
+    local parts = { "[HLBG_QUEUE] action="..tostring(action) }
+    if data then
+        for k,v in pairs(data) do table.insert(parts, tostring(k).."="..tostring(v)) end
+    end
+    local line = table.concat(parts, "|")
+    if player and player.SendBroadcastMessage then player:SendBroadcastMessage(line) end
+end
+
+local function StartWarmup(seconds, affix)
+    HLBG_State.phase = "warmup"
+    HLBG_State.affix = tonumber(affix) or (HLBG_State.affix or 0)
+    HLBG_State.duration = tonumber(seconds) or 120
+    HLBG_State.startTs = os.time()
+    HLBG_State.endTs = HLBG_State.startTs + HLBG_State.duration
+    HLBG_State.locked = true
+    BroadcastWarmup(HLBG_State.duration)
+    BroadcastStatus()
+    -- Optionally port queued players at warmup start
+    if HLBG_Config.queue and HLBG_Config.queue.teleport_on_reset then
+        for team,q in pairs(HLBG_Queue) do
+            for i=1,#q do
+                local guid = q[i]
+                for _,pl in ipairs(GetPlayersInWorld() or {}) do
+                    if pl:GetGUIDLow() == guid then
+                        local pos = HLBG_Config.queue[team]
+                        if pos then
+                            pcall(function() pl:Teleport(HLBG_Config.queue.map or 0, pos.x, pos.y, pos.z, pos.o) end)
+                            SendQueueMessage(pl, "teleported", { team = team, phase = "warmup" })
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function StartMatch(seconds, affix)
+    HLBG_State.phase = "active"
+    HLBG_State.affix = tonumber(affix) or (HLBG_State.affix or 0)
+    HLBG_State.duration = tonumber(seconds) or 900
+    HLBG_State.startTs = os.time()
+    HLBG_State.endTs = HLBG_State.startTs + HLBG_State.duration
+    HLBG_State.locked = true
+    BroadcastStatus()
+    -- Optionally port queued players at match start (if not already teleported)
+    if HLBG_Config.queue and HLBG_Config.queue.teleport_on_reset then
+        for team,q in pairs(HLBG_Queue) do
+            for i=1,#q do
+                local guid = q[i]
+                for _,pl in ipairs(GetPlayersInWorld() or {}) do
+                    if pl:GetGUIDLow() == guid then
+                        local pos = HLBG_Config.queue[team]
+                        if pos then
+                            pcall(function() pl:Teleport(HLBG_Config.queue.map or 0, pos.x, pos.y, pos.z, pos.o) end)
+                            SendQueueMessage(pl, "teleported", { team = team, phase = "start" })
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function EndMatch()
+    HLBG_State.phase = "ended"
+    HLBG_State.duration = 0
+    HLBG_State.endTs = os.time()
+    HLBG_State.locked = false
+    BroadcastStatus()
+end
+
+local function ResetMatch()
+    HLBG_State.phase = "idle"
+    HLBG_State.duration = 0
+    HLBG_State.startTs = 0
+    HLBG_State.endTs = 0
+    HLBG_State.locked = false
+    BroadcastStatus()
+    -- Optional teleport queued players to faction spawns
+    if HLBG_Config.queue and HLBG_Config.queue.teleport_on_reset then
+        for team,q in pairs(HLBG_Queue) do
+            for i=1,#q do
+                local guid = q[i]
+                for _,pl in ipairs(GetPlayersInWorld() or {}) do
+                    if pl:GetGUIDLow() == guid then
+                        local pos = HLBG_Config.queue[team]
+                        if pos then
+                            pcall(function() pl:Teleport(HLBG_Config.queue.map or 0, pos.x, pos.y, pos.z, pos.o) end)
+                            SendQueueMessage(pl, "teleported", { team = team })
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Clear queues after reset
+    HLBG_Queue = { Alliance = {}, Horde = {} }
+end
+
+-- Background timer to auto-transition when timers elapse
+if not __hlbg_tick_event then
+    __hlbg_tick_event = CreateLuaEvent(function(e)
+        if HLBG_State.phase == "warmup" or HLBG_State.phase == "active" then
+            if secondsRemaining() <= 0 then
+                if HLBG_State.phase == "warmup" then
+                    -- auto-start match after warmup
+                    StartMatch(900, HLBG_State.affix)
+                else
+                    -- active ended
+                    EndMatch()
+                    ResetMatch()
+                end
+            end
+        end
+    end, 1000, 0)
+    print("[HLBG_AIO] Tick event registered for state transitions")
+end
+
+function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
     if what == "HISTORY" then
         local page = tonumber(arg1) or 1
         local per = tonumber(arg2) or 25
-        local sortKey = arg3 or "id"
-        local sortDir = arg4 or "DESC"
-        local rows, total, col, dir = FetchHistoryPage(page, per, sortKey, sortDir)
+        -- Accept both shapes:
+        --  New:  page, per, sortKey, sortDir, winnerFilter, affixFilter, seasonId
+        --  Legacy: page, per, seasonId, sortKey, sortDir
+        local sortKey, sortDir, winnerFilter, affixFilter, seasonId
+        if arg3 and tonumber(arg3) and (not tonumber(arg4)) and (arg5 or arg6 or arg7) then
+            -- Likely legacy with season in arg3
+            seasonId = tonumber(arg3)
+            sortKey = arg4 or "id"
+            sortDir = arg5 or "DESC"
+            winnerFilter = arg6
+            affixFilter = arg7
+        else
+            sortKey = arg3 or "id"
+            sortDir = arg4 or "DESC"
+            winnerFilter = arg5
+            affixFilter = arg6
+            seasonId = tonumber(arg7)
+        end
+    local rows, total, col, dir = FetchHistoryPage(page, per, sortKey, sortDir, winnerFilter, affixFilter, seasonId)
         print(string.format("[HLBG_AIO] HISTORY page=%d per=%d -> rows=%d total=%s sort=%s %s", page, per, (rows and #rows or 0), tostring(total), tostring(col), tostring(dir)))
         if okAIO and AIO and AIO.Handle then
             -- Send as table (preferred)
@@ -235,12 +605,109 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
             AIO.Handle(player, "HLBG", "DBG", string.format("HISTORY_N=%d TOTAL=%s", rows and #rows or 0, tostring(total)))
         end
     elseif what == "STATS" then
-        local stats = FetchStats()
+        local season = tonumber(arg1)
+        local stats = FetchStats(season)
         if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "Stats", stats)
             -- Debug ping to confirm client receive path
             AIO.Handle(player, "HLBG", "PONG")
             AIO.Handle(player, "HLBG", "DBG", "STATS_OK")
+        end
+    elseif what == "RESULTS" then
+        -- Return the last recorded match (optionally for a given season)
+        local season = tonumber(arg1)
+        local haveSeason = hasColumn('hlbg_winner_history','season')
+        local where = ""
+        if season and haveSeason then where = string.format(" WHERE season = %d", season) end
+        local sql = "SELECT id, occurred_at, winner_tid, win_reason, affix" .. (haveSeason and ", season" or "") ..
+                    " FROM hlbg_winner_history" .. where .. " ORDER BY occurred_at DESC LIMIT 1"
+        local res = safeQuery(CharDBQuery, sql)
+        local payload = {}
+        if res and res:NextRow() then
+            local id = res:GetUInt64(0)
+            local ts = res:GetString(1)
+            local tid = res:GetUInt32(2)
+            local reason = res:IsNull(3) and nil or res:GetString(3)
+            local affix = res:GetUInt32(4)
+            local winner = (tid == 0 and "Alliance") or (tid == 1 and "Horde") or "DRAW"
+            payload = { id = tostring(id), ts = ts, winner = winner, affix = tostring(affix), reason = reason or "-" }
+            if haveSeason then payload.season = res:GetUInt32(5) end
+        end
+        if okAIO and AIO and AIO.Handle then
+            AIO.Handle(player, "HLBG", "Results", payload)
+        end
+    elseif what == "AFFIXES" then
+        local seasonId = tonumber(arg1)
+        local search = tostring(arg2 or "")
+        -- Preflight column availability via information_schema to avoid MySQL aborts when columns are missing
+        local hasEffect, hasSeason = false, false
+        do
+            local qEff = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hlbg_affixes' AND COLUMN_NAME='effect'"
+            local rEff = safeQuery(CharDBQuery, qEff)
+            if rEff then local n = asNumber((rEff.GetUInt64 and rEff:GetUInt64(0)) or (rEff.GetUInt32 and rEff:GetUInt32(0)) or 0); hasEffect = (n > 0) end
+            local qSea = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hlbg_affixes' AND COLUMN_NAME='season_id'"
+            local rSea = safeQuery(CharDBQuery, qSea)
+            if rSea then local n2 = asNumber((rSea.GetUInt64 and rSea:GetUInt64(0)) or (rSea.GetUInt32 and rSea:GetUInt32(0)) or 0); hasSeason = (n2 > 0) end
+        end
+        -- Build WHERE with guards for optional columns
+        local whereParts = {}
+        if seasonId and hasSeason then table.insert(whereParts, string.format("(season_id = %d OR season_id IS NULL)", seasonId)) end
+        if search ~= "" then
+            local s = search:gsub("'", "''")
+            local nameLike = string.format("(name LIKE '%%%s%%')", s)
+            if hasEffect then
+                table.insert(whereParts, "(" .. nameLike .. string.format(" OR (effect LIKE '%%%s%%')", s) .. ")")
+            else
+                table.insert(whereParts, nameLike)
+            end
+        end
+        local where = (#whereParts > 0) and (" WHERE "..table.concat(whereParts, " AND ")) or ""
+        local selEffect = hasEffect and "effect" or "''"
+        local selSeason = hasSeason and "COALESCE(season_id,0)" or "0"
+        local sql = string.format("SELECT id, name, %s, %s FROM hlbg_affixes%s ORDER BY name ASC", selEffect, selSeason, where)
+        local res = safeQuery(CharDBQuery, sql)
+        local rows = {}
+        if res then
+            repeat
+                local id = res:GetUInt32(0)
+                local name = res:GetString(1)
+                local effect = hasEffect and res:GetString(2) or ""
+                local sid = hasSeason and res:GetUInt32(3) or 0
+                table.insert(rows, { id = id, name = name, effect = effect, season_id = sid })
+            until not res:NextRow()
+        end
+        if okAIO and AIO and AIO.Handle then
+            AIO.Handle(player, "HLBG", "Affixes", rows)
+        end
+    elseif what == "STATUS" then
+        BroadcastStatus(player)
+    elseif what == "QUEUE" then
+        local action = tostring(arg1 or "status"):lower()
+        if action == "join" then
+            local team, pos, size = joinQueue(player)
+            local eta = secondsRemaining()
+            if okAIO and AIO and AIO.Handle then
+                local aCount = HLBG_Queue.Alliance and #HLBG_Queue.Alliance or 0
+                local hCount = HLBG_Queue.Horde and #HLBG_Queue.Horde or 0
+                AIO.Handle(player, "HLBG", "QueueStatus", { team = team, pos = pos, size = size, eta = eta, countA = aCount, countH = hCount })
+            end
+            SendQueueMessage(player, "joined", { team = team, pos = pos, size = size, eta = eta })
+        elseif action == "leave" then
+            local team, size = leaveQueue(player)
+            if okAIO and AIO and AIO.Handle then
+                local aCount = HLBG_Queue.Alliance and #HLBG_Queue.Alliance or 0
+                local hCount = HLBG_Queue.Horde and #HLBG_Queue.Horde or 0
+                AIO.Handle(player, "HLBG", "QueueStatus", { team = team, pos = 0, size = size, eta = secondsRemaining(), countA = aCount, countH = hCount })
+            end
+            SendQueueMessage(player, "left", { team = team, size = size })
+        else
+            local team, pos, size = queuePosition(player)
+            if okAIO and AIO and AIO.Handle then
+                local aCount = HLBG_Queue.Alliance and #HLBG_Queue.Alliance or 0
+                local hCount = HLBG_Queue.Horde and #HLBG_Queue.Horde or 0
+                AIO.Handle(player, "HLBG", "QueueStatus", { team = team, pos = pos or 0, size = size or 0, eta = secondsRemaining(), countA = aCount, countH = hCount })
+            end
+            SendQueueMessage(player, "status", { team = team or "?", pos = pos or 0, size = size or 0, eta = secondsRemaining() })
         end
     elseif what == "PING" then
         if okAIO and AIO and AIO.Handle then
@@ -345,6 +812,38 @@ end
 RegisterPlayerEvent(42, OnCommand)
 print("[HLBG_AIO] OnCommand hook registered (.hlbgui)")
 
+-- Also support /hlbg from client by mapping to same behavior
+local function OnSlashHLBG(event, player, command)
+    if command == "hlbg" or command == ".hlbg" then
+        print("[HLBG_AIO] OnCommand received: "..tostring(command))
+        if okAIO and AIO and AIO.Handle then
+            AIO.Handle(player, "HLBG", "OpenUI")
+            -- Prime initial data so tabs aren't empty
+            AIO.Handle(player, "HLBG", "PONG")
+            -- Status first, then stats/history minimal
+            AIO.Handle(player, "HLBG", "Status", BuildStatusPayload())
+            local rows, total = FetchHistoryPage(1, 10, "id", "DESC")
+            AIO.Handle(player, "HLBG", "History", rows, 1, 10, total, "id", "DESC")
+            AIO.Handle(player, "HLBG", "Stats", FetchStats())
+        else
+            player:SendBroadcastMessage("HLBG: UI requested. If AIO is unavailable, use PvP pane HLBG tab.")
+        end
+        return false
+    end
+end
+RegisterPlayerEvent(42, OnSlashHLBG)
+
+-- Bridge AIO calls used by clients (HistoryUI/StatsUI) to our unified request handler
+if Handlers then
+    function Handlers.HistoryUI(player, p, per, a3, a4, a5, a6, a7)
+        -- Delegate to unified HISTORY path which already normalizes legacy/new shapes
+        Handlers.Request(player, "HISTORY", p, per, a3, a4, a5, a6, a7)
+    end
+    function Handlers.StatsUI(player, season)
+        Handlers.Request(player, "STATS", season)
+    end
+end
+
 -- GM helper: broadcast a TSV dump of the current first page so clients can receive a visible sample
 local function DumpHistoryToPlayer(player, page, per, sortKey, sortDir)
     page = tonumber(page) or 1; per = tonumber(per) or 5
@@ -401,6 +900,64 @@ local function OnCommandExtended(event, player, command)
             print("[HLBG_AIO] Sent test HISTORY array to player")
         else
             player:SendBroadcastMessage("HLBG: test payload prepared but AIO unavailable")
+        end
+        return false
+    end
+    -- Fallback: history/historyui via chat command -> broadcast TSV with TOTAL prefix
+    if command:match('^hlbg%s+historyui') or command:match('^%.hlbg%s+historyui') then
+        local c = command:gsub('^%.','')
+        local p, per, season, sk, sd = c:match('^hlbg%s+historyui%s+(%d+)%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)')
+        if not p then
+            p, per, sk, sd = c:match('^hlbg%s+historyui%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)')
+        end
+        local page = tonumber(p) or 1
+        local perPage = tonumber(per) or 5
+        local seasonId = season and tonumber(season) or nil
+        local sortKey = sk or 'id'
+        local sortDir = sd or 'DESC'
+        local rows, total = FetchHistoryPage(page, perPage, sortKey, sortDir, nil, nil, seasonId)
+        local lines = {}
+        for i=1,#rows do
+            local r = rows[i]
+            table.insert(lines, table.concat({ r.id or '', r.season or '', r.seasonName or '', r.ts or '', r.winner or '', r.affix or '', r.reason or '' }, "\t"))
+        end
+        local tsv = table.concat(lines, '||')
+        if player and player.SendBroadcastMessage then
+            player:SendBroadcastMessage("[HLBG_HISTORY_TSV] TOTAL="..tostring(total or 0).."||"..tsv)
+        end
+        return false
+    end
+    if command:match('^hlbg%s+history') or command:match('^%.hlbg%s+history') then
+        local c = command:gsub('^%.','')
+        local p, per, season, sk, sd = c:match('^hlbg%s+history%s+(%d+)%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)')
+        if not p then
+            p, per, sk, sd = c:match('^hlbg%s+history%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)')
+        end
+        local page = tonumber(p) or 1
+        local perPage = tonumber(per) or 5
+        local seasonId = season and tonumber(season) or nil
+        local sortKey = sk or 'id'
+        local sortDir = sd or 'DESC'
+        local rows, total = FetchHistoryPage(page, perPage, sortKey, sortDir, nil, nil, seasonId)
+        local lines = {}
+        for i=1,#rows do
+            local r = rows[i]
+            table.insert(lines, table.concat({ r.id or '', r.ts or '', r.winner or '', r.affix or '', r.reason or '' }, "\t"))
+        end
+        if player and player.SendBroadcastMessage then
+            player:SendBroadcastMessage("[HLBG_HISTORY_TSV] TOTAL="..tostring(total or 0).."||"..table.concat(lines, '||'))
+        end
+        return false
+    end
+    -- Fallback: statsui -> broadcast compact JSON
+    if command:match('^hlbg%s+statsui') or command:match('^%.hlbg%s+statsui') then
+        local c = command:gsub('^%.','')
+        local s = c:match('^hlbg%s+statsui%s+(%d+)')
+        local season = tonumber(s)
+        local stats = FetchStats(season)
+        local json = json_encode(stats)
+        if player and player.SendBroadcastMessage then
+            player:SendBroadcastMessage("[HLBG_STATS_JSON] "..json)
         end
         return false
     end
@@ -469,9 +1026,13 @@ local function GetLiveRows(scope, zoneId)
     zoneId = tonumber(zoneId) or HLBG_Config.live_broadcast.zoneId
 
     -- Try to query the latest entry for the zone (if zone_id exists in table)
-    local sql = string.format("SELECT id, occurred_at, score_alliance, score_horde, zone_id FROM hlbg_winner_history WHERE zone_id = %d ORDER BY occurred_at DESC LIMIT 1", tonumber(zoneId) or 0)
-    local res = safeQuery(CharDBQuery, sql)
-    if res then
+    local haveZone = hasColumn('hlbg_winner_history','zone_id')
+    local haveScoreA = hasColumn('hlbg_winner_history','score_alliance')
+    local haveScoreH = hasColumn('hlbg_winner_history','score_horde')
+    if haveZone and haveScoreA and haveScoreH then
+        local sql = string.format("SELECT id, occurred_at, score_alliance, score_horde, zone_id FROM hlbg_winner_history WHERE zone_id = %d ORDER BY occurred_at DESC LIMIT 1", tonumber(zoneId) or 0)
+        local res = safeQuery(CharDBQuery, sql)
+        if res and res:NextRow() then
         -- found a recorded match; build two per-team rows (Alliance/Horde)
         local id = tostring(res:GetUInt64(0) or 0)
         local ts = res:GetString(1) or os.date("%Y-%m-%d %H:%M:%S")
@@ -482,6 +1043,7 @@ local function GetLiveRows(scope, zoneId)
         table.insert(rows, { id = id.."-A", ts = ts, name = "Alliance", team = "Alliance", score = tonumber(sa) or sa })
         table.insert(rows, { id = id.."-H", ts = ts, name = "Horde", team = "Horde", score = tonumber(sh) or sh })
         return rows
+        end
     end
 
     -- Fallback: iterate players in scope and provide placeholder per-player rows (score unknown)
@@ -542,3 +1104,42 @@ end
         return true
     end
     RegisterPlayerEvent(42, OnCommandLive)
+
+-- GM/status control commands
+local function OnCommandState(event, player, command)
+    -- Trim leading dot
+    local cmd = command:gsub("^%.", "")
+    if cmd:match("^hlbgwarmup") then
+        local secs = tonumber(cmd:match("hlbgwarmup%s+(%d+)") or "") or 120
+        local aff = tonumber(cmd:match("affix=(%d+)") or "") or HLBG_State.affix or 0
+        StartWarmup(secs, aff)
+        player:SendBroadcastMessage(string.format("HLBG: warmup %ds affix=%d", secs, aff))
+        return false
+    elseif cmd:match("^hlbgstart") then
+        local secs = tonumber(cmd:match("hlbgstart%s+(%d+)") or "") or 900
+        local aff = tonumber(cmd:match("affix=(%d+)") or "") or HLBG_State.affix or 0
+        StartMatch(secs, aff)
+        player:SendBroadcastMessage(string.format("HLBG: match started %ds affix=%d", secs, aff))
+        return false
+    elseif cmd:match("^hlbgstatus") then
+        BroadcastStatus(player)
+        return false
+    elseif cmd:match("^hlbgreset") then
+        ResetMatch()
+        player:SendBroadcastMessage("HLBG: match reset")
+        return false
+    elseif cmd:match("^hlbgq%s+join") then
+        local team, pos, size = joinQueue(player)
+        SendQueueMessage(player, "joined", { team = team, pos = pos, size = size, eta = secondsRemaining() })
+        return false
+    elseif cmd:match("^hlbgq%s+leave") then
+        local team, size = leaveQueue(player)
+        SendQueueMessage(player, "left", { team = team, size = size })
+        return false
+    elseif cmd:match("^hlbgq") then
+        local team, pos, size = queuePosition(player)
+        SendQueueMessage(player, "status", { team = team or "?", pos = pos or 0, size = size or 0, eta = secondsRemaining() })
+        return false
+    end
+end
+RegisterPlayerEvent(42, OnCommandState)
