@@ -6,7 +6,7 @@ _G.HLBG = HLBG
 HLBG.UI = HLBG.UI or {}
 HLBG.UI.HUD = HLBG.UI.HUD or CreateFrame("Frame", "HLBG_HUD", UIParent)
 local HUD = HLBG.UI.HUD
-HUD:SetSize(260, 64)
+HUD:SetSize(340, 84)
 HUD:SetPoint("TOP", UIParent, "TOP", 0, -80)
 HUD:Hide()
 HUD:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 16, insets = { left=4, right=4, top=4, bottom=4 } })
@@ -16,16 +16,16 @@ if HUD.SetFrameStrata then HUD:SetFrameStrata("DIALOG") end
 -- Labels
 -- Alliance icon + label
 HUD.AllianceIcon = HUD:CreateTexture(nil, "OVERLAY")
-HUD.AllianceIcon:SetSize(18, 18)
+HUD.AllianceIcon:SetSize(36, 36)
 HUD.AllianceIcon:SetPoint("TOPLEFT", HUD, "TOPLEFT", 8, -8)
 HUD.AllianceIcon:SetTexture("Interface\\TargetingFrame\\UI-PVP-Alliance")
 
 HUD.Alliance = HUD:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-HUD.Alliance:SetPoint("LEFT", HUD.AllianceIcon, "RIGHT", 4, 0)
+HUD.Alliance:SetPoint("LEFT", HUD.AllianceIcon, "RIGHT", 0, 0)
 
 -- Horde icon + label
 HUD.HordeIcon = HUD:CreateTexture(nil, "OVERLAY")
-HUD.HordeIcon:SetSize(18, 18)
+HUD.HordeIcon:SetSize(36, 36)
 HUD.HordeIcon:SetPoint("TOPRIGHT", HUD, "TOPRIGHT", -8, -8)
 HUD.HordeIcon:SetTexture("Interface\\TargetingFrame\\UI-PVP-Horde")
 
@@ -94,7 +94,22 @@ function HLBG.UpdateHUD()
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     if HinterlandAffixHUDDB.useAddonHud == nil then HinterlandAffixHUDDB.useAddonHud = true end
     local use = HinterlandAffixHUDDB.useAddonHud
-    if use then HUD:Show() else HUD:Hide() end
+    if use then
+        HUD:Show()
+        -- Hide legacy external affix frame if present to avoid duplicate text in background
+        local ext = _G["HinterlandAffixHUD"]
+        if ext then
+            pcall(function() ext:Hide() end)
+            if not ext._hlbgHooked then
+                ext._hlbgHooked = true
+                ext:HookScript("OnShow", function(self)
+                    if HinterlandAffixHUDDB and HinterlandAffixHUDDB.useAddonHud then self:Hide() end
+                end)
+            end
+        end
+    else
+        HUD:Hide()
+    end
 end
 
 -- Smooth countdown: decrement RES.END locally between STATUS updates
@@ -136,6 +151,11 @@ end
 function HLBG.UnhideBlizzHUDDeep()
     local w = _G["WorldStateAlwaysUpFrame"]
     if w then w:Show() end
+    -- If addon HUD is off, allow the legacy affix frame to operate normally
+    if HinterlandAffixHUDDB and not HinterlandAffixHUDDB.useAddonHud then
+        local ext = _G["HinterlandAffixHUD"]
+        if ext and ext.Show then pcall(function() ext:Show() end) end
+    end
 end
 
 _G.HLBG = HLBG
