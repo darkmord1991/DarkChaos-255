@@ -33,6 +33,9 @@ HLBG_Config.live_broadcast = HLBG_Config.live_broadcast or {
     max_chat_len = 1000,    -- max characters for JSON chat fallback (safe cap)
 }
 
+-- Server-side client log file path (relative to server working dir or absolute). Update if needed.
+HLBG_Config.server_log_path = HLBG_Config.server_log_path or "Custom/Logs/hlbg_client.log"
+
 -- Minimal JSON encoder for simple arrays/tables containing strings/numbers
 local function json_encode_value(v)
     local t = type(v)
@@ -265,21 +268,16 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
                 local drop = #__hlbg_log_buffer - 15000
                 for i=1,drop do table.remove(__hlbg_log_buffer,1) end
             end
-            -- create a flush timer once
-            if not __hlbg_log_flush_timer then
-                __hlbg_log_flush_timer = CreateFrame("Frame")
-                __hlbg_log_flush_timer._elapsed = 0
-                local flushInterval = 2.0 -- seconds
-                __hlbg_log_flush_timer:SetScript("OnUpdate", function(self, elapsed)
-                    self._elapsed = self._elapsed + (elapsed or 0)
-                    if self._elapsed < flushInterval then return end
-                    self._elapsed = 0
+            -- create a server-side flush event once (use CreateLuaEvent on server)
+            if not __hlbg_log_flush_event then
+                local flushIntervalMs = 2000 -- milliseconds
+                __hlbg_log_flush_event = CreateLuaEvent(function(e)
                     if not __hlbg_log_buffer or #__hlbg_log_buffer == 0 then return end
                     -- swap buffers to minimise time holding the active buffer
                     local toWrite = __hlbg_log_buffer
                     __hlbg_log_buffer = {}
                     -- write all queued lines in one open/close
-                    local logPath = "/home/wowcore/azeroth-server/logs/hlbg_client.log"
+                    local logPath = HLBG_Config.server_log_path or "Custom/Logs/hlbg_client.log"
                     local ok, f = pcall(function() return io.open(logPath, "a") end)
                     if ok and f then
                         -- Aggregate by content to avoid writing repeated identical lines.
@@ -317,7 +315,8 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
                         for i=1,#toWrite do local ent = toWrite[i]; print("[HLBG_CLIENTLOG] " .. tostring(ent.line)) end
                         print(string.format("[HLBG_AIO] CLIENTLOG: failed to open %s (err=%s); printed to console", tostring(logPath), tostring(f or "")))
                     end
-                end)
+                end, flushIntervalMs, 0)
+                print(string.format("[HLBG_AIO] CLIENTLOG: buffer flush event registered (path=%s, interval_ms=%d)", tostring(HLBG_Config.server_log_path), flushIntervalMs))
             end
         end
     end

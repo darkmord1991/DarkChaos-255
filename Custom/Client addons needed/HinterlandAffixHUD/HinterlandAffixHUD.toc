@@ -6,4 +6,8 @@
 ## Deps: AIO_Client
 ## SavedVariables: HinterlandAffixHUDDB
 HinterlandAffixHUD.lua
+HLBG_Utils.lua
+HLBG_HUD.lua
+HLBG_UI.lua
+HLBG_Handlers.lua
 HLBG_AIO_Client.lua
