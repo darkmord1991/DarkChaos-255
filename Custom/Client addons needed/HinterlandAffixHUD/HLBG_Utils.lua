@@ -26,7 +26,88 @@ end
 
 -- Minimal JSON decoder placeholder (the main file still contains a full decoder)
 if type(HLBG.json_decode) ~= 'function' then
-    HLBG.json_decode = function(_) return nil, "json decoder not loaded" end
+    -- Tiny JSON decoder covering objects, arrays, strings, numbers, true/false/null
+    local function skipws(s,i)
+        local _,j = s:find("^%s*", i); return (j or i-1)+1
+    end
+    local function parseString(s,i)
+        i = i + 1; local out = {}
+        while i <= #s do
+            local c = s:sub(i,i)
+            if c == '"' then return table.concat(out), i+1 end
+            if c == '\\' then
+                local n = s:sub(i+1,i+1)
+                local map = { ['"']='"', ['\\']='\\', ['/']='/', b='\b', f='\f', n='\n', r='\r', t='\t' }
+                if map[n] then out[#out+1] = map[n]; i = i + 2
+                elseif n == 'u' then
+                    local hex = s:sub(i+2,i+5)
+                    local cp = tonumber(hex,16) or 32
+                    if cp < 0x80 then out[#out+1] = string.char(cp)
+                    elseif cp < 0x800 then out[#out+1] = string.char(0xC0+math.floor(cp/0x40), 0x80+(cp%0x40))
+                    else out[#out+1] = string.char(0xE0+math.floor(cp/0x1000), 0x80+math.floor((cp%0x1000)/0x40), 0x80+(cp%0x40)) end
+                    i = i + 6
+                else
+                    return nil, i
+                end
+            else out[#out+1] = c; i = i + 1 end
+        end
+        return nil, i
+    end
+    local function parseNumber(s,i)
+        local j = i
+        while j <= #s and s:sub(j,j):match('[%d%+%-%eE%.]') do j=j+1 end
+        local n = tonumber(s:sub(i,j-1))
+        if n == nil then return nil, i end
+        return n, j
+    end
+    local parseValue
+    local function parseArray(s,i)
+        i = i + 1; local arr = {}; i = skipws(s,i)
+        if s:sub(i,i) == ']' then return arr, i+1 end
+        while true do
+            local v; v, i = parseValue(s, i); if v == nil then return nil, i end
+            arr[#arr+1] = v; i = skipws(s,i)
+            local ch = s:sub(i,i)
+            if ch == ']' then return arr, i+1 end
+            if ch ~= ',' then return nil, i end
+            i = skipws(s, i+1)
+        end
+    end
+    local function parseObject(s,i)
+        i = i + 1; local obj = {}; i = skipws(s,i)
+        if s:sub(i,i) == '}' then return obj, i+1 end
+        while true do
+            if s:sub(i,i) ~= '"' then return nil, i end
+            local k; k, i = parseString(s,i); if k == nil then return nil, i end
+            i = skipws(s,i); if s:sub(i,i) ~= ':' then return nil, i end
+            i = skipws(s, i+1)
+            local v; v, i = parseValue(s,i); if v == nil then return nil, i end
+            obj[k] = v; i = skipws(s,i)
+            local ch = s:sub(i,i)
+            if ch == '}' then return obj, i+1 end
+            if ch ~= ',' then return nil, i end
+            i = skipws(s, i+1)
+        end
+    end
+    parseValue = function(s,i)
+        i = skipws(s,i)
+        local c = s:sub(i,i)
+        if c == '"' then return parseString(s,i)
+        elseif c == '{' then return parseObject(s,i)
+        elseif c == '[' then return parseArray(s,i)
+        elseif c == '-' or c:match('%d') then return parseNumber(s,i)
+        elseif s:sub(i,i+3) == 'true' then return true, i+4
+        elseif s:sub(i,i+4) == 'false' then return false, i+5
+        elseif s:sub(i,i+3) == 'null' then return nil, i+4
+        end
+        return nil, i
+    end
+    HLBG.json_decode = function(text)
+        if type(text) ~= 'string' then return nil, 'input not string' end
+        local v, idx = parseValue(text, 1)
+        if v == nil then return nil, 'parse error at '..tostring(idx) end
+        return v, nil
+    end
 end
 
 -- expose

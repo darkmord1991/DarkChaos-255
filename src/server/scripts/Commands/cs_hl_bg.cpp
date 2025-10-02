@@ -250,7 +250,7 @@ public:
         // operational auditing. The message includes the GM name and low GUID
         // as a compact identity marker.
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-            LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) set %s resources from %u -> %u", admin->GetName().c_str(), admin->GetGUID().GetCounter(), teamStr.c_str(), prev, amount);
+            LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) set {} resources from {} -> {}", admin->GetName(), admin->GetGUID().GetCounter(), teamStr, prev, amount);
         std::string colored = (tid == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
         handler->PSendSysMessage("Set {} resources to {}", colored, amount);
         return true;
@@ -288,7 +288,7 @@ public:
                 hl->TeleportPlayersToStart();
                 // Audit log
                 if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-                    LOG_INFO("admin.hlbg", "[ADMIN] %s (GUID:%u) forced a Hinterland BG reset", admin->GetName().c_str(), admin->GetGUID().GetCounter());
+                    LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced a Hinterland BG reset", admin->GetName(), admin->GetGUID().GetCounter());
                 handler->PSendSysMessage("Hinterland BG forced reset executed.");
                 return true;
             }

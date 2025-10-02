@@ -13,6 +13,8 @@ function HLBG._getSeason()
     if s < 0 then s = 0 end
     return s
 end
+-- Provide a stable global alias so callers can still obtain the season even if AIO swaps the HLBG table
+_G.HLBG_GetSeason = HLBG._getSeason
 
 -- Utility: safely register a SLASH_* command without stomping existing registrations.
 local function safeRegisterSlash(key, cmd, handler)
@@ -764,22 +766,61 @@ function HLBG.HistoryStr(a, b, c, d, e, f, g)
     else
         tsv, page, per, total, col, dir = b, c, d, e, f, g
     end
+    -- Normalize payload: convert CRLF to LF, convert our backup '||' line sep to newlines,
+    -- and convert '|' field separators to tabs in case the client stripped real tabs.
+    if type(tsv) == 'string' then
+        tsv = tsv:gsub('\r', '')
+        tsv = tsv:gsub('%|%|', '\n')
+        tsv = tsv:gsub('%|', '\t')
+        -- Replace any remaining control chars (except newline and tab) with tab as a safe field sep
+        tsv = tsv:gsub('[\001-\008\011\012\014-\031]', '\t')
+        -- Strip WoW color codes if present (|cAARRGGBB ... |r)
+        tsv = tsv:gsub('%|c%x%x%x%x%x%x%x%x', ''):gsub('%|r', '')
+    end
     local rows = {}
     if type(tsv) == "string" and tsv ~= "" then
         for line in tsv:gmatch("[^\n]+") do
-            -- Newest 7-column format: id\tseason\tseasonName\tts\twinner\taffix\treason
+            -- Try strict 7-col TAB format first
             local id7, season7, sname7, ts7, win7, aff7, rea7 = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
             if id7 and ts7 and win7 and aff7 and rea7 then
                 table.insert(rows, { id = id7 or "", season = tonumber(season7) or season7, seasonName = sname7, ts = ts7 or "", winner = win7 or "", affix = aff7 or "", reason = rea7 or "" })
             else
-                -- Prior 6-column format: id\tseason\tts\twinner\taffix\treason
-                local id, season, ts, win, aff, rea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-                if id and ts and win and aff and rea then
-                    table.insert(rows, { id = id or "", season = tonumber(season) or season, ts = ts or "", winner = win or "", affix = aff or "", reason = rea or "" })
+                -- Tokenize by tabs (after normalization control chars -> tabs)
+                local cols = {}
+                for fld in string.gmatch(line, "([^\t]+)") do cols[#cols+1] = fld end
+                if #cols >= 7 then
+                    table.insert(rows, { id = cols[1] or "", season = tonumber(cols[2]) or cols[2], seasonName = cols[3], ts = cols[4] or "", winner = cols[5] or "", affix = cols[6] or "", reason = cols[7] or "" })
+                elseif #cols == 6 then
+                    -- Two possibilities:
+                    --  a) {id, season, ts, winner, affix, reason}
+                    --  b) {id, seasonName(="Season X"), ts, winner, affix, reason}
+                    local seasonNum = tonumber(cols[2])
+                    local seasonName = nil
+                    if not seasonNum and type(cols[2]) == 'string' then
+                        local n = tonumber((cols[2]):match("Season%s+(%d+)") or '')
+                        if n then seasonNum = n; seasonName = cols[2] end
+                    end
+                    table.insert(rows, { id = cols[1] or "", season = seasonNum or cols[2], seasonName = seasonName, ts = cols[3] or "", winner = cols[4] or "", affix = cols[5] or "", reason = cols[6] or "" })
+                elseif #cols == 5 then
+                    table.insert(rows, { id = cols[1] or "", ts = cols[2] or "", winner = cols[3] or "", affix = cols[4] or "", reason = cols[5] or "" })
                 else
-                    -- Legacy 5-column format: id\tts\twinner\taffix\treason
-                    local lid, lts, lwin, laff, lrea = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-                    if lid then table.insert(rows, { id = lid or "", ts = lts or "", winner = lwin or "", affix = laff or "", reason = lrea or "" }) end
+                    -- Best-effort: split by whitespace
+                    local parts = {}
+                    for w in string.gmatch(line, "(%S+)") do parts[#parts+1] = w end
+                    if #parts >= 5 then
+                        -- attempt to rejoin 'Season X' if present
+                        local sname, sidx = nil, nil
+                        for i=1,#parts-1 do if parts[i] == 'Season' and tonumber(parts[i+1]) then sname = parts[i] .. ' ' .. parts[i+1]; sidx = i; break end end
+                        if sidx then table.remove(parts, sidx); parts[sidx] = sname end
+                        if #parts >= 7 then
+                            table.insert(rows, { id = parts[1], season = tonumber(parts[2]) or parts[2], seasonName = parts[3], ts = parts[4], winner = parts[5], affix = parts[6], reason = parts[7] })
+                        elseif #parts == 6 then
+                            local seasonNum = tonumber(parts[2]) or tonumber((parts[2] or ''):match('Season%s+(%d+)') or '')
+                            table.insert(rows, { id = parts[1], season = seasonNum or parts[2], ts = parts[3], winner = parts[4], affix = parts[5], reason = parts[6] })
+                        else
+                            table.insert(rows, { id = parts[1], ts = parts[2], winner = parts[3], affix = parts[4], reason = parts[5] })
+                        end
+                    end
                 end
             end
         end
@@ -815,17 +856,26 @@ end
     -- History TSV fallback
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
+        -- Support optional TOTAL=NN meta at the start
+        local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
+        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
         -- Convert our '||' line placeholders back to real newlines and reuse HistoryStr
         htsv = htsv:gsub('%|%|', '\n')
-        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, 5, 0, 'id', 'DESC') end
+        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
     end
 
     -- Stats JSON fallback
     local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
-        local ok, decoded = pcall(function() return json_decode(sj) end)
-        if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        local ok, decoded = pcall(function()
+            return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
+        end)
+        if ok and type(decoded) == 'table' then
+            -- If server included { total: N } and we have History UI, record it
+            if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
+            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        end
         return
     end
 end)
@@ -1207,7 +1257,7 @@ function HLBG._MainSlashHandler(msg)
     local per = (hist and hist.per) or 5
     local sk = (hist and hist.sortKey) or "id"
     local sd = (hist and hist.sortDir) or "DESC"
-    local sv = HLBG._getSeason()
+    local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (type(_G.HLBG_GetSeason) == 'function' and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
         -- Broad calls for compatibility
         _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
@@ -1223,8 +1273,9 @@ function HLBG._MainSlashHandler(msg)
         _G.AIO.Handle("HLBG", "HistoryUI", p, per, sk, sd)
         _G.AIO.Handle("HLBG", "HistoryUI", p, per, sv, sk, sd)
         _G.AIO.Handle("HLBG", "StatsUI")
-    else
-        -- chat-dot fallbacks so data loads even if AIO client is missing
+    end
+    -- Always also use chat-dot fallbacks so data loads even if AIO is present but server ignores it
+    do
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
         if sendDot then
             sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd))
@@ -1232,6 +1283,7 @@ function HLBG._MainSlashHandler(msg)
             sendDot(string.format(".hlbg history %d %d %s %s", p, per, sk, sd))
             sendDot(string.format(".hlbg history %d %d %d %s %s", p, per, sv, sk, sd))
             sendDot(".hlbg statsui")
+            sendDot(string.format(".hlbg statsui %d", sv))
             sendDot(".hlbg stats")
         end
     end

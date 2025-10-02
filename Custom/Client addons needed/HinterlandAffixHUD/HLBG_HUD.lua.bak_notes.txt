@@ -1,0 +1,2 @@
+This backup note explains that HLBG_HUD.lua was previously a minimal stub only showing the affix.
+We will replace it with a working HUD that displays Alliance/Horde resources and a countdown timer, fed by STATUS addon messages (A=,H=,END=,LOCK=).

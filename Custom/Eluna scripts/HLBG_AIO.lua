@@ -33,8 +33,9 @@ HLBG_Config.live_broadcast = HLBG_Config.live_broadcast or {
     max_chat_len = 1000,    -- max characters for JSON chat fallback (safe cap)
 }
 
--- Server-side client log file path (relative to server working dir or absolute). Update if needed.
-HLBG_Config.server_log_path = HLBG_Config.server_log_path or "Custom/Logs/hlbg_client.log"
+-- Server-side client log file path (absolute path on your host/container)
+-- Default to requested location under azeroth-server logs directory.
+HLBG_Config.server_log_path = HLBG_Config.server_log_path or "/home/wowcore/azeroth-server/logs/hlbg_client.log"
 
 -- Minimal JSON encoder for simple arrays/tables containing strings/numbers
 local function json_encode_value(v)
@@ -277,7 +278,12 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4)
                     local toWrite = __hlbg_log_buffer
                     __hlbg_log_buffer = {}
                     -- write all queued lines in one open/close
-                    local logPath = HLBG_Config.server_log_path or "Custom/Logs/hlbg_client.log"
+                    local logPath = HLBG_Config.server_log_path or "/home/wowcore/azeroth-server/logs/hlbg_client.log"
+                    -- Try to ensure directory exists (best-effort)
+                    pcall(function()
+                        local dir = string.match(logPath, "^(.*)/[^/]+$")
+                        if dir and dir ~= "" and os and os.execute then os.execute('mkdir -p '..dir) end
+                    end)
                     local ok, f = pcall(function() return io.open(logPath, "a") end)
                     if ok and f then
                         -- Aggregate by content to avoid writing repeated identical lines.

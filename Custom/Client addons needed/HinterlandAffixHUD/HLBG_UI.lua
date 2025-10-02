@@ -2,8 +2,8 @@
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 
--- UI: handlers and rendering logic (moved from main client file)
 -- Live rendering
+if not HLBG.Live then
 function HLBG.Live(rows)
     if not HLBG._ensureUI('Live') then return end
     rows = rows or {}
@@ -111,6 +111,7 @@ function HLBG.Live(rows)
     HLBG.UI.Live.Content:SetHeight(newH)
     if HLBG.UI.Live.Scroll and HLBG.UI.Live.Scroll.SetVerticalScroll then HLBG.UI.Live.Scroll:SetVerticalScroll(0) end
 end
+end
 
 -- Ensure live header helper
 local function ensureLiveHeader()
@@ -178,6 +179,7 @@ if HLBG._devMode then
 end
 
 -- History rendering and TSV parser
+if not HLBG.History then
 function HLBG.History(a, b, c, d, e, f, g)
     if not HLBG._ensureUI('History') then return end
     local rows, page, per, total, col, dir
@@ -304,13 +306,22 @@ function HLBG.History(a, b, c, d, e, f, g)
     if HLBG.UI.History.Scroll and HLBG.UI.History.Scroll.SetVerticalScroll then HLBG.UI.History.Scroll:SetVerticalScroll(0) end
     if HLBG.UI.History.EmptyText then if hadRows then HLBG.UI.History.EmptyText:Hide() else HLBG.UI.History.EmptyText:Show() end end
 end
+end
 
+if not HLBG.HistoryStr then
 function HLBG.HistoryStr(a, b, c, d, e, f, g)
     if not HLBG._ensureUI('HistoryStr') then return end
     local tsv, page, per, total, col, dir
     if type(a) == "string" then tsv, page, per, total, col, dir = a, b, c, d, e, f else tsv, page, per, total, col, dir = b, c, d, e, f, g end
     local rows = {}
+    local reportedTotal = tonumber(total or 0) or 0
     if type(tsv) == "string" and tsv ~= "" then
+        -- Allow a leading meta like: TOTAL=123||<rows...>
+        local meta = tsv:match("^TOTAL=(%d+)%s*%|%|")
+        if meta then
+            reportedTotal = tonumber(meta) or reportedTotal
+            tsv = tsv:gsub("^TOTAL=%d+%s*%|%|", "")
+        end
         for line in tsv:gmatch("[^\n]+") do
             local id7, season7, sname7, ts7, win7, aff7, rea7 = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
             if id7 and ts7 and win7 and aff7 and rea7 then
@@ -326,9 +337,11 @@ function HLBG.HistoryStr(a, b, c, d, e, f, g)
             end
         end
     end
-    return HLBG.History(rows, page, per, total, col, dir)
+    return HLBG.History(rows, page, per, reportedTotal, col, dir)
+end
 end
 
+if not HLBG.Stats then
 function HLBG.Stats(player, stats)
     if not HLBG._ensureUI('Stats') then return end
     if type(player) ~= "string" and type(player) ~= "userdata" then stats = player end
@@ -396,6 +409,7 @@ function HLBG.Stats(player, stats)
         pending._timer._elapsed = 0
         pending._timer:SetScript("OnUpdate", pending._timer:GetScript("OnUpdate"))
     end
+end
 end
 
 
@@ -482,6 +496,93 @@ function ShowTab(i)
     if HLBG.UI.Info then if i == 5 then HLBG.UI.Info:Show() else HLBG.UI.Info:Hide() end end
     if HLBG.UI.Results then if i == 6 then HLBG.UI.Results:Show() else HLBG.UI.Results:Hide() end end
     HinterlandAffixHUDDB.lastInnerTab = i
+end
+
+-- Helper: request History + Stats for current selection (season-only)
+function HLBG._requestHistoryAndStats()
+    local hist = HLBG.UI and HLBG.UI.History
+    local p = (hist and hist.page) or 1
+    local per = (hist and hist.per) or 5
+    local sk = (hist and hist.sortKey) or "id"
+    local sd = (hist and hist.sortDir) or "DESC"
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "History", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "HISTORY", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "HistoryUI", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "Request", "STATS", season)
+        _G.AIO.Handle("HLBG", "Stats", season)
+        _G.AIO.Handle("HLBG", "STATS", season)
+        _G.AIO.Handle("HLBG", "StatsUI", season)
+    end
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    if type(sendDot) == 'function' then
+        sendDot(string.format(".hlbg historyui %d %d %d %s %s", p, per, season, sk, sd))
+        sendDot(string.format(".hlbg statsui %d", season))
+    end
+end
+
+-- Season dropdown (top-right)
+do
+    local label = HLBG.UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOPRIGHT", HLBG.UI.Frame, "TOPRIGHT", -210, -16)
+    label:SetText("Season:")
+    local maxSeason = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.maxSeason) or 10
+    local function seasonList()
+        local t = {0}
+        for i=1,maxSeason do t[#t+1]=i end
+        return t
+    end
+    if type(UIDropDownMenu_Initialize) == 'function' then
+        local dd = CreateFrame('Frame', 'HLBG_SeasonDrop', HLBG.UI.Frame, 'UIDropDownMenuTemplate')
+        dd:SetPoint('LEFT', label, 'RIGHT', -10, -4)
+        local function onSelect(self, val)
+            HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+            HinterlandAffixHUDDB.desiredSeason = tonumber(val) or 0
+            UIDropDownMenu_SetSelectedValue(dd, HinterlandAffixHUDDB.desiredSeason)
+            UIDropDownMenu_SetText(dd, (tonumber(val)==0) and 'Current' or tostring(val))
+            -- reset to page 1 and request
+            if HLBG.UI and HLBG.UI.History then HLBG.UI.History.page = 1 end
+            HLBG._requestHistoryAndStats()
+        end
+        local function init()
+            local cur = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+            local info
+            for _,v in ipairs(seasonList()) do
+                info = UIDropDownMenu_CreateInfo()
+                info.text = (v==0) and 'Current' or tostring(v)
+                info.value = v
+                info.func = function() onSelect(nil, v) end
+                info.checked = (v == cur)
+                UIDropDownMenu_AddButton(info)
+            end
+            UIDropDownMenu_SetSelectedValue(dd, cur)
+            UIDropDownMenu_SetWidth(dd, 90)
+            UIDropDownMenu_SetText(dd, (cur==0) and 'Current' or tostring(cur))
+        end
+        UIDropDownMenu_Initialize(dd, init)
+        -- Reinitialize when frame shows in case maxSeason changed
+        HLBG.UI.Frame:HookScript('OnShow', function() UIDropDownMenu_Initialize(dd, init) end)
+    else
+        -- Fallback: simple cycle button
+        local btn = CreateFrame('Button', nil, HLBG.UI.Frame, 'UIPanelButtonTemplate')
+        btn:SetSize(90, 20)
+        btn:SetPoint('LEFT', label, 'RIGHT', 4, 0)
+        local function setText()
+            local cur = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+            btn:SetText((cur==0) and 'Current' or ('Season '..cur))
+        end
+        btn:SetScript('OnClick', function()
+            HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+            local cur = tonumber(HinterlandAffixHUDDB.desiredSeason or 0) or 0
+            cur = cur + 1; if cur > maxSeason then cur = 0 end
+            HinterlandAffixHUDDB.desiredSeason = cur
+            if HLBG.UI and HLBG.UI.History then HLBG.UI.History.page = 1 end
+            HLBG._requestHistoryAndStats(); setText()
+        end)
+        setText()
+    end
 end
 
 HLBG.UI.Live = CreateFrame("Frame", nil, HLBG.UI.Frame)
@@ -583,21 +684,16 @@ HLBG.UI.History.Nav.Prev:SetScript("OnClick", function()
     local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
     hist.page = math.max(1, (hist.page or 1) - 1)
     HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
-    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
     end
     do
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
         if type(sendDot) == 'function' then
-            sendDot(string.format(".hlbg historyui %d %d %s %s", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC"))
             sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
         end
     end
@@ -608,14 +704,18 @@ HLBG.UI.History.Nav.Next:SetScript("OnClick", function()
     local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
     hist.page = math.min(maxPage, (hist.page or 1) + 1)
     HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
-    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC")
         _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
     end
-    if type(HLBG.safeExecSlash) == 'function' then
-        HLBG.safeExecSlash(string.format(".hlbg historyui %d %d %s %s", hist.page, hist.per or 5, hist.sortKey or "id", hist.sortDir or "DESC"))
-        HLBG.safeExecSlash(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+    do
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if type(sendDot) == 'function' then
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+        end
     end
 end)
 
@@ -796,15 +896,20 @@ HLBG.UI.History:SetScript("OnShow", function(self)
     local per = self.per or 5
     local sk = self.sortKey or "id"
     local sd = self.sortDir or "DESC"
+    -- Only load current season results
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "History", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "HISTORY", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sk, sd)
+        -- Season-specific variants only
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "History", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "HISTORY", p, per, season, sk, sd)
+        _G.AIO.Handle("HLBG", "HistoryUI", p, per, season, sk, sd)
     end
     do
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        if type(sendDot) == 'function' then sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd)) end
+        if type(sendDot) == 'function' then
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", p, per, season, sk, sd))
+        end
     end
     self:Update()
 end)
@@ -989,14 +1094,10 @@ local function PopulateTestData()
     HLBG.UI.History:Update()
 end
 
--- Populate test data on addon load
-PopulateTestData()
+-- Populate test data on addon load (disabled in production to avoid noise)
+-- PopulateTestData()
 
 -- Debugging: print frame references
-for k, v in pairs(HLBG.UI) do
-    if type(v) == "table" and v.GetName and v:GetName() then
-        print("HLBG.UI." .. k .. " = " .. v:GetName())
-    end
-end
+-- Debug printing of UI frames is disabled by default
 
 _G.HLBG = HLBG

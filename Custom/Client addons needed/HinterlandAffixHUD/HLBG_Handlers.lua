@@ -130,6 +130,12 @@ end
 
 -- Support addon-channel STATUS & AFFIX messages to drive HUD
 local eventFrame = CreateFrame("Frame")
+-- 3.3.5a requires registering addon message prefixes explicitly
+pcall(function()
+    if type(RegisterAddonMessagePrefix) == 'function' then
+        RegisterAddonMessagePrefix('HLBG')
+    end
+end)
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     local prefix, msg = ...
@@ -170,22 +176,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- AFFIX messages
     local aff = msg:match("^AFFIX|(.*)$")
     if aff then
-        if HLBG.UI and HLBG.UI.Affix and HLBG.UI.Affix.Text then
-            pcall(function()
-                HLBG.UI.Affix.Text:SetText(tostring(aff))
-                HLBG.UI.Affix:Show()
-                local tfr = CreateFrame('Frame')
-                tfr._t = 0
-                tfr:SetScript('OnUpdate', function(self, elapsed)
-                    self._t = self._t + (elapsed or 0)
-                    if self._t >= 6 then
-                        if HLBG.UI and HLBG.UI.Affix then HLBG.UI.Affix:Hide() end
-                        self:SetScript('OnUpdate', nil)
-                        self = nil
-                    end
-                end)
-            end)
-        end
+        HLBG._affixText = tostring(aff)
+        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
+        -- Always hide legacy floating chip to avoid duplicate Affix text
+        if HLBG.UI and HLBG.UI.Affix then pcall(function() HLBG.UI.Affix:Hide() end) end
         return
     end
 
@@ -210,8 +204,11 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- History TSV fallback
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
+        local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
+        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
         htsv = htsv:gsub('%|%|', '\n')
-        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, 5, 0, 'id', 'DESC') end
+        if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
+        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
     end
 
@@ -221,7 +218,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
         end)
-        if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        if ok and type(decoded) == 'table' then
+            if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
+            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        end
         return
     end
 end)
@@ -257,8 +257,11 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     -- History TSV
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
+        local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
+        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
         htsv = htsv:gsub('%|%|', '\n')
-        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, 5, 0, 'id', 'DESC') end
+        if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
+        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
     end
     -- Stats JSON
@@ -267,7 +270,10 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
         end)
-        if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        if ok and type(decoded) == 'table' then
+            if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
+            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+        end
         return
     end
 end)
