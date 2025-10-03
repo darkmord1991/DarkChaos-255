@@ -258,17 +258,30 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir, winnerFilter, a
 end
 
 local function FetchStats(seasonId)
-    local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, byWeather = {}, affixDur = {}, weatherDur = {} }
+    -- Rich stats modeled after npc_hl_scoreboard: totals, streaks, margins, per-affix splits
+    local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, affixDur = {}, winRates = {}, totals = {}, reasons = {} }
     local whereParts = {}
     -- Treat seasonId=0 as "current/all" (no filter). Only filter when > 0 and column exists.
     if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('hlbg_winner_history','season') then
         table.insert(whereParts, string.format("season = %d", tonumber(seasonId)))
     end
+    -- Optionally exclude manual resets if configured via OutdoorPvPHL (when available)
+    local includeManual = true
+    do
+        local ok, OutdoorPvPHL = pcall(function() return OutdoorPvPHL end)
+        if ok and OutdoorPvPHL and OutdoorPvPHL.GetStatsIncludeManualResets then
+            local hl = GetHL and GetHL() or nil
+            if hl and hl.GetStatsIncludeManualResets then includeManual = hl:GetStatsIncludeManualResets() and true or false end
+        end
+    end
+    if not includeManual then
+        table.insert(whereParts, "(win_reason IS NULL OR win_reason <> 'manual')")
+    end
     local where = (#whereParts>0) and (" WHERE "..table.concat(whereParts, " AND ")) or ""
     -- total
     do
         local t = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history"..where)
-    if t then stats.total = asNumber((t.GetUInt64 and t:GetUInt64(0)) or (t.GetUInt32 and t:GetUInt32(0)) or 0) end
+        if t then stats.total = asNumber((t.GetUInt64 and t:GetUInt64(0)) or (t.GetUInt32 and t:GetUInt32(0)) or 0) end
     end
     -- winner_tid: 0 Alliance, 1 Horde, 2 Neutral/Draw
     local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY winner_tid")
@@ -279,6 +292,13 @@ local function FetchStats(seasonId)
             if tid == 0 then stats.counts["Alliance"] = c
             elseif tid == 1 then stats.counts["Horde"] = c
             else stats.draws = c end
+        end
+    end
+    -- Win reasons summary
+    do
+        local rr = safeQuery(CharDBQuery, "SELECT SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual') FROM hlbg_winner_history"..where)
+        if rr then
+            stats.reasons = { depletion = asNumber(rr:GetUInt64(0) or 0), tiebreaker = asNumber(rr:GetUInt64(1) or 0), manual = asNumber(rr:GetUInt64(2) or 0) }
         end
     end
     if hasColumn('hlbg_winner_history','duration_seconds') then
@@ -304,6 +324,20 @@ local function FetchStats(seasonId)
             else stats.byAffix[aff].DRAW = c end
         end
     end
+    -- Per-affix win rates (A/H/D counts + n)
+    do
+        local rr = safeQuery(CharDBQuery, "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        if rr then
+            while rr:NextRow() do
+                local aff = tostring(rr:GetUInt32(0))
+                local a = asNumber(rr:GetUInt64(1) or 0)
+                local h = asNumber(rr:GetUInt64(2) or 0)
+                local d = asNumber(rr:GetUInt64(3) or 0)
+                local n = asNumber(rr:GetUInt64(4) or 0)
+                stats.winRates[aff] = { A = a, H = h, D = d, n = n }
+            end
+        end
+    end
     -- No weather column in schema; leave byWeather empty
     -- Duration aggregates per affix
     if hasColumn('hlbg_winner_history','duration_seconds') then
@@ -317,6 +351,180 @@ local function FetchStats(seasonId)
                 local s = res5:IsNull(2) and 0 or asNumber(res5:GetUInt64(2))
                 local a = res5:IsNull(3) and 0 or tonumber(res5:GetFloat(3)) or 0
                 stats.affixDur[aff] = { count = c, sum = s, avg = a }
+            end
+        end
+    end
+    -- Current and longest streaks (last 200)
+    do
+        local q = safeQuery(CharDBQuery, "SELECT winner_tid FROM hlbg_winner_history"..where.." ORDER BY id DESC LIMIT 200")
+        local currCount, currTeam = 0, 2
+        local bestCount, bestTeam = 0, 2
+        if q then
+            local first = true
+            local prev = 2
+            while q:NextRow() do
+                local t = q:GetUInt32(0)
+                if t ~= 0 and t ~= 1 then
+                    if first then currCount = 0; currTeam = 2; first = false end
+                    prev = 2
+                else
+                    if first then currTeam = t; currCount = 1; first = false end
+                    if prev == t then
+                        currCount = currCount + 1
+                    elseif prev == 2 then
+                        currCount = 1; currTeam = t
+                    else
+                        if currCount > bestCount then bestCount = currCount; bestTeam = prev end
+                        currCount = 1; currTeam = t
+                    end
+                    prev = t
+                end
+            end
+            if currCount > bestCount then bestCount = currCount; bestTeam = currTeam end
+        end
+        local function tn(id) return (id==0 and 'Alliance') or (id==1 and 'Horde') or 'None' end
+        stats.currentStreakTeam = tn(currTeam)
+        stats.currentStreakLen = currCount
+        stats.longestStreakTeam = tn(bestTeam)
+        stats.longestStreakLen = bestCount
+    end
+    -- Largest margin among A/H
+    do
+        local sep = (where ~= "" and " AND ") or " WHERE "
+        local rm = safeQuery(CharDBQuery, "SELECT occurred_at, winner_tid, score_alliance, score_horde FROM hlbg_winner_history"..where..sep.."winner_tid IN (0,1) ORDER BY ABS(score_alliance - score_horde) DESC, id DESC LIMIT 1")
+        if rm and rm:NextRow() then
+            local ts = rm:GetString(0)
+            local tid = rm:GetUInt32(1)
+            local a = rm:GetUInt32(2)
+            local h = rm:GetUInt32(3)
+            local margin = (a>h) and (a-h) or (h-a)
+            stats.largestMargin = { ts = ts, winner = (tid==0 and 'Alliance' or 'Horde'), a = a, h = h, margin = margin }
+        end
+    end
+    -- Average scores per affix
+    do
+        local ra = safeQuery(CharDBQuery, "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        if ra then
+            stats.avgScorePerAffix = {}
+            while ra:NextRow() do
+                local aff = tostring(ra:GetUInt32(0))
+                local avga = tonumber(ra:GetDouble(1)) or 0
+                local avgh = tonumber(ra:GetDouble(2)) or 0
+                local n    = asNumber(ra:GetUInt64(3) or 0)
+                stats.avgScorePerAffix[aff] = { A = avga, H = avgh, n = n }
+            end
+        end
+    end
+    -- Average margin per affix
+    do
+        local ram = safeQuery(CharDBQuery, "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY am DESC")
+        if ram then
+            stats.affixAvgMargin = {}
+            while ram:NextRow() do
+                local aff = tostring(ram:GetUInt32(0))
+                local avgm = tonumber(ram:GetDouble(1)) or 0
+                local n = asNumber(ram:GetUInt64(2) or 0)
+                stats.affixAvgMargin[aff] = { avg = avgm, n = n }
+            end
+        end
+    end
+    -- Reason breakdown per affix
+    do
+        local rrb = safeQuery(CharDBQuery, "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        if rrb then
+            stats.affixReasons = {}
+            while rrb:NextRow() do
+                local aff = tostring(rrb:GetUInt32(0))
+                local dep = asNumber(rrb:GetUInt64(1) or 0)
+                local tie = asNumber(rrb:GetUInt64(2) or 0)
+                local n   = asNumber(rrb:GetUInt64(3) or 0)
+                stats.affixReasons[aff] = { depletion = dep, tiebreaker = tie, n = n }
+            end
+        end
+    end
+    -- Top lists (limit 5)
+    local topN = 5
+    do
+        local sep = (where ~= "" and " AND ") or " WHERE "
+        local rt = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history"..where..sep.."winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
+        if rt then
+            stats.topWinnersByAffix = {}
+            while rt:NextRow() do
+                local tid = rt:GetUInt32(0)
+                local aff = rt:GetUInt32(1)
+                local c   = asNumber(rt:GetUInt64(2) or 0)
+                table.insert(stats.topWinnersByAffix, { tid = tid, winner = (tid==0 and 'Alliance' or 'Horde'), affix = aff, count = c })
+            end
+        end
+    end
+    do
+        local sep = (where ~= "" and " AND ") or " WHERE "
+        local rdraw = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history"..where..sep.."winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT "..topN)
+        if rdraw then
+            stats.drawsByAffix = {}
+            while rdraw:NextRow() do
+                local aff = rdraw:GetUInt32(0)
+                local c   = asNumber(rdraw:GetUInt64(1) or 0)
+                table.insert(stats.drawsByAffix, { affix = aff, count = c })
+            end
+        end
+    end
+    do
+        local rtd = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history"..where.." GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
+        if rtd then
+            stats.topOutcomesByAffix = {}
+            while rtd:NextRow() do
+                local tid = rtd:GetUInt32(0)
+                local aff = rtd:GetUInt32(1)
+                local c   = asNumber(rtd:GetUInt64(2) or 0)
+                local oname = (tid==0 and 'Alliance') or (tid==1 and 'Horde') or 'Draw'
+                table.insert(stats.topOutcomesByAffix, { affix = aff, outcome = oname, tid = tid, count = c })
+            end
+        end
+    end
+    do
+        local raf = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY c DESC, affix ASC LIMIT "..topN)
+        if raf then
+            stats.topAffixesByMatches = {}
+            while raf:NextRow() do
+                local aff = raf:GetUInt32(0)
+                local c   = asNumber(raf:GetUInt64(1) or 0)
+                table.insert(stats.topAffixesByMatches, { affix = aff, count = c })
+            end
+        end
+    end
+    -- Median margin using window functions if supported (DB >= MariaDB 10.2 or MySQL 8)
+    do
+        local supports = false
+        local ver = safeQuery(CharDBQuery, "SELECT VERSION()")
+        if ver and ver:NextRow() then
+            local v = tostring(ver:GetString(0) or "")
+            if v:find("MariaDB") then
+                local p = v:find("10%.")
+                supports = (p ~= nil)
+            else
+                local first = v:match("^(%d+)")
+                supports = (tonumber(first or 0) or 0) >= 8
+            end
+        end
+        if supports then
+            local cond = where:gsub("^%s*WHERE%s*", "")
+            if cond == '' then cond = '1=1' end
+            local sql = (
+                "WITH ranked AS ("..
+                "SELECT affix, ABS(score_alliance - score_horde) AS m, "..
+                "ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn, "..
+                "COUNT(*) OVER (PARTITION BY affix) AS cnt FROM hlbg_winner_history WHERE "..cond..") "..
+                "SELECT affix, AVG(m) AS med FROM ranked WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2)) GROUP BY affix ORDER BY med DESC"
+            )
+            local rmed = safeQuery(CharDBQuery, sql)
+            if rmed then
+                stats.affixMedianMargin = {}
+                while rmed:NextRow() do
+                    local aff = rmed:GetUInt32(0)
+                    local med = tonumber(rmed:GetDouble(1)) or 0
+                    stats.affixMedianMargin[aff] = med
+                end
             end
         end
     end
@@ -400,6 +608,16 @@ local function secondsRemaining()
 end
 
 local function BuildStatusPayload()
+    -- Compute live faction player counts in configured zone (best-effort)
+    local zoneId = HLBG_Config and HLBG_Config.live_broadcast and HLBG_Config.live_broadcast.zoneId or 47
+    local aPlayers, hPlayers = 0, 0
+    for _,pl in ipairs(GetPlayersInWorld() or {}) do
+        local okZ, zid = pcall(function() return pl:GetZoneId() end)
+        if okZ and tonumber(zid) == tonumber(zoneId) then
+            local okT, t = pcall(function() return pl:GetTeam() end)
+            if okT then if t == 0 then aPlayers = aPlayers + 1 elseif t == 1 then hPlayers = hPlayers + 1 end end
+        end
+    end
     return {
         A = HLBG_State.scoreA or 0,
         H = HLBG_State.scoreH or 0,
@@ -408,6 +626,11 @@ local function BuildStatusPayload()
         AFF = HLBG_State.affix or 0,
         DURATION = HLBG_State.duration or 0,
         PHASE = HLBG_State.phase or "idle",
+        APlayers = aPlayers,
+        HPlayers = hPlayers,
+        -- aliases for older client keys
+        APC = aPlayers,
+        HPC = hPlayers,
     }
 end
 
@@ -421,8 +644,9 @@ local function BroadcastStatus(toPlayer)
         end
     end
     -- Chat fallback
-    local msg = string.format("[HLBG_STATUS] A=%d|H=%d|END=%d|LOCK=%d|AFF=%d|DURATION=%d|PHASE=%s",
-        payload.A, payload.H, payload.END, payload.LOCK, payload.AFF, payload.DURATION, tostring(payload.PHASE))
+    local msg = string.format("[HLBG_STATUS] A=%d|H=%d|END=%d|LOCK=%d|AFF=%d|DURATION=%d|PHASE=%s|APLAYERs=%d|HPLAYERS=%d",
+        payload.A, payload.H, payload.END, payload.LOCK, payload.AFF, payload.DURATION, tostring(payload.PHASE),
+        tonumber(payload.APlayers or 0) or 0, tonumber(payload.HPlayers or 0) or 0)
     if toPlayer and toPlayer.SendBroadcastMessage then
         toPlayer:SendBroadcastMessage(msg)
     else

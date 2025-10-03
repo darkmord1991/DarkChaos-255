@@ -61,6 +61,11 @@ end
 -- UpdateHUD reads RES (set by handlers) and refreshes labels
 function HLBG.UpdateHUD()
     if not HLBG.UI or not HLBG.UI.HUD then return end
+    -- Ensure sensible defaults
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    if HinterlandAffixHUDDB.useAddonHud == nil then HinterlandAffixHUDDB.useAddonHud = true end
+    -- Default: keep HUD hidden outside The Hinterlands unless user opts in
+    if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = false end
     local res = _G.RES or {A=0,H=0,END=0}
     local a = tonumber(res.A or 0) or 0
     local h = tonumber(res.H or 0) or 0
@@ -91,10 +96,27 @@ function HLBG.UpdateHUD()
         HUD.Affix:Hide()
     end
     -- Honor user toggle: only show if enabled
-    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-    if HinterlandAffixHUDDB.useAddonHud == nil then HinterlandAffixHUDDB.useAddonHud = true end
     local use = HinterlandAffixHUDDB.useAddonHud
-    if use then
+    -- Optional gating: keep HUD hidden outside PvP instances unless user explicitly sets showHudEverywhere
+    local inInstance, instanceType = false, nil
+    pcall(function()
+        inInstance = (type(IsInInstance) == 'function') and IsInInstance() or false
+        local ok,it = pcall(function() return (type(GetInstanceType) == 'function') and GetInstanceType() or nil end)
+        if ok then instanceType = it end
+    end)
+    -- Also allow showing in The Hinterlands open world (zone 47) even if not in an instance
+    local inHinterlands = false
+    pcall(function()
+        if type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function' then
+            local z = HLBG.safeGetRealZoneText() or ''
+            inHinterlands = (z == 'The Hinterlands')
+        else
+            local z = (type(GetRealZoneText) == 'function' and (GetRealZoneText() or '')) or ''
+            inHinterlands = (z == 'The Hinterlands')
+        end
+    end)
+    local allowHere = HinterlandAffixHUDDB.showHudEverywhere or inHinterlands or (inInstance and (instanceType == 'pvp' or instanceType == 'arena'))
+    if use and allowHere then
         HUD:Show()
         -- Hide legacy external affix frame if present to avoid duplicate text in background
         local ext = _G["HinterlandAffixHUD"]

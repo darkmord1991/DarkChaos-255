@@ -61,6 +61,22 @@ function HLBG.Live(rows)
     else
         sorted = rows
     end
+    -- Update compact summary instead of rendering list rows
+    pcall(function()
+        local RES = _G.RES or {A=0,H=0}
+        local a = tonumber(RES.A or 0) or 0
+        local h = tonumber(RES.H or 0) or 0
+        local tl = tonumber(HLBG._timeLeft or RES.DURATION or 0) or 0
+        local m = math.floor(tl/60); local s = tl%60
+        local aff = tostring(HLBG._affixText or "-")
+        local ap = (HLBG._lastStatus and (HLBG._lastStatus.APlayers or HLBG._lastStatus.APC or HLBG._lastStatus.AllyCount)) or "-"
+        local hp = (HLBG._lastStatus and (HLBG._lastStatus.HPlayers or HLBG._lastStatus.HPC or HLBG._lastStatus.HordeCount)) or "-"
+        if HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.Summary then
+            HLBG.UI.Live.Summary:SetText(string.format("Resources  A:%d  H:%d      Players  A:%s  H:%s      Time %d:%02d      Affix %s", a,h,tostring(ap),tostring(hp), m,s, aff))
+        end
+    end)
+    -- Prefer compact summary view; skip detailed row rendering for now
+    do return end
     local y = -4
     for i,row in ipairs(sorted) do
         local r = HLBG.UI.Live.rows[i]
@@ -68,19 +84,16 @@ function HLBG.Live(rows)
             -- lazily create row if missing
             r = CreateFrame("Frame", nil, HLBG.UI.Live.Content)
             if r.SetFrameStrata then r:SetFrameStrata("DIALOG") end
-            r:SetSize(440, 28)
-            r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            r.score = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            r.meta = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 2, -2)
-            r.name:SetWidth(300); HLBG.safeSetJustify(r.name, "LEFT")
-            r.score:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -2)
+            r:SetSize(440, 20)
+            r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.hk = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.score = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.name:SetPoint("LEFT", r, "LEFT", 2, 0)
+            r.name:SetWidth(240); HLBG.safeSetJustify(r.name, "LEFT")
+            r.hk:SetPoint("LEFT", r.name, "RIGHT", 12, 0)
+            r.hk:SetWidth(60); HLBG.safeSetJustify(r.hk, "CENTER")
+            r.score:SetPoint("LEFT", r.hk, "RIGHT", 12, 0)
             r.score:SetWidth(100); HLBG.safeSetJustify(r.score, "RIGHT")
-            r.meta:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 2, 2)
-            r.meta:SetWidth(220); HLBG.safeSetJustify(r.meta, "LEFT")
-            r.ts:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -2, 2)
-            r.ts:SetWidth(200); HLBG.safeSetJustify(r.ts, "RIGHT")
             HLBG.UI.Live.rows[i] = r
         end
         r:ClearAllPoints()
@@ -89,25 +102,18 @@ function HLBG.Live(rows)
         local score = row.score or row[5] or row[2] or 0
         local hk = tonumber(row.hk or row.HK or row[6]) or 0
         local cls = tonumber(row[7] or row.class or row.Class) or nil
-        local subgroup = (type(row.subgroup) ~= 'nil' and tonumber(row.subgroup)) or nil
-        local team = tostring(row.team or row.Team or "")
         r.name:SetText(tostring(name))
+        r.hk:SetText(string.format('HK:+%d', math.max(0, hk)))
         r.score:SetText(tostring(score))
-        local parts = {}
-        if team ~= '' then table.insert(parts, team) end
-        table.insert(parts, string.format('HK:+%d', math.max(0, hk)))
-        if cls then table.insert(parts, 'Class:'..tostring(cls)) end
-        if subgroup and subgroup >= 0 then table.insert(parts, 'Group:'..tostring(subgroup)) end
-        r.meta:SetText(table.concat(parts, '  '))
         if not r._hlbgHover then
             r._hlbgHover = true
             r:SetScript('OnEnter', function(self) self:SetBackdrop({ bgFile = 'Interface/Tooltips/UI-Tooltip-Background' }); self:SetBackdropColor(1,1,0.4,0.10) end)
             r:SetScript('OnLeave', function(self) self:SetBackdrop(nil) end)
         end
         r:Show()
-        y = y - 18
+        y = y - 20
     end
-    local newH = math.max(300, 8 + #rows * 18)
+    local newH = math.max(180, 8 + #rows * 20)
     HLBG.UI.Live.Content:SetHeight(newH)
     if HLBG.UI.Live.Scroll and HLBG.UI.Live.Scroll.SetVerticalScroll then HLBG.UI.Live.Scroll:SetVerticalScroll(0) end
 end
@@ -205,11 +211,16 @@ function HLBG.History(a, b, c, d, e, f, g)
         end
         rows = {}
     end
-    HLBG.UI.History.page = page or HLBG.UI.History.page or 1
-    HLBG.UI.History.per = per or HLBG.UI.History.per or 25
-    HLBG.UI.History.total = total or HLBG.UI.History.total or 0
+    -- Only overwrite pagination when explicit numeric values are provided by the payload
+    -- Coerce numeric pagination values even if they come as strings
+    if page ~= nil then HLBG.UI.History.page = tonumber(page) or HLBG.UI.History.page end
+    if per ~= nil then HLBG.UI.History.per = tonumber(per) or HLBG.UI.History.per end
+    if total ~= nil then HLBG.UI.History.total = tonumber(total) or HLBG.UI.History.total end
+    HLBG.UI.History.page = HLBG.UI.History.page or 1
+    HLBG.UI.History.per = HLBG.UI.History.per or 15
+    HLBG.UI.History.total = HLBG.UI.History.total or 0
     HLBG.UI.History.sortKey = col or HLBG.UI.History.sortKey or "id"
-    HLBG.UI.History.sortDir = dir or HLBG.UI.History.sortDir or "DESC"
+    HLBG.UI.History.sortDir = dir or HLBG.UI.History.sortDir or "ASC"
     local normalized = {}
     if type(rows) == "table" then
         if #rows and #rows > 0 then
@@ -231,6 +242,16 @@ function HLBG.History(a, b, c, d, e, f, g)
         if type(rows.id) ~= "nil" or type(rows.ts) ~= "nil" then table.insert(normalized, rows) end
     end
     rows = normalized
+    -- Client-side sort safety: if we want ASC by id but the server returns any order, sort here
+    local wantAsc = (tostring((HLBG.UI.History.sortDir or "ASC"):upper()) == "ASC")
+    local byId = (tostring(HLBG.UI.History.sortKey or "id"):lower() == "id")
+    if byId and wantAsc and type(rows) == 'table' and #rows > 1 then
+        table.sort(rows, function(a,b)
+            local ai = tonumber((type(a)=="table" and (a.id or a[1])) or 0) or 0
+            local bi = tonumber((type(b)=="table" and (b.id or b[1])) or 0) or 0
+            return ai < bi
+        end)
+    end
     if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
     HLBG.UI.History.lastRows = rows
     local sample = ""
@@ -266,12 +287,12 @@ function HLBG.History(a, b, c, d, e, f, g)
             r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            r.id:SetPoint("LEFT", r, "LEFT", 0, 0); r.id:SetWidth(50); HLBG.safeSetJustify(r.id, "LEFT")
-            r.sea:SetPoint("LEFT", r.id, "RIGHT", 6, 0); r.sea:SetWidth(50)
-            r.ts:SetPoint("LEFT", r.sea, "RIGHT", 6, 0); r.ts:SetWidth(120)
-            r.win:SetPoint("LEFT", r.ts, "RIGHT", 6, 0); r.win:SetWidth(80)
-            r.aff:SetPoint("LEFT", r.win, "RIGHT", 6, 0); r.aff:SetWidth(70)
-            r.rea:SetPoint("LEFT", r.aff, "RIGHT", 6, 0); r.rea:SetWidth(50)
+            r.id:SetPoint("LEFT", r, "LEFT", 0, 0); r.id:SetWidth(40); HLBG.safeSetJustify(r.id, "LEFT")
+            r.sea:SetPoint("LEFT", r.id, "RIGHT", 10, 0); r.sea:SetWidth(60)
+            r.ts:SetPoint("LEFT", r.sea, "RIGHT", 10, 0); r.ts:SetWidth(150)
+            r.win:SetPoint("LEFT", r.ts, "RIGHT", 10, 0); r.win:SetWidth(70)
+            r.aff:SetPoint("LEFT", r.win, "RIGHT", 10, 0); r.aff:SetWidth(70)
+            r.rea:SetPoint("LEFT", r.aff, "RIGHT", 10, 0); r.rea:SetWidth(60)
             HLBG.UI.History.rows[i] = r
         end
         return r
@@ -285,19 +306,21 @@ function HLBG.History(a, b, c, d, e, f, g)
         local sea = row.season
         local sname = row.seasonName or row.sname or nil
         local compact_len = (type(row) == 'table' and #row) or 0
-        local ts, win, affix, reas
-        if compact_len >= 5 then ts,row3,win,affix,reas = row[2],row[3],row[3],row[4],row[5] end
+    local ts, win, affix, reas
+    if compact_len >= 5 then ts,win,affix,reas = row[2],row[3],row[4],row[5] end
         r.id:SetText(tostring(id or ""))
         r.sea:SetText(tostring(sname or sea or ""))
         r.ts:SetText(ts or row.ts or "")
-        r.win:SetText(win or row.winner or "")
+    local wtxt = (win or row.winner or "")
+    if tostring(wtxt):upper()=="DRAW" then wtxt = "Draw" end
+    r.win:SetText(wtxt)
         r.aff:SetText(HLBG.GetAffixName(affix or row.affix))
         r.rea:SetText(reas or row.reason or "-")
         if not r._hlbgHover then r._hlbgHover = true; r:SetScript('OnEnter', function(self) self:SetBackdrop({ bgFile = 'Interface/Tooltips/UI-Tooltip-Background' }); self:SetBackdropColor(1,1,0.4,0.10) end); r:SetScript('OnLeave', function(self) self:SetBackdrop(nil) end) end
         r:Show(); y = y - 14; hadRows = true
     end
-    local maxPage = (HLBG.UI.History.total and HLBG.UI.History.total > 0) and math.max(1, math.ceil(HLBG.UI.History.total/(HLBG.UI.History.per or 25))) or (HLBG.UI.History.page or 1)
-    HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", HLBG.UI.History.page, maxPage))
+    local maxPage = (HLBG.UI.History.total and HLBG.UI.History.total > 0) and math.max(1, math.ceil((HLBG.UI.History.total or 0)/(HLBG.UI.History.per or 15))) or (HLBG.UI.History.page or 1)
+    HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", HLBG.UI.History.page or 1, maxPage))
     HLBG.UI.History.Nav.Prev:SetEnabled((HLBG.UI.History.page or 1) > 1)
     HLBG.UI.History.Nav.Next:SetEnabled((HLBG.UI.History.page or 1) < maxPage)
     local visibleCount = (type(rows) == "table" and #rows) or 0
@@ -496,15 +519,27 @@ function ShowTab(i)
     if HLBG.UI.Info then if i == 5 then HLBG.UI.Info:Show() else HLBG.UI.Info:Hide() end end
     if HLBG.UI.Results then if i == 6 then HLBG.UI.Results:Show() else HLBG.UI.Results:Hide() end end
     HinterlandAffixHUDDB.lastInnerTab = i
+    -- Show Season selector only for History/Stats; hide for Live/Queue/Info/Results
+    pcall(function()
+        local showSeason = (i == 2 or i == 3)
+        local lab = HLBG.UI.SeasonLabel
+        local dd = HLBG.UI.SeasonDrop
+        if lab then
+            if lab.SetShown then lab:SetShown(showSeason) else if showSeason then lab:Show() else lab:Hide() end end
+        end
+        if dd then
+            if dd.SetShown then dd:SetShown(showSeason) else if showSeason then dd:Show() else dd:Hide() end end
+        end
+    end)
 end
 
 -- Helper: request History + Stats for current selection (season-only)
 function HLBG._requestHistoryAndStats()
     local hist = HLBG.UI and HLBG.UI.History
     local p = (hist and hist.page) or 1
-    local per = (hist and hist.per) or 5
+    local per = (hist and hist.per) or 15
     local sk = (hist and hist.sortKey) or "id"
-    local sd = (hist and hist.sortDir) or "DESC"
+    local sd = (hist and hist.sortDir) or "ASC"
     local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
         _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, season, sk, sd)
@@ -525,7 +560,8 @@ end
 
 -- Season dropdown (top-right)
 do
-    local label = HLBG.UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    HLBG.UI.SeasonLabel = HLBG.UI.SeasonLabel or HLBG.UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local label = HLBG.UI.SeasonLabel
     label:SetPoint("TOPRIGHT", HLBG.UI.Frame, "TOPRIGHT", -210, -16)
     label:SetText("Season:")
     local maxSeason = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.maxSeason) or 10
@@ -535,7 +571,8 @@ do
         return t
     end
     if type(UIDropDownMenu_Initialize) == 'function' then
-        local dd = CreateFrame('Frame', 'HLBG_SeasonDrop', HLBG.UI.Frame, 'UIDropDownMenuTemplate')
+        HLBG.UI.SeasonDrop = HLBG.UI.SeasonDrop or CreateFrame('Frame', 'HLBG_SeasonDrop', HLBG.UI.Frame, 'UIDropDownMenuTemplate')
+        local dd = HLBG.UI.SeasonDrop
         dd:SetPoint('LEFT', label, 'RIGHT', -10, -4)
         local function onSelect(self, val)
             HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
@@ -566,7 +603,8 @@ do
         HLBG.UI.Frame:HookScript('OnShow', function() UIDropDownMenu_Initialize(dd, init) end)
     else
         -- Fallback: simple cycle button
-        local btn = CreateFrame('Button', nil, HLBG.UI.Frame, 'UIPanelButtonTemplate')
+    HLBG.UI.SeasonDrop = HLBG.UI.SeasonDrop or CreateFrame('Button', nil, HLBG.UI.Frame, 'UIPanelButtonTemplate')
+    local btn = HLBG.UI.SeasonDrop
         btn:SetSize(90, 20)
         btn:SetPoint('LEFT', label, 'RIGHT', 4, 0)
         local function setText()
@@ -589,10 +627,29 @@ HLBG.UI.Live = CreateFrame("Frame", nil, HLBG.UI.Frame)
 HLBG.UI.Live:SetAllPoints(HLBG.UI.Frame)
 HLBG.UI.Live.Text = HLBG.UI.Live:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Live.Text:SetPoint("TOPLEFT", 16, -40)
-HLBG.UI.Live.Text:SetText("Live status shows resources, timer and affix. Use the HUD on the world view.")
+HLBG.UI.Live.Text:SetText("Live Status")
+-- Compact summary line: resources, players, time, affix
+HLBG.UI.Live.Summary = HLBG.UI.Live:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+HLBG.UI.Live.Summary:SetPoint("TOPLEFT", HLBG.UI.Live.Text, "BOTTOMLEFT", 0, -8)
+HLBG.UI.Live.Summary:SetWidth(460)
+HLBG.safeSetJustify(HLBG.UI.Live.Summary, "LEFT")
 HLBG.UI.Live:SetScript("OnShow", function()
     -- Always mirror current STATUS into the Live tab, even outside zone 47
     pcall(function() if type(HLBG.UpdateLiveFromStatus) == 'function' then HLBG.UpdateLiveFromStatus() end end)
+    -- Update summary view from last known status
+    pcall(function()
+        local RES = _G.RES or {A=0,H=0}
+        local a = tonumber(RES.A or 0) or 0
+        local h = tonumber(RES.H or 0) or 0
+        local tl = tonumber(HLBG._timeLeft or RES.DURATION or 0) or 0
+        local m = math.floor(tl/60); local s = tl%60
+        local aff = tostring(HLBG._affixText or "-")
+        local ap = (HLBG._lastStatus and (HLBG._lastStatus.APlayers or HLBG._lastStatus.APC or HLBG._lastStatus.AllyCount)) or "-"
+        local hp = (HLBG._lastStatus and (HLBG._lastStatus.HPlayers or HLBG._lastStatus.HPC or HLBG._lastStatus.HordeCount)) or "-"
+        if HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.Summary then
+            HLBG.UI.Live.Summary:SetText(string.format("Resources  A:%d  H:%d      Players  A:%s  H:%s      Time %d:%02d      Affix %s", a,h,tostring(ap),tostring(hp), m,s, aff))
+        end
+    end)
     -- Also request a fresh STATUS from the server via AIO if available
     if _G.AIO and _G.AIO.Handle then
         _G.AIO.Handle("HLBG", "Request", "STATUS")
@@ -606,6 +663,30 @@ HLBG.UI.Live:SetScript("OnShow", function()
     end
 end)
 
+-- Auto-refresh Live summary timer: updates the summary time display every second without spamming server
+do
+    local acc = 0
+    local fr = CreateFrame('Frame')
+    fr:SetScript('OnUpdate', function(_, elapsed)
+        acc = acc + (elapsed or 0)
+        if acc < 1.0 then return end
+        acc = 0
+        -- Only update if the Live tab is visible
+        if not (HLBG and HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.IsShown and HLBG.UI.Live:IsShown()) then return end
+        local RES = _G.RES or {A=0,H=0}
+        local a = tonumber(RES.A or 0) or 0
+        local h = tonumber(RES.H or 0) or 0
+        local tl = tonumber(HLBG._timeLeft or RES.DURATION or 0) or 0
+        local m = math.floor(tl/60); local s = tl%60
+        local aff = tostring(HLBG._affixText or "-")
+        local ap = (HLBG._lastStatus and (HLBG._lastStatus.APlayers or HLBG._lastStatus.APC or HLBG._lastStatus.AllyCount)) or "-"
+        local hp = (HLBG._lastStatus and (HLBG._lastStatus.HPlayers or HLBG._lastStatus.HPC or HLBG._lastStatus.HordeCount)) or "-"
+        if HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.Summary then
+            HLBG.UI.Live.Summary:SetText(string.format("Resources  A:%d  H:%d      Players  A:%s  H:%s      Time %d:%02d      Affix %s", a,h,tostring(ap),tostring(hp), m,s, aff))
+        end
+    end)
+end
+
 -- Live scoreboard: scrollable player list
 HLBG.UI.Live.Scroll = CreateFrame("ScrollFrame", "HLBG_LiveScroll", HLBG.UI.Live, "UIPanelScrollFrameTemplate")
 HLBG.UI.Live.Scroll:SetPoint("TOPLEFT", 16, -64)
@@ -615,6 +696,10 @@ HLBG.UI.Live.Content:SetSize(460, 300)
 if HLBG.UI.Live.Content.SetFrameStrata then HLBG.UI.Live.Content:SetFrameStrata("DIALOG") end
 HLBG.UI.Live.Scroll:SetScrollChild(HLBG.UI.Live.Content)
 HLBG.UI.Live.rows = HLBG.UI.Live.rows or {}
+-- Build header once for labels + totals
+pcall(function() ensureLiveHeader() end)
+-- Prefer compact summary; hide the old header labels
+if HLBG.UI.Live.Header and HLBG.UI.Live.Header.Hide then HLBG.UI.Live.Header:Hide() end
 
 local function liveGetRow(i)
     local r = HLBG.UI.Live.rows[i]
@@ -651,10 +736,10 @@ HLBG.UI.History.Scroll:SetScrollChild(HLBG.UI.History.Content)
 HLBG.UI.History.rows = HLBG.UI.History.rows or {}
 -- Defaults for paging/sort
 HLBG.UI.History.page = HLBG.UI.History.page or 1
-HLBG.UI.History.per = HLBG.UI.History.per or 5
+HLBG.UI.History.per = HLBG.UI.History.per or 15
 HLBG.UI.History.total = HLBG.UI.History.total or 0
 HLBG.UI.History.sortKey = HLBG.UI.History.sortKey or "id"
-HLBG.UI.History.sortDir = HLBG.UI.History.sortDir or "DESC"
+HLBG.UI.History.sortDir = HLBG.UI.History.sortDir or "ASC"
 HLBG.UI.History.EmptyText = HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 HLBG.UI.History.EmptyText:SetPoint("TOPLEFT", 16, -64)
 HLBG.UI.History.EmptyText:SetText("No data yet…")
@@ -688,40 +773,40 @@ HLBG.UI.History.Nav.Next:SetPoint("LEFT", HLBG.UI.History.Nav.PageText, "RIGHT",
 
 HLBG.UI.History.Nav.Prev:SetScript("OnClick", function()
     local hist = HLBG.UI.History
-    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
+    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 15))) or (hist.page or 1)
     hist.page = math.max(1, (hist.page or 1) - 1)
     HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
     local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+    _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
     end
     do
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
         if type(sendDot) == 'function' then
-            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC"))
         end
     end
 end)
 
 HLBG.UI.History.Nav.Next:SetScript("OnClick", function()
     local hist = HLBG.UI.History
-    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 5))) or (hist.page or 1)
+    local maxPage = (hist.total and hist.total > 0) and math.max(1, math.ceil(hist.total/(hist.per or 15))) or (hist.page or 1)
     hist.page = math.min(maxPage, (hist.page or 1) + 1)
     HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", hist.page, maxPage))
     local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
-        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC")
+    _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
+    _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC")
     end
     do
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
         if type(sendDot) == 'function' then
-            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 5, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+            sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "ASC"))
         end
     end
 end)
@@ -732,6 +817,7 @@ HLBG.UI.Stats:Hide()
 HLBG.UI.Stats.Text = HLBG.UI.Stats:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 HLBG.UI.Stats.Text:SetPoint("TOPLEFT", 16, -40)
 HLBG.UI.Stats.Text:SetText("Stats will appear here.")
+HLBG.UI.Stats.Text:SetWidth(460)
 HLBG.UI.Stats:SetScript("OnShow", function()
     local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
@@ -848,25 +934,29 @@ HLBG.UI.History.Header:SetHighlightFontObject("GameFontHighlight")
 -- Create an explicit FontString child for consistent API across clients (3.3.5 Button:SetJustifyH may be nil)
 HLBG.UI.History.Header.Text = HLBG.UI.History.Header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 HLBG.UI.History.Header.Text:SetPoint("LEFT", 2, 0)
-HLBG.UI.History.Header.Text:SetText("Player Name          Score  Team  Time")
+-- Labels match the columns we actually render below: id | season | time | winner | affix | reason
+HLBG.UI.History.Header.Text:SetText("ID     Season      Time             Winner   Affix  Reason")
 HLBG.safeSetJustify(HLBG.UI.History.Header.Text, "LEFT")
 HLBG.UI.History.Header:SetHitRectInsets(0, 0, 0, 0)
 HLBG.UI.History.Header:SetScript("OnClick", function(self)
-    if not HLBG.UI.History.sortBy then HLBG.UI.History.sortBy = {} end
-    local sortIndex = self.sortIndex or 1
-    HLBG.UI.History.sortDescending = not HLBG.UI.History.sortDescending
-    table.sort(HLBG.UI.History.rows, function(a, b)
-        local av, bv = a[sortIndex], b[sortIndex]
-        if type(av) == "string" then av = av:lower() end
-        if type(bv) == "string" then bv = bv:lower() end
-        if HLBG.UI.History.sortDescending then
-            return av > bv
-        else
-            return av < bv
-        end
-    end)
-    HLBG.UI.History.sorted = true
-    HLBG.UI.History:Update()
+    -- Delegate sorting to the server; toggle sortDir and keep sortKey (default 'id')
+    local hist = HLBG.UI.History
+    hist.sortKey = hist.sortKey or "id"
+    local cur = tostring((hist.sortDir or "ASC"):upper())
+    hist.sortDir = (cur == "DESC") and "ASC" or "DESC"
+    -- Reset to first page when changing sort
+    hist.page = 1
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey, hist.sortDir)
+        _G.AIO.Handle("HLBG", "History", hist.page, hist.per or 15, season, hist.sortKey, hist.sortDir)
+        _G.AIO.Handle("HLBG", "HISTORY", hist.page, hist.per or 15, season, hist.sortKey, hist.sortDir)
+        _G.AIO.Handle("HLBG", "HistoryUI", hist.page, hist.per or 15, season, hist.sortKey, hist.sortDir)
+    end
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    if type(sendDot) == 'function' then
+        sendDot(string.format(".hlbg historyui %d %d %d %s %s", hist.page, hist.per or 15, season, hist.sortKey or "id", hist.sortDir or "DESC"))
+    end
 end)
 
 HLBG.UI.History.Header.sortIndex = 1
@@ -900,9 +990,9 @@ HLBG.UI.History:SetScript("OnShow", function(self)
     end
     -- Auto-request history for current paging/sort (AIO + fallback)
     local p = self.page or 1
-    local per = self.per or 5
+    local per = self.per or 15
     local sk = self.sortKey or "id"
-    local sd = self.sortDir or "DESC"
+    local sd = self.sortDir or "ASC"
     -- Only load current season results
     local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (_G.HLBG_GetSeason and _G.HLBG_GetSeason()) or 0
     if _G.AIO and _G.AIO.Handle then
@@ -921,7 +1011,7 @@ HLBG.UI.History:SetScript("OnShow", function(self)
     self:Update()
 end)
 
-HLBG.UI.Results.Header = HLBG.UI.History.Header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+HLBG.UI.Results.Header = HLBG.UI.Results:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 HLBG.UI.Results.Header:SetPoint("TOPLEFT", HLBG.UI.Results, "TOPLEFT", 0, -16)
 HLBG.UI.Results.Header:SetPoint("TOPRIGHT", HLBG.UI.Results, "TOPRIGHT", 0, -16)
 HLBG.UI.Results.Header:SetHeight(24)

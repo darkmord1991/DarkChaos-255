@@ -145,6 +145,8 @@ end
                 local LOCK = tonumber(b:match('%f[%w]LOCK=(%d+)'))
                 local AFF = b:match('%f[%w]AFF=([^|]+)') or b:match('%f[%w]AFFIX=([^|]+)')
                 local DUR = tonumber(b:match('%f[%w]DURATION=(%d+)')) or tonumber(b:match('%f[%w]MATCH_TOTAL=(%d+)'))
+                local AP = tonumber(b:match('%f[%w]APLAYERs=(%d+)')) or tonumber(b:match('%f[%w]APLAYER%(s%)=(%d+)')) or tonumber(b:match('%f[%w]APLAYER=(%d+)')) or tonumber(b:match('%f[%w]APC=(%d+)'))
+                local HP = tonumber(b:match('%f[%w]HPLAYERS=(%d+)')) or tonumber(b:match('%f[%w]HPLAYERs=(%d+)')) or tonumber(b:match('%f[%w]HPC=(%d+)'))
                 HLBG._lastStatus = HLBG._lastStatus or {}
                 if A then HLBG._lastStatus.A = A end
                 if H then HLBG._lastStatus.H = H end
@@ -152,6 +154,8 @@ end
                 if LOCK ~= nil then HLBG._lastStatus.LOCK = LOCK end
                 if AFF then HLBG._lastStatus.AFF = AFF end
                 if DUR then HLBG._lastStatus.DURATION = DUR end
+                if AP then HLBG._lastStatus.APlayers = AP; HLBG._lastStatus.APC = AP end
+                if HP then HLBG._lastStatus.HPlayers = HP; HLBG._lastStatus.HPC = HP end
                 if type(HLBG.UpdateLiveFromStatus) == 'function' then pcall(HLBG.UpdateLiveFromStatus) end
                 return
             end
@@ -166,9 +170,22 @@ end
                 if htsv:find('\t') then
                     if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, per, total, 'id', 'DESC') end
                 else
-                    -- Compact single-line row fallback
-                    local row = HLBG._parseHistLineFlexible(htsv)
-                    if row then HLBG._pushHistoryRow(row) end
+                    -- No tabs present (some servers strip them). Parse each line flexibly.
+                    local rows = {}
+                    for line in htsv:gmatch('[^\n]+') do
+                        if line and line ~= '' and type(HLBG._parseHistLineFlexible) == 'function' then
+                            local r = HLBG._parseHistLineFlexible(line)
+                            if r then table.insert(rows, r) end
+                        end
+                    end
+                    if #rows > 0 then
+                        if type(HLBG.History) == 'function' then
+                            pcall(HLBG.History, rows, 1, per, total, 'id', 'DESC')
+                        else
+                            -- fallback: push first row
+                            pcall(HLBG._pushHistoryRow, rows[1])
+                        end
+                    end
                 end
                 return
             end
@@ -189,7 +206,11 @@ end
             -- STATS JSON fallback
             local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
             if sj then
-                local ok, decoded = pcall(function() return (type(json_decode) == 'function' and json_decode(sj)) or nil end)
+                local ok, decoded = pcall(function()
+                    if type(json_decode) == 'function' then return json_decode(sj) end
+                    if type(HLBG) == 'table' and type(HLBG.json_decode) == 'function' then return HLBG.json_decode(sj) end
+                    return nil
+                end)
                 if ok and type(decoded) == 'table' and type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
                 return
             end
@@ -312,9 +333,11 @@ function HLBG._bootstrapUI()
     HLBG.UI.Frame = f
 
     -- Tabs (Live/History/Stats/Queue/Affixes)
+    -- IMPORTANT: PanelTemplates_* APIs expect tabs to be named FrameName.."Tab"..index
+    -- so for frame name HLBG_FallbackFrame the buttons must be HLBG_FallbackFrameTab1..N
     local tabs = {}
     local function makeTab(idx, text)
-        local b = CreateFrame('Button', 'HLBG_FallbackTab'..idx, f, 'OptionsFrameTabButtonTemplate')
+        local b = CreateFrame('Button', f:GetName()..'Tab'..idx, f, 'OptionsFrameTabButtonTemplate')
         if idx == 1 then b:SetPoint('TOPLEFT', f, 'BOTTOMLEFT', 10, 7) else b:SetPoint('LEFT', tabs[idx-1], 'RIGHT') end
         b:SetText(text)
         tabs[idx] = b
@@ -361,23 +384,23 @@ function HLBG._bootstrapUI()
         h.Nav.Next:SetText('Next')
         h.Nav.PageText = h.Nav:CreateFontString(nil, 'OVERLAY', 'GameFontNormalSmall')
         h.Nav.PageText:SetPoint('LEFT', h.Nav.Next, 'RIGHT', 8, 0)
-        h.per = h.per or 10
+    h.per = h.per or 10
         h.Nav.Prev:SetScript('OnClick', function()
-            local p = (h.page or 1); if p>1 then p=p-1 end
+            local p = tonumber(h.page or 1) or 1; if p > 1 then p = p - 1 end
             if _G.AIO and _G.AIO.Handle then
                 local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
                 local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
                 local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-                _G.AIO.Handle('HLBG','Request','HISTORY', p, h.per or 10, h.sortKey or 'id', h.sortDir or 'DESC', wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                _G.AIO.Handle('HLBG','Request','HISTORY', p, h.per or 10, h.sortKey or 'id', h.sortDir or 'ASC', wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
             end
         end)
         h.Nav.Next:SetScript('OnClick', function()
-            local p = (h.page or 1) + 1
+            local p = (tonumber(h.page or 1) or 1) + 1
             if _G.AIO and _G.AIO.Handle then
                 local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
                 local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
                 local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-                _G.AIO.Handle('HLBG','Request','HISTORY', p, h.per or 10, h.sortKey or 'id', h.sortDir or 'DESC', wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                _G.AIO.Handle('HLBG','Request','HISTORY', p, h.per or 10, h.sortKey or 'id', h.sortDir or 'ASC', wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
             end
         end)
     end
@@ -470,7 +493,7 @@ function HLBG._bootstrapUI()
             if _G.AIO and _G.AIO.Handle then
                 local h = HLBG.UI.History
                 local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-                _G.AIO.Handle('HLBG','Request','HISTORY', h.page or 1, h.per or 10, h.sortKey or 'id', h.sortDir or 'DESC')
+                _G.AIO.Handle('HLBG','Request','HISTORY', h.page or 1, h.per or 10, h.sortKey or 'id', h.sortDir or 'ASC')
             end
         elseif i == 3 then
             -- ensure stats loads when Stats tab is shown
@@ -483,13 +506,18 @@ function HLBG._bootstrapUI()
     end
     for i=1,#tabs do tabs[i]:SetScript('OnClick', function() showTab(i) end) end
     HLBG.ShowTab = showTab
-    _G.ShowTab = _G.ShowTab or showTab
+    -- Only set the global if it's not already provided by the full UI module
+    if type(_G.ShowTab) ~= 'function' then _G.ShowTab = showTab end
     HLBG.UI._boot = true
     return true
 end
 
 function HLBG._ensureUI(kind)
-    -- kind is informational; we bootstrap once and return true
+    -- Prefer the full UI if it already constructed a frame/tabs
+    if HLBG.UI and HLBG.UI.Frame and (HLBG.UI.Tabs and #HLBG.UI.Tabs > 0 or HLBG.UI.Live or HLBG.UI.History or HLBG.UI.Stats) then
+        return true
+    end
+    -- Otherwise build the minimal fallback once
     return HLBG._bootstrapUI()
 end
 
@@ -1340,7 +1368,7 @@ if _G.AIO and _G.AIO.Handle then
     local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
     local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
     local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 15, "id", "ASC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
     _G.AIO.Handle("HLBG", "Request", "STATS")
     _G.AIO.Handle("HLBG", "Request", "AFFIXES", sv, HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or '')
     _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
@@ -1410,6 +1438,9 @@ function HLBG.Status(payload)
     RES.LOCK = tonumber(payload.LOCK or payload.lock or 0) or 0
     HLBG._affixText = payload.AFF or payload.affix or HLBG._affixText
     HLBG._lastStatus = payload
+    -- Normalize aliases for player counts
+    if payload.APlayers or payload.APC then HLBG._lastStatus.APlayers = tonumber(payload.APlayers or payload.APC) or HLBG._lastStatus.APlayers end
+    if payload.HPlayers or payload.HPC then HLBG._lastStatus.HPlayers = tonumber(payload.HPlayers or payload.HPC) or HLBG._lastStatus.HPlayers end
     -- draw
     if type(HLBG.UpdateLiveFromStatus) == 'function' then
         pcall(HLBG.UpdateLiveFromStatus)
@@ -1436,6 +1467,80 @@ function HLBG.Stats(stats)
     local d = tonumber(stats.draws or 0) or 0
     local avg = tonumber(stats.avgDuration or 0) or 0
     local lines = { string.format('Alliance: %d  Horde: %d  Draws: %d  Avg: %d min', a, h, d, math.floor(avg/60)) }
+    -- Optional extras mirrored from server NPC stats
+    if stats.total then table.insert(lines, string.format('Total records: %s', tostring(stats.total))) end
+    if stats.currentStreakTeam and stats.currentStreakLen then
+        table.insert(lines, string.format('Current streak: %s x%d', tostring(stats.currentStreakTeam), tonumber(stats.currentStreakLen) or 0))
+    end
+    if stats.longestStreakTeam and stats.longestStreakLen then
+        table.insert(lines, string.format('Longest streak: %s x%d', tostring(stats.longestStreakTeam), tonumber(stats.longestStreakLen) or 0))
+    end
+    if stats.largestMargin then
+        local lm = stats.largestMargin
+        table.insert(lines, string.format('Largest margin: [%s] %s by %d (A:%d H:%d)', tostring(lm.ts or '?'), tostring(lm.winner or '?'), tonumber(lm.margin or 0) or 0, tonumber(lm.a or 0) or 0, tonumber(lm.h or 0) or 0))
+    end
+    if stats.medianMargin then
+        table.insert(lines, string.format('Median margin: %d', tonumber(stats.medianMargin) or 0))
+    end
+    if type(stats.reasons) == 'table' then
+        local r = stats.reasons
+        local parts = {}
+        for k,v in pairs(r) do parts[#parts+1] = string.format('%s:%s', tostring(k), tostring(v)) end
+        if #parts > 0 then table.insert(lines, 'Reasons: '..table.concat(parts, ', ')) end
+    end
+    -- Per-affix summaries (compact)
+    if type(stats.winRates) == 'table' then
+        table.insert(lines, 'Win rates per affix:')
+        local shown = 0
+        for aff, r in pairs(stats.winRates) do
+            if type(r) == 'table' and r.n and r.A and r.H and r.D then
+                table.insert(lines, string.format('- %s: A:%.1f%% H:%.1f%% D:%.1f%% (n=%d)', tostring(aff), (r.A*100.0)/r.n, (r.H*100.0)/r.n, (r.D*100.0)/r.n, r.n))
+                shown = shown + 1; if shown >= 5 then break end
+            end
+        end
+    end
+    local function top3Flexible(v)
+        local items = {}
+        if type(v) == 'table' then
+            if #v > 0 then
+                for i=1,#v do
+                    local row = v[i]
+                    local total = (tonumber(row.Alliance or row.A or 0) or 0) + (tonumber(row.Horde or row.H or 0) or 0) + (tonumber(row.DRAW or row.D or 0) or 0)
+                    local label = row.weather or row.affix or tostring(i)
+                    items[#items+1] = { label = label, total = total }
+                end
+            else
+                for k,row in pairs(v) do
+                    local total = (tonumber(row.Alliance or 0) or 0) + (tonumber(row.Horde or 0) or 0) + (tonumber(row.DRAW or 0) or 0)
+                    items[#items+1] = { label = tostring(k), total = total }
+                end
+            end
+        end
+        table.sort(items, function(a,b) return a.total > b.total end)
+        local out = {}
+        for i=1,math.min(3,#items) do out[#out+1] = string.format('%s:%d', tostring(items[i].label), tonumber(items[i].total) or 0) end
+        return table.concat(out, ', ')
+    end
+    if stats.byAffix and next(stats.byAffix) then table.insert(lines, 'Top Affixes: '..top3Flexible(stats.byAffix)) end
+    if stats.byWeather and next(stats.byWeather) then table.insert(lines, 'Top Weather: '..top3Flexible(stats.byWeather)) end
+    local function top3avg(map)
+        local arr = {}
+        for k,v in pairs(map or {}) do arr[#arr+1] = { k=k, v=tonumber(v.avg or v.Avg or 0) or 0 } end
+        table.sort(arr, function(x,y) return x.v > y.v end)
+        local out = {}
+        for i=1,math.min(3,#arr) do out[#out+1] = string.format('%s:%d min', tostring(arr[i].k), math.floor((arr[i].v or 0)/60)) end
+        return table.concat(out, ', ')
+    end
+    if stats.affixDur and next(stats.affixDur) then table.insert(lines, 'Slowest Affixes (avg): '..top3avg(stats.affixDur)) end
+    if stats.weatherDur and next(stats.weatherDur) then table.insert(lines, 'Slowest Weather (avg): '..top3avg(stats.weatherDur)) end
+    if type(stats.topWinners) == 'table' and #stats.topWinners > 0 then
+        local items = {}
+        for i=1,math.min(3,#stats.topWinners) do
+            local r = stats.topWinners[i]
+            items[#items+1] = string.format('%s:%d', tostring(r.name or r.Name or '?'), tonumber(r.wins or r.Wins or 0) or 0)
+        end
+        if #items > 0 then table.insert(lines, 'Top winners: '..table.concat(items, ', ')) end
+    end
     if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then HLBG.UI.Stats.Text:SetText(table.concat(lines, '\n')) end
 end
 end
@@ -1445,32 +1550,38 @@ if type(HLBG.History) ~= 'function' then
 function HLBG.History(rows, page, per, total, col, dir)
     if not HLBG._ensureUI('History') then return end
     rows = rows or {}
+    -- Normalize array-of-rows: server sends named fields; fallback accepts array indices
     local h = HLBG.UI.History
-    h.page = page or 1; h.per = per or 10; h.total = total or #rows; h.sortKey = col or 'id'; h.sortDir = dir or 'DESC'
+    h.page = tonumber(page) or 1; h.per = tonumber(per) or 10; h.total = tonumber(total) or #rows; h.sortKey = col or 'id'; h.sortDir = dir or 'ASC'
     -- hide old rows
     for i=1,#h.rows do h.rows[i]:Hide() end
     local function getRow(i)
         local r = h.rows[i]
         if not r then
             r = CreateFrame('Frame', nil, h.Content)
-            r:SetSize(420, 14)
+            r:SetSize(460, 18)
             r.id = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             r.ts = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             r.win = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             r.aff = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             r.rea = r:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             r.id:SetPoint('LEFT', r, 'LEFT', 0, 0); r.id:SetWidth(50)
-            r.ts:SetPoint('LEFT', r.id, 'RIGHT', 6, 0); r.ts:SetWidth(120)
+            r.ts:SetPoint('LEFT', r.id, 'RIGHT', 6, 0); r.ts:SetWidth(156)
             r.win:SetPoint('LEFT', r.ts, 'RIGHT', 6, 0); r.win:SetWidth(80)
-            r.aff:SetPoint('LEFT', r.win, 'RIGHT', 6, 0); r.aff:SetWidth(70)
-            r.rea:SetPoint('LEFT', r.aff, 'RIGHT', 6, 0); r.rea:SetWidth(50)
+            r.aff:SetPoint('LEFT', r.win, 'RIGHT', 6, 0); r.aff:SetWidth(90)
+            r.rea:SetPoint('LEFT', r.aff, 'RIGHT', 6, 0); r.rea:SetWidth(60)
+            HLBG.safeSetJustify(r.id, 'LEFT')
+            HLBG.safeSetJustify(r.ts, 'LEFT')
+            HLBG.safeSetJustify(r.win, 'LEFT')
+            HLBG.safeSetJustify(r.aff, 'LEFT')
+            HLBG.safeSetJustify(r.rea, 'LEFT')
             h.rows[i] = r
         end
         return r
     end
     local y = -22
     for i, row in ipairs(rows) do
-        local r = getRow(i)
+    local r = getRow(i)
         r:ClearAllPoints(); r:SetPoint('TOPLEFT', h.Content, 'TOPLEFT', 0, y)
         local id = row.id or row[1]
         local ts = row.ts or row[2]
@@ -1482,9 +1593,16 @@ function HLBG.History(rows, page, per, total, col, dir)
         r.win:SetText(tostring(win or ''))
         r.aff:SetText(HLBG.GetAffixName(aff))
         r.rea:SetText(tostring(rea or ''))
-        r:Show(); y = y - 14
+        r:Show(); y = y - 18
     end
     h.Content:SetHeight(math.max(300, -y + 8))
+    -- Update pager text and buttons if present
+    local totalRows = tonumber(h.total or #rows) or #rows
+    local perPage = tonumber(h.per or 10) or 10
+    local maxPage = math.max(1, math.ceil((totalRows > 0 and totalRows or #rows)/perPage))
+    if h.Nav and h.Nav.PageText then h.Nav.PageText:SetText(string.format('Page %d / %d', h.page or 1, maxPage)) end
+    if h.Nav and h.Nav.Prev then if (h.page or 1) > 1 then h.Nav.Prev:Enable() else h.Nav.Prev:Disable() end end
+    if h.Nav and h.Nav.Next then if (h.page or 1) < maxPage then h.Nav.Next:Enable() else h.Nav.Next:Disable() end end
     if HLBG.UI and HLBG.UI.Frame and not HLBG.UI.Frame:IsShown() then HLBG.UI.Frame:Show() end
 end
 end
@@ -1651,6 +1769,9 @@ do
     -- preserve some helper functions and UI from the current HLBG table so we don't lose pointers
     local preservedSendLog = (type(HLBG) == "table" and type(HLBG.SendClientLog) == "function") and HLBG.SendClientLog or nil
     local preservedUI = (type(HLBG) == "table" and type(HLBG.UI) == "table") and HLBG.UI or nil
+    -- Preserve UI bootstrap helpers so subsequent calls continue to work after table swap
+    local preservedBootstrap = (type(HLBG) == "table" and type(HLBG._bootstrapUI) == "function") and HLBG._bootstrapUI or nil
+    local preservedEnsure = (type(HLBG) == "table" and type(HLBG._ensureUI) == "function") and HLBG._ensureUI or nil
     -- preserve safe helpers that UI and handlers rely on (these can be lost when HLBG table is swapped by AIO)
     local preservedSafe = {}
     if type(HLBG) == "table" then
@@ -1690,6 +1811,8 @@ do
     -- reattach preserved helpers to the new reg table if present
     if preservedSendLog then reg.SendClientLog = preservedSendLog end
     if preservedUI then reg.UI = preservedUI end
+    if preservedBootstrap and not reg._bootstrapUI then reg._bootstrapUI = preservedBootstrap end
+    if preservedEnsure and not reg._ensureUI then reg._ensureUI = preservedEnsure end
     for k, fn in pairs(preservedSafe) do reg[k] = reg[k] or fn end
     _G.HLBG = reg; HLBG = reg
         DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers successfully registered (History/Stats/PONG/OpenUI)")
@@ -1702,7 +1825,7 @@ do
             local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
             local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 15, "id", "ASC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
             _G.AIO.Handle("HLBG", "Request", "STATS")
             _G.AIO.Handle("HLBG", "Request", "AFFIXES", sv, HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or '')
             _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
@@ -1939,7 +2062,7 @@ if _G.AIO and _G.AIO.Handle then
     local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
     local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
     local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 15, "id", "ASC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
     _G.AIO.Handle("HLBG", "Request", "STATS")
     _G.AIO.Handle("HLBG", "Request", "AFFIXES", sv, HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or '')
     _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
@@ -2057,7 +2180,136 @@ function HLBG.History(rows, page, per, total, col, dir)
         r:Show(); y = y - 14
     end
     h.Content:SetHeight(math.max(300, -y + 8))
+    -- Update pager text and nav if available in fallback UI
+    if h.Nav and h.Nav.PageText then
+        local totalRows = tonumber(h.total or #rows) or #rows
+        local perPage = tonumber(h.per or 10) or 10
+        local maxPage = math.max(1, math.ceil((totalRows > 0 and totalRows or #rows)/perPage))
+        h.Nav.PageText:SetText(string.format('Page %d / %d', h.page or 1, maxPage))
+        if h.Nav.Prev then if (h.page or 1) > 1 then h.Nav.Prev:Enable() else h.Nav.Prev:Disable() end end
+        if h.Nav.Next then if (h.page or 1) < maxPage then h.Nav.Next:Enable() else h.Nav.Next:Disable() end end
+    end
     if HLBG.UI and HLBG.UI.Frame and not HLBG.UI.Frame:IsShown() then HLBG.UI.Frame:Show() end
+end
+end
+
+-- TSV fallback handler for history (AIO older builds or chat broadcast)
+if type(HLBG.HistoryStr) ~= 'function' then
+function HLBG.HistoryStr(tsv, page, per, total, col, dir)
+    local rows = {}
+    if type(tsv) == 'string' and tsv ~= '' then
+        -- Support custom separator '||' -> newline
+        if tsv:find('%|%|') then tsv = tsv:gsub('%|%|','\n') end
+        for line in tsv:gmatch('[^\n]+') do
+            local id, ts, win, aff, rea = line:match('^(.-)\t(.-)\t(.-)\t(.-)\t(.*)$')
+            if id then table.insert(rows, { id = id, ts = ts, winner = win, affix = aff, reason = rea }) end
+        end
+    end
+    HLBG.History(rows, page, per, total, col, dir)
+end
+end
+
+-- Queue status handler and request helper
+if type(HLBG.QueueStatus) ~= 'function' then
+function HLBG.QueueStatus(payload)
+    HLBG._ensureUI('Queue')
+    local q = HLBG.UI and HLBG.UI.QueuePane
+    if not q then return end
+    if type(payload) == 'string' then
+        -- parse chat fallback: key=value|key=value
+        local data = {}
+        for kv in payload:gmatch('[^|]+') do
+            local k,v = kv:match('^(%w+)%=(.+)$')
+            if k then data[k] = v end
+        end
+        payload = data
+    end
+    payload = payload or {}
+    local team = payload.team or '?'
+    local pos = tonumber(payload.pos or 0) or 0
+    local size = tonumber(payload.size or 0) or 0
+    local eta = tonumber(payload.eta or 0) or 0
+    local aCount = tonumber(payload.countA or 0) or 0
+    local hCount = tonumber(payload.countH or 0) or 0
+    if q.Status then q.Status:SetText(string.format('Queue: %s — position %d of %d (ETA %s)', tostring(team), pos, size, HLBG._fmtETA and HLBG._fmtETA(eta) or tostring(eta)..'s')) end
+    if q.Counts then q.Counts:SetText(string.format('Queued: Alliance %d | Horde %d | Total %d', aCount, hCount, aCount + hCount)) end
+end
+end
+
+function HLBG._fmtETA(sec)
+    sec = tonumber(sec or 0) or 0
+    local m = math.floor(sec/60); local s = sec%60
+    return string.format('%d:%02d', m, s)
+end
+
+function HLBG.RequestQueue(action)
+    action = tostring(action or 'STATUS'):upper()
+    if _G.AIO and _G.AIO.Handle then
+        if action == 'JOIN' then _G.AIO.Handle('HLBG','Request','QUEUE','join')
+        elseif action == 'LEAVE' then _G.AIO.Handle('HLBG','Request','QUEUE','leave')
+        else _G.AIO.Handle('HLBG','Request','QUEUE','status') end
+    end
+end
+
+-- Affixes handler and request helper
+if type(HLBG.Affixes) ~= 'function' then
+function HLBG.Affixes(rows)
+    HLBG._ensureUI('Affixes')
+    local a = HLBG.UI and HLBG.UI.AffixPane
+    if not a then return end
+    rows = rows or {}
+    -- Build name map for affix code -> name
+    _G.HLBG_AFFIX_NAMES = _G.HLBG_AFFIX_NAMES or {}
+    for i=1,#rows do
+        local r = rows[i]
+        local id = r.id or r[1]
+        local name = r.name or r[2]
+        if id and name then _G.HLBG_AFFIX_NAMES[id] = name end
+    end
+    -- Render simple list
+    if not a.Rows then return end
+    for i=1,#a.Rows do a.Rows[i]:Hide() end
+    a.Rows = a.Rows or {}
+    local function getRow(i)
+        local fr = a.Rows[i]
+        if not fr then
+            fr = CreateFrame('Frame', nil, a.Content)
+            fr:SetSize(420, 16)
+            fr.name = fr:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+            fr.effect = fr:CreateFontString(nil, 'OVERLAY', 'GameFontDisableSmall')
+            fr.name:SetPoint('LEFT', fr, 'LEFT', 0, 0)
+            fr.name:SetWidth(200)
+            fr.effect:SetPoint('LEFT', fr.name, 'RIGHT', 8, 0)
+            fr.effect:SetWidth(200)
+            a.Rows[i] = fr
+        end
+        return fr
+    end
+    local y = -4
+    for i=1,#rows do
+        local r = rows[i]
+        local fr = getRow(i)
+        fr:ClearAllPoints(); fr:SetPoint('TOPLEFT', a.Content, 'TOPLEFT', 0, y)
+        local nm = r.name or r[2] or '?'
+        local eff = r.effect or r[3] or ''
+        fr.name:SetText(nm)
+        fr.effect:SetText(eff)
+        fr:Show(); y = y - 16
+    end
+    a.Content:SetHeight(math.max(300, -y + 8))
+end
+end
+
+function HLBG.RequestAffixes()
+    local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    local search = HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or ''
+    if _G.AIO and _G.AIO.Handle then _G.AIO.Handle('HLBG','Request','AFFIXES', sv, search) end
+end
+
+-- Lightweight debug message
+if type(HLBG.DBG) ~= 'function' then
+function HLBG.DBG(msg)
+    HLBG._lastDBG = tostring(msg or '')
 end
 end
 
@@ -2275,7 +2527,7 @@ do
             local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
             local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 15, "id", "ASC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
             _G.AIO.Handle("HLBG", "Request", "STATS")
             _G.AIO.Handle("HLBG", "Request", "AFFIXES", sv, HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or '')
             _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
@@ -2544,7 +2796,7 @@ do
             local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
             local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, "id", "DESC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 15, "id", "ASC", wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
             _G.AIO.Handle("HLBG", "Request", "STATS")
             _G.AIO.Handle("HLBG", "Request", "AFFIXES", sv, HinterlandAffixHUDDB and HinterlandAffixHUDDB.affixSearch or '')
             _G.AIO.Handle("HLBG", "Request", "QUEUE", "STATUS")
