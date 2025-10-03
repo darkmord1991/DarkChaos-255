@@ -383,7 +383,7 @@ function HLBG.ShowSettings()
             s.Content:SetHeight(math.max(400, totalHeight))
         end
         
-        -- Update height after all elements have rendered
+        -- Update height after all elements have rendered - use our custom timer implementation
         C_Timer.After(0.1, updateHeight)
         
         s.initialized = true

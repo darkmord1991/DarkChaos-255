@@ -85,7 +85,7 @@ function HLBG.Stats(stats)
         s.SeasonLabel:SetPoint("LEFT", s.SeasonFrame, "LEFT", 0, 0)
         s.SeasonLabel:SetText("Season:")
         
-        s.SeasonDropdown = CreateFrame("Button", nil, s.SeasonFrame, "UIDropDownMenuTemplate")
+        s.SeasonDropdown = CreateFrame("Button", "HLBG_StatsSeasonDropDown", s.SeasonFrame, "UIDropDownMenuTemplate")
         s.SeasonDropdown:SetPoint("LEFT", s.SeasonLabel, "RIGHT", 5, -3)
         
         UIDropDownMenu_Initialize(s.SeasonDropdown, function(self, level)

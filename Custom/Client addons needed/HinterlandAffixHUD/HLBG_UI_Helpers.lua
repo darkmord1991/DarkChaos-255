@@ -165,8 +165,74 @@ function HLBG.UI.FixUIErrors()
         HLBG.UI.SettingsPane.ScrollFrame:SetName("HLBG_SettingsScrollFrame")
     end
     
+    -- Fix for dropdown menus
+    if HLBG.UI and HLBG.UI.History and HLBG.UI.History.FilterWinnerDropDown and not HLBG.UI.History.FilterWinnerDropDown:GetName() then
+        HLBG.UI.History.FilterWinnerDropDown:SetName("HLBG_HistoryWinnerDropDown")
+    end
+    
+    if HLBG.UI and HLBG.UI.History and HLBG.UI.History.FilterAffixDropDown and not HLBG.UI.History.FilterAffixDropDown:GetName() then
+        HLBG.UI.History.FilterAffixDropDown:SetName("HLBG_HistoryAffixDropDown")
+    end
+    
+    -- Debug dropdown if it exists
+    if HLBG.Debug and HLBG.Debug.Frame and not _G["HLBG_DebugLevelDropDown"] then
+        local dropdown = _G["HLBG_DebugLevelDropDown"]
+        if dropdown and not dropdown:GetName() then
+            dropdown:SetName("HLBG_DebugLevelDropDown")
+        end
+    end
+    
+    -- Apply general dropdown fixes from compatibility layer
+    if HLBG.Compat and HLBG.Compat.fixDropdownMenus then
+        HLBG.Compat.fixDropdownMenus()
+    end
+    
     print("|cFF33FF99Hinterland Affix HUD:|r UI fixes applied.")
 end
 
+-- Helper function to create dropdown menus safely
+function HLBG.UI.Helpers.CreateDropDown(parent, name, width, initialValue, items, callback)
+    -- Generate a unique name if one is not provided
+    if not name then
+        name = "HLBG_DropDown_" .. tostring(math.floor(GetTime() * 1000))
+    end
+    
+    -- Create the dropdown frame with an explicit name
+    local dropdown = CreateFrame("Frame", name, parent, "UIDropDownMenuTemplate")
+    dropdown:SetPoint("CENTER", parent, "CENTER", 0, 0)
+    UIDropDownMenu_SetWidth(dropdown, width or 130)
+    UIDropDownMenu_SetText(dropdown, initialValue or "Select...")
+    
+    -- Setup the initialization function
+    UIDropDownMenu_Initialize(dropdown, function(self, level)
+        level = level or 1
+        local info = UIDropDownMenu_CreateInfo()
+        
+        for _, item in ipairs(items or {}) do
+            info.text = item.text or item
+            info.value = item.value or item
+            info.checked = (initialValue == (item.value or item))
+            info.func = function()
+                UIDropDownMenu_SetText(dropdown, item.text or item)
+                if callback then callback(item.value or item) end
+                -- Use safe way to close dropdown menus in WoW 3.3.5a
+                if DropDownList1 and DropDownList1:IsShown() then
+                    DropDownList1:Hide()
+                end
+                if DropDownList2 and DropDownList2:IsShown() then
+                    DropDownList2:Hide()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    return dropdown
+end
+
 -- Run the fixes when this file loads
-C_Timer.After(2, HLBG.UI.FixUIErrors)
+C_Timer.After(2, function()
+    if HLBG.UI.FixUIErrors then
+        HLBG.Compat.safeCall(HLBG.UI.FixUIErrors)
+    end
+end)

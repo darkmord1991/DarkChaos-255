@@ -71,7 +71,8 @@ if type(_G.ShowTab) == "function" and type(_G.RegisterTab) == "function" then
         end
     end
     
-    -- Register our new tabs if they aren't already registered
+    -- Register our new tabs after a short delay to ensure UI elements are created
+    -- Use our compatible C_Timer implementation
     C_Timer.After(1, function()
         if HLBG.UI and HLBG.UI.SettingsPane then
             _G.RegisterTab(6, "Settings", HLBG.UI.SettingsPane)

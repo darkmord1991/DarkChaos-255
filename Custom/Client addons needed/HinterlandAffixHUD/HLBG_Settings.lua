@@ -163,7 +163,8 @@ end
 
 -- Create dropdown menu
 function HLBG.CreateDropdown(parent, text, setting, options, yOffset)
-    local dropdown = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
+    local dropdownName = "HLBG_Settings_" .. setting .. "DropDown"
+    local dropdown = CreateFrame("Frame", dropdownName, parent, "UIDropDownMenuTemplate")
     dropdown:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, yOffset)
     dropdown.setting = setting
     

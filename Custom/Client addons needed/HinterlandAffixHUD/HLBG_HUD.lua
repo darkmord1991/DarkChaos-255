@@ -68,6 +68,12 @@ function HLBG.UpdateHUD()
     if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = false end
     local res = _G.RES or {A=0,H=0,END=0}
     local a = tonumber(res.A or 0) or 0
+    
+    -- Update affix text in HUD
+    if HLBG.UI.HUD.Affix then
+        local affixText = HLBG._affixText or "Unknown"
+        HLBG.UI.HUD.Affix:SetText("Affix: " .. affixText)
+    end
     local h = tonumber(res.H or 0) or 0
     local rawEnd = tonumber(res.END or 0) or 0
     -- Server may send END as an absolute epoch timestamp. Convert to seconds left when it looks like an epoch (> 3 days).

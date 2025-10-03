@@ -2,9 +2,15 @@
 ## Title: Hinterland Affix HUD (AIO)
 ## Notes: Shows Hinterland BG current affix, history, stats and queue UI
 ## Author: DC-255
-## Version: 1.5.2
+## Version: 1.5.4
 ## Deps: AIO_Client
 ## SavedVariables: HinterlandAffixHUDDB
+
+# Core compatibility layer
+HLBG_Compatibility.lua
+HLBG_Debug_Helper.lua
+
+# Original files
 HinterlandAffixHUD.lua
 HLBG_Core.lua
 HLBG_JSON.lua
@@ -27,3 +33,10 @@ HLBG_UI_History_Fixed.lua
 HLBG_UI_Info.lua
 HLBG_UI_Settings.lua
 HLBG_UI_Integrator.lua
+
+# Stability Fixes
+HLBG_AntiFlicker.lua
+HLBG_ZoneDetect.lua
+HLBG_Stability.lua
+HLBG_DedupeHUD.lua
+HLBG_AIO_Client.lua

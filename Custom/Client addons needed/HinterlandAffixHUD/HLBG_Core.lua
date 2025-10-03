@@ -215,7 +215,12 @@ end
 
 -- Update Live display from last status payload
 function HLBG.UpdateLiveFromStatus()
-    -- Implementation to be added in UI module
+    -- Save the affix for other functions to use
+    if HLBG._lastStatus and HLBG._lastStatus.AFF then
+        HLBG._affixText = HLBG._lastStatus.AFF
+    end
+    
+    -- The actual implementation will be provided in the UI module
 end
 
 -- Handle which affix filter to use based on user selection

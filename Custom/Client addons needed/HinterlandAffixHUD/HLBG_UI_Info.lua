@@ -174,7 +174,7 @@ function HLBG.ShowInfo()
             i.Content:SetHeight(math.max(400, totalHeight))
         end
         
-        -- Update height
+        -- Update height - use our custom timer implementation
         C_Timer.After(0.1, updateHeight)
         
         i.initialized = true

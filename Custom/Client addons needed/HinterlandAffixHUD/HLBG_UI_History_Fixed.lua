@@ -9,7 +9,12 @@ function HLBG.History(rows, page, per, total, col, dir)
     local h = HLBG.UI and HLBG.UI.History
     if not h then return end
     
-    rows = rows or {}
+    -- Ensure rows is a table
+    if type(rows) ~= 'table' then
+        print("|cFFFF0000HLBG Error:|r History received invalid rows type: " .. type(rows))
+        rows = {}
+    end
+    
     h.page = tonumber(page or 1) or 1
     h.per = tonumber(per or 10) or 10
     h.total = tonumber(total or #rows) or #rows
@@ -164,7 +169,7 @@ function HLBG.History(rows, page, per, total, col, dir)
         winnerLabel:SetText("Winner:")
         
         local winnerOptions = {"ALL", "Alliance", "Horde", "Draw"}
-        h.Filter.Winner = CreateFrame("Frame", nil, h.Filter, "UIDropDownMenuTemplate")
+        h.Filter.Winner = CreateFrame("Frame", "HLBG_HistoryWinnerDropDown", h.Filter, "UIDropDownMenuTemplate")
         h.Filter.Winner:SetPoint("LEFT", winnerLabel, "RIGHT", -5, -3)
         
         UIDropDownMenu_SetWidth(h.Filter.Winner, 100)
@@ -240,17 +245,30 @@ function HLBG.History(rows, page, per, total, col, dir)
     
     -- Populate rows
     local y = 0
-    for i, row in ipairs(rows) do
+    
+    -- Extra safety check - ensure rows is a table before iteration
+    if type(rows) ~= 'table' then
+        print("|cFFFF0000HLBG Error:|r Cannot iterate over rows: not a table")
+        return
+    end
+    
+    for i=1, #rows do
+        local row = rows[i]
+        if type(row) ~= 'table' then
+            print("|cFFFF0000HLBG Error:|r Invalid row type at index " .. i .. ": " .. type(row))
+            row = {}  -- Use empty table as fallback
+        end
+        
         local r = getRow(i)
         r:SetPoint("TOPLEFT", h.Content, "TOPLEFT", 0, y)
         r:SetPoint("RIGHT", h.Content, "RIGHT", 0, 0)
         
-        -- Extract row data
-        local id = row.id or row[1] or ""
-        local ts = row.ts or row[2] or ""
-        local win = row.winner or row[3] or ""
-        local aff = row.affix or row[4] or ""
-        local duration = row.duration or row.reason or row[5] or ""
+        -- Extract row data with enhanced safety
+        local id = (type(row) == 'table' and (row.id or row[1])) or ""
+        local ts = (type(row) == 'table' and (row.ts or row[2])) or ""
+        local win = (type(row) == 'table' and (row.winner or row[3])) or ""
+        local aff = (type(row) == 'table' and (row.affix or row[4])) or ""
+        local duration = (type(row) == 'table' and (row.duration or row.reason or row[5])) or ""
         
         -- Format affix name if helper function exists
         local affixName = aff
@@ -317,18 +335,65 @@ end
 
 -- TSV fallback handler for history (AIO older builds or chat broadcast)
 function HLBG.HistoryStr(tsv, page, per, total, col, dir)
+    -- Safety check for input type
+    if type(tsv) ~= 'string' and type(tsv) ~= 'table' then
+        print("|cFFFF0000HLBG Error:|r Invalid history data type: " .. type(tsv))
+        HLBG.History({}, page, per, total, col, dir)
+        return
+    end
+    
     local rows = {}
+    
+    -- Process string input
     if type(tsv) == 'string' and tsv ~= '' then
         -- Support custom separator '||' -> newline
         if tsv:find('%|%|') then tsv = tsv:gsub('%|%|','\n') end
+        
+        -- Extract TOTAL meta if present
+        local extractedTotal = tonumber(tsv:match('^TOTAL=(%d+)%s*')) or total
+        if extractedTotal then
+            -- Remove the TOTAL prefix if it exists
+            tsv = tsv:gsub('^TOTAL=%d+%s*%|%|', '')
+        end
+        
         for line in string.gmatch(tsv, '[^\n]+') do
+            -- Try TSV format first (tab-separated)
             local id, ts, win, aff, data = line:match('^(.-)\t(.-)\t(.-)\t(.-)\t(.*)$')
+            
             if id then 
                 -- Try to parse the last column - might be duration or other data
                 local duration = tonumber(data) or data
                 table.insert(rows, { id = id, ts = ts, winner = win, affix = aff, duration = duration })
+            else
+                -- Try space-separated format as fallback
+                local fallbackData = HLBG._parseHistLineFlexible and HLBG._parseHistLineFlexible(line)
+                if fallbackData then
+                    table.insert(rows, fallbackData)
+                end
             end
         end
+    -- Process table input
+    elseif type(tsv) == 'table' then
+        rows = tsv
     end
-    HLBG.History(rows, page, per, total, col, dir)
+    
+    -- Safety check - ensure rows is a table before passing to History
+    if type(rows) ~= 'table' then
+        print("|cFFFF0000HLBG Error:|r History rows is not a table")
+        rows = {}
+    end
+    
+    -- Don't call History with empty rows to avoid UI disruption
+    if #rows == 0 and not HinterlandAffixHUDDB.alwaysShowEmptyHistory then
+        print("|cFF33FF99HLBG:|r No history data to display")
+        return
+    end
+    
+    -- Throttle history updates to prevent UI flicker
+    if HLBG._lastHistoryUpdate and GetTime() - HLBG._lastHistoryUpdate < 1.0 then
+        return
+    end
+    
+    HLBG._lastHistoryUpdate = GetTime()
+    pcall(function() HLBG.History(rows, page, per, total, col, dir) end)
 end
