@@ -1,13 +1,29 @@
 ## Interface: 30300
 ## Title: Hinterland Affix HUD (AIO)
-## Notes: Shows Hinterland BG current affix under the Wintergrasp-style HUD
+## Notes: Shows Hinterland BG current affix, history, stats and queue UI
 ## Author: DC-255
-## Version: 1.3.0
+## Version: 1.5.2
 ## Deps: AIO_Client
 ## SavedVariables: HinterlandAffixHUDDB
 HinterlandAffixHUD.lua
+HLBG_Core.lua
+HLBG_JSON.lua
 HLBG_Utils.lua
 HLBG_HUD.lua
+HLBG_Debug.lua
 HLBG_UI.lua
+HLBG_Info.lua
+HLBG_Settings.lua
+HLBG_Help.lua
+HLBG_AFK.lua
+HLBG_SlashCommands.lua
+HLBG_AIO.lua
 HLBG_Handlers.lua
-HLBG_AIO_Client.lua
+
+# Enhanced UI Components
+HLBG_UI_Helpers.lua
+HLBG_UI_Stats_Enhanced.lua
+HLBG_UI_History_Fixed.lua
+HLBG_UI_Info.lua
+HLBG_UI_Settings.lua
+HLBG_UI_Integrator.lua

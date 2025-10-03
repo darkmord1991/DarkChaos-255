@@ -138,21 +138,87 @@ end
 function HLBG.UpdateLiveFromStatus()
     -- Always refresh HUD first
     pcall(function() HLBG.UpdateHUD() end)
+    
     -- If Live pane exists, render two rows based on RES
     if not HLBG.UI or not HLBG.UI.Live then return end
+    
+    -- Get current resources
     local res = _G.RES or {A=0,H=0}
     local nowts = (type(date)=="function" and date("%Y-%m-%d %H:%M:%S")) or ""
-    local rows = {
-        { id = "A", ts = nowts, name = "Alliance", team = "Alliance", score = tonumber(res.A or 0) or 0 },
-        { id = "H", ts = nowts, name = "Horde", team = "Horde", score = tonumber(res.H or 0) or 0 },
+    
+    -- Get status data
+    local status = HLBG._lastStatus or {}
+    local playerCounts = {
+        Alliance = tonumber(status.APlayers or status.APC or 0) or 0,
+        Horde = tonumber(status.HPlayers or status.HPC or 0) or 0
     }
-    if type(HLBG.Live) == 'function' then pcall(HLBG.Live, rows) end
+    
+    -- Create rows with additional information
+    local rows = {
+        { 
+            id = "A", 
+            ts = nowts, 
+            name = "Alliance", 
+            team = "Alliance", 
+            score = tonumber(res.A or 0) or 0,
+            players = playerCounts.Alliance
+        },
+        { 
+            id = "H", 
+            ts = nowts, 
+            name = "Horde", 
+            team = "Horde", 
+            score = tonumber(res.H or 0) or 0,
+            players = playerCounts.Horde
+        },
+    }
+    
+    -- Update the Live UI
+    if type(HLBG.Live) == 'function' then 
+        pcall(HLBG.Live, rows) 
+    end
+    
     -- Update header totals if helper is available
     pcall(function()
-        if HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.Header and HLBG.UI.Live.Header.Totals then
-            HLBG.UI.Live.Header.Totals:SetText(string.format("Alliance: %d   Horde: %d", rows[1].score, rows[2].score))
+        if HLBG.UI and HLBG.UI.Live and HLBG.UI.Live.Header then
+            -- Update scores
+            if HLBG.UI.Live.Header.Totals then
+                HLBG.UI.Live.Header.Totals:SetText(string.format("Alliance: %d   Horde: %d", rows[1].score, rows[2].score))
+            end
+            
+            -- Update player counts
+            if HLBG.UI.Live.Header.Players then
+                HLBG.UI.Live.Header.Players:SetText(string.format("Players: Alliance %d / Horde %d", 
+                    rows[1].players, rows[2].players))
+            end
+            
+            -- Update timer if available
+            if HLBG.UI.Live.Header.Timer then
+                local timeLeft = HLBG._timeLeft or 0
+                if timeLeft > 0 then
+                    HLBG.UI.Live.Header.Timer:SetText("Time: " .. fmtTimer(timeLeft))
+                    HLBG.UI.Live.Header.Timer:Show()
+                else
+                    HLBG.UI.Live.Header.Timer:SetText("No active battle")
+                end
+            end
+            
+            -- Update affix if available
+            if HLBG.UI.Live.Header.Affix then
+                local affixText = HLBG._affixText or "None"
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(affixText) or affixText
+                HLBG.UI.Live.Header.Affix:SetText("Affix: " .. affixName)
+            end
         end
     end)
+    
+    -- Also update Live UI even when outside BG zone if configured
+    if (HinterlandAffixHUDDB and HinterlandAffixHUDDB.showOutside) then
+        -- Make sure Live tab is visible
+        if HLBG.UI and HLBG.UI.Live then
+            HLBG.UI.Live:Show()
+        end
+    end
 end
 
 -- Smooth countdown: decrement RES.END locally between STATUS updates

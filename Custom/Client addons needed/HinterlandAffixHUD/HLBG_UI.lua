@@ -188,7 +188,7 @@ end
 if not HLBG.History then
 function HLBG.History(a, b, c, d, e, f, g)
     if not HLBG._ensureUI('History') then return end
-    local rows, page, per, total, col, dir
+    local rows, page, per, total, col, dir, secondsAgo
     local function looksLikeRows(v)
         if type(v) ~= "table" then return false end
         if #v and #v > 0 then return true end
@@ -196,11 +196,11 @@ function HLBG.History(a, b, c, d, e, f, g)
         return false
     end
     if looksLikeRows(a) then
-        rows, page, per, total, col, dir = a, b, c, d, e, f
+        rows, page, per, total, col, dir, secondsAgo = a, b, c, d, e, f, g
     elseif looksLikeRows(b) then
-        rows, page, per, total, col, dir = b, c, d, e, f, g
+        rows, page, per, total, col, dir, secondsAgo = b, c, d, e, f, g
     else
-        rows, page, per, total, col, dir = b, c, d, e, f, g
+        page, per, rows, total, col, dir, secondsAgo = a, b, c, d, e, f, g
     end
     if type(rows) ~= "table" then
         local tsv = nil
@@ -211,123 +211,372 @@ function HLBG.History(a, b, c, d, e, f, g)
         end
         rows = {}
     end
+    
+    -- Debug the received parameters
+    HLBG.Debug("History: rows=" .. (type(rows) == "table" and #rows or "0") .. 
+               " page=" .. tostring(page) .. 
+               " per=" .. tostring(per) .. 
+               " total=" .. tostring(total) ..
+               " col=" .. tostring(col) .. 
+               " dir=" .. tostring(dir))
+    
     -- Only overwrite pagination when explicit numeric values are provided by the payload
     -- Coerce numeric pagination values even if they come as strings
     if page ~= nil then HLBG.UI.History.page = tonumber(page) or HLBG.UI.History.page end
     if per ~= nil then HLBG.UI.History.per = tonumber(per) or HLBG.UI.History.per end
     if total ~= nil then HLBG.UI.History.total = tonumber(total) or HLBG.UI.History.total end
     HLBG.UI.History.page = HLBG.UI.History.page or 1
-    HLBG.UI.History.per = HLBG.UI.History.per or 15
+    HLBG.UI.History.per = HLBG.UI.History.per or 10
     HLBG.UI.History.total = HLBG.UI.History.total or 0
     HLBG.UI.History.sortKey = col or HLBG.UI.History.sortKey or "id"
-    HLBG.UI.History.sortDir = dir or HLBG.UI.History.sortDir or "ASC"
+    HLBG.UI.History.sortDir = dir or HLBG.UI.History.sortDir or "DESC"
+    
+    -- Enhanced normalization logic
     local normalized = {}
     if type(rows) == "table" then
-        if #rows and #rows > 0 then
+        -- First try to handle the case where rows is a map with numeric keys (1, 2, etc)
+        if #rows > 0 then
+            -- It's already a sequential array
             normalized = rows
         else
+            -- Try to normalize from various formats
             local tmp = {}
-            for k,v in pairs(rows) do
+            for k, v in pairs(rows) do
                 if type(v) == "table" then
-                    local nk = tonumber(k)
-                    if nk then tmp[nk] = v else table.insert(tmp, v) end
+                    -- If we have a table with numeric keys inside
+                    tmp[#tmp + 1] = v
                 end
             end
-            local hasNumeric = false
-            for k,_ in pairs(tmp) do if type(k) == "number" then hasNumeric = true; break end end
-            if hasNumeric then local i = 1; while tmp[i] do table.insert(normalized, tmp[i]); i=i+1 end else for _,v in ipairs(tmp) do table.insert(normalized, v) end end
+            
+            -- If we still don't have rows, maybe rows itself is a single row
+            if #tmp == 0 and (rows.id or rows.ts or rows.winner or rows.affix) then
+                tmp[1] = rows
+            end
+            
+            normalized = tmp
         end
     end
-    if #normalized == 0 and type(rows) == "table" then
-        if type(rows.id) ~= "nil" or type(rows.ts) ~= "nil" then table.insert(normalized, rows) end
+    
+    -- Additional normalization: extract numeric properties to named ones
+    for i, row in ipairs(normalized) do
+        -- Convert numeric indices to named properties if not already present
+        if type(row[1]) ~= "nil" and type(row.id) == "nil" then row.id = row[1] end
+        if type(row[2]) ~= "nil" and type(row.ts) == "nil" then row.ts = row[2] end
+        if type(row[3]) ~= "nil" and type(row.winner) == "nil" then row.winner = row[3] end
+        if type(row[3]) ~= "nil" and type(row.winner_tid) == "nil" then
+            -- Try to detect faction IDs
+            if row[3] == "Horde" or row[3] == "HORDE" then row.winner_tid = 67 end
+            if row[3] == "Alliance" or row[3] == "ALLIANCE" then row.winner_tid = 469 end
+        end
+        if type(row[4]) ~= "nil" and type(row.affix) == "nil" then row.affix = row[4] end
+        if type(row[5]) ~= "nil" and type(row.dur) == "nil" then row.dur = row[5] end
+        if type(row[6]) ~= "nil" and type(row.reason) == "nil" then row.reason = row[6] end
     end
+    
     rows = normalized
-    -- Client-side sort safety: if we want ASC by id but the server returns any order, sort here
+    
+    -- Client-side sort safety: if we want ASC/DESC by a key but the server returns any order, sort here
     local wantAsc = (tostring((HLBG.UI.History.sortDir or "ASC"):upper()) == "ASC")
-    local byId = (tostring(HLBG.UI.History.sortKey or "id"):lower() == "id")
-    if byId and wantAsc and type(rows) == 'table' and #rows > 1 then
+    local sortKey = tostring(HLBG.UI.History.sortKey or "id"):lower()
+    
+    if type(rows) == 'table' and #rows > 1 then
         table.sort(rows, function(a,b)
-            local ai = tonumber((type(a)=="table" and (a.id or a[1])) or 0) or 0
-            local bi = tonumber((type(b)=="table" and (b.id or b[1])) or 0) or 0
-            return ai < bi
+            local av, bv
+            
+            if sortKey == "id" then
+                av = tonumber((type(a)=="table" and (a.id or a[1])) or 0) or 0
+                bv = tonumber((type(b)=="table" and (b.id or b[1])) or 0) or 0
+            elseif sortKey == "ts" then
+                av = tonumber((type(a)=="table" and (a.ts or a[2])) or 0) or 0
+                bv = tonumber((type(b)=="table" and (b.ts or b[2])) or 0) or 0
+            else
+                -- Default to string comparison for other fields
+                av = tostring((type(a)=="table" and (a[sortKey] or "")) or "")
+                bv = tostring((type(b)=="table" and (b[sortKey] or "")) or "")
+            end
+            
+            if wantAsc then
+                return av < bv
+            else
+                return av > bv
+            end
         end)
     end
+    
+    -- Store for debugging
     if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
     HLBG.UI.History.lastRows = rows
     local sample = ""
     if #rows > 0 and type(rows[1]) == 'table' then
         local r = rows[1]
-        local id = tostring(r[1] or r.id or "")
-        local ts = tostring(r[2] or r.ts or "")
-        local win = tostring(r[3] or r.winner or "")
-        sample = string.format("%s\t%s\t%s\t%s", id, ts, win, tostring(r[4] or r.affix or ""))
+        local id = tostring(r.id or r[1] or "")
+        local ts = tostring(r.ts or r[2] or "")
+        local win = tostring(r.winner or r[3] or "")
+        sample = string.format("%s\t%s\t%s\t%s", id, ts, win, tostring(r.affix or r[4] or ""))
     end
+    
+    -- Log the results
     table.insert(HinterlandAffixHUD_DebugLog, 1, string.format("[%s] HISTORY N=%d sample=%s", date("%Y-%m-%d %H:%M:%S"), #rows, sample))
     while #HinterlandAffixHUD_DebugLog > 200 do table.remove(HinterlandAffixHUD_DebugLog) end
-    -- forward a compact sample to server-side log if available
+    
+    -- Forward a compact sample to server-side log if available
     local okSend = pcall(function() return _G.HLBG_SendClientLog end)
     local send = (okSend and type(_G.HLBG_SendClientLog) == "function") and _G.HLBG_SendClientLog or ((type(HLBG) == "table" and type(HLBG.SendClientLog) == "function") and HLBG.SendClientLog or nil)
     if send then
         local sample2 = sample
         pcall(function() send(string.format("HISTORY_CLIENT N=%d sample=%s", #rows, sample2)) end)
     end
+    
+    -- Show the UI and set the proper tab
     if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show(); ShowTab(2) end
     if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Content then HLBG.UI.History.Content:Show() end
     if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Scroll then HLBG.UI.History.Scroll:SetVerticalScroll(0) end
-    -- render rows (simplified)
+    
+    -- Prepare rows container
+    if not HLBG.UI.History.rows then HLBG.UI.History.rows = {} end
+    
+    -- Render rows with improved visuals
     local function getRow(i)
         local r = HLBG.UI.History.rows[i]
         if not r then
-            r = CreateFrame("Frame", nil, HLBG.UI.History.Content)
+            r = CreateFrame("Frame", "HLBG_HistoryRow_"..i, HLBG.UI.History.Content)
             if r.SetFrameStrata then r:SetFrameStrata("DIALOG") end
-            r:SetSize(420, 14)
+            r:SetHeight(22) -- Taller rows for better readability
+            
+            -- Set backdrop for better visibility
+            r:SetBackdrop({ 
+                bgFile = "Interface/Tooltips/UI-Tooltip-Background", 
+                edgeFile = nil, 
+                tile = true, tileSize = 16, edgeSize = 0, 
+                insets = { left = 0, right = 0, top = 0, bottom = 0 }
+            })
+            
+            -- Create text fields
             r.id = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.sea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.ts = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.win = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             r.aff = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            r.dur = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") 
             r.rea = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            r.id:SetPoint("LEFT", r, "LEFT", 0, 0); r.id:SetWidth(40); HLBG.safeSetJustify(r.id, "LEFT")
-            r.sea:SetPoint("LEFT", r.id, "RIGHT", 10, 0); r.sea:SetWidth(60)
-            r.ts:SetPoint("LEFT", r.sea, "RIGHT", 10, 0); r.ts:SetWidth(150)
-            r.win:SetPoint("LEFT", r.ts, "RIGHT", 10, 0); r.win:SetWidth(70)
-            r.aff:SetPoint("LEFT", r.win, "RIGHT", 10, 0); r.aff:SetWidth(70)
-            r.rea:SetPoint("LEFT", r.aff, "RIGHT", 10, 0); r.rea:SetWidth(60)
+            
+            -- Set positioning with more space
+            r.id:SetPoint("LEFT", r, "LEFT", 5, 0); r.id:SetWidth(40) 
+            HLBG.safeSetJustify(r.id, "LEFT")
+            
+            r.sea:SetPoint("LEFT", r.id, "RIGHT", 5, 0); r.sea:SetWidth(40)
+            HLBG.safeSetJustify(r.sea, "LEFT")
+            
+            r.ts:SetPoint("LEFT", r.sea, "RIGHT", 5, 0); r.ts:SetWidth(120)
+            HLBG.safeSetJustify(r.ts, "LEFT")
+            
+            r.win:SetPoint("LEFT", r.ts, "RIGHT", 5, 0); r.win:SetWidth(70)
+            HLBG.safeSetJustify(r.win, "LEFT")
+            
+            r.aff:SetPoint("LEFT", r.win, "RIGHT", 5, 0); r.aff:SetWidth(70)
+            HLBG.safeSetJustify(r.aff, "LEFT")
+            
+            r.dur:SetPoint("LEFT", r.aff, "RIGHT", 5, 0); r.dur:SetWidth(60)
+            HLBG.safeSetJustify(r.dur, "LEFT")
+            
+            r.rea:SetPoint("LEFT", r.dur, "RIGHT", 5, 0); r.rea:SetWidth(70)
+            HLBG.safeSetJustify(r.rea, "LEFT")
+            
+            -- Add hover effect
+            r:SetScript('OnEnter', function(self) 
+                self:SetBackdropColor(0.3, 0.3, 0.7, 0.5)
+                
+                -- Show tooltip with more details
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Battleground #" .. (self.rowData and self.rowData.id or "?"))
+                
+                -- Add timestamp/time ago
+                if self.rowData and self.rowData.ts then
+                    local timeText
+                    if secondsAgo and tonumber(self.rowData.ts) then
+                        local ts = tonumber(self.rowData.ts)
+                        if ts < secondsAgo then
+                            timeText = SecondsToTime(secondsAgo - ts) .. " ago"
+                        else
+                            timeText = date("%Y-%m-%d %H:%M:%S", ts)
+                        end
+                    else
+                        timeText = tostring(self.rowData.ts)
+                    end
+                    GameTooltip:AddLine("Time: " .. timeText)
+                end
+                
+                -- Winner details
+                if self.rowData and self.rowData.winner_tid then
+                    if self.rowData.winner_tid == 67 then
+                        GameTooltip:AddLine("Winner: |cFFFF0000Horde|r")
+                    elseif self.rowData.winner_tid == 469 then
+                        GameTooltip:AddLine("Winner: |cFF0000FFAlliance|r")
+                    else
+                        GameTooltip:AddLine("Winner: " .. tostring(self.rowData.winner or "Unknown"))
+                    end
+                end
+                
+                -- Affix details
+                if self.rowData and self.rowData.affix then
+                    local affixName = HLBG.GetAffixName(self.rowData.affix)
+                    GameTooltip:AddLine("Affix: " .. affixName)
+                end
+                
+                -- Duration
+                if self.rowData and self.rowData.dur and tonumber(self.rowData.dur) then
+                    GameTooltip:AddLine("Duration: " .. SecondsToTime(tonumber(self.rowData.dur)))
+                end
+                
+                -- Victory reason
+                if self.rowData and self.rowData.reason then
+                    GameTooltip:AddLine("Victory by: " .. tostring(self.rowData.reason))
+                end
+                
+                GameTooltip:Show()
+            end)
+            
+            r:SetScript('OnLeave', function(self)
+                -- Restore original color based on row index
+                local rowIndex = self.rowIndex or 0
+                if rowIndex % 2 == 0 then
+                    self:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+                else 
+                    self:SetBackdropColor(0.05, 0.05, 0.05, 0.3)
+                end
+                
+                GameTooltip:Hide()
+            end)
+            
             HLBG.UI.History.rows[i] = r
         end
         return r
     end
-    for i=1,#HLBG.UI.History.rows do HLBG.UI.History.rows[i]:Hide() end
-    local y = -22; local hadRows = false
+    
+    -- Hide all existing rows
+    for i=1, #HLBG.UI.History.rows do 
+        if HLBG.UI.History.rows[i] then
+            HLBG.UI.History.rows[i]:Hide() 
+        end
+    end
+    
+    -- Starting position and tracking
+    local y = -22
+    local hadRows = false
+    local contentWidth = 450
+    
+    -- Check if we need to add an empty state message
+    if #rows == 0 then
+        if not HLBG.UI.History.EmptyText then
+            HLBG.UI.History.EmptyText = HLBG.UI.History.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            HLBG.UI.History.EmptyText:SetPoint("CENTER", 0, 0)
+            HLBG.UI.History.EmptyText:SetText("No history entries found.\nPlay some battlegrounds!")
+        end
+        HLBG.UI.History.EmptyText:Show()
+    elseif HLBG.UI.History.EmptyText then
+        HLBG.UI.History.EmptyText:Hide()
+    end
+    
+    -- Create rows for each entry
     for i, row in ipairs(rows) do
         local r = getRow(i)
-        r:ClearAllPoints(); r:SetPoint("TOPLEFT", HLBG.UI.History.Content, "TOPLEFT", 0, y)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", HLBG.UI.History.Content, "TOPLEFT", 5, y)
+        r:SetPoint("RIGHT", HLBG.UI.History.Content, "RIGHT", -5, 0)
+        r:SetHeight(22)
+        
+        -- Store row data for tooltip
+        r.rowData = row
+        r.rowIndex = i
+        
+        -- Set alternating row background
+        if i % 2 == 0 then
+            r:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+        else
+            r:SetBackdropColor(0.05, 0.05, 0.05, 0.3)
+        end
+        
+        -- Extract values from the row with fallbacks
         local id = row.id or row[1]
         local sea = row.season
         local sname = row.seasonName or row.sname or nil
-        local compact_len = (type(row) == 'table' and #row) or 0
-    local ts, win, affix, reas
-    if compact_len >= 5 then ts,win,affix,reas = row[2],row[3],row[4],row[5] end
+        local ts = row.ts or row[2]
+        local win = row.winner or row[3]
+        local affix = row.affix or row[4]
+        local dur = row.dur or row[5]
+        local reas = row.reason or row[6]
+        
+        -- Format timestamps if we have secondsAgo
+        local tsText = ts
+        if secondsAgo and ts and type(ts) == "number" then
+            if ts < secondsAgo then
+                tsText = SecondsToTime(secondsAgo - ts).." ago"
+            else
+                tsText = date("%Y-%m-%d %H:%M:%S", ts)
+            end
+        end
+        
+        -- Set text fields with improved formatting
         r.id:SetText(tostring(id or ""))
         r.sea:SetText(tostring(sname or sea or ""))
-        r.ts:SetText(ts or row.ts or "")
-    local wtxt = (win or row.winner or "")
-    if tostring(wtxt):upper()=="DRAW" then wtxt = "Draw" end
-    r.win:SetText(wtxt)
-        r.aff:SetText(HLBG.GetAffixName(affix or row.affix))
-        r.rea:SetText(reas or row.reason or "-")
-        if not r._hlbgHover then r._hlbgHover = true; r:SetScript('OnEnter', function(self) self:SetBackdrop({ bgFile = 'Interface/Tooltips/UI-Tooltip-Background' }); self:SetBackdropColor(1,1,0.4,0.10) end); r:SetScript('OnLeave', function(self) self:SetBackdrop(nil) end) end
-        r:Show(); y = y - 14; hadRows = true
+        r.ts:SetText(tsText or "")
+        
+        -- Color-code winner by faction
+        local wtxt = (win or "")
+        if row.winner_tid and row.winner_tid == 67 then
+            wtxt = "|cFFFF0000Horde|r"
+        elseif row.winner_tid and row.winner_tid == 469 then
+            wtxt = "|cFF0000FFAlliance|r"
+        elseif tostring(wtxt):upper() == "DRAW" then 
+            wtxt = "|cFFFFFF00Draw|r"
+        end
+        r.win:SetText(wtxt)
+        
+        -- Use affix name helper if available
+        r.aff:SetText(HLBG.GetAffixName and HLBG.GetAffixName(affix) or tostring(affix or ""))
+        
+        -- Format duration nicely if present
+        if dur and tonumber(dur) then
+            r.dur:SetText(SecondsToTime(tonumber(dur)))
+        else
+            r.dur:SetText("")
+        end
+        
+        -- Victory reason
+        r.rea:SetText(reas or "-")
+        
+        r:Show()
+        y = y - 22 -- Match row height
+        hadRows = true
     end
-    local maxPage = (HLBG.UI.History.total and HLBG.UI.History.total > 0) and math.max(1, math.ceil((HLBG.UI.History.total or 0)/(HLBG.UI.History.per or 15))) or (HLBG.UI.History.page or 1)
-    HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", HLBG.UI.History.page or 1, maxPage))
-    HLBG.UI.History.Nav.Prev:SetEnabled((HLBG.UI.History.page or 1) > 1)
-    HLBG.UI.History.Nav.Next:SetEnabled((HLBG.UI.History.page or 1) < maxPage)
-    local visibleCount = (type(rows) == "table" and #rows) or 0
-    local newH = math.max(300, 22 + visibleCount * 14 + 8)
+    
+    -- Update pager information
+    local maxPage = (HLBG.UI.History.total and HLBG.UI.History.total > 0) and 
+                    math.max(1, math.ceil((HLBG.UI.History.total or 0)/(HLBG.UI.History.per or 10))) or 
+                    (HLBG.UI.History.page or 1)
+                    
+    if HLBG.UI.History.Nav and HLBG.UI.History.Nav.PageText then
+        HLBG.UI.History.Nav.PageText:SetText(string.format("Page %d / %d", HLBG.UI.History.page or 1, maxPage))
+    end
+    
+    if HLBG.UI.History.Nav and HLBG.UI.History.Nav.Prev then
+        HLBG.UI.History.Nav.Prev:SetEnabled((HLBG.UI.History.page or 1) > 1)
+    end
+    
+    if HLBG.UI.History.Nav and HLBG.UI.History.Nav.Next then
+        HLBG.UI.History.Nav.Next:SetEnabled((HLBG.UI.History.page or 1) < maxPage)
+    end
+    
+    -- Adjust content height to match rows
+    local visibleCount = #rows
+    local newH = math.max(300, 22 + visibleCount * 22 + 16) -- Account for header and some padding
     HLBG.UI.History.Content:SetHeight(newH)
-    if HLBG.UI.History.Scroll and HLBG.UI.History.Scroll.SetVerticalScroll then HLBG.UI.History.Scroll:SetVerticalScroll(0) end
-    if HLBG.UI.History.EmptyText then if hadRows then HLBG.UI.History.EmptyText:Hide() else HLBG.UI.History.EmptyText:Show() end end
+    
+    -- Reset scroll position
+    if HLBG.UI.History.Scroll and HLBG.UI.History.Scroll.SetVerticalScroll then 
+        HLBG.UI.History.Scroll:SetVerticalScroll(0)
+        HLBG.UI.History.Scroll:UpdateScrollChildRect()
+    end
 end
 end
 
@@ -370,11 +619,203 @@ function HLBG.Stats(player, stats)
     if type(player) ~= "string" and type(player) ~= "userdata" then stats = player end
     stats = stats or {}
     HLBG._lastStats = stats
+    
+    -- Store the stats data for later reference
+    HLBG.UI.Stats.data = stats
+    
+    -- Debug the stats we received
+    HLBG.Debug("Stats received: " .. (stats and type(stats) == "table" and #stats or "0") .. " entries")
+    
+    -- Create a function to generate section headers
+    local function createHeader(parent, text, yOffset)
+        local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        header:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, yOffset)
+        header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, 0)
+        header:SetJustifyH("LEFT")
+        header:SetText(text)
+        return header
+    end
+    
+    -- Create a function for stat rows
+    local function createStatRow(parent, label, value, yOffset)
+        local row = CreateFrame("Frame", nil, parent)
+        row:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yOffset)
+        row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -20, 0)
+        row:SetHeight(18)
+        
+        local labelText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        labelText:SetPoint("LEFT", row, "LEFT", 0, 0)
+        labelText:SetWidth(150)
+        labelText:SetJustifyH("LEFT")
+        labelText:SetText(label)
+        
+        local valueText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        valueText:SetPoint("LEFT", labelText, "RIGHT", 10, 0)
+        valueText:SetWidth(150)
+        valueText:SetJustifyH("LEFT")
+        valueText:SetText(value)
+        
+        return row, yOffset - 18
+    end
+    
+    -- Clear existing content
+    if HLBG.UI.Stats.Content and HLBG.UI.Stats.Content.children then
+        for _, child in ipairs(HLBG.UI.Stats.Content.children) do
+            child:Hide()
+        end
+    end
+    
+    -- Initialize children table if needed
+    if not HLBG.UI.Stats.Content.children then
+        HLBG.UI.Stats.Content.children = {}
+    end
+    
+    -- Re-create UI from scratch
+    local content = HLBG.UI.Stats.Content
+    local y = -10
+    
+    -- Overall stats
+    local header = createHeader(content, "Hinterland Battleground Statistics", y)
+    table.insert(HLBG.UI.Stats.Content.children, header)
+    y = y - 30
+    
+    -- Extract faction win counts
+    local counts = stats.counts or {}
+    local alliance = tonumber(counts.Alliance or counts.ALLIANCE or 0) or 0
+    local horde = tonumber(counts.Horde or counts.HORDE or 0) or 0
+    local draws = tonumber(stats.draws or 0) or 0
+    local total = alliance + horde + draws
+    
+    -- Win percentages
+    local alliancePct = total > 0 and math.floor((alliance / total) * 100) or 0
+    local hordePct = total > 0 and math.floor((horde / total) * 100) or 0
+    local drawPct = total > 0 and math.floor((draws / total) * 100) or 0
+    
+    -- Win stats
+    local row, newY = createStatRow(content, "Total battles:", tostring(total), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    local row, newY = createStatRow(content, "Alliance wins:", string.format("%d (%d%%)", alliance, alliancePct), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    local row, newY = createStatRow(content, "Horde wins:", string.format("%d (%d%%)", horde, hordePct), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    local row, newY = createStatRow(content, "Draws:", string.format("%d (%d%%)", draws, drawPct), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    -- Duration stats
+    local avgDuration = tonumber(stats.avgDuration or 0) or 0
+    local minDuration = tonumber(stats.minDuration or 0) or 0
+    local maxDuration = tonumber(stats.maxDuration or 0) or 0
+    
+    y = y - 10
+    local header = createHeader(content, "Duration Statistics", y)
+    table.insert(HLBG.UI.Stats.Content.children, header)
+    y = y - 30
+    
+    local row, newY = createStatRow(content, "Average duration:", SecondsToTime(avgDuration), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    local row, newY = createStatRow(content, "Shortest battle:", SecondsToTime(minDuration), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    local row, newY = createStatRow(content, "Longest battle:", SecondsToTime(maxDuration), y)
+    table.insert(HLBG.UI.Stats.Content.children, row)
+    y = newY
+    
+    -- Affix stats if available
+    if stats.affixWins and type(stats.affixWins) == "table" and next(stats.affixWins) then
+        y = y - 10
+        local header = createHeader(content, "Affix Statistics", y)
+        table.insert(HLBG.UI.Stats.Content.children, header)
+        y = y - 30
+        
+        for affix, wins in pairs(stats.affixWins) do
+            local affixName = HLBG.GetAffixName and HLBG.GetAffixName(affix) or affix
+            local affixCount = tonumber(wins.count or 0) or 0
+            local allianceWins = tonumber(wins.alliance or 0) or 0
+            local hordeWins = tonumber(wins.horde or 0) or 0
+            local affixDraws = tonumber(wins.draws or 0) or 0
+            
+            local row, newY = createStatRow(content, affixName .. ":", 
+                string.format("Total: %d - A: %d, H: %d, Draw: %d", 
+                    affixCount, allianceWins, hordeWins, affixDraws), y)
+            table.insert(HLBG.UI.Stats.Content.children, row)
+            y = newY
+        end
+    end
+    
+    -- Streak information if available
+    if stats.streaks and type(stats.streaks) == "table" then
+        y = y - 10
+        local header = createHeader(content, "Current Streaks", y)
+        table.insert(HLBG.UI.Stats.Content.children, header)
+        y = y - 30
+        
+        local allianceStreak = tonumber(stats.streaks.alliance or 0) or 0
+        local hordeStreak = tonumber(stats.streaks.horde or 0) or 0
+        
+        local row, newY = createStatRow(content, "Alliance streak:", tostring(allianceStreak) .. " wins", y)
+        table.insert(HLBG.UI.Stats.Content.children, row)
+        y = newY
+        
+        local row, newY = createStatRow(content, "Horde streak:", tostring(hordeStreak) .. " wins", y)
+        table.insert(HLBG.UI.Stats.Content.children, row)
+        y = newY
+    end
+    
+    -- Records if available
+    if stats.records and type(stats.records) == "table" then
+        y = y - 10
+        local header = createHeader(content, "Records", y)
+        table.insert(HLBG.UI.Stats.Content.children, header)
+        y = y - 30
+        
+        local allianceRecord = tonumber(stats.records.alliance or 0) or 0
+        local hordeRecord = tonumber(stats.records.horde or 0) or 0
+        
+        local row, newY = createStatRow(content, "Alliance record:", tostring(allianceRecord) .. " consecutive wins", y)
+        table.insert(HLBG.UI.Stats.Content.children, row)
+        y = newY
+        
+        local row, newY = createStatRow(content, "Horde record:", tostring(hordeRecord) .. " consecutive wins", y)
+        table.insert(HLBG.UI.Stats.Content.children, row)
+        y = newY
+    end
+    
+    -- Update content height
+    content:SetHeight(math.abs(y) + 20)
+    
+    -- If there's a single stats string summary, show it in the text field as well
+    if HLBG.UI.Stats.Text and stats.summary then
+        HLBG.UI.Stats.Text:SetText(stats.summary)
+    elseif HLBG.UI.Stats.Text then
+        local summaryText = string.format(
+            "Alliance: %d (%d%%)  Horde: %d (%d%%)  Draws: %d\nAvg duration: %s",
+            alliance, alliancePct, horde, hordePct, draws, SecondsToTime(avgDuration)
+        )
+        HLBG.UI.Stats.Text:SetText(summaryText)
+    end
+    
+    -- Show the UI
+    if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show(); ShowTab(3) end
+    
+    -- Make sure we cancel the pending timer if it exists
     local delay = 0.15
     local pending = HLBG.UI.Stats
-    pending._pendingStats = stats; pending._pending = true
+    pending._pendingStats = stats
+    pending._pending = true
+    
     if not pending._timer then
-        pending._timer = CreateFrame("Frame"); pending._timer._elapsed = 0
+        pending._timer = CreateFrame("Frame")
+        pending._timer._elapsed = 0
         pending._timer:SetScript("OnUpdate", function(self, elapsed)
             pending._timer._elapsed = pending._timer._elapsed + (elapsed or 0)
             if pending._timer._elapsed < delay then return end
