@@ -35,7 +35,41 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "AzerothCore: Build (local)",
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/ssh-sync-and-build.ps1",
+				"-RemoteHost",
+				"${input:remoteHost}",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-PrivateKeyPath",
+				"${input:privateKeyPath}"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": [
+				"$gcc",
+				"$msCompile"
+			]
+		},
+		{
+			"label": "AzerothCore: Build (local only)",
 			"type": "shell",
 			"command": "./acore.sh compiler build",
 			"group": {
@@ -46,31 +80,44 @@
 				"reveal": "always",
 				"panel": "new"
 			},
-			"problemMatcher": []
+			"problemMatcher": [
+				"$gcc",
+				"$msCompile"
+			]
 		},
 		{
-			"label": "AzerothCore: Sync changed + Build",
+			"label": "AzerothCore: Build (with stored credentials)",
 			"type": "shell",
 			"command": "powershell",
 			"args": [
 				"-NoProfile",
 				"-ExecutionPolicy",
 				"Bypass",
-				"-File",
-				"apps/git_tools/sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-Command",
+				"$password = & 'apps/git_tools/credential-manager.ps1' -Action get -Key 'ssh-password'; & 'apps/git_tools/ssh-sync-and-build.ps1' -UseStoredCredentials -RemotePassword $password"
 			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
 			},
+			"problemMatcher": [
+				"$gcc",
+				"$msCompile"
+			]
+		},
+		{
+			"label": "AzerothCore: Setup SSH Credentials",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"& 'apps/git_tools/credential-manager.ps1' -Action set -Key 'ssh-password' -Secure"
+			],
+			"group": "none",
 			"presentation": {
 				"reveal": "always",
 				"panel": "new"
@@ -120,201 +167,15 @@
 				"panel": "new"
 			},
 			"problemMatcher": []
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc",
-				"$msCompile"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"isBackground": false,
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build (local)",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Sync changed + Build (agent)",
-			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"apps/git_tools/sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$msCompile"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Sync changed + Build",
-			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"apps/git_tools/sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Sync changed + Build",
-			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"apps/git_tools/sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Sync changed + Build (temp)",
-			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"apps/git_tools/sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
-			],
-			"isBackground": false,
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build (local)",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
-		},
-		{
-			"label": "AzerothCore: Build (local)",
-			"type": "shell",
-			"command": "./acore.sh compiler build"
-		},
-		{
-			"label": "AzerothCore: Build",
-			"type": "shell",
-			"command": "./acore.sh compiler build",
-			"group": "build"
 		}
 	],
 	"inputs": [
+		{
+			"id": "remoteHost",
+			"type": "promptString",
+			"description": "SSH server hostname or IP address",
+			"default": "your-build-server.com"
+		},
 		{
 			"id": "remoteUser",
 			"type": "promptString",
@@ -324,19 +185,19 @@
 		{
 			"id": "remotePassword",
 			"type": "promptString",
-			"description": "SSH password for remote build host",
+			"description": "SSH password for remote build host (leave blank if using key)",
 			"password": true
 		},
 		{
 			"id": "remoteRepoPath",
 			"type": "promptString",
 			"description": "Absolute repo path on remote host",
-			"default": "/home/wowcore"
+			"default": "/home/wowcore/azerothcore"
 		},
 		{
-			"id": "remoteHostKey",
+			"id": "privateKeyPath",
 			"type": "promptString",
-			"description": "Optional SSH host key fingerprint to pin (leave blank to skip)",
+			"description": "Path to SSH private key file (optional)",
 			"default": ""
 		}
 	]

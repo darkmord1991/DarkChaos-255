@@ -13,7 +13,7 @@
 #include <cmath>
 
 /*
- * hlbg_commandscript
+ * hlbg_commandscript - Enhanced Build System Test
  * ------------------
  * Provides GM/admin commands to inspect and manage the Hinterland (zone 47)
  * outdoor battleground state.
