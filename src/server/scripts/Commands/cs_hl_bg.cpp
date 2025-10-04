@@ -399,13 +399,13 @@ public:
             {
                 Field* fields = result->Fetch();
                 handler->PSendSysMessage("=== HLBG Enhanced Configuration ===");
-                handler->PSendSysMessage("Duration: {} minutes", fields[0].GetUInt32());
-                handler->PSendSysMessage("Max Players Per Side: {}", fields[1].GetUInt32());
-                handler->PSendSysMessage("Level Range: {}-{}", fields[2].GetUInt32(), fields[3].GetUInt32());
-                handler->PSendSysMessage("Affix Rotation: {}", fields[4].GetBool() ? "Enabled" : "Disabled");
-                handler->PSendSysMessage("Resource Cap: {}", fields[5].GetUInt32());
-                handler->PSendSysMessage("Queue Type: {}", fields[6].GetString());
-                handler->PSendSysMessage("Status: {}", fields[7].GetBool() ? "Active" : "Inactive");
+                handler->PSendSysMessage("Duration: {} minutes", fields[0].Get<uint32>());
+                handler->PSendSysMessage("Max Players Per Side: {}", fields[1].Get<uint32>());
+                handler->PSendSysMessage("Level Range: {}-{}", fields[2].Get<uint32>(), fields[3].Get<uint32>());
+                handler->PSendSysMessage("Affix Rotation: {}", fields[4].Get<bool>() ? "Enabled" : "Disabled");
+                handler->PSendSysMessage("Resource Cap: {}", fields[5].Get<uint32>());
+                handler->PSendSysMessage("Queue Type: {}", fields[6].Get<std::string>());
+                handler->PSendSysMessage("Status: {}", fields[7].Get<bool>() ? "Active" : "Inactive");
             }
             else
             {
@@ -504,18 +504,18 @@ public:
         {
             Field* fields = result->Fetch();
             handler->PSendSysMessage("=== Enhanced HLBG Statistics ===");
-            handler->PSendSysMessage("Total Battles: {}", fields[0].GetUInt32());
-            handler->PSendSysMessage("Alliance Wins: {} | Horde Wins: {} | Draws: {}", fields[1].GetUInt32(), fields[2].GetUInt32(), fields[3].GetUInt32());
-            handler->PSendSysMessage("Manual Resets: {}", fields[4].GetUInt32());
-            handler->PSendSysMessage("Current Streak: {} ({})", fields[5].GetString(), fields[6].GetUInt32());
-            handler->PSendSysMessage("Longest Streak: {} ({})", fields[7].GetString(), fields[8].GetUInt32());
-            handler->PSendSysMessage("Avg Battle Time: {}s", fields[9].GetUInt32());
-            handler->PSendSysMessage("Total Participants: {}", fields[10].GetUInt32());
-            handler->PSendSysMessage("Total Kills/Deaths: {}/{}", fields[11].GetUInt32(), fields[12].GetUInt32());
+            handler->PSendSysMessage("Total Battles: {}", fields[0].Get<uint32>());
+            handler->PSendSysMessage("Alliance Wins: {} | Horde Wins: {} | Draws: {}", fields[1].Get<uint32>(), fields[2].Get<uint32>(), fields[3].Get<uint32>());
+            handler->PSendSysMessage("Manual Resets: {}", fields[4].Get<uint32>());
+            handler->PSendSysMessage("Current Streak: {} ({})", fields[5].Get<std::string>(), fields[6].Get<uint32>());
+            handler->PSendSysMessage("Longest Streak: {} ({})", fields[7].Get<std::string>(), fields[8].Get<uint32>());
+            handler->PSendSysMessage("Avg Battle Time: {}s", fields[9].Get<uint32>());
+            handler->PSendSysMessage("Total Participants: {}", fields[10].Get<uint32>());
+            handler->PSendSysMessage("Total Kills/Deaths: {}/{}", fields[11].Get<uint32>(), fields[12].Get<uint32>());
             
             if (!fields[13].IsNull())
             {
-                handler->PSendSysMessage("Last Reset: {} on {}", fields[13].GetString(), fields[14].GetString());
+                handler->PSendSysMessage("Last Reset: {} on {}", fields[13].Get<std::string>(), fields[14].Get<std::string>());
             }
         }
         else
@@ -538,9 +538,9 @@ public:
             {
                 Field* fields = result->Fetch();
                 handler->PSendSysMessage("=== Current HLBG Season ===");
-                handler->PSendSysMessage("Name: {}", fields[0].GetString());
-                handler->PSendSysMessage("Period: {} to {}", fields[1].GetString(), fields[2].GetString());
-                handler->PSendSysMessage("Description: {}", fields[3].GetString());
+                handler->PSendSysMessage("Name: {}", fields[0].Get<std::string>());
+                handler->PSendSysMessage("Period: {} to {}", fields[1].Get<std::string>(), fields[2].Get<std::string>());
+                handler->PSendSysMessage("Description: {}", fields[3].Get<std::string>());
             }
             else
             {
@@ -562,11 +562,11 @@ public:
                 {
                     Field* fields = result->Fetch();
                     handler->PSendSysMessage("ID:{} {} ({} to {}) [{}]", 
-                        fields[0].GetUInt32(), 
-                        fields[1].GetString(), 
-                        fields[2].GetString(), 
-                        fields[3].GetString(),
-                        fields[4].GetBool() ? "ACTIVE" : "inactive");
+                        fields[0].Get<uint32>(), 
+                        fields[1].Get<std::string>(), 
+                        fields[2].Get<std::string>(), 
+                        fields[3].Get<std::string>(),
+                        fields[4].Get<bool>() ? "ACTIVE" : "inactive");
                 } while (result->NextRow());
             }
             else
@@ -611,15 +611,15 @@ public:
                 do
                 {
                     Field* fields = result->Fetch();
-                    float winRate = fields[2].GetUInt32() > 0 ? (float(fields[3].GetUInt32()) / fields[2].GetUInt32() * 100) : 0;
+                    float winRate = fields[2].Get<uint32>() > 0 ? (float(fields[3].Get<uint32>()) / fields[2].Get<uint32>() * 100) : 0;
                     handler->PSendSysMessage("{} | {} | {} | {} ({:.1f}%) | {}/{}", 
-                        fields[0].GetString(),   // player_name
-                        fields[1].GetString(),   // faction
-                        fields[2].GetUInt32(),   // battles_participated
-                        fields[3].GetUInt32(),   // battles_won
+                        fields[0].Get<std::string>(),   // player_name
+                        fields[1].Get<std::string>(),   // faction
+                        fields[2].Get<uint32>(),   // battles_participated
+                        fields[3].Get<uint32>(),   // battles_won
                         winRate,
-                        fields[4].GetUInt32(),   // total_kills
-                        fields[5].GetUInt32()    // total_deaths
+                        fields[4].Get<uint32>(),   // total_kills
+                        fields[5].Get<uint32>()    // total_deaths
                     );
                 } while (result->NextRow());
             }
