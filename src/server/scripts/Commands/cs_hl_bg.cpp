@@ -68,6 +68,10 @@ public:
             { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
             { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
             { "affix",  HandleHLBGAffixCommand,  SEC_GAMEMASTER, Console::No },
+            { "config", HandleHLBGConfigCommand, SEC_GAMEMASTER, Console::No },
+            { "stats",  HandleHLBGStatsCommand,  SEC_GAMEMASTER, Console::No },
+            { "season", HandleHLBGSeasonCommand, SEC_GAMEMASTER, Console::No },
+            { "players",HandleHLBGPlayersCommand,SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =
@@ -380,6 +384,251 @@ public:
             handler->PSendSysMessage("  Player spell: {}  NPC spell: {}  Weather: {} ({}, {}%)",
                 (unsigned)pspell, (unsigned)nspell, wname, (unsigned)wtype, (unsigned)ipct);
         }
+        return true;
+    }
+
+    // Enhanced HLBG Configuration Command
+    static bool HandleHLBGConfigCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            // Display current configuration
+            QueryResult result = WorldDatabase.Query("SELECT duration_minutes, max_players_per_side, min_level, max_level, affix_rotation_enabled, resource_cap, queue_type, is_active FROM hlbg_config ORDER BY id DESC LIMIT 1");
+            
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                handler->PSendSysMessage("=== HLBG Enhanced Configuration ===");
+                handler->PSendSysMessage("Duration: {} minutes", fields[0].GetUInt32());
+                handler->PSendSysMessage("Max Players Per Side: {}", fields[1].GetUInt32());
+                handler->PSendSysMessage("Level Range: {}-{}", fields[2].GetUInt32(), fields[3].GetUInt32());
+                handler->PSendSysMessage("Affix Rotation: {}", fields[4].GetBool() ? "Enabled" : "Disabled");
+                handler->PSendSysMessage("Resource Cap: {}", fields[5].GetUInt32());
+                handler->PSendSysMessage("Queue Type: {}", fields[6].GetString());
+                handler->PSendSysMessage("Status: {}", fields[7].GetBool() ? "Active" : "Inactive");
+            }
+            else
+            {
+                handler->SendSysMessage("No enhanced HLBG configuration found! Run the database schema first.");
+            }
+            return true;
+        }
+
+        char* setting = strtok((char*)args, " ");
+        char* value = strtok(nullptr, " ");
+
+        if (!setting || !value)
+        {
+            handler->SendSysMessage("Usage: .hlbg config [duration|maxplayers|resources|affix|active] [value]");
+            return false;
+        }
+
+        std::string settingStr = setting;
+        std::string valueStr = value;
+        std::transform(settingStr.begin(), settingStr.end(), settingStr.begin(), ::tolower);
+
+        if (settingStr == "duration")
+        {
+            uint32 minutes = atoi(value);
+            if (minutes < 5 || minutes > 120)
+            {
+                handler->SendSysMessage("Duration must be between 5 and 120 minutes");
+                return false;
+            }
+            WorldDatabase.PExecute("UPDATE hlbg_config SET duration_minutes = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", minutes, handler->GetSession()->GetPlayer()->GetName());
+            handler->PSendSysMessage("HLBG duration set to {} minutes", minutes);
+        }
+        else if (settingStr == "maxplayers")
+        {
+            uint32 players = atoi(value);
+            if (players < 10 || players > 100)
+            {
+                handler->SendSysMessage("Max players must be between 10 and 100 per side");
+                return false;
+            }
+            WorldDatabase.PExecute("UPDATE hlbg_config SET max_players_per_side = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", players, handler->GetSession()->GetPlayer()->GetName());
+            handler->PSendSysMessage("HLBG max players per side set to {}", players);
+        }
+        else if (settingStr == "resources")
+        {
+            uint32 resources = atoi(value);
+            if (resources < 100 || resources > 2000)
+            {
+                handler->SendSysMessage("Resource cap must be between 100 and 2000");
+                return false;
+            }
+            WorldDatabase.PExecute("UPDATE hlbg_config SET resource_cap = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", resources, handler->GetSession()->GetPlayer()->GetName());
+            handler->PSendSysMessage("HLBG resource cap set to {}", resources);
+        }
+        else if (settingStr == "affix")
+        {
+            bool enabled = (valueStr == "on" || valueStr == "true" || valueStr == "1");
+            WorldDatabase.PExecute("UPDATE hlbg_config SET affix_rotation_enabled = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", enabled, handler->GetSession()->GetPlayer()->GetName());
+            handler->PSendSysMessage("HLBG affix rotation {}", enabled ? "enabled" : "disabled");
+        }
+        else if (settingStr == "active")
+        {
+            bool active = (valueStr == "on" || valueStr == "true" || valueStr == "1");
+            WorldDatabase.PExecute("UPDATE hlbg_config SET is_active = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", active, handler->GetSession()->GetPlayer()->GetName());
+            handler->PSendSysMessage("HLBG {}", active ? "activated" : "deactivated");
+        }
+        else
+        {
+            handler->SendSysMessage("Unknown setting. Available: duration, maxplayers, resources, affix, active");
+            return false;
+        }
+
+        return true;
+    }
+
+    // Enhanced HLBG Statistics Command
+    static bool HandleHLBGStatsCommand(ChatHandler* handler, char const* args)
+    {
+        if (args && *args && strcmp(args, "reset") == 0)
+        {
+            // Reset all statistics
+            WorldDatabase.PExecute("UPDATE hlbg_statistics SET total_runs = 0, alliance_wins = 0, horde_wins = 0, draws = 0, manual_resets = manual_resets + 1, current_streak_faction = 'None', current_streak_count = 0, avg_run_time_seconds = 0, shortest_run_seconds = 0, longest_run_seconds = 0, total_players_participated = 0, total_kills = 0, total_deaths = 0, last_reset_by_gm = NOW(), last_reset_gm_name = '{}' ORDER BY id DESC LIMIT 1", handler->GetSession()->GetPlayer()->GetName());
+            
+            handler->SendSysMessage("Enhanced HLBG statistics have been reset!");
+            
+            // Record in battle history
+            WorldDatabase.PExecute("INSERT INTO hlbg_battle_history (battle_end, winner_faction, duration_seconds, ended_by_gm, gm_name, notes) VALUES (NOW(), 'Draw', 0, 1, '{}', 'Statistics reset by GM')", handler->GetSession()->GetPlayer()->GetName());
+            
+            return true;
+        }
+
+        // Display current enhanced statistics
+        QueryResult result = WorldDatabase.Query("SELECT total_runs, alliance_wins, horde_wins, draws, manual_resets, current_streak_faction, current_streak_count, longest_streak_faction, longest_streak_count, avg_run_time_seconds, total_players_participated, total_kills, total_deaths, last_reset_gm_name, last_reset_by_gm FROM hlbg_statistics ORDER BY id DESC LIMIT 1");
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            handler->PSendSysMessage("=== Enhanced HLBG Statistics ===");
+            handler->PSendSysMessage("Total Battles: {}", fields[0].GetUInt32());
+            handler->PSendSysMessage("Alliance Wins: {} | Horde Wins: {} | Draws: {}", fields[1].GetUInt32(), fields[2].GetUInt32(), fields[3].GetUInt32());
+            handler->PSendSysMessage("Manual Resets: {}", fields[4].GetUInt32());
+            handler->PSendSysMessage("Current Streak: {} ({})", fields[5].GetString(), fields[6].GetUInt32());
+            handler->PSendSysMessage("Longest Streak: {} ({})", fields[7].GetString(), fields[8].GetUInt32());
+            handler->PSendSysMessage("Avg Battle Time: {}s", fields[9].GetUInt32());
+            handler->PSendSysMessage("Total Participants: {}", fields[10].GetUInt32());
+            handler->PSendSysMessage("Total Kills/Deaths: {}/{}", fields[11].GetUInt32(), fields[12].GetUInt32());
+            
+            if (!fields[13].IsNull())
+            {
+                handler->PSendSysMessage("Last Reset: {} on {}", fields[13].GetString(), fields[14].GetString());
+            }
+        }
+        else
+        {
+            handler->SendSysMessage("No enhanced HLBG statistics found! Apply the enhanced database schema.");
+        }
+
+        return true;
+    }
+
+    // Enhanced HLBG Season Management
+    static bool HandleHLBGSeasonCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            // Show current season
+            QueryResult result = WorldDatabase.Query("SELECT name, start_date, end_date, description FROM hlbg_seasons WHERE is_active = 1 LIMIT 1");
+            
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                handler->PSendSysMessage("=== Current HLBG Season ===");
+                handler->PSendSysMessage("Name: {}", fields[0].GetString());
+                handler->PSendSysMessage("Period: {} to {}", fields[1].GetString(), fields[2].GetString());
+                handler->PSendSysMessage("Description: {}", fields[3].GetString());
+            }
+            else
+            {
+                handler->SendSysMessage("No active HLBG season found!");
+            }
+            return true;
+        }
+
+        char* action = strtok((char*)args, " ");
+        
+        if (strcmp(action, "list") == 0)
+        {
+            QueryResult result = WorldDatabase.Query("SELECT id, name, start_date, end_date, is_active FROM hlbg_seasons ORDER BY id DESC LIMIT 10");
+            
+            if (result)
+            {
+                handler->PSendSysMessage("=== HLBG Seasons ===");
+                do
+                {
+                    Field* fields = result->Fetch();
+                    handler->PSendSysMessage("ID:{} {} ({} to {}) [{}]", 
+                        fields[0].GetUInt32(), 
+                        fields[1].GetString(), 
+                        fields[2].GetString(), 
+                        fields[3].GetString(),
+                        fields[4].GetBool() ? "ACTIVE" : "inactive");
+                } while (result->NextRow());
+            }
+            else
+            {
+                handler->SendSysMessage("No seasons found!");
+            }
+        }
+        else if (strcmp(action, "activate") == 0)
+        {
+            char* seasonId = strtok(nullptr, " ");
+            
+            if (!seasonId)
+            {
+                handler->SendSysMessage("Usage: .hlbg season activate [season_id]");
+                return false;
+            }
+            
+            // Deactivate all seasons first
+            WorldDatabase.Execute("UPDATE hlbg_seasons SET is_active = 0");
+            
+            // Activate specified season
+            WorldDatabase.PExecute("UPDATE hlbg_seasons SET is_active = 1 WHERE id = {}", atoi(seasonId));
+            
+            handler->PSendSysMessage("Activated HLBG season ID: {}", seasonId);
+        }
+
+        return true;
+    }
+
+    // Enhanced HLBG Player Statistics
+    static bool HandleHLBGPlayersCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args || strcmp(args, "top") == 0)
+        {
+            // Show top players by battles won
+            QueryResult result = WorldDatabase.Query("SELECT player_name, faction, battles_participated, battles_won, total_kills, total_deaths FROM hlbg_player_stats ORDER BY battles_won DESC LIMIT 10");
+            
+            if (result)
+            {
+                handler->PSendSysMessage("=== Top HLBG Players ===");
+                handler->PSendSysMessage("Name | Faction | Battles | Wins | K/D");
+                do
+                {
+                    Field* fields = result->Fetch();
+                    float winRate = fields[2].GetUInt32() > 0 ? (float(fields[3].GetUInt32()) / fields[2].GetUInt32() * 100) : 0;
+                    handler->PSendSysMessage("{} | {} | {} | {} ({:.1f}%) | {}/{}", 
+                        fields[0].GetString(),   // player_name
+                        fields[1].GetString(),   // faction
+                        fields[2].GetUInt32(),   // battles_participated
+                        fields[3].GetUInt32(),   // battles_won
+                        winRate,
+                        fields[4].GetUInt32(),   // total_kills
+                        fields[5].GetUInt32()    // total_deaths
+                    );
+                } while (result->NextRow());
+            }
+            else
+            {
+                handler->SendSysMessage("No enhanced player statistics found! Apply the enhanced database schema.");
+            }
+        }
+
         return true;
     }
 };
