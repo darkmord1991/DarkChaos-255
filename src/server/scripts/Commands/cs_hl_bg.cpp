@@ -435,7 +435,7 @@ public:
                 handler->SendSysMessage("Duration must be between 5 and 120 minutes");
                 return false;
             }
-            WorldDatabase.PExecute("UPDATE hlbg_config SET duration_minutes = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", minutes, handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_config SET duration_minutes = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", minutes, handler->GetSession()->GetPlayer()->GetName());
             handler->PSendSysMessage("HLBG duration set to {} minutes", minutes);
         }
         else if (settingStr == "maxplayers")
@@ -446,7 +446,7 @@ public:
                 handler->SendSysMessage("Max players must be between 10 and 100 per side");
                 return false;
             }
-            WorldDatabase.PExecute("UPDATE hlbg_config SET max_players_per_side = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", players, handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_config SET max_players_per_side = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", players, handler->GetSession()->GetPlayer()->GetName());
             handler->PSendSysMessage("HLBG max players per side set to {}", players);
         }
         else if (settingStr == "resources")
@@ -457,19 +457,19 @@ public:
                 handler->SendSysMessage("Resource cap must be between 100 and 2000");
                 return false;
             }
-            WorldDatabase.PExecute("UPDATE hlbg_config SET resource_cap = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", resources, handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_config SET resource_cap = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", resources, handler->GetSession()->GetPlayer()->GetName());
             handler->PSendSysMessage("HLBG resource cap set to {}", resources);
         }
         else if (settingStr == "affix")
         {
             bool enabled = (valueStr == "on" || valueStr == "true" || valueStr == "1");
-            WorldDatabase.PExecute("UPDATE hlbg_config SET affix_rotation_enabled = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", enabled, handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_config SET affix_rotation_enabled = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", enabled, handler->GetSession()->GetPlayer()->GetName());
             handler->PSendSysMessage("HLBG affix rotation {}", enabled ? "enabled" : "disabled");
         }
         else if (settingStr == "active")
         {
             bool active = (valueStr == "on" || valueStr == "true" || valueStr == "1");
-            WorldDatabase.PExecute("UPDATE hlbg_config SET is_active = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", active, handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_config SET is_active = {}, updated_by = '{}' ORDER BY id DESC LIMIT 1", active, handler->GetSession()->GetPlayer()->GetName());
             handler->PSendSysMessage("HLBG {}", active ? "activated" : "deactivated");
         }
         else
@@ -487,12 +487,12 @@ public:
         if (args && *args && strcmp(args, "reset") == 0)
         {
             // Reset all statistics
-            WorldDatabase.PExecute("UPDATE hlbg_statistics SET total_runs = 0, alliance_wins = 0, horde_wins = 0, draws = 0, manual_resets = manual_resets + 1, current_streak_faction = 'None', current_streak_count = 0, avg_run_time_seconds = 0, shortest_run_seconds = 0, longest_run_seconds = 0, total_players_participated = 0, total_kills = 0, total_deaths = 0, last_reset_by_gm = NOW(), last_reset_gm_name = '{}' ORDER BY id DESC LIMIT 1", handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("UPDATE hlbg_statistics SET total_runs = 0, alliance_wins = 0, horde_wins = 0, draws = 0, manual_resets = manual_resets + 1, current_streak_faction = 'None', current_streak_count = 0, avg_run_time_seconds = 0, shortest_run_seconds = 0, longest_run_seconds = 0, total_players_participated = 0, total_kills = 0, total_deaths = 0, last_reset_by_gm = NOW(), last_reset_gm_name = '{}' ORDER BY id DESC LIMIT 1", handler->GetSession()->GetPlayer()->GetName());
             
             handler->SendSysMessage("Enhanced HLBG statistics have been reset!");
             
             // Record in battle history
-            WorldDatabase.PExecute("INSERT INTO hlbg_battle_history (battle_end, winner_faction, duration_seconds, ended_by_gm, gm_name, notes) VALUES (NOW(), 'Draw', 0, 1, '{}', 'Statistics reset by GM')", handler->GetSession()->GetPlayer()->GetName());
+            WorldDatabase.Execute("INSERT INTO hlbg_battle_history (battle_end, winner_faction, duration_seconds, ended_by_gm, gm_name, notes) VALUES (NOW(), 'Draw', 0, 1, '{}', 'Statistics reset by GM')", handler->GetSession()->GetPlayer()->GetName());
             
             return true;
         }
@@ -588,7 +588,7 @@ public:
             WorldDatabase.Execute("UPDATE hlbg_seasons SET is_active = 0");
             
             // Activate specified season
-            WorldDatabase.PExecute("UPDATE hlbg_seasons SET is_active = 1 WHERE id = {}", atoi(seasonId));
+            WorldDatabase.Execute("UPDATE hlbg_seasons SET is_active = 1 WHERE id = {}", atoi(seasonId));
             
             handler->PSendSysMessage("Activated HLBG season ID: {}", seasonId);
         }

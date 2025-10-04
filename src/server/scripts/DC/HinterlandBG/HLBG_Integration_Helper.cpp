@@ -19,7 +19,7 @@ public:
     static void OnBattlegroundStart(uint32 instanceId, uint32 affixId)
     {
         // Record battle start in database
-        WorldDatabase.PExecute("INSERT INTO hlbg_battle_history (battle_start, affix_id, instance_id, map_id) VALUES (NOW(), {}, {}, 47)", affixId, instanceId);
+        WorldDatabase.Execute("INSERT INTO hlbg_battle_history (battle_start, affix_id, instance_id, map_id) VALUES (NOW(), {}, {}, 47)", affixId, instanceId);
         
         // Broadcast to all players that battle has started
         BroadcastBattleStart(affixId);
@@ -31,7 +31,7 @@ public:
     static void OnBattlegroundEnd(uint32 instanceId, const std::string& winner, uint32 allianceResources, uint32 hordeResources, uint32 duration, uint32 affixId)
     {
         // Update the battle history record
-        WorldDatabase.PExecute("UPDATE hlbg_battle_history SET battle_end = NOW(), winner_faction = '{}', duration_seconds = {}, alliance_resources = {}, horde_resources = {} WHERE instance_id = {} AND battle_end IS NULL", 
+        WorldDatabase.Execute("UPDATE hlbg_battle_history SET battle_end = NOW(), winner_faction = '{}', duration_seconds = {}, alliance_resources = {}, horde_resources = {} WHERE instance_id = {} AND battle_end IS NULL", 
             winner, duration, allianceResources, hordeResources, instanceId);
         
         // Count participants
@@ -39,7 +39,7 @@ public:
         uint32 hordePlayers = GetPlayerCountInBG(instanceId, HORDE);
         
         // Update player counts in history
-        WorldDatabase.PExecute("UPDATE hlbg_battle_history SET alliance_players = {}, horde_players = {} WHERE instance_id = {} AND battle_end IS NOT NULL ORDER BY id DESC LIMIT 1", 
+        WorldDatabase.Execute("UPDATE hlbg_battle_history SET alliance_players = {}, horde_players = {} WHERE instance_id = {} AND battle_end IS NOT NULL ORDER BY id DESC LIMIT 1", 
             alliancePlayers, hordePlayers, instanceId);
         
         // Update comprehensive statistics using our AIO handler class
@@ -58,7 +58,7 @@ public:
         RecordManualReset(gmName);
         
         // Update battle history
-        WorldDatabase.PExecute("UPDATE hlbg_battle_history SET battle_end = NOW(), winner_faction = 'Draw', ended_by_gm = 1, gm_name = '{}', notes = 'Manually reset by GM' WHERE instance_id = {} AND battle_end IS NULL", 
+        WorldDatabase.Execute("UPDATE hlbg_battle_history SET battle_end = NOW(), winner_faction = 'Draw', ended_by_gm = 1, gm_name = '{}', notes = 'Manually reset by GM' WHERE instance_id = {} AND battle_end IS NULL", 
             gmName, instanceId);
     }
     
@@ -96,7 +96,7 @@ public:
         std::string faction = player->GetTeam() == ALLIANCE ? "Alliance" : "Horde";
         
         // Update or insert player statistics
-        WorldDatabase.PExecute("INSERT INTO hlbg_player_stats (player_guid, player_name, faction, battles_participated, last_participation) VALUES ({}, '{}', '{}', 1, NOW()) ON DUPLICATE KEY UPDATE battles_participated = battles_participated + 1, last_participation = NOW()", 
+        WorldDatabase.Execute("INSERT INTO hlbg_player_stats (player_guid, player_name, faction, battles_participated, last_participation) VALUES ({}, '{}', '{}', 1, NOW()) ON DUPLICATE KEY UPDATE battles_participated = battles_participated + 1, last_participation = NOW()", 
             playerGuid, playerName, faction);
         
         // Send current battle status to the player
@@ -115,10 +115,10 @@ public:
         uint32 victimGuid = victim->GetGUIDLow();
         
         // Update killer statistics
-        WorldDatabase.PExecute("UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = {}", killerGuid);
+        WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = {}", killerGuid);
         
         // Update victim statistics
-        WorldDatabase.PExecute("UPDATE hlbg_player_stats SET total_deaths = total_deaths + 1 WHERE player_guid = {}", victimGuid);
+        WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_deaths = total_deaths + 1 WHERE player_guid = {}", victimGuid);
         
         // Update global statistics
         WorldDatabase.Execute("UPDATE hlbg_statistics SET total_kills = total_kills + 1, total_deaths = total_deaths + 1");
@@ -133,7 +133,7 @@ public:
         uint32 playerGuid = player->GetGUIDLow();
         
         // Update player statistics
-        WorldDatabase.PExecute("UPDATE hlbg_player_stats SET resources_captured = resources_captured + {} WHERE player_guid = {}", resourceAmount, playerGuid);
+        WorldDatabase.Execute("UPDATE hlbg_player_stats SET resources_captured = resources_captured + {} WHERE player_guid = {}", resourceAmount, playerGuid);
     }
 
 private:
@@ -179,7 +179,7 @@ private:
         UpdateWinStreaks(winner);
         
         // Update affix usage
-        WorldDatabase.PExecute("UPDATE hlbg_affixes SET usage_count = usage_count + 1 WHERE id = {}", affix);
+        WorldDatabase.Execute("UPDATE hlbg_affixes SET usage_count = usage_count + 1 WHERE id = {}", affix);
         
         LOG_INFO("hlbg", "Battle ended: {} won in {}s with affix {} (A:{} H:{})", 
             winner, duration, affix, allianceRes, hordeRes);
@@ -187,7 +187,7 @@ private:
     
     static void RecordManualReset(const std::string& gmName)
     {
-        WorldDatabase.PExecute("UPDATE hlbg_statistics SET manual_resets = manual_resets + 1, last_reset_by_gm = NOW(), last_reset_gm_name = '{}'", gmName);
+        WorldDatabase.Execute("UPDATE hlbg_statistics SET manual_resets = manual_resets + 1, last_reset_by_gm = NOW(), last_reset_gm_name = '{}'", gmName);
         
         LOG_INFO("hlbg", "Battle manually reset by GM: {}", gmName);
     }
@@ -200,9 +200,9 @@ private:
             return;
             
         Field* fields = result->Fetch();
-        std::string currentFaction = fields[0].GetString();
-        uint32 currentCount = fields[1].GetUInt32();
-        uint32 longestCount = fields[2].GetUInt32();
+        std::string currentFaction = fields[0].Get<std::string>();
+        uint32 currentCount = fields[1].Get<uint32>();
+        uint32 longestCount = fields[2].Get<uint32>();
         
         if (winner == "Draw")
         {
@@ -225,7 +225,7 @@ private:
         else
         {
             // Start new streak
-            WorldDatabase.PExecute("UPDATE hlbg_statistics SET current_streak_faction = '{}', current_streak_count = 1", winner);
+            WorldDatabase.Execute("UPDATE hlbg_statistics SET current_streak_faction = '{}', current_streak_count = 1", winner);
         }
     }
     

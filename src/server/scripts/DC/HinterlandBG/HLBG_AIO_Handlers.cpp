@@ -43,15 +43,15 @@ private:
         if (result)
         {
             Field* fields = result->Fetch();
-            data.WriteU32(fields[0].GetUInt32()); // duration_minutes
-            data.WriteU32(fields[1].GetUInt32()); // max_players_per_side
-            data.WriteU32(fields[2].GetUInt32()); // min_level
-            data.WriteU32(fields[3].GetUInt32()); // max_level
-            data.WriteBool(fields[4].GetBool());  // affix_rotation_enabled
-            data.WriteU32(fields[5].GetUInt32()); // resource_cap
-            data.WriteString(fields[6].GetString()); // queue_type
-            data.WriteU32(fields[7].GetUInt32()); // respawn_time_seconds
-            data.WriteBool(fields[8].GetBool());  // is_active
+            data.WriteU32(fields[0].Get<uint32>()); // duration_minutes
+            data.WriteU32(fields[1].Get<uint32>()); // max_players_per_side
+            data.WriteU32(fields[2].Get<uint32>()); // min_level
+            data.WriteU32(fields[3].Get<uint32>()); // max_level
+            data.WriteBool(fields[4].Get<bool>());  // affix_rotation_enabled
+            data.WriteU32(fields[5].Get<uint32>()); // resource_cap
+            data.WriteString(fields[6].Get<std::string>()); // queue_type
+            data.WriteU32(fields[7].Get<uint32>()); // respawn_time_seconds
+            data.WriteBool(fields[8].Get<bool>());  // is_active
         }
         else
         {
@@ -84,12 +84,12 @@ private:
         if (result)
         {
             Field* fields = result->Fetch();
-            data.WriteString(fields[0].GetString()); // name
-            data.WriteString(fields[1].GetString()); // start_date
-            data.WriteString(fields[2].GetString()); // end_date  
-            data.WriteString(fields[3].GetString()); // description
-            data.WriteString(fields[4].GetString()); // rewards_alliance
-            data.WriteString(fields[5].GetString()); // rewards_horde
+            data.WriteString(fields[0].Get<std::string>()); // name
+            data.WriteString(fields[1].Get<std::string>()); // start_date
+            data.WriteString(fields[2].Get<std::string>()); // end_date  
+            data.WriteString(fields[3].Get<std::string>()); // description
+            data.WriteString(fields[4].Get<std::string>()); // rewards_alliance
+            data.WriteString(fields[5].Get<std::string>()); // rewards_horde
         }
         else
         {
@@ -118,30 +118,30 @@ private:
         if (result)
         {
             Field* fields = result->Fetch();
-            data.WriteU32(fields[0].GetUInt32());  // total_runs
-            data.WriteU32(fields[1].GetUInt32());  // alliance_wins
-            data.WriteU32(fields[2].GetUInt32());  // horde_wins
-            data.WriteU32(fields[3].GetUInt32());  // draws
-            data.WriteU32(fields[4].GetUInt32());  // manual_resets
-            data.WriteString(fields[5].GetString()); // current_streak_faction
-            data.WriteU32(fields[6].GetUInt32());  // current_streak_count
-            data.WriteString(fields[7].GetString()); // longest_streak_faction
-            data.WriteU32(fields[8].GetUInt32());  // longest_streak_count
-            data.WriteU32(fields[9].GetUInt32());  // avg_run_time_seconds
-            data.WriteU32(fields[10].GetUInt32()); // shortest_run_seconds
-            data.WriteU32(fields[11].GetUInt32()); // longest_run_seconds
-            data.WriteU32(fields[12].GetUInt32()); // most_popular_affix
-            data.WriteU32(fields[13].GetUInt32()); // total_players_participated
-            data.WriteU32(fields[14].GetUInt32()); // total_kills
-            data.WriteU32(fields[15].GetUInt32()); // total_deaths
+            data.WriteU32(fields[0].Get<uint32>());  // total_runs
+            data.WriteU32(fields[1].Get<uint32>());  // alliance_wins
+            data.WriteU32(fields[2].Get<uint32>());  // horde_wins
+            data.WriteU32(fields[3].Get<uint32>());  // draws
+            data.WriteU32(fields[4].Get<uint32>());  // manual_resets
+            data.WriteString(fields[5].Get<std::string>()); // current_streak_faction
+            data.WriteU32(fields[6].Get<uint32>());  // current_streak_count
+            data.WriteString(fields[7].Get<std::string>()); // longest_streak_faction
+            data.WriteU32(fields[8].Get<uint32>());  // longest_streak_count
+            data.WriteU32(fields[9].Get<uint32>());  // avg_run_time_seconds
+            data.WriteU32(fields[10].Get<uint32>()); // shortest_run_seconds
+            data.WriteU32(fields[11].Get<uint32>()); // longest_run_seconds
+            data.WriteU32(fields[12].Get<uint32>()); // most_popular_affix
+            data.WriteU32(fields[13].Get<uint32>()); // total_players_participated
+            data.WriteU32(fields[14].Get<uint32>()); // total_kills
+            data.WriteU32(fields[15].Get<uint32>()); // total_deaths
             
             // Last reset info
-            std::string lastReset = fields[16].IsNull() ? "Never" : fields[16].GetString();
+            std::string lastReset = fields[16].IsNull() ? "Never" : fields[16].Get<std::string>();
             data.WriteString(lastReset);
             
             // Calculate server uptime in days
             time_t now = time(nullptr);
-            time_t serverStart = fields[17].GetUInt32();
+            time_t serverStart = fields[17].Get<uint32>();
             uint32 uptimeDays = (now - serverStart) / 86400;
             data.WriteU32(uptimeDays);
         }
@@ -178,14 +178,14 @@ private:
             do
             {
                 Field* fields = result->Fetch();
-                data.WriteString(fields[0].GetString()); // battle_end (date)
-                data.WriteString(fields[1].GetString()); // winner_faction
-                data.WriteU32(fields[2].GetUInt32());    // duration_seconds
-                data.WriteU32(fields[3].GetUInt32());    // affix_id
-                data.WriteU32(fields[4].GetUInt32());    // alliance_resources
-                data.WriteU32(fields[5].GetUInt32());    // horde_resources
-                data.WriteU32(fields[6].GetUInt32());    // alliance_players
-                data.WriteU32(fields[7].GetUInt32());    // horde_players
+                data.WriteString(fields[0].Get<std::string>()); // battle_end (date)
+                data.WriteString(fields[1].Get<std::string>()); // winner_faction
+                data.WriteU32(fields[2].Get<uint32>());    // duration_seconds
+                data.WriteU32(fields[3].Get<uint32>());    // affix_id
+                data.WriteU32(fields[4].Get<uint32>());    // alliance_resources
+                data.WriteU32(fields[5].Get<uint32>());    // horde_resources
+                data.WriteU32(fields[6].Get<uint32>());    // alliance_players
+                data.WriteU32(fields[7].Get<uint32>());    // horde_players
             } while (result->NextRow());
         }
         else
@@ -246,14 +246,14 @@ public:
         WorldDatabase.Execute(updateQuery.c_str());
         
         // Insert battle history record
-        WorldDatabase.PExecute("INSERT INTO hlbg_battle_history (battle_end, winner_faction, duration_seconds, affix_id, alliance_resources, horde_resources, alliance_players, horde_players) VALUES (NOW(), '{}', {}, {}, {}, {}, {}, {})",
+        WorldDatabase.Execute("INSERT INTO hlbg_battle_history (battle_end, winner_faction, duration_seconds, affix_id, alliance_resources, horde_resources, alliance_players, horde_players) VALUES (NOW(), '{}', {}, {}, {}, {}, {}, {})",
             winner, duration, affix, allianceRes, hordeRes, alliancePlayers, hordePlayers);
         
         // Update win streaks
         UpdateWinStreaks(winner);
         
         // Update affix usage
-        WorldDatabase.PExecute("UPDATE hlbg_affixes SET usage_count = usage_count + 1 WHERE id = {}", affix);
+        WorldDatabase.Execute("UPDATE hlbg_affixes SET usage_count = usage_count + 1 WHERE id = {}", affix);
         
         // Broadcast updated stats to all online players
         BroadcastStatsUpdate();
@@ -265,7 +265,7 @@ public:
     // Call this when GM manually resets a battle
     static void RecordManualReset(const std::string& gmName)
     {
-        WorldDatabase.PExecute("UPDATE hlbg_statistics SET manual_resets = manual_resets + 1, last_reset_by_gm = NOW(), last_reset_gm_name = '{}'", gmName);
+        WorldDatabase.Execute("UPDATE hlbg_statistics SET manual_resets = manual_resets + 1, last_reset_by_gm = NOW(), last_reset_gm_name = '{}'", gmName);
         
         LOG_INFO("hlbg", "Battle manually reset by GM: {}", gmName);
     }
@@ -279,9 +279,9 @@ private:
             return;
             
         Field* fields = result->Fetch();
-        std::string currentFaction = fields[0].GetString();
-        uint32 currentCount = fields[1].GetUInt32();
-        uint32 longestCount = fields[2].GetUInt32();
+        std::string currentFaction = fields[0].Get<std::string>();
+        uint32 currentCount = fields[1].Get<uint32>();
+        uint32 longestCount = fields[2].Get<uint32>();
         
         if (winner == "Draw")
         {
@@ -304,7 +304,7 @@ private:
         else
         {
             // Start new streak
-            WorldDatabase.PExecute("UPDATE hlbg_statistics SET current_streak_faction = '{}', current_streak_count = 1", winner);
+            WorldDatabase.Execute("UPDATE hlbg_statistics SET current_streak_faction = '{}', current_streak_count = 1", winner);
         }
     }
     
