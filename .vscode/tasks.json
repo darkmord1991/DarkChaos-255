@@ -1,96 +1,343 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-      {
-        "label": "AzerothCore: Dashboard",
-        "type": "shell",
-        "command": "./acore.sh",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Download client-data",
-        "type": "shell",
-        "command": "./acore.sh client-data",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Clean build",
-        "type": "shell",
-        "command": "./acore.sh compiler clean",
-        "group": "build",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Build",
-        "type": "shell",
-        "command": "./acore.sh compiler build",
-        "group": {
-          "kind": "build",
-          "isDefault": true
-        },
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Check codestyle cpp",
-        "type": "shell",
-        "command": "python apps/codestyle/codestyle-cpp.py",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Check codestyle sql",
-        "type": "shell",
-        "command": "python apps/codestyle/codestyle-sql.py",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Run authserver (restarter)",
-        "type": "shell",
-        "command": "./acore.sh run-authserver",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      },
-      {
-        "label": "AzerothCore: Run worldserver (restarter)",
-        "type": "shell",
-        "command": "./acore.sh run-worldserver",
-        "group": "none",
-        "presentation": {
-          "reveal": "always",
-          "panel": "new"
-        },
-        "problemMatcher": []
-      }
-    ]
-  }
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "AzerothCore: Dashboard",
+			"type": "shell",
+			"command": "./acore.sh",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Download client-data",
+			"type": "shell",
+			"command": "./acore.sh client-data",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Clean build",
+			"type": "shell",
+			"command": "./acore.sh compiler clean",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Build (local)",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Sync changed + Build",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/sync-and-build.ps1",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-HostKey",
+				"${input:remoteHostKey}"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Check codestyle cpp",
+			"type": "shell",
+			"command": "python apps/codestyle/codestyle-cpp.py",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Check codestyle sql",
+			"type": "shell",
+			"command": "python apps/codestyle/codestyle-sql.py",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Run authserver (restarter)",
+			"type": "shell",
+			"command": "./acore.sh run-authserver",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Run worldserver (restarter)",
+			"type": "shell",
+			"command": "./acore.sh run-worldserver",
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc",
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build (local)",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Sync changed + Build (agent)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/sync-and-build.ps1",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-HostKey",
+				"${input:remoteHostKey}"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Sync changed + Build",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/sync-and-build.ps1",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-HostKey",
+				"${input:remoteHostKey}"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Sync changed + Build",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/sync-and-build.ps1",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-HostKey",
+				"${input:remoteHostKey}"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Sync changed + Build (temp)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"apps/git_tools/sync-and-build.ps1",
+				"-RemoteUser",
+				"${input:remoteUser}",
+				"-RemotePassword",
+				"${input:remotePassword}",
+				"-RemoteRepoPath",
+				"${input:remoteRepoPath}",
+				"-HostKey",
+				"${input:remoteHostKey}"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build (local)",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		},
+		{
+			"label": "AzerothCore: Build (local)",
+			"type": "shell",
+			"command": "./acore.sh compiler build"
+		},
+		{
+			"label": "AzerothCore: Build",
+			"type": "shell",
+			"command": "./acore.sh compiler build",
+			"group": "build"
+		}
+	],
+	"inputs": [
+		{
+			"id": "remoteUser",
+			"type": "promptString",
+			"description": "SSH username for remote build host",
+			"default": "wowcore"
+		},
+		{
+			"id": "remotePassword",
+			"type": "promptString",
+			"description": "SSH password for remote build host",
+			"password": true
+		},
+		{
+			"id": "remoteRepoPath",
+			"type": "promptString",
+			"description": "Absolute repo path on remote host",
+			"default": "/home/wowcore"
+		},
+		{
+			"id": "remoteHostKey",
+			"type": "promptString",
+			"description": "Optional SSH host key fingerprint to pin (leave blank to skip)",
+			"default": ""
+		}
+	]
+}

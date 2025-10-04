@@ -11,9 +11,9 @@ _G.HLBG = HLBG
 HinterlandAffixHUDDB = HinterlandAffixHUDDB or {
     disableChatUpdates = true,
     showHUD = true,
-    hudPosition = {point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -50, y = -150},
+    hudPosition = {point = "TOP", relPoint = "TOP", x = 0, y = -50},
     hudScale = 1.0,
-    affixPosition = {point = "TOPLEFT", relPoint = "TOPLEFT", x = 30, y = -150}
+    affixPosition = {point = "TOP", relPoint = "TOP", x = 0, y = -120}
 }
 
 -- Constants
@@ -48,7 +48,10 @@ end
 
 local function IsInHinterlands()
     local zone = GetRealZoneText()
-    return zone == ZONE_HINTERLANDS
+    local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+    
+    -- Check for zone 47 (HLBG) or Hinterlands zone text
+    return (mapID == 47) or (zone == ZONE_HINTERLANDS)
 end
 
 local function SecondsToClock(seconds)
@@ -58,9 +61,9 @@ local function SecondsToClock(seconds)
     return string.format("%d:%02d", mins, secs)
 end
 
--- HUD Frame for resource display
+-- HUD Frame for resource display (central top position)
 local hudFrame = CreateFrame("Frame", "HLBG_HUD", UIParent)
-hudFrame:SetSize(240, 92)
+hudFrame:SetSize(280, 110)
 hudFrame:SetMovable(true)
 hudFrame:EnableMouse(true)
 hudFrame:RegisterForDrag("LeftButton")
@@ -75,7 +78,7 @@ hudFrame:SetBackdrop({
 })
 hudFrame:SetBackdropColor(0, 0, 0, 0.8)
 
--- HUD positioning
+-- HUD positioning (central top)
 local pos = HinterlandAffixHUDDB.hudPosition
 hudFrame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
 hudFrame:SetScale(HinterlandAffixHUDDB.hudScale)
@@ -98,7 +101,7 @@ hudFrame:SetScript("OnDragStop", function(self)
     }
 end)
 
--- HUD text elements
+-- HUD text elements with affix
 hudFrame.allianceText = hudFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 hudFrame.allianceText:SetPoint("TOPRIGHT", -8, -8)
 hudFrame.allianceText:SetText("|TInterface/TargetingFrame/UI-PVP-ALLIANCE:16|t Alliance: 0/450")
@@ -107,8 +110,12 @@ hudFrame.hordeText = hudFrame:CreateFontString(nil, "OVERLAY", "GameFontHighligh
 hudFrame.hordeText:SetPoint("TOPRIGHT", hudFrame.allianceText, "BOTTOMRIGHT", 0, -6)
 hudFrame.hordeText:SetText("|TInterface/TargetingFrame/UI-PVP-HORDE:16|t Horde: 0/450")
 
+hudFrame.affixText = hudFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+hudFrame.affixText:SetPoint("TOPRIGHT", hudFrame.hordeText, "BOTTOMRIGHT", 0, -6)
+hudFrame.affixText:SetText("Affix: None")
+
 hudFrame.timerText = hudFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-hudFrame.timerText:SetPoint("TOPRIGHT", hudFrame.hordeText, "BOTTOMRIGHT", 0, -6)
+hudFrame.timerText:SetPoint("TOPRIGHT", hudFrame.affixText, "BOTTOMRIGHT", 0, -6)
 hudFrame.timerText:SetText("Time: --:--")
 
 -- Affix display frame
@@ -156,6 +163,13 @@ local function UpdateHUD()
     local status = HLBG.currentStatus
     hudFrame.allianceText:SetText(string.format("|TInterface/TargetingFrame/UI-PVP-ALLIANCE:16|t Alliance: %d/450", status.alliance))
     hudFrame.hordeText:SetText(string.format("|TInterface/TargetingFrame/UI-PVP-HORDE:16|t Horde: %d/450", status.horde))
+    
+    -- Update affix display in HUD
+    if status.affix then
+        hudFrame.affixText:SetText("Affix: " .. GetAffixName(status.affix))
+    else
+        hudFrame.affixText:SetText("Affix: None")
+    end
     
     if status.timeLeft and status.timeLeft > 0 then
         hudFrame.timerText:SetText("Time Left: " .. SecondsToClock(status.timeLeft))
@@ -209,18 +223,36 @@ end
 -- Zone change handler
 local function OnZoneChanged()
     if IsInHinterlands() then
-        if HLBG.currentStatus.inProgress then
+        HLBG.currentStatus.inZone = true
+        
+        -- Always show HUD when in HLBG unless explicitly disabled
+        if not HinterlandAffixHUDDB.hideHUD then
+            hudFrame:Show()
+            
+            -- Initialize with default data if no current status
+            if not HLBG.currentStatus.alliance then
+                HLBG.currentStatus.alliance = 0
+                HLBG.currentStatus.horde = 0
+                HLBG.currentStatus.affix = 0
+                HLBG.currentStatus.timeLeft = 0
+            end
+            
             UpdateHUD()
         end
+        
         if HLBG.currentStatus.affix then
             UpdateAffix(HLBG.currentStatus.affix)
         end
+        
         if HinterlandAffixHUDDB.showHUD then
             HideBlizzardHUD()
         end
     else
-        hudFrame:Hide()
-        affixFrame:Hide()
+        HLBG.currentStatus.inZone = false
+        if HinterlandAffixHUDDB.hideWhenNotInZone then
+            hudFrame:Hide()
+            affixFrame:Hide()
+        end
         ShowBlizzardHUD()
     end
 end
@@ -256,13 +288,19 @@ function HLBG.UpdateStatus(data)
     if type(data) ~= "table" then return end
     
     local status = HLBG.currentStatus
-    status.alliance = tonumber(data.A) or status.alliance
-    status.horde = tonumber(data.H) or status.horde
-    status.timeLeft = tonumber(data.timeLeft) or tonumber(data.END) and (tonumber(data.END) - time()) or 0
-    status.inProgress = true
+    status.alliance = tonumber(data.A) or status.alliance or 0
+    status.horde = tonumber(data.H) or status.horde or 0
+    status.timeLeft = tonumber(data.timeLeft) or (tonumber(data.END) and (tonumber(data.END) - time())) or 0
+    status.inProgress = (status.alliance > 0 or status.horde > 0 or status.timeLeft > 0)
     
     if data.affix then
-        UpdateAffix(data.affix)
+        status.affix = tonumber(data.affix) or status.affix or 0
+        UpdateAffix(status.affix)
+    end
+    
+    -- Always show HUD when in zone and we have status update
+    if IsInHinterlands() and not HinterlandAffixHUDDB.hideHUD then
+        hudFrame:Show()
     end
     
     UpdateHUD()
@@ -309,19 +347,40 @@ SlashCmdList["HLBGHUD"] = function(msg)
     
     if command == "toggle" then
         HLBG.ToggleHUD()
+    elseif command == "show" then
+        hudFrame:Show()
+        print("|cFF00FF00[HLBG]|r HUD shown")
+    elseif command == "hide" then
+        hudFrame:Hide()
+        print("|cFF00FF00[HLBG]|r HUD hidden")
     elseif command == "reset" then
         HLBG.ResetPosition()
     elseif command == "test" then
-        HLBG.UpdateStatus({A = 250, H = 180, timeLeft = 900})
-        HLBG.SetAffix(1)
-        print("|cFF00FF00[HLBG]|r Test data loaded")
+        -- Force HUD to show first
+        hudFrame:Show()
+        affixFrame:Show()
+        -- Update with test data  
+        HLBG.UpdateStatus({A = 350, H = 280, affix = 1, timeLeft = 930, END = time() + 930})
+        -- Also trigger AIO test data if available
+        if HLBG.GenerateTestData then
+            HLBG.GenerateTestData()
+        end
+        -- Force update HUD display
+        UpdateHUD()
+        UpdateAffix(1)
+        print("|cFF00FF00[HLBG]|r Test data loaded - HUD is now visible with test data")
     else
         print("|cFF00FF00[HLBG]|r Commands:")
         print("  /hlbghud toggle - Toggle HUD display")
+        print("  /hlbghud show - Show HUD")
+        print("  /hlbghud hide - Hide HUD")
         print("  /hlbghud reset - Reset positions")
         print("  /hlbghud test - Load test data")
     end
 end
+
+-- Alias for settings UI compatibility
+HLBG.ResetHUD = HLBG.ResetPosition
 
 -- Export functions for AIO client
 _G.HLBG = HLBG
