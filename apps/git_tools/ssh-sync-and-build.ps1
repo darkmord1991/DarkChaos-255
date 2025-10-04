@@ -3,7 +3,6 @@ param(
     [string]$RemoteUser = "",
     [string]$RemotePassword = "",
     [string]$RemoteRepoPath = "",
-    [string]$PrivateKeyPath = "",
     [switch]$UseStoredCredentials
 )
 
@@ -74,6 +73,22 @@ if ($UseStoredCredentials) {
     else {
         Write-Log "No stored credentials found. Please run with parameters first." "ERROR"
         exit 1
+    }
+}
+
+# Robustly parse optional -PrivateKeyPath from raw args so the script doesn't fail
+# if the flag is provided without a value (some task runners may pass an empty token).
+$PrivateKeyPath = ""
+for ($i = 0; $i -lt $args.Count; $i++) {
+    if ($args[$i] -ieq '-PrivateKeyPath') {
+        if ($i + 1 -lt $args.Count -and ($args[$i+1] -notmatch '^-[A-Za-z]')) {
+            $PrivateKeyPath = $args[$i+1]
+        }
+        else {
+            # Flag present but no value provided: treat as empty string
+            $PrivateKeyPath = ''
+        }
+        break
     }
 }
 
@@ -149,58 +164,124 @@ if ($localChanges) {
     Write-Log "Found local changes to sync:" "INFO"
     $localChanges | ForEach-Object { Write-Log "  $_" "INFO" }
     
-    # Create a patch of local changes
-    $patchFile = "$env:TEMP\azeroth-sync-$(Get-Date -Format 'yyyyMMdd-HHmmss').patch"
-    git diff > $patchFile
-    
-    if ((Get-Content $patchFile).Count -gt 0) {
-        Write-Log "Created patch file: $patchFile" "INFO"
-        
-        # Copy patch to remote server
-        Write-Log "Uploading patch to remote server..." "INFO"
-        if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
-            $env:SSHPASS = $RemotePassword
-            & sshpass -e scp $sshOptions $patchFile "${sshTarget}:${RemoteRepoPath}/local-changes.patch"
+    # Determine changed files using git status so we can sync per-file (more robust than patch apply)
+    Write-Log "Determining changed files via git status..." "INFO"
+    $status = & git status --porcelain --untracked-files=normal
+    if (-not $status) {
+        Write-Log "No changes detected after all (race condition?). Nothing to sync." "INFO"
+        exit 0
+    }
+
+    # Parse status lines (preserve leading characters like '.' in paths)
+    $lines = $status -split "`n" | ForEach-Object { $_ } | Where-Object { $_ -ne '' }
+    $toCopy = @()
+    $toDelete = @()
+    foreach ($line in $lines) {
+        # Use regex to extract status code and path (preserves leading dots)
+        if ($line -match '^(..)	?(?:\s+)?(.*)$') {
+            $code = $matches[1].Trim()
+            $rest = $matches[2]
         }
         else {
-            & scp $sshOptions $patchFile "${sshTarget}:${RemoteRepoPath}/local-changes.patch"
+            # Fallback: skip malformed line
+            Write-Log "Skipping malformed git status line: $line" "WARNING"
+            continue
         }
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "Failed to upload patch file." "ERROR"
-            exit 1
-        }
-        
-        # Apply patch on remote server
-        Write-Log "Applying changes on remote server..." "INFO"
-        $applyCmd = "cd $RemoteRepoPath && git apply local-changes.patch && rm local-changes.patch"
-        
-        if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
-            $env:SSHPASS = $RemotePassword
-            & sshpass -e ssh $sshOptions $sshTarget $applyCmd
+
+        if ($code -eq 'D') {
+            $toDelete += $rest
         }
         else {
-            & ssh $sshOptions $sshTarget $applyCmd
+            # additions, modifications, untracked, etc.
+            # handle rename pattern like 'src -> dst'
+            if ($rest -match ' -> ') {
+                $parts = $rest -split ' -> '
+                $toCopy += $parts[-1]
+                $toDelete += $parts[0]
+            }
+            else {
+                $toCopy += $rest
+            }
         }
-        
+    }
+
+    $toCopy = $toCopy | Where-Object { $_ -and $_ -ne '.' } | Select-Object -Unique
+    $toDelete = $toDelete | Where-Object { $_ -and $_ -ne '.' } | Select-Object -Unique
+
+    Write-Log "Files to copy: $($toCopy.Count)  files to delete: $($toDelete.Count)" "INFO"
+
+    # Copy files one by one, creating directories on remote
+    foreach ($f in $toCopy) {
+        $localPath = Join-Path (Get-Location) $f
+        if (-not (Test-Path $localPath)) {
+            Write-Log "Skipping missing local file: $f" "WARNING"
+            continue
+        }
+        $remoteDir = [System.IO.Path]::GetDirectoryName($f)
+        if ($remoteDir -and $remoteDir -ne '') {
+            $mkdirCmd = "mkdir -p '$RemoteRepoPath/$remoteDir'"
+            if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
+                $env:SSHPASS = $RemotePassword
+                & sshpass -e ssh $sshOptions $sshTarget $mkdirCmd
+            }
+            else {
+                & ssh $sshOptions $sshTarget $mkdirCmd
+            }
+        }
+
+        Write-Log "Copying $f to remote..." "INFO"
+        if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
+            $env:SSHPASS = $RemotePassword
+            & sshpass -e scp $sshOptions $localPath "${sshTarget}:${RemoteRepoPath}/$f"
+        }
+        else {
+            & scp $sshOptions $localPath "${sshTarget}:${RemoteRepoPath}/$f"
+        }
+
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "Failed to apply changes on remote server." "ERROR"
+            Write-Log "Failed to upload file $f" "ERROR"
             exit 1
         }
-        
-        Write-Log "Changes successfully synced to remote server!" "SUCCESS"
-        
-        # Clean up local patch file
-        Remove-Item $patchFile -ErrorAction SilentlyContinue
+    }
+
+    # Remove deleted files on remote
+    foreach ($rf in $toDelete) {
+        Write-Log "Removing remote file: $rf" "INFO"
+        $rmcmd = "rm -f '$RemoteRepoPath/$rf'"
+        if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
+            $env:SSHPASS = $RemotePassword
+            & sshpass -e ssh $sshOptions $sshTarget $rmcmd
+        }
+        else {
+            & ssh $sshOptions $sshTarget $rmcmd
+        }
+    }
+
+    Write-Log "Per-file sync complete. You may need to commit on remote if desired." "SUCCESS"
+
+    # Optionally run remote build
+    Write-Log "Starting remote build (UpdateWoWshort.sh)..." "INFO"
+    $buildCmd = "cd $RemoteRepoPath && chmod +x UpdateWoWshort.sh; ./UpdateWoWshort.sh"
+    if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
+        $env:SSHPASS = $RemotePassword
+        & sshpass -e ssh $sshOptions $sshTarget $buildCmd
+    }
+    else {
+        & ssh $sshOptions $sshTarget $buildCmd
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "Remote build failed. Check remote logs." "ERROR"
+        exit 1
     }
 }
 else {
     Write-Log "No local changes to sync." "INFO"
 }
 
-# Build on remote server
-Write-Log "Starting build on remote server..." "INFO"
-$buildCmd = "cd $RemoteRepoPath && ./acore.sh compiler build"
+# Build on remote server using UpdateWoWshort.sh
+Write-Log "Starting build on remote server (UpdateWoWshort.sh)..." "INFO"
+$buildCmd = "cd $RemoteRepoPath && chmod +x UpdateWoWshort.sh; ./UpdateWoWshort.sh"
 
 if ($RemotePassword -and (Get-Command sshpass -ErrorAction SilentlyContinue)) {
     $env:SSHPASS = $RemotePassword

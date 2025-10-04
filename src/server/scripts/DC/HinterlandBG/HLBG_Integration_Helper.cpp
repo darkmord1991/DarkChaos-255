@@ -9,8 +9,11 @@
 #include "Player.h"
 #include "DatabaseEnv.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "Log.h"
+#ifdef HAS_AIO
 #include "AIO.h"
+#endif
 
 class HinterlandBattlegroundIntegration
 {
@@ -65,14 +68,15 @@ public:
     // Call this periodically to send live battle status to players
     static void BroadcastLiveStatus(uint32 allianceResources, uint32 hordeResources, uint32 affixId, uint32 timeRemaining)
     {
-        SessionMap const& sessions = sWorld->GetAllSessions();
-        for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
         {
             if (Player* player = itr->second->GetPlayer())
             {
                 if (player->IsInWorld())
                 {
-                    // Send live status via AIO
+                    // Send live status via AIO if available
+#ifdef HAS_AIO
                     AioPacket data;
                     data.WriteU32(allianceResources);
                     data.WriteU32(hordeResources);
@@ -80,6 +84,10 @@ public:
                     data.WriteU32(timeRemaining);
                     
                     AIO().Handle(player, "HLBG", "Status", data);
+#else
+                    // AIO not available: optionally send a chat message as fallback
+                    ChatHandler(player->GetSession()).PSendSysMessage("HLBG status: A:%u H:%u Affix:%u Time:%u", allianceResources, hordeResources, affixId, timeRemaining);
+#endif
                 }
             }
         }
@@ -140,8 +148,8 @@ private:
     static void BroadcastBattleStart(uint32 affixId)
     {
         // Notify all players that battle has started
-        SessionMap const& sessions = sWorld->GetAllSessions();
-        for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
         {
             if (Player* player = itr->second->GetPlayer())
             {
@@ -255,13 +263,18 @@ private:
         uint32 affixId = GetCurrentAffix(instanceId);
         uint32 timeRemaining = GetBattleTimeRemaining(instanceId);
         
-        AioPacket data;
-        data.WriteU32(allianceResources);
-        data.WriteU32(hordeResources);
-        data.WriteU32(affixId);
-        data.WriteU32(timeRemaining);
+    // Use AIO if available, otherwise send simple chat fallback
+#ifdef HAS_AIO
+    AioPacket data;
+    data.WriteU32(allianceResources);
+    data.WriteU32(hordeResources);
+    data.WriteU32(affixId);
+    data.WriteU32(timeRemaining);
         
-        AIO().Handle(player, "HLBG", "Status", data);
+    AIO().Handle(player, "HLBG", "Status", data);
+#else
+    ChatHandler(player->GetSession()).PSendSysMessage("HLBG status: A:%u H:%u Affix:%u Time:%u", allianceResources, hordeResources, affixId, timeRemaining);
+#endif
     }
     
     // These functions need to be implemented based on your existing BG system

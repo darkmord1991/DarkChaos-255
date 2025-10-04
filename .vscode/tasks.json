@@ -53,7 +53,7 @@
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
 				"-PrivateKeyPath",
-				"${input:privateKeyPath}"
+				"${env:USERPROFILE}\\.ssh\\id_ed25519"
 			],
 			"group": {
 				"kind": "build",
@@ -195,10 +195,10 @@
 			"default": "/home/wowcore/azerothcore"
 		},
 		{
-			"id": "privateKeyPath",
-			"type": "promptString",
-			"description": "Path to SSH private key file (optional)",
-			"default": ""
+				"id": "privateKeyPath",
+				"type": "promptString",
+				"description": "Path to SSH private key file (optional)",
+				"default": "${env:USERPROFILE}\\.ssh\\id_ed25519"
 		}
 	]
 }

@@ -5,12 +5,18 @@
  * AIO handlers for Hinterland Battleground real-time communication
  */
 
-#include "AIO.h"
 #include "Player.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "WorldSession.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+
+#ifndef HAS_AIO
+// AIO not available: provide a no-op initializer so build succeeds
+void InitializeHLBGHandlers() {}
+#else
+#include "AIO.h"
 
 class HLBGAIOHandlers
 {
@@ -311,8 +317,8 @@ private:
     static void BroadcastStatsUpdate()
     {
         // Send updated stats to all online players who have HLBG UI open
-        SessionMap const& sessions = sWorld->GetAllSessions();
-        for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
         {
             if (Player* player = itr->second->GetPlayer())
             {
@@ -337,3 +343,5 @@ void InitializeHLBGHandlers()
 {
     HLBGAIOHandlers::Initialize();
 }
+
+#endif // HAS_AIO
