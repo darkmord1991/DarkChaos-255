@@ -1,17 +1,4 @@
 -- Use the improved, unified version (same as the copy under Custom/Client/Client addons needed/)
-
--- Track that this file is loading
-if _G.HLBG_RecordFileLoad then
-    _G.HLBG_RecordFileLoad("HinterlandAffixHUD.lua")
-end
-
--- Enable debug output
-_G.HLBG_Debug = true
-
-if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00EEFF[HLBG Debug]|r Loaded: HinterlandAffixHUD.lua (main file)")
-end
-
 local f = CreateFrame("Frame", "HinterlandAffixHUD", UIParent)
 f:SetSize(200, 50)
 f:SetPoint("CENTER")

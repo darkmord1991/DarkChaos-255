@@ -1,0 +1,23 @@
+## Interface: 30300
+## Title: Hinterland Affix HUD (Emergency)
+## Notes: Displays HinterlandBG current season, active affixes and status
+## Author: DarkChaos/FrozenSoul
+## Version: 1.0.1
+## DefaultState: enabled
+## SavedVariables: HLBG_SavedVars
+## LoadAfter: AIO_Client
+
+# Core tracking to diagnose loading issues
+HLBG_LoadDebug.lua
+
+# Compatibility Layer
+HLBG_TimerCompat.lua
+
+# AIO dependency checker
+HLBG_AIO_Check.lua
+
+# Diagnostic Tools
+HLBG_Diagnostic.lua
+
+# Main Addon
+HLBG_Core.lua

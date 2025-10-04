@@ -1,0 +1,13 @@
+## Interface: 30300
+## Title: Hinterland Battleground HUD
+## Notes: Shows Hinterland BG affix, history, stats and live status
+## Author: DC-255
+## Version: 2.0.0
+## Dependencies: AIO_Client
+## SavedVariables: HinterlandAffixHUDDB
+
+# Main addon file
+HinterlandAffixHUD_Clean.lua
+
+# AIO integration
+HLBG_AIO_Client.lua
