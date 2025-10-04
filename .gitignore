@@ -102,7 +102,6 @@ local.properties
 #  !modules/yourmodule
 #
 # ==================
-# SSH sync and build credential files
-/apps/git_tools/ssh-config.json
-/apps/git_tools/build-credentials.json
-/apps/git_tools/*.patch
+/.vscode/tasks.json
+/apps/git_tools/sync-and-build.ps1
+/apps/git_tools/sync-changed.ps1
