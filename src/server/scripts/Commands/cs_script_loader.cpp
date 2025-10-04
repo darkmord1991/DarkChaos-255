@@ -64,7 +64,6 @@ void AddSC_item_commandscript();
 void AddSC_player_settings_commandscript();
 void AddSC_worldstate_commandscript();
 void AddSC_faq_commandscript();
-void AddSC_hlbg_commandscript();
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -118,5 +117,4 @@ void AddCommandsScripts()
     AddSC_player_settings_commandscript();
     AddSC_worldstate_commandscript();
     AddSC_faq_commandscript();
-    AddSC_hlbg_commandscript();
 }

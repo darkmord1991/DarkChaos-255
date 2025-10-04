@@ -19,8 +19,6 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Thresholds.cpp
     HinterlandBG/OutdoorPvPHL_Worldstates.cpp
     HinterlandBG/OutdoorPvPHL_Admin.cpp
-    # HinterlandBG/HLBG_AIO_Handlers.cpp  # Disabled until AIO system is properly configured
-    HinterlandBG/HLBG_Integration_Helper.cpp
 )
 
 # Add sources to AzerothCore scripts
