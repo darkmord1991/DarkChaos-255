@@ -6,6 +6,7 @@
  */
 
 #include "HLBG_AIO_Handlers.cpp" // Include the AIO handlers
+#include "WorldSessionMgr.h"
 
 class HinterlandBattlegroundIntegration
 {
@@ -60,7 +61,7 @@ public:
     // Call this periodically to send live battle status to players
     static void BroadcastLiveStatus(uint32 allianceResources, uint32 hordeResources, uint32 affixId, uint32 timeRemaining)
     {
-        SessionMap const& sessions = sWorld->GetAllSessions();
+            WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
         for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
         {
             if (Player* player = itr->second->GetPlayer())
@@ -86,7 +87,7 @@ public:
         if (!player)
             return;
             
-        uint32 playerGuid = player->GetGUIDLow();
+            uint32 playerGuid = player->GetGUID().GetCounter();
         std::string playerName = player->GetName();
         std::string faction = player->GetTeam() == ALLIANCE ? "Alliance" : "Horde";
         
@@ -106,8 +107,8 @@ public:
         if (!killer || !victim)
             return;
             
-        uint32 killerGuid = killer->GetGUIDLow();
-        uint32 victimGuid = victim->GetGUIDLow();
+            uint32 killerGuid = killer->GetGUID().GetCounter();
+            uint32 victimGuid = victim->GetGUID().GetCounter();
         
         // Update killer statistics
         WorldDatabase.PExecute("UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = {}", killerGuid);
@@ -125,7 +126,7 @@ public:
         if (!player)
             return;
             
-        uint32 playerGuid = player->GetGUIDLow();
+            uint32 playerGuid = player->GetGUID().GetCounter();
         
         // Update player statistics
         WorldDatabase.PExecute("UPDATE hlbg_player_stats SET resources_captured = resources_captured + {} WHERE player_guid = {}", resourceAmount, playerGuid);
