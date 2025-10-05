@@ -700,10 +700,12 @@ do
         
         -- preserve safe helpers that UI and handlers rely on (these can be lost when HLBG table is swapped by AIO)
         local preservedSafe = {}
-        if type(HLBG) == "table" then
+        if type(HLBG) == 'table' then
             for _, k in ipairs({
                 'SafePrint','safeExecSlash','safeRegisterSlash','safeSetJustify','safeIsInInstance',
-                'safeGetRealZoneText','safeGetNumWorldStateUI','safeGetWorldStateUIInfo','safeGetPlayerMapPosition'
+                'safeGetRealZoneText','safeGetNumWorldStateUI','safeGetWorldStateUIInfo','safeGetPlayerMapPosition',
+                -- Preserve diagnostic helper so it remains callable after AIO swaps the HLBG table
+                'PrintStartupHistory'
             }) do
                 if type(HLBG[k]) == 'function' then preservedSafe[k] = HLBG[k] end
             end
