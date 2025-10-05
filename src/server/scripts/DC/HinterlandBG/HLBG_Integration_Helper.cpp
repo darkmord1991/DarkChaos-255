@@ -81,13 +81,11 @@ public:
 		uint32 killerGuid = killer->GetGUID().GetCounter();
 		uint32 victimGuid = victim->GetGUID().GetCounter();
 
-	WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = {}", killerGuid);
-	WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_deaths = total_deaths + 1 WHERE player_guid = {}", victimGuid);
+		WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = {}", killerGuid);
+		WorldDatabase.Execute("UPDATE hlbg_player_stats SET total_deaths = total_deaths + 1 WHERE player_guid = {}", victimGuid);
 		WorldDatabase.Execute("UPDATE hlbg_statistics SET total_kills = total_kills + 1, total_deaths = total_deaths + 1");
-	{
 		// instanceId not used in this integration shim; mark explicitly to avoid warnings
 		(void)instanceId;
-	}
 
 	static void OnResourceCapture(Player* player, uint32 resourceAmount, uint32 instanceId)
 	{
@@ -96,10 +94,8 @@ public:
 
 		uint32 playerGuid = player->GetGUID().GetCounter();
 	WorldDatabase.Execute("UPDATE hlbg_player_stats SET resources_captured = resources_captured + {} WHERE player_guid = {}", resourceAmount, playerGuid);
-	{
-		// instanceId not used here in this shim; avoid unused-parameter warning
-		(void)instanceId;
-	}
+	// instanceId not used here in this shim; avoid unused-parameter warning
+	(void)instanceId;
 
 private:
 	static void BroadcastBattleStart(uint32 affixId)
