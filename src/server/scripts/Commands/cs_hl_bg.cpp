@@ -69,6 +69,18 @@ public:
         //   the CommandInvoker wrapper. Newer commands may use typed
         //   argument parsing and different handler signatures.
 
+        // Ensure nested subtables are stored in named static variables so
+        // that ChatCommandBuilder's reference_wrapper does not point to a
+        // temporary that will be destroyed. Using an inline temporary
+        // std::vector here would create a dangling reference and crash
+        // when the command map is initialized.
+        static ChatCommandTable queueSubTable = {
+            { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
+            { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
+            { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+        };
+
         static ChatCommandTable hlbgCommandTable =
         {
             // Admin/GM commands
@@ -88,12 +100,7 @@ public:
             { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
 
             // Nested 'queue' subtable for player queue actions
-            { "queue", std::vector<ChatCommandBuilder> {
-                { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
-                { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
-                { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-                { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-            } },
+            { "queue", queueSubTable },
         };
 
         static ChatCommandTable commandTable =
