@@ -34,11 +34,14 @@ void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
         // Use the OutdoorPvP's internal player tracking instead of GetAllSessions()
         for (uint8 team = 0; team < 2; ++team)
         {
-            for (Player* player : _players[team])
+            for (const ObjectGuid& playerGuid : _players[team])
             {
-                if (player && player->IsInWorld() && player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                if (Player* player = ObjectAccessor::FindConnectedPlayer(playerGuid))
                 {
-                    s_zonePlayerCache.playerGuids.push_back(player->GetGUID());
+                    if (player->IsInWorld() && player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                    {
+                        s_zonePlayerCache.playerGuids.push_back(playerGuid);
+                    }
                 }
             }
         }
