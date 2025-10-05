@@ -163,8 +163,21 @@
         _persistenceEnabled = true;
         _lockEnabled = false;
         _lockDurationSeconds = 0;
+        
+        // State machine initialization
+        _bgState = BG_STATE_CLEANUP;  // Start in cleanup state waiting for players
+        _warmupDurationSeconds = 120; // 2 minutes default
+        _warmupTimeRemaining = 0;
+        _pauseStartTime = 0;
+        _cleanupTimeRemaining = 0;
+        _queueEnabled = true;
         _isLocked = false;
         _lockUntilEpoch = 0;
+
+        // Queue system initialization
+        _queuedPlayers.clear();
+        _minPlayersToStart = 4; // Minimum players needed to start warmup
+        _maxGroupSize = 5;      // Maximum group size allowed
         // Per-kill spell feedback defaults
         _killSpellOnPlayerKillAlliance = 0;
         _killSpellOnPlayerKillHorde = 0;
@@ -409,23 +422,8 @@
 
     void OutdoorPvPHL::PlaySounds(bool side)
     {
-        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
-        {
-            for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
-            {
-                if(!itr->second || !itr->second->GetPlayer() || !itr->second->GetPlayer()->IsInWorld() || itr->second->GetPlayer()->GetZoneId() != OutdoorPvPHLBuffZones[i])
-                    continue;
-
-                if(itr->second->GetPlayer()->GetZoneId() == OutdoorPvPHLBuffZones[i])
-                {
-                    if(itr->second->GetPlayer()->GetTeamId() == TEAM_ALLIANCE && side == true)
-                        itr->second->GetPlayer()->PlayDirectSound(HL_SOUND_ALLIANCE_GOOD, itr->second->GetPlayer());
-                    else
-                        itr->second->GetPlayer()->PlayDirectSound(HL_SOUND_HORDE_GOOD, itr->second->GetPlayer());
-                }
-            }
-        }
+        // Use optimized version that avoids expensive GetAllSessions()
+        PlaySoundsOptimized(side);
     }
 
     // Cosmetic: provide a Battleground-like item link prefix for chat/notifications
@@ -444,6 +442,19 @@
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
+        
+        // Update state machine first
+        UpdateStateMachine(diff);
+        
+        // Performance monitoring (log every 5 minutes)
+        static uint32 s_perfLogTimer = 0;
+        s_perfLogTimer += diff;
+        if (s_perfLogTimer >= 300000) // 5 minutes
+        {
+            LogPerformanceStats();
+            s_perfLogTimer = 0;
+        }
+        
         if(_FirstLoad == false)
         {
             if(_LastWin == ALLIANCE) 

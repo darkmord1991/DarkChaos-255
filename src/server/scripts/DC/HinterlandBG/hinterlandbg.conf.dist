@@ -5,6 +5,14 @@
 # Match window duration (seconds)
 HinterlandBG.MatchDuration = 3600
 
+# Warmup phase duration (seconds) - time for players to join before battle starts
+HinterlandBG.WarmupDuration = 120
+
+# Queue system settings
+HinterlandBG.Queue.Enabled = 1
+HinterlandBG.Queue.MinPlayers = 4
+HinterlandBG.Queue.MaxGroupSize = 5
+
 # AFK policy (seconds)
 HinterlandBG.AFK.WarnSeconds = 120
 HinterlandBG.AFK.TeleportSeconds = 180

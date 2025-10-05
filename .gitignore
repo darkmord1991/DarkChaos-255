@@ -105,3 +105,10 @@ local.properties
 /.vscode/tasks.json
 /apps/git_tools/sync-and-build.ps1
 /apps/git_tools/sync-changed.ps1
+authorized_keys.remote
+.vscode/tasks.json
+apps/git_tools/credential-manager.ps1
+apps/git_tools/install_remote_key.sh
+apps/git_tools/README.md
+apps/git_tools/ssh-config.json
+apps/git_tools/ssh-sync-and-build.ps1

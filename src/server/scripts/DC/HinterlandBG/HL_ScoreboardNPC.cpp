@@ -14,11 +14,12 @@
 #include <algorithm>
 #include <cmath>
 
+// Use centralized utility function
+namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
+
 static OutdoorPvPHL* GetHL()
 {
-    if (OutdoorPvP* pvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-        return dynamic_cast<OutdoorPvPHL*>(pvp);
-    return nullptr;
+    return HLBGUtils::GetHinterlandBG();
 }
 
 class npc_hl_scoreboard : public CreatureScript

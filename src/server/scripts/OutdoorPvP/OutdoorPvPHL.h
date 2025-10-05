@@ -32,20 +32,29 @@
 
 
     /*
-     * Hinterland BG — Feature Overview (2025-09-29)
-     * ------------------------------------------------
+     * Hinterland BG — Feature Overview (2025-10-05) — UPDATED
+     * ========================================================
      * Core gameplay and systems implemented by this OutdoorPvP script:
-     * - Participation gate:
-     *   - Only max-level players can join; under-max are teleported to capitals
-     *     (Alliance → Stormwind, Horde → Orgrimmar) with a whisper.
-     * - Joiner UX:
-     *   - Private whisper on zone enter with a gold welcome and the current standing
-     *     (Alliance/Horde resources, colored names).
-    * - Worldstate HUD (Wintergrasp-style):
-     *   - Sends required WG worldstates (SHOW, ACTIVE, ATTACKER/DEFENDER, CONTROL, ICON_ACTIVE,
-     *     CLOCK, CLOCK_TEXTS, VEHICLE counters as resources, MAX values) and refreshes periodically
-     *     to keep timer/resources visible in Hinterlands.
-    * - Match window:
+     *
+     * 🎯 BATTLEGROUND LIFECYCLE (NEW)
+     * - Finite State Machine: WARMUP → IN_PROGRESS → PAUSED → FINISHED → CLEANUP
+     * - Queue System: LFG-like functionality with group support and automatic warmup start
+     * - Warmup Phase: Configurable preparation time before battles begin
+     * - Admin Controls: Pause/resume/force finish with proper state validation
+     *
+     * 👥 PARTICIPATION & ACCESS
+     * - Level Gate: Only max-level players can participate; under-max teleported to capitals
+     * - Queue Management: Players can join/leave queue individually or as groups
+     * - Eligibility Checks: Deserter, combat, instance, and alive status validation
+     * - Team Balancing: Automatic Alliance vs Horde queue tracking
+     *
+     * 🎮 PLAYER EXPERIENCE
+     * - Welcome System: Private whisper with current standings on zone entry
+     * - Queue Commands: .hlbg queue join/leave/status with position tracking
+     * - HUD Integration: Wintergrasp-style worldstates with timer/resources
+     * - Auto-Teleport: Queued players automatically brought to battleground
+     *
+     * 📊 MATCH MANAGEMENT:
     *   - 60-minute duration tracked as an absolute end time for the clock; on expiry the BG auto-resets and restarts.
     *     Auto-reset sequence: Teleport in-zone players to faction start GYs, then respawn NPCs/GOs and refresh HUD.
     * - Status broadcasting:
@@ -139,6 +148,9 @@
             // Public affix enum (used by DC helper sources and tests)
             // Declared early so it is visible to all subsequent member declarations
             enum AffixType { AFFIX_NONE=0, AFFIX_HASTE_BUFF=1, AFFIX_SLOW=2, AFFIX_REDUCED_HEALING=3, AFFIX_REDUCED_ARMOR=4, AFFIX_BOSS_ENRAGE=5 };
+            
+            // Battleground state machine
+            enum BGState { BG_STATE_WARMUP=0, BG_STATE_IN_PROGRESS=1, BG_STATE_PAUSED=2, BG_STATE_FINISHED=3, BG_STATE_CLEANUP=4 };
 
             bool SetupOutdoorPvP() override;
 
@@ -224,6 +236,13 @@
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
+            
+            // State machine interface
+            BGState GetBGState() const { return _bgState; }
+            void TransitionToState(BGState newState);
+            void PauseBattle();
+            void ResumeBattle();
+            void ForceFinishBattle(TeamId winner = TEAM_NEUTRAL);
             // Iterate all players currently in the Hinterlands and apply a functor
             template <typename Func>
             void ForEachPlayerInZone(Func f) const
@@ -337,6 +356,60 @@
             void _persistState() const; // helper that checks toggle and calls SaveRequiredWorldStates
             // Track recent winners for scoreboard UX
             void _recordWinner(TeamId winner);
+            void _recordManualReset();
+            
+            // State machine implementation
+            void UpdateStateMachine(uint32 diff);
+            void EnterWarmupState();
+            void UpdateWarmupState(uint32 diff);
+            void EnterInProgressState();
+            void UpdateInProgressState(uint32 diff);
+            void EnterPausedState();
+            void UpdatePausedState(uint32 diff);
+            void EnterFinishedState();
+            void UpdateFinishedState(uint32 diff);
+            void EnterCleanupState();
+            void UpdateCleanupState(uint32 diff);
+            const char* GetAffixName(AffixType affix) const;
+            void BroadcastToZone(const char* format, ...);
+
+            // Queue management methods
+            void AddPlayerToQueue(Player* player);
+            void RemovePlayerFromQueue(Player* player);
+            bool IsPlayerInQueue(Player* player);
+            uint32 GetQueuedPlayerCount();
+            uint32 GetQueuedPlayerCountByTeam(TeamId teamId);
+            void ShowQueueStatus(Player* player);
+            void ProcessQueueSystem();
+            void StartWarmupPhase();
+            void TeleportQueuedPlayers();
+            void ClearQueue();
+            void OnPlayerDisconnected(Player* player);
+            
+            // Group queue methods
+            bool AddGroupToQueue(Player* leader);
+            bool RemoveGroupFromQueue(Player* leader);
+
+            // Command handlers
+            void HandleQueueJoinCommand(Player* player);
+            void HandleQueueLeaveCommand(Player* player);
+            void HandleQueueStatusCommand(Player* player);
+            void HandleGroupQueueJoinCommand(Player* player);
+            void HandleGroupQueueLeaveCommand(Player* player);
+            void HandleAdminQueueClear(Player* admin);
+            void HandleAdminQueueList(Player* admin);
+            void HandleAdminForceWarmup(Player* admin);
+            void HandleAdminQueueConfig(Player* admin, const char* setting, const char* value);
+            bool HandlePlayerCommand(Player* player, const std::string& command, const std::string& args);
+            bool HandleAdminCommand(Player* admin, const std::string& command, const std::string& args);
+
+            // Performance optimizations
+            void CollectZonePlayers(std::vector<Player*>& players) const;
+            void PlaySoundsOptimized(bool side);
+            void UpdateWorldStatesAllPlayersOptimized();
+            void InvalidatePlayerCache();
+            void _applyAffixEffectsOptimized();
+            void LogPerformanceStats() const;
 
             uint32 _ally_gathered;
             uint32 _horde_gathered;
@@ -402,6 +475,26 @@
     uint32 _resourcesLossNpcBoss;      // e.g., 200
     // Persistence and lock configuration
     bool   _persistenceEnabled;        // save/restore match state across restarts
+    
+    // State machine variables
+    BGState _bgState;                  // current battleground state
+    uint32  _warmupDurationSeconds;    // warmup phase duration (configurable)
+    uint32  _warmupTimeRemaining;      // milliseconds remaining in warmup
+    uint32  _pauseStartTime;           // when pause started (for resume calculations)
+    uint32  _cleanupTimeRemaining;     // milliseconds remaining in cleanup
+    bool    _queueEnabled;             // queue system active
+
+    // Queue system structures and methods
+    struct QueueEntry
+    {
+        ObjectGuid playerGuid;
+        uint32 joinTime;
+        TeamId teamId;
+    };
+    
+    std::vector<QueueEntry> _queuedPlayers;
+    uint32 _minPlayersToStart;
+    uint32 _maxGroupSize;
     bool   _lockEnabled;               // enable lock window after win
     uint32 _lockDurationSeconds;       // lock duration
     uint32 _lockDurationExpirySec;     // optional override for expiry lock duration

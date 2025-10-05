@@ -2,12 +2,27 @@ Hinterland BG (OutdoorPvPHL) — DC module guide
 
 This folder provides the DC-specific integration for the Hinterland BG OutdoorPvP script. It wraps the canonical class in `src/server/scripts/OutdoorPvP/OutdoorPvPHL.*` via a small header (`HinterlandBG.h`) and adds config-driven behavior and helpers.
 
-Files here
+## 🏗️ Architecture Overview
+
+### Core System Files
 - `HinterlandBG.h` — tiny wrapper that includes the canonical `OutdoorPvP/OutdoorPvPHL.h` to avoid duplicate class definitions.
 - `OutdoorPvPHL_Config.cpp` — loads module options from config (see below).
 - `OutdoorPvPHL_Rewards.cpp` — team-based end-of-match rewards, world messages, and optional tokens.
 - `OutdoorPvPHL_Reset.cpp` — reset/teleport helpers and zone-wide respawn logic.
 - `HLMovementHandlerScript.h` — movement hook used for AFK tracking.
+
+### 🚀 New Performance & Queue System (2025-10-05)
+- `OutdoorPvPHL_StateMachine.cpp` — finite state machine for battleground lifecycle management
+- `OutdoorPvPHL_Queue.cpp` — LFG-like queue system with group support and auto-teleportation
+- `OutdoorPvPHL_Commands.cpp` — consolidated command handlers for queue and admin operations
+- `OutdoorPvPHL_Performance.cpp` — performance optimizations replacing expensive GetAllSessions() calls
+- `OutdoorPvPHL_Utils.cpp` — consolidated utility functions eliminating code duplication
+
+### 📊 Support & Integration Files
+- `OutdoorPvPHL_JoinLeave.cpp` — player zone entry/exit handlers
+- `OutdoorPvPHL_Worldstates.cpp` — HUD worldstate management (optimized)
+- `OutdoorPvPHL_Admin.cpp` — administrative functions and manual reset tracking
+- `hlbg_addon.cpp` — unified addon interface support using centralized utilities
 
 Configuration (example)
 Place these keys in your `configs/modules/hinterlandbg.conf` (or your preferred module config). Values shown are examples; tune for your realm.

@@ -19,6 +19,9 @@
 #include "Map.h"
 #include "DatabaseEnv.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
+
+// Forward declaration for utility functions
+namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include "Util.h"
 #include <string>
@@ -56,11 +59,10 @@ namespace HLBGAddon
         return out;
     }
 
+    // Use centralized utility function
     static OutdoorPvPHL* GetHL()
     {
-        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!out) return nullptr;
-        return dynamic_cast<OutdoorPvPHL*>(out);
+        return HLBGUtils::GetHinterlandBG();
     }
 
     static const char* WeatherName(uint32 w)
@@ -142,6 +144,8 @@ public:
     {
         static ChatCommandTable queueSub = {
             { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
+            { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
+            { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
             { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
         };
 
@@ -535,8 +539,25 @@ public:
             return true;
         }
 
-        hl->TeleportToTeamBase(player);
-        ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] teleporting");
+        // Use the new queue system
+        hl->HandleQueueJoinCommand(player);
+        return true;
+    }
+
+    // .hlbg queue leave -> leave the queue
+    static bool HandleHLBGQueueLeave(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!handler || !handler->GetSession()) return false;
+        Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
+        OutdoorPvPHL* hl = HLBGAddon::GetHL();
+        if (!hl)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
+            return true;
+        }
+
+        // Use the new queue system
+        hl->HandleQueueLeaveCommand(player);
         return true;
     }
 
@@ -557,9 +578,8 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
             return true;
         }
-        bool inZone = (player->GetZoneId() == OutdoorPvPHLBuffZones[0]);
-        std::string s = std::string("[HLBG_QUEUE] ") + (inZone ? "in_zone" : "away");
-        ChatHandler(player->GetSession()).SendSysMessage(s.c_str());
+        // Use the new queue system to show status
+        hl->HandleQueueStatusCommand(player);
         return true;
     }
 };

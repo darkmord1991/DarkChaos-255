@@ -64,15 +64,6 @@ void OutdoorPvPHL::UpdateWorldStatesForPlayer(Player* player)
 // Refresh HUD for all players currently in the Hinterlands zone.
 void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
 {
-    WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-    for (auto const& it : sessionMap)
-    {
-        WorldSession* sess = it.second;
-        if (!sess)
-            continue;
-        Player* p = sess->GetPlayer();
-        if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
-            continue;
-        UpdateWorldStatesForPlayer(p);
-    }
+    // Use optimized version that avoids expensive GetAllSessions()
+    UpdateWorldStatesAllPlayersOptimized();
 }

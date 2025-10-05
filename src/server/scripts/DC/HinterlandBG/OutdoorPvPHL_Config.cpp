@@ -20,6 +20,10 @@ void OutdoorPvPHL::LoadConfig()
     if (sConfigMgr)
     {
         _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
+        _warmupDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.WarmupDuration", _warmupDurationSeconds);
+        _queueEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Queue.Enabled", _queueEnabled);
+        _minPlayersToStart = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MinPlayers", _minPlayersToStart);
+        _maxGroupSize = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MaxGroupSize", _maxGroupSize);
         _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
         _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
         _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);

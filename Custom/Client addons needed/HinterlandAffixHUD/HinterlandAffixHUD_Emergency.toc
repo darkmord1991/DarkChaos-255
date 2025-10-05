@@ -4,12 +4,18 @@
 ## Author: DC-255
 ## Version: 1.5.4-emergency
 ## SavedVariables: HinterlandAffixHUDDB
+## OptionalDeps: AIO_Client
+## LoadAfter: AIO_Client
 
 # Emergency Core Files Only - in correct loading order
 HLBG_LoadDebug.lua
 HLBG_TimerCompat.lua
+HLBG_DebugBootstrap.lua 
+HLBG_Compatibility.lua
 HLBG_JSON.lua
 HLBG_Debug.lua
+HLBG_Core.lua
+HLBG_Utils.lua
 HLBG_AIO_Client.lua
 HLBG_Troubleshooter.lua
 HLBG_FileLoader.lua

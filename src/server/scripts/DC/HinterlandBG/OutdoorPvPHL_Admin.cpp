@@ -49,6 +49,8 @@ std::vector<ObjectGuid> const& OutdoorPvPHL::GetBattlegroundGroupGUIDs(TeamId te
 // Force an immediate zone reset (admin/commands).
 void OutdoorPvPHL::ForceReset()
 {
+    // Record manual reset in history table before resetting
+    _recordManualReset();
     HandleReset();
 }
 
@@ -150,4 +152,25 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     CharacterDatabase.Execute(
         "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
         zone, mapId, _season, winnerTid, a, h, reason, aff, weather, wint, dur);
+}
+
+// Record manual reset in history table
+void OutdoorPvPHL::_recordManualReset()
+{
+    uint32 zone = OutdoorPvPHLBuffZones[0];
+    uint32 mapId = 0;
+    if (Map* m = GetMap())
+        mapId = m->GetId();
+    uint32 a = _ally_gathered;
+    uint32 h = _horde_gathered;
+    uint8 aff = static_cast<uint8>(_activeAffix);
+    uint32 dur = GetCurrentMatchDurationSeconds();
+    uint32 weather = GetAffixWeatherType(aff);
+    float wint = GetAffixWeatherIntensity(aff);
+    
+    CharacterDatabase.Execute(
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
+        zone, mapId, _season, 2, a, h, "manual", aff, weather, wint, dur);
+        
+    LOG_INFO("outdoorpvp.hl", "[HL] Manual reset recorded in history - Alliance: {}, Horde: {}, Affix: {}", a, h, aff);
 }
