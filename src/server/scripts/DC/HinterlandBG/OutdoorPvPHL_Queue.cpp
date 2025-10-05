@@ -207,8 +207,9 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
         if (!player)
             continue;
 
-        // Choose spawn location based on team
-        WorldLocation const* spawnLoc = (entry.teamId == TEAM_ALLIANCE) ? &_baseAlliance : &_baseHorde;
+    // Choose spawn location based on team. Use the local HLBase struct declared
+    // inside OutdoorPvPHL (map + x/y/z/o) rather than WorldLocation.
+    const HLBase* spawnLoc = (entry.teamId == TEAM_ALLIANCE) ? &_baseAlliance : &_baseHorde;
         
         // Only teleport if player is not already in the zone
         if (player->GetZoneId() != OutdoorPvPHLBuffZones[0])
