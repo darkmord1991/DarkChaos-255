@@ -137,8 +137,8 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
     std::vector<Player*> zonePlayers;
     CollectZonePlayers(zonePlayers);
     
-    uint32 playerSpell = GetAffixPlayerSpell(_currentAffix);
-    uint32 npcSpell = GetAffixNpcSpell(_currentAffix);
+    uint32 playerSpell = GetAffixPlayerSpell(_activeAffix);
+    uint32 npcSpell = GetAffixNpcSpell(_activeAffix);
     
     // Apply to players in batch
     if (playerSpell > 0)
