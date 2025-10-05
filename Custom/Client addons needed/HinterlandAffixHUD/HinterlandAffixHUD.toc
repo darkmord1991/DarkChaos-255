@@ -27,7 +27,8 @@ HinterlandAffixHUD.lua
 HLBG_Core.lua
 HLBG_JSON.lua
 HLBG_Utils.lua
-HLBG_HUD.lua
+-- Use modern HUD implementation by default
+HLBG_HUD_Modern.lua
 HLBG_Debug.lua
 HLBG_UI.lua
 HLBG_Info.lua
