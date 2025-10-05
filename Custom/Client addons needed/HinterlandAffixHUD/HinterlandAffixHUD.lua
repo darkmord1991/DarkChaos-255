@@ -342,17 +342,38 @@ SlashCmdList["HLAFFIX"] = function(msg)
     end
     return
   elseif msg == "dump" then
-    local n = (type(HLBG) == 'table' and type(HLBG.safeGetNumWorldStateUI) == 'function') and HLBG.safeGetNumWorldStateUI() or (GetNumWorldStateUI and GetNumWorldStateUI() or 0)
-    print("HinterlandAffixHUD: worldstates:")
-    print("count:", n)
-    for i=1,n do
-      local txt, val, a, b, c, id
-      if type(HLBG) == 'table' and type(HLBG.safeGetWorldStateUIInfo) == 'function' then
-        txt, val, a, b, c, id = HLBG.safeGetWorldStateUIInfo(i)
-      elseif GetWorldStateUIInfo then
-        txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+    -- Print authoritative worldstate (if available) and last AIO status with timestamps
+    print("HinterlandAffixHUD: authoritative worldstate (if present):")
+    if type(HLBG) == 'table' and type(HLBG.GetAuthoritativeStatus) == 'function' then
+      local ok, auth = pcall(function() return HLBG.GetAuthoritativeStatus() end)
+      if ok and auth then
+        for k,v in pairs(auth) do print("  ", k, v) end
+      else
+        print("  (no authoritative worldstate present)")
       end
-      print(i, string.format("0x%X", id or 0), txt or "", val or 0)
+    else
+      -- Fallback: dump raw worldstates
+      local n = (type(HLBG) == 'table' and type(HLBG.safeGetNumWorldStateUI) == 'function') and HLBG.safeGetNumWorldStateUI() or (GetNumWorldStateUI and GetNumWorldStateUI() or 0)
+      print("  raw worldstate count:", n)
+      for i=1,n do
+        local txt, val, a, b, c, id
+        if type(HLBG) == 'table' and type(HLBG.safeGetWorldStateUIInfo) == 'function' then
+          txt, val, a, b, c, id = HLBG.safeGetWorldStateUIInfo(i)
+        elseif GetWorldStateUIInfo then
+          txt, val, a, b, c, id = GetWorldStateUIInfo(i)
+        end
+        print(i, string.format("0x%X", id or 0), txt or "", val or 0)
+      end
+    end
+
+    print("HinterlandAffixHUD: last AIO status:")
+    if HLBG and HLBG._lastStatus then
+      local ts = HLBG._lastStatusTimestamp or 0
+      print("  timestamp:", ts)
+      for k,v in pairs(HLBG._lastStatus) do print("  ", k, v) end
+      print("  source:", HLBG._lastStatusSource or "unknown")
+    else
+      print("  (no last AIO status cached)")
     end
     return
   elseif msg:find("^test ") then
@@ -394,6 +415,28 @@ SlashCmdList["HLAFFIX"] = function(msg)
     ApplySavedPositionAndScale()
     print("HinterlandAffixHUD: position reset")
     return
+  elseif msg:find("^cleanup") then
+    -- Usage: /hlaffix cleanup on|off|toggle
+    local op = msg:match("^cleanup%s*(%w+)")
+    local ok, res = pcall(function()
+      if type(HLBG) == 'table' and type(HLBG.ToggleEmergencyCleanup) == 'function' then
+        if op == 'on' then return HLBG.ToggleEmergencyCleanup(true) end
+        if op == 'off' then return HLBG.ToggleEmergencyCleanup(false) end
+        return HLBG.ToggleEmergencyCleanup()
+      elseif type(_G.HLBG_ToggleEmergencyCleanup) == 'function' then
+        if op == 'on' then return _G.HLBG_ToggleEmergencyCleanup(true) end
+        if op == 'off' then return _G.HLBG_ToggleEmergencyCleanup(false) end
+        return _G.HLBG_ToggleEmergencyCleanup()
+      else
+        return nil, 'no toggle available'
+      end
+    end)
+    if ok and res ~= nil then
+      print('HinterlandAffixHUD: emergencyCleanup =', tostring(res))
+    else
+      print('HinterlandAffixHUD: cleanup toggle not available yet')
+    end
+    return
   end
   print("HinterlandAffixHUD commands:")
   print("/hlaffix id <number|0xHEX> - set worldstate id (default 0xDD1010)")
@@ -424,6 +467,20 @@ local function CreateOptionsPanel()
     HinterlandAffixHUDDB.hideDefault = self:GetChecked() and true or false
     HIDE_DEFAULT_HUD = HinterlandAffixHUDDB.hideDefault
     update()
+  end)
+
+  local cleanup = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+  cleanup:SetPoint("TOPLEFT", hide, "BOTTOMLEFT", 0, -24)
+  local cleanupLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  cleanupLabel:SetPoint("LEFT", cleanup, "RIGHT", 4, 0)
+  cleanupLabel:SetText("Emergency cleanup (hide legacy HUD)")
+  cleanup:SetScript("OnClick", function(self)
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    HinterlandAffixHUDDB.emergencyCleanup = self:GetChecked() and true or false
+    -- call the exposed toggle
+    if type(HLBG.ToggleEmergencyCleanup) == 'function' then
+      pcall(function() HLBG.ToggleEmergencyCleanup(HinterlandAffixHUDDB.emergencyCleanup) end)
+    end
   end)
 
   local scale = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
@@ -485,6 +542,7 @@ local function CreateOptionsPanel()
   panel.refresh = function()
     HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
     hide:SetChecked(HinterlandAffixHUDDB.hideDefault or false)
+    cleanup:SetChecked(HinterlandAffixHUDDB.emergencyCleanup == nil and true or HinterlandAffixHUDDB.emergencyCleanup)
     scale:SetValue(tonumber(HinterlandAffixHUDDB.scale or 1) or 1)
     eb:SetText(HinterlandAffixHUDDB.worldstateId and string.format("0x%X", HinterlandAffixHUDDB.worldstateId) or "0xDD1010")
     lock:SetChecked(HinterlandAffixHUDDB.locked or false)

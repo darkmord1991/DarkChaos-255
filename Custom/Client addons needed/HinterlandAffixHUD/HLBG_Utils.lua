@@ -157,6 +157,36 @@ function HLBG.safeGetPlayerMapPosition(unit)
     return x, y
 end
 
+-- GetAuthoritativeStatus: prefer Wintergrasp-style worldstate values when available.
+-- Returns a table: { allianceResources=number, hordeResources=number, timeLeft=number, alliancePlayers=number, hordePlayers=number, affixId=number, affixName=string }
+function HLBG.GetAuthoritativeStatus()
+    local status = {}
+    -- Check for worldstate entries first
+    local n = HLBG.safeGetNumWorldStateUI()
+    if n and n > 0 then
+        for i=1,n do
+            local txt, val, a, b, c, id = HLBG.safeGetWorldStateUIInfo(i)
+            if id and val then
+                -- Known mapping used by server: 0xDD0001..0xDD0008
+                if id == 0xDD0001 then status.allianceResources = tonumber(val) or status.allianceResources end
+                if id == 0xDD0002 then status.hordeResources = tonumber(val) or status.hordeResources end
+                if id == 0xDD0003 then status.timeLeft = tonumber(val) or status.timeLeft end
+                if id == 0xDD0007 then status.affixId = tonumber(val) or status.affixId end
+                if id == 0xDD0008 then status.affixEpoch = tonumber(val) or status.affixEpoch end
+            else
+                -- Fallback: scan textual entries for Affix line
+                if type(txt) == 'string' then
+                    local name = txt:match('[Aa]ffix[:%s]+([%a%s]+)')
+                    if name and name ~= '' then status.affixName = name end
+                end
+            end
+        end
+    end
+    -- If we got nothing, return nil
+    if not next(status) then return nil end
+    return status
+end
+
 -- Ensure UI helper: returns true when the main UI is built and, if a panel name is
 -- provided, that specific sub-panel exists (e.g., 'History', 'Stats', 'Live').
 -- This avoids calling into UI-dependent render paths before HLBG_UI.lua has run.

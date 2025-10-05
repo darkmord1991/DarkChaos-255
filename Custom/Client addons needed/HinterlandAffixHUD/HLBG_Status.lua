@@ -41,8 +41,29 @@ function HLBG.ProcessStatusUpdate(status)
         end
     end
     
+    -- Normalize numeric fields and clamp to sane ranges
+    local function tonum(v) return tonumber(v) or 0 end
+    status.A = tonum(status.A)
+    status.H = tonum(status.H)
+    status.END = tonum(status.END)
+    status.APPLAYERS = tonum(status.APLAYERS or status.APlayers or status.APC)
+    status.HPLAYERS = tonum(status.HPLAYERS or status.HPlayers or status.HPC)
+
+    -- Ignore duplicate identical status objects to avoid UI flip-flops
+    if HLBG._lastStatus then
+        local last = HLBG._lastStatus
+        if last.A == status.A and last.H == status.H and last.END == status.END then
+            -- no meaningful change
+            return
+        end
+    end
+
     -- Store status in the addon's cache
     HLBG._lastStatus = status
+    -- Record a timestamp and source for debugging/dumps
+    local now = (type(time) == 'function' and time()) or ((type(GetTime) == 'function' and GetTime()) or 0)
+    HLBG._lastStatusTimestamp = now
+    HLBG._lastStatusSource = 'AIO'
     
     -- Extract affix information
     local affixID = status.affix or status.affixID or status.affixId or status.AFF
@@ -73,6 +94,7 @@ function HLBG.ProcessStatusUpdate(status)
         print("HLBG: Status update processed")
         print("  Affix ID:", HLBG._currentAffixID)
         print("  Affix Text:", HLBG._affixText)
+        print("  Timestamp:", HLBG._lastStatusTimestamp)
     end
 end
 

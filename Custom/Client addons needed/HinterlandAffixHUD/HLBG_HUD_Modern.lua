@@ -189,13 +189,26 @@ end
 
 -- Update HUD data
 function HLBG.UpdateModernHUD(data)
-    if not HUD or not HUD:IsVisible() then return end
-    
+    if not HUD then return end
+    -- allow updates even when HUD hidden so telemetry and internal state stay consistent
     data = data or {}
+    -- Prefer authoritative worldstate when available
+    local auth = nil
+    if type(HLBG.GetAuthoritativeStatus) == 'function' then
+        pcall(function() auth = HLBG.GetAuthoritativeStatus() end)
+    end
+    if auth and type(auth) == 'table' then
+        -- prefer auth values but allow explicit data to override when provided
+        for k,v in pairs(auth) do if data[k] == nil then data[k] = v end end
+    end
     
     -- Update resources
     local allianceRes = tonumber(data.allianceResources or data.A or 0) or 0
     local hordeRes = tonumber(data.hordeResources or data.H or 0) or 0
+    -- Clamp resources to sane bounds to avoid occasional spikes from malformed input
+    local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi else return v end end
+    allianceRes = clamp(math.floor(allianceRes), 0, 500)
+    hordeRes = clamp(math.floor(hordeRes), 0, 500)
     
     HUD.allianceText:SetText("Alliance: " .. allianceRes)
     HUD.hordeText:SetText("Horde: " .. hordeRes)
@@ -207,8 +220,11 @@ function HLBG.UpdateModernHUD(data)
     HUD.alliancePlayers:SetText("Players: " .. alliancePlayers)
     HUD.hordePlayers:SetText("Players: " .. hordePlayers)
     
-    -- Update timer
+    -- Update timer (clamp to a sane maximum e.g., 7 days)
     local timeLeft = tonumber(data.timeLeft or data.END or 0) or 0
+    if timeLeft < 0 then timeLeft = 0 end
+    local MAX_TIME = 7 * 24 * 3600 -- one week
+    if timeLeft > MAX_TIME then timeLeft = MAX_TIME end
     HUD.timerText:SetText("Time: " .. formatTime(timeLeft))
     
     -- Update phase
@@ -227,11 +243,18 @@ function HLBG.UpdateModernHUD(data)
         HUD.phaseText:SetTextColor(0.8, 0.8, 0.8, 1) -- Light gray
     end
     
-    -- Update affix
-    local affixName = data.affixName or data.affix or "None"
-    if type(HLBG.GetAffixName) == "function" and data.affixId then
-        affixName = HLBG.GetAffixName(data.affixId)
+    -- Update affix (prefer explicit name, then authoritative affixName, then affixId -> name)
+    local affixName = data.affixName or data.affix or nil
+    if not affixName and data.affixId then
+        if type(HLBG.GetAffixName) == "function" then
+            local ok, res = pcall(function() return HLBG.GetAffixName(data.affixId) end)
+            if ok and res then affixName = res end
+        else
+            affixName = tostring(data.affixId)
+        end
     end
+    if not affixName and auth and auth.affixName then affixName = auth.affixName end
+    if not affixName then affixName = "None" end
     HUD.affixText:SetText("Affix: " .. affixName)
     
     -- Update telemetry if enabled
@@ -390,8 +413,9 @@ end
 -- Legacy compatibility - hook into old HUD update functions
 local oldUpdateHUD = HLBG.UpdateHUD
 HLBG.UpdateHUD = function()
-    -- Call old function for compatibility
-    if oldUpdateHUD then
+    -- Call old function for compatibility only if legacy HUD remains active and modern is NOT preferred
+    local modernPreferred = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.modernScoreboard) or (_G['HLBG_ModernHUD'] ~= nil)
+    if oldUpdateHUD and not modernPreferred then
         pcall(oldUpdateHUD)
     end
     
@@ -437,9 +461,17 @@ _G.HLBG = HLBG
 pcall(function()
     if HLBG.UI and HLBG.UI.HUD and HLBG.UI.HUD ~= HLBG.UI.ModernHUD then
         HLBG.UI.HUD:Hide()
+        HLBG.UI.HUD:SetScript('OnUpdate', nil)
     end
     local legacy = _G["HinterlandAffixHUD"]
     if legacy and legacy.Hide then legacy:Hide() end
     local worldstate = _G["WorldStateAlwaysUpFrame"]
     if worldstate and worldstate.Hide then worldstate:Hide() end
+    if _G['HLBG_HUD'] and type(_G['HLBG_HUD'].Hide) == 'function' then
+        pcall(function() _G['HLBG_HUD']:Hide(); _G['HLBG_HUD']:SetScript('OnUpdate', nil) end)
+    end
+    if _G['HLBG_AffixChip'] and type(_G['HLBG_AffixChip'].Hide) == 'function' then
+        pcall(function() _G['HLBG_AffixChip']:Hide(); _G['HLBG_AffixChip']:SetScript('OnUpdate', nil) end)
+    end
+    if HLBG.UI and HLBG.UI.Affix and type(HLBG.UI.Affix.Hide) == 'function' then pcall(function() HLBG.UI.Affix:Hide(); HLBG.UI.Affix:SetScript('OnUpdate', nil) end) end
 end)
