@@ -159,7 +159,8 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
     {
         if (_affixTimerMs <= diff)
         {
-            RotateAffix();
+            // Use the internal affix selector declared in the class
+            _selectAffixForNewBattle();
             _affixTimerMs = _affixPeriodSec * IN_MILLISECONDS;
         }
         else
