@@ -11,7 +11,7 @@
 #include "WorldStateDefines.h"
 #include "Creature.h"
 #include "Map.h"
-#include "ChatHandler.h"
+#include "Chat.h"
 #include "Log.h"
 #include <vector>
 #include <unordered_set>
