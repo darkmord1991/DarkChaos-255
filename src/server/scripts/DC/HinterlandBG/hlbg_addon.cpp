@@ -40,6 +40,16 @@ namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
 
 using namespace Acore::ChatCommands;
 
+// Forward declarations for handler functions referenced by the command tables
+bool HandleHLBGLive(ChatHandler* handler, char const* args);
+bool HandleHLBGWarmup(ChatHandler* handler, char const* args);
+bool HandleHLBGResults(ChatHandler* handler, char const* args);
+bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args);
+bool HandleHLBGStatsUI(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueJoin(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueLeave(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args);
+
 namespace HLBGAddon
 {
     static constexpr uint32 WARMUP_WINDOW_SECONDS = 120; // allow joins only during the first N seconds of a match
@@ -139,46 +149,12 @@ namespace HLBGAddon
     }
 }
 
-class hlbg_addon_commandscript : public CommandScript
-{
-public:
-    hlbg_addon_commandscript() : CommandScript("hlbg_addon_commandscript") {}
-
-    ChatCommandTable GetCommands() const override
-    {
-        static ChatCommandTable queueSub = {
-            { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
-            { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
-            { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-        };
-
-        static ChatCommandTable uiSub = {
-            { "live",    HandleHLBGLive,    SEC_PLAYER, Console::No },
-            { "historyui", HandleHLBGHistoryUI, SEC_PLAYER, Console::No },
-            { "statsui", HandleHLBGStatsUI, SEC_PLAYER, Console::No },
-            { "warmup",  HandleHLBGWarmup,  SEC_GAMEMASTER, Console::No },
-            { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
-        };
-
-        // Merge UI subcommands and nest the queue subcommands under a dedicated "queue" node.
-        // This prevents name collisions (for example ".hlbg status" admin vs queue status).
-        static ChatCommandTable merged;
-        if (merged.empty())
-        {
-            merged.reserve(uiSub.size() + 1);
-            // Copy UI entries
-            for (auto const& c : uiSub) merged.push_back(c);
-            // Add 'queue' as a nested subtable so commands are invoked as '.hlbg queue join' etc.
-            merged.emplace_back("queue", queueSub);
-        }
-
-        static ChatCommandTable root = {
-            { "hlbg", merged },
-        };
-        return root;
-    }
-};
+// Note: command registration for '.hlbg' is centralized in
+// src/server/scripts/Commands/cs_hl_bg.cpp. This file only provides the
+// handler implementations (e.g. HandleHLBGLive, HandleHLBGQueueJoin, ...)
+// as free functions so they can be referenced by the centralized command
+// table. The previous addon-level CommandScript that registered a top-level
+// 'hlbg' node has been removed to avoid duplicate registrations at startup.
 
 // Helper: build per-player JSON rows (sorted by score desc, limited)
     static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
@@ -593,3 +569,11 @@ public:
 // as free functions so they can be referenced by the centralized command
 // table. The previous addon-level CommandScript registration has been
 // removed to avoid duplicate top-level 'hlbg' registration at startup.
+
+// Provide a no-op AddSC symbol so legacy callers (dc_script_loader.cpp)
+// that expect this registration function still link successfully.
+// The actual command registration lives in `cs_hl_bg.cpp` now.
+void AddSC_hlbg_addon()
+{
+    // intentionally empty; registration moved to cs_hl_bg.cpp
+}
