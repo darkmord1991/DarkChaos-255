@@ -8,6 +8,7 @@
 #include "Player.h"
 #include "WorldSessionMgr.h"
 #include "ObjectAccessor.h"
+#include "WorldStateDefines.h"
 #include <vector>
 #include <unordered_set>
 
@@ -100,13 +101,14 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
     std::vector<WorldStateUpdate> updates;
     updates.reserve(10); // Typical number of worldstates
     
-    // Prepare all worldstate updates
+    // Use Wintergrasp worldstates (WG-like HUD for HLBG)
     uint32 timeRemaining = GetTimeRemainingSeconds();
-    updates.push_back({HL_WORLDSTATE_TIMER, timeRemaining});
-    updates.push_back({HL_WORLDSTATE_ALLIANCE, GetResources(TEAM_ALLIANCE)});
-    updates.push_back({HL_WORLDSTATE_HORDE, GetResources(TEAM_HORDE)});
-    updates.push_back({HL_WORLDSTATE_MAX_ALLIANCE, _initialResourcesAlliance});
-    updates.push_back({HL_WORLDSTATE_MAX_HORDE, _initialResourcesHorde});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_SHOW, 1});           // Enable WG HUD display
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK, timeRemaining}); // Timer display
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 1});         // Mark battlefield as active
+    
+    // Use custom worldstates for resources (if they exist in the original implementation)
+    // For now, just use the basic WG states
     
     // Apply all updates to all players in batch
     for (Player* player : zonePlayers)
