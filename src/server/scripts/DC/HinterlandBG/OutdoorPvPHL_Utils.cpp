@@ -151,8 +151,13 @@ namespace HLBGUtils
             return;
             
         std::vector<Player*> zonePlayers;
-        hl->CollectZonePlayers(zonePlayers);
-        
+        // Collect players using the public ForEachPlayerInZone helper to avoid
+        // accessing private members like CollectZonePlayers.
+        hl->ForEachPlayerInZone([&zonePlayers](Player* p) {
+            if (p && p->IsInWorld() && p->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                zonePlayers.push_back(p);
+        });
+
         for (Player* player : zonePlayers)
         {
             ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
