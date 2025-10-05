@@ -9,6 +9,10 @@
 #include "WorldSessionMgr.h"
 #include "ObjectAccessor.h"
 #include "WorldStateDefines.h"
+#include "Creature.h"
+#include "Map.h"
+#include "ChatHandler.h"
+#include "Log.h"
 #include <vector>
 #include <unordered_set>
 
@@ -137,8 +141,8 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
     std::vector<Player*> zonePlayers;
     CollectZonePlayers(zonePlayers);
     
-    uint32 playerSpell = GetAffixPlayerSpell(_activeAffix);
-    uint32 npcSpell = GetAffixNpcSpell(_activeAffix);
+    uint32 playerSpell = GetAffixPlayerSpell(static_cast<uint8>(_activeAffix));
+    uint32 npcSpell = GetAffixNpcSpell(static_cast<uint8>(_activeAffix));
     
     // Apply to players in batch
     if (playerSpell > 0)
@@ -152,18 +156,25 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
         }
     }
     
-    // Apply to NPCs using efficient map traversal
-    if (npcSpell > 0 && _map)
+    // Apply to NPCs using zone player iteration (more compatible approach)
+    if (npcSpell > 0)
     {
-        auto applyToCreature = [npcSpell](Creature* creature)
+        // Apply affix to nearby NPCs for each player in the zone
+        for (Player* player : zonePlayers)
         {
-            if (creature && creature->IsAlive() && !creature->HasAura(npcSpell))
+            std::list<Creature*> nearbyCreatures;
+            player->GetCreatureListWithEntryInGrid(nearbyCreatures, 0, 200.0f); // Get all creatures within 200 yards
+            
+            for (Creature* creature : nearbyCreatures)
             {
-                creature->CastSpell(creature, npcSpell, true);
+                if (creature && creature->IsAlive() && !creature->HasAura(npcSpell) && 
+                    creature->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                {
+                    creature->CastSpell(creature, npcSpell, true);
+                }
             }
-        };
-        
-        _map->DoForAllCreaturesInZone(applyToCreature, OutdoorPvPHLBuffZones[0]);
+            break; // Only need to do this once, not for every player
+        }
     }
 }
 
