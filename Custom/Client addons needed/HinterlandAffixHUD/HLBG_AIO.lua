@@ -148,7 +148,7 @@ end
 -- Minimal Stats handler: show counts if provided; otherwise clear text
 if type(HLBG.Stats) ~= 'function' then
     function HLBG.Stats(stats)
-        HLBG._ensureUI('Stats')
+        if not (type(HLBG._ensureUI) == 'function' and HLBG._ensureUI('Stats')) then return end
         stats = stats or {}
         local counts = stats.counts or {}
         local a = tonumber(counts.Alliance or counts.ALLIANCE or 0) or 0
@@ -167,7 +167,7 @@ end
 if type(HLBG.Live) ~= 'function' then
     function HLBG.Live(payload)
         -- Accept either raw status or rows list; prefer status already collected via chat/AIO
-        HLBG._ensureUI('Live')
+        if not (type(HLBG._ensureUI) == 'function' and HLBG._ensureUI('Live')) then return end
         HLBG.UpdateLiveFromStatus()
     end
 end
@@ -175,7 +175,7 @@ end
 -- Queue status handler
 if type(HLBG.QueueStatus) ~= 'function' then
     function HLBG.QueueStatus(payload)
-        HLBG._ensureUI('Queue')
+        if not (type(HLBG._ensureUI) == 'function' and HLBG._ensureUI('Queue')) then return end
         local q = HLBG.UI and HLBG.UI.QueuePane
         if not q then return end
         
@@ -397,7 +397,7 @@ end
 -- Affixes handler
 if type(HLBG.Affixes) ~= 'function' then
     function HLBG.Affixes(rows)
-        HLBG._ensureUI('Affixes')
+        if not (type(HLBG._ensureUI) == 'function' and HLBG._ensureUI('Affixes')) then return end
         local a = HLBG.UI and HLBG.UI.AffixPane
         if not a then return end
         rows = rows or {}
