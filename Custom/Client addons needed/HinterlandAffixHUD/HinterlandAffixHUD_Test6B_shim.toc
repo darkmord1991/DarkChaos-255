@@ -1,0 +1,16 @@
+## Interface: 30300
+## Title: Hinterland Affix HUD (Test6B - shim)
+## Notes: Test6B with HLBG_AIO_Shim preloaded to prevent nil-call errors
+## Author: DC-255
+## Version: 1.5.7-test6b-shim
+## Deps: AIO_Client
+## OptionalDeps: AIO_Client 
+## LoadAfter: AIO_Client
+## DefaultState: enabled
+## SavedVariables: HinterlandAffixHUDDB
+
+# Shim and Isolated suspect files (6B)
+HLBG_AIO_Shim.lua
+HLBG_AIO.lua
+HLBG_Handlers.lua
+HLBG_Status.lua
