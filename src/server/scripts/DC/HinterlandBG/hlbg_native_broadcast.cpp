@@ -66,23 +66,6 @@ static std::string BuildJsonRows(const std::vector<std::tuple<std::string, std::
     return ss.str();
 }
 
-// Build a TSV payload where rows are joined by '||' (client will convert back to newlines)
-static std::string BuildTsvRows(const std::vector<std::tuple<std::string, std::string, std::string, std::string, int>>& rows)
-{
-    std::ostringstream ss;
-    bool first = true;
-    for (auto const& r : rows)
-    {
-        if (!first) ss << "||";
-        first = false;
-        std::string id, ts, name, team; int score;
-        std::tie(id, ts, name, team, score) = r;
-        // fields separated by tab
-        ss << id << '\t' << ts << '\t' << name << '\t' << team << '\t' << score;
-    }
-    return ss.str();
-}
-
 class hlbg_native_commandscript : public CommandScript
 {
 public:

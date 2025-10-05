@@ -129,8 +129,8 @@ function HLBG.CreateModernScoreboardUI()
         -- Set default tab
         live.activeTab = "All"
         
-        -- Scroll frame for player list
-        live.PlayerScroll = CreateFrame("ScrollFrame", nil, live.TabFrame, "UIPanelScrollFrameTemplate")
+    -- Scroll frame for player list (must have a name for UIPanelScrollFrameTemplate)
+    live.PlayerScroll = CreateFrame("ScrollFrame", "HLBG_PlayerScrollFrame", live.TabFrame, "UIPanelScrollFrameTemplate")
         live.PlayerScroll:SetPoint("TOPLEFT", live.TabFrame, "TOPLEFT", 8, -30)
         live.PlayerScroll:SetPoint("BOTTOMRIGHT", live.TabFrame, "BOTTOMRIGHT", -28, 8)
         

@@ -232,7 +232,86 @@ if AIO then
     end
     
     -- Events from server that we handle
-    AIO.RegisterEvent("HLBG", function(command, args)
+    -- Guard against duplicate registration which can cause 'an event is already registered' errors
+    HLBG._aioRegistered = HLBG._aioRegistered or false
+    if not HLBG._aioRegistered and AIO.RegisterEvent then
+        local ok, err = pcall(function()
+            AIO.RegisterEvent("HLBG", function(command, args)
+                if type(command) ~= 'string' then return end
+                args = args or {}
+                
+                -- Handle different command types
+                if command == "Status" or command == "status" then
+                    -- Status update (live match data)
+                    if type(HLBG.Status) == 'function' then pcall(HLBG.Status, args) end
+                    return
+                end
+
+                if command == "History" or command == "history" then
+                    -- History data for UI
+                    if type(args) == 'table' and type(args.rows) == 'table' then
+                        if type(HLBG.History) == 'function' then
+                            pcall(HLBG.History, args.rows, args.page or 1, args.perpage or 5, args.total or #args.rows, args.sort or 'id', args.order or 'DESC')
+                        else
+                            -- If no history handler, push first row to buffer
+                            if args.rows[1] then pcall(HLBG._pushHistoryRow, args.rows[1]) end
+                        end
+                    elseif type(args) == 'table' and type(args.tsv) == 'string' then
+                        -- Alternative format: TSV string
+                        if type(HLBG.HistoryStr) == 'function' then
+                            pcall(HLBG.HistoryStr, args.tsv, args.page or 1, args.perpage or 5, args.total or 0, args.sort or 'id', args.order or 'DESC')
+                        end
+                    end
+                    return
+                end
+
+                if command == "Stats" or command == "stats" then
+                    -- Statistics summary
+                    if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, args) end
+                    return
+                end
+
+                if command == "Server" or command == "server" then
+                    -- Server info/welcome
+                    if type(args) == 'table' and type(args.motd) == 'string' and args.motd ~= '' then
+                        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                            DEFAULT_CHAT_FRAME:AddMessage('|cFF88EEEEHLBG:|r ' .. args.motd)
+                        end
+                    end
+                    if type(args) == 'table' and args.season and type(HLBG.SetCurrentSeason) == 'function' then
+                        pcall(HLBG.SetCurrentSeason, tonumber(args.season) or 0)
+                    end
+                    return
+                end
+
+                if command == "Error" or command == "error" then
+                    -- Error message from server
+                    if type(args) == 'table' and type(args.message) == 'string' then
+                        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r ' .. args.message)
+                        end
+                    end
+                    return
+                end
+
+                -- Unknown command, log if in dev mode
+                if HLBG._devMode and DEFAULT_CHAT_FRAME then
+                    local argsStr = ''
+                    if type(args) == 'table' then
+                        for k,v in pairs(args) do argsStr = argsStr .. ' ' .. tostring(k) .. '=' .. tostring(v) end
+                    else
+                        argsStr = tostring(args)
+                    end
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Unknown command: ' .. command .. ' Args: ' .. argsStr)
+                end
+            end)
+        end)
+        if ok then
+            HLBG._aioRegistered = true
+        else
+            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r Failed to register AIO event: ' .. tostring(err)) end
+        end
+    end
         if type(command) ~= 'string' then return end
         args = args or {}
         

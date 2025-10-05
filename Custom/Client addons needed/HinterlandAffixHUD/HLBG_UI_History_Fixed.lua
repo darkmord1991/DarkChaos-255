@@ -21,23 +21,35 @@ function HLBG.History(rows, page, per, total, col, dir)
     h.sortKey = col or 'id'
     h.sortDir = dir or 'DESC'
     
-    -- Initialize UI components if needed
+    -- Reuse existing UI elements (from HLBG_UI.lua) when present to avoid duplicate frames/headers
+    -- Accept either `h.Scroll`/`h.Content` or `h.ScrollFrame`/`h.Content` shapes
     if not h.initialized then
-        -- Create scrollable content frame
-        h.ScrollFrame = CreateFrame("ScrollFrame", "HLBG_HistoryScrollFrame", h, "UIPanelScrollFrameTemplate")
-        h.ScrollFrame:SetPoint("TOPLEFT", h, "TOPLEFT", 10, -10)
-        h.ScrollFrame:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -30, 60) -- Leave space for navigation
-        
-        h.Content = CreateFrame("Frame", "HLBG_HistoryScrollContent", h.ScrollFrame)
-        h.Content:SetSize(h:GetWidth() - 40, 400)  -- Height will adjust based on content
-        h.ScrollFrame:SetScrollChild(h.Content)
-        
-        -- Create header row
-        h.Header = CreateFrame("Frame", nil, h)
-        h.Header:SetPoint("TOPLEFT", h, "TOPLEFT", 10, -10)
-        h.Header:SetPoint("RIGHT", h, "RIGHT", -30, 0)
-        h.Header:SetHeight(20)
-        
+        local existingScroll = h.Scroll or h.ScrollFrame
+        if existingScroll then
+            h.ScrollFrame = existingScroll
+            -- Prefer existing content if set, otherwise try to get scroll child
+            if not h.Content and type(h.ScrollFrame.GetScrollChild) == 'function' then
+                h.Content = h.ScrollFrame:GetScrollChild()
+            end
+        else
+            -- Create scrollable content frame
+            h.ScrollFrame = CreateFrame("ScrollFrame", "HLBG_HistoryScrollFrame", h, "UIPanelScrollFrameTemplate")
+            h.ScrollFrame:SetPoint("TOPLEFT", h, "TOPLEFT", 10, -10)
+            h.ScrollFrame:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -30, 60) -- Leave space for navigation
+
+            h.Content = CreateFrame("Frame", "HLBG_HistoryScrollContent", h.ScrollFrame)
+            h.Content:SetSize(h:GetWidth() - 40, 400)  -- Height will adjust based on content
+            h.ScrollFrame:SetScrollChild(h.Content)
+        end
+
+        -- Create header row only if missing
+        if not h.Header then
+            h.Header = CreateFrame("Frame", nil, h)
+            h.Header:SetPoint("TOPLEFT", h, "TOPLEFT", 10, -10)
+            h.Header:SetPoint("RIGHT", h, "RIGHT", -30, 0)
+            h.Header:SetHeight(20)
+        end
+
         -- Column headers
         local headers = {
             { text = "ID", width = 50 },
@@ -46,163 +58,168 @@ function HLBG.History(rows, page, per, total, col, dir)
             { text = "Affix", width = 100 },
             { text = "Duration", width = 60 }
         }
-        
-        h.HeaderText = {}
+
+        h.HeaderText = h.HeaderText or {}
         local x = 0
         for i, header in ipairs(headers) do
-            local headerText = h.Header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            headerText:SetPoint("LEFT", h.Header, "LEFT", x, 0)
-            headerText:SetText(header.text)
-            headerText:SetWidth(header.width)
-            h.HeaderText[i] = headerText
-            
-            -- Add sort functionality
-            local headerButton = CreateFrame("Button", nil, h.Header)
-            headerButton:SetPoint("TOPLEFT", headerText, "TOPLEFT", -5, 5)
-            headerButton:SetPoint("BOTTOMRIGHT", headerText, "BOTTOMRIGHT", 5, -5)
-            
-            headerButton:SetScript("OnClick", function()
-                local sortKeys = {"id", "ts", "winner", "affix", "duration"}
-                local newDir = (h.sortKey == sortKeys[i] and h.sortDir == "ASC") and "DESC" or "ASC"
-                
-                -- Request new sort order
+            if not h.HeaderText[i] then
+                local headerText = h.Header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                headerText:SetPoint("LEFT", h.Header, "LEFT", x, 0)
+                headerText:SetText(header.text)
+                headerText:SetWidth(header.width)
+                h.HeaderText[i] = headerText
+
+                -- Add sort functionality
+                local headerButton = CreateFrame("Button", nil, h.Header)
+                headerButton:SetPoint("TOPLEFT", headerText, "TOPLEFT", -5, 5)
+                headerButton:SetPoint("BOTTOMRIGHT", headerText, "BOTTOMRIGHT", 5, -5)
+
+                headerButton:SetScript("OnClick", function()
+                    local sortKeys = {"id", "ts", "winner", "affix", "duration"}
+                    local newDir = (h.sortKey == sortKeys[i] and h.sortDir == "ASC") and "DESC" or "ASC"
+
+                    -- Request new sort order
+                    local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+                    local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
+                    local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
+
+                    if _G.AIO and _G.AIO.Handle then
+                        _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, h.per, sortKeys[i], newDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                    end
+
+                    -- Fallback to chat command if AIO isn't available
+                    if HLBG.SendServerDot then
+                        HLBG.SendServerDot(string.format(".hlbg history 1 %d %s %s", h.per, sortKeys[i], newDir))
+                    end
+                end)
+            end
+            x = x + header.width + 10
+        end
+
+        -- Create navigation controls only if missing
+        if not h.Nav then
+            h.Nav = CreateFrame("Frame", nil, h)
+            h.Nav:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 10, 10)
+            h.Nav:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -30, 10)
+            h.Nav:SetHeight(40)
+
+            -- Previous page button
+            h.Nav.Prev = CreateFrame("Button", nil, h.Nav, "UIPanelButtonTemplate")
+            h.Nav.Prev:SetSize(100, 22)
+            h.Nav.Prev:SetPoint("LEFT", h.Nav, "LEFT", 0, 0)
+            h.Nav.Prev:SetText("< Previous")
+
+            -- Page text
+            h.Nav.PageText = h.Nav:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            h.Nav.PageText:SetPoint("CENTER", h.Nav, "CENTER", 0, 0)
+            h.Nav.PageText:SetText("Page 1 / 1")
+
+            -- Next page button
+            h.Nav.Next = CreateFrame("Button", nil, h.Nav, "UIPanelButtonTemplate")
+            h.Nav.Next:SetSize(100, 22)
+            h.Nav.Next:SetPoint("RIGHT", h.Nav, "RIGHT", 0, 0)
+            h.Nav.Next:SetText("Next >")
+
+            -- Setup navigation button handlers
+            h.Nav.Prev:SetScript("OnClick", function()
+                local newPage = math.max(1, h.page - 1)
                 local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
                 local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
                 local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-                
+
                 if _G.AIO and _G.AIO.Handle then
-                    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, h.per, sortKeys[i], newDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                    _G.AIO.Handle("HLBG", "Request", "HISTORY", newPage, h.per, h.sortKey, h.sortDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
                 end
-                
-                -- Fallback to chat command if AIO isn't available
+
+                -- Use chat-dot fallback
                 if HLBG.SendServerDot then
-                    HLBG.SendServerDot(string.format(".hlbg history 1 %d %s %s", h.per, sortKeys[i], newDir))
+                    HLBG.SendServerDot(string.format(".hlbg history %d %d %s %s", newPage, h.per, h.sortKey, h.sortDir))
+                    HLBG.SendServerDot(string.format(".hlbg history %d %d %d %s %s", newPage, h.per, sv, h.sortKey, h.sortDir))
+                end
+
+                -- Update page number optimistically
+                h.page = newPage
+                local maxPage = math.max(1, math.ceil(h.total / h.per))
+                h.Nav.PageText:SetText(string.format('Page %d / %d', newPage, maxPage))
+
+                if newPage <= 1 then h.Nav.Prev:Disable() else h.Nav.Prev:Enable() end
+                h.Nav.Next:Enable()
+            end)
+
+            h.Nav.Next:SetScript("OnClick", function()
+                local newPage = h.page + 1
+                local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+                local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
+                local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
+
+                if _G.AIO and _G.AIO.Handle then
+                    _G.AIO.Handle("HLBG", "Request", "HISTORY", newPage, h.per, h.sortKey, h.sortDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                end
+
+                -- Use chat-dot fallback
+                if HLBG.SendServerDot then
+                    HLBG.SendServerDot(string.format(".hlbg history %d %d %s %s", newPage, h.per, h.sortKey, h.sortDir))
+                    HLBG.SendServerDot(string.format(".hlbg history %d %d %d %s %s", newPage, h.per, sv, h.sortKey, h.sortDir))
+                end
+
+                -- Update page number optimistically
+                h.page = newPage
+                local maxPage = math.max(1, math.ceil(h.total / h.per))
+                h.Nav.PageText:SetText(string.format('Page %d / %d', newPage, maxPage))
+
+                h.Nav.Prev:Enable()
+                if newPage >= maxPage then h.Nav.Next:Disable() else h.Nav.Next:Enable() end
+            end)
+        end
+
+        -- Create filter controls only if missing
+        if not h.Filter then
+            h.Filter = CreateFrame("Frame", nil, h)
+            h.Filter:SetPoint("TOPLEFT", h.Header, "BOTTOMLEFT", 0, -5)
+            h.Filter:SetPoint("TOPRIGHT", h.Header, "BOTTOMRIGHT", 0, -5)
+            h.Filter:SetHeight(30)
+
+            -- Winner filter
+            local winnerLabel = h.Filter:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            winnerLabel:SetPoint("LEFT", h.Filter, "LEFT", 0, 0)
+            winnerLabel:SetText("Winner:")
+
+            local winnerOptions = {"ALL", "Alliance", "Horde", "Draw"}
+            h.Filter.Winner = CreateFrame("Frame", "HLBG_HistoryWinnerDropDown", h.Filter, "UIDropDownMenuTemplate")
+            h.Filter.Winner:SetPoint("LEFT", winnerLabel, "RIGHT", -5, -3)
+
+            UIDropDownMenu_SetWidth(h.Filter.Winner, 100)
+            UIDropDownMenu_SetText(h.Filter.Winner, HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner or "ALL")
+
+            UIDropDownMenu_Initialize(h.Filter.Winner, function(self, level)
+                for _, option in ipairs(winnerOptions) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = option
+                    info.value = option
+                    info.func = function(self)
+                        HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+                        HinterlandAffixHUDDB.histWinner = self.value
+                        UIDropDownMenu_SetText(h.Filter.Winner, self.value)
+
+                        -- Apply filter
+                        local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+                        local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
+
+                        if _G.AIO and _G.AIO.Handle then
+                            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, h.per, h.sortKey, h.sortDir, self.value, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
+                        end
+
+                        -- Fallback
+                        if HLBG.SendServerDot then
+                            HLBG.SendServerDot(string.format(".hlbg history 1 %d %s %s %s", h.per, h.sortKey, h.sortDir, self.value))
+                        end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
                 end
             end)
-            
-            x = x + header.width + 10
         end
-        
-        -- Create navigation controls
-        h.Nav = CreateFrame("Frame", nil, h)
-        h.Nav:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 10, 10)
-        h.Nav:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -30, 10)
-        h.Nav:SetHeight(40)
-        
-        -- Previous page button
-        h.Nav.Prev = CreateFrame("Button", nil, h.Nav, "UIPanelButtonTemplate")
-        h.Nav.Prev:SetSize(100, 22)
-        h.Nav.Prev:SetPoint("LEFT", h.Nav, "LEFT", 0, 0)
-        h.Nav.Prev:SetText("< Previous")
-        
-        -- Page text
-        h.Nav.PageText = h.Nav:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        h.Nav.PageText:SetPoint("CENTER", h.Nav, "CENTER", 0, 0)
-        h.Nav.PageText:SetText("Page 1 / 1")
-        
-        -- Next page button
-        h.Nav.Next = CreateFrame("Button", nil, h.Nav, "UIPanelButtonTemplate")
-        h.Nav.Next:SetSize(100, 22)
-        h.Nav.Next:SetPoint("RIGHT", h.Nav, "RIGHT", 0, 0)
-        h.Nav.Next:SetText("Next >")
-        
-        -- Setup navigation button handlers
-        h.Nav.Prev:SetScript("OnClick", function()
-            local newPage = math.max(1, h.page - 1)
-            local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-            local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
-            local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-            
-            if _G.AIO and _G.AIO.Handle then
-                _G.AIO.Handle("HLBG", "Request", "HISTORY", newPage, h.per, h.sortKey, h.sortDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
-            end
-            
-            -- Use chat-dot fallback
-            if HLBG.SendServerDot then
-                HLBG.SendServerDot(string.format(".hlbg history %d %d %s %s", newPage, h.per, h.sortKey, h.sortDir))
-                HLBG.SendServerDot(string.format(".hlbg history %d %d %d %s %s", newPage, h.per, sv, h.sortKey, h.sortDir))
-            end
-            
-            -- Update page number optimistically
-            h.page = newPage
-            local maxPage = math.max(1, math.ceil(h.total / h.per))
-            h.Nav.PageText:SetText(string.format('Page %d / %d', newPage, maxPage))
-            
-            if newPage <= 1 then h.Nav.Prev:Disable() else h.Nav.Prev:Enable() end
-            h.Nav.Next:Enable()
-        end)
-        
-        h.Nav.Next:SetScript("OnClick", function()
-            local newPage = h.page + 1
-            local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-            local wf = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner) or 'ALL'
-            local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-            
-            if _G.AIO and _G.AIO.Handle then
-                _G.AIO.Handle("HLBG", "Request", "HISTORY", newPage, h.per, h.sortKey, h.sortDir, wf, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
-            end
-            
-            -- Use chat-dot fallback
-            if HLBG.SendServerDot then
-                HLBG.SendServerDot(string.format(".hlbg history %d %d %s %s", newPage, h.per, h.sortKey, h.sortDir))
-                HLBG.SendServerDot(string.format(".hlbg history %d %d %d %s %s", newPage, h.per, sv, h.sortKey, h.sortDir))
-            end
-            
-            -- Update page number optimistically
-            h.page = newPage
-            local maxPage = math.max(1, math.ceil(h.total / h.per))
-            h.Nav.PageText:SetText(string.format('Page %d / %d', newPage, maxPage))
-            
-            h.Nav.Prev:Enable()
-            if newPage >= maxPage then h.Nav.Next:Disable() else h.Nav.Next:Enable() end
-        end)
-        
-        -- Create filter controls
-        h.Filter = CreateFrame("Frame", nil, h)
-        h.Filter:SetPoint("TOPLEFT", h.Header, "BOTTOMLEFT", 0, -5)
-        h.Filter:SetPoint("TOPRIGHT", h.Header, "BOTTOMRIGHT", 0, -5)
-        h.Filter:SetHeight(30)
-        
-        -- Winner filter
-        local winnerLabel = h.Filter:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        winnerLabel:SetPoint("LEFT", h.Filter, "LEFT", 0, 0)
-        winnerLabel:SetText("Winner:")
-        
-        local winnerOptions = {"ALL", "Alliance", "Horde", "Draw"}
-        h.Filter.Winner = CreateFrame("Frame", "HLBG_HistoryWinnerDropDown", h.Filter, "UIDropDownMenuTemplate")
-        h.Filter.Winner:SetPoint("LEFT", winnerLabel, "RIGHT", -5, -3)
-        
-        UIDropDownMenu_SetWidth(h.Filter.Winner, 100)
-        UIDropDownMenu_SetText(h.Filter.Winner, HinterlandAffixHUDDB and HinterlandAffixHUDDB.histWinner or "ALL")
-        
-        UIDropDownMenu_Initialize(h.Filter.Winner, function(self, level)
-            for _, option in ipairs(winnerOptions) do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = option
-                info.value = option
-                info.func = function(self)
-                    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-                    HinterlandAffixHUDDB.histWinner = self.value
-                    UIDropDownMenu_SetText(h.Filter.Winner, self.value)
-                    
-                    -- Apply filter
-                    local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-                    local af = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.histAffix) or ''
-                    
-                    if _G.AIO and _G.AIO.Handle then
-                        _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, h.per, h.sortKey, h.sortDir, self.value, HLBG.ResolveAffixFilter and HLBG.ResolveAffixFilter(af) or af, sv)
-                    end
-                    
-                    -- Fallback
-                    if HLBG.SendServerDot then
-                        HLBG.SendServerDot(string.format(".hlbg history 1 %d %s %s %s", h.per, h.sortKey, h.sortDir, self.value))
-                    end
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-        end)
-        
-        h.rows = {} -- Will store the row frames
+
+        h.rows = h.rows or {} -- Will store the row frames
         h.initialized = true
     end
     

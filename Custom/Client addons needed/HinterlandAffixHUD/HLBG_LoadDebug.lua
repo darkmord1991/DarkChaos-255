@@ -13,25 +13,27 @@ table.insert(_G.HLBG_LoadState.files, "HLBG_LoadDebug.lua")
 local loadFrame = CreateFrame("Frame")
 
 -- Track load errors
-loadFrame:SetScript("OnEvent", function(self, event, errorMessage)
+loadFrame:SetScript("OnEvent", function(self, event, ...)
+    local args = {...}
     if event == "ADDON_LOADED" then
-        local addonName = ...
+        local addonName = select(1, ...)
         if addonName == "HinterlandAffixHUD" then
             -- Record addon loaded successfully
             _G.HLBG_LoadState.addonLoaded = true
-            
+
             -- Log addon loaded message to chat
             if DEFAULT_CHAT_FRAME then
                 DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG:|r Addon loaded successfully. Files processed: " .. #(_G.HLBG_LoadState.files or {}))
             end
-            
+
             -- Check for any C_Timer usage before compatibility layer
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "LUA_ERROR" then
+        local errorMessage = select(1, ...)
         -- Record the error
         table.insert(_G.HLBG_LoadState.errors, errorMessage or "Unknown error")
-        
+
         -- Log error to chat
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r " .. (errorMessage or "Unknown error"))

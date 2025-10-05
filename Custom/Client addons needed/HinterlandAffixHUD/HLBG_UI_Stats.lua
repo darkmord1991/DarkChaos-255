@@ -16,8 +16,8 @@ function HLBG.Stats(stats)
     
     -- Initialize UI components if needed
     if not s.initialized then
-        -- Create scrollable frame for content
-        s.ScrollFrame = CreateFrame("ScrollFrame", nil, s, "UIPanelScrollFrameTemplate")
+    -- Create scrollable frame for content
+    s.ScrollFrame = CreateFrame("ScrollFrame", "HLBG_StatsScrollFrame", s, "UIPanelScrollFrameTemplate")
         s.ScrollFrame:SetPoint("TOPLEFT", s, "TOPLEFT", 10, -10)
         s.ScrollFrame:SetPoint("BOTTOMRIGHT", s, "BOTTOMRIGHT", -30, 10)
         

@@ -168,7 +168,7 @@ function HLBG.RefreshDebug()
         HLBG.DebugFrame.CloseButton:SetScript("OnClick", function() HLBG.DebugFrame:Hide() end)
         
         -- Debug text
-        HLBG.DebugFrame.Scroll = CreateFrame("ScrollFrame", nil, HLBG.DebugFrame, "UIPanelScrollFrameTemplate")
+    HLBG.DebugFrame.Scroll = CreateFrame("ScrollFrame", "HLBG_DebugScrollFrame", HLBG.DebugFrame, "UIPanelScrollFrameTemplate")
         HLBG.DebugFrame.Scroll:SetPoint("TOPLEFT", 10, -30)
         HLBG.DebugFrame.Scroll:SetPoint("BOTTOMRIGHT", -28, 10)
         

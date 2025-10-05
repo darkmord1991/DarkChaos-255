@@ -220,7 +220,7 @@ function HLBG.ShowCommandsTab(parent)
     line:Show()
     
     -- Create scrollframe for commands
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "HLBG_HelpCommandsScrollFrame", parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", line, "BOTTOMLEFT", 0, -10)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -30, 0)
     scrollFrame:Show()
@@ -277,7 +277,7 @@ function HLBG.ShowFAQTab(parent)
     title:Show()
     
     -- Create scrollframe for FAQ
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "HLBG_HelpFAQScrollFrame", parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -30, 0)
     scrollFrame:Show()

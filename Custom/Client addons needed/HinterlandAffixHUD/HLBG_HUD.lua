@@ -75,6 +75,27 @@ function HLBG.UpdateHUD()
     if HinterlandAffixHUDDB.useAddonHud == nil then HinterlandAffixHUDDB.useAddonHud = true end
     -- Default: show HUD everywhere (changed from false to true to fix outside-zone visibility)
     if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = true end
+
+    -- If modern scoreboard is enabled, hide the legacy HUD entirely and make sure
+    -- the modern Live scoreboard UI is created and visible instead. This prevents
+    -- duplicate HUDs (legacy + modern) from showing at the same time.
+    if HinterlandAffixHUDDB.modernScoreboard then
+        -- Hide legacy HUD
+        pcall(function() HUD:Hide() end)
+        -- Create / show modern scoreboard if possible
+        pcall(function()
+            if type(HLBG._ensureUI) == 'function' then
+                HLBG._ensureUI('Live')
+            end
+            if HLBG.CreateModernScoreboardUI and type(HLBG.CreateModernScoreboardUI) == 'function' then
+                HLBG.CreateModernScoreboardUI()
+            end
+            if HLBG.UI and HLBG.UI.Live and HinterlandAffixHUDDB.useAddonHud then
+                pcall(function() HLBG.UI.Live:Show() end)
+            end
+        end)
+        return
+    end
     
     -- Use the latest resource data from server
     local res = _G.RES or {A=0,H=0,END=0}
