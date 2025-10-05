@@ -543,8 +543,8 @@ public:
             return true;
         }
 
-        // Use the new queue system
-        hl->HandleQueueJoinCommand(player);
+    // Use the public queue API
+    hl->AddPlayerToQueue(player);
         return true;
     }
 
@@ -560,8 +560,8 @@ public:
             return true;
         }
 
-        // Use the new queue system
-        hl->HandleQueueLeaveCommand(player);
+    // Use the public queue API
+    hl->RemovePlayerFromQueue(player);
         return true;
     }
 
@@ -582,8 +582,8 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
             return true;
         }
-        // Use the new queue system to show status
-        hl->HandleQueueStatusCommand(player);
+    // Use the public queue API to show status
+    hl->ShowQueueStatus(player);
         return true;
     }
 };
