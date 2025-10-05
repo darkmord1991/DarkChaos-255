@@ -132,7 +132,7 @@ void OutdoorPvPHL::HandleAdminQueueList(Player* admin)
         Player* queuedPlayer = ObjectAccessor::FindConnectedPlayer(entry.playerGuid);
         std::string playerName = queuedPlayer ? queuedPlayer->GetName() : "Offline";
         std::string teamName = (entry.teamId == TEAM_ALLIANCE) ? "Alliance" : "Horde";
-        uint32 waitTime = GameTime::GetGameTime() - entry.joinTime;
+        uint32 waitTime = GameTime::GetGameTime().count() - entry.joinTime;
         
         ch.PSendSysMessage("%u. %s (%s) - %u seconds", position, playerName.c_str(), teamName.c_str(), waitTime);
         position++;
