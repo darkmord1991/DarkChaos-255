@@ -236,6 +236,15 @@
             void ForceReset();
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
+
+            // Addon integration helper: allow external code (addons/command scripts)
+            // to request the same command dispatch as internal callers. This is a
+            // thin public wrapper that forwards to the private HandlePlayerCommand
+            // implementation without exposing internal helpers.
+            bool QueueCommandFromAddon(Player* player, const std::string& command, const std::string& args)
+            {
+                return HandlePlayerCommand(player, command, args);
+            }
             
             // State machine interface
             BGState GetBGState() const { return _bgState; }
