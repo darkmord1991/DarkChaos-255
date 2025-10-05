@@ -120,33 +120,7 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
     }
 }
 
-// Efficient status broadcast without GetAllSessions()
-void OutdoorPvPHL::_sendStatusBroadcast()
-{
-    if (!_statusBroadcastEnabled)
-        return;
-        
-    std::vector<Player*> zonePlayers;
-    CollectZonePlayers(zonePlayers);
-    
-    if (zonePlayers.empty())
-        return;
-
-    uint32 minutesLeft = GetTimeRemainingSeconds() / 60;
-    uint32 allyResources = GetResources(TEAM_ALLIANCE);
-    uint32 hordeResources = GetResources(TEAM_HORDE);
-
-    char buffer[512];
-    snprintf(buffer, sizeof(buffer), 
-        "|cff1eff00[Hinterland BG]|r Time: %u min | Alliance: %u | Horde: %u", 
-        minutesLeft, allyResources, hordeResources);
-
-    // Single message to all zone players
-    for (Player* player : zonePlayers)
-    {
-        ChatHandler(player->GetSession()).SendSysMessage(buffer);
-    }
-}
+// Method removed - functionality exists in BroadcastStatusToZone() method
 
 // Cache invalidation when players enter/leave zone
 void OutdoorPvPHL::InvalidatePlayerCache()
