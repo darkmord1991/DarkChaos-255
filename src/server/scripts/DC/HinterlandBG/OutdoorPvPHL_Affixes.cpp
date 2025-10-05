@@ -166,3 +166,71 @@ void OutdoorPvPHL::ApplyAffixWeather()
         }
     });
 }
+
+// Select and activate a new affix for the upcoming battle (or periodic rotation).
+void OutdoorPvPHL::_selectAffixForNewBattle()
+{
+    // If affix system disabled, ensure none is active
+    if (!_affixEnabled)
+    {
+        _activeAffix = AFFIX_NONE;
+        _affixTimerMs = 0;
+        _affixNextChangeEpoch = 0;
+        return;
+    }
+
+    // Choose a candidate affix. If random-on-start is enabled choose randomly,
+    // otherwise pick the next non-none affix in round-robin fashion.
+    AffixType newAffix = AFFIX_NONE;
+    const uint8 affixCount = static_cast<uint8>(AFFIX_BOSS_ENRAGE);
+    if (_affixRandomOnStart)
+    {
+        // Prefer non-zero affixes; allow NONE only if randomness yields 0 rarely.
+        uint32 idx = urand(0, affixCount); // 0..affixCount
+        newAffix = static_cast<AffixType>(idx);
+    }
+    else
+    {
+        // Round-robin: advance to next affix code, wrap and allow NONE as a rest state
+        uint8 current = static_cast<uint8>(_activeAffix);
+        uint8 candidate = (current + 1) % (affixCount + 1);
+        newAffix = static_cast<AffixType>(candidate);
+    }
+
+    // Avoid repeating the same affix consecutively when possible
+    if (newAffix == _activeAffix)
+    {
+        // try next value once more
+        uint8 cur = static_cast<uint8>(newAffix);
+        cur = (cur + 1) % (affixCount + 1);
+        newAffix = static_cast<AffixType>(cur);
+    }
+
+    // Apply the change
+    _clearAffixEffects();
+    _activeAffix = newAffix;
+
+    // Reset timers
+    if (_affixPeriodSec > 0)
+        _affixTimerMs = _affixPeriodSec * IN_MILLISECONDS;
+    else
+        _affixTimerMs = 0;
+    _affixNextChangeEpoch = (_affixTimerMs > 0) ? (NowSec() + (_affixTimerMs / IN_MILLISECONDS)) : 0;
+
+    // Apply new effects and weather
+    _applyAffixEffects();
+    if (_affixWeatherEnabled)
+        ApplyAffixWeather();
+
+    // Optional announcement to zone
+    if (_affixAnnounce)
+    {
+        const char* name = HL_AffixName(_activeAffix);
+        if (Map* m = GetMap())
+        {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Hinterland BG: New affix active — %s", name);
+            m->SendZoneText(OutdoorPvPHLBuffZones[0], buf);
+        }
+    }
+}
