@@ -3,6 +3,40 @@
 -- Ensure HLBG namespace exists
 HLBG = HLBG or {}
 
+-- Defensive fallback: ensure HLBG._ensureUI exists so calls like HLBG._ensureUI('X') do not
+-- cause "attempt to call field '_ensureUI' (a nil value)" during early startup when the
+-- UI initializer may not yet have run. Return false to indicate UI wasn't ready.
+if type(HLBG._ensureUI) ~= 'function' then
+    HLBG._ensureUI = function(...) return false end
+end
+
+-- SafePrint should already be available from HLBG_EmergencyFix.lua
+-- If not available, provide a minimal fallback
+if type(HLBG.SafePrint) ~= 'function' then
+    function HLBG.SafePrint(msg)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, tostring(msg or ''))
+        else
+            print(tostring(msg or ''))
+        end
+    end
+end
+
+-- Small helper: safe debug print that falls back to SafePrint/print if HLBG.Debug isn't defined
+local function safeDebug(...)
+    local parts = {}
+    for i=1, select('#', ...) do parts[i] = tostring(select(i, ...)) end
+    local msg = table.concat(parts, ' ')
+    if type(HLBG.Debug) == 'function' then pcall(HLBG.Debug, msg) end
+    if type(HLBG.SafePrint) == 'function' then pcall(HLBG.SafePrint, msg) else pcall(print, msg) end
+end
+
+-- Skip global AddMessage shim since EmergencyFix already provides it
+-- Just log that we're using the existing system
+if HLBG._AddMessageShimInstalled then
+    HLBG.SafePrint("HLBG_AIO: Using existing AddMessage shim from emergency fix")
+end
+
 -- Minimal UI open function if not defined elsewhere
 if type(HLBG.OpenUI) ~= 'function' then
     function HLBG.OpenUI()
@@ -53,7 +87,7 @@ if type(HLBG.History) ~= 'function' then
             r.id:SetText(tostring(id or ''))
             r.ts:SetText(tostring(ts or ''))
             r.win:SetText(tostring(win or ''))
-            r.aff:SetText(HLBG.GetAffixName(aff))
+            r.aff:SetText((HLBG.GetAffixName and HLBG.GetAffixName(aff)) or tostring(aff or ''))
             r.rea:SetText(tostring(rea or ''))
             r:Show(); y = y - 14
         end
@@ -344,8 +378,8 @@ if type(HLBG.Affixes) ~= 'function' then
         if not a then return end
         rows = rows or {}
         
-        -- Debug info
-        HLBG.Debug("Affixes received: " .. #rows)
+    -- Debug info
+    safeDebug("Affixes received: " .. #rows)
         
         -- Build name map for affix code -> name
         _G.HLBG_AFFIX_NAMES = _G.HLBG_AFFIX_NAMES or {}
@@ -611,15 +645,28 @@ end
 
 -- Register handlers once all functions exist; bind when AIO loads (or immediately if already loaded)
 do
+    -- SafePrint should be available from EmergencyFix; if not, use minimal fallback
+    if type(HLBG.SafePrint) ~= 'function' then
+        HLBG.SafePrint = function(msg)
+            pcall(print, tostring(msg or ''))
+        end
+    end
     local function register()
         if not (_G.AIO and _G.AIO.AddHandlers) then return false end
+        
+        -- Check if HLBG_AIO_Check already handled registration via legacy RegisterEvent
+        if HLBG._aioRegistered or HLBG._aioRegistering then
+            HLBG.SafePrint("HLBG_AIO: Registration already handled by AIO_Check, skipping AddHandlers")
+            return true
+        end
+        
         -- Request a fresh table and then assign handlers for maximum compatibility
         local ok, reg = pcall(function() return _G.AIO.AddHandlers("HLBG", {}) end)
         if not ok or type(reg) ~= "table" then
             local errmsg = tostring(reg or "")
             -- If AddHandlers asserted because the name is already registered, try to attach to any existing global HLBG table
             if errmsg:find("an event is already registered") or errmsg:find("already registered") then
-                if type(_G.HLBG) == "table" then
+                    if type(_G.HLBG) == "table" then
                     local existing = _G.HLBG
                     -- merge our handlers into the existing table only when missing to avoid stomping
                     existing.OpenUI = existing.OpenUI or HLBG.OpenUI
@@ -635,15 +682,15 @@ do
                     existing.QueueStatus = existing.QueueStatus or HLBG.QueueStatus
                     existing.Results = existing.Results or HLBG.Results
                     _G.HLBG = existing; HLBG = existing
-                    DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO name already registered; attached to existing HLBG table")
+                    HLBG.SafePrint("HLBG: AIO name already registered; attached to existing HLBG table")
                     return true
                 else
-                    DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO name already registered; handlers may belong to another addon — using fallback")
+                    HLBG.SafePrint("HLBG: AIO name already registered; handlers may belong to another addon — using fallback")
                     -- Treat as terminal (don't spam retries) but not a success for AIO binding
                     return true
                 end
             end
-            DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO.AddHandlers returned unexpected value; retrying")
+            HLBG.SafePrint("HLBG: AIO.AddHandlers returned unexpected value; retrying")
             return false
         end
         
@@ -655,7 +702,7 @@ do
         local preservedSafe = {}
         if type(HLBG) == "table" then
             for _, k in ipairs({
-                'safeExecSlash','safeRegisterSlash','safeSetJustify','safeIsInInstance',
+                'SafePrint','safeExecSlash','safeRegisterSlash','safeSetJustify','safeIsInInstance',
                 'safeGetRealZoneText','safeGetNumWorldStateUI','safeGetWorldStateUIInfo','safeGetPlayerMapPosition'
             }) do
                 if type(HLBG[k]) == 'function' then preservedSafe[k] = HLBG[k] end
@@ -698,8 +745,18 @@ do
         for k, fn in pairs(preservedSafe) do reg[k] = reg[k] or fn end
         _G.HLBG = reg; HLBG = reg
         
-        DEFAULT_CHAT_FRAME:AddMessage("HLBG: Handlers successfully registered (History/Stats/PONG/OpenUI)")
-        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+        -- Use SafePrint if available, otherwise fall back to AddMessage with stringified message
+        local function safeStartupPrint(msg)
+            pcall(function()
+                if type(HLBG) == 'table' and type(HLBG.SafePrint) == 'function' then
+                    HLBG.SafePrint(msg)
+                elseif DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    DEFAULT_CHAT_FRAME:AddMessage(tostring(msg or ''))
+                end
+            end)
+        end
+        safeStartupPrint("HLBG: Handlers successfully registered (History/Stats/PONG/OpenUI)")
+        safeStartupPrint(string.format(
             "HLBG: Registered handlers -> History=%s, Stats=%s, PONG=%s, OpenUI=%s",
             tostring(type(HLBG.History)), tostring(type(HLBG.Stats)), tostring(type(HLBG.PONG)), tostring(type(HLBG.OpenUI))
         ))
@@ -720,7 +777,7 @@ do
 
     -- Try immediate register; if it fails, poll for AIO for a few seconds and also listen to ADDON_LOADED
     if not register() then
-        DEFAULT_CHAT_FRAME:AddMessage("HLBG: AIO not available yet; starting registration poll")
+    HLBG.SafePrint("HLBG: AIO not available yet; starting registration poll")
         local attempts = 0
         local maxAttempts = 20
         local pollT = 0
@@ -731,21 +788,21 @@ do
             pollT = 0
             attempts = attempts + 1
             if register() then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG: registration succeeded after %d attempts", attempts))
+                HLBG.SafePrint(string.format("HLBG: registration succeeded after %d attempts", attempts))
                 self:SetScript("OnUpdate", nil)
                 return
             end
             if attempts >= maxAttempts then
-                DEFAULT_CHAT_FRAME:AddMessage("HLBG: registration failed after multiple attempts; handlers not bound")
+                HLBG.SafePrint("HLBG: registration failed after multiple attempts; handlers not bound")
                 self:SetScript("OnUpdate", nil)
             end
         end)
         fr:RegisterEvent("ADDON_LOADED")
         fr:SetScript("OnEvent", function(self, _, name)
             if name == "AIO_Client" or name == "AIO" or name == "RochetAio" then
-                DEFAULT_CHAT_FRAME:AddMessage("HLBG: ADDON_LOADED signaled AIO; attempting register")
+                HLBG.SafePrint("HLBG: ADDON_LOADED signaled AIO; attempting register")
                 if register() then
-                    DEFAULT_CHAT_FRAME:AddMessage("HLBG: registration succeeded from ADDON_LOADED")
+                    HLBG.SafePrint("HLBG: registration succeeded from ADDON_LOADED")
                     fr:SetScript("OnUpdate", nil); fr:UnregisterAllEvents(); fr:SetScript("OnEvent", nil)
                 end
             end
@@ -759,18 +816,18 @@ do
         local haveAIO = (_G.AIO and _G.AIO.AddHandlers) and true or false
         local handlersBound = (type(HLBG) == 'table' and (type(HLBG.History) == 'function' or type(HLBG.HISTORY) == 'function')) and true or false
         local uiPresent = (type(HLBG) == 'table' and type(HLBG.UI) == 'table') or (type(UI) == 'table')
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("HLBG STARTUP: AIO=%s handlers=%s UI=%s", tostring(haveAIO), tostring(handlersBound), tostring(uiPresent)))
-        if not uiPresent and type(UI) == 'table' then DEFAULT_CHAT_FRAME:AddMessage("HLBG STARTUP: attaching local UI to HLBG") ; HLBG.UI = UI end
+    HLBG.SafePrint(string.format("HLBG STARTUP: AIO=%s handlers=%s UI=%s", tostring(haveAIO), tostring(handlersBound), tostring(uiPresent)))
+    if not uiPresent and type(UI) == 'table' then HLBG.SafePrint("HLBG STARTUP: attaching local UI to HLBG") ; HLBG.UI = UI end
         -- Print and persist slash registration summary if available
         local regParts = {}
-        if HLBG._registered_slashes and #HLBG._registered_slashes > 0 then
+            if HLBG._registered_slashes and #HLBG._registered_slashes > 0 then
             for _,s in ipairs(HLBG._registered_slashes) do table.insert(regParts, s.cmd) end
-            DEFAULT_CHAT_FRAME:AddMessage("HLBG: registered slashes -> " .. table.concat(regParts, ", "))
+            HLBG.SafePrint("HLBG: registered slashes -> " .. tostring(table.concat(regParts, ", ")))
         end
         local skipParts = {}
         if HLBG._skipped_slashes and #HLBG._skipped_slashes > 0 then
             for _,s in ipairs(HLBG._skipped_slashes) do table.insert(skipParts, string.format("%s (%s)", tostring(s.cmd), tostring(s.reason))) end
-            DEFAULT_CHAT_FRAME:AddMessage("HLBG: skipped slashes -> " .. table.concat(skipParts, ", "))
+            HLBG.SafePrint("HLBG: skipped slashes -> " .. tostring(table.concat(skipParts, ", ")))
         end
         -- Persist a compact startup summary for later inspection (keep last 20)
         HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
@@ -783,7 +840,7 @@ do
             n = tonumber(n) or 1
             local hist = HinterlandAffixHUDDB and HinterlandAffixHUDDB.startupHistory or nil
             if not hist or #hist == 0 then
-                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('HLBG: no startup history saved') end
+                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then HLBG.SafePrint('HLBG: no startup history saved') end
                 return
             end
             if n < 1 then n = 1 end
@@ -791,9 +848,9 @@ do
             local e = hist[n]
             if not e then return end
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG startup @ %s: AIO=%s handlers=%s ui=%s', date('%Y-%m-%d %H:%M:%S', e.ts), tostring(e.aio), tostring(e.handlers), tostring(e.ui)))
-                if e.registered and #e.registered > 0 then DEFAULT_CHAT_FRAME:AddMessage(' registered: '..table.concat(e.registered, ', ')) end
-                if e.skipped and #e.skipped > 0 then DEFAULT_CHAT_FRAME:AddMessage(' skipped: '..table.concat(e.skipped, ', ')) end
+                HLBG.SafePrint(string.format('HLBG startup @ %s: AIO=%s handlers=%s ui=%s', date('%Y-%m-%d %H:%M:%S', e.ts), tostring(e.aio), tostring(e.handlers), tostring(e.ui)))
+                if e.registered and #e.registered > 0 then HLBG.SafePrint(' registered: '..tostring(table.concat(e.registered, ', '))) end
+                if e.skipped and #e.skipped > 0 then HLBG.SafePrint(' skipped: '..tostring(table.concat(e.skipped, ', '))) end
             end
         end
     end
