@@ -18,7 +18,14 @@ if not HLBG._unifiedChatHandlerInstalled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT
         
         -- Safety check - if originalFunction is nil, use the default behavior
         if not originalFunction then
-            return self:GetScript("OnEvent")(self, "CHAT_MSG_SYSTEM", text, ...)
+            local fallback = self:GetScript("OnEvent")
+            if type(fallback) == 'function' then
+                return fallback(self, "CHAT_MSG_SYSTEM", text, ...)
+            else
+                -- Last-resort: ensure we don't call a nil handler. Print safely.
+                print(tostring(text))
+                return
+            end
         end
         
         -- Prevent recursive calls to our handler
@@ -102,7 +109,14 @@ if not HLBG._unifiedChatHandlerInstalled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT
             local originalFunction = HLBG._originalAddMessage
             -- Safety check - if originalFunction is nil, use the default behavior
             if not originalFunction then
-                return self:GetScript("OnEvent")(self, "CHAT_MSG_SYSTEM", text, ...)
+                local fallback = self:GetScript("OnEvent")
+                if type(fallback) == 'function' then
+                    return fallback(self, "CHAT_MSG_SYSTEM", text, ...)
+                else
+                    -- Last-resort: ensure we don't call a nil handler. Print safely.
+                    print(tostring(text))
+                    return
+                end
             end
             return originalFunction(self, text, ...)
         end
@@ -188,6 +202,7 @@ end
 -- Register slash command for debug
 SLASH_HLBGDEBUG1 = "/hlbgdebug"
 SlashCmdList["HLBGDEBUG"] = function(msg)
+    msg = msg or ""
     if msg:match("^help") then
         print("HLBG Debug Commands:")
         print("/hlbgdebug dump - Dump current state")

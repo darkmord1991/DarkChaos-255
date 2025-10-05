@@ -15,9 +15,9 @@ function HLBG.Debug(msg)
     local timestamp = date("%H:%M:%S")
     local formatted = string.format("|cff00FFFF[HLBG %s]|r %s", timestamp, tostring(msg or "nil"))
     
-    -- Output to chat frame if available
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage(formatted)
+    -- Output to chat frame if available (defensive)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(tostring(formatted or ''))
     end
     
     -- Also store in debug log
@@ -99,9 +99,9 @@ function HLBG.DumpToChat(tbl, name)
     end
     
     name = name or "Table"
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Dump]|r " .. name .. ":")
-        DEFAULT_CHAT_FRAME:AddMessage(HLBG.Dump(tbl))
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Dump]|r " .. tostring(name or "") .. ":"))
+        DEFAULT_CHAT_FRAME:AddMessage(tostring(HLBG.Dump(tbl) or ""))
     end
 end
 
@@ -114,12 +114,12 @@ SlashCmdList["HLBGDEBUG"] = function(msg)
     HinterlandAffixHUDDB.devMode = true
     
     -- Show debug help
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Debug]|r Debug mode enabled.")
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Debug]|r Available commands:")
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Debug]|r /hlbgdebug - Show this help")
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Debug]|r /hlbg devmode on|off - Enable/disable debug mode")
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG Debug]|r /hlbg season <n> - Set season filter (0 = all)")
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Debug]|r Debug mode enabled."))
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Debug]|r Available commands:"))
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Debug]|r /hlbgdebug - Show this help"))
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Debug]|r /hlbg devmode on|off - Enable/disable debug mode"))
+        DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG Debug]|r /hlbg season <n> - Set season filter (0 = all)"))
     end
     
     -- Try to dump some useful info
@@ -235,6 +235,6 @@ SlashCmdList["HLBGDEBUGFRAME"] = function(msg)
 end
 
 -- Print a message when this file loads
-if DEFAULT_CHAT_FRAME and (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00FFFF[HLBG]|r Debug utilities loaded. Use /hlbgdebug for help.")
+if DEFAULT_CHAT_FRAME and (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) and DEFAULT_CHAT_FRAME.AddMessage then
+    DEFAULT_CHAT_FRAME:AddMessage(tostring("|cff00FFFF[HLBG]|r Debug utilities loaded. Use /hlbgdebug for help."))
 end

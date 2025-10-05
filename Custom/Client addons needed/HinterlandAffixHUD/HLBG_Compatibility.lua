@@ -200,9 +200,23 @@ HLBG.Compat.safeCall = function(func, ...)
 end
 
 -- Run the dropdown fix when the compatibility layer loads
-C_Timer.After(1, function()
-    HLBG.Compat.safeCall(HLBG.Compat.fixDropdownMenus)
-    print("|cFF33FF99Hinterland BG:|r Fixed dropdown menus")
-end)
+if C_Timer and C_Timer.After then
+    C_Timer.After(1, function()
+        HLBG.Compat.safeCall(HLBG.Compat.fixDropdownMenus)
+        print("|cFF33FF99Hinterland BG:|r Fixed dropdown menus")
+    end)
+else
+    -- Fallback if C_Timer not available yet
+    local fallbackFrame = CreateFrame("Frame")
+    local elapsed = 0
+    fallbackFrame:SetScript("OnUpdate", function(self, e)
+        elapsed = elapsed + e
+        if elapsed >= 1 then
+            HLBG.Compat.safeCall(HLBG.Compat.fixDropdownMenus)
+            print("|cFF33FF99Hinterland BG:|r Fixed dropdown menus (fallback)")
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+end
 
 print("|cFF33FF99Hinterland BG:|r Compatibility layer loaded")

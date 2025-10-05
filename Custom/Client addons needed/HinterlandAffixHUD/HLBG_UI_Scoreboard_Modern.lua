@@ -172,7 +172,6 @@ function HLBG.CreateModernScoreboardUI()
         live.PlayerRows = {}
         live.sortField = "score"
         live.sortDirection = "DESC"
-    end
     
     live.modernInitialized = true
 end

@@ -31,7 +31,9 @@ do
         local idleSec = now - (lastTime or now)
         local threshold = (HinterlandAffixHUDDB.afkWarnSeconds or 120)
         if idleSec >= threshold then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00HLBG|r: You seem AFK. Please move or you may be removed.")
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(tostring("|cffffcc00HLBG|r: You seem AFK. Please move or you may be removed."))
+            end
             -- reset timer to avoid spamming
             lastTime = now - (threshold/2)
         end

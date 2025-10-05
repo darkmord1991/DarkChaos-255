@@ -1,0 +1,15 @@
+## Interface: 30300
+## Title: Hinterland Affix HUD (Emergency Test)
+## Notes: Emergency minimal version to test loading
+## Author: DC-255
+## Version: 1.5.7-emergency
+## Deps: AIO_Client
+## OptionalDeps: AIO_Client 
+## LoadAfter: AIO_Client
+## DefaultState: enabled
+## SavedVariables: HinterlandAffixHUDDB
+
+# Emergency compatibility layer - minimal files only
+HLBG_EmergencyFix.lua
+HLBG_TimerCompat.lua
+HLBG_LoadDebug.lua

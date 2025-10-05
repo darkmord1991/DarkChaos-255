@@ -1,0 +1,49 @@
+## Interface: 30300
+## Title: Hinterland Affix HUD (Fixed)
+## Notes: Shows Hinterland BG current affix, history, stats and queue UI (Fixed Version)
+## Author: DC-255
+## Version: 1.5.7-fixed
+## Deps: AIO_Client
+## OptionalDeps: AIO_Client 
+## LoadAfter: AIO_Client
+## DefaultState: enabled
+## SavedVariables: HinterlandAffixHUDDB
+
+# Emergency compatibility layer - MUST BE FIRST!
+HLBG_EmergencyFix.lua
+HLBG_TimerCompat.lua
+HLBG_LoadDebug.lua
+
+# Core compatibility files
+HLBG_AIO_Check.lua
+HLBG_Compatibility.lua
+
+# Debug system
+HLBG_DebugBootstrap.lua
+HLBG_Debug_Helper.lua
+
+# Core functionality that works
+HinterlandAffixHUD.lua
+HLBG_Core.lua
+HLBG_JSON.lua
+HLBG_Utils.lua
+HLBG_HUD.lua
+HLBG_Debug.lua
+HLBG_UI.lua
+HLBG_Info.lua
+HLBG_Settings.lua
+HLBG_Help.lua
+HLBG_AFK.lua
+HLBG_SlashCommands.lua
+
+# Fixed AIO integration
+HLBG_AIO.lua
+HLBG_Handlers.lua
+HLBG_Status.lua
+# Additional handlers (comment out if causing issues)
+# HLBG_StatsHandler.lua
+# HLBG_HistoryHandler.lua
+
+# Enhanced features (disabled for now to ensure stability)
+# Enhanced Core Components, Enhanced UI Components, etc. can be added back later
+# after confirming this base version works

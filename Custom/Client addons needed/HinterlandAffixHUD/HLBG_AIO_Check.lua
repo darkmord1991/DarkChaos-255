@@ -21,13 +21,18 @@ local function CheckAIO()
         return
     end
     
-    if _G.AIO and type(_G.AIO) == "table" and type(_G.AIO.Handle) == "function" then
+        if _G.AIO and type(_G.AIO) == "table" and type(_G.AIO.Handle) == "function" then
         -- AIO is available, we can initialize
         aioCheckFrame.initialized = true
         
-        -- Log success
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon")
+        -- Log success (defensive)
+        HLBG = HLBG or {}
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            if type(HLBG.SafePrint) == 'function' then
+                HLBG.SafePrint("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(tostring("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon"))
+            end
         end
         
         -- Record in the load state
@@ -57,19 +62,39 @@ local function CheckAIO()
                 local ok, err = pcall(function()
                     _G.AIO.RegisterEvent("HLBG", function(command, args)
                         if type(command) ~= "string" then return end
+                        args = args or {}
                         if type(HLBG.HandleAIOCommand) == "function" then
-                            pcall(HLBG.HandleAIOCommand, command, args or {})
-                        elseif DEFAULT_CHAT_FRAME and HLBG._devMode then
-                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r AIO command handler not available: " .. command)
+                            pcall(HLBG.HandleAIOCommand, command, args)
+                            return
+                        end
+
+                        -- If no handler, log in dev mode
+                        if HLBG._devMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                            HLBG = HLBG or {}
+                            local c = tostring(command or '')
+                            local argsStr = ''
+                            if type(args) == 'table' then
+                                for k,v in pairs(args) do argsStr = argsStr .. ' ' .. tostring(k) .. '=' .. tostring(v) end
+                            else
+                                argsStr = tostring(args or '')
+                            end
+                            if type(HLBG.SafePrint) == 'function' then
+                                HLBG.SafePrint("|cFFFFAA00HLBG:|r AIO command handler not available: " .. c .. " Args:" .. argsStr)
+                            else
+                                DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r AIO command handler not available: " .. c .. " Args:" .. argsStr)
+                            end
                         end
                     end)
                 end)
                 HLBG._aioRegistering = nil
                 if ok then
                     HLBG._aioRegistered = true
-                    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Legacy RegisterEvent hookup succeeded") end
+                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                        HLBG = HLBG or {}
+                        if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint("|cFF88AA88HLBG:|r Legacy RegisterEvent hookup succeeded") else DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Legacy RegisterEvent hookup succeeded") end
+                    end
                 else
-                    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Failed to RegisterEvent HLBG: " .. tostring(err)) end
+                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Failed to RegisterEvent HLBG: " .. tostring(err or '')) end
                 end
             else
                 if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping RegisterEvent hookup (another module is registering)") end
@@ -90,8 +115,7 @@ local function CheckAIO()
             aioCheckFrame:SetScript("OnUpdate", nil)
             
             if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Required dependency AIO_Client not found after " .. 
-                    aioCheckFrame.maxRetries .. " attempts. Please ensure AIO_Client addon is installed and enabled.")
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Required dependency AIO_Client not found after " .. tostring(aioCheckFrame.maxRetries) .. " attempts. Please ensure AIO_Client addon is installed and enabled.")
             end
             
             -- Record error in the load state
@@ -181,7 +205,9 @@ function HLBG.HandleAIOCommand(command, args)
         -- Server info/welcome
         if type(args) == "table" and type(args.motd) == "string" and args.motd ~= "" then
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF88EEEEHLBG Server:|r " .. args.motd)
+                HLBG = HLBG or {}
+                local m = tostring(args.motd or '')
+                if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint("|cFF88EEEEHLBG Server:|r " .. m) else DEFAULT_CHAT_FRAME:AddMessage("|cFF88EEEEHLBG Server:|r " .. m) end
             end
         end
         if type(args) == "table" and args.season and type(HLBG.SetCurrentSeason) == "function" then
@@ -194,7 +220,9 @@ function HLBG.HandleAIOCommand(command, args)
         -- Error message from server
         if type(args) == "table" and type(args.message) == "string" then
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r " .. args.message)
+                HLBG = HLBG or {}
+                local m = tostring(args.message or '')
+                if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint("|cFFFF0000HLBG Error:|r " .. m) else DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r " .. m) end
             end
         end
         return
@@ -208,7 +236,11 @@ function HLBG.HandleAIOCommand(command, args)
         else
             argsStr = tostring(args)
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Unknown command: " .. command .. " Args: " .. argsStr)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            HLBG = HLBG or {}
+            local c = tostring(command or '')
+            if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint("|cFF88AA88HLBG:|r Unknown command: " .. c .. " Args: " .. tostring(argsStr or '')) else DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Unknown command: " .. c .. " Args: " .. tostring(argsStr or '')) end
+        end
     end
 end
 

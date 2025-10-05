@@ -140,7 +140,7 @@ function HLBG.Stats(stats)
                 _G.AIO.Handle("HLBG", "Request", "STATS", season)
             end
             if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("HLBG: Requesting fresh statistics...")
+                DEFAULT_CHAT_FRAME:AddMessage(tostring("HLBG: Requesting fresh statistics..."))
             end
         end)
         

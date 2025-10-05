@@ -196,7 +196,7 @@ end
 function HLBG.Debug(msg)
     if not HinterlandAffixHUDDB or not HinterlandAffixHUDDB.devMode then return end
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33eeee[HLBG Debug]|r " .. tostring(msg))
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33eeee[HLBG Debug]|r " .. tostring(msg or ''))
     end
 end
 

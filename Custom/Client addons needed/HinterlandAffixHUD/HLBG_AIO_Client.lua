@@ -164,12 +164,12 @@ do
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         local old = DEFAULT_CHAT_FRAME.AddMessage
         DEFAULT_CHAT_FRAME.AddMessage = function(self, msg, r, g, b, id, ...)
-            if type(msg) == 'string' then
-                local handled = parseHLBG(msg)
-                if not handled then return old(self, msg, r, g, b, id, ...) end
-            else
-                return old(self, msg, r, g, b, id, ...)
-            end
+            -- Ensure we never forward nil/non-strings to the original AddMessage (ChatFrame expects a string).
+            -- Coerce the incoming message to a string safely and run the parser on that string.
+            local s = (type(msg) == 'string') and msg or tostring(msg or '')
+            local ok, handled = pcall(function() return parseHLBG(s) end)
+            if not ok then handled = false end
+            if not handled then return old(self, s, r, g, b, id, ...) end
         end
     end
 end
@@ -220,7 +220,10 @@ if AIO then
         
         -- Verify AIO is loaded and ready
         if not AIO or not AIO.Handle then 
-            if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r AIO not ready') end
+            HLBG = HLBG or {}
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint('|cFFFF0000HLBG Error:|r AIO not ready') else DEFAULT_CHAT_FRAME:AddMessage(tostring('|cFFFF0000HLBG Error:|r AIO not ready')) end
+            end
             return
         end
         
@@ -275,11 +278,11 @@ if AIO then
 
                 if command == "Server" or command == "server" then
                     -- Server info/welcome
-                    if type(args) == 'table' and type(args.motd) == 'string' and args.motd ~= '' then
-                        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                            DEFAULT_CHAT_FRAME:AddMessage('|cFF88EEEEHLBG:|r ' .. args.motd)
-                        end
-                    end
+                            if type(args) == 'table' and type(args.motd) == 'string' and args.motd ~= '' then
+                                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88EEEEHLBG:|r ' .. tostring(args.motd or ''))
+                                end
+                            end
                     if type(args) == 'table' and args.season and type(HLBG.SetCurrentSeason) == 'function' then
                         pcall(HLBG.SetCurrentSeason, tonumber(args.season) or 0)
                     end
@@ -290,7 +293,7 @@ if AIO then
                     -- Error message from server
                     if type(args) == 'table' and type(args.message) == 'string' then
                         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r ' .. args.message)
+                            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r ' .. tostring(args.message or ''))
                         end
                     end
                     return
@@ -302,9 +305,9 @@ if AIO then
                     if type(args) == 'table' then
                         for k,v in pairs(args) do argsStr = argsStr .. ' ' .. tostring(k) .. '=' .. tostring(v) end
                     else
-                        argsStr = tostring(args)
+                        argsStr = tostring(args or '')
                     end
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Unknown command: ' .. command .. ' Args: ' .. argsStr)
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Unknown command: ' .. tostring(command or '') .. ' Args: ' .. argsStr)
                 end
             end)
         end)
@@ -314,78 +317,11 @@ if AIO then
             if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r Failed to register AIO event: ' .. tostring(err)) end
         end
     end
-        if type(command) ~= 'string' then return end
-        args = args or {}
-        
-        -- Handle different command types
-        if command == "Status" or command == "status" then
-            -- Status update (live match data)
-            if type(HLBG.Status) == 'function' then pcall(HLBG.Status, args) end
-            return
-        end
-        
-        if command == "History" or command == "history" then
-            -- History data for UI
-            if type(args) == 'table' and type(args.rows) == 'table' then
-                if type(HLBG.History) == 'function' then
-                    pcall(HLBG.History, args.rows, args.page or 1, args.perpage or 5, args.total or #args.rows, args.sort or 'id', args.order or 'DESC')
-                else
-                    -- If no history handler, push first row to buffer
-                    if args.rows[1] then pcall(HLBG._pushHistoryRow, args.rows[1]) end
-                end
-            elseif type(args) == 'table' and type(args.tsv) == 'string' then
-                -- Alternative format: TSV string
-                if type(HLBG.HistoryStr) == 'function' then
-                    pcall(HLBG.HistoryStr, args.tsv, args.page or 1, args.perpage or 5, args.total or 0, args.sort or 'id', args.order or 'DESC')
-                end
-            end
-            return
-        end
-        
-        if command == "Stats" or command == "stats" then
-            -- Statistics summary
-            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, args) end
-            return
-        end
-        
-        if command == "Server" or command == "server" then
-            -- Server info/welcome
-            if type(args) == 'table' and type(args.motd) == 'string' and args.motd ~= '' then
-                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88EEEEHLBG Server:|r ' .. args.motd)
-                end
-            end
-            if type(args) == 'table' and args.season and type(HLBG.SetCurrentSeason) == 'function' then
-                pcall(HLBG.SetCurrentSeason, tonumber(args.season) or 0)
-            end
-            return
-        end
-        
-        if command == "Error" or command == "error" then
-            -- Error message from server
-            if type(args) == 'table' and type(args.message) == 'string' then
-                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG Error:|r ' .. args.message)
-                end
-            end
-            return
-        end
-        
-        -- Unknown command, log if in dev mode
-        if HLBG._devMode and DEFAULT_CHAT_FRAME then
-            local argsStr = ''
-            if type(args) == 'table' then
-                for k,v in pairs(args) do argsStr = argsStr .. ' ' .. tostring(k) .. '=' .. tostring(v) end
-            else
-                argsStr = tostring(args)
-            end
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Unknown command: ' .. command .. ' Args: ' .. argsStr)
-        end
-    end)
     
-    -- Inform user that AIO integration is working
+    -- Inform user that AIO integration is working (defensive)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r AIO integration active')
+        HLBG = HLBG or {}
+        if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint('|cFF88AA88HLBG:|r AIO integration active') else DEFAULT_CHAT_FRAME:AddMessage(tostring('|cFF88AA88HLBG:|r AIO integration active')) end
     end
     
     -- Main slash command handler (only need one version of this)
@@ -406,17 +342,31 @@ if AIO then
         -- Handle common commands
         cmd = cmd:lower()
         if cmd == 'help' or cmd == '?' then
-            if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88Hinterland Battleground HUD Commands:|r')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg - Show the UI')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg history - Show the battle history')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg stats - Show statistics')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg status - Show current match status')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg season <n> - Show data for season <n> (0=all)')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg reload - Reload all data')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg options - Show options')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg affix - Show today\'s affix')
-                DEFAULT_CHAT_FRAME:AddMessage('/hlbg test - Test HUD')
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                HLBG = HLBG or {}
+                if type(HLBG.SafePrint) == 'function' then
+                    HLBG.SafePrint('|cFF88AA88Hinterland Battleground HUD Commands:|r')
+                    HLBG.SafePrint('/hlbg - Show the UI')
+                    HLBG.SafePrint('/hlbg history - Show the battle history')
+                    HLBG.SafePrint('/hlbg stats - Show statistics')
+                    HLBG.SafePrint('/hlbg status - Show current match status')
+                    HLBG.SafePrint('/hlbg season <n> - Show data for season <n> (0=all)')
+                    HLBG.SafePrint('/hlbg reload - Reload all data')
+                    HLBG.SafePrint('/hlbg options - Show options')
+                    HLBG.SafePrint('/hlbg affix - Show today\'s affix')
+                    HLBG.SafePrint('/hlbg test - Test HUD')
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88Hinterland Battleground HUD Commands:|r')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg - Show the UI')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg history - Show the battle history')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg stats - Show statistics')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg status - Show current match status')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg season <n> - Show data for season <n> (0=all)')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg reload - Reload all data')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg options - Show options')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg affix - Show today\'s affix')
+                    DEFAULT_CHAT_FRAME:AddMessage('/hlbg test - Test HUD')
+                end
             end
             return
         elseif cmd == 'stats' then
@@ -442,11 +392,12 @@ if AIO then
             if s < 0 then s = 0 end
             HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
             HinterlandAffixHUDDB.desiredSeason = s
-            if DEFAULT_CHAT_FRAME then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                HLBG = HLBG or {}
                 if s == 0 then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Now showing data for all seasons')
+                    if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint('|cFF88AA88HLBG:|r Now showing data for all seasons') else DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Now showing data for all seasons') end
                 else
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF88AA88HLBG:|r Now showing data for season %d', s))
+                    if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint(string.format('|cFF88AA88HLBG:|r Now showing data for season %d', s)) else DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF88AA88HLBG:|r Now showing data for season %d', s)) end
                 end
             end
             -- Request reload of data for new season
@@ -458,8 +409,9 @@ if AIO then
             HLBG.SendCommand('RequestStats')
             HLBG.SendCommand('RequestHistory')
             HLBG.SendCommand('RequestStatus')
-            if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Reloading data')
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                HLBG = HLBG or {}
+                if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint('|cFF88AA88HLBG:|r Reloading data') else DEFAULT_CHAT_FRAME:AddMessage('|cFF88AA88HLBG:|r Reloading data') end
             end
             return
         elseif cmd == 'options' or cmd == 'settings' or cmd == 'config' then
