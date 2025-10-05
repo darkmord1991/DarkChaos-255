@@ -10,6 +10,30 @@ if type(HLBG._ensureUI) ~= 'function' then
     HLBG._ensureUI = function(...) return false end
 end
 
+-- Early-safe PrintStartupHistory: provide a minimal, immediate implementation so tools
+-- that call /run HLBG.PrintStartupHistory(1) before deferred startup diagnostics can
+-- still get a meaningful output. This will be preserved into the AIO-provided table
+-- during registration because it exists at registration time.
+if type(HLBG.PrintStartupHistory) ~= 'function' then
+    HLBG.PrintStartupHistory = function(n)
+        n = tonumber(n) or 1
+        local hist = HinterlandAffixHUDDB and HinterlandAffixHUDDB.startupHistory
+        if not hist or #hist == 0 then
+            if type(HLBG.SafePrint) == 'function' then HLBG.SafePrint('HLBG: no startup history saved') else print('HLBG: no startup history saved') end
+            return
+        end
+        if n < 1 then n = 1 end
+        if n > #hist then n = #hist end
+        local e = hist[n]
+        if not e then return end
+        if type(HLBG.SafePrint) == 'function' then
+            HLBG.SafePrint(string.format('HLBG startup @ %s: AIO=%s handlers=%s ui=%s', date('%Y-%m-%d %H:%M:%S', e.ts), tostring(e.aio), tostring(e.handlers), tostring(e.ui)))
+        else
+            print(string.format('HLBG startup @ %s: AIO=%s handlers=%s ui=%s', date('%Y-%m-%d %H:%M:%S', e.ts), tostring(e.aio), tostring(e.handlers), tostring(e.ui)))
+        end
+    end
+end
+
 -- SafePrint should already be available from HLBG_EmergencyFix.lua
 -- If not available, provide a minimal fallback
 if type(HLBG.SafePrint) ~= 'function' then
