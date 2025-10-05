@@ -543,8 +543,8 @@ public:
             return true;
         }
 
-    // Use the public queue API
-    hl->AddPlayerToQueue(player);
+    // Use the public command API to request queue join (avoids calling private methods)
+    hl->HandlePlayerCommand(player, "queue", "join");
         return true;
     }
 
@@ -560,8 +560,8 @@ public:
             return true;
         }
 
-    // Use the public queue API
-    hl->RemovePlayerFromQueue(player);
+    // Use the public command API to request queue leave (avoids calling private methods)
+    hl->HandlePlayerCommand(player, "queue", "leave");
         return true;
     }
 
@@ -582,8 +582,8 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] not_available");
             return true;
         }
-    // Use the public queue API to show status
-    hl->ShowQueueStatus(player);
+    // Use the public command API to request queue status (avoids calling private methods)
+    hl->HandlePlayerCommand(player, "queue", "status");
         return true;
     }
 };
