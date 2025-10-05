@@ -4,6 +4,20 @@ _G.HLBG = HLBG
 
 -- Full HUD implementation: Alliance/Horde resources and match timer
 HLBG.UI = HLBG.UI or {}
+-- If a modern HUD is present (or the user prefers it), disable the legacy HUD entirely
+local modernPresent = (_G['HLBG_ModernHUD'] ~= nil) or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.modernScoreboard)
+if modernPresent then
+    -- Hide any leftover legacy HUD frames to prevent duplicates/flicker
+    pcall(function()
+        if HLBG.UI and HLBG.UI.HUD and type(HLBG.UI.HUD.Hide) == 'function' then HLBG.UI.HUD:Hide() end
+        if _G['HLBG_HUD'] and type(_G['HLBG_HUD'].Hide) == 'function' then _G['HLBG_HUD']:Hide() end
+        if HLBG.UI and HLBG.UI.Affix and type(HLBG.UI.Affix.Hide) == 'function' then HLBG.UI.Affix:Hide() end
+        if _G['HLBG_AffixChip'] and type(_G['HLBG_AffixChip'].Hide) == 'function' then _G['HLBG_AffixChip']:Hide() end
+    end)
+    -- Stop executing this legacy HUD file so only modern HUD remains active
+    return
+end
+
 -- Only create the legacy HUD if a modern HUD isn't already present
 if not HLBG.UI.HUD and not _G['HLBG_ModernHUD'] then
     HLBG.UI.HUD = CreateFrame("Frame", "HLBG_HUD", UIParent)
