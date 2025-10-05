@@ -10,6 +10,7 @@
 ## SavedVariables: HinterlandAffixHUDDB
 
 # Shim and Isolated suspect files (6B)
+HLBG_Diagnostics_Shared.lua
 HLBG_AIO_Shim.lua
 HLBG_AIO.lua
 HLBG_Handlers.lua
