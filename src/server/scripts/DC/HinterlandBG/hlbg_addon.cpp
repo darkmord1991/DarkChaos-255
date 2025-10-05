@@ -21,6 +21,10 @@
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 
 // Forward declaration for utility functions
+// OutdoorPvPHL is declared in OutdoorPvP/OutdoorPvPHL.h which we include below,
+// but declare a lightweight forward declaration so prototypes using the pointer
+// type can appear before the full include.
+class OutdoorPvPHL;
 namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include "Util.h"
