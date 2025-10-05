@@ -675,6 +675,8 @@ do
         reg.PONG       = HLBG.PONG
         reg.DBG        = HLBG.DBG
         reg.HistoryStr = HLBG.HistoryStr
+    reg.HistoryTSV  = HLBG.HistoryTSV or HLBG.ProcessHistoryTSV
+    reg.StatsJSON    = HLBG.StatsJSON or HLBG.ProcessStatsJSON
         reg.HISTORY    = reg.History
         reg.STATS      = reg.Stats
         

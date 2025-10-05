@@ -11,9 +11,11 @@ if HinterlandAffixHUDDB.showHudInWarmup == nil then HinterlandAffixHUDDB.showHud
 if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = false end
 if HinterlandAffixHUDDB.enableTelemetry == nil then HinterlandAffixHUDDB.enableTelemetry = true end
 
--- Create modern HUD frame
 HLBG.UI = HLBG.UI or {}
-HLBG.UI.ModernHUD = HLBG.UI.ModernHUD or CreateFrame("Frame", "HLBG_ModernHUD", UIParent)
+-- Use a single canonical frame name so reloads don't create multiple HUDs
+if not HLBG.UI.ModernHUD or not _G['HLBG_ModernHUD'] then
+    HLBG.UI.ModernHUD = CreateFrame("Frame", "HLBG_ModernHUD", UIParent)
+end
 local HUD = HLBG.UI.ModernHUD
 
 -- HUD Setup
@@ -430,3 +432,14 @@ else
 end
 
 _G.HLBG = HLBG
+
+-- Ensure only the modern HUD remains visible: hide legacy HUDs if present
+pcall(function()
+    if HLBG.UI and HLBG.UI.HUD and HLBG.UI.HUD ~= HLBG.UI.ModernHUD then
+        HLBG.UI.HUD:Hide()
+    end
+    local legacy = _G["HinterlandAffixHUD"]
+    if legacy and legacy.Hide then legacy:Hide() end
+    local worldstate = _G["WorldStateAlwaysUpFrame"]
+    if worldstate and worldstate.Hide then worldstate:Hide() end
+end)

@@ -86,8 +86,5 @@ function HLBG.ProcessStatsJSON(jsonStr)
     end
 end
 
--- Register our handler for AIO Stats message
-if _G.AIO and _G.AIO.AddHandlers then
-    local handler = _G.AIO.AddHandlers('HLBG', {}) or {}
-    handler.StatsJSON = HLBG.ProcessStatsJSON
-end
+-- Expose stats handler on HLBG table for central AIO registration
+HLBG.StatsJSON = HLBG.ProcessStatsJSON

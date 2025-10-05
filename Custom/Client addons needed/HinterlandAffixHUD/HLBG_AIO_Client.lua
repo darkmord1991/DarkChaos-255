@@ -233,8 +233,10 @@ if AIO then
     
     -- Events from server that we handle
     -- Guard against duplicate registration which can cause 'an event is already registered' errors
+    -- If AIO.AddHandlers exists then another module (or central binder) is responsible for registering "HLBG",
+    -- so avoid calling RegisterEvent in that case to prevent the duplicate-registration assertion.
     HLBG._aioRegistered = HLBG._aioRegistered or false
-    if not HLBG._aioRegistered and AIO.RegisterEvent then
+    if not HLBG._aioRegistered and AIO.RegisterEvent and not AIO.AddHandlers then
         local ok, err = pcall(function()
             AIO.RegisterEvent("HLBG", function(command, args)
                 if type(command) ~= 'string' then return end

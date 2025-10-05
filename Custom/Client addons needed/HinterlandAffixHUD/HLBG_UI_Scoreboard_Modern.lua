@@ -104,44 +104,57 @@ function HLBG.CreateModernScoreboardUI()
         live.BattleInfo:SetTextColor(0.8, 0.8, 0.8, 1)
     end
     
-    -- Create tabbed view for Alliance/Horde
+    -- Create tabbed view for Alliance/Horde (guard against duplicate creation)
     if not live.TabFrame then
         live.TabFrame = CreateFrame("Frame", nil, live)
         live.TabFrame:SetPoint("TOPLEFT", live.ModernHeader, "BOTTOMLEFT", 0, -5)
         live.TabFrame:SetPoint("BOTTOMRIGHT", live, "BOTTOMRIGHT", -10, 10)
-        
-        -- Tab buttons
-        live.AllianceTab = CreateFrame("Button", nil, live.TabFrame, "OptionsFrameTabButtonTemplate")
+    end
+
+    -- Tab buttons (named frames required by UIPanelTemplates)
+    if not live.AllianceTab then
+        live.AllianceTab = CreateFrame("Button", "HLBG_ModernTab_Alliance", live.TabFrame, "OptionsFrameTabButtonTemplate")
         live.AllianceTab:SetPoint("TOPLEFT", live.TabFrame, "TOPLEFT", 5, 0)
         live.AllianceTab:SetText("Alliance")
         live.AllianceTab:SetScript("OnClick", function() HLBG.ShowScoreboardTab("Alliance") end)
-        
-        live.HordeTab = CreateFrame("Button", nil, live.TabFrame, "OptionsFrameTabButtonTemplate")
+    end
+
+    if not live.HordeTab then
+        live.HordeTab = CreateFrame("Button", "HLBG_ModernTab_Horde", live.TabFrame, "OptionsFrameTabButtonTemplate")
         live.HordeTab:SetPoint("LEFT", live.AllianceTab, "RIGHT", -15, 0)
         live.HordeTab:SetText("Horde")
         live.HordeTab:SetScript("OnClick", function() HLBG.ShowScoreboardTab("Horde") end)
-        
-        live.AllTab = CreateFrame("Button", nil, live.TabFrame, "OptionsFrameTabButtonTemplate")
+    end
+
+    if not live.AllTab then
+        live.AllTab = CreateFrame("Button", "HLBG_ModernTab_All", live.TabFrame, "OptionsFrameTabButtonTemplate")
         live.AllTab:SetPoint("LEFT", live.HordeTab, "RIGHT", -15, 0)
         live.AllTab:SetText("All Players")
         live.AllTab:SetScript("OnClick", function() HLBG.ShowScoreboardTab("All") end)
-        
-        -- Set default tab
-        live.activeTab = "All"
-        
-    -- Scroll frame for player list (must have a name for UIPanelScrollFrameTemplate)
-    live.PlayerScroll = CreateFrame("ScrollFrame", "HLBG_PlayerScrollFrame", live.TabFrame, "UIPanelScrollFrameTemplate")
+    end
+
+    -- Set default tab
+    live.activeTab = live.activeTab or "All"
+
+    -- Scroll frame for player list (must have a name for UIPanelScrollFrameTemplate) — guard creation
+    if not live.PlayerScroll then
+        live.PlayerScroll = CreateFrame("ScrollFrame", "HLBG_PlayerScrollFrame", live.TabFrame, "UIPanelScrollFrameTemplate")
         live.PlayerScroll:SetPoint("TOPLEFT", live.TabFrame, "TOPLEFT", 8, -30)
         live.PlayerScroll:SetPoint("BOTTOMRIGHT", live.TabFrame, "BOTTOMRIGHT", -28, 8)
-        
+    end
+
+    if not live.PlayerContent then
         live.PlayerContent = CreateFrame("Frame", nil, live.PlayerScroll)
         live.PlayerContent:SetSize(440, 300)
         live.PlayerScroll:SetScrollChild(live.PlayerContent)
-        
-        -- Column headers
+    end
+
+    -- Column headers
+    if not live.ColumnHeaders then
         live.ColumnHeaders = CreateFrame("Frame", nil, live.PlayerScroll)
         live.ColumnHeaders:SetPoint("BOTTOMLEFT", live.PlayerScroll, "TOPLEFT", 0, 2)
         live.ColumnHeaders:SetSize(440, 20)
+    end
         
         local headerBg = live.ColumnHeaders:CreateTexture(nil, "BACKGROUND")
         headerBg:SetAllPoints()

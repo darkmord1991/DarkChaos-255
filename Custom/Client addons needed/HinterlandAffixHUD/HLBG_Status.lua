@@ -120,12 +120,9 @@ HLBG.Init = function(...)
     SetupStatusTimer()
 end
 
--- Register AIO handler for status updates
-if _G.AIO and _G.AIO.AddHandlers then
-    local handler = _G.AIO.AddHandlers('HLBG', {})
-    handler.Status = HLBG.ProcessStatusUpdate
-    handler.STATUS = HLBG.ProcessStatusUpdate
-end
+-- Expose status handlers on the HLBG table for central AIO registration
+HLBG.Status = HLBG.ProcessStatusUpdate
+HLBG.STATUS = HLBG.ProcessStatusUpdate
 
 -- Initialize right away if HLBG is already loaded
 if HLBG._initialized then

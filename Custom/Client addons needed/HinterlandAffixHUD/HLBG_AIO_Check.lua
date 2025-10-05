@@ -47,16 +47,37 @@ local function CheckAIO()
             pcall(HLBG.InitializeAfterAIO)
         end
         
-        -- Register with AIO
-        if _G.AIO and _G.AIO.RegisterEvent then
-            _G.AIO.RegisterEvent("HLBG", function(command, args)
-                if type(command) ~= "string" then return end
-                if type(HLBG.HandleAIOCommand) == "function" then
-                    pcall(HLBG.HandleAIOCommand, command, args or {})
-                elseif DEFAULT_CHAT_FRAME and HLBG._devMode then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r AIO command handler not available: " .. command)
+        -- Register with AIO, but only when AIO.AddHandlers isn't present.
+        -- If AddHandlers exists, another module (central binder) will attach handlers for "HLBG".
+        if _G.AIO and _G.AIO.RegisterEvent and not _G.AIO.AddHandlers then
+            -- Avoid double attempts from multiple files by using a shared in-progress flag
+            HLBG._aioRegistered = HLBG._aioRegistered or false
+            if not HLBG._aioRegistered and not HLBG._aioRegistering then
+                HLBG._aioRegistering = true
+                local ok, err = pcall(function()
+                    _G.AIO.RegisterEvent("HLBG", function(command, args)
+                        if type(command) ~= "string" then return end
+                        if type(HLBG.HandleAIOCommand) == "function" then
+                            pcall(HLBG.HandleAIOCommand, command, args or {})
+                        elseif DEFAULT_CHAT_FRAME and HLBG._devMode then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r AIO command handler not available: " .. command)
+                        end
+                    end)
+                end)
+                HLBG._aioRegistering = nil
+                if ok then
+                    HLBG._aioRegistered = true
+                    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Legacy RegisterEvent hookup succeeded") end
+                else
+                    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Failed to RegisterEvent HLBG: " .. tostring(err)) end
                 end
-            end)
+            else
+                if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping RegisterEvent hookup (another module is registering)") end
+            end
+        else
+            if _G.AIO and _G.AIO.AddHandlers and DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping legacy RegisterEvent hookup because AIO.AddHandlers is present (central binder will register handlers)")
+            end
         end
         
         return true

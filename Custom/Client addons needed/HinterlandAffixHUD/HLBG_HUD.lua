@@ -4,7 +4,14 @@ _G.HLBG = HLBG
 
 -- Full HUD implementation: Alliance/Horde resources and match timer
 HLBG.UI = HLBG.UI or {}
-HLBG.UI.HUD = HLBG.UI.HUD or CreateFrame("Frame", "HLBG_HUD", UIParent)
+-- Only create the legacy HUD if a modern HUD isn't already present
+if not HLBG.UI.HUD and not _G['HLBG_ModernHUD'] then
+    HLBG.UI.HUD = CreateFrame("Frame", "HLBG_HUD", UIParent)
+elseif HLBG.UI.HUD and HLBG.UI.HUD:GetName() == 'HLBG_ModernHUD' then
+    -- avoid name clash
+    HLBG.UI.HUD = nil
+end
+HLBG.UI.HUD = HLBG.UI.HUD or _G['HLBG_HUD']
 local HUD = HLBG.UI.HUD
 HUD:SetSize(340, 84)
 HUD:SetPoint("TOP", UIParent, "TOP", 0, -80)

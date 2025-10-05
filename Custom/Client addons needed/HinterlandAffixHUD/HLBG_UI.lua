@@ -936,16 +936,18 @@ HLBG.UI.Frame.Title:SetPoint("TOPLEFT", 16, -12)
 HLBG.UI.Frame.Title:SetText("Hinterland Battleground")
 
 -- Tabs inside window: Live / History / Stats
-HLBG.UI.Tabs = {}
-HLBG.UI.Tabs[1] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab1", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+
+HLBG.UI.Tabs = HLBG.UI.Tabs or {}
+local baseName = HLBG.UI.Frame.GetName and HLBG.UI.Frame:GetName() or "HLBG_Main"
+HLBG.UI.Tabs[1] = HLBG.UI.Tabs[1] or CreateFrame("Button", baseName.."Tab1", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[1]:SetPoint("TOPLEFT", HLBG.UI.Frame, "BOTTOMLEFT", 10, 7)
 HLBG.UI.Tabs[1]:SetText("Live")
 HLBG.UI.Tabs[1]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(1) end end)
-HLBG.UI.Tabs[2] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab2", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+HLBG.UI.Tabs[2] = HLBG.UI.Tabs[2] or CreateFrame("Button", baseName.."Tab2", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[2]:SetPoint("LEFT", HLBG.UI.Tabs[1], "RIGHT")
 HLBG.UI.Tabs[2]:SetText("History")
 HLBG.UI.Tabs[2]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(2) end end)
-HLBG.UI.Tabs[3] = CreateFrame("Button", HLBG.UI.Frame:GetName().."Tab3", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
+HLBG.UI.Tabs[3] = HLBG.UI.Tabs[3] or CreateFrame("Button", baseName.."Tab3", HLBG.UI.Frame, "OptionsFrameTabButtonTemplate")
 HLBG.UI.Tabs[3]:SetPoint("LEFT", HLBG.UI.Tabs[2], "RIGHT")
 HLBG.UI.Tabs[3]:SetText("Stats")
 HLBG.UI.Tabs[3]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(3) end end)
@@ -964,11 +966,30 @@ HLBG.UI.Tabs[6]:SetPoint("LEFT", HLBG.UI.Tabs[5], "RIGHT")
 HLBG.UI.Tabs[6]:SetText("Results")
 HLBG.UI.Tabs[6]:SetScript("OnClick", function() if type(ShowTab) == 'function' then ShowTab(6) end end)
 
-PanelTemplates_SetNumTabs(HLBG.UI.Frame, 6)
-PanelTemplates_SetTab(HLBG.UI.Frame, 1)
+-- Safe wrappers for PanelTemplates functions (older clients may not define these or frame may be unnamed)
+local function SafeSetNumTabs(frame, n)
+    if not frame or type(n) ~= 'number' then return end
+    if type(PanelTemplates_SetNumTabs) ~= 'function' then return end
+    -- avoid calling with unnamed frame (template concatenates frame:GetName() with 'Tab')
+    local fname = frame.GetName and frame:GetName() or nil
+    if not fname then return end
+    pcall(PanelTemplates_SetNumTabs, frame, n)
+end
+
+local function SafeSetTab(frame, i)
+    if not frame or type(i) ~= 'number' then return end
+    if type(PanelTemplates_SetTab) ~= 'function' then return end
+    local fname = frame.GetName and frame:GetName() or nil
+    if not fname then return end
+    pcall(PanelTemplates_SetTab, frame, i)
+end
+
+SafeSetNumTabs(HLBG.UI.Frame, 6)
+SafeSetTab(HLBG.UI.Frame, 1)
 
 function ShowTab(i)
-    PanelTemplates_SetTab(HLBG.UI.Frame, i)
+    -- Only call PanelTemplates_SetTab when safe
+    SafeSetTab(HLBG.UI.Frame, i)
     if HLBG.UI.Live then if i == 1 then HLBG.UI.Live:Show() else HLBG.UI.Live:Hide() end end
     if HLBG.UI.History then if i == 2 then HLBG.UI.History:Show() else HLBG.UI.History:Hide() end end
     if HLBG.UI.Stats then if i == 3 then HLBG.UI.Stats:Show() else HLBG.UI.Stats:Hide() end end

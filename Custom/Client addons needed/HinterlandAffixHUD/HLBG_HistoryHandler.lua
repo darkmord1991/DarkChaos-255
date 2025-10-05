@@ -172,8 +172,5 @@ function HLBG.ProcessHistoryTSV(tsv, page, per, total, col, dir)
     end
 end
 
--- Register our handler for AIO HistoryTSV message
-if _G.AIO and _G.AIO.AddHandlers then
-    local handler = _G.AIO.AddHandlers('HLBG', {}) or {}
-    handler.HistoryTSV = HLBG.ProcessHistoryTSV
-end
+-- Expose history handlers on HLBG table for central AIO registration
+HLBG.HistoryTSV = HLBG.ProcessHistoryTSV
