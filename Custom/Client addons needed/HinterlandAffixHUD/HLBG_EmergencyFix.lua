@@ -43,3 +43,21 @@ end
 
 -- Log that this emergency fix loaded
 _G.HLBG.DiagnosticPrint("Emergency fix loaded - SafePrint available")
+
+-- Provide an extremely small PrintStartupHistory so users can run the diagnostic
+-- even if later files haven't attached the full implementation yet.
+if type(_G.HLBG.PrintStartupHistory) ~= 'function' then
+    _G.HLBG.PrintStartupHistory = function(n)
+        n = tonumber(n) or 1
+        local hist = HinterlandAffixHUDDB and HinterlandAffixHUDDB.startupHistory
+        if not hist or #hist == 0 then
+            _G.HLBG.DiagnosticPrint('HLBG: no startup history saved')
+            return
+        end
+        if n < 1 then n = 1 end
+        if n > #hist then n = #hist end
+        local e = hist[n]
+        if not e then return end
+        _G.HLBG.DiagnosticPrint(string.format('HLBG startup @ %s: AIO=%s handlers=%s ui=%s', date('%Y-%m-%d %H:%M:%S', e.ts), tostring(e.aio), tostring(e.handlers), tostring(e.ui)))
+    end
+end
