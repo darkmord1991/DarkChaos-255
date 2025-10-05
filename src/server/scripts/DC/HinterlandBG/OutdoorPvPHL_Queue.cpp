@@ -217,13 +217,16 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
             if (player->TeleportTo(spawnLoc->map, spawnLoc->x, spawnLoc->y, spawnLoc->z, spawnLoc->o))
             {
                 teleportCount++;
-                ChatHandler(player->GetSession()).PSendSysMessage("Welcome to Hinterland Battleground! Warmup phase: %u seconds remaining.", _warmupRemainingMs / IN_MILLISECONDS);
+                // _warmupTimeRemaining is stored in milliseconds. Convert to seconds for messaging.
+                uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
+                ChatHandler(player->GetSession()).PSendSysMessage("Welcome to Hinterland Battleground! Warmup phase: %u seconds remaining.", warmupSec);
             }
         }
         else
         {
             // Player is already in zone, just send notification
-            ChatHandler(player->GetSession()).PSendSysMessage("Hinterland Battle warmup phase has started! %u seconds until battle begins.", _warmupRemainingMs / IN_MILLISECONDS);
+            uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
+            ChatHandler(player->GetSession()).PSendSysMessage("Hinterland Battle warmup phase has started! %u seconds until battle begins.", warmupSec);
         }
     }
 
