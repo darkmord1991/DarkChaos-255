@@ -86,6 +86,7 @@ public:
 		WorldDatabase.Execute("UPDATE hlbg_statistics SET total_kills = total_kills + 1, total_deaths = total_deaths + 1");
 		// instanceId not used in this integration shim; mark explicitly to avoid warnings
 		(void)instanceId;
+	}
 
 	static void OnResourceCapture(Player* player, uint32 resourceAmount, uint32 instanceId)
 	{
@@ -96,6 +97,7 @@ public:
 	WorldDatabase.Execute("UPDATE hlbg_player_stats SET resources_captured = resources_captured + {} WHERE player_guid = {}", resourceAmount, playerGuid);
 	// instanceId not used here in this shim; avoid unused-parameter warning
 	(void)instanceId;
+	}
 
 private:
 	static void BroadcastBattleStart(uint32 affixId)
