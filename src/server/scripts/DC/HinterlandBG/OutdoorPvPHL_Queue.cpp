@@ -38,7 +38,9 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // Add player to queue
     QueueEntry entry;
     entry.playerGuid = playerGuid;
-    entry.joinTime = GameTime::GetGameTime();
+    // GameTime::GetGameTime() returns a duration (Seconds). Store the
+    // integral count into the uint32 joinTime field.
+    entry.joinTime = static_cast<uint32>(GameTime::GetGameTime().count());
     entry.teamId = player->GetTeamId();
     
     _queuedPlayers.push_back(entry);
@@ -134,7 +136,9 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
         if (it != _queuedPlayers.end())
         {
             uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
-            uint32 waitTime = GameTime::GetGameTime() - it->joinTime;
+            // Use .count() to get an integral seconds value and compute wait time
+            // against the stored uint32 joinTime.
+            uint32 waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - it->joinTime);
             ch.PSendSysMessage("Your position: %u | Wait time: %u seconds", position, waitTime);
         }
     }

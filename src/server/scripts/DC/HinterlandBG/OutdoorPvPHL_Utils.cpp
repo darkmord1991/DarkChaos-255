@@ -15,9 +15,11 @@ namespace HLBGUtils
     OutdoorPvPHL* GetHinterlandBG()
     {
         static OutdoorPvPHL* s_cachedHL = nullptr;
-        static uint32 s_lastCheck = 0;
+    static uint32 s_lastCheck = 0;
         
-        uint32 currentTime = GameTime::GetGameTime();
+    // GameTime::GetGameTime() returns a Seconds duration; use .count()
+    // to obtain an integral seconds value for uint32 timestamps.
+    uint32 currentTime = static_cast<uint32>(GameTime::GetGameTime().count());
         
         // Cache the instance for 30 seconds to avoid repeated lookups
         if (!s_cachedHL || (currentTime - s_lastCheck) > 30)
