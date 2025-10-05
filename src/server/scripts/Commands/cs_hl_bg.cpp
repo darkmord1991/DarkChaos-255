@@ -37,6 +37,16 @@
 
 using namespace Acore::ChatCommands;
 
+// Prototypes for addon/chat fallback handlers implemented in DC/HinterlandBG/hlbg_addon.cpp
+bool HandleHLBGLive(ChatHandler* handler, char const* args);
+bool HandleHLBGWarmup(ChatHandler* handler, char const* args);
+bool HandleHLBGResults(ChatHandler* handler, char const* args);
+bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args);
+bool HandleHLBGStatsUI(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueJoin(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueLeave(ChatHandler* handler, char const* args);
+bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args);
+
 class hlbg_commandscript : public CommandScript
 {
 public:
@@ -61,6 +71,7 @@ public:
 
         static ChatCommandTable hlbgCommandTable =
         {
+            // Admin/GM commands
             { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No },
             { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
@@ -68,6 +79,21 @@ public:
             { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
             { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
             { "affix",  HandleHLBGAffixCommand,  SEC_GAMEMASTER, Console::No },
+
+            // Addon/UI fallback commands (exposed to players)
+            { "live",    HandleHLBGLive,    SEC_PLAYER, Console::No },
+            { "historyui", HandleHLBGHistoryUI, SEC_PLAYER, Console::No },
+            { "statsui", HandleHLBGStatsUI, SEC_PLAYER, Console::No },
+            { "warmup",  HandleHLBGWarmup,  SEC_GAMEMASTER, Console::No },
+            { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
+
+            // Nested 'queue' subtable for player queue actions
+            { "queue", std::vector<ChatCommandBuilder> {
+                { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
+                { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
+                { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+                { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+            } },
         };
 
         static ChatCommandTable commandTable =

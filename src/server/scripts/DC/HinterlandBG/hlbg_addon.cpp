@@ -161,14 +161,16 @@ public:
             { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
         };
 
-        // Merge our UI and queue subcommands under a single 'hlbg' root to avoid duplicates
+        // Merge UI subcommands and nest the queue subcommands under a dedicated "queue" node.
+        // This prevents name collisions (for example ".hlbg status" admin vs queue status).
         static ChatCommandTable merged;
         if (merged.empty())
         {
-            merged.reserve(uiSub.size() + queueSub.size());
-            // Copy entries individually to avoid operations that require assignment
+            merged.reserve(uiSub.size() + 1);
+            // Copy UI entries
             for (auto const& c : uiSub) merged.push_back(c);
-            for (auto const& c : queueSub) merged.push_back(c);
+            // Add 'queue' as a nested subtable so commands are invoked as '.hlbg queue join' etc.
+            merged.emplace_back("queue", queueSub);
         }
 
         static ChatCommandTable root = {
@@ -176,8 +178,9 @@ public:
         };
         return root;
     }
+};
 
-    // Helper: build per-player JSON rows (sorted by score desc, limited)
+// Helper: build per-player JSON rows (sorted by score desc, limited)
     static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
     {
         if (!hl) return std::string("[]");
@@ -214,7 +217,7 @@ public:
     }
 
     // .hlbg live [players] => send compact live JSON
-    static bool HandleHLBGLive(ChatHandler* handler, char const* args)
+    bool HandleHLBGLive(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -247,7 +250,7 @@ public:
     }
 
     // .hlbg warmup [text]
-    static bool HandleHLBGWarmup(ChatHandler* handler, char const* args)
+    bool HandleHLBGWarmup(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -259,7 +262,7 @@ public:
     }
 
     // .hlbg results (GM) -> send compact results JSON
-    static bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
+    bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -285,7 +288,7 @@ public:
     // Notes:
     //  - season is optional; if omitted, server's current HL season is used.
     //  - to preserve backward compatibility, if the 3rd token is a number it is treated as season.
-    static bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args)
+    bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -352,7 +355,7 @@ public:
     }
 
     // .hlbg statsui [season] -> send compact stats JSON used by client Stats()
-    static bool HandleHLBGStatsUI(ChatHandler* handler, char const* args)
+    bool HandleHLBGStatsUI(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -484,7 +487,7 @@ public:
     }
 
     // .hlbg queue join -> warmup-only join and safe eligibility checks
-    static bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
+    bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -549,7 +552,7 @@ public:
     }
 
     // .hlbg queue leave -> leave the queue
-    static bool HandleHLBGQueueLeave(ChatHandler* handler, char const* /*args*/)
+    bool HandleHLBGQueueLeave(ChatHandler* handler, char const* /*args*/)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -565,7 +568,7 @@ public:
     }
 
     // .hlbg queue status [text]
-    static bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args)
+    bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession()) return false;
         Player* player = handler->GetSession()->GetPlayer(); if (!player) return false;
@@ -584,9 +587,9 @@ public:
     hl->QueueCommandFromAddon(player, "queue", "status");
         return true;
     }
-};
-
-void AddSC_hlbg_addon()
-{
-    new hlbg_addon_commandscript();
-}
+// Note: Command registration for '.hlbg' is centralized in
+// src/server/scripts/Commands/cs_hl_bg.cpp. This file contains the
+// handler implementations (e.g. HandleHLBGLive, HandleHLBGQueueJoin, ...)
+// as free functions so they can be referenced by the centralized command
+// table. The previous addon-level CommandScript registration has been
+// removed to avoid duplicate top-level 'hlbg' registration at startup.
