@@ -145,12 +145,16 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
     if (NowSec() >= _matchEndTime)
     {
         // Determine winner by resources
-        if (_ally_gathered > _horde_gathered)
-            if (!_winnerRecorded) _recordWinner(TEAM_ALLIANCE);
-        else if (_horde_gathered > _ally_gathered)
-            if (!_winnerRecorded) _recordWinner(TEAM_HORDE);
-        else
-            if (!_winnerRecorded) _recordWinner(TEAM_NEUTRAL); // Draw
+        if (_ally_gathered > _horde_gathered) {
+            if (!_winnerRecorded)
+                _recordWinner(TEAM_ALLIANCE);
+        } else if (_horde_gathered > _ally_gathered) {
+            if (!_winnerRecorded)
+                _recordWinner(TEAM_HORDE);
+        } else {
+            if (!_winnerRecorded)
+                _recordWinner(TEAM_NEUTRAL); // Draw
+        }
             
         TransitionToState(BG_STATE_FINISHED);
         return;
