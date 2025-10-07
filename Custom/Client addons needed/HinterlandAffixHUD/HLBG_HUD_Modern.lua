@@ -2,14 +2,14 @@
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 
--- Initialize HUD settings with defaults
+-- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
 HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
 if HinterlandAffixHUDDB.hudEnabled == nil then HinterlandAffixHUDDB.hudEnabled = true end
 if HinterlandAffixHUDDB.hudScale == nil then HinterlandAffixHUDDB.hudScale = 1.0 end
 if HinterlandAffixHUDDB.hudAlpha == nil then HinterlandAffixHUDDB.hudAlpha = 0.9 end
 if HinterlandAffixHUDDB.showHudInWarmup == nil then HinterlandAffixHUDDB.showHudInWarmup = true end
 if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = false end
-if HinterlandAffixHUDDB.enableTelemetry == nil then HinterlandAffixHUDDB.enableTelemetry = true end
+if HinterlandAffixHUDDB.enableTelemetry == nil then HinterlandAffixHUDDB.enableTelemetry = false end -- Disabled by default
 
 HLBG.UI = HLBG.UI or {}
 -- Use a single canonical frame name so reloads don't create multiple HUDs
@@ -191,11 +191,14 @@ end
 function HLBG.UpdateModernHUD(data)
     if not HUD then return end
     
-    -- Throttle updates to prevent blinking (max once per 0.5 seconds)
+    -- Emergency freeze check - can be enabled via /hlbgdebug freezehud
+    if HLBG._freezeHUD then return end
+    
+    -- Aggressive throttle to prevent blinking (max once per 2 seconds)
     local now = GetTime()
     HLBG._lastHUDUpdate = HLBG._lastHUDUpdate or 0
-    if (now - HLBG._lastHUDUpdate) < 0.5 then
-        return -- Skip this update, too soon
+    if (now - HLBG._lastHUDUpdate) < 2.0 then
+        return -- Skip this update, too frequent
     end
     HLBG._lastHUDUpdate = now
     
@@ -229,12 +232,23 @@ function HLBG.UpdateModernHUD(data)
     HUD.alliancePlayers:SetText("Players: " .. alliancePlayers)
     HUD.hordePlayers:SetText("Players: " .. hordePlayers)
     
-    -- Update timer (clamp to a sane maximum e.g., 7 days)
+    -- Update timer with better validation and fallback
     local timeLeft = tonumber(data.timeLeft or data.END or 0) or 0
     if timeLeft < 0 then timeLeft = 0 end
-    local MAX_TIME = 7 * 24 * 3600 -- one week
-    if timeLeft > MAX_TIME then timeLeft = MAX_TIME end
-    HUD.timerText:SetText("Time: " .. formatTime(timeLeft))
+    
+    -- More aggressive time clamping - max 2 hours for a battleground
+    local MAX_TIME = 2 * 3600 -- 2 hours maximum
+    if timeLeft > MAX_TIME then
+        -- Probably receiving incorrect data, use fallback
+        timeLeft = 1800 -- Default to 30 minutes
+    end
+    
+    -- If time seems unrealistic, show "Unknown" instead of wrong time
+    if timeLeft > 7200 then -- More than 2 hours
+        HUD.timerText:SetText("Time: Unknown")
+    else
+        HUD.timerText:SetText("Time: " .. formatTime(timeLeft))
+    end
     
     -- Update phase
     local phase = data.phase or "UNKNOWN"
@@ -419,61 +433,100 @@ function HLBG.InitializeModernHUD()
     HLBG.UpdateModernHUD()
 end
 
--- Legacy compatibility - hook into old HUD update functions
-local oldUpdateHUD = HLBG.UpdateHUD
-HLBG.UpdateHUD = function()
-    -- Call old function for compatibility only if legacy HUD remains active and modern is NOT preferred
-    local modernPreferred = (HinterlandAffixHUDDB and HinterlandAffixHUDDB.modernScoreboard) or (_G['HLBG_ModernHUD'] ~= nil)
-    if oldUpdateHUD and not modernPreferred then
-        pcall(oldUpdateHUD)
-    end
+-- Improved worldstate reader to fix 0 values and blinking
+function HLBG.ReadWorldstateData()
+    local data = {}
     
-    -- Extract data from multiple sources - like Wintergrasp worldstate integration
-    local res = _G.RES or {}
-    local status = HLBG._lastStatus or {}
-    
-    -- Also check worldstates directly - use text parsing for reliability
-    local wsData = {}
-    if type(GetNumWorldStateUI) == 'function' then
+    -- Read all worldstates and map known IDs
+    if type(GetNumWorldStateUI) == 'function' and type(GetWorldStateUIInfo) == 'function' then
         local numWS = GetNumWorldStateUI()
         for i = 1, numWS do
-            local text, value, a, b, c, id = GetWorldStateUIInfo(i)
+            local wsType, state, text, icon, dynamicIcon, tooltip, dynamicTooltip, extendedUI, extendedUIState1, extendedUIState2, extendedUIState3 = GetWorldStateUIInfo(i)
             
-            -- Parse by text content (more reliable than guessing IDs)
-            if text and type(text) == 'string' then
-                local textLower = text:lower()
-                local numValue = tonumber(value) or 0
-                
-                -- Alliance resources
-                if textLower:find("alliance") and not textLower:find("player") then
-                    wsData.allianceResources = numValue
-                -- Horde resources  
-                elseif textLower:find("horde") and not textLower:find("player") then
-                    wsData.hordeResources = numValue
-                -- Time remaining
-                elseif textLower:find("time") or textLower:find("duration") then
-                    wsData.timeLeft = numValue
-                -- Player counts
-                elseif textLower:find("alliance") and textLower:find("player") then
-                    wsData.alliancePlayers = numValue
-                elseif textLower:find("horde") and textLower:find("player") then
-                    wsData.hordePlayers = numValue
+            -- Map known worldstate IDs for HLBG
+            if wsType then
+                if wsType == 3901 then -- Alliance Resources
+                    data.allianceResources = tonumber(text) or data.allianceResources or 0
+                elseif wsType == 3902 then -- Horde Resources  
+                    data.hordeResources = tonumber(text) or data.hordeResources or 0
+                elseif wsType == 3903 then -- Alliance Players
+                    data.alliancePlayers = tonumber(text) or data.alliancePlayers or 0
+                elseif wsType == 3904 then -- Horde Players
+                    data.hordePlayers = tonumber(text) or data.hordePlayers or 0
+                elseif wsType == 3905 then -- Time Left
+                    data.timeLeft = tonumber(text) or data.timeLeft or 0
+                elseif wsType == 3906 then -- Affix Name
+                    data.affixName = tostring(text or data.affixName or "None")
+                elseif wsType == 3907 then -- Phase
+                    data.phase = tostring(text or data.phase or "IDLE")
                 end
             end
         end
     end
     
-    local data = {
-        allianceResources = wsData.allianceResources or res.A or 0,
-        hordeResources = wsData.hordeResources or res.H or 0,
-        timeLeft = wsData.timeLeft or HLBG._timeLeft or res.END or 0,
-        alliancePlayers = wsData.alliancePlayers or status.APlayers or status.APC or 0,
-        hordePlayers = wsData.hordePlayers or status.HPlayers or status.HPC or 0,
-        affixName = HLBG._affixText or "None",
-        phase = status.phase or "IDLE"
+    -- Fallback to global RES table if worldstates are empty
+    if not data.allianceResources and _G.RES then
+        data.allianceResources = tonumber(_G.RES.A) or 0
+        data.hordeResources = tonumber(_G.RES.H) or 0
+    end
+    
+    -- Store last known good data to prevent showing 0s
+    HLBG._lastKnownData = HLBG._lastKnownData or {}
+    for k, v in pairs(data) do
+        if v and v ~= 0 and v ~= "" then
+            HLBG._lastKnownData[k] = v
+        end
+    end
+    
+    -- Use last known good values if current values are 0/empty
+    for k, v in pairs(HLBG._lastKnownData) do
+        if not data[k] or data[k] == 0 or data[k] == "" then
+            data[k] = v
+        end
+    end
+    
+    return data
+end
+
+-- Improved HUD update with worldstate-first approach (no more blinking)
+local oldUpdateHUD = HLBG.UpdateHUD
+HLBG.UpdateHUD = function()
+    -- Throttle updates to prevent blinking (max once per 3 seconds)
+    local now = GetTime()
+    HLBG._lastHUDUpdate = HLBG._lastHUDUpdate or 0
+    if (now - HLBG._lastHUDUpdate) < 3.0 then
+        return -- Skip update to prevent blinking
+    end
+    HLBG._lastHUDUpdate = now
+    
+    -- Primary: Use improved worldstate reader (server-driven, real-time)
+    local hudData = HLBG.ReadWorldstateData()
+    
+    -- Secondary: Use HLBG._lastStatus as fallback and sync source
+    local status = HLBG._lastStatus or {}
+    local res = _G.RES or {}
+    
+    -- Combine data with worldstates taking priority (server-authoritative)
+    local finalData = {
+        allianceResources = hudData.allianceResources or status.A or status.allianceResources or res.A or 450,
+        hordeResources = hudData.hordeResources or status.H or status.hordeResources or res.H or 450,
+        timeLeft = hudData.timeLeft or status.DURATION or status.timeLeft or HLBG._timeLeft or res.END or 1800,
+        alliancePlayers = hudData.alliancePlayers or status.APC or status.APlayers or 0,
+        hordePlayers = hudData.hordePlayers or status.HPC or status.HPlayers or 0,
+        affixName = hudData.affixName or status.AFF or status.affixName or HLBG._affixText or "None",
+        phase = hudData.phase or status.phase or "ACTIVE"
     }
     
-    HLBG.UpdateModernHUD(data)
+    -- Update HLBG._lastStatus to keep status command in sync
+    HLBG._lastStatus = HLBG._lastStatus or {}
+    HLBG._lastStatus.A = finalData.allianceResources
+    HLBG._lastStatus.H = finalData.hordeResources
+    HLBG._lastStatus.DURATION = finalData.timeLeft
+    HLBG._lastStatus.APC = finalData.alliancePlayers  
+    HLBG._lastStatus.HPC = finalData.hordePlayers
+    
+    -- Update the HUD with stable, non-blinking data
+    HLBG.UpdateModernHUD(finalData)
 end
 
 -- Event handler for worldstate updates (throttled to prevent blinking)
@@ -482,10 +535,10 @@ wsFrame:RegisterEvent("UPDATE_WORLD_STATES")
 wsFrame:RegisterEvent("WORLD_STATE_UI_TIMER_UPDATE") 
 wsFrame:SetScript("OnEvent", function(self, event)
     if event == "UPDATE_WORLD_STATES" or event == "WORLD_STATE_UI_TIMER_UPDATE" then
-        -- Throttle worldstate updates (max once per second to prevent rapid blinking)
+        -- Aggressive throttle for worldstate updates (max once per 3 seconds)
         local now = GetTime()
         self._lastWSUpdate = self._lastWSUpdate or 0
-        if (now - self._lastWSUpdate) < 1.0 then
+        if (now - self._lastWSUpdate) < 3.0 then
             return -- Skip this update, too frequent
         end
         self._lastWSUpdate = now

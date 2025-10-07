@@ -8,6 +8,26 @@ function HLBG._MainSlashHandler(msg)
     msg = tostring(msg or ""):gsub("^%s+","")
     local sub = msg:match("^(%S+)")
     
+    -- aio diagnostic command: /hlbg aio
+    if sub and sub:lower() == 'aio' then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG AIO Diagnostics:|r")
+        DEFAULT_CHAT_FRAME:AddMessage("AIO available: " .. (_G.AIO and "YES" or "NO"))
+        if _G.AIO then
+            DEFAULT_CHAT_FRAME:AddMessage("AIO.Handle: " .. (type(_G.AIO.Handle) == 'function' and "YES" or "NO"))
+            DEFAULT_CHAT_FRAME:AddMessage("AIO.AddHandlers: " .. (_G.AIO.AddHandlers and "YES" or "NO"))
+            DEFAULT_CHAT_FRAME:AddMessage("AIO.RegisterEvent: " .. (_G.AIO.RegisterEvent and "YES" or "NO"))
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("HLBG._aioRegistered: " .. (HLBG._aioRegistered and "YES" or "NO"))
+        DEFAULT_CHAT_FRAME:AddMessage("HLBG._aioHandlersRegistered: " .. (HLBG._aioHandlersRegistered and "YES" or "NO"))
+        
+        -- Test a simple AIO call
+        if _G.AIO and _G.AIO.Handle then
+            local ok, err = pcall(_G.AIO.Handle, 'HLBG', 'Test')
+            DEFAULT_CHAT_FRAME:AddMessage("AIO test call: " .. (ok and "SUCCESS" or "FAILED: " .. tostring(err)))
+        end
+        return
+    end
+    
     -- season selector: /hlbg season <n|0>
     if sub and sub:lower() == 'season' then
         local arg = tonumber(msg:match('^%S+%s+(%S+)') or '')
@@ -39,14 +59,64 @@ function HLBG._MainSlashHandler(msg)
         return
     end
 
+    -- status subcommand: /hlbg status (to sync HUD and command output)
+    if sub and sub:lower() == 'status' then
+        -- Request fresh status from server (with error handling)
+        if _G.AIO and _G.AIO.Handle then
+            pcall(_G.AIO.Handle, 'HLBG', 'Request', 'STATUS')
+            pcall(_G.AIO.Handle, 'HLBG', 'Status')
+        end
+        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+        if sendDot then sendDot('.hlbgstatus'); sendDot('.hlbg status') end
+        
+        -- Display current cached status
+        local status = HLBG._lastStatus or {}
+        local lines = {}
+        table.insert(lines, "|cFF33FF99HLBG Current Status:|r")
+        table.insert(lines, "Alliance: " .. (status.A or status.allianceResources or 0))
+        table.insert(lines, "Horde: " .. (status.H or status.hordeResources or 0))
+        table.insert(lines, "Players A/H: " .. (status.APC or status.APlayers or 0) .. "/" .. (status.HPC or status.HPlayers or 0))
+        if status.DURATION or status.timeLeft then
+            local timeLeft = tonumber(status.DURATION or status.timeLeft or 0) or 0
+            local m = math.floor(timeLeft/60); local s = timeLeft%60
+            table.insert(lines, "Time: " .. string.format("%d:%02d", m, s))
+        end
+        table.insert(lines, "Affix: " .. (status.AFF or status.affixName or "None"))
+        table.insert(lines, "Phase: " .. (status.phase or "Unknown"))
+        
+        for _, line in ipairs(lines) do
+            DEFAULT_CHAT_FRAME:AddMessage(line)
+        end
+        
+        -- Force HUD update with same data to ensure sync
+        if type(HLBG.UpdateModernHUD) == 'function' then
+            local hudData = {
+                allianceResources = status.A or status.allianceResources or 0,
+                hordeResources = status.H or status.hordeResources or 0,
+                alliancePlayers = status.APC or status.APlayers or 0,
+                hordePlayers = status.HPC or status.HPlayers or 0,
+                timeLeft = status.DURATION or status.timeLeft or 0,
+                affixName = status.AFF or status.affixName or "None",
+                phase = status.phase or "IDLE"
+            }
+            HLBG.UpdateModernHUD(hudData)
+        end
+        
+        -- Request fresh status for next time (with error handling)
+        if type(HLBG.RequestStatus) == 'function' then
+            pcall(HLBG.RequestStatus)
+        end
+        return
+    end
+
     -- queue subcommands: /hlbg queue join|leave
     if sub and sub:lower() == 'queue' then
         local act = (msg:match('^%S+%s+(%S+)') or ''):lower()
         if act == 'join' or act == 'leave' then
             if _G.AIO and _G.AIO.Handle then
-                _G.AIO.Handle('HLBG', 'Request', act == 'join' and 'QUEUE_JOIN' or 'QUEUE_LEAVE')
-                _G.AIO.Handle('HLBG', act == 'join' and 'QueueJoin' or 'QueueLeave')
-                _G.AIO.Handle('HLBG', 'QUEUE', act:upper())
+                pcall(_G.AIO.Handle, 'HLBG', 'Request', act == 'join' and 'QUEUE_JOIN' or 'QUEUE_LEAVE')
+                pcall(_G.AIO.Handle, 'HLBG', act == 'join' and 'QueueJoin' or 'QueueLeave')
+                pcall(_G.AIO.Handle, 'HLBG', 'QUEUE', act:upper())
             end
             local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
             if sendDot then
@@ -62,7 +132,10 @@ function HLBG._MainSlashHandler(msg)
     if type(HLBG.EnsurePvPHeaderButton) == 'function' then pcall(HLBG.EnsurePvPHeaderButton) elseif type(_G.EnsurePvPHeaderButton) == 'function' then pcall(_G.EnsurePvPHeaderButton) end
     
     -- Open UI by default
-    HLBG.OpenUI()
+    if HLBG.UI and HLBG.UI.Frame then 
+        HLBG.UI.Frame:Show() 
+        if type(ShowTab) == 'function' then ShowTab(1) end
+    end
     
     -- Get UI state for requests
     local hist = (HLBG and HLBG.UI and HLBG.UI.History) or nil
@@ -72,37 +145,37 @@ function HLBG._MainSlashHandler(msg)
     local sd = (hist and hist.sortDir) or "DESC"
     local sv = (HLBG and HLBG._getSeason and HLBG._getSeason()) or (type(_G.HLBG_GetSeason) == 'function' and _G.HLBG_GetSeason()) or 0
     
-    -- Request data via AIO if available
-    if _G.AIO and _G.AIO.Handle then
-        -- Broad calls for compatibility
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", p, per, sv, sk, sd)
-        _G.AIO.Handle("HLBG", "History", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "History", p, per, sv, sk, sd)
-        _G.AIO.Handle("HLBG", "HISTORY", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "HISTORY", p, per, sv, sk, sd)
-        _G.AIO.Handle("HLBG", "Request", "STATS")
-        _G.AIO.Handle("HLBG", "Stats")
-        _G.AIO.Handle("HLBG", "STATS")
-        -- Some servers expose *UI variants
-        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sk, sd)
-        _G.AIO.Handle("HLBG", "HistoryUI", p, per, sv, sk, sd)
-        _G.AIO.Handle("HLBG", "StatsUI")
+    -- Check if data already loaded during initialization
+    if HLBG.InitState and HLBG.InitState.historyDataLoaded then
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Using cached data (loaded at startup)")
+        end
+        -- Use cached data instead of requesting again
+        if HLBG.RefreshHistoryData then
+            HLBG.RefreshHistoryData()
+        end
+        return
     end
     
-    -- Always also use chat-dot fallbacks so data loads even if AIO is present but server ignores it
-    do
-        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        if sendDot then
-            sendDot(string.format(".hlbg historyui %d %d %s %s", p, per, sk, sd))
-            sendDot(string.format(".hlbg historyui %d %d %d %s %s", p, per, sv, sk, sd))
-            sendDot(string.format(".hlbg history %d %d %s %s", p, per, sk, sd))
-            sendDot(string.format(".hlbg history %d %d %d %s %s", p, per, sv, sk, sd))
-            sendDot(".hlbg statsui")
-            sendDot(string.format(".hlbg statsui %d", sv))
-            sendDot(".hlbg stats")
+    -- Only load data if not already cached (should rarely happen)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Loading fresh data...")
+    end
+    
+    -- Trigger one-time data load
+    if HLBG.LoadInitialData then
+        HLBG.LoadInitialData()
+    else
+        -- Fallback if initialization system not loaded
+        if _G.AIO and _G.AIO.Handle then
+            local ok, err = pcall(_G.AIO.Handle, "HLBG", "Request", "HISTORY", p, per, sv, sk, sd)
+            if ok then
+                pcall(_G.AIO.Handle, "HLBG", "Request", "STATS", sv)
+            end
         end
     end
+    
+    -- Dot commands handled in LoadInitialData function - no redundant calls needed here
 end
 
 -- Register slash commands for Hinterland BG

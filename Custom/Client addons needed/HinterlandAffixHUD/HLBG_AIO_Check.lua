@@ -100,8 +100,71 @@ local function CheckAIO()
                 if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping RegisterEvent hookup (another module is registering)") end
             end
         else
-            if _G.AIO and _G.AIO.AddHandlers and DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping legacy RegisterEvent hookup because AIO.AddHandlers is present (central binder will register handlers)")
+            -- Modern AIO.AddHandlers method
+            if _G.AIO and _G.AIO.AddHandlers then
+                if not HLBG._aioHandlersRegistered then
+                    local ok, handlers = pcall(function()
+                        return _G.AIO.AddHandlers("HLBG", {})
+                    end)
+                    
+                    if ok and type(handlers) == "table" then
+                        -- Add our handler functions to the handlers table
+                        handlers.Status = function(player, args)
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, "Status", args)
+                            end
+                        end
+                        
+                        handlers.History = function(player, args)
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, "History", args)
+                            end
+                        end
+                        
+                        handlers.Stats = function(player, args)
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, "Stats", args)
+                            end
+                        end
+                        
+                        handlers.Server = function(player, args)
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, "Server", args)
+                            end
+                        end
+                        
+                        handlers.Error = function(player, args)
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, "Error", args)
+                            end
+                        end
+                        
+                        -- Generic handler for any command
+                        handlers.Request = function(player, ...)
+                            local args = {...}
+                            if args[1] then
+                                if type(HLBG.HandleAIOCommand) == "function" then
+                                    pcall(HLBG.HandleAIOCommand, args[1], args[2])
+                                end
+                            end
+                        end
+                        
+                        HLBG._aioHandlersRegistered = true
+                        HLBG._aioRegistered = true -- Mark as registered
+                        
+                        if DEFAULT_CHAT_FRAME then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r AIO.AddHandlers registration successful")
+                        end
+                    else
+                        if DEFAULT_CHAT_FRAME then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r AIO.AddHandlers failed: " .. tostring(handlers))
+                        end
+                    end
+                else
+                    if DEFAULT_CHAT_FRAME then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r AIO handlers already registered")
+                    end
+                end
             end
         end
         

@@ -48,6 +48,9 @@ HLBG_UI_Modern.lua
 # Comprehensive initialization system
 HLBG_Initialize.lua
 
+# Queue handling and status
+HLBG_QueueHandler.lua
+
 # Test AIO files individually - add HLBG_Handlers.lua
 HLBG_Status.lua
 HLBG_Handlers.lua

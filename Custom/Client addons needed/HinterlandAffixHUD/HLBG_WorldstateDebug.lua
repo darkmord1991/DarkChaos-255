@@ -1,16 +1,4 @@
--- HLBG_WorldstateDebug.lua - Debug worldstate values f        elseif msg == "hud" then
-        if HLBG.UpdateHUD then
-            print("|cFF33FF99HLBG:|r Forcing HUD update...")
-            HLBG.UpdateHUD()
-        else
-            print("|cFFFF0000HLBG:|r UpdateHUD function not found")
-        end
-    elseif msg == "stopblink" or msg == "notelemetry" then
-        HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-        HinterlandAffixHUDDB.enableTelemetry = false
-        print("|cFF33FF99HLBG:|r Telemetry disabled - this should stop HUD blinking")
-        print("|cFF888888Use /reload to fully apply changes|r")
-    elseleshooting
+-- HLBG_WorldstateDebug.lua - Debug worldstate values for troubleshooting
 
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
@@ -72,11 +60,25 @@ SlashCmdList["HLBGDEBUG"] = function(msg)
         else
             print("|cFFFF0000HLBG:|r UpdateHUD function not found")
         end
+    elseif msg == "stopblink" or msg == "notelemetry" then
+        HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+        HinterlandAffixHUDDB.enableTelemetry = false
+        print("|cFF33FF99HLBG:|r Telemetry disabled - this should stop HUD blinking")
+        print("|cFF888888Use /reload to fully apply changes|r")
+    elseif msg == "freezehud" or msg == "noupdate" then
+        HLBG._freezeHUD = true
+        print("|cFF33FF99HLBG:|r HUD updates frozen - this will stop all blinking")
+        print("|cFF888888Use '/hlbgdebug unfreeze' to re-enable updates|r")
+    elseif msg == "unfreeze" then
+        HLBG._freezeHUD = false
+        print("|cFF33FF99HLBG:|r HUD updates re-enabled")
     else
         print("|cFF33FF99HLBG Debug Commands:|r")
         print("  /hlbgdebug ws - Show all worldstates")
         print("  /hlbgdebug hud - Force HUD update")
         print("  /hlbgdebug stopblink - Disable telemetry to stop HUD blinking")
+        print("  /hlbgdebug freezehud - Completely stop HUD updates (anti-blink)")
+        print("  /hlbgdebug unfreeze - Re-enable HUD updates")
         print("  /hlbgws - Show all worldstates (shortcut)")
     end
 end
