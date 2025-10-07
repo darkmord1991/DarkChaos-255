@@ -176,7 +176,9 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
 // Assign a random honor amount for a kill using KillHonorValues config.
 void OutdoorPvPHL::Randomizer(Player* player)
 {
-    switch (urand(0, 4))
+    // NOTE: original code used urand(0,4) but only provided cases 0..3 → case 4 was a silent no-op.
+    // Either add a 5th bracket or tighten the random range; we choose the latter for predictable distribution.
+    switch (urand(0, 3))
     {
         case 0:
         {
@@ -224,14 +226,15 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         switch (victimTeam)
         {
             case TEAM_ALLIANCE:
-                _ally_gathered -= _resourcesLossPlayerKill;
+                // Clamp to zero to avoid unsigned underflow (could previously wrap to very large number)
+                _ally_gathered = (_ally_gathered > _resourcesLossPlayerKill) ? (_ally_gathered - _resourcesLossPlayerKill) : 0u;
                 scorePoints = _resourcesLossPlayerKill;
                 // Per-kill spell feedback (optional)
                 if (_killSpellOnPlayerKillHorde)
                     player->CastSpell(player, _killSpellOnPlayerKillHorde, true);
                 break;
             default: // Horde
-                _horde_gathered -= _resourcesLossPlayerKill;
+                _horde_gathered = (_horde_gathered > _resourcesLossPlayerKill) ? (_horde_gathered - _resourcesLossPlayerKill) : 0u;
                 scorePoints = _resourcesLossPlayerKill;
                 if (_killSpellOnPlayerKillAlliance)
                     player->CastSpell(player, _killSpellOnPlayerKillAlliance, true);

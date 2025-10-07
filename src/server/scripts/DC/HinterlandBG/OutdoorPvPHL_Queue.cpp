@@ -189,12 +189,12 @@ void OutdoorPvPHL::StartWarmupPhase()
     }
 
     LOG_INFO("bg.battleground", "HLBG: Starting warmup phase with {} queued players", GetQueuedPlayerCount());
-    
-    // Teleport all queued players to the zone first
-    TeleportQueuedPlayers();
-    
-    // Then transition to warmup state (this will initialize warmup timer and send notifications)
+    // Transition first so warmup timer & announcements are initialized before players arrive.
+    // This prevents a zero/old _warmupTimeRemaining value being shown in the teleport welcome message.
     TransitionToState(BG_STATE_WARMUP);
+
+    // Now teleport all queued players (messages will display correct remaining time).
+    TeleportQueuedPlayers();
 }
 
 void OutdoorPvPHL::TeleportQueuedPlayers()

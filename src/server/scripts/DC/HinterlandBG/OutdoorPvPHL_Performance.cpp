@@ -107,9 +107,10 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
     
     // Use Wintergrasp worldstates (WG-like HUD for HLBG)
     uint32 timeRemaining = GetTimeRemainingSeconds();
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_SHOW, 1});           // Enable WG HUD display
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK, timeRemaining}); // Timer display
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 1});         // Mark battlefield as active
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_SHOW, 1});            // Enable WG HUD display
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK, timeRemaining}); // Timer display (seconds/end-epoch depending on implementation elsewhere)
+    // Use 0 for ACTIVE to match FillInitialWorldStates()/UpdateWorldStatesForPlayer (WG wartime semantics)
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0});          // Wartime flag (0 = active in original WG)
     
     // Use custom worldstates for resources (if they exist in the original implementation)
     // For now, just use the basic WG states
