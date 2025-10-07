@@ -136,6 +136,23 @@ pcall(function()
         RegisterAddonMessagePrefix('HLBG')
     end
 end)
+    
+    -- Slash command to dump last sanitized TSV (client-side debug)
+    SLASH_HLBGSANIT1 = '/hlbgsanitize'
+    SLASH_HLBGSANIT2 = '.hlbgsanitize'
+    SlashCmdList['HLBGSANIT'] = function(msg)
+        local s = (HLBG and HLBG._lastSanitizedTSV) or nil
+        if not s or s == '' then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r No sanitized TSV available') end
+            return
+        end
+        -- Print a trimmed preview and store full content in debug buffer
+        local preview = (string.len(s) > 400) and (s:sub(1,400) .. '...[truncated]') or s
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG sanitized TSV preview:|r ' .. preview) end
+        HinterlandAffixHUD_DebugLog = HinterlandAffixHUD_DebugLog or {}
+        table.insert(HinterlandAffixHUD_DebugLog, 1, string.format('[HLBG_SANITIZED] %s', s))
+        while #HinterlandAffixHUD_DebugLog > 500 do table.remove(HinterlandAffixHUD_DebugLog) end
+    end
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     local prefix, msg = ...
@@ -204,9 +221,29 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- History TSV fallback
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
-        local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
-        htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
-        htsv = htsv:gsub('%|%|', '\n')
+        -- Handler-side sanitization (pre-process common chat fallback shapes)
+        -- Convert '||' markers into newlines, strip optional TOTAL= prefix, and remove high-byte garbage
+        local function strip_high_bytes(s)
+            if type(s) ~= 'string' then return s end
+            local out = {}
+            for i=1,#s do local b = string.byte(s,i); if b and b < 128 then table.insert(out, string.char(b)) end end
+            return table.concat(out)
+        end
+    htsv = strip_high_bytes(htsv)
+    local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or htsv:match('^TOTAL=(%d+)%s*') or 0)) or 0
+    htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', ''):gsub('^TOTAL=%d+%s*', '')
+    -- Convert common row separators into real newlines. Some servers use '||' or single '|' between rows.
+    htsv = htsv:gsub('%|%|', '\n')
+    -- Dev-only: report whether handler converted pipes into newlines
+    pcall(function()
+        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            local foundPipe = htsv:find('%|') and true or false
+            local foundNl = htsv:find('\n') and true or false
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Handler sanitized: foundPipe=%s foundNewline=%s', tostring(foundPipe), tostring(foundNl)))
+        end
+    end)
+    if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|', '\n') end
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
         if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
@@ -284,10 +321,59 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
         -- Strip TOTAL prefix
         htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
-        -- If multi-row separator exists, convert to newlines for HistoryStr
-        if htsv:find('%|%|') then htsv = htsv:gsub('%|%|','\n') end
-        if htsv:find('\t') and type(HLBG.HistoryStr) == 'function' then
-            pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+    -- If multi-row separator exists, convert to newlines for HistoryStr
+    -- Dev-only: report pipe/newline state before conversion
+    pcall(function()
+        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            local foundNl = htsv:find('\n') and true or false
+            local pipeCount = 0
+            for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler before conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+        end
+    end)
+    htsv = htsv:gsub('%|%|','\n')
+    if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|','\n') end
+    -- Dev-only: report pipe/newline state after conversion
+    pcall(function()
+        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            local foundNl = htsv:find('\n') and true or false
+            local pipeCount = 0
+            for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler after conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+        end
+    end)
+        local hasTabs = htsv:find('\t') and true or false
+        local hasNL   = htsv:find('\n') and true or false
+        pcall(function()
+            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+            if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv))
+            end
+        end)
+        pcall(function()
+            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+            if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
+            end
+        end)
+        if hasTabs and type(HLBG.HistoryStr) == 'function' then
+            pcall(function()
+                local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+                if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r About to call HistoryStr')
+                end
+            end)
+            local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+            if not ok then
+                pcall(function()
+                    local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+                    if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                        DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug|r HistoryStr error: '..tostring(err))
+                    end
+                end)
+            end
         else
             -- Tabs missing (some servers strip them in chat). Try flexible single-line parser per row.
             local rows = {}
@@ -319,6 +405,44 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         return
     end
 end)
+
+-- Slash command to force reparse last sanitized TSV (dev aid)
+SLASH_HLBGREPARSE1 = '/hlbgreparse'
+SlashCmdList['HLBGREPARSE'] = function()
+    local tsv = HLBG._lastSanitizedTSV
+    if not tsv or tsv == '' then
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r No last sanitized TSV to reparse') end
+        return
+    end
+    if type(HLBG.HistoryStr) == 'function' then
+        local ok, err = pcall(HLBG.HistoryStr, tsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 15, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.total) or 0, 'id', 'DESC')
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            if ok then
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Reparse invoked')
+            else
+                DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Reparse error '..tostring(err))
+            end
+        end
+    end
+end
+
+-- Slash command to check HLBG functions and force test
+SLASH_HLBGTEST1 = '/hlbgtest'
+SlashCmdList['HLBGTEST'] = function()
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r HistoryStr type: %s', type(HLBG.HistoryStr)))
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r History type: %s', type(HLBG.History)))
+        if type(HLBG.HistoryStr) == 'function' then
+            local testTSV = "1\t1\tSeason 1: Test\t2025-10-07 20:00:00\tDraw\t0\tmanual\n2\t1\tSeason 1: Test\t2025-10-07 19:00:00\tAlliance\t1\tauto"
+            local ok, err = pcall(HLBG.HistoryStr, testTSV, 1, 15, 2, 'id', 'DESC')
+            if ok then
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Test:|r HistoryStr test call succeeded')
+            else
+                DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Test:|r HistoryStr test error: '..tostring(err))
+            end
+        end
+    end
+end
 
 -- expose helpers for other files
 HLBG.EnsurePvPTab = EnsurePvPTab

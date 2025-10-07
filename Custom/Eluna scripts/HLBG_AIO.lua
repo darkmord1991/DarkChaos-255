@@ -68,6 +68,36 @@ end
 local function json_encode(obj)
     return json_encode_value(obj)
 end
+-- Ensure chat fallback strings are valid UTF-8 and safe for single-line broadcast
+local function sanitize_for_chat(s)
+    if type(s) ~= 'string' then return tostring(s or '') end
+    -- normalize CRLF -> LF, collapse newlines to a visible marker (we prefer to keep newlines replaced later)
+    s = s:gsub('\r\n','\n'):gsub('\r','\n')
+    -- Replace control chars except LF/TAB with space
+    s = s:gsub('[%z\1-\31]', function(c) if c=='\n' or c=='\t' then return c else return ' ' end end)
+    -- Validate UTF-8: attempt to keep valid sequences, replace invalid bytes with '?'
+    local out = {}
+    local i = 1; local n = #s
+    while i <= n do
+        local b = string.byte(s, i)
+        if not b then break end
+        if b < 0x80 then
+            table.insert(out, string.char(b)); i = i + 1
+        elseif b >= 0xC2 and b <= 0xDF and i+1 <= n then
+            local b2 = string.byte(s, i+1)
+            if b2 and b2 >= 0x80 and b2 <= 0xBF then table.insert(out, s:sub(i,i+1)); i = i + 2 else table.insert(out, '?'); i = i + 1 end
+        elseif b >= 0xE0 and b <= 0xEF and i+2 <= n then
+            local b2,b3 = string.byte(s, i+1, i+2)
+            if b2 and b3 and b2>=0x80 and b2<=0xBF and b3>=0x80 and b3<=0xBF then table.insert(out, s:sub(i,i+2)); i = i + 3 else table.insert(out, '?'); i = i + 1 end
+        elseif b >= 0xF0 and b <= 0xF4 and i+3 <= n then
+            local b2,b3,b4 = string.byte(s, i+1, i+3)
+            if b2 and b3 and b4 and b2>=0x80 and b2<=0xBF and b3>=0x80 and b3<=0xBF and b4>=0x80 and b4<=0xBF then table.insert(out, s:sub(i,i+3)); i = i + 4 else table.insert(out, '?'); i = i + 1 end
+        else
+            table.insert(out, '?'); i = i + 1
+        end
+    end
+    return table.concat(out)
+end
 
 local function safeQuery(dbfunc, sql)
     local ok, res = pcall(dbfunc, sql)
@@ -820,6 +850,7 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7
             local ok, err = pcall(function()
                 if player and player.SendBroadcastMessage then
                     local sample = (tsv and #tsv>200) and tsv:sub(1,200) or tsv
+                    sample = sanitize_for_chat(sample)
                     player:SendBroadcastMessage("[HLBG_DBG_TSV] "..tostring(sample or ""))
                 end
             end)
@@ -1082,9 +1113,10 @@ local function DumpHistoryToPlayer(player, page, per, sortKey, sortDir)
     end
     -- join rows with a safe delimiter '||' so chat doesn't collapse newlines; client will convert back
     local tsv = table.concat(buf, "||")
-    if player and player.SendBroadcastMessage then
-        player:SendBroadcastMessage("[HLBG_DUMP] "..(tsv or ""))
-    end
+            if player and player.SendBroadcastMessage then
+                local safe = sanitize_for_chat(tsv or "")
+                player:SendBroadcastMessage("[HLBG_DUMP] "..safe)
+            end
     return rows, total
 end
 
@@ -1104,6 +1136,7 @@ local function OnCommandExtended(event, player, command)
             { id = "998", ts = now, winner = "Horde", affix = "5", reason = "TestEntryB" },
         }
         if okAIO and AIO and AIO.Handle then
+            if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "History", rows, 1, 5, 2, "id", "DESC")
             -- also send a TSV fallback
             local buf = {}
@@ -1118,6 +1151,7 @@ local function OnCommandExtended(event, player, command)
                     local safeTSV = tsv
                     -- replace newlines with '||' to keep chat on a single line (client will convert back)
                     safeTSV = safeTSV:gsub("\n", "||")
+                    safeTSV = sanitize_for_chat(safeTSV)
                     player:SendBroadcastMessage("[HLBG_DUMP] "..tostring(safeTSV))
                 end
             AIO.Handle(player, "HLBG", "PONG")

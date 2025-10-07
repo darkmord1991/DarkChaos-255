@@ -272,9 +272,9 @@ SlashCmdList["HLBGDEBUG"] = function(msg)
             _G.AIO.Handle('HLBG', 'Stats')
             _G.AIO.Handle('HLBG', 'STATS')
         end
-        -- Use dot command as backup
+        -- Use dot command as backup (explicit statsui to avoid ambiguity)
         if type(HLBG.SendServerDot) == 'function' then
-            HLBG.SendServerDot(".hlbg stats")
+            HLBG.SendServerDot(".hlbg statsui")
         end
     elseif msg:match("^ui") then
         print("Showing UI...")

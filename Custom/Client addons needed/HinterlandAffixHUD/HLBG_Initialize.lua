@@ -39,12 +39,7 @@ function HLBG.Initialize()
         print("|cFF33FF99HLBG:|r Modern styling applied")
     end
     
-    -- Step 3: Load test data if needed
-    if not HLBG.InitState.testDataLoaded then
-        HLBG.LoadTestData()
-        HLBG.InitState.testDataLoaded = true
-        print("|cFF33FF99HLBG:|r Test data loaded")
-    end
+
     
     -- Step 3.5: Load real data once
     if not HLBG.InitState.historyDataLoaded then
@@ -95,7 +90,8 @@ function HLBG.LoadInitialData()
     local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
     if type(sendDot) == 'function' then
         sendDot(string.format(".hlbg historyui 1 15 %d id DESC", season))
-        sendDot(string.format(".hlbg stats %d", season))
+        -- Use explicit statsui to avoid server-side ambiguity between 'statsmanual' and 'statsui'
+        sendDot(string.format(".hlbg statsui %d", season))
     end
     
     print("|cFF33FF99HLBG:|r Initial data requests sent")

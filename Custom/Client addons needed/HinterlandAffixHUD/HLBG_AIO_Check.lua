@@ -141,11 +141,23 @@ local function CheckAIO()
                         
                         -- Generic handler for any command
                         handlers.Request = function(player, ...)
-                            local args = {...}
-                            if args[1] then
-                                if type(HLBG.HandleAIOCommand) == "function" then
-                                    pcall(HLBG.HandleAIOCommand, args[1], args[2])
-                                end
+                            local vargs = {...}
+                            if not vargs or type(vargs[1]) ~= 'string' then return end
+                            local cmd = vargs[1]
+                            -- Build params table from remaining varargs (positional payload)
+                            local params = {}
+                            for i = 2, #vargs do params[#params+1] = vargs[i] end
+                            -- If the payload is a single table (legacy), use it directly
+                            if #params == 1 and type(params[1]) == 'table' then params = params[1] end
+                            if type(HLBG.HandleAIOCommand) == "function" then
+                                pcall(HLBG.HandleAIOCommand, cmd, params)
+                                -- Temp visual aid: show UI for 10s when any data arrives
+                                -- Show the UI when data arrives, but do not auto-hide it (keep user in control)
+                                pcall(function()
+                                    if HLBG and HLBG.UI and HLBG.UI.Frame then
+                                        if HLBG.UI.Frame.SetShown then HLBG.UI.Frame:SetShown(true) else HLBG.UI.Frame:Show() end
+                                    end
+                                end)
                             end
                         end
                         
@@ -232,39 +244,128 @@ CheckAIO()
 function HLBG.HandleAIOCommand(command, args)
     if type(command) ~= "string" then return end
     args = args or {}
+    -- normalize command to lower-case for case-insensitive handling
+    local cmd = tostring(command or ''):lower()
+    if HLBG._devMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        local t = type(args)
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Received AIO command '%s' (type %s)", tostring(cmd), tostring(t)))
+    end
     
     -- Handle different command types
-    if command == "Status" or command == "status" then
+    if cmd == "status" then
         -- Status update (live match data)
         if type(HLBG.Status) == "function" then pcall(HLBG.Status, args) end
         return
     end
     
-    if command == "History" or command == "history" then
-        -- History data for UI
-        if type(args) == "table" and type(args.rows) == "table" then
-            if type(HLBG.History) == "function" then
-                pcall(HLBG.History, args.rows, args.page or 1, args.perpage or 5, args.total or #args.rows, args.sort or "id", args.order or "DESC")
-            elseif type(HLBG._pushHistoryRow) == "function" and args.rows[1] then
-                -- If no history handler, push first row to buffer
-                pcall(HLBG._pushHistoryRow, args.rows[1])
-            end
-        elseif type(args) == "table" and type(args.tsv) == "string" then
-            -- Alternative format: TSV string
-            if type(HLBG.HistoryStr) == "function" then
-                pcall(HLBG.HistoryStr, args.tsv, args.page or 1, args.perpage or 5, args.total or 0, args.sort or "id", args.order or "DESC")
+    if cmd == "history" then
+        -- History data for UI - support multiple shapes from server
+        local function dbg(msg)
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r '..tostring(msg)) end
+        end
+        if type(args) ~= 'table' then
+            dbg('History: received non-table payload; ignoring')
+            return
+        end
+
+        -- Case A: args.rows = { ... } (preferred)
+        if type(args.rows) == 'table' then
+            dbg(string.format('History: rows=%d total=%s (via args.rows)', #args.rows, tostring(args.total)))
+            if type(HLBG.History) == 'function' then
+                pcall(HLBG.History, args.rows, args.page or 1, args.perpage or args.per or 15, args.total or #args.rows, args.sort or args.order or 'id', args.order or args.sort or 'DESC')
+                -- Quick visual fallback: ensure main UI is visible when data arrives, but only if frame exists
+                pcall(function()
+                    if HLBG and HLBG.UI and HLBG.UI.Frame then
+                        if HLBG.UI.Frame.SetShown then HLBG.UI.Frame:SetShown(true) else HLBG.UI.Frame:Show() end
+                    end
+                end)
+                return
             end
         end
+
+        -- Case B: args.tsv provided
+        if type(args.tsv) == 'string' and args.tsv ~= '' then
+            dbg('History: received TSV payload')
+            -- Pre-sanitize TSV to remove high bytes, normalize CRLF, and convert '||' markers
+            local function strip_high_bytes(s)
+                if type(s) ~= 'string' then return s end
+                local out = {}
+                for i=1,#s do local b = string.byte(s,i); if b and b < 128 then table.insert(out, string.char(b)) end end
+                return table.concat(out)
+            end
+            local function sanitize(s)
+                if type(s) ~= 'string' then return s end
+                s = s:gsub('\r\n','\n'):gsub('\r','\n')
+                s = s:gsub('%|%|','\n')
+                -- Protect tabs/newlines
+                local pTab, pNL = '\1','\2'
+                s = s:gsub('\t', pTab):gsub('\n', pNL)
+                s = s:gsub('%c', ' ')
+                s = s:gsub(pTab, '\t'):gsub(pNL, '\n')
+                s = strip_high_bytes(s)
+                return s
+            end
+            local tsv = sanitize(args.tsv)
+            if type(HLBG.HistoryStr) == 'function' then
+                pcall(HLBG.HistoryStr, tsv, args.page or 1, args.perpage or args.per or 15, args.total or 0, args.sort or args.order or 'id', args.order or args.sort or 'DESC')
+                pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
+                return
+            end
+        end
+
+        -- Case C: positional-style table (e.g., { {row1}, {row2}, total=.. } ) or rows passed directly
+        -- Detect array-like table where first element is a row table
+        if #args > 0 and type(args[1]) == 'table' then
+            dbg('History: array-like payload detected, using args as rows')
+            local rows = {}
+            for i=1,#args do if type(args[i])=='table' then rows[#rows+1]=args[i] end end
+            if #rows>0 and type(HLBG.History) == 'function' then
+                pcall(HLBG.History, rows, args.page or args[2] or 1, args.per or args.perpage or args[3] or 15, args.total or #rows, args.sort or 'id', args.order or 'DESC')
+                pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
+                return
+            end
+        end
+
+        -- Case D: legacy single-row table
+        if (args.id or args.ts or args.winner) and type(HLBG.History) == 'function' then
+            dbg('History: single-row payload detected; wrapping in array')
+            pcall(HLBG.History, {args}, args.page or 1, args.perpage or 15, args.total or 1, args.sort or 'id', args.order or 'DESC')
+            pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
+            return
+        end
+
+        dbg('History: no handler matched for payload')
         return
     end
     
-    if command == "Stats" or command == "stats" then
-        -- Statistics summary
-        if type(HLBG.Stats) == "function" then pcall(HLBG.Stats, args) end
-        return
+    if cmd == "stats" then
+        -- Statistics summary (support table or positional)
+        if type(args) ~= 'table' then
+            if type(HLBG.OnServerStats) == 'function' then pcall(HLBG.OnServerStats, { totalBattles = tonumber(args) or 0 }) end
+            return
+        end
+        if type(HLBG.OnServerStats) == 'function' then
+            pcall(HLBG.OnServerStats, args)
+            return
+        elseif #args > 0 then
+            -- Positional: total, alliance, horde, draws...
+            pcall(function()
+                local s = {
+                    totalBattles = tonumber(args[1]) or 0,
+                    allianceWins = tonumber(args[2]) or 0,
+                    hordeWins = tonumber(args[3]) or 0,
+                    draws = tonumber(args[4]) or 0,
+                }
+                if type(HLBG.OnServerStats) == 'function' then HLBG.OnServerStats(s) elseif type(HLBG.Stats) == 'function' then HLBG.Stats(s) end
+            end)
+            return
+        else
+            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, args) end
+            return
+        end
     end
     
-    if command == "Server" or command == "server" then
+    if cmd == "server" then
         -- Server info/welcome
         if type(args) == "table" and type(args.motd) == "string" and args.motd ~= "" then
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -279,7 +380,7 @@ function HLBG.HandleAIOCommand(command, args)
         return
     end
     
-    if command == "Error" or command == "error" then
+    if cmd == "error" then
         -- Error message from server
         if type(args) == "table" and type(args.message) == "string" then
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then

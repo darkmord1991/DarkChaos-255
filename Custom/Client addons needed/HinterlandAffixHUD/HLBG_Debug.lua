@@ -196,7 +196,7 @@ function HLBG.RefreshDebug()
     local info = {
         "HLBG Debug Information",
         "=====================",
-        "Version: " .. (HLBG.version or "unknown"),
+    "Version: " .. (HLBG.VERSION or HLBG.version or "unknown"),
         "DevMode: " .. (HLBG._devMode and "ON" or "OFF"),
         "AIO: " .. (_G.AIO and "Available" or "Not available"),
         "",

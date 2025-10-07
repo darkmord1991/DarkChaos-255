@@ -2,7 +2,7 @@
 ## Title: Hinterland Battleground Addon (Modern Edition)
 ## Notes: Modern UI battleground addon with enhanced HUD, statistics, and match history
 ## Author: DC-255
-## Version: 1.5.7-modern
+## Version: 1.5.8-refactor
 ## Deps: AIO_Client
 ## OptionalDeps: AIO_Client 
 ## LoadAfter: AIO_Client
@@ -29,7 +29,11 @@ HinterlandAffixHUD.lua
 HLBG_Core.lua
 HLBG_JSON.lua
 HLBG_Utils.lua
--- Use modern HUD implementation by default
+core\HLBG_Version.lua
+core\HLBG_Live.lua
+core\HLBG_History.lua
+core\HLBG_Stats.lua
+# Use modern HUD implementation by default
 HLBG_HUD_Modern.lua
 HLBG_Debug.lua
 HLBG_UI.lua
