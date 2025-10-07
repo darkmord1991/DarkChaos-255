@@ -432,6 +432,11 @@ SlashCmdList['HLBGTEST'] = function()
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r HistoryStr type: %s', type(HLBG.HistoryStr)))
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r History type: %s', type(HLBG.History)))
+        local keys = {}
+        for k,v in pairs(HLBG or {}) do
+            keys[#keys + 1] = tostring(k)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r HLBG keys: %s', table.concat(keys, ', ')))
         if type(HLBG.HistoryStr) == 'function' then
             local testTSV = "1\t1\tSeason 1: Test\t2025-10-07 20:00:00\tDraw\t0\tmanual\n2\t1\tSeason 1: Test\t2025-10-07 19:00:00\tAlliance\t1\tauto"
             local ok, err = pcall(HLBG.HistoryStr, testTSV, 1, 15, 2, 'id', 'DESC')
@@ -440,7 +445,554 @@ SlashCmdList['HLBGTEST'] = function()
             else
                 DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Test:|r HistoryStr test error: '..tostring(err))
             end
+        else
+            -- Try to manually load the History module
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Test:|r Attempting to load History module manually...')
         end
+    end
+end
+
+-- Force show HLBG window and create tabs manually
+SLASH_HLBGSHOW1 = '/hlbgshow'
+SlashCmdList['HLBGSHOW'] = function()
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempting to show HLBG window and create tabs...')
+        
+        -- Try to show main frame
+        if HLBG.UI and HLBG.UI.Frame then
+            HLBG.UI.Frame:Show()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Main frame shown')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No main frame found')
+        end
+        
+        -- Check for tabs
+        if HLBG.UI and HLBG.UI.Tabs then
+            HLBG.UI.Tabs:Show()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Tabs container shown')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No tabs container found')
+        end
+        
+        -- Try to force create History UI
+        if type(HLBG._ensureUI) == 'function' then
+            pcall(HLBG._ensureUI, 'History')
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted to ensure History UI')
+        end
+        
+        -- Try UpdateHistoryDisplay if available
+        if type(HLBG.UpdateHistoryDisplay) == 'function' then
+            pcall(HLBG.UpdateHistoryDisplay)
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted UpdateHistoryDisplay')
+        end
+        
+        -- Show tab status
+        local tabCount = 0
+        if HLBG.UI and HLBG.UI.Tabs then
+            for i=1,10 do
+                local tab = _G["HLBG_Tab_"..i]
+                if tab then tabCount = tabCount + 1 end
+            end
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Found %d tabs', tabCount))
+        
+        -- Report stored data
+        local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Stored rows: %d', rowCount))
+    end
+end
+
+-- Simple emergency window
+SLASH_HLBGTABS1 = '/hlbgtabs'
+SlashCmdList['HLBGTABS'] = function()
+    local ok, err = pcall(function()
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Creating emergency window...')
+        
+        -- Simple basic frame
+        local frame = CreateFrame("Frame", "HLBG_Emergency", UIParent)
+        frame:SetSize(500, 300)
+        frame:SetPoint("CENTER")
+        frame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border", 
+            tile = true, tileSize = 16, edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 0.9)
+        frame:EnableMouse(true)
+        frame:SetMovable(true)
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+        frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+        
+        -- Title
+        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", frame, "TOP", 0, -15)
+        title:SetText("HLBG History Data")
+        
+        -- Close button
+        local close = CreateFrame("Button", nil, frame)
+        close:SetSize(20, 20)
+        close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+        close:SetNormalTexture("Interface/Buttons/UI-Panel-MinimizeButton-Up")
+        close:SetScript("OnClick", function() frame:Hide() end)
+        
+        -- Content area
+        local scroll = CreateFrame("ScrollFrame", nil, frame)
+        scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
+        scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 15)
+        
+        local content = CreateFrame("Frame", nil, scroll)
+        content:SetSize(460, 1000)
+        scroll:SetScrollChild(content)
+        
+        -- Show stored data
+        local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
+        
+        local y = -10
+        local info = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        info:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        info:SetText(string.format("Stored History Rows: %d", rowCount))
+        y = y - 25
+        
+        if rowCount > 0 and HLBG.UI.History and HLBG.UI.History.lastRows then
+            for i, row in ipairs(HLBG.UI.History.lastRows) do
+                local rowText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                rowText:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+                rowText:SetWidth(450)
+                rowText:SetJustifyH("LEFT")
+                rowText:SetText(string.format("#%s: %s - %s vs %s (%s)", 
+                    row.id or '?', 
+                    row.seasonName or '?', 
+                    row.winner or '?', 
+                    row.affix or '?',
+                    row.reason or '?'
+                ))
+                y = y - 18
+                if i >= 20 then break end -- Limit display
+            end
+        else
+            local noData = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            noData:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            noData:SetText("No history data found in HLBG.UI.History.lastRows")
+        end
+        
+        frame:Show()
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Emergency window created and shown!')
+    end)
+    
+    if not ok then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Emergency window error: ' .. tostring(err))
+    end
+end
+
+-- Fix main addon window
+SLASH_HLBGFIX1 = '/hlbgfix'
+SlashCmdList['HLBGFIX'] = function()
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempting to fix main addon window...')
+    
+    -- Check main addon state
+    local hasMainFrame = HLBG and HLBG.UI and HLBG.UI.Frame
+    local hasHistoryFrame = hasMainFrame and HLBG.UI.History
+    local hasData = hasHistoryFrame and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0
+    local hasUpdateFunction = type(HLBG.UpdateHistoryDisplay) == 'function'
+    
+    DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Main frame: %s, History frame: %s, Data: %s (%d rows), Update function: %s',
+        hasMainFrame and "YES" or "NO",
+        hasHistoryFrame and "YES" or "NO", 
+        hasData and "YES" or "NO",
+        hasData and #HLBG.UI.History.lastRows or 0,
+        hasUpdateFunction and "YES" or "NO"
+    ))
+    
+    if hasMainFrame then
+        -- Show main frame and focus history tab
+        HLBG.UI.Frame:Show()
+        if HLBG.UI.Tabs and HLBG.UI.Tabs[1] then
+            -- Click first tab (History)
+            if HLBG.UI.Tabs[1]:GetScript("OnClick") then
+                HLBG.UI.Tabs[1]:GetScript("OnClick")(HLBG.UI.Tabs[1])
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Clicked History tab')
+            end
+        end
+        
+        -- Force update display if we have data
+        if hasData and hasUpdateFunction then
+            pcall(function() 
+                HLBG.UpdateHistoryDisplay() 
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Called UpdateHistoryDisplay()')
+            end)
+        end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Main frame not found - addon may not be loaded properly')
+    end
+end
+
+-- Complete UI System Fix
+SLASH_HLBGFULLFIX1 = '/hlbgfullfix'
+SlashCmdList['HLBGFULLFIX'] = function()
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Performing complete UI system fix...')
+    
+    -- Step 1: AGGRESSIVELY disable ALL Modern UI functions
+    if HLBG.ApplyModernStyling then 
+        HLBG.ApplyModernStyling = function() 
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Modern styling blocked!')
+        end
+    end
+    if HLBG.ModernizeContentAreas then
+        HLBG.ModernizeContentAreas = function() 
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r ModernizeContentAreas blocked!')
+        end
+    end
+    if HLBG.UpdateModernTabStyling then
+        HLBG.UpdateModernTabStyling = function() end
+    end
+    if HLBG.CreateModernStatsCards then
+        HLBG.CreateModernStatsCards = function() end
+    end
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Disabled ALL Modern UI systems aggressively')
+    
+    -- Step 2: Hide any conflicting HUD/windows
+    if _G["HLBG_Rebuilt"] then _G["HLBG_Rebuilt"]:Hide() end
+    if _G["HLBG_ModernHUD"] then _G["HLBG_ModernHUD"]:Hide() end
+    
+    -- Step 3: Ensure main frame exists and is properly configured
+    if not (HLBG and HLBG.UI and HLBG.UI.Frame) then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Creating main frame - original was missing')
+        HLBG.UI = HLBG.UI or {}
+        HLBG.UI.Frame = CreateFrame("Frame", "HLBG_Fixed", UIParent)
+        HLBG.UI.Frame:SetSize(600, 400)
+        HLBG.UI.Frame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        HLBG.UI.Frame:SetBackdropColor(0, 0, 0, 0.8)
+    end
+    
+    -- Step 4: Fix frame positioning and show it
+    HLBG.UI.Frame:ClearAllPoints()
+    HLBG.UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    HLBG.UI.Frame:SetFrameStrata("HIGH")
+    HLBG.UI.Frame:SetFrameLevel(100)
+    HLBG.UI.Frame:Show()
+    
+    -- Step 5: Create or fix tabs with proper positioning INSIDE the frame
+    HLBG.UI.Tabs = HLBG.UI.Tabs or {}
+    local tabNames = {"History", "Stats", "Info", "Settings", "Queue"}
+    
+    for i = 1, 5 do
+        -- Create tab if it doesn't exist
+        if not HLBG.UI.Tabs[i] then
+            HLBG.UI.Tabs[i] = CreateFrame("Button", "HLBG_Tab"..i, HLBG.UI.Frame)
+        end
+        
+        local tab = HLBG.UI.Tabs[i]
+        tab:ClearAllPoints()
+        
+        -- Position INSIDE the frame, not below it
+        if i == 1 then
+            tab:SetPoint("TOPLEFT", HLBG.UI.Frame, "TOPLEFT", 20, -40)
+        else
+            tab:SetPoint("LEFT", HLBG.UI.Tabs[i-1], "RIGHT", 5, 0)
+        end
+        
+        tab:SetSize(80, 25)
+        tab:SetText(tabNames[i])
+        tab:SetNormalFontObject("GameFontNormal")
+        
+        -- Clear any existing backdrop and add a simple visible one
+        tab:SetBackdrop(nil)
+        tab:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
+        tab:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+        
+        -- Ensure tab is visible and clickable
+        tab:SetFrameStrata("HIGH")
+        tab:SetFrameLevel(101)
+        tab:EnableMouse(true)
+        tab:Show()
+        
+        -- Set click handler
+        if i == 1 then -- History tab
+            tab:SetScript("OnClick", function()
+                -- Highlight this tab
+                tab:SetBackdropColor(0.4, 0.4, 0.4, 0.9)
+                -- Dim other tabs
+                for j = 2, 5 do
+                    if HLBG.UI.Tabs[j] then
+                        HLBG.UI.Tabs[j]:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+                    end
+                end
+                
+                -- Show history content
+                if HLBG.UI.History then
+                    HLBG.UI.History:Show()
+                    -- Call original update function if it exists
+                    if type(HLBG.UpdateHistoryDisplay) == 'function' then
+                        pcall(HLBG.UpdateHistoryDisplay)
+                    end
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History tab activated')
+                end
+                
+                -- Hide other content
+                if HLBG.UI.Stats then HLBG.UI.Stats:Hide() end
+                if HLBG.UI.Info then HLBG.UI.Info:Hide() end
+                if HLBG.UI.Settings then HLBG.UI.Settings:Hide() end
+                if HLBG.UI.Queue then HLBG.UI.Queue:Hide() end
+            end)
+        elseif i == 2 then -- Stats tab
+            tab:SetScript("OnClick", function()
+                tab:SetBackdropColor(0.4, 0.4, 0.4, 0.9)
+                HLBG.UI.Tabs[1]:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+                for j = 3, 5 do
+                    if HLBG.UI.Tabs[j] then HLBG.UI.Tabs[j]:SetBackdropColor(0.2, 0.2, 0.2, 0.9) end
+                end
+                
+                if HLBG.UI.Stats then HLBG.UI.Stats:Show() end
+                if HLBG.UI.History then HLBG.UI.History:Hide() end
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Stats tab activated')
+            end)
+        else -- Other tabs
+            tab:SetScript("OnClick", function()
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r '..tabNames[i]..' tab clicked (content not implemented yet)')
+            end)
+        end
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Fixed all 5 tabs with proper positioning and visibility')
+    
+    -- Step 6: Activate History tab by default
+    if HLBG.UI.Tabs[1] then
+        HLBG.UI.Tabs[1]:GetScript("OnClick")(HLBG.UI.Tabs[1])
+    end
+    
+    -- Step 7: Add close button if missing
+    if not HLBG.UI.Frame.closeBtn then
+        local close = CreateFrame("Button", nil, HLBG.UI.Frame)
+        close:SetSize(20, 20)
+        close:SetPoint("TOPRIGHT", HLBG.UI.Frame, "TOPRIGHT", -10, -10)
+        close:SetNormalTexture("Interface/Buttons/UI-Panel-MinimizeButton-Up")
+        close:SetScript("OnClick", function() HLBG.UI.Frame:Hide() end)
+        HLBG.UI.Frame.closeBtn = close
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Complete UI fix applied - tabs should now be visible and functional!')
+end
+
+-- Nuclear option: Show absolutely minimal working UI 
+SLASH_HLBGNUCLEAR1 = '/hlbgnuclear'
+SlashCmdList['HLBGNUCLEAR'] = function()
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r NUCLEAR OPTION: Creating completely isolated UI...')
+    
+    -- Disable everything that might interfere
+    HLBG.ApplyModernStyling = function() end
+    HLBG.ModernizeContentAreas = function() end
+    HLBG.UpdateModernTabStyling = function() end
+    HLBG.CreateModernStatsCards = function() end
+    
+    -- Hide any existing conflicting frames
+    for _, frameName in ipairs({"HLBG_Main", "HLBG_Fixed", "HLBG_Rebuilt", "HLBG_ModernHUD"}) do
+        local frame = _G[frameName]
+        if frame and frame.Hide then frame:Hide() end
+    end
+    
+    -- Create completely new, isolated frame 
+    local frame = CreateFrame("Frame", "HLBG_Nuclear", UIParent)
+    frame:SetSize(600, 400)
+    frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameLevel(1000) -- Very high level to ensure visibility
+    
+    -- Bright, obvious background so we can see it
+    frame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    frame:SetBackdropColor(0.1, 0.1, 0.5, 0.9) -- Dark blue so we can see it
+    frame:SetBackdropBorderColor(1, 1, 1, 1) -- White border
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", 0, -15)
+    title:SetText("HLBG - Nuclear Mode")
+    title:SetTextColor(1, 1, 1, 1) -- White text
+    
+    -- Close button 
+    local close = CreateFrame("Button", nil, frame)
+    close:SetSize(20, 20)
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    close:SetNormalTexture("Interface/Buttons/UI-Panel-MinimizeButton-Up")
+    close:SetScript("OnClick", function() frame:Hide() end)
+    
+    -- Create super simple tabs
+    local tabs = {}
+    local tabNames = {"History", "Stats"}
+    local currentContent = nil
+    
+    for i = 1, 2 do
+        local tab = CreateFrame("Button", nil, frame)
+        tab:SetSize(100, 30)
+        tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 20 + ((i-1) * 105), -50)
+        tab:SetText(tabNames[i])
+        tab:SetNormalFontObject("GameFontNormal")
+        
+        -- Very visible tab background
+        tab:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
+        tab:SetBackdropColor(0.3, 0.3, 0.3, 1)
+        tab:SetFrameLevel(1001)
+        
+        tab:SetScript("OnClick", function()
+            -- Clear previous content
+            if currentContent then currentContent:Hide() end
+            
+            -- Highlight clicked tab
+            for j, t in ipairs(tabs) do
+                t:SetBackdropColor(j == i and 0.5 or 0.3, j == i and 0.5 or 0.3, j == i and 0.5 or 0.3, 1)
+            end
+            
+            -- Create content area for this tab
+            currentContent = CreateFrame("Frame", nil, frame)
+            currentContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -90)
+            currentContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 20)
+            currentContent:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
+            currentContent:SetBackdropColor(0.05, 0.05, 0.2, 0.9) -- Dark blue content area
+            currentContent:SetFrameLevel(1002)
+            
+            if i == 1 then -- History tab
+                local text = currentContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                text:SetPoint("TOPLEFT", currentContent, "TOPLEFT", 10, -10)
+                text:SetText("Battle History:")
+                text:SetTextColor(1, 1, 1, 1)
+                
+                -- Show actual data from memory if available
+                local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
+                local dataText = currentContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                dataText:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -10)
+                dataText:SetWidth(550)
+                dataText:SetJustifyH("LEFT")
+                dataText:SetTextColor(0.8, 0.8, 1, 1)
+                
+                if rowCount > 0 then
+                    local lines = {string.format("Found %d stored battle entries:", rowCount)}
+                    for j, row in ipairs(HLBG.UI.History.lastRows) do
+                        if j > 10 then break end -- Limit display
+                        table.insert(lines, string.format("#%s: %s (%s)", row.id or '?', row.winner or '?', row.reason or '?'))
+                    end
+                    dataText:SetText(table.concat(lines, "\n"))
+                else
+                    dataText:SetText("No battle history found in memory")
+                end
+                
+            elseif i == 2 then -- Stats tab
+                local text = currentContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                text:SetPoint("TOPLEFT", currentContent, "TOPLEFT", 10, -10)
+                text:SetText("Statistics: Stats tab functionality not implemented in nuclear mode")
+                text:SetTextColor(1, 1, 1, 1)
+            end
+            
+            currentContent:Show()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Nuclear mode - '..tabNames[i]..' tab activated')
+        end)
+        
+        tabs[i] = tab
+    end
+    
+    -- Show frame and activate History tab
+    frame:Show()
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Auto-click History tab
+    tabs[1]:GetScript("OnClick")(tabs[1])
+    
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Nuclear mode activated - completely isolated UI should now be visible!')
+end
+
+-- Request full history data from server
+SLASH_HLBGREFRESH1 = '/hlbgrefresh'  
+SlashCmdList['HLBGREFRESH'] = function()
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requesting fresh data from server...')
+    
+    -- Request new data
+    if type(SendAddonMessage) == 'function' then
+        pcall(function()
+            SendAddonMessage("HLBG_REQUEST", "HISTORY", "WHISPER", UnitName("player"))
+            SendAddonMessage("HLBG_REQUEST", "STATS", "WHISPER", UnitName("player")) 
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent data requests via addon messages')
+        end)
+    end
+    
+    -- Also try slash command fallbacks
+    pcall(function()
+        SendChatMessage(".hlbg history", "GUILD")
+        SendChatMessage(".hlbg stats", "GUILD") 
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent fallback chat commands')
+    end)
+end
+
+-- Emergency: Create working HistoryStr function since core file isn't loading
+HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, sortDir)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r HistoryStr called with TSV length: ' .. (tsv and #tsv or 0))
+    end
+    
+    local rows = {}
+    if type(tsv) == 'string' and tsv ~= '' then
+        -- Sanitize: convert pipes to newlines if needed
+        tsv = tsv:gsub('%|%|', '\n')  
+        if tsv:find('|') and not tsv:find('\n') then
+            tsv = tsv:gsub('|', '\n')
+        end
+        
+        -- Parse TSV lines
+        for line in tsv:gmatch('[^\n]+') do
+            line = line:gsub('^%s+',''):gsub('%s+$','')
+            if line ~= '' then
+                local cols = {}
+                for col in line:gmatch('[^\t]+') do
+                    local trimmed = col:gsub('^%s+',''):gsub('%s+$','')
+                    cols[#cols + 1] = trimmed
+                end
+                if #cols >= 7 then
+                    rows[#rows + 1] = {
+                        id = cols[1],
+                        season = cols[2], 
+                        seasonName = cols[3],
+                        ts = cols[4],
+                        winner = cols[5],
+                        affix = cols[6],
+                        reason = cols[7]
+                    }
+                end
+            end
+        end
+    end
+    
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Parsed %d rows', #rows))
+    end
+    
+    -- Store rows and try to call History function if available
+    HLBG.UI = HLBG.UI or {}
+    HLBG.UI.History = HLBG.UI.History or {}
+    HLBG.UI.History.lastRows = rows
+    HLBG.UI.History.page = tonumber(page) or 1
+    HLBG.UI.History.per = tonumber(per) or 15
+    HLBG.UI.History.total = tonumber(total) or #rows
+    
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Stored %d rows in lastRows', #rows))
+    end
+    
+    -- Try to render if UI exists
+    if HLBG.UpdateHistoryDisplay and type(HLBG.UpdateHistoryDisplay) == 'function' then
+        pcall(HLBG.UpdateHistoryDisplay)
     end
 end
 

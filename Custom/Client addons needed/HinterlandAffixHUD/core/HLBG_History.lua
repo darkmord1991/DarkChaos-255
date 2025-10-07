@@ -1,5 +1,10 @@
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
+-- Debug: Announce that this file is loading
+if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG Debug:|r HLBG_History.lua loading...")
+end
+
 -- History module (extracted from monolithic UI file)
 -- Responsibilities:
 --  * Parse history payloads (table or TSV)
@@ -325,7 +330,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
         end
 
         for line in tsv:gmatch('[^\n]+') do
-        for line in tsv:gmatch('[^\n]+') do
             -- Trim line
             line = line:gsub('^%s+',''):gsub('%s+$','')
             if line ~= '' then
@@ -350,15 +354,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
                     local added = false
                     local alt = line
                     if alt:find('%|') then
-    cont:SetHeight(math.max(120, (#rows*22)+30))
-
-    -- Dev debug first row mapping summary
-    pcall(function()
-        if rows[1] and DEFAULT_CHAT_FRAME and (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) then
-            local r1 = rows[1]
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r FirstRow id=%s season=%s ts=%s winner=%s affix=%s reason=%s', tostring(r1.id), tostring(r1.season or r1.seasonName or '-'), tostring(r1.ts), tostring(r1.winner), tostring(r1.affix), tostring(r1.reason)))
-        end
-    end)
                         local parts = {}
                         for part in alt:gmatch('[^%|]+') do parts[#parts+1] = (part or ''):gsub('^%s+',''):gsub('%s+$','') end
                         if #parts >= 5 then
@@ -396,4 +391,9 @@ if not HLBG.HistoryApplySort then
             HLBG.History(ui.lastRows, ui.page, ui.per, ui.total, ui.sortKey, ui.sortDir)
         end
     end
+end
+
+-- Debug: Announce that functions are defined
+if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))
 end
