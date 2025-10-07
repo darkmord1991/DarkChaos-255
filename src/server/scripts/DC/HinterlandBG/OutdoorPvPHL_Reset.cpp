@@ -61,6 +61,7 @@ void OutdoorPvPHL::HandleReset()
     _playerScores.clear();
     _playerHKBaseline.clear();
     LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
+    _winnerRecorded = false; // allow new winner recording for next match
     // If configured, pick a random affix for the new battle immediately
     // (weather will be synced if enabled)
     if (_affixEnabled && _affixRandomOnStart)

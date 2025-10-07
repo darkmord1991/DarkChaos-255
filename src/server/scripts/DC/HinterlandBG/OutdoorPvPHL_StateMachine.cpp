@@ -127,14 +127,16 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
     // Check for battle end conditions
     if (_ally_gathered == 0)
     {
-        _recordWinner(TEAM_HORDE);
+        if (!_winnerRecorded)
+            _recordWinner(TEAM_HORDE);
         TransitionToState(BG_STATE_FINISHED);
         return;
     }
     
     if (_horde_gathered == 0)
     {
-        _recordWinner(TEAM_ALLIANCE);
+        if (!_winnerRecorded)
+            _recordWinner(TEAM_ALLIANCE);
         TransitionToState(BG_STATE_FINISHED);
         return;
     }
@@ -144,11 +146,11 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
     {
         // Determine winner by resources
         if (_ally_gathered > _horde_gathered)
-            _recordWinner(TEAM_ALLIANCE);
+            if (!_winnerRecorded) _recordWinner(TEAM_ALLIANCE);
         else if (_horde_gathered > _ally_gathered)
-            _recordWinner(TEAM_HORDE);
+            if (!_winnerRecorded) _recordWinner(TEAM_HORDE);
         else
-            _recordWinner(TEAM_NEUTRAL); // Draw
+            if (!_winnerRecorded) _recordWinner(TEAM_NEUTRAL); // Draw
             
         TransitionToState(BG_STATE_FINISHED);
         return;
@@ -256,7 +258,7 @@ void OutdoorPvPHL::ForceFinishBattle(TeamId winner)
     if (_bgState == BG_STATE_IN_PROGRESS || _bgState == BG_STATE_PAUSED)
     {
         if (winner != TEAM_NEUTRAL)
-            _recordWinner(winner);
+            if (!_winnerRecorded) _recordWinner(winner);
         TransitionToState(BG_STATE_FINISHED);
     }
 }

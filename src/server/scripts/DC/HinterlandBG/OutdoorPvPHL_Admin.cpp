@@ -127,12 +127,18 @@ float OutdoorPvPHL::GetAffixWeatherIntensity(uint8 code) const
 // Private helper: keep an in-memory ring buffer of last ~10 winners
 void OutdoorPvPHL::_recordWinner(TeamId winner)
 {
+    // Prevent duplicate winner recordings (can happen if depletion + timer expiry
+    // or admin force-finish race in the same update frame). Once a winner is
+    // persisted for a match, further calls are ignored until next reset.
+    if (_winnerRecorded)
+        return;
     if (winner != TEAM_ALLIANCE && winner != TEAM_HORDE)
         return;
     // push front, unique-consecutive not required; keep last 10
     _recentWinners.push_front(winner);
     while (_recentWinners.size() > 10)
         _recentWinners.pop_back();
+    _winnerRecorded = true;
 
     // Persist a row in characters DB for history
     // Note: CharacterDatabase is available globally; keep SQL minimal and safe.

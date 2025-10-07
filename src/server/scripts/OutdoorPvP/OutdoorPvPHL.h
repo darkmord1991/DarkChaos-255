@@ -366,6 +366,11 @@
             // Track recent winners for scoreboard UX
             void _recordWinner(TeamId winner);
             void _recordManualReset();
+            // Guard flag to ensure winner persistence logic only runs once per match.
+            // Without this, simultaneous detection paths (resource depletion threshold
+            // + state machine tick, or admin force finish during depletion) could
+            // attempt to insert duplicate rows into hlbg_winner_history.
+            bool _winnerRecorded = false; // reset in constructor and HandleReset
             
             // State machine implementation
             void UpdateStateMachine(uint32 diff);

@@ -215,6 +215,7 @@
     _memberOfflineSince.clear();
     _zoneWasEmpty = false;
     _statsIncludeManualResets = true;
+    _winnerRecorded = false; // no winner yet this match
 
     }
 
