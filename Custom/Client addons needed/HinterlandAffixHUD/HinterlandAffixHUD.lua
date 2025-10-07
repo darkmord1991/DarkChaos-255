@@ -1,11 +1,12 @@
 -- Use the improved, unified version (same as the copy under Custom/Client/Client addons needed/)
 local f = CreateFrame("Frame", "HinterlandAffixHUD", UIParent)
-f:SetSize(200, 50)
+f:SetSize(1, 1)  -- Minimal size
 f:SetPoint("CENTER")
-f:SetMovable(true)
-f:EnableMouse(true)
-f:RegisterForDrag("LeftButton")
-f:SetClampedToScreen(true)
+f:Hide()  -- Hide immediately - background HUD disabled
+f:SetMovable(false)  -- Disable movement
+f:EnableMouse(false)  -- Disable mouse
+-- f:RegisterForDrag("LeftButton")  -- Disabled
+-- f:SetClampedToScreen(true)  -- Disabled
 local function SavePosition()
   local point, rel, relPoint, x, y = f:GetPoint()
   HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
@@ -113,6 +114,11 @@ local function setAffixByName(name)
 end
 
 local function update()
+  -- DISABLED: Background affix HUD removed per user request
+  -- Always hide this HUD to prevent conflicts with modern HUD
+  f:Hide()
+  
+  --[[ ORIGINAL CODE DISABLED
   -- Only show our affix line inside The Hinterlands
   if not InHinterlands() then
     f:Hide()
@@ -121,6 +127,7 @@ local function update()
     if AlwaysUpFrame then AlwaysUpFrame:Show() end
     return
   end
+  
   local count = (type(HLBG) == 'table' and type(HLBG.safeGetNumWorldStateUI) == 'function') and HLBG.safeGetNumWorldStateUI() or (type(GetNumWorldStateUI) == 'function' and GetNumWorldStateUI() or 0)
   local label = ""
   local icon  = nil
@@ -176,6 +183,10 @@ local function update()
 
   applyHideHUD()
   AnchorUnderAlwaysUp()
+  --]]
+  
+  -- Function disabled - return early to prevent any HUD display
+  return
 end
 
 local HLAFFIXHUD_VERSION = "1.3.0"
@@ -273,12 +284,12 @@ f:RegisterEvent("ZONE_CHANGED")
 f:RegisterEvent("ZONE_CHANGED_INDOORS")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
--- Some cores rarely fire worldstate events on 3.3.5a; poll as a safety net
+-- Some cores rarely fire worldstate events on 3.3.5a; poll as a safety net with reduced frequency
 do
   local acc = 0
   f:SetScript("OnUpdate", function(self, elapsed)
     acc = acc + (elapsed or 0)
-    if acc > 1.0 then
+    if acc > 5.0 then  -- Reduced from 1.0 to 5.0 seconds for better performance
       acc = 0
       update()
     end

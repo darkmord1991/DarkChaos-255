@@ -1,78 +1,113 @@
-# Hinterland Battleground Addon
+# Hinterland Battleground Addon (Modern Edition)
 
 ## Overview
-The Hinterland Battleground Addon enhances your experience in the custom Hinterland 25v25 PvP battleground. It provides a heads-up display showing the current affix, resources, timers, and other information crucial to gameplay. The addon also offers a comprehensive UI for viewing match history, statistics, and joining the queue.
+The Hinterland Battleground Addon provides a comprehensive interface for the custom Hinterland 25v25 PvP battleground on DarkChaos-255 server. Features include a modern HUD, match history, statistics, and queue management with enhanced stability and visual design.
 
 ## Version
-1.5.0
+1.5.7-emergency (Modern UI Edition)
 
-## Features
-- **Live Battle HUD**: Shows real-time resources, player counts, and time remaining
-- **Match History**: View details of your past battleground matches
-- **Statistics**: See your win/loss rates and performance metrics
-- **Affix Information**: Detailed explanation of all possible battleground affixes
-- **Queue Management**: Join the queue and see estimated wait times
-- **Settings**: Customize the addon's behavior and appearance
-- **Help System**: In-game documentation and FAQ
+## ✨ Modern Features
+- **🎨 Modern UI Design**: Dark theme with professional styling, card-based layouts
+- **📊 Real-time HUD**: Moveable modern HUD showing Alliance/Horde resources and battle status  
+- **📈 Statistics Dashboard**: Beautiful card-based stats display with win/loss rates and performance metrics
+- **📋 Match History**: Enhanced history viewer with sorting and pagination
+- **🎯 Smart Content Loading**: Automatic test data population when server data unavailable
+- **🔧 Enhanced Error Handling**: Comprehensive compatibility fixes for WoW 3.3.5a
+- **💬 Debug Tools**: Advanced debugging commands for troubleshooting
 
-## Installation
-- Copy the `HinterlandAffixHUD` folder to your WoW/Interface/AddOns directory on your client.
-- Ensure the AIO_Client addon is installed (required dependency)
-- Restart the client or use `/reload`.
+## 🚀 Quick Start
+1. **Installation**: Copy `HinterlandAffixHUD` folder to `WoW/Interface/AddOns/`
+2. **Dependencies**: Ensure `AIO_Client` addon is installed
+3. **Launch**: Use `/reload` then `/hlbg show` to open the modern interface
 
-## Usage
-- Type `/hlbg` or `/hinterland` to open the main interface
-- Join the battleground queue via the Queue tab or with `/hlbg queue join`
-- Configure the addon's settings in the Settings tab or with `/hlbgconfig`
+## 📋 Command Reference
 
-## Commands
-- `/hlbg` - Open the main interface
-- `/hlbg queue join` - Join the battleground queue
-- `/hlbg queue leave` - Leave the battleground queue
-- `/hlbg status` - Show current battleground status
-- `/hlbg debug [on|off]` - Enable or disable debug mode
-- `/hlbg season <n>` - Set the season filter (0 = all/current)
-- `/hlbgconfig` - Open the addon settings panel
-- `/hinterland` - Alias for /hlbg
+### Primary Commands
+- `/hlbg show` - Open the modernized main window
+- `/hlbg hide` - Close the main window  
+- `/hlbg reload` - Reload all UI components
+- `/hlbg testdata` - Load test data for empty tabs
+- `/hlbg style` - Reapply modern styling
+- `/hlbg stats` - Refresh statistics display
 
-Legacy commands:
-- `/hlaffix dump` - List current worldstates (helps identify the right ID)
-- `/hlaffix id <number|0xHEX>` - Set the affix worldstate ID (default 0xDD1010)
-- `/hlaffix hide on|off` - Hide/show Blizzard's WG-style HUD
+### Debug & Troubleshooting
+- `/hlbgws` - Show all worldstate values (HUD sync debugging)
+- `/hlbgdiag` - Diagnose empty tabs and UI issues
+- `/hlbgdebug ws` - Worldstate debugging info
+- `/hlbgdebug hud` - Force HUD update
 
-## Customization
-The addon offers various customization options in the Settings tab:
-- Toggle chat notifications for battleground events
-- Adjust HUD scale and position
-- Configure auto-teleport and notification settings
-- Enable developer mode for debugging
+### Legacy Support
+- `/hlaffix dump` - List current worldstates  
+- `/hlaffix id <number>` - Set affix worldstate ID
+- `/hlaffix hide on|off` - Toggle Blizzard HUD visibility
 
-## Troubleshooting
-If you encounter issues with the addon:
-1. Make sure AIO_Client is installed and working
-2. Check if the addon is enabled in your AddOns list
-3. Enable debug mode with `/hlbg debug on` and check for error messages
-4. Try reloading your UI with `/reload`
+## 🎯 Key Improvements
 
-## Credits
-- Created by DC-255
-- For the Hinterland Battleground custom content on DarkChaos-255 server
-====================
+### ✅ Fixed Issues
+- **Background Affix HUD**: Completely disabled conflicting background HUD
+- **Live Tab**: Removed redundant Live tab, restructured tab system
+- **Empty Tabs**: Enhanced content loading with immediate fallback data
+- **HUD Sync**: Improved worldstate parsing for reliable Alliance/Horde resource display
+- **Modern Styling**: Professional dark theme with hover effects and smooth animations
 
-HinterlandAffixHUD
-------------------
-A tiny addon that shows the current Hinterland BG affix (and weather) near the WG-style HUD. It reads a custom worldstate value sent by the server and falls back to parsing server announcements.
+### 🔧 Technical Enhancements  
+- **C_Timer Compatibility**: Full 3.3.5a compatibility layer
+- **Safe AIO Operations**: Graceful fallback when AIO unavailable
+- **Enhanced Error Handling**: Comprehensive error catching and recovery
+- **Smart Initialization**: Multiple retry mechanisms ensure reliable loading
 
-Install:
-- Copy the `HinterlandAffixHUD` folder to your WoW/Interface/AddOns directory on your client.
-- Restart the client or use `/reload`.
+## 📊 Interface Tabs
 
-Usage:
-- /hlaffix dump — list current worldstates (helps identify the right ID)
-- /hlaffix id <number|0xHEX> — set the affix worldstate ID (default 0xDD1010)
-- /hlaffix hide on|off — hide/show Blizzard’s WG-style HUD (so the addon “replaces” it visually)
+### 🗂️ History Tab
+- Enhanced battle history with modern row styling
+- Sortable columns and pagination controls
+- Immediate test data loading if server data unavailable
+- Color-coded faction indicators
 
-Notes:
-- Requires the server to send the custom worldstate ID and announcements (Affix/Weather lines) for best results.
-- You can reposition by editing the `SetPoint` line in `HinterlandAffixHUD.lua`.
-- Affix names map: 0=None, 1=Haste, 2=Slow, 3=Reduced Healing, 4=Reduced Armor, 5=Boss Enrage.
+### 📈 Stats Tab  
+- Beautiful 2x3 card grid layout showing key metrics
+- Real-time win/loss rates and performance statistics
+- Refresh button for manual data updates
+- Fallback data when server statistics unavailable
+
+### ℹ️ Info Tab
+- Comprehensive battleground information and rules
+- Affix explanations and strategy guides
+- Modern formatting with enhanced readability
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+1. **Empty Tabs**: Use `/hlbgdiag` to check status, `/hlbg testdata` to load sample data
+2. **HUD Not Syncing**: Use `/hlbgws` to verify worldstate data availability
+3. **UI Not Loading**: Use `/hlbg reload` to reinitialize all components
+4. **Missing Modern Styling**: Use `/hlbg style` to reapply visual enhancements
+
+### Debug Information
+- Enable comprehensive logging with `/hlbgdebug ws`
+- Check worldstate sync with `/hlbgws` command
+- Diagnose tab content issues with `/hlbgdiag`
+
+## 📁 File Structure (Post-Cleanup)
+**Active Files (29 total):**
+- Core: `HinterlandAffixHUD.lua`, `HLBG_Core.lua`, `HLBG_UI.lua`
+- Modern UI: `HLBG_HUD_Modern.lua`, `HLBG_UI_Modern.lua`
+- Compatibility: `HLBG_ErrorFixes.lua`, `HLBG_Compatibility.lua`
+- Features: `HLBG_Settings.lua`, `HLBG_Help.lua`, `HLBG_SlashCommands.lua`
+- Debug: `HLBG_WorldstateDebug.lua`, `HLBG_Debug_Helper.lua`
+
+**Removed in Cleanup (41 files):**
+- Duplicate functionality files, legacy implementations, backup TOC files
+- See `CLEANUP_LOG.md` for complete removal details
+
+## 💡 Tips
+- **First Time Users**: The addon automatically loads test data if no server data is available
+- **HUD Positioning**: Drag the modern HUD to reposition it on screen
+- **Tab Navigation**: Use mouse or keyboard shortcuts to switch between tabs
+- **Performance**: Modern UI is optimized for smooth performance on 3.3.5a clients
+
+## 🏆 Credits
+- **Created by**: DC-255
+- **Server**: DarkChaos-255 Hinterland Battleground
+- **Modern UI**: Enhanced with professional styling and improved UX
+- **Compatibility**: Optimized for WoW 3.3.5a with comprehensive error handling

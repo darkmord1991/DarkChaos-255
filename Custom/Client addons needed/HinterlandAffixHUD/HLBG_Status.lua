@@ -84,10 +84,7 @@ function HLBG.ProcessStatusUpdate(status)
         pcall(HLBG.UpdateHUD)
     end
     
-    -- Update the Live tab if present
-    if type(HLBG.UpdateLiveFromStatus) == 'function' then
-        pcall(HLBG.UpdateLiveFromStatus)
-    end
+    -- Live tab functionality disabled - no update needed
     
     -- Debug output
     if HLBG._devMode then

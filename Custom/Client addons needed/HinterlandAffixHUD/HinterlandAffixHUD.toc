@@ -1,8 +1,8 @@
 ## Interface: 30300
-## Title: Hinterland Affix HUD (Emergency Test)
-## Notes: Emergency minimal version to test loading
+## Title: Hinterland Battleground Addon (Modern Edition)
+## Notes: Modern UI battleground addon with enhanced HUD, statistics, and match history
 ## Author: DC-255
-## Version: 1.5.7-emergency
+## Version: 1.5.7-modern
 ## Deps: AIO_Client
 ## OptionalDeps: AIO_Client 
 ## LoadAfter: AIO_Client
@@ -13,6 +13,7 @@
 HLBG_EmergencyFix.lua
 HLBG_TimerCompat.lua
 HLBG_LoadDebug.lua
+HLBG_ErrorFixes.lua
 
 # Core compatibility files - add these back
 HLBG_AIO_Check.lua
@@ -21,6 +22,7 @@ HLBG_Compatibility.lua
 # Debug system - add these back
 HLBG_DebugBootstrap.lua
 HLBG_Debug_Helper.lua
+HLBG_WorldstateDebug.lua
 
 # Core functionality that we know works
 HinterlandAffixHUD.lua
@@ -36,6 +38,15 @@ HLBG_Settings.lua
 HLBG_Help.lua
 HLBG_AFK.lua
 HLBG_SlashCommands.lua
+
+# Fallback data and debugging
+HLBG_FallbackData.lua
+
+# Modern UI styling and enhancements
+HLBG_UI_Modern.lua
+
+# Comprehensive initialization system
+HLBG_Initialize.lua
 
 # Test AIO files individually - add HLBG_Handlers.lua
 HLBG_Status.lua

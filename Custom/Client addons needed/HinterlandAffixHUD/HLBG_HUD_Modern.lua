@@ -187,9 +187,18 @@ local function formatTime(seconds)
     end
 end
 
--- Update HUD data
+-- Update HUD data with throttling to prevent blinking
 function HLBG.UpdateModernHUD(data)
     if not HUD then return end
+    
+    -- Throttle updates to prevent blinking (max once per 0.5 seconds)
+    local now = GetTime()
+    HLBG._lastHUDUpdate = HLBG._lastHUDUpdate or 0
+    if (now - HLBG._lastHUDUpdate) < 0.5 then
+        return -- Skip this update, too soon
+    end
+    HLBG._lastHUDUpdate = now
+    
     -- allow updates even when HUD hidden so telemetry and internal state stay consistent
     data = data or {}
     -- Prefer authoritative worldstate when available
@@ -389,12 +398,12 @@ function HLBG.InitializeModernHUD()
         end
     end)
     
-    -- Set up regular telemetry updates
+    -- Set up less frequent telemetry updates to prevent blinking
     if HinterlandAffixHUDDB.enableTelemetry then
         local telemetryFrame = CreateFrame("Frame")
         telemetryFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = (self.elapsed or 0) + elapsed
-            if self.elapsed >= 1 then -- Update every second
+            if self.elapsed >= 5 then -- Update every 5 seconds instead of 1 to reduce blinking
                 self.elapsed = 0
                 if HUD:IsVisible() then
                     HLBG.UpdateModernHUD() -- Update telemetry portion
@@ -419,22 +428,74 @@ HLBG.UpdateHUD = function()
         pcall(oldUpdateHUD)
     end
     
-    -- Extract data from legacy RES global
+    -- Extract data from multiple sources - like Wintergrasp worldstate integration
     local res = _G.RES or {}
     local status = HLBG._lastStatus or {}
     
+    -- Also check worldstates directly - use text parsing for reliability
+    local wsData = {}
+    if type(GetNumWorldStateUI) == 'function' then
+        local numWS = GetNumWorldStateUI()
+        for i = 1, numWS do
+            local text, value, a, b, c, id = GetWorldStateUIInfo(i)
+            
+            -- Parse by text content (more reliable than guessing IDs)
+            if text and type(text) == 'string' then
+                local textLower = text:lower()
+                local numValue = tonumber(value) or 0
+                
+                -- Alliance resources
+                if textLower:find("alliance") and not textLower:find("player") then
+                    wsData.allianceResources = numValue
+                -- Horde resources  
+                elseif textLower:find("horde") and not textLower:find("player") then
+                    wsData.hordeResources = numValue
+                -- Time remaining
+                elseif textLower:find("time") or textLower:find("duration") then
+                    wsData.timeLeft = numValue
+                -- Player counts
+                elseif textLower:find("alliance") and textLower:find("player") then
+                    wsData.alliancePlayers = numValue
+                elseif textLower:find("horde") and textLower:find("player") then
+                    wsData.hordePlayers = numValue
+                end
+            end
+        end
+    end
+    
     local data = {
-        allianceResources = res.A or 0,
-        hordeResources = res.H or 0,
-        timeLeft = HLBG._timeLeft or res.END or 0,
-        alliancePlayers = status.APlayers or status.APC or 0,
-        hordePlayers = status.HPlayers or status.HPC or 0,
+        allianceResources = wsData.allianceResources or res.A or 0,
+        hordeResources = wsData.hordeResources or res.H or 0,
+        timeLeft = wsData.timeLeft or HLBG._timeLeft or res.END or 0,
+        alliancePlayers = wsData.alliancePlayers or status.APlayers or status.APC or 0,
+        hordePlayers = wsData.hordePlayers or status.HPlayers or status.HPC or 0,
         affixName = HLBG._affixText or "None",
         phase = status.phase or "IDLE"
     }
     
     HLBG.UpdateModernHUD(data)
 end
+
+-- Event handler for worldstate updates (throttled to prevent blinking)
+local wsFrame = CreateFrame("Frame")
+wsFrame:RegisterEvent("UPDATE_WORLD_STATES")
+wsFrame:RegisterEvent("WORLD_STATE_UI_TIMER_UPDATE") 
+wsFrame:SetScript("OnEvent", function(self, event)
+    if event == "UPDATE_WORLD_STATES" or event == "WORLD_STATE_UI_TIMER_UPDATE" then
+        -- Throttle worldstate updates (max once per second to prevent rapid blinking)
+        local now = GetTime()
+        self._lastWSUpdate = self._lastWSUpdate or 0
+        if (now - self._lastWSUpdate) < 1.0 then
+            return -- Skip this update, too frequent
+        end
+        self._lastWSUpdate = now
+        
+        -- Update HUD when worldstates change
+        if HLBG.UpdateHUD then
+            HLBG.UpdateHUD()
+        end
+    end
+end)
 
 -- Initialize when addon loads
 if HLBG.UI and HLBG.UI.Frame then

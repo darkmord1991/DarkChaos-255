@@ -130,12 +130,18 @@ function HLBG._ensureUI(component)
     end
     
     if component == 'Live' and not HLBG.UI.Live then
+        -- DISABLED: Live tab functionality removed per user request
+        -- The hlbg status command can be run from anywhere, making this tab redundant
         HLBG.UI.Live = CreateFrame('Frame', nil, UIParent)
-        HLBG.UI.Live:SetSize(400, 100)
+        HLBG.UI.Live:SetSize(1, 1)  -- Minimal size
         HLBG.UI.Live:SetPoint('CENTER')
+        HLBG.UI.Live:Hide()  -- Keep hidden
         HLBG.UI.Live.Text = HLBG.UI.Live:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         HLBG.UI.Live.Text:SetPoint('CENTER')
-        HLBG.UI.Live.Text:SetText('Waiting for live data…')
+        HLBG.UI.Live.Text:SetText('Live tab disabled - use /hlbg status instead')
+        
+        -- Mark as disabled
+        HLBG.UI.Live._disabled = true
     elseif component == 'Stats' and not HLBG.UI.Stats then
         HLBG.UI.Stats = CreateFrame('Frame', nil, UIParent)
         HLBG.UI.Stats:SetSize(400, 300)
