@@ -10,167 +10,195 @@ HLBG = HLBG or {}
 
 -- Check for existing JSON decoder and create one if needed
 if type(_G.json_decode) ~= 'function' and type(HLBG.json_decode) ~= 'function' then
-    -- Lightweight JSON parser for WoW client (with no external dependencies)
+    -- Simple robust JSON parser for WoW client (recursive-safe)
     function HLBG.json_decode(str)
         if type(str) ~= 'string' or str == '' then return nil end
         
         local pos = 1
-        local function skipws() 
-            local _, newpos = str:find('^%s*', pos)
-            if newpos then pos = newpos + 1 end
+        local len = #str
+        
+        local function skipWs()
+            while pos <= len do
+                local c = str:byte(pos)
+                if c == 32 or c == 9 or c == 10 or c == 13 then -- space, tab, newline, carriage return
+                    pos = pos + 1
+                else
+                    break
+                end
+            end
         end
         
-        local function parseError(msg)
-            return nil, string.format("json error: %s at position %d in [%.10s...]", msg, pos, str:sub(pos, pos+9))
-        end
-        
-        local function expect(pattern, err)
-            local matched = str:match('^' .. pattern, pos)
-            if not matched then return parseError(err) end
-            pos = pos + #matched
-            return matched
+        local function parseValue() -- Forward declared below
         end
         
         local function parseString()
-            local s, e = str:find('^"(.-)"', pos)
-            if not s then return parseError("unterminated string") end
-            local val = str:sub(s+1, e-1)
-            pos = e + 1
+            if pos > len or str:byte(pos) ~= 34 then -- not "
+                return nil, "Expected string"
+            end
+            pos = pos + 1 -- skip opening quote
+            local start = pos
             
-            -- Handle escape sequences
-            val = val:gsub('\\(.)', function(c)
-                if c == 'n' then return '\n'
-                elseif c == 'r' then return '\r'
-                elseif c == 't' then return '\t'
-                elseif c == 'f' then return '\f'
-                elseif c == 'b' then return '\b'
-                elseif c == 'u' then 
-                    -- Unicode \uXXXX handling (minimal for common cases)
-                    local hex = str:match('^\\u(%x%x%x%x)', pos - 2)
-                    if hex then
-                        local code = tonumber(hex, 16)
-                        -- Basic support for common latin-1 and euro symbol
-                        if code == 0x20AC then return '€' end  -- Euro sign
-                        if code <= 0xFF then return string.char(code) end
-                        return '' -- Skip unsupported characters
-                    end
-                    return ''
-                else return c end
-            end)
-            
-            return val
+            while pos <= len do
+                local c = str:byte(pos)
+                if c == 34 then -- closing quote
+                    local result = str:sub(start, pos - 1)
+                    pos = pos + 1
+                    -- Basic escape handling
+                    result = result:gsub('\\(.)', function(escaped)
+                        if escaped == 'n' then return '\n'
+                        elseif escaped == 't' then return '\t'  
+                        elseif escaped == 'r' then return '\r'
+                        elseif escaped == '\\' then return '\\'
+                        elseif escaped == '"' then return '"'
+                        else return escaped end
+                    end)
+                    return result
+                elseif c == 92 then -- backslash
+                    pos = pos + 2 -- skip escape sequence  
+                else
+                    pos = pos + 1
+                end
+            end
+            return nil, "Unterminated string"
         end
         
         local function parseNumber()
-            local num = str:match('^-?%d+%.?%d*[eE]?[+-]?%d*', pos)
-            if not num then return parseError("invalid number") end
-            pos = pos + #num
-            return tonumber(num)
+            local start = pos
+            if pos <= len and (str:byte(pos) == 45) then pos = pos + 1 end -- minus sign
+            
+            while pos <= len do
+                local c = str:byte(pos)
+                if c >= 48 and c <= 57 then -- 0-9
+                    pos = pos + 1
+                elseif c == 46 then -- decimal point
+                    pos = pos + 1
+                else
+                    break
+                end
+            end
+            
+            local numStr = str:sub(start, pos - 1)
+            return tonumber(numStr)
         end
         
         local function parseArray()
-            local arr = {}
-            skipws()
-            if str:sub(pos, pos) == ']' then
+            local result = {}
+            pos = pos + 1 -- skip [
+            skipWs()
+            
+            if pos <= len and str:byte(pos) == 93 then -- ]
                 pos = pos + 1
-                return arr
+                return result
             end
             
             while true do
-                skipws()
-                local val, err = parseValue()
+                skipWs()
+                local value, err = parseValue()
                 if err then return nil, err end
-                table.insert(arr, val)
+                table.insert(result, value)
                 
-                skipws()
-                local c = str:sub(pos, pos)
-                pos = pos + 1
-                if c == ']' then break end
-                if c ~= ',' then return parseError("expected ',' or ']'") end
+                skipWs()
+                if pos > len then return nil, "Unexpected end in array" end
+                
+                local c = str:byte(pos)
+                if c == 93 then -- ]
+                    pos = pos + 1
+                    break
+                elseif c == 44 then -- ,
+                    pos = pos + 1
+                else
+                    return nil, "Expected ',' or ']' in array"
+                end
             end
             
-            return arr
+            return result
         end
         
         local function parseObject()
-            local obj = {}
-            skipws()
-            if str:sub(pos, pos) == '}' then
+            local result = {}
+            pos = pos + 1 -- skip {
+            skipWs()
+            
+            if pos <= len and str:byte(pos) == 125 then -- }
                 pos = pos + 1
-                return obj
+                return result
             end
             
             while true do
-                skipws()
-                if str:sub(pos, pos) ~= '"' then return parseError("expected string key") end
+                skipWs()
+                local key, err = parseString()
+                if err then return nil, "Expected string key: " .. err end
                 
-                local key = parseString()
-                if not key then return parseError("invalid key") end
-                
-                skipws()
-                if str:sub(pos, pos) ~= ':' then return parseError("expected ':'") end
+                skipWs()
+                if pos > len or str:byte(pos) ~= 58 then -- :
+                    return nil, "Expected ':' after key"
+                end
                 pos = pos + 1
                 
-                skipws()
-                local val, err = parseValue()
-                if err then return nil, err end
-                obj[key] = val
+                skipWs()
+                local value, err2 = parseValue()
+                if err2 then return nil, err2 end
+                result[key] = value
                 
-                skipws()
-                local c = str:sub(pos, pos)
-                pos = pos + 1
-                if c == '}' then break end
-                if c ~= ',' then return parseError("expected ',' or '}'") end
+                skipWs()
+                if pos > len then return nil, "Unexpected end in object" end
+                
+                local c = str:byte(pos)
+                if c == 125 then -- }
+                    pos = pos + 1
+                    break
+                elseif c == 44 then -- ,
+                    pos = pos + 1
+                else
+                    return nil, "Expected ',' or '}' in object"
+                end
             end
             
-            return obj
+            return result
         end
-        
-        -- Forward declaration to resolve recursive dependency
-        local parseValue
         
         parseValue = function()
-            skipws()
-            local c = str:sub(pos, pos)
+            skipWs()
+            if pos > len then return nil, "Unexpected end of input" end
             
-            if c == '"' then return parseString()
-            elseif c == '{' then pos = pos + 1; return parseObject()
-            elseif c == '[' then pos = pos + 1; return parseArray()
-            elseif c == 'n' then
-                if str:sub(pos, pos+3) == 'null' then
-                    pos = pos + 4
-                    return nil
-                else
-                    return parseError("expected 'null'")
-                end
-            elseif c == 't' then
-                if str:sub(pos, pos+3) == 'true' then
+            local c = str:byte(pos)
+            if c == 34 then -- "
+                return parseString()
+            elseif c == 123 then -- {
+                return parseObject()
+            elseif c == 91 then -- [
+                return parseArray()
+            elseif c == 116 then -- t (true)
+                if str:sub(pos, pos + 3) == "true" then
                     pos = pos + 4
                     return true
-                else
-                    return parseError("expected 'true'")
                 end
-            elseif c == 'f' then
-                if str:sub(pos, pos+4) == 'false' then
+                return nil, "Invalid literal"
+            elseif c == 102 then -- f (false)
+                if str:sub(pos, pos + 4) == "false" then
                     pos = pos + 5
                     return false
-                else
-                    return parseError("expected 'false'")
                 end
-            elseif c == '-' or (c >= '0' and c <= '9') then
+                return nil, "Invalid literal"
+            elseif c == 110 then -- n (null)
+                if str:sub(pos, pos + 3) == "null" then
+                    pos = pos + 4
+                    return nil
+                end
+                return nil, "Invalid literal"
+            elseif c == 45 or (c >= 48 and c <= 57) then -- - or 0-9
                 return parseNumber()
             else
-                return parseError("unexpected character: " .. c)
+                return nil, "Unexpected character: " .. string.char(c)
             end
         end
         
-        skipws()
         local result, err = parseValue()
         if err then return nil, err end
         
-        skipws()
-        if pos <= #str then
-            return nil, "trailing garbage at position " .. pos
+        skipWs()
+        if pos <= len then
+            return nil, "Extra characters after JSON"
         end
         
         return result

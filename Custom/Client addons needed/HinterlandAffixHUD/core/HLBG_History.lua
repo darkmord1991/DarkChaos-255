@@ -149,6 +149,7 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
     end
 
     local y=-22
+    DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
     for i,row in ipairs(rows) do
         local r = Row(i)
         r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
@@ -171,12 +172,22 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
         local dur = tonumber(row.dur) or 0; r.dur:SetText(dur>0 and SecondsToTime(dur) or '-')
         r.rea:SetText(row.reason or '-')
         r:Show(); y = y - 22
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y + 22))
     end
     cont:SetHeight(math.max(120, (#rows*22)+30))
     
+    -- Hide the "Loading..." text when we have data
+    if ui.EmptyText then
+        if #rows > 0 then
+            ui.EmptyText:Hide()
+        else
+            ui.EmptyText:Show()
+        end
+    end
+    
     -- Debug success message
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully!', #rows))
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully! Content height set to %.0f', #rows, cont:GetHeight()))
     end
 
     -- Pager display

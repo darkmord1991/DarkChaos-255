@@ -353,25 +353,34 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             end
         end)
         pcall(function()
-            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
-            if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
-            end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
         end)
         if hasTabs and type(HLBG.HistoryStr) == 'function' then
             pcall(function()
-                local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
-                if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r About to call HistoryStr')
-                end
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r About to call HistoryStr')
             end)
+            
+            -- Store the sanitized TSV for debugging
+            HLBG._lastSanitizedTSV = htsv
+            local lines = {}
+            for line in htsv:gmatch('[^\n]+') do
+                if line and line:trim() ~= '' then
+                    table.insert(lines, line)
+                end
+            end
+            
+            pcall(function()
+                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
+            end)
+            
             local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
-            if not ok then
+            if ok then
                 pcall(function()
-                    local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
-                    if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                        DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug|r HistoryStr error: '..tostring(err))
-                    end
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r HistoryStr call succeeded!')
+                end)
+            else
+                pcall(function()
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug|r HistoryStr error: '..tostring(err))
                 end)
             end
         else
@@ -392,15 +401,83 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         end
         return
     end
-    -- Stats JSON
+    -- Stats JSON - FIXED to properly handle incoming JSON and display stats
     local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
-        local ok, decoded = pcall(function()
-            return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
+        pcall(function()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Processing STATS_JSON, length: ' .. #sj)
         end)
+        
+        local ok, decoded = pcall(function()
+            -- First try built-in JSON decoder if available
+            if HLBG.json_decode and type(HLBG.json_decode) == 'function' then
+                return HLBG.json_decode(sj)
+            elseif type(json_decode) == 'function' then
+                return json_decode(sj)
+            else
+                -- Fallback: Simple JSON parsing for known structure
+                local stats = {}
+                
+                -- Extract key values from JSON string manually
+                stats.draws = tonumber(sj:match('"draws":(%d+)')) or 0
+                stats.avgDuration = tonumber(sj:match('"avgDuration":(%d+)')) or 0
+                stats.season = tonumber(sj:match('"season":(%d+)')) or 1
+                stats.seasonName = sj:match('"seasonName":"([^"]+)"') or "Season 1"
+                
+                -- Extract counts object
+                local allianceCount = tonumber(sj:match('"Alliance":(%d+)')) or 0
+                local hordeCount = tonumber(sj:match('"Horde":(%d+)')) or 0
+                stats.counts = { Alliance = allianceCount, Horde = hordeCount }
+                
+                -- Calculate total battles
+                stats.totalBattles = allianceCount + hordeCount + stats.draws
+                
+                return stats
+            end
+        end)
+        
         if ok and type(decoded) == 'table' then
-            if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
-            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
+            pcall(function()
+                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r JSON decoded successfully: Alliance=' .. (decoded.counts and decoded.counts.Alliance or 'nil') .. ', Horde=' .. (decoded.counts and decoded.counts.Horde or 'nil') .. ', Draws=' .. (decoded.draws or 'nil'))
+            end)
+            
+            -- Store total if present
+            if decoded.total and HLBG.UI and HLBG.UI.History then 
+                HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total 
+            end
+            
+            -- Call stats display function with decoded data - TRY MULTIPLE APPROACHES
+            if type(HLBG.Stats) == 'function' then 
+                pcall(HLBG.Stats, decoded) 
+                pcall(function()
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with decoded data')
+                end)
+            end
+            
+            if type(HLBG.OnServerStats) == 'function' then
+                pcall(HLBG.OnServerStats, decoded)
+                pcall(function()
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with decoded data')
+                end)
+            end
+            
+            -- Force update stats display if UI exists
+            if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
+                pcall(function()
+                    local totalBattles = (decoded.counts and decoded.counts.Alliance or 0) + (decoded.counts and decoded.counts.Horde or 0) + (decoded.draws or 0)
+                    HLBG.UI.Stats.Text:SetText(string.format('|cFF33FF99Stats:|r Battles %d  Alliance Wins %d  Horde Wins %d  Draws %d',
+                        totalBattles,
+                        decoded.counts and decoded.counts.Alliance or 0,
+                        decoded.counts and decoded.counts.Horde or 0,
+                        decoded.draws or 0))
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Directly updated Stats UI text')
+                end)
+            end
+            
+        else
+            pcall(function()
+                DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug:|r JSON decode failed: ' .. tostring(decoded))
+            end)
         end
         return
     end
@@ -936,49 +1013,64 @@ SlashCmdList['HLBGREFRESH'] = function()
     end)
 end
 
--- Emergency: Create working HistoryStr function since core file isn't loading
+-- Emergency: Enhanced HistoryStr function to properly handle TSV data and display
 HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, sortDir)
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+    pcall(function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r HistoryStr called with TSV length: ' .. (tsv and #tsv or 0))
-    end
+    end)
     
     local rows = {}
     if type(tsv) == 'string' and tsv ~= '' then
-        -- Sanitize: convert pipes to newlines if needed
+        -- Enhanced sanitization: convert pipes to newlines if needed
         tsv = tsv:gsub('%|%|', '\n')  
         if tsv:find('|') and not tsv:find('\n') then
             tsv = tsv:gsub('|', '\n')
         end
         
-        -- Parse TSV lines
+        -- Parse TSV lines with better error handling
         for line in tsv:gmatch('[^\n]+') do
-            line = line:gsub('^%s+',''):gsub('%s+$','')
-            if line ~= '' then
+            line = line:gsub('^%s+',''):gsub('%s+$','') -- trim whitespace
+            if line ~= '' and not line:match('^%s*$') then -- skip empty lines
                 local cols = {}
-                for col in line:gmatch('[^\t]+') do
-                    local trimmed = col:gsub('^%s+',''):gsub('%s+$','')
-                    cols[#cols + 1] = trimmed
+                -- Handle both tab and space-separated values
+                if line:find('\t') then
+                    for col in line:gmatch('[^\t]+') do
+                        local trimmed = col:gsub('^%s+',''):gsub('%s+$','')
+                        if trimmed ~= '' then
+                            cols[#cols + 1] = trimmed
+                        end
+                    end
+                else
+                    -- Fallback: split on multiple spaces
+                    for col in line:gmatch('%S+') do
+                        cols[#cols + 1] = col
+                    end
                 end
-                if #cols >= 7 then
+                
+                -- Create row if we have enough columns
+                if #cols >= 4 then
                     rows[#rows + 1] = {
-                        id = cols[1],
-                        season = cols[2], 
-                        seasonName = cols[3],
-                        ts = cols[4],
-                        winner = cols[5],
-                        affix = cols[6],
-                        reason = cols[7]
+                        id = cols[1] or '',
+                        season = cols[2] or '1',
+                        seasonName = cols[3] or 'Season 1',
+                        ts = cols[4] or '',
+                        winner = cols[5] or 'Unknown',
+                        affix = cols[6] or '0',
+                        reason = cols[7] or 'unknown'
                     }
                 end
             end
         end
     end
     
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Parsed %d rows', #rows))
-    end
+    pcall(function()
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Parsed %d rows from TSV', #rows))
+        if #rows > 0 then
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r First row: ID=' .. (rows[1].id or 'nil') .. ', Winner=' .. (rows[1].winner or 'nil') .. ', Season=' .. (rows[1].seasonName or 'nil'))
+        end
+    end)
     
-    -- Store rows and try to call History function if available
+    -- Store rows in UI system
     HLBG.UI = HLBG.UI or {}
     HLBG.UI.History = HLBG.UI.History or {}
     HLBG.UI.History.lastRows = rows
@@ -986,14 +1078,35 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
     HLBG.UI.History.per = tonumber(per) or 15
     HLBG.UI.History.total = tonumber(total) or #rows
     
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Stored %d rows in lastRows', #rows))
+    -- Try calling the real History function if available
+    if type(HLBG.History) == 'function' then
+        pcall(function()
+            HLBG.History(rows, page, per, total, sortKey, sortDir)
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Called HLBG.History with parsed rows')
+        end)
     end
     
-    -- Try to render if UI exists
-    if HLBG.UpdateHistoryDisplay and type(HLBG.UpdateHistoryDisplay) == 'function' then
-        pcall(HLBG.UpdateHistoryDisplay)
+    -- Try to render/update display
+    if type(HLBG.UpdateHistoryDisplay) == 'function' then
+        pcall(function()
+            HLBG.UpdateHistoryDisplay()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Called UpdateHistoryDisplay')
+        end)
     end
+    
+    -- Force show main UI if available and populated
+    if #rows > 0 and HLBG.UI and HLBG.UI.Frame then
+        pcall(function()
+            HLBG.UI.Frame:Show()
+            -- Click history tab if available
+            if HLBG.UI.Tabs and HLBG.UI.Tabs[1] and HLBG.UI.Tabs[1]:GetScript("OnClick") then
+                HLBG.UI.Tabs[1]:GetScript("OnClick")(HLBG.UI.Tabs[1])
+            end
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Attempted to show UI with ' .. #rows .. ' history rows')
+        end)
+    end
+    
+    return rows -- Return parsed data for any caller that needs it
 end
 
 -- expose helpers for other files
