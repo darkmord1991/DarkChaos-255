@@ -142,6 +142,8 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
             r[name]=fs
             if idx==1 then fs:SetPoint('LEFT', r,'LEFT',5,0) else fs:SetPoint('LEFT', prev,'RIGHT',5,0) end
             fs:SetWidth(widths[idx])
+            fs:SetTextColor(1,1,1,1) -- Force white text
+            if fs.SetFont then fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE") end
             prev=fs
         end
         ui.rows[i]=r
@@ -171,6 +173,11 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
         r.aff:SetText(HLBG.GetAffixName and HLBG.GetAffixName(row.affix) or (row.affix or '-'))
         local dur = tonumber(row.dur) or 0; r.dur:SetText(dur>0 and SecondsToTime(dur) or '-')
         r.rea:SetText(row.reason or '-')
+        -- Debug: print row text
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d text: id=%s sea=%s ts=%s win=%s aff=%s dur=%s rea=%s',
+                i, tostring(row.id or '-'), tostring(row.season or row.seasonName or '-'), tsText, winTxt, tostring(row.affix or '-'), tostring(dur>0 and SecondsToTime(dur) or '-'), tostring(row.reason or '-')))
+        end
         r:Show(); y = y + 22  -- Move down for next row (positive direction)
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y - 22))
     end

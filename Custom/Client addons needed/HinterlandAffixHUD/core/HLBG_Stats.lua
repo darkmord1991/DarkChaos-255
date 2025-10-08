@@ -35,11 +35,16 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
     -- Minimal rendering hook (UI code still lives in main UI until further split)
     if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
         pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
-        local statsText = string.format('Alliance: %d | Horde: %d | Draws: %d | Total: %d',
-            (stats.counts and stats.counts.Alliance) or 0,
-            (stats.counts and stats.counts.Horde) or 0,
-            stats.draws or 0,
-            stats.totalBattles or ((stats.counts and stats.counts.Alliance or 0) + (stats.counts and stats.counts.Horde or 0) + (stats.draws or 0)))
+        local statsText
+        if stats and stats.counts and (stats.counts.Alliance > 0 or stats.counts.Horde > 0 or stats.draws > 0) then
+            statsText = string.format('Alliance: %d | Horde: %d | Draws: %d | Total: %d',
+                (stats.counts and stats.counts.Alliance) or 0,
+                (stats.counts and stats.counts.Horde) or 0,
+                stats.draws or 0,
+                stats.totalBattles or ((stats.counts and stats.counts.Alliance or 0) + (stats.counts and stats.counts.Horde or 0) + (stats.draws or 0)))
+        else
+            statsText = 'No stats available. Waiting for data...'
+        end
         HLBG.UI.Stats.Text:SetText(statsText)
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Directly updated Stats UI text: ' .. statsText)
