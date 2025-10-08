@@ -148,7 +148,7 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
         return r
     end
 
-    local y=-22
+    local y=10  -- Start at positive Y (10 pixels from top)
     DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
     for i,row in ipairs(rows) do
         local r = Row(i)
@@ -171,10 +171,10 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
         r.aff:SetText(HLBG.GetAffixName and HLBG.GetAffixName(row.affix) or (row.affix or '-'))
         local dur = tonumber(row.dur) or 0; r.dur:SetText(dur>0 and SecondsToTime(dur) or '-')
         r.rea:SetText(row.reason or '-')
-        r:Show(); y = y - 22
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y + 22))
+        r:Show(); y = y + 22  -- Move down for next row (positive direction)
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y - 22))
     end
-    cont:SetHeight(math.max(120, (#rows*22)+30))
+    cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding for positive positioning
     
     -- Hide the "Loading..." text when we have data
     if ui.EmptyText then

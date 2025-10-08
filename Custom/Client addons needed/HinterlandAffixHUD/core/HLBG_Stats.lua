@@ -35,11 +35,19 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
     -- Minimal rendering hook (UI code still lives in main UI until further split)
     if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
         pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
-        HLBG.UI.Stats.Text:SetText(string.format('|cFF33FF99Stats:|r Battles %d  Alliance Wins %d  Horde Wins %d  Draws %d',
-            stats.totalBattles or 0,
+        local statsText = string.format('Alliance: %d | Horde: %d | Draws: %d | Total: %d',
             (stats.counts and stats.counts.Alliance) or 0,
             (stats.counts and stats.counts.Horde) or 0,
-            stats.draws or 0))
+            stats.draws or 0,
+            stats.totalBattles or ((stats.counts and stats.counts.Alliance or 0) + (stats.counts and stats.counts.Horde or 0) + (stats.draws or 0)))
+        HLBG.UI.Stats.Text:SetText(statsText)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Directly updated Stats UI text: ' .. statsText)
+        end
+    else
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF3333HLBG Debug:|r Stats UI elements missing! UI=' .. tostring(HLBG.UI ~= nil) .. ' Stats=' .. tostring(HLBG.UI and HLBG.UI.Stats ~= nil) .. ' Text=' .. tostring(HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text ~= nil))
+        end
     end
 end
 

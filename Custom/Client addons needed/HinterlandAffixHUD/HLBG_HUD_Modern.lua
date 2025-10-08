@@ -382,10 +382,11 @@ function HLBG.UpdateHUDVisibility()
             inHinterlands = (zone == "The Hinterlands")
         end
         
-        -- Check if in battleground instance
+        -- Check if in battleground instance (WoW 3.3.5 compatible)
         if type(GetBattlefieldStatus) == "function" then
-            for i = 1, GetMaxBattlefieldID() do
-                local status = GetBattlefieldStatus(i)
+            -- In 3.3.5, check first few battlefield slots (usually 1-4)
+            for i = 1, 4 do
+                local status, _, instanceID = GetBattlefieldStatus(i)
                 if status == "active" then
                     inBattleground = true
                     break
