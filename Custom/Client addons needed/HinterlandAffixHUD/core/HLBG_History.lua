@@ -105,6 +105,10 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
     local cont = ui.Content
     if not cont then
         -- UI content not yet created; leave lastRows stored and return so UI can pick it up later
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFFF3333HLBG Debug|r History.Content missing! UI=%s History=%s', 
+                tostring(HLBG.UI ~= nil), tostring(HLBG.UI and HLBG.UI.History ~= nil)))
+        end
         -- Dev: schedule a one-shot retry to render if UI appears shortly after
         if not HLBG._historyDeferredRetryScheduled then
             HLBG._historyDeferredRetryScheduled = true
@@ -113,7 +117,7 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
                 if HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.Content and HLBG.UI.History.lastRows then
                     -- Re-invoke with preserved lastRows
                     pcall(HLBG.History, HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
-                    if (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r Deferred history render invoked')
                     end
                 end
@@ -169,6 +173,11 @@ HLBG.History = HLBG.History or function(a,b,c,d,e,f,g)
         r:Show(); y = y - 22
     end
     cont:SetHeight(math.max(120, (#rows*22)+30))
+    
+    -- Debug success message
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully!', #rows))
+    end
 
     -- Pager display
     local maxPage = math.max(1, math.ceil((ui.total or #rows)/ui.per))

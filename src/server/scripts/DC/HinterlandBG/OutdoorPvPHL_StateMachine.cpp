@@ -79,10 +79,22 @@ void OutdoorPvPHL::EnterWarmupState()
     
     // Enable queue system notifications
     _queueEnabled = true;
+    
+    // Initialize worldstates for warmup
+    UpdateWorldStatesAllPlayers();
 }
 
 void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
 {
+    // Update worldstates regularly during warmup
+    static uint32 worldstateTimer = 0;
+    worldstateTimer += diff;
+    if (worldstateTimer >= 5000) // Update every 5 seconds
+    {
+        UpdateWorldStatesAllPlayers();
+        worldstateTimer = 0;
+    }
+    
     if (_warmupTimeRemaining <= diff)
     {
         // Warmup finished, start battle
@@ -120,10 +132,22 @@ void OutdoorPvPHL::EnterInProgressState()
         if (_affixWeatherEnabled)
             ApplyAffixWeather();
     }
+    
+    // Immediately update worldstates when battle starts
+    UpdateWorldStatesAllPlayers();
 }
 
 void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
 {
+    // Update worldstates regularly for client HUD updates
+    static uint32 worldstateTimer = 0;
+    worldstateTimer += diff;
+    if (worldstateTimer >= 5000) // Update every 5 seconds
+    {
+        UpdateWorldStatesAllPlayers();
+        worldstateTimer = 0;
+    }
+    
     // Check for battle end conditions
     if (_ally_gathered == 0)
     {

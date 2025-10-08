@@ -1,60 +1,48 @@
 ## Interface: 30300
-## Title: Hinterland Battleground Addon (Modern Edition)
-## Notes: Modern UI battleground addon with enhanced HUD, statistics, and match history
+## Title: Hinterland Battleground Addon
+## Notes: Battleground addon with HUD, statistics, and match history
 ## Author: DC-255
-## Version: 1.5.8-refactor
+## Version: 1.3.0
 ## Deps: AIO_Client
 ## OptionalDeps: AIO_Client 
 ## LoadAfter: AIO_Client
 ## DefaultState: enabled
 ## SavedVariables: HinterlandAffixHUDDB
 
-# Emergency compatibility layer - works
-HLBG_EmergencyFix.lua
+# Core compatibility and utilities
 HLBG_TimerCompat.lua
-HLBG_LoadDebug.lua
-HLBG_ErrorFixes.lua
-
-# Core compatibility files - add these back
-HLBG_AIO_Check.lua
-HLBG_Compatibility.lua
-
-# Debug system - add these back
-HLBG_DebugBootstrap.lua
-HLBG_Debug_Helper.lua
-HLBG_WorldstateDebug.lua
-
-# Core functionality that we know works
-HinterlandAffixHUD.lua
-HLBG_Core.lua
 HLBG_JSON.lua
 HLBG_Utils.lua
+
+# AIO integration
+HLBG_AIO_Check.lua
+
+# Core modules
 core\HLBG_Version.lua
 core\HLBG_Live.lua
 core\HLBG_History.lua
 core\HLBG_Stats.lua
-# Use modern HUD implementation by default
+
+# Modern HUD (replaces old HinterlandAffixHUD.lua) 
 HLBG_HUD_Modern.lua
-HLBG_Debug.lua
+
+# Legacy HUD for comparison (temporarily enabled)
+HinterlandAffixHUD.lua
+
+# Main UI
 HLBG_UI.lua
-HLBG_Info.lua
-HLBG_Settings.lua
-HLBG_Help.lua
-HLBG_AFK.lua
-HLBG_SlashCommands.lua
 
-# Fallback data and debugging
-HLBG_FallbackData.lua
+# Handlers for data processing
+HLBG_Handlers.lua
 
-# Modern UI styling and enhancements
-HLBG_UI_Modern.lua
-
-# Comprehensive initialization system
+# Initialization system
 HLBG_Initialize.lua
 
-# Queue handling and status
-HLBG_QueueHandler.lua
-
-# Test AIO files individually - add HLBG_Handlers.lua
-HLBG_Status.lua
-HLBG_Handlers.lua
+# Debug helpers
+HLBG_DebugUI.lua
+HLBG_TestHistory.lua
+HLBG_DebugHUD.lua
+HLBG_DebugStats.lua
+HLBG_DebugChat.lua
+HLBG_DebugTabs.lua
+HLBG_DebugData.lua

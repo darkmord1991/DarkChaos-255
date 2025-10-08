@@ -4,7 +4,8 @@ _G.HLBG = HLBG
 
 -- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
 HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
-if HinterlandAffixHUDDB.hudEnabled == nil then HinterlandAffixHUDDB.hudEnabled = true end
+-- Force HUD enabled by default for new installations and reset any disabled state
+HinterlandAffixHUDDB.hudEnabled = true
 if HinterlandAffixHUDDB.hudScale == nil then HinterlandAffixHUDDB.hudScale = 1.0 end
 if HinterlandAffixHUDDB.hudAlpha == nil then HinterlandAffixHUDDB.hudAlpha = 0.9 end
 if HinterlandAffixHUDDB.showHudInWarmup == nil then HinterlandAffixHUDDB.showHudInWarmup = true end
@@ -443,22 +444,30 @@ function HLBG.ReadWorldstateData()
         for i = 1, numWS do
             local wsType, state, text, icon, dynamicIcon, tooltip, dynamicTooltip, extendedUI, extendedUIState1, extendedUIState2, extendedUIState3 = GetWorldStateUIInfo(i)
             
-            -- Map known worldstate IDs for HLBG
+            -- Map known worldstate IDs for HLBG (using correct server worldstate IDs)
             if wsType then
-                if wsType == 3901 then -- Alliance Resources
+                if wsType == 3680 then -- Alliance Resources (WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A)
                     data.allianceResources = tonumber(text) or data.allianceResources or 0
-                elseif wsType == 3902 then -- Horde Resources  
+                elseif wsType == 3490 then -- Horde Resources (WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H) 
                     data.hordeResources = tonumber(text) or data.hordeResources or 0
-                elseif wsType == 3903 then -- Alliance Players
+                elseif wsType == 3681 then -- Alliance Players (estimated based on pattern)
                     data.alliancePlayers = tonumber(text) or data.alliancePlayers or 0
-                elseif wsType == 3904 then -- Horde Players
+                elseif wsType == 3491 then -- Horde Players (estimated based on pattern)
                     data.hordePlayers = tonumber(text) or data.hordePlayers or 0
-                elseif wsType == 3905 then -- Time Left
-                    data.timeLeft = tonumber(text) or data.timeLeft or 0
-                elseif wsType == 3906 then -- Affix Name
+                elseif wsType == 3781 then -- Time Left (WORLD_STATE_BATTLEFIELD_WG_CLOCK)
+                    -- This is epoch time, convert to remaining seconds
+                    local currentTime = time()
+                    local endTime = tonumber(text) or currentTime
+                    data.timeLeft = math.max(0, endTime - currentTime)
+                elseif wsType == 4354 then -- Clock text (WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS)
+                    -- Alternative time source
+                    local currentTime = time()
+                    local endTime = tonumber(text) or currentTime
+                    data.timeLeft = math.max(0, endTime - currentTime)
+                elseif wsType == 3695 then -- Custom affix worldstate (if implemented)
                     data.affixName = tostring(text or data.affixName or "None")
-                elseif wsType == 3907 then -- Phase
-                    data.phase = tostring(text or data.phase or "IDLE")
+                elseif wsType == 3674 then -- WG Active state (can indicate phase)
+                    data.phase = (tonumber(text) == 0 and "IN_PROGRESS") or "IDLE"
                 end
             end
         end
@@ -589,3 +598,10 @@ pcall(function()
     end
     if HLBG.UI and HLBG.UI.Affix and type(HLBG.UI.Affix.Hide) == 'function' then pcall(function() HLBG.UI.Affix:Hide(); HLBG.UI.Affix:SetScript('OnUpdate', nil) end) end
 end)
+
+-- Create a reference so HLBG.HUD points to the modern HUD for compatibility
+HLBG.HUD = {
+    frame = HLBG.UI.ModernHUD,
+    enabled = function() return HinterlandAffixHUDDB and HinterlandAffixHUDDB.hudEnabled end,
+    Update = function() if HLBG.UI.ModernHUD and HLBG.UI.ModernHUD.Update then HLBG.UI.ModernHUD:Update() end end
+}

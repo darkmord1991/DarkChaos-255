@@ -305,5 +305,13 @@ function HLBG.PrintJsonTestRun(n)
 end
 
 -- Register JSON test-related slash commands
-HLBG.safeRegisterSlash("HLBGJSON", "/hlbgjsontest", HLBG.RunJsonDecodeTests)
-HLBG.safeRegisterSlash("HLBGJSONRUN", "/hlbgjsontestrun", HLBG.PrintJsonTestRun)
+if HLBG.safeRegisterSlash then
+    HLBG.safeRegisterSlash("HLBGJSON", "/hlbgjsontest", HLBG.RunJsonDecodeTests)
+    HLBG.safeRegisterSlash("HLBGJSONRUN", "/hlbgjsontestrun", HLBG.PrintJsonTestRun)
+else
+    -- Fallback to standard slash command registration
+    SLASH_HLBGJSON1 = "/hlbgjsontest"
+    SlashCmdList["HLBGJSON"] = HLBG.RunJsonDecodeTests
+    SLASH_HLBGJSONRUN1 = "/hlbgjsontestrun"  
+    SlashCmdList["HLBGJSONRUN"] = HLBG.PrintJsonTestRun
+end

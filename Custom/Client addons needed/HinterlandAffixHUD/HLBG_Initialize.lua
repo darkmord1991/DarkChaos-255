@@ -266,3 +266,55 @@ if HLBG.UI and HLBG.UI.Frame then
 end
 
 print("|cFF33FF99HLBG:|r Initialization system loaded")
+
+-- Command to fully initialize/reset the addon state
+SLASH_HLBGINIT1 = '/hlbginit'
+function SlashCmdList.HLBGINIT(msg)
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF00FF00=== HLBG Full Initialization ===|r')
+    
+    -- Ensure HUD is enabled and visible
+    HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
+    HinterlandAffixHUDDB.hudEnabled = true
+    HinterlandAffixHUDDB.showHudEverywhere = true
+    
+    -- Update HUD visibility
+    if HLBG.UpdateHUDVisibility then
+        HLBG.UpdateHUDVisibility()
+        DEFAULT_CHAT_FRAME:AddMessage('HUD visibility updated')
+    end
+    
+    -- Show main UI if it exists  
+    if HLBG.UI and HLBG.UI.Frame then
+        if not HLBG.UI.Frame:IsShown() then
+            HLBG.UI.Frame:Show()
+            DEFAULT_CHAT_FRAME:AddMessage('Main UI shown')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('Main UI already visible')
+        end
+    end
+    
+    -- Force HUD to show if it exists
+    local hud = HLBG.UI and HLBG.UI.ModernHUD
+    if hud then
+        if not hud:IsShown() then
+            hud:Show()
+            DEFAULT_CHAT_FRAME:AddMessage('HUD force shown')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('HUD already visible')
+        end
+    end
+    
+    -- Refresh data
+    DEFAULT_CHAT_FRAME:AddMessage('Requesting fresh server data...')
+    if AIO and AIO.Handle then
+        pcall(function() AIO.Handle("HLBG", "RequestStats") end)
+        pcall(function() AIO.Handle("HLBG", "RequestHistory") end)
+    end
+    
+    -- Also try chat commands as fallback
+    pcall(function() SendChatMessage(".hlbg statsui", "SAY") end)
+    pcall(function() SendChatMessage(".hlbg historyui", "SAY") end)
+    
+    DEFAULT_CHAT_FRAME:AddMessage('|cFF00FF00Initialization complete!|r')
+    DEFAULT_CHAT_FRAME:AddMessage('================================')
+end

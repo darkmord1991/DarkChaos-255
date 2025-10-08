@@ -2,9 +2,10 @@
 local f = CreateFrame("Frame", "HinterlandAffixHUD", UIParent)
 f:SetSize(1, 1)  -- Minimal size
 f:SetPoint("CENTER")
-f:Hide()  -- Hide immediately - background HUD disabled
-f:SetMovable(false)  -- Disable movement
-f:EnableMouse(false)  -- Disable mouse
+-- f:Hide()  -- Temporarily enabled for debugging
+f:Show()  -- Show for debugging worldstates
+f:SetMovable(true)  -- Enable movement for debugging
+f:EnableMouse(true)  -- Enable mouse for debugging
 -- f:RegisterForDrag("LeftButton")  -- Disabled
 -- f:SetClampedToScreen(true)  -- Disabled
 local function SavePosition()

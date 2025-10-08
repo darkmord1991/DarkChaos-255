@@ -1042,22 +1042,7 @@ end
 -- (No-op) Legacy code block placeholder removed. History/Stats already defined in core modules.
 
 -- UI construction extracted from the main client file to keep the addon modular.
-HLBG.UI = HLBG.UI or {}
-
--- Main window inside PvP frame (increased size for better readability)
-HLBG.UI.Frame = CreateFrame("Frame", "HLBG_Main", PVPParentFrame or PVPFrame)
-HLBG.UI.Frame:SetSize(640, 450)
-HLBG.UI.Frame:Hide()
--- Ensure our panel stays above world overlays on 3.3.5
-if HLBG.UI.Frame.SetFrameStrata then HLBG.UI.Frame:SetFrameStrata("DIALOG") end
-HLBG.UI.Frame:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 16, insets = { left=4, right=4, top=4, bottom=4 } })
-HLBG.UI.Frame:SetBackdropColor(0,0,0,0.5)
-HLBG.UI.Frame:ClearAllPoints()
-HLBG.UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-HLBG.UI.Frame:EnableMouse(true)
-HLBG.UI.Frame:SetMovable(true)
-HLBG.UI.Frame:RegisterForDrag("LeftButton")
-HLBG.UI.Frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+-- Note: Main frame creation is done earlier in this file (around line 213)
 HLBG.UI.Frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local p, rel, rp, x, y = self:GetPoint()
