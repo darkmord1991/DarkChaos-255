@@ -996,6 +996,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
     bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
     uint8 _lastDepartIdx = 255;
+    // Anchor bypass throttling to avoid repeating remaps in quick succession
+    uint8 _lastBypassedAnchor = 255;
+    uint32 _bypassMs = 0; // ms since last bypass
     // Corner smoothing state
     bool _movingToCustom = false;
     Position _customTarget;
@@ -1597,9 +1600,6 @@ private:
         // Apply averaged rate to the flight speed
         me->SetSpeedRate(MOVE_FLIGHT, avg);
     }
-    // Anchor bypass throttling to avoid repeating remaps in quick succession
-    uint8 _lastBypassedAnchor = 255;
-    uint32 _bypassMs = 0; // ms since last bypass
 };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
