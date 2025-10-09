@@ -1520,6 +1520,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
 
+#if 0 // DEBUG: isolate parse error
 private:
     // Is the given index the terminal node for the current route?
     bool IsFinalNodeOfCurrentRoute(uint8 idx) const
@@ -1608,6 +1609,7 @@ private:
         // Apply averaged rate to the flight speed
         me->SetSpeedRate(MOVE_FLIGHT, avg);
     }
+#endif // end DEBUG isolation
 };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
