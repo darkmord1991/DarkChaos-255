@@ -776,6 +776,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             }
         }
 
+        // Advance bypass timer (avoid remapping repeatedly)
+        if (_bypassMs < 60000)
+            _bypassMs += diff;
+        if (_bypassMs > 3000 && _lastBypassedAnchor != 255)
+            _lastBypassedAnchor = 255;
+
         // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
         if (_started && !_isLanding)
         {
@@ -1337,18 +1343,39 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             // Aggressive bypass for known sticky anchors: remap the next index to avoid landing exactly on them
             if (nextIdx == kIndex_acfm19)
             {
+                // If we've just bypassed this anchor recently, avoid doing it again immediately
+                if (_lastBypassedAnchor == kIndex_acfm19 && _bypassMs < 3000)
+                {
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm19 (throttle).");
+                }
+                else
+                {
                 // For descending/camp-return routes, jump back to the classic anchor (acfm15).
                 // For other forward routes, step past the anchor (acfm20) to avoid stickiness.
                 if (_routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0 || _routeMode == ROUTE_L60_RETURN19)
                     nextIdx = kIndex_acfm15;
                 else
                     nextIdx = static_cast<uint8>(kIndex_acfm19 + 1);
+                // record bypass and throttle repeated remaps
+                _lastBypassedAnchor = kIndex_acfm19;
+                _bypassMs = 0;
                 if (Player* p = GetPassengerPlayer())
                     if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx));
             }
             if (nextIdx == kIndex_acfm35)
             {
+                // throttle repeated acfm35 remaps as well
+                if (_lastBypassedAnchor == kIndex_acfm35 && _bypassMs < 3000)
+                {
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm35 (throttle).");
+                }
+                else
+                {
                 // For routes that target acfm35, prefer stepping from acfm34 to avoid a single long sticky hop.
                 // If acfm34 is far, try stepping past acfm35 instead.
                 uint8 altPrev = static_cast<uint8>(kIndex_acfm35 - 1);
@@ -1359,9 +1386,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     nextIdx = altPrev;
                 else if (kIndex_acfm35 + 1 < kPathLength)
                     nextIdx = static_cast<uint8>(kIndex_acfm35 + 1);
+                _lastBypassedAnchor = kIndex_acfm35;
+                _bypassMs = 0;
                 if (Player* p = GetPassengerPlayer())
                     if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx));
+                }
             }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
             {
@@ -1564,6 +1594,9 @@ private:
         // Apply averaged rate to the flight speed
         me->SetSpeedRate(MOVE_FLIGHT, avg);
     }
+    // Anchor bypass throttling to avoid repeating remaps in quick succession
+    uint8 _lastBypassedAnchor = 255;
+    uint32 _bypassMs = 0; // ms since last bypass
 };
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
