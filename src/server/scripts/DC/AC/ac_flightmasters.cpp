@@ -1520,7 +1520,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
 
-/*private:*/
+private:
     // Is the given index the terminal node for the current route?
     bool IsFinalNodeOfCurrentRoute(uint8 idx) const
     {
