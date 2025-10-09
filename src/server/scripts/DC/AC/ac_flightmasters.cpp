@@ -802,7 +802,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
                 }
         }
-        }
         // Faster cleanup after dismount
         me->DespawnOrUnsummon(500);
     }
