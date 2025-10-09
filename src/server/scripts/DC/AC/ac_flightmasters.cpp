@@ -603,6 +603,10 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
     // Forward declaration so methods defined earlier (like UpdateAI) can call it.
     bool IsFinalNodeOfCurrentRoute(uint8 idx) const;
+    bool IsNearIndex(uint8 idx, float max2d) const;
+    float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const;
+    void AdjustSpeedForTurn(float angleDeg);
+    void SmoothAndSetSpeed(float targetRate);
 
     void UpdateAI(uint32 diff) override
     {
