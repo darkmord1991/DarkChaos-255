@@ -36,6 +36,8 @@
 #include "Vehicle.h"
 #include "Chat.h"
 #include "SharedDefines.h"
+#include "PathGenerator.h"
+#include "MoveSplineInit.h"
 #include <type_traits>
 #include <chrono>
 #include <string>
@@ -253,6 +255,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // Face summoner (flightmaster or player)
         me->SetFacingToObject(summoner);
 
+        // Initialize pathfinding system
+        _pathGenerator = nullptr; // Will be created on first use
+        _useSmartPathfinding = false;
+        _pathfindingRetries = 0;
+
         // Small lift-off point above current pos to avoid ground clipping
         Position takeoff = me->GetPosition();
         takeoff.m_positionZ += 4.0f;
@@ -321,7 +328,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _index = (startIdx > 0) ? static_cast<uint8>(startIdx - 1) : 0;
                 if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Nearest node is {}. Beginning descent at {}.", NodeLabel(nearest), NodeLabel(_index));
-                MoveToIndex(_index);
+                MoveToIndexWithSmartPath(_index);
                 return;
             }
 
@@ -332,7 +339,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _index = 0;
                 if (p && p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Boarded gryphon seat {}. Level 40+ route: starting at {} and heading to {}.", (int)seatId, NodeLabel(_index), NodeLabel(kIndex_acfm35));
-                MoveToIndex(_index);
+                MoveToIndexWithSmartPath(_index);
                 return;
             }
 
@@ -509,7 +516,15 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             _movingToCustom = false;
             _awaitingArrival = false;
-            // After the smoothing hop, continue to the already planned real index
+            
+            // Reset pathfinding retry counter on successful intermediate point arrival
+            if (_useSmartPathfinding)
+            {
+                _pathfindingRetries = 0;
+                _useSmartPathfinding = false;
+            }
+            
+            // After the smoothing/pathfinding hop, continue to the already planned real index
             MoveToIndex(_index);
             return;
         }
@@ -653,10 +668,25 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         }
                         else
                         {
+                            // Try smart pathfinding before hard fallback
+                            if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
+                            {
+                                _pathfindingRetries++;
+                                if (Player* p = GetPassengerPlayer())
+                                    if (p->IsGameMaster())
+                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
+                                
+                                _awaitingArrival = false;
+                                _hopElapsedMs = 0;
+                                _hopRetries = 0;
+                                MoveToIndexWithSmartPath(_index);
+                                return;
+                            }
+                            
                             // Hard fallback: snap to target node and continue the route
                             if (Player* p = GetPassengerPlayer())
                                 if (p->IsGameMaster())
-                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
                             float tx = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
                             float ty = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
                             float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
@@ -664,9 +694,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
                             _hopElapsedMs = 0;
                             _hopRetries = 0;
+                            _pathfindingRetries = 0; // Reset pathfinding retries
                             if (_movingToCustom)
                             {
                                 _movingToCustom = false;
+                                _useSmartPathfinding = false;
                                 _awaitingArrival = false;
                                 MoveToIndex(_index);
                             }
@@ -886,6 +918,87 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool _movingToCustom = false;
     Position _customTarget;
     uint32 _customPointSeq = 0;
+    
+    // Enhanced pathfinding
+    std::unique_ptr<PathGenerator> _pathGenerator;
+    bool _useSmartPathfinding = false;
+    uint32 _pathfindingRetries = 0;
+
+    // Smart pathfinding method - calculates intelligent path to destination
+    bool CalculateSmartPath(Position const& destination, std::vector<Position>& outPath)
+    {
+        if (!_pathGenerator)
+            _pathGenerator = std::make_unique<PathGenerator>(me);
+            
+        // Configure pathfinder for aerial movement
+        _pathGenerator->SetUseStraightPath(false);
+        _pathGenerator->SetUseRaycast(true);  // Use raycast for flying creatures
+        _pathGenerator->SetPathLengthLimit(200.0f);  // Reasonable limit for flights
+        
+        bool success = _pathGenerator->CalculatePath(destination.GetPositionX(), 
+                                                    destination.GetPositionY(), 
+                                                    destination.GetPositionZ(), 
+                                                    true);  // force destination
+        
+        if (success)
+        {
+            Movement::PointsArray const& points = _pathGenerator->GetPath();
+            outPath.clear();
+            
+            // Convert PathGenerator points to Position objects
+            for (auto const& point : points)
+            {
+                Position pos(point.x, point.y, point.z + 8.0f, 0.0f); // Add height for flight
+                outPath.push_back(pos);
+            }
+            
+            if (Player* p = GetPassengerPlayer())
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path calculated with {} points", outPath.size());
+            
+            return !outPath.empty();
+        }
+        
+        return false;
+    }
+    
+    // Enhanced pathfinding with fallback to waypoints
+    void MoveToIndexWithSmartPath(uint8 idx)
+    {
+        Position destination(kPath[idx].GetPositionX(), kPath[idx].GetPositionY(), 
+                           kPath[idx].GetPositionZ(), kPath[idx].GetOrientation());
+        
+        // Calculate distance to see if smart pathfinding is needed
+        float dx = me->GetPositionX() - destination.GetPositionX();
+        float dy = me->GetPositionY() - destination.GetPositionY();
+        float dz = me->GetPositionZ() - destination.GetPositionZ();
+        float dist3D = sqrtf(dx*dx + dy*dy + dz*dz);
+        
+        // Use smart pathfinding for long distances or when stuck recovery is needed
+        if (dist3D > 150.0f || _pathfindingRetries > 0)
+        {
+            std::vector<Position> smartPath;
+            if (CalculateSmartPath(destination, smartPath))
+            {
+                if (smartPath.size() > 1)
+                {
+                    // Use first intermediate point as custom target
+                    _customTarget = smartPath[1]; // Skip starting point
+                    _useSmartPathfinding = true;
+                    MoveToCustom(_customTarget);
+                    
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via intermediate point", NodeLabel(idx));
+                    return;
+                }
+            }
+        }
+        
+        // Fallback to regular waypoint movement
+        _useSmartPathfinding = false;
+        MoveToIndex(idx);
+    }
 
     void HandleArriveAtCurrentNode(bool isProximity)
     {
@@ -1195,7 +1308,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     }
                 }
             }
-            MoveToIndex(_index);
+            MoveToIndexWithSmartPath(_index);
             return;
         }
 
