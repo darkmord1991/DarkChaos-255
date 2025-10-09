@@ -601,6 +601,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         });
     }
 
+    // Forward declaration so methods defined earlier (like UpdateAI) can call it.
+    bool IsFinalNodeOfCurrentRoute(uint8 idx) const;
+
     void UpdateAI(uint32 diff) override
     {
         // Drive scheduled tasks
