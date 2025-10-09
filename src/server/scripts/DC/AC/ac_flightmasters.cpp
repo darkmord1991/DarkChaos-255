@@ -42,6 +42,8 @@
 #include <chrono>
 #include <string>
 #include <cmath>
+#include <numeric>
+#include <deque>
 
 namespace DC_AC_Flight
 {
@@ -511,20 +513,32 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             return;
         }
 
-        // If we are aiming at a custom smoothing target, intercept arrival and proceed to real waypoint
+        // If we are aiming at a custom smoothing target, intercept arrival and proceed to next smart point or to real waypoint
         if (_movingToCustom && id == _currentPointId)
         {
+            // If we have more smart-path points queued, continue chaining to the next one
+            if (!_smartPathQueue.empty())
+            {
+                Position next = _smartPathQueue.front();
+                _smartPathQueue.pop_front();
+                // remain in custom-moving mode and issue next hop
+                _movingToCustom = true;
+                MoveToCustom(next);
+                return;
+            }
+
+            // No more smart-path points: finish custom movement and continue to the planned waypoint
             _movingToCustom = false;
             _awaitingArrival = false;
-            
+
             // Reset pathfinding retry counter on successful intermediate point arrival
             if (_useSmartPathfinding)
             {
                 _pathfindingRetries = 0;
                 _useSmartPathfinding = false;
             }
-            
-            // After the smoothing/pathfinding hop, continue to the already planned real index
+
+            // After finishing smart-path chain, continue to the planned real index
             MoveToIndex(_index);
             return;
         }
@@ -783,8 +797,67 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             {
                 if (Player* p = GetPassengerPlayer())
                     if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Returning to start location and dismounting.");
-                // Teleport to recorded flight start position, snap to ground, and safely dismount
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Attempting smart-path recovery to destination before fallback.");
+
+                // Attempt smart path recovery to the current route's final destination
+                uint8 finalIdx = _index; // default to current
+                // Determine route final destination index
+                if (IsFinalNodeOfCurrentRoute(_index))
+                    finalIdx = _index;
+                else
+                {
+                    // Choose nearest final node for route
+                    switch (_routeMode)
+                    {
+                        case ROUTE_L25_TO_40:
+                        case ROUTE_L40_DIRECT:
+                            finalIdx = kIndex_acfm35; break;
+                        case ROUTE_L25_TO_60:
+                        case ROUTE_L40_SCENIC:
+                        case ROUTE_L0_TO_57:
+                            finalIdx = kIndex_acfm57; break;
+                        case ROUTE_L60_RETURN40:
+                            finalIdx = kIndex_acfm40; break;
+                        case ROUTE_L60_RETURN19:
+                            finalIdx = kIndex_acfm19; break;
+                        case ROUTE_L60_RETURN0:
+                        case ROUTE_L40_RETURN0:
+                            finalIdx = kIndex_startcamp; break;
+                        default:
+                            finalIdx = LastScenicIndex(); break;
+                    }
+                }
+
+                Position dest(kPath[finalIdx].GetPositionX(), kPath[finalIdx].GetPositionY(), kPath[finalIdx].GetPositionZ(), kPath[finalIdx].GetOrientation());
+                std::vector<Position> recoveryPath;
+                if (CalculateSmartPath(dest, recoveryPath) && !recoveryPath.empty())
+                {
+                    // Queue path and start moving along it
+                    _smartPathQueue.clear();
+                    for (auto const& rp : recoveryPath)
+                    {
+                        float dx2 = me->GetPositionX() - rp.GetPositionX();
+                        float dy2 = me->GetPositionY() - rp.GetPositionY();
+                        if ((dx2*dx2 + dy2*dy2) > 9.0f)
+                            _smartPathQueue.push_back(rp);
+                    }
+                    if (!_smartPathQueue.empty())
+                    {
+                        Position next = _smartPathQueue.front();
+                        _smartPathQueue.pop_front();
+                        _useSmartPathfinding = true;
+                        _awaitingArrival = false;
+                        _hopElapsedMs = 0;
+                        _stuckMs = 0;
+                        MoveToCustom(next);
+                        return;
+                    }
+                }
+
+                // If smart path failed, fallback to previous behaviour: teleport back to start and dismount
+                if (Player* p = GetPassengerPlayer())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting to start and dismounting.");
                 float sx = _flightStartPos.GetPositionX();
                 float sy = _flightStartPos.GetPositionY();
                 float sz = _flightStartPos.GetPositionZ();
@@ -923,6 +996,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     std::unique_ptr<PathGenerator> _pathGenerator;
     bool _useSmartPathfinding = false;
     uint32 _pathfindingRetries = 0;
+    std::deque<Position> _smartPathQueue; // queued intermediate positions from PathGenerator
 
     // Smart pathfinding method - calculates intelligent path to destination
     bool CalculateSmartPath(Position const& destination, std::vector<Position>& outPath)
@@ -948,7 +1022,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             // Convert PathGenerator points to Position objects
             for (auto const& point : points)
             {
-                Position pos(point.x, point.y, point.z + 8.0f, 0.0f); // Add height for flight
+                Position pos(point.x, point.y, point.z + 6.0f, 0.0f); // Add height for flight (smaller offset for smoother Z)
                 outPath.push_back(pos);
             }
             
@@ -974,22 +1048,32 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         float dz = me->GetPositionZ() - destination.GetPositionZ();
         float dist3D = sqrtf(dx*dx + dy*dy + dz*dz);
         
-        // Use smart pathfinding for long distances or when stuck recovery is needed
-        if (dist3D > 150.0f || _pathfindingRetries > 0)
+        // Use smart pathfinding for medium/long distances or when stuck recovery is needed
+        if (dist3D > 120.0f || _pathfindingRetries > 0)
         {
             std::vector<Position> smartPath;
             if (CalculateSmartPath(destination, smartPath))
             {
-                if (smartPath.size() > 1)
+                // Queue useful intermediate points for chained movement. Skip points that are very close.
+                _smartPathQueue.clear();
+                for (auto const& sp : smartPath)
                 {
-                    // Use first intermediate point as custom target
-                    _customTarget = smartPath[1]; // Skip starting point
+                    float dx2 = me->GetPositionX() - sp.GetPositionX();
+                    float dy2 = me->GetPositionY() - sp.GetPositionY();
+                    float d2 = dx2*dx2 + dy2*dy2;
+                    if (d2 > 9.0f) // skip tiny steps (3 units radius)
+                        _smartPathQueue.push_back(sp);
+                }
+                if (!_smartPathQueue.empty())
+                {
+                    // Pop the first queued point and move to it; MovementInform chaining will continue
+                    Position next = _smartPathQueue.front();
+                    _smartPathQueue.pop_front();
                     _useSmartPathfinding = true;
-                    MoveToCustom(_customTarget);
-                    
+                    MoveToCustom(next);
                     if (Player* p = GetPassengerPlayer())
                         if (p->IsGameMaster())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via intermediate point", NodeLabel(idx));
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via {} smart points", NodeLabel(idx), (uint32)(_smartPathQueue.size() + 1));
                     return;
                 }
             }
@@ -1250,6 +1334,35 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             uint8 arrivedIdx = _index; // index we just reached
             _awaitingArrival = false;
+            // Aggressive bypass for known sticky anchors: remap the next index to avoid landing exactly on them
+            if (nextIdx == kIndex_acfm19)
+            {
+                // For descending/camp-return routes, jump back to the classic anchor (acfm15).
+                // For other forward routes, step past the anchor (acfm20) to avoid stickiness.
+                if (_routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0 || _routeMode == ROUTE_L60_RETURN19)
+                    nextIdx = kIndex_acfm15;
+                else
+                    nextIdx = static_cast<uint8>(kIndex_acfm19 + 1);
+                if (Player* p = GetPassengerPlayer())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+            }
+            if (nextIdx == kIndex_acfm35)
+            {
+                // For routes that target acfm35, prefer stepping from acfm34 to avoid a single long sticky hop.
+                // If acfm34 is far, try stepping past acfm35 instead.
+                uint8 altPrev = static_cast<uint8>(kIndex_acfm35 - 1);
+                float dx34 = me->GetPositionX() - kPath[altPrev].GetPositionX();
+                float dy34 = me->GetPositionY() - kPath[altPrev].GetPositionY();
+                float d34 = sqrtf(dx34*dx34 + dy34*dy34);
+                if (d34 < 150.0f)
+                    nextIdx = altPrev;
+                else if (kIndex_acfm35 + 1 < kPathLength)
+                    nextIdx = static_cast<uint8>(kIndex_acfm35 + 1);
+                if (Player* p = GetPassengerPlayer())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
+            }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
             {
                 bool ascending = nextIdx > arrivedIdx;
@@ -1418,17 +1531,40 @@ private:
     void AdjustSpeedForTurn(float angleDeg)
     {
         float rate = _baseFlightSpeed;
-        if (angleDeg > 75.0f)
+        if (angleDeg >  75.0f)
             rate = 1.2f;
         else if (angleDeg > 35.0f)
             rate = 1.6f;
         else
             rate = _baseFlightSpeed;
-        me->SetSpeedRate(MOVE_FLIGHT, rate);
+        // Apply a small smoothing filter to avoid abrupt camera/speed jumps between hops
+        SmoothAndSetSpeed(rate);
     }
 
     float _baseFlightSpeed = 2.0f;
-    };
+    // Small rolling window to smooth flight speed changes across hops
+    std::deque<float> _speedHistory;
+    static constexpr size_t kSpeedSmoothWindow = 3;
+
+    // Smoothly blend recent speed targets and apply to the creature's flight speed.
+    void SmoothAndSetSpeed(float targetRate)
+    {
+        // Push newest target
+        _speedHistory.push_back(targetRate);
+        // Trim history
+        while (_speedHistory.size() > kSpeedSmoothWindow)
+            _speedHistory.pop_front();
+
+        // Compute simple average
+        float sum = 0.0f;
+        for (float v : _speedHistory)
+            sum += v;
+        float avg = sum / static_cast<float>(_speedHistory.size());
+
+        // Apply averaged rate to the flight speed
+        me->SetSpeedRate(MOVE_FLIGHT, avg);
+    }
+};
 // Script wrapper for the gryphon taxi AI
 class ac_gryphon_taxi_800011 : public CreatureScript
 {
