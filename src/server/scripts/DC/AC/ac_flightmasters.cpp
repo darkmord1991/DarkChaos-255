@@ -472,7 +472,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     lift.m_positionZ += 18.0f;
                     me->GetMotionMaster()->MovePoint(POINT_TAKEOFF, lift);
                     // enqueue the first hop shortly after to avoid queuing conflicts
-                    _scheduler.Schedule(std::chrono::milliseconds(300), [this](TaskContext /*ctx*/)
+                    _scheduler.Schedule(std::chrono::milliseconds(300), [this](TaskContext ctx)
                     {
                         if (me->IsInWorld())
                             MoveToIndex(_index);
@@ -578,7 +578,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetSpeedRate(MOVE_FLIGHT, 1.0f);
         me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
         // Fallback in 5s in case land inform is missed
-        _scheduler.Schedule(std::chrono::milliseconds(5000), [this](TaskContext /*ctx*/)
+    _scheduler.Schedule(std::chrono::milliseconds(5000), [this](TaskContext ctx)
         {
             if (!me->IsInWorld())
                 return;
@@ -759,7 +759,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (!_landingScheduled)
                     {
                         _landingScheduled = true;
-                        _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext /*ctx*/)
+                        _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext ctx)
                         {
                             if (!me->IsInWorld())
                                 return;
@@ -1494,7 +1494,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_landingScheduled)
         {
             _landingScheduled = true;
-            _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext /*ctx*/)
+            _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext ctx)
             {
                 if (!me->IsInWorld())
                     return;
