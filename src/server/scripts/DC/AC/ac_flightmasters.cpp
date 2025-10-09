@@ -1777,7 +1777,6 @@ void AddSC_flightmasters()
     new DC_AC_Flight::ac_gryphon_taxi_800011();
 }
 
-}
 
 /*
 DB Notes (example workflow):
