@@ -474,6 +474,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     // enqueue the first hop shortly after to avoid queuing conflicts
                     _scheduler.Schedule(std::chrono::milliseconds(300), [this](TaskContext ctx)
                     {
+                        (void)ctx;
                         if (me->IsInWorld())
                             MoveToIndex(_index);
                     });
@@ -578,8 +579,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetSpeedRate(MOVE_FLIGHT, 1.0f);
         me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, 7.0f);
         // Fallback in 5s in case land inform is missed
-    _scheduler.Schedule(std::chrono::milliseconds(5000), [this](TaskContext ctx)
+        _scheduler.Schedule(std::chrono::milliseconds(5000), [this](TaskContext ctx)
         {
+            (void)ctx;
             if (!me->IsInWorld())
                 return;
             if (_isLanding)
@@ -761,6 +763,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         _landingScheduled = true;
                         _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext ctx)
                         {
+                            (void)ctx;
                             if (!me->IsInWorld())
                                 return;
                             if (Player* p = GetPassengerPlayer())
@@ -1496,6 +1499,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             _landingScheduled = true;
             _scheduler.Schedule(std::chrono::milliseconds(6000), [this](TaskContext ctx)
             {
+                (void)ctx;
                 if (!me->IsInWorld())
                     return;
                 if (Player* p = GetPassengerPlayer())
@@ -1516,7 +1520,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
     }
 
-private:
+/*private:*/
     // Is the given index the terminal node for the current route?
     bool IsFinalNodeOfCurrentRoute(uint8 idx) const
     {
