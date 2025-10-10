@@ -1,15 +1,15 @@
 /*
  * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
-*/
-
-// End of file - removed stray markdown fence that broke C++ parsing
+ *
+ * ScriptNames:
+ *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
  *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
  *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
  *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
  *   - ac_gryphon_taxi_800011 (vehicle AI)
-*/
-
-// End of file - removed stray markdown fence (```)
+ *
+ * Behavior:
+ * - Each flightmaster offers routes appropriate for its tier:
  *   Camp:         to Level 25+, to Level 40+, to Level 60+
  *   Level 25+:    to Camp, to Level 40+, to Level 60+
  *   Level 40+:    to Camp, to Level 25+, to Level 60+
@@ -708,33 +708,34 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             for (int i = 0; i < 8; ++i)
                 if (Unit* u = kit->GetPassenger(i))
                     if (Player* p = u->ToPlayer())
-                        return p;
-        }
-        return nullptr;
-    }
+                        #if 1
+                        /*
+                         * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
+                         *
+                         * ScriptNames:
+                         *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
+                         *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
+                         *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
+                         *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
+                         *   - ac_gryphon_taxi_800011 (vehicle AI)
+                         *
+                         * Behavior:
+                         * - Each flightmaster offers routes appropriate for its tier:
+                         *   Camp:         to Level 25+, to Level 40+, to Level 60+
+                         *   Level 25+:    to Camp, to Level 40+, to Level 60+
+                         *   Level 40+:    to Camp, to Level 25+, to Level 60+
+                         *   Level 60+:    to Camp, to Level 25+, to Level 40+
+                         * - Selecting a route summons a temporary gryphon vehicle and auto-boards the player.
+                         * - The gryphon follows predefined waypoints with stability features: proximity arrival fallback,
+                         *   hop/final-hop watchdogs, stuck detection, turn-aware speed, and corner smoothing.
+                         * - Debug lines prefixed with "[Flight Debug]" are shown to Game Masters only.
+                         *
+                         * Vehicle creature template required:
+                         * - Create/clone a vehicle-capable gryphon template in DB (suggested entry 800011) with VehicleId set
+                         *   to a gryphon seat layout. Set ScriptName = "ac_gryphon_taxi_800011".
+                         */
+                        #endif
 
-    void DismountAndDespawn()
-    {
-        if (Vehicle* kit = me->GetVehicleKit())
-        {
-            for (int i = 0; i < 8; ++i)
-                if (Unit* u = kit->GetPassenger(i))
-                {
-                    u->ExitVehicle();
-                    if (Player* p = u->ToPlayer())
-                        ChatHandler(p->GetSession()).SendSysMessage("You have arrived at your destination.");
-                }
-        }
-        // Faster cleanup after dismount
-        me->DespawnOrUnsummon(500);
-    }
-
-    uint8 _index = 0;
-    uint32 _currentPointId = 0;
-    bool _started = false;
-    bool _awaitingArrival = false;
-    bool _landingScheduled = false;
-    bool _isLanding = false;
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
     uint32 _hopElapsedMs = 0; // time since last hop started
