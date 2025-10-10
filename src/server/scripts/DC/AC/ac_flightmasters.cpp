@@ -1361,7 +1361,7 @@ public:
     }
 };
 
-} // namespace DC_AC_Flight
+} ; // namespace DC_AC_Flight
 
 void AddSC_flightmasters()
 {
