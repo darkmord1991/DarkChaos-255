@@ -7,9 +7,9 @@
  *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
  *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
  *   - ac_gryphon_taxi_800011 (vehicle AI)
- *
- * Behavior:
- * - Each flightmaster offers routes appropriate for its tier:
+*/
+
+// End of file - removed stray markdown fence (```)
  *   Camp:         to Level 25+, to Level 40+, to Level 60+
  *   Level 25+:    to Camp, to Level 40+, to Level 60+
  *   Level 40+:    to Camp, to Level 25+, to Level 60+
