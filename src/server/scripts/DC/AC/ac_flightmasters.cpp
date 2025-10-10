@@ -1,31 +1,3 @@
-/*
- * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
- *
- * ScriptNames:
- *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
- *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
- *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
- *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
- *   - ac_gryphon_taxi_800011 (vehicle AI)
- *
- * Behavior:
- * - Each flightmaster offers routes appropriate for its tier:
- *   Camp:         to Level 25+, to Level 40+, to Level 60+
- *   Level 25+:    to Camp, to Level 40+, to Level 60+
- *   Level 40+:    to Camp, to Level 25+, to Level 60+
- *   Level 60+:    to Camp, to Level 25+, to Level 40+
- * - Selecting a route summons a temporary gryphon vehicle and auto-boards the player.
- * - The gryphon follows predefined waypoints with stability features: proximity arrival fallback,
- *   hop/final-hop watchdogs, stuck detection, turn-aware speed, and corner smoothing.
- * - Debug lines prefixed with "[Flight Debug]" are shown to Game Masters only.
- *
- * Vehicle creature template required:
- * - Create/clone a vehicle-capable gryphon template in DB (suggested entry 800011) with VehicleId set
- *   to a gryphon seat layout. Set ScriptName = "ac_gryphon_taxi_800011".
- */
-
-#include "Creature.h"
-#include "CreatureAI.h"
 #include "CreatureScript.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -116,6 +88,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
     // Route mode declared early to ensure visibility in all in-class method bodies
     FlightRouteMode _routeMode = ROUTE_TOUR; // default to tour unless overridden by gossip
+    // Flight state
+    bool _started = false;           // has the flight been started via SetData
+    bool _awaitingArrival = false;   // awaiting MovementInform/arrival handling
+    bool _isLanding = false;         // currently performing landing sequence
+    bool _landingScheduled = false;  // scheduled landing fallback task
+    uint8 _index = 0;                // current waypoint index
+    uint32 _currentPointId = 0;      // current MovePoint id
 
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
 
@@ -225,6 +204,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
 
         // TOUR and other default start: attempt to start near the nearest scenic index but
+
         // clamp to acfm15 to avoid starting past the classic section on camp departures.
         uint8 startIdx = nearest > kIndex_acfm15 ? kIndex_acfm15 : nearest;
         _index = (startIdx > 0) ? static_cast<uint8>(startIdx - 1) : 0;
@@ -346,6 +326,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool IsFinalNodeOfCurrentRoute(uint8 idx) const;
     bool IsNearIndex(uint8 idx, float max2d) const;
     float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const;
+    // Gracefully dismount passengers and despawn the taxi
+    void DismountAndDespawn();
 
     void UpdateAI(uint32 diff) override
     {
@@ -708,33 +690,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             for (int i = 0; i < 8; ++i)
                 if (Unit* u = kit->GetPassenger(i))
                     if (Player* p = u->ToPlayer())
-                        #if 1
-                        /*
-                         * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
-                         *
-                         * ScriptNames:
-                         *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
-                         *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
-                         *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
-                         *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
-                         *   - ac_gryphon_taxi_800011 (vehicle AI)
-                         *
-                         * Behavior:
-                         * - Each flightmaster offers routes appropriate for its tier:
-                         *   Camp:         to Level 25+, to Level 40+, to Level 60+
-                         *   Level 25+:    to Camp, to Level 40+, to Level 60+
-                         *   Level 40+:    to Camp, to Level 25+, to Level 60+
-                         *   Level 60+:    to Camp, to Level 25+, to Level 40+
-                         * - Selecting a route summons a temporary gryphon vehicle and auto-boards the player.
-                         * - The gryphon follows predefined waypoints with stability features: proximity arrival fallback,
-                         *   hop/final-hop watchdogs, stuck detection, turn-aware speed, and corner smoothing.
-                         * - Debug lines prefixed with "[Flight Debug]" are shown to Game Masters only.
-                         *
-                         * Vehicle creature template required:
-                         * - Create/clone a vehicle-capable gryphon template in DB (suggested entry 800011) with VehicleId set
-                         *   to a gryphon seat layout. Set ScriptName = "ac_gryphon_taxi_800011".
-                         */
-                        #endif
+                        return p;
+        }
+        return nullptr;
+    }
+
+    /* DismountAndDespawn implementation defined outside the class */
 
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
@@ -1379,6 +1340,7 @@ public:
 
 } // namespace DC_AC_Flight
 // Close namespace DC_AC_Flight
+// DismountAndDespawn is defined after AddSC_flightmasters() to avoid redeclaration parsing issues.
 void AddSC_flightmasters()
 {
     // Register the flightmaster scripts using unqualified names resolved into the namespace.
@@ -1388,6 +1350,27 @@ void AddSC_flightmasters()
     new acflightmaster40();
     new acflightmaster60();
     new ac_gryphon_taxi_800011();
+}
+
+
+// Fully-qualified implementation for ac_gryphon_taxi_800011AI::DismountAndDespawn
+namespace DC_AC_Flight
+{
+    void ac_gryphon_taxi_800011AI::DismountAndDespawn()
+    {
+        // Ensure any passenger is removed from the vehicle, then despawn the taxi
+        if (Player* p = GetPassengerPlayer())
+        {
+            // Attempt to politely remove the player from the vehicle
+            p->ExitVehicle();
+        }
+        // Restore physics in case we changed them and schedule a gentle despawn
+        me->SetHover(false);
+        me->SetDisableGravity(false);
+        me->SetCanFly(false);
+        // Give a short delay so clients process dismount; mirror SummonTaxiAndStart's behaviour
+        me->DespawnOrUnsummon(1000);
+    }
 }
 
 
