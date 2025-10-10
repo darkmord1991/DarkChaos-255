@@ -1361,16 +1361,24 @@ public:
     }
 };
 
-}; // namespace DC_AC_Flight
+    // Namespace-local registration helper: register scripts using unqualified names
+    // This keeps all type lookups inside the same namespace and avoids linkage / lookup
+    // issues on differing toolchains.
+    void RegisterFlightmasters()
+    {
+        new acflightmaster0();
+        new acflightmaster25();
+        new acflightmaster40();
+        new acflightmaster60();
+        new ac_gryphon_taxi_800011();
+    }
+
+} // namespace DC_AC_Flight
 
 void AddSC_flightmasters()
 {
-    // Register the four dedicated flightmaster scripts and the gryphon taxi
-    new DC_AC_Flight::acflightmaster0();
-    new DC_AC_Flight::acflightmaster25();
-    new DC_AC_Flight::acflightmaster40();
-    new DC_AC_Flight::acflightmaster60();
-    new DC_AC_Flight::ac_gryphon_taxi_800011();
+    // Call into the namespace-local registrar so types are resolved correctly.
+    DC_AC_Flight::RegisterFlightmasters();
 }
 
 
