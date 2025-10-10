@@ -1361,24 +1361,17 @@ public:
     }
 };
 
-    // Namespace-local registration helper: register scripts using unqualified names
-    // This keeps all type lookups inside the same namespace and avoids linkage / lookup
-    // issues on differing toolchains.
-    void RegisterFlightmasters()
-    {
-        new acflightmaster0();
-        new acflightmaster25();
-        new acflightmaster40();
-        new acflightmaster60();
-        new ac_gryphon_taxi_800011();
-    }
-
 } // namespace DC_AC_Flight
 
 void AddSC_flightmasters()
 {
-    // Call into the namespace-local registrar so types are resolved correctly.
-    DC_AC_Flight::RegisterFlightmasters();
+    // Register the flightmaster scripts using unqualified names resolved into the namespace.
+    using namespace DC_AC_Flight;
+    new acflightmaster0();
+    new acflightmaster25();
+    new acflightmaster40();
+    new acflightmaster60();
+    new ac_gryphon_taxi_800011();
 }
 
 
