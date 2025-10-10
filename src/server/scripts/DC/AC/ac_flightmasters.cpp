@@ -1363,7 +1363,6 @@ public:
 
 } // namespace DC_AC_Flight
 // Close namespace DC_AC_Flight
-}
 void AddSC_flightmasters()
 {
     // Register the flightmaster scripts using unqualified names resolved into the namespace.
