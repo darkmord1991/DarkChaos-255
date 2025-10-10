@@ -1,8 +1,8 @@
 /*
  * DarkChaos Custom: Multi Flightmasters for Azshara Crater taxi
- *
- * ScriptNames:
- *   - acflightmaster0   -> Camp flightmaster (NPC 800010)
+*/
+
+// End of file - removed stray markdown fence that broke C++ parsing
  *   - acflightmaster25  -> Level 25+ flightmaster (NPC 800012)
  *   - acflightmaster40  -> Level 40+ flightmaster (NPC 800013)
  *   - acflightmaster60  -> Level 60+ flightmaster (NPC 800014)
@@ -46,6 +46,7 @@
 #include <cmath>
 #include <numeric>
 #include <deque>
+#include <limits>
 
 namespace DC_AC_Flight
 {
@@ -127,44 +128,56 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _routeMode = static_cast<FlightRouteMode>(value);
         _started = true;
         _awaitingArrival = false;
-        _isLanding = false;
-        _landingScheduled = false;
-        _stuckMs = 0;
-        _noPassengerMs = 0;
-        _hopElapsedMs = 0;
-        _hopRetries = 0;
-        _pathfindingRetries = 0;
-
-        // Record flight start position for fallback
-        _flightStartPos = me->GetPosition();
-        _lastPosX = me->GetPositionX();
-        _lastPosY = me->GetPositionY();
-
-        Player* p = GetPassengerPlayer();
-
-        // Choose starting index based on route mode. The bulk of the original logic
-        // for selecting the initial _index is preserved below; use the helper MoveToIndexWithSmartPath
-        // to begin movement once a start index is chosen.
-
-        // Helper: find nearest scenic index (exclude Startcamp)
-        uint8 nearest = 0;
-        float bestD2 = std::numeric_limits<float>::max();
-        for (uint8 i = 0; i < kPathLength - 1; ++i)
-        {
-            float dx = me->GetPositionX() - kPath[i].GetPositionX();
-            float dy = me->GetPositionY() - kPath[i].GetPositionY();
-            float d2 = dx * dx + dy * dy;
-            if (d2 < bestD2)
+            // Local helpers used by the startup routine
+            Player* p = GetPassengerPlayer();
+            uint8 nextIdx = _index;
+            // Compute nearest scenic node index to the gryphon's current position for initial routing
+            uint8 nearest = 0;
             {
-                bestD2 = d2;
-                nearest = i;
+                float bestDist = std::numeric_limits<float>::max();
+                uint8 last = LastScenicIndex();
+                for (uint8 i = 0; i <= last; ++i)
+                {
+                    float dx = me->GetPositionX() - kPath[i].GetPositionX();
+                    float dy = me->GetPositionY() - kPath[i].GetPositionY();
+                    float d2 = dx * dx + dy * dy;
+                    if (d2 < bestDist)
+                    {
+                        bestDist = d2;
+                        nearest = i;
+                    }
+                }
             }
-        }
-
-        // Default starting behaviours (mirror prior logic but simplified to be robust)
-        if (_routeMode == ROUTE_L40_DIRECT)
-        {
-            _index = 0;
+            _awaitingArrival = false;
+            // Aggressive bypass for known sticky anchors: remap the next index to avoid landing exactly on them
+            if (nextIdx == kIndex_acfm19)
+            {
+                // If we've just bypassed this anchor recently, avoid doing it again immediately
+                if (_lastBypassedAnchor == kIndex_acfm19 && _bypassMs < 3000)
+                {
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm19 (throttle).");
+                }
+                else
+                {
+                    // For descending/camp-return routes, jump back to the classic anchor (acfm15).
+                    // For other forward routes, step past the anchor (acfm20) to avoid stickiness.
+                    if (_routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0 || _routeMode == ROUTE_L60_RETURN19)
+                        nextIdx = kIndex_acfm15;
+                    else
+                        nextIdx = static_cast<uint8>(kIndex_acfm19 + 1);
+                    // record bypass and throttle repeated remaps
+                    _lastBypassedAnchor = kIndex_acfm19;
+                    _bypassMs = 0;
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage(
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                }
+            }
+            if (nextIdx == kIndex_acfm35)
+            {
             if (p && p->IsGameMaster())
                 ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Level 40+ route start at {}.", NodeLabel(_index));
             MoveToIndexWithSmartPath(_index);
@@ -1057,7 +1070,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _bypassMs = 0;
                 if (Player* p = GetPassengerPlayer())
                     if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx));
+                        ChatHandler(p->GetSession()).PSendSysMessage(
+                            "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
             }
             if (nextIdx == kIndex_acfm35)
             {
@@ -1084,7 +1098,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _bypassMs = 0;
                 if (Player* p = GetPassengerPlayer())
                     if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx));
+                        ChatHandler(p->GetSession()).PSendSysMessage(
+                            "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
                 }
             }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake

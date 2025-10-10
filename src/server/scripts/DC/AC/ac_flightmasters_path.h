@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 #include <vector>
 #include <deque>
 #include "Position.h"
 class Creature;
+class WorldObject;
 
 namespace DC_AC_Flight
 {
@@ -25,3 +26,5 @@ private:
     static constexpr size_t kSpeedSmoothWindow = 4;
 };
 }
+
+
