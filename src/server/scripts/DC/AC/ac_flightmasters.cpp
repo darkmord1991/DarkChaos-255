@@ -1338,7 +1338,7 @@ public:
     }
 };
 
-} // namespace DC_AC_Flight
+}; // namespace DC_AC_Flight
 // Close namespace DC_AC_Flight
 // DismountAndDespawn is defined after AddSC_flightmasters() to avoid redeclaration parsing issues.
 void AddSC_flightmasters()
