@@ -523,11 +523,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             else
                                 me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
                             _hopElapsedMs = 0;
+                                // record a minor failure for this node
+                                if (arrivedIdx < _nodeFailCount.size())
+                                    ++_nodeFailCount[arrivedIdx];
                         }
                         else if (_hopRetries == 1)
                         {
                             // Rate-limited micro-nudge: skip if we recently nudged this same node
-                            if (_lastNudgeIdx == _index && _lastNudgeMs < 10000)
+                            if (_lastNudgeIdx == _index && _lastNudgeMs < kMicroNudgeRateLimitMs)
                             {
                                 if (Player* p = GetPassengerPlayer())
                                     if (p->IsGameMaster())
@@ -580,6 +583,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             float nudgex = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
                             float nudgey = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
                             float nudgez = (_movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ()) + 8.0f; // slightly higher nudge
+                            // If this node has repeatedly failed, escalate the nudge height for stubborn spots
+                            if (_index < _nodeFailCount.size() && _nodeFailCount[_index] >= kFailEscalationThreshold)
+                            {
+                                nudgez += 10.0f; // stronger nudge on repeat failures
+                                if (Player* p = GetPassengerPlayer())
+                                    if (p->IsGameMaster())
+                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased micro-nudge at {} (failcount=%u).", NodeLabel(_index), static_cast<uint32>(_nodeFailCount[_index]));
+                            }
                             Position nudgePos(nudgex, nudgey, nudgez, 0.0f);
                             me->GetMotionMaster()->Clear();
                             me->GetMotionMaster()->MovePoint(_currentPointId, nudgePos);
@@ -589,6 +600,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             _lastNudgeIdx = _index;
                             _lastNudgeMs = 0;
                             _hopElapsedMs = 0;
+                            // record this micro-nudge as a failure attempt for the node
+                            if (_index < _nodeFailCount.size())
+                                ++_nodeFailCount[_index];
                         }
                         else
                         {
@@ -616,9 +630,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
                             me->UpdateGroundPositionZ(tx, ty, tz);
                             me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
-                            _hopElapsedMs = 0;
-                            _hopRetries = 0;
-                            _pathfindingRetries = 0; // Reset pathfinding retries
+                                _hopElapsedMs = 0;
+                                _hopRetries = 0;
+                                _pathfindingRetries = 0; // Reset pathfinding retries
+                                // On hard fallback, count this as a failure and consider escalation
+                                if (_index < _nodeFailCount.size())
+                                    ++_nodeFailCount[_index];
                             if (_movingToCustom)
                             {
                                 _movingToCustom = false;
@@ -696,7 +713,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // Advance micro-nudge timer (rate-limiting)
         if (_lastNudgeMs < 60000)
             _lastNudgeMs += diff;
-        if (_lastNudgeMs > 10000 && _lastNudgeIdx != 255)
+        if (_lastNudgeMs >= kMicroNudgeRateLimitMs && _lastNudgeIdx != 255)
             _lastNudgeIdx = 255;
 
         // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
@@ -939,6 +956,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             Position rise = me->GetPosition();
             rise.m_positionZ = std::max(rise.GetPositionZ() + 22.0f, destination.GetPositionZ() + 18.0f);
+            // escalate arc height if this node keeps failing
+            if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= kFailEscalationThreshold)
+            {
+                rise.m_positionZ += 12.0f;
+                if (Player* p = GetPassengerPlayer())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased elevation arc for {} due to repeated failures.", NodeLabel(idx));
+            }
 
             Position glide = destination;
             glide.m_positionZ = std::max(rise.GetPositionZ(), destination.GetPositionZ() + 18.0f);
@@ -968,6 +993,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
             Position rise = me->GetPosition();
             rise.m_positionZ = std::max(rise.GetPositionZ() + 18.0f, destination.GetPositionZ() + 12.0f);
+            // escalate overhead approach if Startcamp is repeatedly failing
+            if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= kFailEscalationThreshold)
+            {
+                rise.m_positionZ += 18.0f; // much higher overhead approach
+                if (Player* p = GetPassengerPlayer())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: stronger overhead approach for Startcamp due to repeated failures.");
+            }
 
             Position approach = destination;
             approach.m_positionZ = std::max(rise.GetPositionZ(), destination.GetPositionZ() + 12.0f);
