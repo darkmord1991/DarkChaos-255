@@ -151,8 +151,43 @@
     _resourcesLossPlayerKill = PointsLoseOnPvPKill; // 5
     _resourcesLossNpcNormal = 5;
     _resourcesLossNpcBoss = 200;
-        // Load overrides from config if available
-        LoadConfig();
+    // Configuration defaults that are also exposed via hinterlandbg.conf
+    _persistenceEnabled = true;
+    _lockEnabled = false;
+    _lockDurationSeconds = 0;
+    _lockDurationExpirySec = 0;
+    _lockDurationDepletionSec = 0;
+    _queueEnabled = true;
+    _minPlayersToStart = 4;
+    _maxGroupSize = 5;
+    _killSpellOnPlayerKillAlliance = 0;
+    _killSpellOnPlayerKillHorde = 0;
+    _killSpellOnNpcKill = 0;
+    _affixEnabled = true;
+    _affixWeatherEnabled = true;
+    _affixPeriodSec = 0;
+    _affixTimerMs = 0;
+    _activeAffix = AFFIX_NONE;
+    _affixNextChangeEpoch = 0;
+    _affixSpellHaste = 0;
+    _affixSpellSlow = 0;
+    _affixSpellReducedHealing = 0;
+    _affixSpellReducedArmor = 0;
+    _affixSpellBossEnrage = 0;
+        _affixSpellBadWeatherNpcBuff = 0;
+        _affixRandomOnStart = true;
+        _affixAnnounce = false;
+        _affixWorldstateEnabled = false;
+        for (uint8 i = 0; i < 6; ++i)
+        {
+            _affixPlayerSpell[i] = 0;
+            _affixNpcSpell[i] = 0;
+            _affixWeatherType[i] = 0;
+            _affixWeatherIntensity[i] = 0.0f;
+        }
+    _statsIncludeManualResets = true;
+    // Load overrides from config if available
+    LoadConfig();
 
         _ally_gathered = _initialResourcesAlliance;
         _horde_gathered = _initialResourcesHorde;
@@ -160,41 +195,20 @@
         _matchEndTime = 0;
     _matchStartTime = 0;
         // Persistence and lock defaults
-        _persistenceEnabled = true;
-        _lockEnabled = false;
-        _lockDurationSeconds = 0;
-        
         // State machine initialization
         _bgState = BG_STATE_CLEANUP;  // Start in cleanup state waiting for players
         _warmupDurationSeconds = 120; // 2 minutes default
         _warmupTimeRemaining = 0;
         _pauseStartTime = 0;
         _cleanupTimeRemaining = 0;
-        _queueEnabled = true;
         _isLocked = false;
         _lockUntilEpoch = 0;
 
         // Queue system initialization
         _queuedPlayers.clear();
-        _minPlayersToStart = 4; // Minimum players needed to start warmup
-        _maxGroupSize = 5;      // Maximum group size allowed
-        // Per-kill spell feedback defaults
-        _killSpellOnPlayerKillAlliance = 0;
-        _killSpellOnPlayerKillHorde = 0;
-        _killSpellOnNpcKill = 0;
-        // Affix defaults (enabled by default, weather relation on, random on start)
-        _affixEnabled = true;
-        _affixWeatherEnabled = true;
-        _affixPeriodSec = 0;
         _affixTimerMs = 0;
         _activeAffix = AFFIX_NONE;
     _affixNextChangeEpoch = 0;
-        _affixSpellHaste = 0;
-        _affixSpellSlow = 0;
-        _affixSpellReducedHealing = 0;
-        _affixSpellReducedArmor = 0;
-        _affixSpellBossEnrage = 0;
-        _affixRandomOnStart = true;
 
         IS_ABLE_TO_SHOW_MESSAGE = false;
         IS_RESOURCE_MESSAGE_A = false;
@@ -214,7 +228,6 @@
         _statusBroadcastTimerMs = 0;
     _memberOfflineSince.clear();
     _zoneWasEmpty = false;
-    _statsIncludeManualResets = true;
     _winnerRecorded = false; // no winner yet this match
 
     }
