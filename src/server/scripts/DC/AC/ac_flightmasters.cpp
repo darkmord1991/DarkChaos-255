@@ -1337,31 +1337,32 @@ public:
         return true;
     }
 };
-    void RegisterScripts()
-    {
-        new acflightmaster0();
-        new acflightmaster25();
-        new acflightmaster40();
-        new acflightmaster60();
-        new ac_gryphon_taxi_800011();
-    }
-
-    void ac_gryphon_taxi_800011AI::DismountAndDespawn()
-    {
-        // Ensure any passenger is removed from the vehicle, then despawn the taxi
-        if (Player* p = GetPassengerPlayer())
-        {
-            // Attempt to politely remove the player from the vehicle
-            p->ExitVehicle();
-        }
-        // Restore physics in case we changed them and schedule a gentle despawn
-        me->SetHover(false);
-        me->SetDisableGravity(false);
-        me->SetCanFly(false);
-        // Give a short delay so clients process dismount; mirror SummonTaxiAndStart's behaviour
-        me->DespawnOrUnsummon(1000);
-    }
 } // namespace DC_AC_Flight
+
+void DC_AC_Flight::RegisterScripts()
+{
+    new acflightmaster0();
+    new acflightmaster25();
+    new acflightmaster40();
+    new acflightmaster60();
+    new ac_gryphon_taxi_800011();
+}
+
+void DC_AC_Flight::ac_gryphon_taxi_800011AI::DismountAndDespawn()
+{
+    // Ensure any passenger is removed from the vehicle, then despawn the taxi
+    if (Player* p = GetPassengerPlayer())
+    {
+        // Attempt to politely remove the player from the vehicle
+        p->ExitVehicle();
+    }
+    // Restore physics in case we changed them and schedule a gentle despawn
+    me->SetHover(false);
+    me->SetDisableGravity(false);
+    me->SetCanFly(false);
+    // Give a short delay so clients process dismount; mirror SummonTaxiAndStart's behaviour
+    me->DespawnOrUnsummon(1000);
+}
 
 void AddSC_flightmasters()
 {
