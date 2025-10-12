@@ -17,6 +17,7 @@
 
 
 void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp (C++ linkage)
+void AddSC_flighthelper_test(); // location: scripts\DC\AC\cs_flighthelper_test.cpp
 void AddSC_npc_thrall_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
 void AddSC_hlbg_commandscript(); // location: scripts\DC\HinterlandBG\hlbg_commandscript.cpp (C++ linkage)
@@ -32,6 +33,7 @@ void AddSC_hlbg_addon(); // location: scripts\DC\HinterlandBG\hlbg_addon.cpp
 void AddDCScripts()
 {
     AddSC_ac_guard_npc();
+    AddSC_flighthelper_test();
     AddSC_npc_thrall_hinterlandbg();
     AddSC_hinterlandbg_Varian_wrynn();
     AddSC_hlbg_commandscript();

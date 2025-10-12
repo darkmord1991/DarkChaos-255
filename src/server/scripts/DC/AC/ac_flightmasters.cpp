@@ -1308,7 +1308,6 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     taxi->SetHover(true);
     taxi->SetSpeedRate(MOVE_RUN, 1.0f);
     taxi->SetSpeedRate(MOVE_FLIGHT, 1.0f);
-    taxi->SetDeathState(ALIVE);
     taxi->SetHealth(taxi->GetMaxHealth());
     if (!taxi->GetVehicleKit())
     {
