@@ -96,22 +96,72 @@ HinterlandBG.Announce.ExpiryWorld = 1
 HinterlandBG.Announce.DepletionWorld = 1
 
 # Persistence and lock (optional)
-HinterlandBG.Persistence.Enabled = 1            # Save/restore resources, timer, last winner, lock window across restarts
-HinterlandBG.Lock.Enabled = 0                   # Enable lock window after a win
-HinterlandBG.Lock.Duration = 0                  # Lock duration in seconds (0 disables)
+# Save/restore resources, timer, last winner, lock window across restarts
+HinterlandBG.Persistence.Enabled = 1
+# Enable lock window after a win
+HinterlandBG.Lock.Enabled = 0
+# Lock duration in seconds (0 disables)
+HinterlandBG.Lock.Duration = 0
+# Override lock duration for timer-expiry wins
+HinterlandBG.Lock.Duration.Expiry = 0
+# Override lock duration when a team depletes the opponent
+HinterlandBG.Lock.Duration.Depletion = 0
+
+# Track season number for persistent stats (legacy DB rows commonly use season=1)
+HinterlandBG.Season = 1
 
 # Per-kill spell feedback (optional visual/audio)
-HinterlandBG.KillSpell.PlayerKillAlliance = 0   # Spell cast on Alliance player killing a Horde player
-HinterlandBG.KillSpell.PlayerKillHorde    = 0   # Spell cast on Horde player killing an Alliance player
-HinterlandBG.KillSpell.NpcKill            = 0   # Spell cast when killing a configured NPC
+# Spell cast on Alliance player killing a Horde player
+HinterlandBG.KillSpell.PlayerKillAlliance = 0
+# Spell cast on Horde player killing an Alliance player
+HinterlandBG.KillSpell.PlayerKillHorde    = 0
+# Spell cast when killing a configured NPC
+HinterlandBG.KillSpell.NpcKill            = 0
 
 # Affix system (optional): rotate zone-wide buffs/debuffs and optional weather
 HinterlandBG.Affix.Enabled = 0
 HinterlandBG.Affix.WeatherEnabled = 0
-HinterlandBG.Affix.Period = 600                 # seconds between affix rotations
+# seconds between affix rotations
+HinterlandBG.Affix.Period = 600
 # Affix spells (provide your own IDs or leave 0 to disable)
 HinterlandBG.Affix.Spell.Haste = 0
 HinterlandBG.Affix.Spell.Slow = 0
 HinterlandBG.Affix.Spell.ReducedHealing = 0
 HinterlandBG.Affix.Spell.ReducedArmor = 0
 HinterlandBG.Affix.Spell.BossEnrage = 0
+HinterlandBG.Affix.Spell.BadWeatherNpcBuff = 0
+# Shuffle affixes when the battle starts
+HinterlandBG.Affix.RandomOnBattleStart = 1
+# Broadcast affix changes to players
+HinterlandBG.Affix.Announce = 0
+# Update affix state in worldstates for UI integrations
+HinterlandBG.Affix.WorldstateEnabled = 0
+
+# Affix spell arrays (index 0..5)
+HinterlandBG.Affix.PlayerSpell.0 = 0
+HinterlandBG.Affix.PlayerSpell.1 = 0
+HinterlandBG.Affix.PlayerSpell.2 = 0
+HinterlandBG.Affix.PlayerSpell.3 = 0
+HinterlandBG.Affix.PlayerSpell.4 = 0
+HinterlandBG.Affix.PlayerSpell.5 = 0
+HinterlandBG.Affix.NpcSpell.0 = 0
+HinterlandBG.Affix.NpcSpell.1 = 0
+HinterlandBG.Affix.NpcSpell.2 = 0
+HinterlandBG.Affix.NpcSpell.3 = 0
+HinterlandBG.Affix.NpcSpell.4 = 0
+HinterlandBG.Affix.NpcSpell.5 = 0
+HinterlandBG.Affix.WeatherType.0 = 0
+HinterlandBG.Affix.WeatherType.1 = 0
+HinterlandBG.Affix.WeatherType.2 = 0
+HinterlandBG.Affix.WeatherType.3 = 0
+HinterlandBG.Affix.WeatherType.4 = 0
+HinterlandBG.Affix.WeatherType.5 = 0
+HinterlandBG.Affix.WeatherIntensity.0 = 0
+HinterlandBG.Affix.WeatherIntensity.1 = 0
+HinterlandBG.Affix.WeatherIntensity.2 = 0
+HinterlandBG.Affix.WeatherIntensity.3 = 0
+HinterlandBG.Affix.WeatherIntensity.4 = 0
+HinterlandBG.Affix.WeatherIntensity.5 = 0
+
+# Include manual resets in statistics by default
+HinterlandBG.Stats.IncludeManual = 1
