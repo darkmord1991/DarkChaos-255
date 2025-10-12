@@ -869,9 +869,10 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
         
         // Fallback to regular waypoint movement
-        if (_useSmartPathfinding && Player* p = GetPassengerPlayer())
-            if (p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
+        if (_useSmartPathfinding)
+            if (Player* p = GetPassengerPlayer())
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
         _useSmartPathfinding = false;
         MoveToIndex(idx);
     }
