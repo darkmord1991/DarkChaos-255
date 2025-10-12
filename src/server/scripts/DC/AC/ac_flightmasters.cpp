@@ -322,10 +322,75 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         });
     }
 
-    // Forward declaration so methods defined earlier (like UpdateAI) can call it.
-    bool IsFinalNodeOfCurrentRoute(uint8 idx) const;
-    bool IsNearIndex(uint8 idx, float max2d) const;
-    float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const;
+    bool IsFinalNodeOfCurrentRoute(uint8 idx) const
+    {
+        switch (_routeMode)
+        {
+            case ROUTE_TOUR:
+                return idx >= kIndex_acfm15;
+            case ROUTE_RETURN:
+                return idx == kIndex_startcamp;
+            case ROUTE_L40_DIRECT:
+            case ROUTE_L25_TO_40:
+                return idx >= kIndex_acfm35;
+            case ROUTE_L0_TO_57:
+            case ROUTE_L25_TO_60:
+            case ROUTE_L40_SCENIC:
+                return idx >= kIndex_acfm57;
+            case ROUTE_L40_RETURN25:
+            case ROUTE_L60_RETURN19:
+                return idx <= kIndex_acfm19;
+            case ROUTE_L60_RETURN40:
+                return idx <= kIndex_acfm40;
+            case ROUTE_L60_RETURN0:
+            case ROUTE_L40_RETURN0:
+                return idx == kIndex_startcamp;
+            default:
+                return idx >= LastScenicIndex();
+        }
+    }
+
+    bool IsNearIndex(uint8 idx, float max2d) const
+    {
+        if (idx >= kPathLength)
+            return false;
+
+        float dx = me->GetPositionX() - kPath[idx].GetPositionX();
+        float dy = me->GetPositionY() - kPath[idx].GetPositionY();
+        float dz = fabsf(me->GetPositionZ() - kPath[idx].GetPositionZ());
+        float dist2d = sqrtf(dx * dx + dy * dy);
+        return dist2d <= max2d && dz <= 40.0f;
+    }
+
+    float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const
+    {
+        if (prevIdx >= kPathLength || currIdx >= kPathLength || nextIdx >= kPathLength)
+            return 0.0f;
+
+        const Position& a = kPath[prevIdx];
+        const Position& b = kPath[currIdx];
+        const Position& c = kPath[nextIdx];
+
+        float v1x = b.GetPositionX() - a.GetPositionX();
+        float v1y = b.GetPositionY() - a.GetPositionY();
+        float v2x = c.GetPositionX() - b.GetPositionX();
+        float v2y = c.GetPositionY() - b.GetPositionY();
+
+        float len1 = sqrtf(v1x * v1x + v1y * v1y);
+        float len2 = sqrtf(v2x * v2x + v2y * v2y);
+        if (len1 < 0.001f || len2 < 0.001f)
+            return 0.0f;
+
+        float dot = (v1x * v2x) + (v1y * v2y);
+        float cosTheta = dot / (len1 * len2);
+        if (cosTheta > 1.0f)
+            cosTheta = 1.0f;
+        else if (cosTheta < -1.0f)
+            cosTheta = -1.0f;
+
+        float angleRad = acosf(cosTheta);
+        return angleRad * 57.2957795f; // rad -> deg
+    }
     // Gracefully dismount passengers and despawn the taxi
     void DismountAndDespawn()
     {
