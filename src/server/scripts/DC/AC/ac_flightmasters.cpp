@@ -241,9 +241,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     {
         if (type != POINT_MOTION_TYPE)
             return;
-                    // Prime baseline movement speeds for faster travel; later smoothing keeps ratios relative to this base.
-                    me->SetSpeedRate(MOVE_RUN, _baseSpeedRate);
-                    me->SetSpeedRate(MOVE_FLIGHT, _baseSpeedRate);
 
         if (id == POINT_TAKEOFF)
             return; // ignore pre-flight lift
@@ -738,6 +735,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetCanFly(true);
         me->SetDisableGravity(true);
         me->SetHover(true);
+        me->SetSpeedRate(MOVE_RUN, _baseSpeedRate);
+        me->SetSpeedRate(MOVE_FLIGHT, _baseSpeedRate);
         me->GetMotionMaster()->MovePoint(_currentPointId, kPath[idx]);
         _awaitingArrival = true;
         _sinceMoveMs = 0;
@@ -760,6 +759,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetCanFly(true);
         me->SetDisableGravity(true);
         me->SetHover(true);
+        me->SetSpeedRate(MOVE_RUN, _baseSpeedRate);
+        me->SetSpeedRate(MOVE_FLIGHT, _baseSpeedRate);
         me->GetMotionMaster()->MovePoint(_currentPointId, _customTarget);
         _awaitingArrival = true;
         _sinceMoveMs = 0;
@@ -847,6 +848,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (_smartPathQueue.size() == 1 && dist3D < 220.0f)
                 {
                     // One-step smart paths on short legs tend to oscillate; stick to the scripted waypoint.
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path reduced to single hop for {}. Falling back to scripted point.", NodeLabel(idx));
                     _smartPathQueue.clear();
                 }
                 else if (!_smartPathQueue.empty())
@@ -865,6 +869,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
         
         // Fallback to regular waypoint movement
+        if (_useSmartPathfinding && Player* p = GetPassengerPlayer())
+            if (p->IsGameMaster())
+                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
         _useSmartPathfinding = false;
         MoveToIndex(idx);
     }
