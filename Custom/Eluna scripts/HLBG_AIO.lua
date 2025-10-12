@@ -1136,7 +1136,6 @@ local function OnCommandExtended(event, player, command)
             { id = "998", ts = now, winner = "Horde", affix = "5", reason = "TestEntryB" },
         }
         if okAIO and AIO and AIO.Handle then
-            if okAIO and AIO and AIO.Handle then
             AIO.Handle(player, "HLBG", "History", rows, 1, 5, 2, "id", "DESC")
             -- also send a TSV fallback
             local buf = {}
@@ -1146,14 +1145,14 @@ local function OnCommandExtended(event, player, command)
             end
             local tsv = table.concat(buf, "\n")
             AIO.Handle(player, "HLBG", "HistoryStr", tsv, 1, 5, 2, "id", "DESC")
-                -- Also send a chat broadcast fallback so non-AIO clients still receive a sample
-                if player and player.SendBroadcastMessage then
-                    local safeTSV = tsv
-                    -- replace newlines with '||' to keep chat on a single line (client will convert back)
-                    safeTSV = safeTSV:gsub("\n", "||")
-                    safeTSV = sanitize_for_chat(safeTSV)
-                    player:SendBroadcastMessage("[HLBG_DUMP] "..tostring(safeTSV))
-                end
+            -- Also send a chat broadcast fallback so non-AIO clients still receive a sample
+            if player and player.SendBroadcastMessage then
+                local safeTSV = tsv
+                -- replace newlines with '||' to keep chat on a single line (client will convert back)
+                safeTSV = safeTSV:gsub("\n", "||")
+                safeTSV = sanitize_for_chat(safeTSV)
+                player:SendBroadcastMessage("[HLBG_DUMP] "..tostring(safeTSV))
+            end
             AIO.Handle(player, "HLBG", "PONG")
             print("[HLBG_AIO] Sent test HISTORY array to player")
         else
@@ -1349,7 +1348,6 @@ end
     local function OnCommandLive(event, player, command)
         if command == "hlbglive" or command == ".hlbglive" then
             print("[HLBG_AIO] OnCommand received live request: "..tostring(command))
-            local now = os.date("%Y-%m-%d %H:%M:%S")
             local now = os.date("%Y-%m-%d %H:%M:%S")
             local rows = {
                 { id = "1", ts = now, name = tostring(player and player:GetName() or "GM"), team = "Alliance", score = 0 },

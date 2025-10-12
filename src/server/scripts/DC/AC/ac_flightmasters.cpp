@@ -107,6 +107,29 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _routeMode = static_cast<FlightRouteMode>(value);
         _started = true;
         _awaitingArrival = false;
+    _isLanding = false;
+    _landingScheduled = false;
+    _movingToCustom = false;
+    _smartPathQueue.clear();
+    _scheduler.CancelAll();
+    _customPointSeq = 0;
+    _pathfindingRetries = 0;
+    _useSmartPathfinding = false;
+    _sinceMoveMs = 0;
+    _hopElapsedMs = 0;
+    _hopRetries = 0;
+    _noPassengerMs = 0;
+    _stuckMs = 0;
+    _lastPosX = me->GetPositionX();
+    _lastPosY = me->GetPositionY();
+    _flightStartPos = me->GetPosition();
+    _lastDepartIdx = 255;
+    _lastBypassedAnchor = 255;
+    _bypassMs = 60000;
+    me->SetCanFly(true);
+    me->SetDisableGravity(true);
+    me->SetHover(true);
+    me->GetMotionMaster()->Clear();
             // Local helpers used by the startup routine
             Player* p = GetPassengerPlayer();
             uint8 nextIdx = _index;
@@ -1276,15 +1299,34 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
         ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry %u).", static_cast<uint32>(NPC_AC_GRYPHON_TAXI));
         return false;
     }
+    taxi->setActive(true);
+    taxi->SetReactState(REACT_PASSIVE);
+    taxi->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+    taxi->SetFaction(creature->GetFaction());
+    taxi->SetDisableGravity(true);
+    taxi->SetCanFly(true);
+    taxi->SetHover(true);
+    taxi->SetSpeedRate(MOVE_RUN, 1.0f);
+    taxi->SetSpeedRate(MOVE_FLIGHT, 1.0f);
+    taxi->SetDeathState(ALIVE);
+    taxi->SetHealth(taxi->GetMaxHealth());
     if (!taxi->GetVehicleKit())
     {
         ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
         taxi->DespawnOrUnsummon(1000);
         return false;
     }
+    bool boarded = player->EnterVehicle(taxi, -1);
+    if (!boarded)
+        boarded = player->EnterVehicle(taxi, 0);
+    if (!boarded)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("[Flight] Could not place you on the gryphon. Check VehicleId seat 0 in the database.");
+        taxi->DespawnOrUnsummon(1000);
+        return false;
+    }
     if (CreatureAI* ai = taxi->AI())
         ai->SetData(1, static_cast<uint32>(mode));
-    player->EnterVehicle(taxi, -1);
     if (player->IsGameMaster())
         ChatHandler(player->GetSession()).SendSysMessage("[Flight Debug] Attempting to board gryphon (auto-seat). If you don't move, VehicleId/seat config may be wrong.");
     return true;
