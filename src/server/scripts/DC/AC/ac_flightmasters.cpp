@@ -1337,17 +1337,12 @@ public:
         return true;
     }
 };
-
-    void RegisterScripts()
-    {
-        new acflightmaster0();
-        new acflightmaster25();
-        new acflightmaster40();
-        new acflightmaster60();
-        new ac_gryphon_taxi_800011();
-    }
-}; // namespace DC_AC_Flight
+} // namespace DC_AC_Flight
 // Close namespace DC_AC_Flight
+namespace DC_AC_Flight
+{
+    void RegisterScripts();
+}
 // DismountAndDespawn is defined after AddSC_flightmasters() to avoid redeclaration parsing issues.
 void AddSC_flightmasters()
 {
@@ -1358,6 +1353,15 @@ void AddSC_flightmasters()
 // Fully-qualified implementation for ac_gryphon_taxi_800011AI::DismountAndDespawn
 namespace DC_AC_Flight
 {
+    void RegisterScripts()
+    {
+        new acflightmaster0();
+        new acflightmaster25();
+        new acflightmaster40();
+        new acflightmaster60();
+        new ac_gryphon_taxi_800011();
+    }
+
     void ac_gryphon_taxi_800011AI::DismountAndDespawn()
     {
         // Ensure any passenger is removed from the vehicle, then despawn the taxi
