@@ -524,8 +524,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                                 me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
                             _hopElapsedMs = 0;
                                 // record a minor failure for this node
-                                if (arrivedIdx < _nodeFailCount.size())
-                                    ++_nodeFailCount[arrivedIdx];
+                                if (_index < _nodeFailCount.size())
+                                    ++_nodeFailCount[_index];
                         }
                         else if (_hopRetries == 1)
                         {
