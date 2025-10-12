@@ -76,16 +76,17 @@ bool FlightPathHelper::CalculateAndQueue(Position const& dest, std::deque<Positi
     return !outQueue.empty();
 }
 
-void FlightPathHelper::SmoothAndSetSpeed(float targetRate)
+void FlightPathHelper::SmoothAndSetSpeed(float targetSpeed)
 {
     if (!_owner)
         return;
-    _speedHistory.push_back(targetRate);
+    _speedHistory.push_back(targetSpeed);
     if (_speedHistory.size() > kSpeedSmoothWindow)
         _speedHistory.pop_front();
     float sum = std::accumulate(_speedHistory.begin(), _speedHistory.end(), 0.0f);
     float avg = sum / static_cast<float>(_speedHistory.size());
     _owner->SetSpeedRate(MOVE_FLIGHT, avg);
+    _owner->SetSpeedRate(MOVE_RUN, avg);
 }
 
 } // namespace DC_AC_Flight

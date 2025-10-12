@@ -18,7 +18,7 @@ public:
     static bool CalculateSmartPathForObject(WorldObject const* source, Position const& dest, std::vector<Position>& out);
     // Convenience: calculate smart path and filter tiny steps into an output queue
     bool CalculateAndQueue(Position const& dest, std::deque<Position>& outQueue, Creature* owner);
-    void SmoothAndSetSpeed(float targetRate);
+    void SmoothAndSetSpeed(float targetSpeed);
 
 private:
     Creature* _owner = nullptr;

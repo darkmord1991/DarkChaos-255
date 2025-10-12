@@ -19,6 +19,7 @@
 #include <numeric>
 #include <deque>
 #include <limits>
+#include <algorithm>
 
 namespace DC_AC_Flight
 {
@@ -240,6 +241,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     {
         if (type != POINT_MOTION_TYPE)
             return;
+                    // Prime baseline movement speeds for faster travel; later smoothing keeps ratios relative to this base.
+                    me->SetSpeedRate(MOVE_RUN, _baseSpeedRate);
+                    me->SetSpeedRate(MOVE_FLIGHT, _baseSpeedRate);
 
         if (id == POINT_TAKEOFF)
             return; // ignore pre-flight lift
@@ -777,7 +781,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     {
         if (!_pathHelper)
             _pathHelper = std::make_unique<FlightPathHelper>(me);
-        _pathHelper->SmoothAndSetSpeed(targetRate);
+        // Clamp multiplier inside a sane window so sharp turns never stall completely.
+        float clamped = std::max(0.6f, std::min(1.1f, targetRate));
+        _pathHelper->SmoothAndSetSpeed(clamped * _baseSpeedRate);
     }
 
     Player* GetPassengerPlayer() const
@@ -811,6 +817,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool _movingToCustom = false;
     Position _customTarget;
     uint32 _customPointSeq = 0;
+    float _baseSpeedRate = 3.0f;
     
     // Enhanced pathfinding helper (encapsulates PathGenerator and smoothing)
     std::unique_ptr<FlightPathHelper> _pathHelper;
@@ -837,15 +844,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 _pathHelper = std::make_unique<FlightPathHelper>(me);
             if (_pathHelper->CalculateAndQueue(destination, _smartPathQueue, me) && !_smartPathQueue.empty())
             {
-                // Pop the first queued point and move to it; MovementInform chaining will continue
-                Position next = _smartPathQueue.front();
-                _smartPathQueue.pop_front();
-                _useSmartPathfinding = true;
-                MoveToCustom(next);
-                if (Player* p = GetPassengerPlayer())
-                    if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via {} smart points", NodeLabel(idx), (uint32)(_smartPathQueue.size() + 1));
-                return;
+                if (_smartPathQueue.size() == 1 && dist3D < 220.0f)
+                {
+                    // One-step smart paths on short legs tend to oscillate; stick to the scripted waypoint.
+                    _smartPathQueue.clear();
+                }
+                else if (!_smartPathQueue.empty())
+                {
+                    // Pop the first queued point and move to it; MovementInform chaining will continue
+                    Position next = _smartPathQueue.front();
+                    _smartPathQueue.pop_front();
+                    _useSmartPathfinding = true;
+                    MoveToCustom(next);
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via {} smart points", NodeLabel(idx), static_cast<uint32>(_smartPathQueue.size() + 1));
+                    return;
+                }
             }
         }
         
@@ -1306,8 +1321,8 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     taxi->SetDisableGravity(true);
     taxi->SetCanFly(true);
     taxi->SetHover(true);
-    taxi->SetSpeedRate(MOVE_RUN, 1.0f);
-    taxi->SetSpeedRate(MOVE_FLIGHT, 1.0f);
+    taxi->SetSpeedRate(MOVE_RUN, 3.0f);
+    taxi->SetSpeedRate(MOVE_FLIGHT, 3.0f);
     taxi->SetHealth(taxi->GetMaxHealth());
     if (!taxi->GetVehicleKit())
     {
