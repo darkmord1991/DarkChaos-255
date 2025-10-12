@@ -1345,11 +1345,11 @@ void AddSC_flightmasters()
 {
     // Register the flightmaster scripts using unqualified names resolved into the namespace.
     using namespace DC_AC_Flight;
-    new ac_gryphon_taxi_800011AI::acflightmaster0();
-    new ac_gryphon_taxi_800011AI::acflightmaster25();
-    new ac_gryphon_taxi_800011AI::acflightmaster40();
-    new ac_gryphon_taxi_800011AI::acflightmaster60();
-    new ac_gryphon_taxi_800011AI::ac_gryphon_taxi_800011();
+    new acflightmaster0();
+    new acflightmaster25();
+    new acflightmaster40();
+    new acflightmaster60();
+    new ac_gryphon_taxi_800011();
 }
 
 
