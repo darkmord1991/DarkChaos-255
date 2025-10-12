@@ -3,6 +3,7 @@
 #include "Player.h"
 #include "World.h"
 #include "ac_flightmasters_path.h"
+#include <sstream>
 
 using namespace Acore::ChatCommands;
 
@@ -13,11 +14,16 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        // Nested subtables must persist for the lifetime of the command tree. Keep them in
+        // named statics instead of temporary initializer lists to avoid dangling references.
+        static ChatCommandTable flighthelperSubTable =
+        {
+            { "path", HandlePathCommand, SEC_GAMEMASTER, Console::Yes },
+        };
+
         static ChatCommandTable table =
         {
-            { "flighthelper", {
-                { "path", HandlePathCommand, SEC_GAMEMASTER, Console::Yes },
-            } },
+            { "flighthelper", flighthelperSubTable },
         };
         return table;
     }
