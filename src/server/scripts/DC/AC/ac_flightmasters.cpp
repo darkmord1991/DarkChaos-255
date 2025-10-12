@@ -456,11 +456,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 float dy = me->GetPositionY() - ty;
                 float dz = fabs(me->GetPositionZ() - tz);
                 float dist2d = sqrtf(dx * dx + dy * dy);
+                // Relax vertical tolerance slightly because smart hops and terrain can cause Z offsets
                 float near2d = (_index >= kIndex_acfm40) ? 10.0f : 6.0f; // allow a bit more tolerance on the 40+ segment
+                float nearDz = 22.0f; // increased from 18.0f
                 // Known anchor: acfm19 can be sticky when descending from 40+ → Camp; accept a wider proximity
                 if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19)
                     near2d = 12.0f;
-                if (dist2d < near2d && dz < 18.0f)
+                if (dist2d < near2d && dz < nearDz)
                 {
                     // If we were aiming at a custom smoothing target, chain to the real index
                     if (_movingToCustom)
@@ -906,11 +908,28 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             {
                 if (_smartPathQueue.size() == 1 && dist3D < 220.0f)
                 {
-                    // One-step smart paths on short legs tend to oscillate; stick to the scripted waypoint.
-                    if (Player* p = GetPassengerPlayer())
-                        if (p->IsGameMaster())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path reduced to single hop for {}. Falling back to scripted point.", NodeLabel(idx));
-                    _smartPathQueue.clear();
+                    // One-step smart paths on short legs tend to oscillate; but some single-point fixes
+                    // are valuable (e.g., to avoid small obstacles). Accept the single hop only when it
+                    // meaningfully differs from the scripted waypoint to avoid oscillation.
+                    Position candidate = _smartPathQueue.front();
+                    float ddx = candidate.GetPositionX() - destination.GetPositionX();
+                    float ddy = candidate.GetPositionY() - destination.GetPositionY();
+                    float d2 = ddx * ddx + ddy * ddy;
+                    // Require at least ~3.0 units horizontal difference to accept the single smart hop
+                    if (d2 > 9.0f)
+                    {
+                        if (Player* p = GetPassengerPlayer())
+                            if (p->IsGameMaster())
+                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Accepting single smart hop for {} (dx={:.1f}).", NodeLabel(idx), sqrtf(d2));
+                        // leave queue intact and process below
+                    }
+                    else
+                    {
+                        if (Player* p = GetPassengerPlayer())
+                            if (p->IsGameMaster())
+                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path reduced to single hop for {}. Falling back to scripted point.", NodeLabel(idx));
+                        _smartPathQueue.clear();
+                    }
                 }
                 else if (!_smartPathQueue.empty())
                 {
