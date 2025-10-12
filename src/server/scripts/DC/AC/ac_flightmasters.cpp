@@ -18,6 +18,7 @@
 #include <cmath>
 #include <numeric>
 #include <deque>
+#include <vector>
 #include <limits>
 #include <algorithm>
 
@@ -120,6 +121,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     _hopElapsedMs = 0;
     _hopRetries = 0;
     _lastArrivedIdx = 255;
+    // initialize per-node failure counters sized to path length
+    _nodeFailCount.assign(kPathLength, 0);
     _noPassengerMs = 0;
     _stuckMs = 0;
     _lastPosX = me->GetPositionX();
@@ -901,6 +904,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint8 _lastArrivedIdx = 255;
     uint8 _lastNudgeIdx = 255;
     uint32 _lastNudgeMs = 0;
+    // Configurable micro-nudge rate limit (ms)
+    static constexpr uint32 kMicroNudgeRateLimitMs = 10000u; // default 10s
+    // Number of failures on a node before escalation (force bypass/smart-path)
+    static constexpr uint8 kFailEscalationThreshold = 3;
+    // Per-node persistent failure counters
+    std::vector<uint8> _nodeFailCount;
     // Anchor bypass throttling to avoid repeating remaps in quick succession
     uint8 _lastBypassedAnchor = 255;
     uint32 _bypassMs = 0; // ms since last bypass
@@ -1373,6 +1382,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (Player* p = GetPassengerPlayer())
                 if (p->IsGameMaster())
                     ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
+            // Reset per-node failure counter on successful arrival
+            if (arrivedIdx < _nodeFailCount.size())
+                _nodeFailCount[arrivedIdx] = 0;
             // Corner smoothing: if the turn is sharp, perform a short micro-hop along the outgoing direction
             // to allow smoother orientation before the long hop.
             {
