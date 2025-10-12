@@ -478,8 +478,15 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 }
                 else
                 {
-                    // Special-case watchdog: if we're targeting acfm19 on 40+ → Camp for too long, skip directly to acfm15
-                    if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
+                        // Per-node proximity tuning: nodes known to be sticky get relaxed near2d thresholds
+                            if (_index == 2 || _index == 30 || _index == 13) // acfm3, acfm34, acfm14
+                            {
+                                // increase acceptance radius for these nodes slightly
+                                near2d = std::max(near2d, 8.0f);
+                            }
+
+                        // Special-case watchdog: if we're targeting acfm19 on 40+ → Camp for too long, skip directly to acfm15
+                        if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
                     {
                         if (Player* p = GetPassengerPlayer())
                             if (p->IsGameMaster())
@@ -491,11 +498,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     }
                     uint32 hopTimeout = (_routeMode == ROUTE_L40_SCENIC ? 5000u : 8000u);
                     if (_movingToCustom)
-                        hopTimeout = 3000u; // short smoothing hop should resolve quickly
+                        hopTimeout = 4500u; // short smoothing hop: allow more time for custom/arc hops
                     if (_hopElapsedMs > hopTimeout && !_isLanding)
                     {
                         // Hop timeout: try to reissue movement, a few times; then hard-snap to target to avoid loops
-                        if (_hopRetries < 2)
+                        if (_hopRetries < 1)
                         {
                             ++_hopRetries;
                             // Reassert flight and reissue the same MovePoint without spamming chat
@@ -508,6 +515,24 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             else
                                 me->GetMotionMaster()->MovePoint(_currentPointId, kPath[_index]);
                             _hopElapsedMs = 0;
+                        }
+                        else if (_hopRetries == 1)
+                        {
+                            // On the second retry, issue a tiny micro-nudge: reissue MovePoint slightly above target
+                            ++_hopRetries;
+                            float nudgex = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
+                            float nudgey = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
+                            float nudgez = (_movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ()) + 8.0f; // slightly higher nudge
+                            Position nudgePos(nudgex, nudgey, nudgez, 0.0f);
+                            me->GetMotionMaster()->Clear();
+                            me->GetMotionMaster()->MovePoint(_currentPointId, nudgePos);
+                            if (Player* p = GetPassengerPlayer())
+                                if (p->IsGameMaster())
+                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Micro-nudge issued to help clear obstacle at {}.", NodeLabel(_index));
+                            _hopElapsedMs = 0;
+                        }
+                        else
+                        {
                         }
                         else
                         {
@@ -915,8 +940,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     float ddx = candidate.GetPositionX() - destination.GetPositionX();
                     float ddy = candidate.GetPositionY() - destination.GetPositionY();
                     float d2 = ddx * ddx + ddy * ddy;
-                    // Require at least ~3.0 units horizontal difference to accept the single smart hop
-                    if (d2 > 9.0f)
+                    // Require at least ~2.0 units horizontal difference to accept the single smart hop
+                    // (be a bit more permissive to allow small obstacle corrections)
+                    if (d2 > 4.0f)
                     {
                         if (Player* p = GetPassengerPlayer())
                             if (p->IsGameMaster())
