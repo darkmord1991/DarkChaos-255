@@ -137,48 +137,61 @@ public:
             me->GetMotionMaster()->MoveIdle();
 
             // Contextual delayed whispers at station 1 and final station
-            if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+            if (!targetPlayerGuid.IsEmpty())
             {
+                ObjectGuid const guidedPlayer = targetPlayerGuid;
+
                 if (reached == 0)
                 {
-                    scheduler.Schedule(1200ms, [this, player](TaskContext /*ctx*/)
+                    scheduler.Schedule(1200ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
-                        me->Whisper("We have lots of creatures living in the Crater, as it was never explored completely, its your turn now!", LANG_UNIVERSAL, player);
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                            me->Whisper("We have lots of creatures living in the Crater, as it was never explored completely, its your turn now!", LANG_UNIVERSAL, player);
                     });
                 }
                 else if (reached == 3)
                 {
                     // Final station: chain a few short messages with small delays
-                    scheduler.Schedule(1000ms, [this, player](TaskContext /*ctx*/)
+                    scheduler.Schedule(1000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
-                        me->Whisper("This area is huge and has lots of different zones!", LANG_UNIVERSAL, player);
-                    }).Schedule(2000ms, [this, player](TaskContext /*ctx*/)
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                            me->Whisper("This area is huge and has lots of different zones!", LANG_UNIVERSAL, player);
+                    }).Schedule(2000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
-                        me->Whisper("Go and start your journey, you will find lots of wild stuff, I am sure.", LANG_UNIVERSAL, player);
-                    }).Schedule(3000ms, [this, player](TaskContext /*ctx*/)
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                            me->Whisper("Go and start your journey, you will find lots of wild stuff, I am sure.", LANG_UNIVERSAL, player);
+                    }).Schedule(3000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
-                        me->Whisper("Use your start gear and your mobile teleporter pet to get around!", LANG_UNIVERSAL, player);
-                    }).Schedule(4000ms, [this, player](TaskContext /*ctx*/)
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                            me->Whisper("Use your start gear and your mobile teleporter pet to get around!", LANG_UNIVERSAL, player);
+                    }).Schedule(4000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
-                        me->Whisper("Do you see this Shrine? It is for more challenging experiences.", LANG_UNIVERSAL, player);
-                    }).Schedule(3500ms, [this](TaskContext /*ctx*/)
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                            me->Whisper("Do you see this Shrine? It is for more challenging experiences.", LANG_UNIVERSAL, player);
+                    }).Schedule(3500ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         // Face the player and wave early to ensure animation is seen
-                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                        {
                             me->SetFacingToObject(player);
-                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
-                    }).Schedule(4500ms, [this](TaskContext /*ctx*/)
+                            me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                        }
+                    }).Schedule(4500ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         // Face again and give a friendly wave just before despawn
-                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                        {
                             me->SetFacingToObject(player);
-                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
-                    }).Schedule(4800ms, [this](TaskContext /*ctx*/)
+                            me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                        }
+                    }).Schedule(4800ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         // Face again and reinforce in case of client latency/animation cut-off
-                        if (Player* player = ObjectAccessor::FindPlayer(targetPlayerGuid))
+                        if (Player* player = ObjectAccessor::FindPlayer(guidedPlayer))
+                        {
                             me->SetFacingToObject(player);
-                        me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                            me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
+                        }
                     }).Schedule(5s, [this](TaskContext /*ctx*/)
                     {
                         // Despawn at current location 5 seconds after arriving at the last station

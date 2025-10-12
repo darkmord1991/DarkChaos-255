@@ -119,6 +119,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     _sinceMoveMs = 0;
     _hopElapsedMs = 0;
     _hopRetries = 0;
+    _lastArrivedIdx = 255;
     _noPassengerMs = 0;
     _stuckMs = 0;
     _lastPosX = me->GetPositionX();
@@ -176,7 +177,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (Player* p = GetPassengerPlayer())
                         if (p->IsGameMaster())
                             ChatHandler(p->GetSession()).PSendSysMessage(
-                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> {}.", NodeLabel(nextIdx));
                 }
             }
             if (nextIdx == kIndex_acfm35)
@@ -811,6 +812,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint32 _noPassengerMs = 0; // grace timer when no passenger aboard
     bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
     uint8 _lastDepartIdx = 255;
+    uint8 _lastArrivedIdx = 255;
     // Anchor bypass throttling to avoid repeating remaps in quick succession
     uint8 _lastBypassedAnchor = 255;
     uint32 _bypassMs = 0; // ms since last bypass
@@ -829,9 +831,66 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Enhanced pathfinding with fallback to waypoints
     void MoveToIndexWithSmartPath(uint8 idx)
     {
-        Position destination(kPath[idx].GetPositionX(), kPath[idx].GetPositionY(), 
-                           kPath[idx].GetPositionZ(), kPath[idx].GetOrientation());
-        
+        Position destination(kPath[idx].GetPositionX(), kPath[idx].GetPositionY(),
+                             kPath[idx].GetPositionZ(), kPath[idx].GetOrientation());
+
+        // Known sticky hop: acfm34 -> acfm35 sits under tree cover. Inject a short vertical arc to avoid terrain clipping.
+        if (idx == kIndex_acfm35 && _lastArrivedIdx == kIndex_acfm35 - 1 &&
+            (_routeMode == ROUTE_L40_DIRECT || _routeMode == ROUTE_L25_TO_40))
+        {
+            _smartPathQueue.clear();
+
+            Position rise = me->GetPosition();
+            rise.m_positionZ = std::max(rise.GetPositionZ() + 22.0f, destination.GetPositionZ() + 18.0f);
+
+            Position glide = destination;
+            glide.m_positionZ = std::max(rise.GetPositionZ(), destination.GetPositionZ() + 18.0f);
+
+            _smartPathQueue.push_back(rise);
+            _smartPathQueue.push_back(glide);
+            _smartPathQueue.push_back(destination);
+
+            _useSmartPathfinding = true;
+            _pathfindingRetries = 0;
+
+            Position next = _smartPathQueue.front();
+            _smartPathQueue.pop_front();
+            MoveToCustom(next);
+            if (Player* p = GetPassengerPlayer())
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Elevating arc to clear terrain for {}.", NodeLabel(idx));
+            return;
+        }
+
+        // Final hop back to Startcamp can clip the hillside; fly a shallow overhead approach when returning to camp routes.
+        if (idx == kIndex_startcamp &&
+            (_routeMode == ROUTE_RETURN || _routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0) &&
+            _lastArrivedIdx <= 2)
+        {
+            _smartPathQueue.clear();
+
+            Position rise = me->GetPosition();
+            rise.m_positionZ = std::max(rise.GetPositionZ() + 18.0f, destination.GetPositionZ() + 12.0f);
+
+            Position approach = destination;
+            approach.m_positionZ = std::max(rise.GetPositionZ(), destination.GetPositionZ() + 12.0f);
+
+            _smartPathQueue.push_back(rise);
+            _smartPathQueue.push_back(approach);
+            _smartPathQueue.push_back(destination);
+
+            _useSmartPathfinding = true;
+            _pathfindingRetries = 0;
+
+            Position next = _smartPathQueue.front();
+            _smartPathQueue.pop_front();
+            MoveToCustom(next);
+            if (Player* p = GetPassengerPlayer())
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Overhead arc engaged for Startcamp landing.");
+            return;
+        }
+
         // Calculate distance to see if smart pathfinding is needed
         float dx = me->GetPositionX() - destination.GetPositionX();
         float dy = me->GetPositionY() - destination.GetPositionY();
@@ -1126,6 +1185,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (hasNext)
         {
             uint8 arrivedIdx = _index; // index we just reached
+            _lastArrivedIdx = arrivedIdx;
             _awaitingArrival = false;
             // Aggressive bypass for known sticky anchors: remap the next index to avoid landing exactly on them
             if (nextIdx == kIndex_acfm19)
@@ -1152,7 +1212,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (Player* p = GetPassengerPlayer())
                         if (p->IsGameMaster())
                             ChatHandler(p->GetSession()).PSendSysMessage(
-                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> {}.", NodeLabel(nextIdx));
                 }
             }
 
@@ -1183,7 +1243,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (Player* p = GetPassengerPlayer())
                         if (p->IsGameMaster())
                             ChatHandler(p->GetSession()).PSendSysMessage(
-                                "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> {}.", NodeLabel(nextIdx));
                 }
             }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
