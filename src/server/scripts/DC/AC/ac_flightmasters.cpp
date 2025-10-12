@@ -230,8 +230,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
         // TOUR and other default start: attempt to start near the nearest scenic index but
 
-        // clamp to acfm15 to avoid starting past the classic section on camp departures.
-        uint8 startIdx = nearest > kIndex_acfm15 ? kIndex_acfm15 : nearest;
+        // For TOUR starts, clamp to acfm15 to avoid starting past the classic section on camp departures.
+        // For non-TOUR routes (returning flights), respect nearest so we don't force an incorrect anchor.
+        uint8 startIdx;
+        if (_routeMode == ROUTE_TOUR)
+            startIdx = nearest > kIndex_acfm15 ? kIndex_acfm15 : nearest;
+        else
+            startIdx = nearest;
         _index = (startIdx > 0) ? static_cast<uint8>(startIdx - 1) : 0;
         if (p && p->IsGameMaster())
             ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Nearest node is {}. Beginning descent at {}.", NodeLabel(nearest), NodeLabel(_index));
@@ -837,6 +842,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool _l25to40ResetApplied = false; // ensure the L25→40 sanity reset runs at most once per flight
     uint8 _lastDepartIdx = 255;
     uint8 _lastArrivedIdx = 255;
+    uint8 _lastNudgeIdx = 255;
+    uint32 _lastNudgeMs = 0;
     // Anchor bypass throttling to avoid repeating remaps in quick succession
     uint8 _lastBypassedAnchor = 255;
     uint32 _bypassMs = 0; // ms since last bypass
