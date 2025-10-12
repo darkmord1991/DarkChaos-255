@@ -1337,22 +1337,6 @@ public:
         return true;
     }
 };
-} // namespace DC_AC_Flight
-// Close namespace DC_AC_Flight
-namespace DC_AC_Flight
-{
-    void RegisterScripts();
-}
-// DismountAndDespawn is defined after AddSC_flightmasters() to avoid redeclaration parsing issues.
-void AddSC_flightmasters()
-{
-    DC_AC_Flight::RegisterScripts();
-}
-
-
-// Fully-qualified implementation for ac_gryphon_taxi_800011AI::DismountAndDespawn
-namespace DC_AC_Flight
-{
     void RegisterScripts()
     {
         new acflightmaster0();
@@ -1377,6 +1361,11 @@ namespace DC_AC_Flight
         // Give a short delay so clients process dismount; mirror SummonTaxiAndStart's behaviour
         me->DespawnOrUnsummon(1000);
     }
+} // namespace DC_AC_Flight
+
+void AddSC_flightmasters()
+{
+    DC_AC_Flight::RegisterScripts();
 }
 
 
