@@ -327,7 +327,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool IsNearIndex(uint8 idx, float max2d) const;
     float ComputeTurnAngleDeg(uint8 prevIdx, uint8 currIdx, uint8 nextIdx) const;
     // Gracefully dismount passengers and despawn the taxi
-    void DismountAndDespawn();
+    void DismountAndDespawn()
+    {
+        if (Player* p = GetPassengerPlayer())
+            p->ExitVehicle();
+
+        me->SetHover(false);
+        me->SetDisableGravity(false);
+        me->SetCanFly(false);
+        me->DespawnOrUnsummon(1000);
+    }
 
     void UpdateAI(uint32 diff) override
     {
@@ -1346,21 +1355,6 @@ public:
         new ac_gryphon_taxi_800011();
     }
 
-    void ac_gryphon_taxi_800011AI::DismountAndDespawn()
-    {
-        // Ensure any passenger is removed from the vehicle, then despawn the taxi
-        if (Player* p = GetPassengerPlayer())
-        {
-            // Attempt to politely remove the player from the vehicle
-            p->ExitVehicle();
-        }
-        // Restore physics in case we changed them and schedule a gentle despawn
-        me->SetHover(false);
-        me->SetDisableGravity(false);
-        me->SetCanFly(false);
-        // Give a short delay so clients process dismount; mirror SummonTaxiAndStart's behaviour
-        me->DespawnOrUnsummon(1000);
-    }
 } // namespace DC_AC_Flight
 
 void AddSC_flightmasters()
