@@ -533,9 +533,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         }
                         else
                         {
-                        }
-                        else
-                        {
                             // Try smart pathfinding before hard fallback
                             if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
                             {
