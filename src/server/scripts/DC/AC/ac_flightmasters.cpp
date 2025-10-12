@@ -1315,10 +1315,10 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
         taxi->DespawnOrUnsummon(1000);
         return false;
     }
-    bool boarded = player->EnterVehicle(taxi, -1);
-    if (!boarded)
-        boarded = player->EnterVehicle(taxi, 0);
-    if (!boarded)
+    player->EnterVehicle(taxi, -1);
+    if (!player->GetVehicle())
+        player->EnterVehicle(taxi, 0);
+    if (!player->GetVehicle())
     {
         ChatHandler(player->GetSession()).SendSysMessage("[Flight] Could not place you on the gryphon. Check VehicleId seat 0 in the database.");
         taxi->DespawnOrUnsummon(1000);
