@@ -1028,23 +1028,26 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 }
                 else
                 {
-                // For descending/camp-return routes, jump back to the classic anchor (acfm15).
-                // For other forward routes, step past the anchor (acfm20) to avoid stickiness.
-                if (_routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0 || _routeMode == ROUTE_L60_RETURN19)
-                    nextIdx = kIndex_acfm15;
-                else
-                    nextIdx = static_cast<uint8>(kIndex_acfm19 + 1);
-                // record bypass and throttle repeated remaps
-                _lastBypassedAnchor = kIndex_acfm19;
-                _bypassMs = 0;
-                if (Player* p = GetPassengerPlayer())
-                    if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage(
-                            "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                    // For descending/camp-return routes, jump back to the classic anchor (acfm15).
+                    // For other forward routes, step past the anchor (acfm20) to avoid stickiness.
+                    if (_routeMode == ROUTE_L40_RETURN0 || _routeMode == ROUTE_L60_RETURN0 || _routeMode == ROUTE_L60_RETURN19)
+                        nextIdx = kIndex_acfm15;
+                    else
+                        nextIdx = static_cast<uint8>(kIndex_acfm19 + 1);
+
+                    // Record bypass and throttle repeated remaps
+                    _lastBypassedAnchor = kIndex_acfm19;
+                    _bypassMs = 0;
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage(
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm19 -> %s.", NodeLabel(nextIdx).c_str());
+                }
             }
+
             if (nextIdx == kIndex_acfm35)
             {
-                // throttle repeated acfm35 remaps as well
+                // Throttle repeated acfm35 remaps as well
                 if (_lastBypassedAnchor == kIndex_acfm35 && _bypassMs < 3000)
                 {
                     if (Player* p = GetPassengerPlayer())
@@ -1053,22 +1056,23 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 }
                 else
                 {
-                // For routes that target acfm35, prefer stepping from acfm34 to avoid a single long sticky hop.
-                // If acfm34 is far, try stepping past acfm35 instead.
-                uint8 altPrev = static_cast<uint8>(kIndex_acfm35 - 1);
-                float dx34 = me->GetPositionX() - kPath[altPrev].GetPositionX();
-                float dy34 = me->GetPositionY() - kPath[altPrev].GetPositionY();
-                float d34 = sqrtf(dx34*dx34 + dy34*dy34);
-                if (d34 < 150.0f)
-                    nextIdx = altPrev;
-                else if (kIndex_acfm35 + 1 < kPathLength)
-                    nextIdx = static_cast<uint8>(kIndex_acfm35 + 1);
-                _lastBypassedAnchor = kIndex_acfm35;
-                _bypassMs = 0;
-                if (Player* p = GetPassengerPlayer())
-                    if (p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage(
-                            "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
+                    // For routes that target acfm35, prefer stepping from acfm34 to avoid a single long sticky hop.
+                    // If acfm34 is far, try stepping past acfm35 instead.
+                    uint8 altPrev = static_cast<uint8>(kIndex_acfm35 - 1);
+                    float dx34 = me->GetPositionX() - kPath[altPrev].GetPositionX();
+                    float dy34 = me->GetPositionY() - kPath[altPrev].GetPositionY();
+                    float d34 = sqrtf(dx34 * dx34 + dy34 * dy34);
+                    if (d34 < 150.0f)
+                        nextIdx = altPrev;
+                    else if (kIndex_acfm35 + 1 < kPathLength)
+                        nextIdx = static_cast<uint8>(kIndex_acfm35 + 1);
+
+                    _lastBypassedAnchor = kIndex_acfm35;
+                    _bypassMs = 0;
+                    if (Player* p = GetPassengerPlayer())
+                        if (p->IsGameMaster())
+                            ChatHandler(p->GetSession()).PSendSysMessage(
+                                "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> %s.", NodeLabel(nextIdx).c_str());
                 }
             }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
