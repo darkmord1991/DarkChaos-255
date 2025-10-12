@@ -704,8 +704,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         return nullptr;
     }
 
-    /* DismountAndDespawn implementation defined outside the class */
-
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
     uint32 _hopElapsedMs = 0; // time since last hop started
@@ -1346,14 +1344,15 @@ public:
         return true;
     }
 };
-    void RegisterScripts()
-    {
-        new acflightmaster0();
-        new acflightmaster25();
-        new acflightmaster40();
-        new acflightmaster60();
-        new ac_gryphon_taxi_800011();
-    }
+
+void RegisterScripts()
+{
+    new acflightmaster0();
+    new acflightmaster25();
+    new acflightmaster40();
+    new acflightmaster60();
+    new ac_gryphon_taxi_800011();
+}
 
 } // namespace DC_AC_Flight
 
