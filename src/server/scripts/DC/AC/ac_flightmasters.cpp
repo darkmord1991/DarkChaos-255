@@ -1349,7 +1349,7 @@ void AddSC_flightmasters()
     new ac_gryphon_taxi_800011AI::acflightmaster25();
     new ac_gryphon_taxi_800011AI::acflightmaster40();
     new ac_gryphon_taxi_800011AI::acflightmaster60();
-    new ac_gryphon_taxi_800011AI();
+    new ac_gryphon_taxi_800011();
 }
 
 
