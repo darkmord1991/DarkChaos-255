@@ -523,6 +523,55 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         }
                         else if (_hopRetries == 1)
                         {
+                            // Rate-limited micro-nudge: skip if we recently nudged this same node
+                            if (_lastNudgeIdx == _index && _lastNudgeMs < 10000)
+                            {
+                                if (Player* p = GetPassengerPlayer())
+                                    if (p->IsGameMaster())
+                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping micro-nudge for {} (rate-limit).", NodeLabel(_index));
+
+                                // Try smart pathfinding before hard fallback (duplicate of else branch behavior)
+                                if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
+                                {
+                                    _pathfindingRetries++;
+                                    if (Player* p = GetPassengerPlayer())
+                                        if (p->IsGameMaster())
+                                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
+                                    
+                                    _awaitingArrival = false;
+                                    _hopElapsedMs = 0;
+                                    _hopRetries = 0;
+                                    MoveToIndexWithSmartPath(_index);
+                                    return;
+                                }
+
+                                // Hard fallback: snap to target node and continue the route
+                                if (Player* p = GetPassengerPlayer())
+                                    if (p->IsGameMaster())
+                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                                float tx = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
+                                float ty = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
+                                float tz = _movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ();
+                                me->UpdateGroundPositionZ(tx, ty, tz);
+                                me->NearTeleportTo(tx, ty, tz + 2.0f, kPath[_index].GetOrientation());
+                                _hopElapsedMs = 0;
+                                _hopRetries = 0;
+                                _pathfindingRetries = 0; // Reset pathfinding retries
+                                if (_movingToCustom)
+                                {
+                                    _movingToCustom = false;
+                                    _useSmartPathfinding = false;
+                                    _awaitingArrival = false;
+                                    MoveToIndex(_index);
+                                }
+                                else
+                                {
+                                    // Consider this as arrival by proximity to advance the route
+                                    HandleArriveAtCurrentNode(true /*isProximity*/);
+                                }
+                                return;
+                            }
+
                             // On the second retry, issue a tiny micro-nudge: reissue MovePoint slightly above target
                             ++_hopRetries;
                             float nudgex = _movingToCustom ? _customTarget.GetPositionX() : kPath[_index].GetPositionX();
@@ -534,6 +583,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             if (Player* p = GetPassengerPlayer())
                                 if (p->IsGameMaster())
                                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Micro-nudge issued to help clear obstacle at {}.", NodeLabel(_index));
+                            _lastNudgeIdx = _index;
+                            _lastNudgeMs = 0;
                             _hopElapsedMs = 0;
                         }
                         else
@@ -638,6 +689,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             _bypassMs += diff;
         if (_bypassMs > 3000 && _lastBypassedAnchor != 255)
             _lastBypassedAnchor = 255;
+
+        // Advance micro-nudge timer (rate-limiting)
+        if (_lastNudgeMs < 60000)
+            _lastNudgeMs += diff;
+        if (_lastNudgeMs > 10000 && _lastNudgeIdx != 255)
+            _lastNudgeIdx = 255;
 
         // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
         if (_started && !_isLanding)
