@@ -1309,7 +1309,7 @@ public:
 
 // Level 60+ flightmaster (NPC 800014)
 class acflightmaster60 : public CreatureScript
-{
+{ 
 public:
     acflightmaster60() : CreatureScript("acflightmaster60") {}
 
@@ -1338,17 +1338,20 @@ public:
     }
 };
 
+    void RegisterScripts()
+    {
+        new acflightmaster0();
+        new acflightmaster25();
+        new acflightmaster40();
+        new acflightmaster60();
+        new ac_gryphon_taxi_800011();
+    }
 }; // namespace DC_AC_Flight
 // Close namespace DC_AC_Flight
 // DismountAndDespawn is defined after AddSC_flightmasters() to avoid redeclaration parsing issues.
 void AddSC_flightmasters()
 {
-    // Register the flightmaster scripts using unqualified names resolved into the namespace.
-    new DC_AC_Flight::acflightmaster0();
-    new DC_AC_Flight::acflightmaster25();
-    new DC_AC_Flight::acflightmaster40();
-    new DC_AC_Flight::acflightmaster60();
-    new DC_AC_Flight::ac_gryphon_taxi_800011();
+    DC_AC_Flight::RegisterScripts();
 }
 
 
