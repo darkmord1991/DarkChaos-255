@@ -932,11 +932,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Per-node override configuration
     struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
     // Default per-node config: only acfm57 needs more aggressive handling so far
-    static const NodeConfig kPerNodeConfigDefaults[kPathLength] = [](){
-        std::array<NodeConfig, kPathLength> arr{};
-        for (size_t i = 0; i < arr.size(); ++i) arr[i] = { kFailEscalationThreshold, 0.0f };
-        if (kIndex_acfm57 < arr.size()) arr[kIndex_acfm57] = { 2u, 12.0f };
-        return arr;
+    static const std::vector<NodeConfig> kPerNodeConfigDefaults = [](){
+        std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+        if (kIndex_acfm57 < kPathLength)
+            v[kIndex_acfm57] = { 2u, 12.0f };
+        return v;
     }();
     // Per-node persistent failure counters
     std::vector<uint8> _nodeFailCount;
