@@ -1,7 +1,5 @@
 ﻿local HLBG = _G.HLBG or {}
-local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
-
 HLBG.VERSION = '1.5.8-refactor'
 HLBG.BUILD_TS = '2025-10-07'
 
@@ -16,6 +14,6 @@ if not HLBG._versionPrinted then
     HLBG._versionPrinted = true
     C_Timer.After(2, function() if HLBG.PrintVersion then HLBG.PrintVersion() end end)
 end
-_G.HLBG = HLBG
+
 
 
