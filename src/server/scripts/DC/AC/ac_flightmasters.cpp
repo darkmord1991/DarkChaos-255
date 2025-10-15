@@ -1754,6 +1754,8 @@ public:
 void AddSC_flightmasters()
 {
     DC_AC_Flight::RegisterScripts();
+    // Also register the GM debug player script (class is defined in the DC_AC_Flight namespace)
+    new DC_AC_Flight::AC_Flightmaster_DebugCommands();
 }
 
 // Define per-node config defaults (runtime-initialized)
@@ -1764,8 +1766,7 @@ const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flig
     return v;
 }();
 
-// Instantiate the debug commands player script (type is complete now)
-new AC_Flightmaster_DebugCommands();
+// debug commands are instantiated in AddSC_flightmasters()
 
 
 /*
