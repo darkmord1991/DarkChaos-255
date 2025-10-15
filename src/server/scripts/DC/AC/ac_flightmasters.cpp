@@ -932,12 +932,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Per-node override configuration
     struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
     // Default per-node config: only acfm57 needs more aggressive handling so far
-    static const std::vector<NodeConfig> kPerNodeConfigDefaults = [](){
-        std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
-        if (kIndex_acfm57 < kPathLength)
-            v[kIndex_acfm57] = { 2u, 12.0f };
-        return v;
-    }();
+    static const std::vector<NodeConfig> kPerNodeConfigDefaults;
     // Per-node persistent failure counters
     std::vector<uint8> _nodeFailCount;
     // Anchor bypass throttling to avoid repeating remaps in quick succession
@@ -1761,6 +1756,14 @@ void AddSC_flightmasters()
 {
     DC_AC_Flight::RegisterScripts();
 }
+
+// Define per-node config defaults (runtime-initialized)
+const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
+    std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+    if (kIndex_acfm57 < kPathLength)
+        v[kIndex_acfm57] = { 2u, 12.0f };
+    return v;
+}();
 
 
 /*
