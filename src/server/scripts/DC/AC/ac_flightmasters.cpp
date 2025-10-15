@@ -22,6 +22,7 @@
 #include <vector>
 #include <limits>
 #include <algorithm>
+#include <list>
 
 namespace DC_AC_Flight
 {
@@ -1746,30 +1747,31 @@ public:
             uint32 found = 0;
             std::ostringstream oss;
             oss << "[Flight Debug] Active taxi failstats:\n";
-            for (auto& pair : ObjectAccessor::GetCreatureListInGrid(player, 200.0f))
             {
-                Creature* c = pair;
-                if (!c)
-                    continue;
-                if (c->GetEntry() != NPC_AC_GRYPHON_TAXI)
-                    continue;
-                if (!c->IsInWorld())
-                    continue;
-                if (c->AI())
+                std::list<Creature*> taxiList;
+                player->GetCreatureListWithEntryInGrid(taxiList, NPC_AC_GRYPHON_TAXI, 200.0f);
+                for (Creature* c : taxiList)
                 {
-                    // Try to cast to our AI type
-                    ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI());
-                    if (!ai) // maybe another taxi; skip
+                    if (!c)
                         continue;
-                    ++found;
-                    oss << "Instance GUID=" << c->GetGUID().GetRawValue() << " idx=" << static_cast<uint32>(ai->_index) << " failcounts=[";
-                    // print counts compactly
-                    for (size_t i = 0; i < ai->_nodeFailCount.size(); ++i)
+                    if (!c->IsInWorld())
+                        continue;
+                    if (c->AI())
                     {
-                        if (i) oss << ',';
-                        oss << static_cast<uint32>(ai->_nodeFailCount[i]);
+                        // Try to cast to our AI type
+                        ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI());
+                        if (!ai) // maybe another taxi; skip
+                            continue;
+                        ++found;
+                        oss << "Instance GUID=" << c->GetGUID().GetRawValue() << " idx=" << static_cast<uint32>(ai->_index) << " failcounts=[";
+                        // print counts compactly
+                        for (size_t i = 0; i < ai->_nodeFailCount.size(); ++i)
+                        {
+                            if (i) oss << ',';
+                            oss << static_cast<uint32>(ai->_nodeFailCount[i]);
+                        }
+                        oss << "]\n";
                     }
-                    oss << "]\n";
                 }
             }
             if (found == 0)
@@ -1796,17 +1798,20 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node %u: escalation=%u extraZ=%.1f (applies to new flights/instances).", idx, esc, extraZ);
             // Also update any active taxi instances near the player (apply instantly)
             uint32 updated = 0;
-            for (auto& pair : ObjectAccessor::GetCreatureListInGrid(player, 200.0f))
             {
-                Creature* c = pair;
-                if (!c || c->GetEntry() != NPC_AC_GRYPHON_TAXI)
-                    continue;
-                if (ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI()))
+                std::list<Creature*> taxiList;
+                player->GetCreatureListWithEntryInGrid(taxiList, NPC_AC_GRYPHON_TAXI, 200.0f);
+                for (Creature* c : taxiList)
                 {
-                    if (idx < ai->_perNodeConfig.size())
+                    if (!c || c->GetEntry() != NPC_AC_GRYPHON_TAXI)
+                        continue;
+                    if (ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI()))
                     {
-                        ai->_perNodeConfig[idx] = { static_cast<uint8>(esc), extraZ };
-                        ++updated;
+                        if (idx < ai->_perNodeConfig.size())
+                        {
+                            ai->_perNodeConfig[idx] = { static_cast<uint8>(esc), extraZ };
+                            ++updated;
+                        }
                     }
                 }
             }
