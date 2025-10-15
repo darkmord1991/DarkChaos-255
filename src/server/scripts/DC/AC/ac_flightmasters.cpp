@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <chrono>
 #include <string>
+#include <sstream>
 #include <cmath>
 #include <numeric>
 #include <deque>
@@ -1706,8 +1707,6 @@ void RegisterScripts()
     new acflightmaster40();
     new acflightmaster60();
     new ac_gryphon_taxi_800011();
-    // Register player script for GM debugging commands
-    new class AC_Flightmaster_DebugCommands();
 }
 
 // PlayerScript for simple GM debug commands (.acfm failstats / .acfm failreset)
@@ -1764,6 +1763,9 @@ const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flig
         v[kIndex_acfm57] = { 2u, 12.0f };
     return v;
 }();
+
+// Instantiate the debug commands player script (type is complete now)
+new AC_Flightmaster_DebugCommands();
 
 
 /*
