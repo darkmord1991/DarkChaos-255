@@ -590,10 +590,10 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             float nudgey = _movingToCustom ? _customTarget.GetPositionY() : kPath[_index].GetPositionY();
                             float nudgez = (_movingToCustom ? _customTarget.GetPositionZ() : kPath[_index].GetPositionZ()) + 8.0f; // slightly higher nudge
                             // Per-node extra nudgeZ (configurable)
-                            float perNodeExtra = (_index < kPathLength ? kPerNodeConfigDefaults[_index].nudgeExtraZ : 0.0f);
+                            float perNodeExtra = (_index < kPathLength ? _perNodeConfig[_index].nudgeExtraZ : 0.0f);
                             nudgez += perNodeExtra;
                             // If this node has repeatedly failed, escalate the nudge height for stubborn spots
-                            uint8 nodeEscThresh = (_index < kPathLength ? kPerNodeConfigDefaults[_index].escalationThreshold : kFailEscalationThreshold);
+                            uint8 nodeEscThresh = (_index < kPathLength ? _perNodeConfig[_index].escalationThreshold : kFailEscalationThreshold);
                             if (_index < _nodeFailCount.size() && _nodeFailCount[_index] >= nodeEscThresh)
                             {
                                 nudgez += 8.0f; // stronger nudge on repeat failures
@@ -944,6 +944,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
     // Default per-node config: only acfm57 needs more aggressive handling so far
     static const std::vector<NodeConfig> kPerNodeConfigDefaults;
+    // Per-instance copy of per-node config so we can tune active taxis at runtime
+    std::vector<NodeConfig> _perNodeConfig;
     // Per-node persistent failure counters
     std::vector<uint8> _nodeFailCount;
     // Anchor bypass throttling to avoid repeating remaps in quick succession
@@ -964,6 +966,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Enhanced pathfinding with fallback to waypoints
     void MoveToIndexWithSmartPath(uint8 idx)
     {
+    // initialize per-instance per-node config from defaults
+    _perNodeConfig = kPerNodeConfigDefaults;
         Position destination(kPath[idx].GetPositionX(), kPath[idx].GetPositionY(),
                              kPath[idx].GetPositionZ(), kPath[idx].GetOrientation());
 
@@ -976,7 +980,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             Position rise = me->GetPosition();
             rise.m_positionZ = std::max(rise.GetPositionZ() + 22.0f, destination.GetPositionZ() + 18.0f);
             // escalate arc height if this node keeps failing (use per-node override if present)
-            uint8 escThresh = (idx < kPathLength ? kPerNodeConfigDefaults[idx].escalationThreshold : kFailEscalationThreshold);
+            uint8 escThresh = (idx < kPathLength ? _perNodeConfig[idx].escalationThreshold : kFailEscalationThreshold);
             if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= escThresh)
             {
                 rise.m_positionZ += 12.0f;
@@ -1014,7 +1018,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             Position rise = me->GetPosition();
             rise.m_positionZ = std::max(rise.GetPositionZ() + 18.0f, destination.GetPositionZ() + 12.0f);
             // escalate overhead approach if Startcamp is repeatedly failing
-            uint8 escThreshSC = (idx < kPathLength ? kPerNodeConfigDefaults[idx].escalationThreshold : kFailEscalationThreshold);
+            uint8 escThreshSC = (idx < kPathLength ? _perNodeConfig[idx].escalationThreshold : kFailEscalationThreshold);
             if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= escThreshSC)
             {
                 rise.m_positionZ += 18.0f; // much higher overhead approach
@@ -1738,16 +1742,76 @@ public:
         iss >> cmd >> sub;
         if (sub == "failstats")
         {
-            // Aggregate and print non-zero counters
-            std::string out = "[Flight Debug] Node fail counts:";
-            // iterate path indices and report counts
-            for (uint8 i = 0; i < kPathLength; ++i)
+            // Iterate all creatures with the taxi entry and print per-instance fail counters
+            uint32 found = 0;
+            std::ostringstream oss;
+            oss << "[Flight Debug] Active taxi failstats:\n";
+            for (auto& pair : ObjectAccessor::GetCreatureListInGrid(player, 200.0f))
             {
-                // Accessing global state: find any active gryphon AI instances and report the counters
-                // We'll search all creatures of our taxi entry and report the first matching AI's counters
+                Creature* c = pair;
+                if (!c)
+                    continue;
+                if (c->GetEntry() != NPC_AC_GRYPHON_TAXI)
+                    continue;
+                if (!c->IsInWorld())
+                    continue;
+                if (c->AI())
+                {
+                    // Try to cast to our AI type
+                    ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI());
+                    if (!ai) // maybe another taxi; skip
+                        continue;
+                    ++found;
+                    oss << "Instance GUID=" << c->GetGUID().GetRawValue() << " idx=" << static_cast<uint32>(ai->_index) << " failcounts=[";
+                    // print counts compactly
+                    for (size_t i = 0; i < ai->_nodeFailCount.size(); ++i)
+                    {
+                        if (i) oss << ',';
+                        oss << static_cast<uint32>(ai->_nodeFailCount[i]);
+                    }
+                    oss << "]\n";
+                }
             }
-            // For simplicity, print a summary note and instruct to use the GM flight debug for detailed per-flight output
-            ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] To inspect per-flight counters, watch GM chat during a flight run; per-node counters persist per taxi instance.");
+            if (found == 0)
+                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] No active taxi instances found near you. Move near an active taxi or run the command from console.");
+            else
+                ChatHandler(player->GetSession()).PSendSysMessage(oss.str().c_str());
+            return;
+        }
+        else if (sub == "set")
+        {
+            // Syntax: .acfm set <idx> <escThresh> <extraZ>
+            uint32 idx = 0;
+            uint32 esc = 0;
+            float extraZ = 0.0f;
+            iss >> idx >> esc >> extraZ;
+            if (idx >= static_cast<uint32>(kPathLength))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Invalid index %u (path length %u).", idx, static_cast<uint32>(kPathLength));
+                return;
+            }
+            // Update global defaults vector (affects subsequent flights / instances reading defaults)
+            // We intentionally allow small race here; it's a tuning helper, not a strict API.
+            const_cast<ac_gryphon_taxi_800011AI::NodeConfig&>(kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
+            ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node %u: escalation=%u extraZ=%.1f (applies to new flights/instances).", idx, esc, extraZ);
+            // Also update any active taxi instances near the player (apply instantly)
+            uint32 updated = 0;
+            for (auto& pair : ObjectAccessor::GetCreatureListInGrid(player, 200.0f))
+            {
+                Creature* c = pair;
+                if (!c || c->GetEntry() != NPC_AC_GRYPHON_TAXI)
+                    continue;
+                if (ac_gryphon_taxi_800011AI* ai = dynamic_cast<ac_gryphon_taxi_800011AI*>(c->AI()))
+                {
+                    if (idx < ai->_perNodeConfig.size())
+                    {
+                        ai->_perNodeConfig[idx] = { static_cast<uint8>(esc), extraZ };
+                        ++updated;
+                    }
+                }
+            }
+            if (updated > 0)
+                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Applied config to %u active taxi instances near you.", updated);
             return;
         }
         else if (sub == "failreset")
