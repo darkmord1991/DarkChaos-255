@@ -488,11 +488,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                 {
                         // Per-node proximity tuning: nodes known to be sticky get relaxed near2d thresholds
-                            if (_index == 2 || _index == 30 || _index == 13) // acfm3, acfm34, acfm14
-                            {
-                                // increase acceptance radius for these nodes slightly
-                                near2d = std::max(near2d, 8.0f);
-                            }
+                        if (_index == 2 || _index == 30 || _index == 13) // acfm3, acfm34, acfm14
+                        {
+                            // increase acceptance radius for these nodes slightly
+                            near2d = std::max(near2d, 8.0f);
+                        }
+                        // The L25 -> L40 final anchor (acfm15) can be finicky in some terrain; accept a wider proximity
+                        if (_routeMode == ROUTE_L25_TO_40 && _index == kIndex_acfm15)
+                        {
+                            near2d = std::max(near2d, 10.0f);
+                        }
 
                         // Special-case watchdog: if we're targeting acfm19 on 40+ → Camp for too long, skip directly to acfm15
                         if (_routeMode == ROUTE_L40_RETURN0 && _index == kIndex_acfm19 && _hopElapsedMs > 3500u && !_isLanding)
@@ -664,8 +669,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (!_isLanding && !_movingToCustom && IsFinalNodeOfCurrentRoute(_index))
             {
                 uint32 finalTimeout = 6000u;
-                if (_routeMode == ROUTE_L25_TO_40 || _routeMode == ROUTE_L40_DIRECT)
+                // Level-25 -> Level-40 routes visit a number of close anchors in quick succession and
+                // sometimes need a bit more time to settle into the final node; lengthen the timeout
+                // so we don't prematurely trigger the landing fallback. Keep L40 direct routes stricter.
+                if (_routeMode == ROUTE_L40_DIRECT)
                     finalTimeout = 4000u;
+                else if (_routeMode == ROUTE_L25_TO_40)
+                    finalTimeout = 8000u;
                 if (_hopElapsedMs > finalTimeout)
                 {
                     if (Player* p = GetPassengerPlayer())
@@ -1763,6 +1773,9 @@ const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flig
     std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
     if (kIndex_acfm57 < kPathLength)
         v[kIndex_acfm57] = { 2u, 12.0f };
+    // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
+    if (kIndex_acfm15 < kPathLength)
+        v[kIndex_acfm15] = { 2u, 6.0f };
     return v;
 }();
 
