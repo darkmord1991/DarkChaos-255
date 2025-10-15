@@ -534,12 +534,12 @@ public:
                         if (Creature* factionNPC = ObjectAccessor::GetCreature(*me, _factionNPC))
                         {
                             factionNPC->GetMotionMaster()->MovePath(factionNPC->GetSpawnId() * 10, false);
-                            factionNPC->DespawnOrUnsummon(46500);
+                            factionNPC->DespawnOrUnsummon(46500ms);
                             std::list<Creature*> followers;
                             factionNPC->GetCreaturesWithEntryInRange(followers, 30, _instance->GetData(DATA_TEAMID_IN_INSTANCE) == TEAM_HORDE ? NPC_KOR_KRON_GENERAL : NPC_ALLIANCE_COMMANDER);
                             for (Creature* follower : followers)
                             {
-                                follower->DespawnOrUnsummon(46500);
+                                follower->DespawnOrUnsummon(46500ms);
                             }
                         }
                         me->setActive(false);
@@ -934,7 +934,8 @@ public:
                 case EVENT_START_PATHING:
                     me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                     me->SetImmuneToAll(false);
-                    Start(true, true);
+                    me->SetWalk(false);
+                    Start(true);
                     break;
                 case EVENT_SCOURGE_STRIKE:
                     DoCastVictim(SPELL_SCOURGE_STRIKE);
@@ -1810,7 +1811,7 @@ public:
             {
                 _vehicleCheckTimer = 500;
                 if (!me->GetVehicle())
-                    me->DespawnOrUnsummon(100);
+                    me->DespawnOrUnsummon(100ms);
             }
             else
                 _vehicleCheckTimer -= diff;
@@ -2151,7 +2152,7 @@ class spell_svalna_remove_spear : public SpellScript
         {
             if (Unit* vehicle = target->GetVehicleBase())
                 vehicle->RemoveAurasDueToSpell(SPELL_IMPALING_SPEAR);
-            target->DespawnOrUnsummon(1);
+            target->DespawnOrUnsummon(1ms);
         }
     }
 
@@ -3347,7 +3348,7 @@ public:
             if (Creature* broodling = me->SummonCreature(NPC_NERUBAR_BROODLING, me->GetPositionX() + cos(o) * dist, me->GetPositionY() + std::sin(o) * dist, 250.0f, Position::NormalizeOrientation(o - M_PI)))
             {
                 broodling->CastSpell(broodling, SPELL_WEB_BEAM2, false);
-                broodling->GetMotionMaster()->MovePoint(POINT_ENTER_COMBAT, broodling->GetPositionX(), broodling->GetPositionY(), 213.03f, false);
+                broodling->GetMotionMaster()->MovePoint(POINT_ENTER_COMBAT, broodling->GetPositionX(), broodling->GetPositionY(), 213.03f, FORCED_MOVEMENT_NONE, 0.f, 0.f, false);
             }
         }
 

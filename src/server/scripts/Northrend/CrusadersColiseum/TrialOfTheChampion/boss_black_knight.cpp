@@ -131,7 +131,7 @@ public:
 
         void EnterEvadeMode(EvadeReason why) override
         {
-            me->DespawnOrUnsummon(1);
+            me->DespawnOrUnsummon(1ms);
             ScriptedAI::EnterEvadeMode(why);
         }
 
@@ -339,7 +339,8 @@ public:
 
         void Reset() override
         {
-            Start(false, true, ObjectGuid::Empty, nullptr);
+            me->SetWalk(false);
+            Start(false, ObjectGuid::Empty, nullptr);
             SetDespawnAtEnd(true);
             me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
             me->SetImmuneToAll(true);

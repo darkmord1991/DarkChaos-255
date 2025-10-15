@@ -396,7 +396,8 @@ public:
                 case EVENT_RESTART_ESCORT:
                     CheckCaravan();
                     SetDespawnAtEnd(false);
-                    Start(true, true, ObjectGuid::Empty, 0, false, false, true);
+                    SetRun(true);
+                    Start(true, ObjectGuid::Empty, 0, false, false, true);
                     break;
             }
 
@@ -474,7 +475,7 @@ public:
             else if (spell->Id == SPELL_KODO_KOMBO_GOSSIP)
             {
                 me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
-                me->DespawnOrUnsummon(60000);
+                me->DespawnOrUnsummon(60s);
             }
         }
     };

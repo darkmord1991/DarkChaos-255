@@ -304,7 +304,7 @@ struct npc_madrigosa : public NullCreatureAI
             if (Creature* brutallus = instance->GetCreature(DATA_BRUTALLUS))
             {
                 brutallus->SetDisableGravity(true);
-                brutallus->GetMotionMaster()->MovePoint(0, brutallus->GetPositionX(), brutallus->GetPositionY() - 30.0f, brutallus->GetPositionZ() + 15.0f, false, true);
+                brutallus->GetMotionMaster()->MovePoint(0, brutallus->GetPositionX(), brutallus->GetPositionY() - 30.0f, brutallus->GetPositionZ() + 15.0f, FORCED_MOVEMENT_NONE, 0.f, 0.f, false, true);
             }
             events.ScheduleEvent(EVENT_MAD_15, 10s);
             break;
@@ -360,7 +360,7 @@ struct npc_madrigosa : public NullCreatureAI
             break;
         case EVENT_SPAWN_FELMYST:
             DoCastAOE(SPELL_SUMMON_FELBLAZE, true);
-            me->DespawnOrUnsummon(1);
+            me->DespawnOrUnsummon(1ms);
             break;
         }
     }

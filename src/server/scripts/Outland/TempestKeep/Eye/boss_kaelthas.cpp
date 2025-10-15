@@ -655,7 +655,7 @@ struct boss_kaelthas : public BossAI
                 me->AttackStop();
                 me->CastStop();
                 me->SetReactState(REACT_PASSIVE);
-                me->GetMotionMaster()->MovePoint(POINT_MIDDLE, me->GetHomePosition(), true, true);
+                me->GetMotionMaster()->MovePoint(POINT_MIDDLE, me->GetHomePosition(), FORCED_MOVEMENT_NONE, 0.f, true, true);
             }
         });
         ScheduleTimedEvent(1s, [&]
@@ -1013,7 +1013,7 @@ class spell_kaelthas_flame_strike : public AuraScript
     {
         GetUnitOwner()->RemoveAllAuras();
         GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_FLAME_STRIKE_DAMAGE, true);
-        GetUnitOwner()->ToCreature()->DespawnOrUnsummon(2000);
+        GetUnitOwner()->ToCreature()->DespawnOrUnsummon(2s);
     }
 
     void Register() override

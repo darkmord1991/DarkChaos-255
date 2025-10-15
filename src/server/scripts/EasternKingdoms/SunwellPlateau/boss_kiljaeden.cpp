@@ -387,7 +387,7 @@ struct boss_kiljaeden : public BossAI
                     {
                         anveena->RemoveAllAuras();
                         anveena->CastSpell(anveena, SPELL_SACRIFICE_OF_ANVEENA, true);
-                        anveena->DespawnOrUnsummon(1500);
+                        anveena->DespawnOrUnsummon(1500ms);
                         DoCastSelf(SPELL_CUSTOM_08_STATE, true);
                         me->SetUnitFlag(UNIT_FLAG_PACIFIED);
                         scheduler.CancelAll();
@@ -555,7 +555,7 @@ struct boss_kiljaeden : public BossAI
             summon->CastSpell(summon, SPELL_ARMAGEDDON_VISUAL, true);
             summon->SetPosition(summon->GetPositionX(), summon->GetPositionY(), summon->GetPositionZ() + 20.0f, 0.0f);
             summon->m_Events.AddEvent(new CastArmageddon(summon), summon->m_Events.CalculateTime(6000));
-            summon->DespawnOrUnsummon(urand(8000, 10000));
+            summon->DespawnOrUnsummon(randtime(8s, 10s));
         }
     }
 
@@ -729,25 +729,18 @@ struct npc_kalecgos_kj : public NullCreatureAI
         if (summon->GetEntry() == NPC_SHATTERED_SUN_RIFTWAKER)
         {
             summon->CastSpell(summon, SPELL_TELEPORT_VISUAL, true);
-            Movement::MoveSplineInit init(summon);
+
             if (summons.size() == 1)
-            {
-                init.MoveTo(1727.08f, 656.82f, 28.37f, false, true);
-                init.SetFacing(5.14f);
-            }
+                summon->GetMotionMaster()->MovePoint(0, 1727.08f, 656.82f, 28.37f, FORCED_MOVEMENT_NONE, 0.f, 5.14f, false, true);
             else
-            {
-                init.MoveTo(1738.84f, 627.32f, 28.26f, false, true);
-                init.SetFacing(2.0f);
-            }
-            init.Launch();
+                summon->GetMotionMaster()->MovePoint(0, 1738.84f, 627.32f, 28.26f, FORCED_MOVEMENT_NONE, 0.f, 2.0f, false, true);
         }
         else if (summon->GetEntry() == NPC_SHATTRATH_PORTAL_DUMMY)
         {
             if (Creature* riftwaker = summon->FindNearestCreature(NPC_SHATTERED_SUN_RIFTWAKER, 10.0f))
                 riftwaker->CastSpell(summon, SPELL_OPEN_PORTAL_FROM_SHATTRATH, false);
             summon->SetWalk(true);
-            summon->GetMotionMaster()->MovePoint(0, summon->GetPositionX(), summon->GetPositionY(), summon->GetPositionZ() + 30.0f, false, true);
+            summon->GetMotionMaster()->MovePoint(0, summon->GetPositionX(), summon->GetPositionY(), summon->GetPositionZ() + 30.0f, FORCED_MOVEMENT_NONE, 0.f, 0.f, false, true);
         }
         else if (summon->GetEntry() == NPC_INERT_PORTAL)
             summon->CastSpell(summon, SPELL_BOSS_ARCANE_PORTAL_STATE, true);
@@ -762,7 +755,7 @@ struct npc_kalecgos_kj : public NullCreatureAI
         {
             summon->CastSpell(summon, SPELL_TELEPORT_VISUAL, true);
             summon->SetWalk(true);
-            summon->GetMotionMaster()->MovePoint(0, 1710.15f, 639.23f, 27.311f, false, true);
+            summon->GetMotionMaster()->MovePoint(0, 1710.15f, 639.23f, 27.311f, FORCED_MOVEMENT_NONE, 0.f, 0.f, false, true);
         }
         else if (summon->GetEntry() == NPC_THE_CORE_OF_ENTROPIUS)
             summon->GetMotionMaster()->MovePoint(0, summon->GetPositionX(), summon->GetPositionY(), 30.0f);
@@ -919,7 +912,7 @@ struct npc_kalecgos_kj : public NullCreatureAI
             if (Creature* velen = summons.GetCreatureWithEntry(NPC_PROPHET_VELEN))
             {
                 velen->GetMotionMaster()->MovePoint(0, 1739.38f, 643.79f, 28.06f);
-                velen->DespawnOrUnsummon(5000);
+                velen->DespawnOrUnsummon(5s);
             }
             events.ScheduleEvent(eventId + 1, 3s);
             break;
@@ -929,7 +922,7 @@ struct npc_kalecgos_kj : public NullCreatureAI
                     if (summon->GetEntry() == NPC_SHATTERED_SUN_SOLDIER)
                     {
                         summon->GetMotionMaster()->MovePoint(0, 1739.38f, 643.79f, 28.06f);
-                        summon->DespawnOrUnsummon(summon->GetExactDist2d(1734.96f, 642.43f) * 100);
+                        summon->DespawnOrUnsummon(Milliseconds(uint32(summon->GetExactDist2d(1734.96f, 642.43f) * 100)));
                     }
             events.ScheduleEvent(eventId + 1, 7s);
             break;

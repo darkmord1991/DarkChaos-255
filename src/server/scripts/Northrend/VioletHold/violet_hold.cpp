@@ -205,7 +205,7 @@ public:
                     break;
                 case EVENT_SUMMON_SABOTEOUR:
                     DoSummon(NPC_SABOTEOUR, me, 2.0f, 0, TEMPSUMMON_CORPSE_DESPAWN);
-                    me->DespawnOrUnsummon(3000);
+                    me->DespawnOrUnsummon(3s);
                     break;
             }
 
@@ -372,7 +372,8 @@ struct violet_hold_trashAI : public npc_escortAI
                     break;
             }
             SetDespawnAtEnd(false);
-            Start(true, true);
+            me->SetWalk(false);
+            Start(true);
         }
 
         npc_escortAI::UpdateAI(diff);
@@ -1111,7 +1112,8 @@ public:
                         break;
                 }
                 SetDespawnAtEnd(false);
-                Start(true, true);
+                me->SetWalk(false);
+                Start(true);
             }
 
             if (bOpening)
@@ -1136,7 +1138,7 @@ public:
                         me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         me->SetDisplayId(11686);
                         me->CastSpell(me, SPELL_TELEPORT_VISUAL, true);
-                        me->DespawnOrUnsummon(1000);
+                        me->DespawnOrUnsummon(1s);
                     }
                     ++count;
                 }

@@ -347,7 +347,7 @@ public:
         void JustDied(Unit* /*pKiller*/) override
         {
             me->SetUInt32Value(UNIT_FIELD_MOUNTDISPLAYID, 0);
-            me->DespawnOrUnsummon(10000);
+            me->DespawnOrUnsummon(10s);
             if (pInstance)
                 pInstance->SetData(DATA_MOUNT_DIED, 0);
         }
@@ -549,7 +549,8 @@ public:
                     return;
             }
 
-            Start(false, true);
+            me->SetWalk(false);
+            Start(false);
         }
 
         void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override

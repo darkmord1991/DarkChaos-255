@@ -1086,12 +1086,10 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
             if (damagetype != DOT && damage > 0 && !victim->GetOwnerGUID().IsPlayer() && (!spellProto || !spellProto->HasAura(SPELL_AURA_DAMAGE_SHIELD)))
                 victim->ToCreature()->UpdateLeashExtensionTime();
 
-            if (attacker)
+            if (attacker && attacker != victim)
             {
                 if (spellProto && victim->CanHaveThreatList() && !victim->HasUnitState(UNIT_STATE_EVADE) && !victim->IsInCombatWith(attacker))
-                {
                     victim->CombatStart(attacker, !(spellProto->AttributesEx3 & SPELL_ATTR3_SUPPRESS_TARGET_PROCS));
-                }
 
                 victim->AddThreat(attacker, float(damage), damageSchoolMask, spellProto);
             }
@@ -19681,7 +19679,7 @@ void Unit::_ExitVehicle(Position const* exitPosition)
             else if (vehicleBase->IsCreature())
             {
                 vehicle->Uninstall();
-                vehicleBase->m_Events.AddEvent(new VehicleDespawnEvent(*vehicleBase, 2000), vehicleBase->m_Events.CalculateTime(2000));
+                vehicleBase->m_Events.AddEventAtOffset(new VehicleDespawnEvent(*vehicleBase, 2s), 2s);
             }
 
             // xinef: ugly hack, no appripriate hook later to cast spell

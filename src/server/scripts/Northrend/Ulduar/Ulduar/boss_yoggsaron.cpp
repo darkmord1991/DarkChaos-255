@@ -937,7 +937,8 @@ public:
         {
             InitWaypoint();
             Reset();
-            Start(false, true, ObjectGuid::Empty, nullptr, false, true);
+            me->SetWalk(false);
+            Start(false, ObjectGuid::Empty, nullptr, false, true);
         }
 
         uint32 _checkTimer;
@@ -1807,7 +1808,7 @@ public:
             }
 
             me->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
-            me->DespawnOrUnsummon(1000);
+            me->DespawnOrUnsummon(1s);
         }
 
     private:
