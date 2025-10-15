@@ -433,7 +433,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetHover(false);
         me->SetDisableGravity(false);
         me->SetCanFly(false);
-        me->DespawnOrUnsummon(1000);
+    me->DespawnOrUnsummon(1000ms);
     }
 
     void UpdateAI(uint32 diff) override
@@ -1546,7 +1546,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     if (!taxi->GetVehicleKit())
     {
         ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
-        taxi->DespawnOrUnsummon(1000);
+    taxi->DespawnOrUnsummon(1000ms);
         return false;
     }
     player->EnterVehicle(taxi, -1);
@@ -1555,7 +1555,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     if (!player->GetVehicle())
     {
         ChatHandler(player->GetSession()).SendSysMessage("[Flight] Could not place you on the gryphon. Check VehicleId seat 0 in the database.");
-        taxi->DespawnOrUnsummon(1000);
+    taxi->DespawnOrUnsummon(1000ms);
         return false;
     }
     if (CreatureAI* ai = taxi->AI())
