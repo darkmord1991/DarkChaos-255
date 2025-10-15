@@ -1794,7 +1794,7 @@ public:
             }
             // Update global defaults vector (affects subsequent flights / instances reading defaults)
             // We intentionally allow small race here; it's a tuning helper, not a strict API.
-            const_cast<ac_gryphon_taxi_800011AI::NodeConfig&>(kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
+            const_cast<ac_gryphon_taxi_800011AI::NodeConfig&>(ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node %u: escalation=%u extraZ=%.1f (applies to new flights/instances).", idx, esc, extraZ);
             // Also update any active taxi instances near the player (apply instantly)
             uint32 updated = 0;
