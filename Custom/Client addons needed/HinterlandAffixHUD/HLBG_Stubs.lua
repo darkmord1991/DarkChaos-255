@@ -1,4 +1,4 @@
--- HLBG_Stubs.lua - Missing function stubs for compatibility
+﻿-- HLBG_Stubs.lua - Missing function stubs for compatibility
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 

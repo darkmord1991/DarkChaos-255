@@ -1,4 +1,4 @@
--- HLBG_AIO_Check.lua - Ensures AIO is loaded before initializing HLBG
+﻿-- HLBG_AIO_Check.lua - Ensures AIO is loaded before initializing HLBG
 
 -- Track that this file was loaded
 if _G.HLBG_RecordFileLoad then

@@ -1,4 +1,4 @@
--- HLBG_Info.lua - Info panel for Hinterland Battleground AddOn
+﻿-- HLBG_Info.lua - Info panel for Hinterland Battleground AddOn
 -- This file provides updated info about the battleground
 
 -- Initialize our addon namespace if needed

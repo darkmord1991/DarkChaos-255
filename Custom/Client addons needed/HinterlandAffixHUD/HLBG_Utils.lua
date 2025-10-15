@@ -1,4 +1,4 @@
--- HLBG_Utils.lua
+﻿-- HLBG_Utils.lua
 -- Small utility functions extracted from the main client file.
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
@@ -199,3 +199,4 @@ if type(HLBG._ensureUI) ~= 'function' then
 end
 
 _G.HLBG = HLBG
+

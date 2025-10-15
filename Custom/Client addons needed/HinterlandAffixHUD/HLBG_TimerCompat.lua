@@ -1,4 +1,4 @@
--- HLBG_TimerCompat.lua - Compatibility layer for C_Timer
+﻿-- HLBG_TimerCompat.lua - Compatibility layer for C_Timer
 -- *** CRITICAL: THIS FILE MUST LOAD FIRST (after HLBG_LoadDebug.lua) ***
 -- This file provides compatibility functions for WoW 3.3.5a (Wrath of the Lich King)
 -- It implements the C_Timer API that is used throughout the addon

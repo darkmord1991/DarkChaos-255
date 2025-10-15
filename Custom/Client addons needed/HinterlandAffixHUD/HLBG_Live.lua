@@ -1,6 +1,5 @@
-local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
--- Live scoreboard extraction (kept lightweight; original heavy logic trimmed)
 HLBG.Live = HLBG.Live or function(rows)
     if not (HLBG._ensureUI and HLBG._ensureUI('Live')) then return end
     rows = rows or {}
@@ -18,3 +17,4 @@ HLBG.Live = HLBG.Live or function(rows)
         HLBG.UI.Live.Summary:SetText(string.format('Resources  A:%d  H:%d      Players  A:%s  H:%s      Time %d:%02d      Affix %s', a,h,tostring(ap),tostring(hp), m,s, aff))
     end
 end
+

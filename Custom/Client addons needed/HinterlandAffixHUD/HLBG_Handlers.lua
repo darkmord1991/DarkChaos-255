@@ -1,4 +1,4 @@
--- HLBG_Handlers.lua
+﻿-- HLBG_Handlers.lua
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 
@@ -1114,3 +1114,4 @@ HLBG.EnsurePvPTab = EnsurePvPTab
 HLBG.EnsurePvPHeaderButton = EnsurePvPHeaderButton
 
 _G.HLBG = HLBG
+

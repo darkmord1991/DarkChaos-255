@@ -1,4 +1,4 @@
--- HLBG_Settings.lua - Settings panel for Hinterland Battleground AddOn
+﻿-- HLBG_Settings.lua - Settings panel for Hinterland Battleground AddOn
 -- This file provides configuration options for the addon
 
 -- Initialize our addon namespace if needed

@@ -1,4 +1,4 @@
--- HLBG Debug UI checker
+﻿-- HLBG Debug UI checker
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 

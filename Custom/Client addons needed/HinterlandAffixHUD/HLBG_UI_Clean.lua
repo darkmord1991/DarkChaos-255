@@ -1,4 +1,4 @@
--- Clean HLBG_UI.lua - Essential UI only, no duplicates
+﻿-- Clean HLBG_UI.lua - Essential UI only, no duplicates
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 

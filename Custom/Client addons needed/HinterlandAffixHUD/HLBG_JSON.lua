@@ -1,4 +1,4 @@
--- HLBG_JSON.lua - JSON utilities for Hinterland Battleground
+﻿-- HLBG_JSON.lua - JSON utilities for Hinterland Battleground
 
 -- Record file load in diagnostics
 if _G.HLBG_RecordFileLoad then

@@ -18,14 +18,14 @@ HLBG_Stubs.lua
 # AIO integration
 HLBG_AIO_Check.lua
 
-# Core modules
-core\HLBG_Version.lua
-core\HLBG_Live.lua
-core\HLBG_History.lua
-core\HLBG_Stats.lua
-
 # Main UI (clean version)
 HLBG_UI_Clean.lua
+
+# Core modules
+HLBG_Version.lua
+HLBG_Live.lua
+HLBG_History.lua
+HLBG_Stats.lua
 
 # Essential components for full functionality
 HLBG_HUD_Modern.lua

@@ -1,4 +1,4 @@
--- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
+﻿-- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
 local HLBG = _G.HLBG or {}
 _G.HLBG = HLBG
 
