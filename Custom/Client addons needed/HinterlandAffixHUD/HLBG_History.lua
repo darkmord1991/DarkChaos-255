@@ -141,6 +141,16 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         end
         return
     end
+    
+    -- EXTENSIVE DEBUG: Log Content frame state
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        local isShown = cont:IsShown() and "YES" or "NO"
+        local width, height = cont:GetSize()
+        local parent = cont:GetParent()
+        local parentName = parent and parent:GetName() or "nil"
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Content]|r Shown=%s Size=%.0fx%.0f Parent=%s', 
+            isShown, width, height, parentName))
+    end
 
     ui.rows = ui.rows or {}
     -- hide old
@@ -149,18 +159,30 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
     local function Row(i)
         local r = ui.rows[i]; if r then return r end
         r = CreateFrame('Frame', 'HLBG_HistoryRow_'..i, cont)
-        r:SetHeight(22)
-        r:SetBackdrop({ bgFile='Interface/Tooltips/UI-Tooltip-Background'})
+        r:SetSize(550, 22)  -- FIX: Set width=550px height=22px (was missing width!)
+        r:SetBackdrop({ 
+            bgFile='Interface/Tooltips/UI-Tooltip-Background',
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
         local fields = {'id','sea','ts','win','aff','dur','rea'}
-        local widths = {40,40,120,70,70,60,70}
+        local widths = {40,40,135,65,65,55,80}  -- Adjusted widths for better fit
         local prev
         for idx,name in ipairs(fields) do
             local fs = r:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall')
             r[name]=fs
-            if idx==1 then fs:SetPoint('LEFT', r,'LEFT',5,0) else fs:SetPoint('LEFT', prev,'RIGHT',5,0) end
+            if idx==1 then 
+                fs:SetPoint('LEFT', r,'LEFT',8,0)  -- Increased left padding
+            else 
+                fs:SetPoint('LEFT', prev,'RIGHT',3,0)  -- Reduced spacing between columns
+            end
             fs:SetWidth(widths[idx])
             fs:SetTextColor(1,1,1,1) -- Force white text
-            if fs.SetFont then fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE") end
+            fs:SetJustifyH("LEFT")  -- Left-align text
+            if fs.SetFont then fs:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE") end  -- Slightly smaller font
             prev=fs
         end
         ui.rows[i]=r
@@ -173,8 +195,19 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
     end
     for i,row in ipairs(rows) do
         local r = Row(i)
-    r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
+        r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
         r.rowData=row; r.rowIndex=i
+        
+        -- EXTENSIVE DEBUG: Log row frame state
+        if i == 1 and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            local rShown = r:IsShown() and "YES" or "NO"
+            local rWidth, rHeight = r:GetSize()
+            local rParent = r:GetParent()
+            local rParentName = rParent and rParent:GetName() or "nil"
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Row1]|r Shown=%s Size=%.0fx%.0f Parent=%s Y=%d', 
+                rShown, rWidth, rHeight, rParentName, y))
+        end
+        
         if i % 2 == 0 then
             r:SetBackdropColor(0.10,0.10,0.10,0.50)
         else
@@ -202,9 +235,10 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d text: id=%s sea=%s ts=%s win=%s aff=%s dur=%s rea=%s',
                 i, tostring(row.id or '-'), tostring(row.season or row.seasonName or '-'), tsText, winTxt, tostring(row.affix or '-'), tostring(dur>0 and SecondsToTime(dur) or '-'), tostring(row.reason or '-')))
         end
-    r:Show(); y = y - 22  -- Move down for next row using negative Y
+        r:Show()
+        y = y - 22  -- Move down for next row (more negative = further down in TOPLEFT anchor)
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y - 22))
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y))
         end
     end
     cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding

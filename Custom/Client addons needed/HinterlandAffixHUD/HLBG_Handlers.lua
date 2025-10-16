@@ -340,8 +340,45 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local H = tonumber(msg:match("H=(%d+)") or 0) or 0
         local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
         local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
+        
+        -- EXTENSIVE DEBUG: Log parsed values
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS PARSED]|r A=%d H=%d END=%d LOCK=%d", A, H, ENDt, LOCK))
+        end
+        
         RES.A = A; RES.H = H; RES.END = ENDt; RES.LOCK = LOCK
-        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
+        -- Also store in HLBG._lastStatus for UpdateHUD compatibility
+        HLBG._lastStatus = HLBG._lastStatus or {}
+        HLBG._lastStatus.A = A
+        HLBG._lastStatus.H = H
+        HLBG._lastStatus.DURATION = ENDt
+        HLBG._lastStatus.allianceResources = A
+        HLBG._lastStatus.hordeResources = H
+        HLBG._lastStatus.timeLeft = ENDt
+        HLBG._lastStatus.END = ENDt  -- Store END time for HUD visibility check
+        HLBG._lastStatusTime = GetTime()  -- Track when we last received a STATUS message
+        
+        -- EXTENSIVE DEBUG: Confirm storage
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS STORED]|r _lastStatus.A=%s RES.A=%s", tostring(HLBG._lastStatus.A), tostring(RES.A)))
+        end
+        
+        -- Update HUD visibility since we just received a STATUS message (we're definitely in BG now)
+        if type(HLBG.UpdateHUDVisibility) == 'function' then
+            pcall(HLBG.UpdateHUDVisibility)
+        end
+        
+        -- EXTENSIVE DEBUG: Check UpdateHUD exists and call it
+        if type(HLBG.UpdateHUD) == 'function' then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFF[HLBG STATUS]|r Calling UpdateHUD...")
+            end
+            pcall(HLBG.UpdateHUD)
+        else
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[HLBG STATUS ERROR]|r UpdateHUD not found! Type: " .. type(HLBG.UpdateHUD))
+            end
+        end
         return
     end
 
