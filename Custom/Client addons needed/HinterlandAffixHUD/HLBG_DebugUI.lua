@@ -1,6 +1,5 @@
 ﻿-- HLBG Debug UI checker
-local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- Add a debug command to check UI state
 SLASH_HLBGUI1 = '/hlbgui'

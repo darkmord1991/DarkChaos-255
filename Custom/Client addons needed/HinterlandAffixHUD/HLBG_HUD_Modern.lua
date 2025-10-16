@@ -1,6 +1,5 @@
 ﻿-- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
-local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
 HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}

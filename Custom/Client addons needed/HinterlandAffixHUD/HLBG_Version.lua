@@ -1,5 +1,4 @@
-﻿local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 HLBG.VERSION = '1.5.8-refactor'
 HLBG.BUILD_TS = '2025-10-07'
 

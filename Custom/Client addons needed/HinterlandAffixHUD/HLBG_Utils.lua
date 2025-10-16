@@ -1,6 +1,6 @@
 ﻿-- HLBG_Utils.lua
 -- Small utility functions extracted from the main client file.
-local HLBG = _G.HLBG or {}
+local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 _G.HLBG = HLBG
 
 -- Affix code -> friendly name mapping

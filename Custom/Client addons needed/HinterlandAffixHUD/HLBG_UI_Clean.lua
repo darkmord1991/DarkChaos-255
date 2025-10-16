@@ -1,5 +1,4 @@
-﻿local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 HLBG.UI = HLBG.UI or {}
 
@@ -100,38 +99,51 @@ if not HLBG.UI.Tabs then
     HLBG.UI.Tabs[5].text:SetText("Queue")
 end
 
--- Create content frames only once
-if not HLBG.UI.History then
-    local histBtn = CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
+-- Create content frames only once (idempotent and robust)
+-- Ensure the History frame exists first (created earlier during tabs setup)
+HLBG.UI.History = HLBG.UI.History or CreateFrame("Frame", nil, HLBG.UI.Frame)
+HLBG.UI.History:SetAllPoints(HLBG.UI.Frame)
+HLBG.UI.History:Hide()
+
+-- Only create the scroll/content/controls if Content is missing
+if not HLBG.UI.History.Content then
+    -- Create Scroll and Content
+    HLBG.UI.History.Scroll = HLBG.UI.History.Scroll or CreateFrame("ScrollFrame", "HLBG_HistoryScroll", HLBG.UI.History, "UIPanelScrollFrameTemplate")
+    HLBG.UI.History.Scroll:SetPoint("TOPLEFT", 16, -40)
+    HLBG.UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
+    HLBG.UI.History.Content = HLBG.UI.History.Content or CreateFrame("Frame", nil, HLBG.UI.History.Scroll)
+    HLBG.UI.History.Content:SetSize(580, 380)
+    -- Anchor the content to the top-left of the scroll frame so child rows position predictably
+    HLBG.UI.History.Content:SetPoint('TOPLEFT', HLBG.UI.History.Scroll, 'TOPLEFT', 0, 0)
+    HLBG.UI.History.Scroll:SetScrollChild(HLBG.UI.History.Content)
+
+    -- Ensure state fields exist
+    HLBG.UI.History.rows = HLBG.UI.History.rows or {}
+    HLBG.UI.History.page = HLBG.UI.History.page or 1
+    HLBG.UI.History.per = HLBG.UI.History.per or 15
+    HLBG.UI.History.total = HLBG.UI.History.total or 0
+    HLBG.UI.History.sortKey = HLBG.UI.History.sortKey or 'id'
+    HLBG.UI.History.sortDir = HLBG.UI.History.sortDir or 'DESC'
+    HLBG.UI.History.lastRows = HLBG.UI.History.lastRows or {}
+
+    -- Placeholder and test button
+    local histBtn = HLBG.UI.History.HistBtn or CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
     histBtn:SetSize(120, 32)
     histBtn:SetPoint("BOTTOM", HLBG.UI.History, "BOTTOM", 0, 40)
     histBtn:SetText("Test History")
     histBtn:SetScript("OnClick", function() DEFAULT_CHAT_FRAME:AddMessage("History tab button clicked!") end)
-    -- Placeholder for History
-    local histText = HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    HLBG.UI.History.HistBtn = histBtn
+
+    local histText = HLBG.UI.History.Placeholder or HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     histText:SetPoint("CENTER", HLBG.UI.History, "CENTER", 0, 0)
     histText:SetText("No history data loaded.")
     histText:SetTextColor(1,1,1,1)
     HLBG.UI.History.Placeholder = histText
-    HLBG.UI.History = CreateFrame("Frame", nil, HLBG.UI.Frame)
-    HLBG.UI.History:SetAllPoints(HLBG.UI.Frame)
-    HLBG.UI.History:Hide()
-    HLBG.UI.History.Scroll = CreateFrame("ScrollFrame", "HLBG_HistoryScroll", HLBG.UI.History, "UIPanelScrollFrameTemplate")
-    HLBG.UI.History.Scroll:SetPoint("TOPLEFT", 16, -40)
-    HLBG.UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
-    HLBG.UI.History.Content = CreateFrame("Frame", nil, HLBG.UI.History.Scroll)
-    HLBG.UI.History.Content:SetSize(580, 380)
-    HLBG.UI.History.Scroll:SetScrollChild(HLBG.UI.History.Content)
-    HLBG.UI.History.rows = {}
-    HLBG.UI.History.page = 1
-    HLBG.UI.History.per = 15
-    HLBG.UI.History.total = 0
-    HLBG.UI.History.sortKey = 'id'
-    HLBG.UI.History.sortDir = 'DESC'
-    HLBG.UI.History.lastRows = {}
-    
-    -- Add pagination controls
-    local prevBtn = CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
+    -- Alias for legacy renderer: some code expects ui.EmptyText to exist and hides it when rows are present
+    HLBG.UI.History.EmptyText = histText
+
+    -- Add pagination controls (idempotent)
+    local prevBtn = HLBG.UI.History.PrevBtn or CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
     prevBtn:SetSize(50, 20)
     prevBtn:SetPoint("BOTTOMLEFT", HLBG.UI.History, "BOTTOMLEFT", 20, 20)
     prevBtn:SetText("Prev")
@@ -139,8 +151,8 @@ if not HLBG.UI.History then
     prevBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-Button-Red")
     if prevBtn:GetFontString() then prevBtn:GetFontString():SetTextColor(1,0.82,0,1) end
     HLBG.UI.History.PrevBtn = prevBtn
-    
-    local nextBtn = CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
+
+    local nextBtn = HLBG.UI.History.NextBtn or CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
     nextBtn:SetSize(50, 20)
     nextBtn:SetPoint("BOTTOMRIGHT", HLBG.UI.History, "BOTTOMRIGHT", -50, 20)
     nextBtn:SetText("Next")
@@ -148,8 +160,8 @@ if not HLBG.UI.History then
     nextBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-Button-Red")
     if nextBtn:GetFontString() then nextBtn:GetFontString():SetTextColor(1,0.82,0,1) end
     HLBG.UI.History.NextBtn = nextBtn
-    
-    local pageText = HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+
+    local pageText = HLBG.UI.History.PageText or HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     pageText:SetPoint("BOTTOM", HLBG.UI.History, "BOTTOM", 0, 25)
     pageText:SetText("Page 1 / 1")
     HLBG.UI.History.PageText = pageText
@@ -284,6 +296,41 @@ function ShowTab(i)
             HLBG.History(HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG Debug:|r No History data to display")
+            -- Schedule a one-shot retry to re-request history in case of race/timing
+            if not HLBG._showTabRetryScheduled then
+                HLBG._showTabRetryScheduled = true
+                pcall(function()
+                    -- Use C_Timer compatibility layer if present
+                    if type(C_Timer) == 'table' and type(C_Timer.After) == 'function' then
+                        C_Timer.After(0.6, function()
+                            HLBG._showTabRetryScheduled = false
+                            -- Re-request via AIO and fallback chat commands
+                            local page = HLBG.UI.History.page or 1
+                            local per = HLBG.UI.History.per or 5
+                            local sk = HLBG.UI.History.sortKey or 'id'
+                            local sd = HLBG.UI.History.sortDir or 'DESC'
+                            if _G.AIO and _G.AIO.Handle then
+                                pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', page, per, sk, sd)
+                            end
+                            if type(HLBG.safeExecSlash) == 'function' then
+                                pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', page, per, sk, sd))
+                            end
+                            -- If data has arrived in the interim, render it
+                            if HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 and type(HLBG.History) == 'function' then
+                                pcall(HLBG.History, HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
+                                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History retried and rendered after delay') end
+                            else
+                                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG:|r Retry completed but no history rows arrived') end
+                            end
+                        end)
+                    else
+                        -- Fallback without C_Timer: do a simple request and log
+                        HLBG._showTabRetryScheduled = false
+                        if _G.AIO and _G.AIO.Handle then pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC') end
+                        if type(HLBG.safeExecSlash) == 'function' then pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')) end
+                    end
+                end)
+            end
         end
     end
     if i == 2 and HLBG.UI.Stats then HLBG.UI.Stats:Show() end

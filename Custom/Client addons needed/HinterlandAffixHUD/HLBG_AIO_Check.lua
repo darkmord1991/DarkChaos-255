@@ -6,8 +6,7 @@ if _G.HLBG_RecordFileLoad then
 end
 
 -- Create or use existing namespace
-local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- Create a frame to monitor loading state
 local aioCheckFrame = CreateFrame("Frame")

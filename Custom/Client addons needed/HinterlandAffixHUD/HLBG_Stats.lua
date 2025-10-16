@@ -1,5 +1,4 @@
-﻿local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- Stats module (placeholder refactor) - future: integrate real DB-driven stats payload
 

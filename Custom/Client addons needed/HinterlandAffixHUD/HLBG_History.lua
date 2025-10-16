@@ -45,9 +45,10 @@ end
 local function sanitize_tsv(tsv)
     if type(tsv) ~= 'string' then return tsv end
     tsv = tsv:gsub('\r\n','\n'):gsub('\r','\n')
-    -- convert pipe-only payloads into newline separated lines
+    -- convert pipe-only payloads into tab-separated fields on a single line
     if tsv:find('|') and not tsv:find('\n') then
-        tsv = tsv:gsub('%s*%|%s*', '\n')
+        -- replace pipes (optionally surrounded by whitespace) with a single tab
+        tsv = tsv:gsub('%s*%|%s*', '\t')
     end
     tsv = keep_valid_utf8(tsv)
     return tsv
@@ -166,21 +167,27 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         return r
     end
 
-    local y=10  -- Start at positive Y (10 pixels from top)
+    local y = -10  -- Start slightly below top using negative coordinates (standard ScrollFrame)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
     end
     for i,row in ipairs(rows) do
         local r = Row(i)
-        r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
+    r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
         r.rowData=row; r.rowIndex=i
         if i % 2 == 0 then
             r:SetBackdropColor(0.10,0.10,0.10,0.50)
         else
             r:SetBackdropColor(0.05,0.05,0.05,0.30)
         end
-        local ts = tonumber(row.ts) or 0
-        local tsText = ts>0 and date('%Y-%m-%d %H:%M', ts) or '-'
+        local ts_num = tonumber(row.ts)
+        local tsText
+        if ts_num and ts_num > 0 then
+            tsText = date('%Y-%m-%d %H:%M', ts_num)
+        else
+            -- If row.ts is a non-empty string (e.g. parsed '2025-10-07 20:05:44'), display it directly
+            if type(row.ts) == 'string' and row.ts:match('%S') then tsText = row.ts else tsText = '-' end
+        end
         r.id:SetText(row.id or '-')
         r.sea:SetText(row.season or row.seasonName or '-')
         r.ts:SetText(tsText)
@@ -195,12 +202,19 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d text: id=%s sea=%s ts=%s win=%s aff=%s dur=%s rea=%s',
                 i, tostring(row.id or '-'), tostring(row.season or row.seasonName or '-'), tsText, winTxt, tostring(row.affix or '-'), tostring(dur>0 and SecondsToTime(dur) or '-'), tostring(row.reason or '-')))
         end
-        r:Show(); y = y + 22  -- Move down for next row (positive direction)
+    r:Show(); y = y - 22  -- Move down for next row using negative Y
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y - 22))
         end
     end
-    cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding for positive positioning
+    cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding
+
+    -- Ensure scroll is reset to top so the first rows are visible
+    pcall(function()
+        if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Scroll and HLBG.UI.History.Scroll.SetVerticalScroll then
+            HLBG.UI.History.Scroll:SetVerticalScroll(0)
+        end
+    end)
 
     -- Hide the "Loading..." text when we have data
     if ui.EmptyText then
@@ -321,7 +335,7 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
             if line ~= '' then
                 local cols = split_fields(line)
                 for i=1,#cols do cols[i] = (cols[i] or ''):gsub('^%s+',''):gsub('%s+$','') end
-                if #cols >= 7 and cols[4]:match('^%d%d%d%d%-%d%d%-%d%d%') then
+                if #cols >= 7 and cols[4] and cols[4]:match('^%d%d%d%d%-%d%d%-%d%d') then
                     rows[#rows+1] = {
                         id = cols[1],
                         season = tonumber(cols[2]) or cols[2],

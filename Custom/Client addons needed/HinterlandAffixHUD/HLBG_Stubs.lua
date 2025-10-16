@@ -1,5 +1,4 @@
-﻿local HLBG = _G.HLBG or {}
-_G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- HLBG_Stubs.lua - Minimal compatibility stubs for older clients
 -- These provide safe fallbacks for functions the addon expects to exist.
@@ -16,18 +15,18 @@ end
 if not HLBG.GetAffixName then
     function HLBG.GetAffixName(affixId)
         local names = {
-            [0] =  None,
-            [1] = Fortified,
-            [2] = Tyrannical,
-            [3] = Necrotic,
+            [0] = "None",
+            [1] = "Fortified",
+            [2] = "Tyrannical",
+            [3] = "Necrotic",
         }
-        return names[tonumber(affixId) or 0] or (Affix  .. tostring(affixId))
+        return names[tonumber(affixId) or 0] or ("Affix " .. tostring(affixId))
     end
 end
 
 -- Common small helpers
 if not HLBG.PlayerName then
-    HLBG.PlayerName = UnitName( player) or Unknown
+    HLBG.PlayerName = (type(UnitName) == 'function' and UnitName("player")) or "Unknown"
 end
 
 if not HLBG.IsInGroup then
@@ -40,7 +39,7 @@ end
 if not HLBG.SafePrint then
     function HLBG.SafePrint(...)
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(table.concat({ ... },  ))
+            DEFAULT_CHAT_FRAME:AddMessage(table.concat({ ... }, " "))
         end
     end
 end
