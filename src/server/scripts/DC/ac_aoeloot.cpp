@@ -14,6 +14,8 @@
 #include "ObjectAccessor.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
+// GameTime provides GetGameTime()/GetGameTimeMS()
+#include "GameTime.h"
 
 #include <vector>
 #include <unordered_map>
