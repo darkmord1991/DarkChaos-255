@@ -7,6 +7,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <climits>
 
 #if __has_include("wdtfile.h") && __has_include("adtfile.h")
 #include "wdtfile.h"
@@ -63,6 +64,7 @@ int main(int argc, char** argv)
 
         int minTx = INT_MAX, maxTx = INT_MIN, minTy = INT_MAX, maxTy = INT_MIN;
         for (int tx = 0; tx < 64; ++tx)
+        {
             for (int ty = 0; ty < 64; ++ty)
             {
                 if (ADTFile* ADT = WDT.GetMap(tx, ty))
@@ -74,6 +76,7 @@ int main(int argc, char** argv)
                     delete ADT;
                 }
             }
+        }
 
         if (minTx <= maxTx && minTy <= maxTy)
         {
