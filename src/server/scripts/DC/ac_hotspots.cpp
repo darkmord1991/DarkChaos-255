@@ -195,7 +195,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 {
     if (sHotspotsConfig.enabledMaps.empty())
     {
-        LOG_WARNING("scripts", "GetRandomHotspotPosition: no enabled maps configured (Hotspots.EnabledMaps is empty)");
+    LOG_WARN("scripts", "GetRandomHotspotPosition: no enabled maps configured (Hotspots.EnabledMaps is empty)");
         return false;
     }
 
@@ -247,13 +247,13 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
             };
             break;
         default:
-            LOG_WARNING("scripts", "GetRandomHotspotPosition: unsupported map id {}", outMapId);
+            LOG_WARN("scripts", "GetRandomHotspotPosition: unsupported map id {}", outMapId);
             return false;
     }
 
     if (coords.empty())
     {
-        LOG_WARNING("scripts", "GetRandomHotspotPosition: no coordinate presets defined for map {}", outMapId);
+    LOG_WARN("scripts", "GetRandomHotspotPosition: no coordinate presets defined for map {}", outMapId);
         return false;
     }
 
@@ -267,7 +267,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
     if (allowedCoords.empty())
     {
-        LOG_WARNING("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones. enabledZones=%zu excludedZones=%zu", sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
+    LOG_WARN("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones. enabledZones={} excludedZones={}", sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
         return false;
     }
 
