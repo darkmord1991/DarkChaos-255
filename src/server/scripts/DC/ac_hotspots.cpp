@@ -194,7 +194,10 @@ static bool IsZoneAllowed(uint32 zoneId)
 static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float& outX, float& outY, float& outZ)
 {
     if (sHotspotsConfig.enabledMaps.empty())
+    {
+        LOG_WARNING("scripts", "GetRandomHotspotPosition: no enabled maps configured (Hotspots.EnabledMaps is empty)");
         return false;
+    }
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -244,11 +247,15 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
             };
             break;
         default:
+            LOG_WARNING("scripts", "GetRandomHotspotPosition: unsupported map id {}", outMapId);
             return false;
     }
 
     if (coords.empty())
+    {
+        LOG_WARNING("scripts", "GetRandomHotspotPosition: no coordinate presets defined for map {}", outMapId);
         return false;
+    }
 
     // Filter by allowed zones
     std::vector<MapCoords> allowedCoords;
@@ -259,7 +266,10 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
     }
 
     if (allowedCoords.empty())
+    {
+        LOG_WARNING("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones. enabledZones=%zu excludedZones=%zu", sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
         return false;
+    }
 
     // Pick random allowed zone
     std::uniform_int_distribution<size_t> zoneDist(0, allowedCoords.size() - 1);
@@ -305,7 +315,7 @@ static bool SpawnHotspot()
             }
             ss << "}";
         }
-    LOG_ERROR("scripts", "%s", ss.str().c_str());
+    LOG_ERROR("scripts", "{}", ss.str());
         return false;
     }
 
