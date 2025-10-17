@@ -331,10 +331,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR szCmdLine, int sw) {\
     platform, this can be adjusted.
 */
 /* Keep packing simple for this build: ensure the macro includes the 'class' keyword
-   so usages like G3D_BEGIN_PACKED_CLASS(1) TypeName { ... } G3D_END_PACKED_CLASS(1)
-   expand to a valid declaration. */
-/* Expand to nothing when used around class declarations in headers. */
-#define G3D_BEGIN_PACKED_CLASS(byteAlign)
+    so usages like G3D_BEGIN_PACKED_CLASS(1) TypeName { ... } G3D_END_PACKED_CLASS(1)
+    expand to a valid declaration. */
+/* Expand to a simple 'class' declaration wrapper so headers that omit the
+    'class' keyword compile cleanly. */
+#define G3D_BEGIN_PACKED_CLASS(byteAlign) class
 #define G3D_END_PACKED_CLASS(byteAlign)
 
 
