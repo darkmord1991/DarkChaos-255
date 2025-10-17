@@ -17,14 +17,22 @@
 #include "Config.h"
 #include "World.h"
 #include "Chat.h"
+#include "WorldSessionMgr.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 #include "GameTime.h"
 #include "StringConvert.h"
 #include "GameObject.h"
 #include "ObjectAccessor.h"
+#include <sstream>
+#include <iomanip>
+#include <cmath>
+#include <algorithm>
+#include <unordered_map>
 #include <vector>
 #include <random>
+
+using namespace Acore::ChatCommands;
 
 // Configuration cache
 struct HotspotsConfig
@@ -34,7 +42,8 @@ struct HotspotsConfig
     uint32 experienceBonus = 100;            // percentage
     float radius = 150.0f;                   // yards
     uint32 maxActive = 5;
-    uint32 respawnDelay = 15;                // minutes
+    uint32 respawnDelay = 30;                // minutes
+    uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
     uint32 auraSpell = 24171;                // Entry visual (cloud)
     uint32 buffSpell = 23768;                // Persistent buff (flag icon)
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
@@ -132,7 +141,7 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.experienceBonus = sConfigMgr->GetOption<uint32>("Hotspots.ExperienceBonus", 100);
     sHotspotsConfig.radius = sConfigMgr->GetOption<float>("Hotspots.Radius", 150.0f);
     sHotspotsConfig.maxActive = sConfigMgr->GetOption<uint32>("Hotspots.MaxActive", 5);
-    sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 15);
+    sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 30);
     sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 24171);
     sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 23768);
     sHotspotsConfig.minimapIcon = sConfigMgr->GetOption<uint32>("Hotspots.MinimapIcon", 1);
@@ -150,6 +159,8 @@ static void LoadHotspotsConfig()
 
     std::string excludedStr = sConfigMgr->GetOption<std::string>("Hotspots.ExcludedZones", "");
     sHotspotsConfig.excludedZones = ParseUInt32List(excludedStr);
+
+    sHotspotsConfig.initialPopulateCount = sConfigMgr->GetOption<uint32>("Hotspots.InitialPopulateCount", 0);
 }
 
 // Helper: check if map is enabled
@@ -267,19 +278,36 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 }
 
 // Spawn a new hotspot
-static void SpawnHotspot()
+// Returns true if a hotspot was actually spawned, false otherwise
+static bool SpawnHotspot()
 {
     if (!sHotspotsConfig.enabled)
-        return;
+        return false;
 
     if (sActiveHotspots.size() >= sHotspotsConfig.maxActive)
-        return;
+        return false;
 
     uint32 mapId, zoneId;
     float x, y, z;
 
     if (!GetRandomHotspotPosition(mapId, zoneId, x, y, z))
-        return;
+    {
+        // Log details to help diagnose why random position selection failed
+        std::ostringstream ss;
+        ss << "GetRandomHotspotPosition() failed. enabledMapsCount=" << sHotspotsConfig.enabledMaps.size();
+        if (!sHotspotsConfig.enabledMaps.empty())
+        {
+            ss << " maps={";
+            for (size_t i = 0; i < sHotspotsConfig.enabledMaps.size(); ++i)
+            {
+                if (i) ss << ",";
+                ss << sHotspotsConfig.enabledMaps[i];
+            }
+            ss << "}";
+        }
+        LOG_WARNING("scripts", "%s", ss.str().c_str());
+        return false;
+    }
 
     Hotspot hotspot;
     hotspot.id = sNextHotspotId++;
@@ -300,8 +328,12 @@ static void SpawnHotspot()
             if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
             {
                 GameObject* go = new GameObject();
-                if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry, 
-                              map, 1, Position(x, y, z, 0.0f), QuaternionData(), 255, GO_STATE_READY))
+                // Create expects: guidlow, entry, map, phaseMask, x,y,z, ang, rotation, animprogress, go_state
+                float ang = 0.0f;
+                // Map doesn't expose a GetPhaseMask(); use default phase mask (0) for world markers.
+                uint32 phaseMask = 0;
+                if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                              map, phaseMask, x, y, z, ang, G3D::Quat(), 255, GO_STATE_READY))
                 {
                     go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
                     map->AddToMap(go);
@@ -321,8 +353,14 @@ static void SpawnHotspot()
 
     sActiveHotspots.push_back(hotspot);
 
+    // Log spawn details for debugging and persistence validation
+    LOG_INFO("scripts", "Spawned Hotspot #{} on map {} (zone {}) at ({:.1f}, {:.1f}, {:.1f}) expiring in {}s",
+             hotspot.id, hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, hotspot.z,
+             static_cast<int32>(hotspot.expireTime - hotspot.spawnTime));
+
     if (sHotspotsConfig.announceSpawn)
     {
+        // Resolve human friendly names where possible
         std::string mapName = "Unknown";
         switch (mapId)
         {
@@ -332,12 +370,20 @@ static void SpawnHotspot()
             case 571: mapName = "Northrend"; break;
         }
 
+        std::string zoneName = "Unknown";
+        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+            zoneName = area->area_name[0];
+
         std::ostringstream ss;
         ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot has appeared in " << mapName
+           << " (" << zoneName << ") at (" << std::fixed << std::setprecision(1)
+           << hotspot.x << ", " << hotspot.y << ", " << hotspot.z << ")"
            << "! (+" << sHotspotsConfig.experienceBonus << "% XP)";
 
-        sWorld->SendServerMessage(SERVER_MSG_STRING, ss.str());
+        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
     }
+
+    return true;
 }
 
 // Remove expired hotspots
@@ -351,10 +397,13 @@ static void CleanupExpiredHotspots()
             // Remove visual marker GameObject if it exists
             if (!it->gameObjectGuid.IsEmpty())
             {
-                if (GameObject* go = ObjectAccessor::GetGameObject(*go, it->gameObjectGuid))
+                if (Map* m = sMapMgr->FindMap(it->mapId, 0))
                 {
-                    go->SetRespawnTime(0);
-                    go->Delete();
+                    if (GameObject* go = m->GetGameObject(it->gameObjectGuid))
+                    {
+                        go->SetRespawnTime(0);
+                        go->Delete();
+                    }
                 }
             }
 
@@ -362,7 +411,7 @@ static void CleanupExpiredHotspots()
             {
                 std::ostringstream ss;
                 ss << "|cFFFFD700[Hotspot]|r A Hotspot has expired.";
-                sWorld->SendServerMessage(SERVER_MSG_STRING, ss.str());
+                sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
             }
 
             it = sActiveHotspots.erase(it);
@@ -411,6 +460,17 @@ public:
             LOG_INFO("server.loading", ">> - XP Bonus: +{}%", sHotspotsConfig.experienceBonus);
             LOG_INFO("server.loading", ">> - Max Active: {}", sHotspotsConfig.maxActive);
             LOG_INFO("server.loading", ">> - Enabled Maps: {}", sHotspotsConfig.enabledMaps.size());
+            // Initialize spawn timer origin so respawnDelay is measured from server start
+            sLastSpawnCheck = GameTime::GetGameTime().count();
+
+            // If initialPopulateCount is 0, populate up to maxActive
+            uint32 toSpawn = sHotspotsConfig.initialPopulateCount == 0 ? sHotspotsConfig.maxActive : sHotspotsConfig.initialPopulateCount;
+            toSpawn = std::min<uint32>(toSpawn, sHotspotsConfig.maxActive);
+            for (uint32 i = 0; i < toSpawn; ++i)
+            {
+                if (!SpawnHotspot())
+                    LOG_DEBUG("scripts", "SpawnHotspot() returned false during initial population (i=%u)", i);
+            }
         }
     }
 
@@ -419,7 +479,7 @@ public:
         if (!sHotspotsConfig.enabled)
             return;
 
-        time_t now = GameTime::GetGameTime();
+    time_t now = GameTime::GetGameTime().count();
 
         // Check for expired hotspots every 10 seconds
         static time_t sLastCleanup = 0;
@@ -433,7 +493,8 @@ public:
         if (now - sLastSpawnCheck >= (sHotspotsConfig.respawnDelay * MINUTE))
         {
             sLastSpawnCheck = now;
-            SpawnHotspot();
+            if (!SpawnHotspot())
+                LOG_DEBUG("scripts", "SpawnHotspot() returned false during periodic spawn check");
         }
     }
 };
@@ -444,7 +505,7 @@ class HotspotsPlayerScript : public PlayerScript
 public:
     HotspotsPlayerScript() : PlayerScript("HotspotsPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnLogin(Player* player)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
@@ -453,14 +514,14 @@ public:
         CheckPlayerHotspotStatus(player);
     }
 
-    void OnUpdate(Player* player, uint32 /*diff*/) override
+    void OnUpdate(Player* player, uint32 /*diff*/)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
 
         // Check hotspot status every few seconds (throttled by update frequency)
         static std::unordered_map<ObjectGuid, time_t> sLastCheck;
-        time_t now = GameTime::GetGameTime();
+    time_t now = GameTime::GetGameTime().count();
 
         ObjectGuid guid = player->GetGUID();
         if (now - sLastCheck[guid] >= 2)
@@ -513,7 +574,7 @@ class HotspotsPlayerGainXP : public PlayerScript
 public:
     HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/) override
+    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
@@ -533,20 +594,20 @@ class HotspotsCommandScript : public CommandScript
 public:
     HotspotsCommandScript() : CommandScript("HotspotsCommandScript") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> hotspotsCommandTable =
+        static ChatCommandTable hotspotsCommandTable =
         {
-            { "list",   SEC_GAMEMASTER, false, &HandleHotspotsListCommand,   "" },
-            { "spawn",  SEC_ADMINISTRATOR, false, &HandleHotspotsSpawnCommand,  "" },
-            { "clear",  SEC_ADMINISTRATOR, false, &HandleHotspotsClearCommand,  "" },
-            { "reload", SEC_ADMINISTRATOR, false, &HandleHotspotsReloadCommand, "" },
-            { "tp",     SEC_GAMEMASTER, false, &HandleHotspotsTeleportCommand, "" },
+            ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
+            ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
         };
 
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "hotspots", SEC_GAMEMASTER, false, nullptr, "", hotspotsCommandTable },
+            ChatCommandBuilder("hotspots", hotspotsCommandTable)
         };
 
         return commandTable;
@@ -563,7 +624,7 @@ public:
         handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
         for (auto const& hotspot : sActiveHotspots)
         {
-            time_t remaining = hotspot.expireTime - GameTime::GetGameTime();
+            time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
             handler->PSendSysMessage(
                 "  ID: {} | Map: {} | Zone: {} | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
                 hotspot.id, hotspot.mapId, hotspot.zoneId,
@@ -577,8 +638,10 @@ public:
 
     static bool HandleHotspotsSpawnCommand(ChatHandler* handler, char const* /*args*/)
     {
-        SpawnHotspot();
-        handler->SendSysMessage("Spawned a new hotspot.");
+        if (SpawnHotspot())
+            handler->SendSysMessage("Spawned a new hotspot.");
+        else
+            handler->SendSysMessage("Failed to spawn a new hotspot (see server logs for details).");
         return true;
     }
 

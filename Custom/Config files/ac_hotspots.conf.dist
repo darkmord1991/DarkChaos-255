@@ -47,9 +47,17 @@ Hotspots.MaxActive = 5
 #
 #    Hotspots.RespawnDelay
 #        Description: Delay between hotspot spawns (in minutes)
-#        Default:     15
+#        Default:     30
 
-Hotspots.RespawnDelay = 15
+Hotspots.RespawnDelay = 30
+
+#
+#    Hotspots.InitialPopulateCount
+#        Description: Number of hotspots to spawn immediately on server start.
+#                     0 = populate up to Hotspots.MaxActive (default behavior)
+#        Default:     0
+
+Hotspots.InitialPopulateCount = 0
 
 #
 #    Hotspots.AuraSpell

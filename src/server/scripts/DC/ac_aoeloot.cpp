@@ -150,15 +150,15 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
 
         for (auto const& it : loot->items)
         {
-            if (!it.AllowedForPlayer(player)) continue;
-            if (!sAoEConfig.questItems && it.is_quest_item) continue;
+            if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
+            if (!sAoEConfig.questItems && it.needs_quest) continue;
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= 16) break;
             itemsToAdd.push_back(it);
         }
         for (auto const& it : loot->quest_items)
         {
-            if (!it.AllowedForPlayer(player)) continue;
+            if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= 16) break;
             questItemsToAdd.push_back(it);
@@ -220,8 +220,7 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
 
     if (shouldAutoLootForPlayer(player))
     {
-        std::vector<std::pair<uint32, uint32>> mailItems;
-        uint32 mailMoney = 0;
+    std::vector<std::pair<uint32, uint32>> mailItems;
 
         auto storeOrMail = [&](LootItem const& li)
         {
@@ -274,7 +273,7 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
         if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s).";
-        player->GetSession()->SendNotification(ss.str());
+        ChatHandler(player->GetSession()).SendNotification(ss.str());
     }
 }
 
@@ -322,14 +321,14 @@ class AoELootPlayerScript : public PlayerScript
 public:
     AoELootPlayerScript() : PlayerScript("AoELootPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnLogin(Player* player)
     {
         if (!player) return;
         if (sAoEConfig.showMessage)
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled. Loot one corpse to loot nearby corpses.");
     }
 
-    void OnLogout(Player* player) override
+    void OnLogout(Player* player)
     {
         if (!player) return;
         sPlayerLootData.erase(player->GetGUID());
@@ -346,14 +345,14 @@ public:
     {
         static ChatCommandTable aoeTable =
         {
-            { "info",   SEC_PLAYER, false, &HandleInfo, "" },
-            { "reload", SEC_ADMINISTRATOR, false, &HandleReload, "" },
-            { "stats",  SEC_GAMEMASTER, false, &HandleStats,  "" },
+            ChatCommandBuilder("info",   HandleInfo,   SEC_PLAYER,        Console::No),
+            ChatCommandBuilder("reload", HandleReload, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("stats",  HandleStats,  SEC_GAMEMASTER,    Console::No),
         };
 
         static ChatCommandTable commandTable =
         {
-            { "aoeloot", aoeTable }
+            ChatCommandBuilder("aoeloot", aoeTable)
         };
 
         return commandTable;
