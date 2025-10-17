@@ -29,6 +29,9 @@
 #include <vector>
 #include <unordered_map>
 
+// Make ChatCommandTable available unqualified
+using namespace Acore::ChatCommands;
+
 struct AoELootConfig
 {
     bool enabled = true;
