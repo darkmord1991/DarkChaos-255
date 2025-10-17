@@ -61,7 +61,7 @@ public:
     {
         sAoEConfig.Load();
         if (sAoEConfig.showMessage)
-            sLog->outInfo("server.loading", ">> DarkChaos AoE Loot loaded (range: %.1f, max corpses: %u)", sAoEConfig.range, sAoEConfig.maxCorpses);
+            LOG_INFO("server.loading", ">> DarkChaos AoE Loot loaded (range: %.1f, max corpses: %u)", sAoEConfig.range, sAoEConfig.maxCorpses);
     }
 };
 
