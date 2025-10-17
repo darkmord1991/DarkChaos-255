@@ -1,3 +1,5 @@
+MOVEd: original README archived to tools/_removed/map_bounds_extractor/
+See archived files for original instructions.
 Map Bounds Extractor
 ====================
 

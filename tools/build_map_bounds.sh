@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-# Build script for map_bounds_extractor (uses in-repo libmpq sources)
+#!/bin/sh
+# MOVED: original content archived to tools/_removed/map_bounds_extractor/
+echo "map_bounds_extractor helper moved to tools/_removed/map_bounds_extractor/"
+exit 0
 WORKDIR="/home/wowcore"
 cd "$WORKDIR"
 rm -rf map_bounds_build
