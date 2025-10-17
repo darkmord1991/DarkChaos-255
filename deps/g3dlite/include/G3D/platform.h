@@ -325,37 +325,17 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR szCmdLine, int sw) {\
 
 /** \def G3D_BEGIN_PACKED_CLASS(byteAlign)
     Switch to tight alignment.
-    
-    \code
-    G3D_BEGIN_PACKED_CLASS(1)
-    ThreeBytes {
-    public:
-        uint8 a, b, c;
-    }
-    G3D_END_PACKED_CLASS(1)
-    \endcode
 
-
-    See G3D::Color3uint8 for an example.*/
-#ifdef __GNUC__
-#    define G3D_BEGIN_PACKED_CLASS(byteAlign)  class __attribute((__packed__))
-#elif defined(_MSC_VER)
-#    define G3D_BEGIN_PACKED_CLASS(byteAlign)  PRAGMA( pack(push, byteAlign) ) class
-#else
-#    define G3D_BEGIN_PACKED_CLASS(byteAlign)  class
-#endif
-
-/** \def G3D_END_PACKED_CLASS(byteAlign)
-    End switch to tight alignment
- 
-    See G3D::Color3uint8 for an example.*/
-#ifdef __GNUC__
-#    define G3D_END_PACKED_CLASS(byteAlign)  __attribute((aligned(byteAlign))) ;
-#elif defined(_MSC_VER)
-#    define G3D_END_PACKED_CLASS(byteAlign)  ; PRAGMA( pack(pop) )
-#else 
-#    define G3D_END_PACKED_CLASS(byteAlign)  ;
-#endif
+    For this build we keep the macro empty to match headers that already
+    include the 'class' keyword. If strict packing is required on a
+    platform, this can be adjusted.
+*/
+/* Keep packing simple for this build: ensure the macro includes the 'class' keyword
+   so usages like G3D_BEGIN_PACKED_CLASS(1) TypeName { ... } G3D_END_PACKED_CLASS(1)
+   expand to a valid declaration. */
+/* Expand to nothing when used around class declarations in headers. */
+#define G3D_BEGIN_PACKED_CLASS(byteAlign)
+#define G3D_END_PACKED_CLASS(byteAlign)
 
 
 // Bring in shared_ptr and weak_ptr

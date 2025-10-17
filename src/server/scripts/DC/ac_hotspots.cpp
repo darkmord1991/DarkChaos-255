@@ -157,8 +157,28 @@ static void LoadMapBoundsFromCSV()
         if (cols.size() < 5) continue;
         // trim columns
         for (auto &c : cols) c = trim(c);
+        // first column may be a numeric mapId or a map name (internal folder name)
         if (Optional<uint32> mv = Acore::StringTo<uint32>(cols[0]))
             mapId = *mv;
+        else
+        {
+            // try to resolve map name to id using sMapStore
+            std::string mapName = cols[0];
+            for (MapEntry const* me : sMapStore)
+            {
+                if (!me) continue;
+                if (me->name[0] && mapName == std::string(me->name[0]))
+                {
+                    mapId = me->MapID;
+                    break;
+                }
+            }
+            if (mapId == 0)
+            {
+                LOG_WARN("scripts", "Map bounds CSV: could not resolve map name '{}' to id; skipping", mapName);
+                continue;
+            }
+        }
         try { minX = std::stof(cols[1]); maxX = std::stof(cols[2]); minY = std::stof(cols[3]); maxY = std::stof(cols[4]); }
         catch (...) { continue; }
 
@@ -281,6 +301,23 @@ static void TryLoadBoundsFromClientData(const std::string& clientDataPath)
 // Returns true if normalized coords were computed, false if caller should fallback.
 static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float y, float& outNx, float& outNy)
 {
+
+    // First, try to use DBC-provided zone->map helpers to compute zone-relative coords
+    // Map2ZoneCoordinates converts world map coords into zone-relative percentages (0..100).
+    {
+        float tx = x;
+        float ty = y;
+        Map2ZoneCoordinates(tx, ty, zoneId);
+        // If Map2ZoneCoordinates found a mapping, tx/ty should be in ~0..100 range.
+        if (tx >= 0.0f && tx <= 100.0f && ty >= 0.0f && ty <= 100.0f)
+        {
+            outNx = tx / 100.0f;
+            outNy = ty / 100.0f;
+            outNx = std::max(0.0f, std::min(1.0f, outNx));
+            outNy = std::max(0.0f, std::min(1.0f, outNy));
+            return true;
+        }
+    }
 
     // Use CSV/DBC-derived sMapBounds if present
     auto it = sMapBounds.find(mapId);
@@ -406,23 +443,6 @@ static std::vector<uint32> ParseUInt32List(std::string const& str)
         }
         return out;
     }
-            // First, try to use DBC-provided zone->map helpers to compute zone-relative coords.
-            // Map2ZoneCoordinates converts world map coords into zone-relative percentages (0..100).
-            {
-                float tx = x;
-                float ty = y;
-                Map2ZoneCoordinates(tx, ty, zoneId);
-                // If Map2ZoneCoordinates found a mapping, tx/ty should be in ~0..100 range.
-                if (tx >= 0.0f && tx <= 100.0f && ty >= 0.0f && ty <= 100.0f)
-                {
-                    outNx = tx / 100.0f;
-                    outNy = ty / 100.0f;
-                    outNx = std::max(0.0f, std::min(1.0f, outNx));
-                    outNy = std::max(0.0f, std::min(1.0f, outNy));
-                    return true;
-                }
-            }
-
             // Use CSV/DBC-derived sMapBounds if present
 // Load configuration
 static void LoadHotspotsConfig()
@@ -505,9 +525,12 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
     const int attemptsPerRect = 12; // higher attempts per rectangle
     const int rectsPerMap = 6; // not used directly but indicative
+    (void)rectsPerMap;
 
     for (uint32 candidateMapId : maps)
     {
+        if (!IsMapEnabled(candidateMapId))
+            continue;
         std::vector<MapCoords> coords;
 
         switch (candidateMapId)
@@ -865,8 +888,44 @@ public:
             // Build DBC-derived map bounds used for normalized coordinates
             BuildMapBoundsFromDBC();
 
-            // Load optional CSV-provided bounds (var/map_bounds.csv) which can override or provide missing maps
-            LoadMapBoundsFromCSV();
+            // Load optional DB-backed bounds (dc_map_bounds) which can override or provide missing maps
+            // Note: user preference is DB-only storage for custom bounds; CSV loader intentionally omitted.
+            auto LoadMapBoundsFromDB = []()
+            {
+                // Query world database table dc_map_bounds: mapid,minX,maxX,minY,maxY,source
+                try
+                {
+                    QueryResult result = WorldDatabase.Query("SELECT mapid, minX, maxX, minY, maxY FROM dc_map_bounds");
+                    if (!result)
+                    {
+                        LOG_INFO("scripts", "No dc_map_bounds rows found (or table missing)");
+                        return;
+                    }
+
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 mapId = fields[0].Get<uint32>();
+                        double minX = fields[1].Get<double>();
+                        double maxX = fields[2].Get<double>();
+                        double minY = fields[3].Get<double>();
+                        double maxY = fields[4].Get<double>();
+
+                        // Only set bounds if not already present (DBC preferred)
+                        if (sMapBounds.find(mapId) == sMapBounds.end())
+                        {
+                            sMapBounds.emplace(mapId, std::array<float,4>{static_cast<float>(minX), static_cast<float>(maxX), static_cast<float>(minY), static_cast<float>(maxY)});
+                            LOG_INFO("scripts", "Loaded map bounds from DB for map {} -> [{},{},{},{}]", mapId, minX, maxX, minY, maxY);
+                        }
+
+                    } while (result->NextRow());
+                }
+                catch (...) {
+                    LOG_WARN("scripts", "Exception while loading dc_map_bounds from DB - skipping");
+                }
+            };
+
+            LoadMapBoundsFromDB();
 
             // Try runtime ADT/WDT parsing of client data path to fill missing maps
             // Config option: Hotspots.ClientDataPath (default: "Data" or server's data dir)
