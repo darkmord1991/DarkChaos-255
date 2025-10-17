@@ -473,6 +473,22 @@ static std::unordered_map<uint32, std::vector<uint32>> ParseZonesPerMap(std::str
     return result;
 }
 
+// Return hard-coded preset zone IDs used by the hotspot rectangles for a given map.
+// This mirrors the zone IDs assigned in the coordinate presets and is used for
+// startup diagnostics to show which presets exist for a map.
+static std::vector<uint32> GetPresetZoneIdsForMap(uint32 mapId)
+{
+    switch (mapId)
+    {
+        case 0:  return {1, 10, 85};           // Dun Morogh, Duskwood, Tirisfal Glades
+        case 1:  return {141, 331, 17};        // Teldrassil, Ashenvale, Barrens
+        case 530: return {3524, 3520};         // Hellfire, Shadowmoon
+        case 571: return {3537, 495};          // Borean Tundra, Howling Fjord
+        case 37: return {268};                 // Azshara Crater (zone 268)
+        default: return {};
+    }
+}
+
     // Helper: escape braces for fmt-style logging when message may contain '{' or '}'
     static std::string EscapeBraces(std::string const& s)
     {
@@ -657,6 +673,45 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
         if (allowedCoords.empty())
         {
+            // If a per-map enabledZones list exists for this map, attempt a fallback
+            // by sampling random points across the map bounds (if available). This
+            // allows admins to enable zones by config without code-side presets.
+            if (sHotspotsConfig.enabledZonesPerMap.find(candidateMapId) != sHotspotsConfig.enabledZonesPerMap.end())
+            {
+                auto itb = sMapBounds.find(candidateMapId);
+                if (itb != sMapBounds.end())
+                {
+                    const auto& b = itb->second;
+                    std::uniform_real_distribution<float> xb(b[0], b[1]);
+                    std::uniform_real_distribution<float> yb(b[2], b[3]);
+                    const int fallbackAttempts = 128;
+                    for (int fa = 0; fa < fallbackAttempts; ++fa)
+                    {
+                        float candX = xb(gen);
+                        float candY = yb(gen);
+                        float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
+                        if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
+                        {
+                            outMapId = candidateMapId;
+                            outX = candX;
+                            outY = candY;
+                            outZ = groundZ;
+                            // Resolve zone id for sampled point
+                            outZoneId = sMapMgr->GetZoneId(0, candidateMapId, outX, outY, outZ);
+                            LOG_INFO("scripts", "GetRandomHotspotPosition: fallback sampling succeeded for map {} at ({:.1f},{:.1f},{:.1f}) zone {}", candidateMapId, outX, outY, outZ, outZoneId);
+                            return true;
+                        }
+                    }
+                    LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but fallback sampling found no valid ground", candidateMapId);
+                    continue;
+                }
+                else
+                {
+                    LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but no sMapBounds entry available (skipping)", candidateMapId);
+                    continue;
+                }
+            }
+
             LOG_WARN("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones for map {}. enabledZones={} excludedZones={}",
                      candidateMapId, sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
             continue;
@@ -1005,6 +1060,60 @@ public:
                 LOG_INFO("scripts", "Hotspots: loaded map bounds count = {} ; map 37 present = {}", count, has37);
                 if (!has37)
                     LOG_WARN("scripts", "Hotspots: map 37 not found in loaded map bounds - check dc_map_bounds or var/map_bounds.csv");
+            }
+
+            // Startup diagnostic: dump parsed per-map enabled zones and preset matches
+            if (!sHotspotsConfig.enabledZonesPerMap.empty())
+            {
+                for (auto const& kv : sHotspotsConfig.enabledZonesPerMap)
+                {
+                    uint32 mid = kv.first;
+                    std::ostringstream ss;
+                    ss << "Hotspots.EnabledZonesPerMap parsed: map=" << mid << " zones={";
+                    for (size_t i = 0; i < kv.second.size(); ++i)
+                    {
+                        if (i) ss << ",";
+                        ss << kv.second[i];
+                    }
+                    ss << "}";
+                    LOG_INFO("scripts", "{}", ss.str());
+
+                    // Compare against preset zone ids for this map
+                    auto presets = GetPresetZoneIdsForMap(mid);
+                    if (presets.empty())
+                    {
+                        LOG_INFO("scripts", "Hotspots: map {} has no built-in preset rectangles", mid);
+                        continue;
+                    }
+
+                    std::ostringstream ps;
+                    ps << "Hotspots: map " << mid << " preset zones={";
+                    for (size_t i = 0; i < presets.size(); ++i)
+                    {
+                        if (i) ps << ",";
+                        ps << presets[i];
+                    }
+                    ps << "}";
+                    LOG_INFO("scripts", "{}", ps.str());
+
+                    // Which presets are allowed by the config?
+                    std::vector<uint32> allowedPresetZones;
+                    for (uint32 zid : presets)
+                    {
+                        if (IsZoneAllowed(mid, zid))
+                            allowedPresetZones.push_back(zid);
+                    }
+
+                    std::ostringstream ap;
+                    ap << "Hotspots: map " << mid << " allowed preset zones after config filter={";
+                    for (size_t i = 0; i < allowedPresetZones.size(); ++i)
+                    {
+                        if (i) ap << ",";
+                        ap << allowedPresetZones[i];
+                    }
+                    ap << "}";
+                    LOG_INFO("scripts", "{}", ap.str());
+                }
             }
 
             // If initialPopulateCount is 0, populate up to maxActive

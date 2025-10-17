@@ -127,7 +127,7 @@ Hotspots.ExcludedZones = ""
 #                        Hotspots.EnabledZonesPerMap = "1:141,331;37:268"
 #        Default:     "" (use global Hotspots.EnabledZones / Hotspots.ExcludedZones)
 
-Hotspots.EnabledZonesPerMap = ""
+Hotspots.EnabledZonesPerMap = "1:0;37:268"
 
 #
 #    Hotspots.AnnounceSpawn
@@ -163,6 +163,19 @@ Hotspots.SpawnVisualMarker = 1
 #        Default:     179976 (Alliance Flag)
 
 Hotspots.MarkerGameObjectEntry = 179976
+
+#
+#    Hotspots.ClientDataPath
+#        Description: Path to the game client data root used for optional ADT/WDT parsing
+#                     The script will look for the "World/Maps/" layout inside this path.
+#                     Examples:
+#                        Hotspots.ClientDataPath = "C:/Program Files/WoW/client"
+#                        Hotspots.ClientDataPath = "/home/user/wow/"
+#                     If empty or missing, ADT/WDT parsing is skipped and the script
+#                     will rely on DB/CSV map bounds (dc_map_bounds or var/map_bounds.csv).
+#        Default:     "Data"
+
+Hotspots.ClientDataPath = "Data"
 
 #
 # IMPORTANT NOTES:
