@@ -88,6 +88,15 @@ static HotspotsConfig sHotspotsConfig;
 // These are approximate and can be improved later with DBC-driven values.
 static std::unordered_map<uint32, std::array<float,4>> sMapBounds;
 
+// Helper: create or get a base (non-instanced) Map object safely and log on failure.
+static Map* GetBaseMapSafe(uint32 mapId)
+{
+    Map* map = sMapMgr->CreateBaseMap(mapId);
+    if (!map)
+        LOG_WARN("scripts", "GetBaseMapSafe: could not create/find Map object for map id {}", mapId);
+    return map;
+}
+
 // Build map bounds from DBC WorldMapArea entries. This attempts to compute accurate
 // map extents by aggregating all WorldMapArea entries for a given map_id.
 static void BuildMapBoundsFromDBC()
@@ -685,6 +694,21 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                     std::uniform_real_distribution<float> xb(b[0], b[1]);
                     std::uniform_real_distribution<float> yb(b[2], b[3]);
                     const int fallbackAttempts = 128;
+
+                    // We'll need a Map* for sampling; create it once and reuse below
+                    Map* map = nullptr;
+                    bool mapCreated = false;
+
+                    // If we also might use preset rectangles later, create the map only when needed.
+                    // Here, allowedCoords is empty, so we only create the map for fallback sampling.
+                    map = GetBaseMapSafe(candidateMapId);
+                    if (!map)
+                    {
+                        LOG_WARN("scripts", "GetRandomHotspotPosition: could not create/find Map object for map id {} during fallback sampling (skipping)", candidateMapId);
+                        continue;
+                    }
+                    mapCreated = true;
+
                     for (int fa = 0; fa < fallbackAttempts; ++fa)
                     {
                         float candX = xb(gen);
@@ -720,8 +744,8 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
         // Shuffle rectangles to try them in random order
         std::shuffle(allowedCoords.begin(), allowedCoords.end(), gen);
 
-        // Ensure a base (non-instanced) map object exists so we can query terrain height
-        Map* map = sMapMgr->CreateBaseMap(candidateMapId);
+    // Create a single base (non-instanced) Map object for this candidate so we can query terrain height
+    Map* map = GetBaseMapSafe(candidateMapId);
         if (!map)
         {
             LOG_WARN("scripts", "GetRandomHotspotPosition: could not create/find Map object for map id {} (skipping)", candidateMapId);
@@ -805,7 +829,7 @@ static bool SpawnHotspot()
     if (sHotspotsConfig.spawnVisualMarker)
     {
     // Ensure base map exists when creating visual markers
-    if (Map* map = sMapMgr->CreateBaseMap(mapId))
+    if (Map* map = GetBaseMapSafe(mapId))
         {
             // Create GameObject from template
             if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
@@ -940,7 +964,7 @@ static void CleanupExpiredHotspots()
             if (!it->gameObjectGuid.IsEmpty())
             {
                 // Ensure base map exists for cleanup operations
-                if (Map* m = sMapMgr->CreateBaseMap(it->mapId))
+                if (Map* m = GetBaseMapSafe(it->mapId))
                 {
                     if (GameObject* go = m->GetGameObject(it->gameObjectGuid))
                     {
@@ -1253,6 +1277,7 @@ public:
         {
             ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
@@ -1310,6 +1335,53 @@ public:
     {
         LoadHotspotsConfig();
         handler->SendSysMessage("Reloaded hotspots configuration.");
+        return true;
+    }
+
+    static bool HandleHotspotsDumpCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        handler->SendSysMessage("--- Hotspots debug dump ---");
+
+        // Dump sMapBounds
+        handler->SendSysMessage("sMapBounds entries:");
+        if (sMapBounds.empty())
+        {
+            handler->SendSysMessage("  (no map bounds loaded)");
+        }
+        else
+        {
+            for (auto const& kv : sMapBounds)
+            {
+                std::ostringstream ss;
+                ss << "  map=" << kv.first << " -> [" << kv.second[0] << ", " << kv.second[1]
+                   << ", " << kv.second[2] << ", " << kv.second[3] << "]";
+                handler->SendSysMessage(ss.str().c_str());
+            }
+        }
+
+        // Dump per-map enabled zones
+        handler->SendSysMessage("enabledZonesPerMap entries:");
+        if (sHotspotsConfig.enabledZonesPerMap.empty())
+        {
+            handler->SendSysMessage("  (no per-map enabled zones configured)");
+        }
+        else
+        {
+            for (auto const& kv : sHotspotsConfig.enabledZonesPerMap)
+            {
+                std::ostringstream ss;
+                ss << "  map=" << kv.first << " zones={";
+                for (size_t i = 0; i < kv.second.size(); ++i)
+                {
+                    if (i) ss << ",";
+                    ss << kv.second[i];
+                }
+                ss << "}";
+                handler->SendSysMessage(ss.str().c_str());
+            }
+        }
+
+        handler->SendSysMessage("--- end dump ---");
         return true;
     }
 
