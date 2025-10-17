@@ -81,7 +81,7 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
     if (sAoEConfig.playersOnly && player->GetTypeId() != TYPEID_PLAYER) return false;
     if (sAoEConfig.ignoreTapped)
     {
-        if (creature->HasLootRecipient())
+    if (creature->hasLootRecipient())
         {
             Player* recipient = creature->GetLootRecipient();
             if (!recipient) return false;
