@@ -336,7 +336,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR szCmdLine, int sw) {\
 /* Expand to a simple 'class' declaration wrapper so headers that omit the
     'class' keyword compile cleanly. */
 #define G3D_BEGIN_PACKED_CLASS(byteAlign) class
-#define G3D_END_PACKED_CLASS(byteAlign)
+/* Ensure the END macro emits a terminating semicolon so headers that use
+    the pattern "G3D_BEGIN_PACKED_CLASS(n) Name { ... } G3D_END_PACKED_CLASS(n)"
+    expand to a valid class/struct declaration. */
+#define G3D_END_PACKED_CLASS(byteAlign) ;
 
 
 // Bring in shared_ptr and weak_ptr
