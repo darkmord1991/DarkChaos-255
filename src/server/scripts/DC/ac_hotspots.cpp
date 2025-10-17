@@ -74,6 +74,8 @@ struct HotspotsConfig
     std::vector<uint32> enabledMaps;
     std::vector<uint32> enabledZones;
     std::vector<uint32> excludedZones;
+    // Per-map zone allow list: mapId -> list of allowed zone IDs (if present, this overrides global enabled/excluded lists)
+    std::unordered_map<uint32, std::vector<uint32>> enabledZonesPerMap;
     bool announceSpawn = true;
     bool announceExpire = true;
     bool spawnVisualMarker = true;           // Spawn GameObject marker
@@ -426,6 +428,51 @@ static std::vector<uint32> ParseUInt32List(std::string const& str)
     return result;
 }
 
+// Parse per-map zone configuration string like "1:141,331,17;37:268".
+// Returns map<mapId, vector<zoneIds>>. A zoneId of 0 means 'all zones' for that map.
+static std::unordered_map<uint32, std::vector<uint32>> ParseZonesPerMap(std::string const& str)
+{
+    std::unordered_map<uint32, std::vector<uint32>> result;
+    if (str.empty())
+        return result;
+
+    std::istringstream ss(str);
+    std::string entry;
+
+    auto trim = [](std::string s) {
+        const char* ws = " \t\r\n";
+        size_t a = s.find_first_not_of(ws);
+        if (a == std::string::npos) return std::string();
+        size_t b = s.find_last_not_of(ws);
+        return s.substr(a, b - a + 1);
+    };
+
+    // Split by ';' into entries
+    while (std::getline(ss, entry, ';'))
+    {
+        entry = trim(entry);
+        if (entry.empty()) continue;
+
+        size_t colon = entry.find(':');
+        if (colon == std::string::npos) continue;
+
+        std::string mapTok = trim(entry.substr(0, colon));
+        std::string zonesTok = trim(entry.substr(colon + 1));
+
+        if (mapTok.empty() || zonesTok.empty()) continue;
+
+        if (Optional<uint32> maybeMap = Acore::StringTo<uint32>(mapTok))
+        {
+            uint32 mapId = *maybeMap;
+            std::vector<uint32> zones = ParseUInt32List(zonesTok);
+            if (!zones.empty())
+                result.emplace(mapId, std::move(zones));
+        }
+    }
+
+    return result;
+}
+
     // Helper: escape braces for fmt-style logging when message may contain '{' or '}'
     static std::string EscapeBraces(std::string const& s)
     {
@@ -471,6 +518,9 @@ static void LoadHotspotsConfig()
     std::string excludedStr = sConfigMgr->GetOption<std::string>("Hotspots.ExcludedZones", "");
     sHotspotsConfig.excludedZones = ParseUInt32List(excludedStr);
 
+    std::string perMapStr = sConfigMgr->GetOption<std::string>("Hotspots.EnabledZonesPerMap", "");
+    sHotspotsConfig.enabledZonesPerMap = ParseZonesPerMap(perMapStr);
+
     sHotspotsConfig.initialPopulateCount = sConfigMgr->GetOption<uint32>("Hotspots.InitialPopulateCount", 0);
 }
 
@@ -484,10 +534,23 @@ static bool IsMapEnabled(uint32 mapId)
         != sHotspotsConfig.enabledMaps.end();
 }
 
-// Helper: check if zone is allowed
-static bool IsZoneAllowed(uint32 zoneId)
+// Helper: check if zone is allowed for a specific map.
+// If a per-map list exists for the map, it overrides global enabled/excluded lists.
+static bool IsZoneAllowed(uint32 mapId, uint32 zoneId)
 {
-    // Check excluded zones first
+    // If per-map configuration exists for this map, use it
+    auto it = sHotspotsConfig.enabledZonesPerMap.find(mapId);
+    if (it != sHotspotsConfig.enabledZonesPerMap.end())
+    {
+        const std::vector<uint32>& v = it->second;
+        // zone 0 means 'all zones' for this map
+        if (v.size() == 1 && v[0] == 0)
+            return true;
+
+        return std::find(v.begin(), v.end(), zoneId) != v.end();
+    }
+
+    // Check global excluded zones first
     if (std::find(sHotspotsConfig.excludedZones.begin(), sHotspotsConfig.excludedZones.end(), zoneId)
         != sHotspotsConfig.excludedZones.end())
         return false;
@@ -588,7 +651,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
         std::vector<MapCoords> allowedCoords;
         for (auto const& coord : coords)
         {
-            if (IsZoneAllowed(coord.zoneId))
+            if (IsZoneAllowed(candidateMapId, coord.zoneId))
                 allowedCoords.push_back(coord);
         }
 

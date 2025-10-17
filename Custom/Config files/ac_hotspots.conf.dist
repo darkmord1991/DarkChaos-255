@@ -116,6 +116,20 @@ Hotspots.EnabledZones = ""
 Hotspots.ExcludedZones = ""
 
 #
+#    Hotspots.EnabledZonesPerMap
+#        Description: Per-map list of enabled zone IDs. Overrides Hotspots.EnabledZones/ExcludedZones when present.
+#                     Format: "mapId:zone,zone;mapId:zone,zone" (multiple map entries separated by ';')
+#                     Zone ID 0 means "all zones" for that map.
+#                     Examples:
+#                        # Allow all zones for map 1, and only zone 268 on map 37
+#                        Hotspots.EnabledZonesPerMap = "1:0;37:268"
+#                        # Allow only zones 141 and 331 for map 1, and 268 for map 37
+#                        Hotspots.EnabledZonesPerMap = "1:141,331;37:268"
+#        Default:     "" (use global Hotspots.EnabledZones / Hotspots.ExcludedZones)
+
+Hotspots.EnabledZonesPerMap = ""
+
+#
 #    Hotspots.AnnounceSpawn
 #        Description: Announce in world chat when a hotspot spawns
 #        Default:     1 (Enabled)
