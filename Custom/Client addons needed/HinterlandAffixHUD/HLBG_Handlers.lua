@@ -645,40 +645,129 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         end)
         
         if ok and type(decoded) == 'table' then
+            -- Extract win counts from byAffix structure (sum across all affixes)
+            local allianceWins = 0
+            local hordeWins = 0
+            local draws = tonumber(decoded.draws) or 0
+            
+            if decoded.byAffix and type(decoded.byAffix) == 'table' then
+                for affixId, affixData in pairs(decoded.byAffix) do
+                    if type(affixData) == 'table' then
+                        allianceWins = allianceWins + (tonumber(affixData.Alliance) or 0)
+                        hordeWins = hordeWins + (tonumber(affixData.Horde) or 0)
+                    end
+                end
+            end
+            
+            -- Also check top-level counts if present (fallback)
+            if decoded.counts and type(decoded.counts) == 'table' then
+                allianceWins = allianceWins + (tonumber(decoded.counts.Alliance) or 0)
+                hordeWins = hordeWins + (tonumber(decoded.counts.Horde) or 0)
+            end
+            
+            local totalBattles = tonumber(decoded.total) or (allianceWins + hordeWins + draws)
+            
             pcall(function()
-                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r JSON decoded successfully: Alliance=' .. (decoded.counts and decoded.counts.Alliance or 'nil') .. ', Horde=' .. (decoded.counts and decoded.counts.Horde or 'nil') .. ', Draws=' .. (decoded.draws or 'nil'))
+                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles))
             end)
             
             -- Store total if present
             if decoded.total and HLBG.UI and HLBG.UI.History then 
-                HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total 
+                HLBG.UI.History.total = totalBattles
             end
             
-            -- Call stats display function with decoded data - TRY MULTIPLE APPROACHES
+            -- Build normalized stats object
+            local normalizedStats = {
+                counts = { Alliance = allianceWins, Horde = hordeWins },
+                draws = draws,
+                totalBattles = totalBattles,
+                avgDuration = tonumber(decoded.avgDuration) or 0,
+                season = tonumber(decoded.season) or 1,
+                seasonName = decoded.seasonName or "Season 1"
+            }
+            
+            -- Call stats display function with normalized data
             if type(HLBG.Stats) == 'function' then 
-                pcall(HLBG.Stats, decoded) 
+                pcall(HLBG.Stats, normalizedStats) 
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with decoded data')
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with normalized data')
                 end)
             end
             
             if type(HLBG.OnServerStats) == 'function' then
-                pcall(HLBG.OnServerStats, decoded)
+                pcall(HLBG.OnServerStats, normalizedStats)
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with decoded data')
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with normalized data')
                 end)
             end
             
             -- Force update stats display if UI exists
             if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
                 pcall(function()
-                    local totalBattles = (decoded.counts and decoded.counts.Alliance or 0) + (decoded.counts and decoded.counts.Horde or 0) + (decoded.draws or 0)
-                    HLBG.UI.Stats.Text:SetText(string.format('|cFF33FF99Stats:|r Battles %d  Alliance Wins %d  Horde Wins %d  Draws %d',
-                        totalBattles,
-                        decoded.counts and decoded.counts.Alliance or 0,
-                        decoded.counts and decoded.counts.Horde or 0,
-                        decoded.draws or 0))
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Directly updated Stats UI text')
+                    local lines = {}
+                    table.insert(lines, "|cFFFFD700=== Hinterland BG Statistics ===|r")
+                    table.insert(lines, "")
+                    table.insert(lines, string.format("|cFFFFD700Season:|r %s (#%d)", normalizedStats.seasonName or "Season 1", normalizedStats.season or 1))
+                    table.insert(lines, "")
+                    
+                    -- Battle counts
+                    table.insert(lines, "|cFFFFD700Battle Summary:|r")
+                    table.insert(lines, string.format("  |cFFFFFFFFTotal Battles:|r %d", totalBattles))
+                    table.insert(lines, string.format("  |cFF0099FFAlliance Wins:|r %d  |cFFAAAA00(%.1f%%)|r", 
+                        allianceWins, 
+                        totalBattles > 0 and (allianceWins / totalBattles * 100) or 0))
+                    table.insert(lines, string.format("  |cFFFF0000Horde Wins:|r %d  |cFFAAAA00(%.1f%%)|r", 
+                        hordeWins, 
+                        totalBattles > 0 and (hordeWins / totalBattles * 100) or 0))
+                    table.insert(lines, string.format("  |cFFAAAA00Draws:|r %d  |cFFAAAA00(%.1f%%)|r", 
+                        draws, 
+                        totalBattles > 0 and (draws / totalBattles * 100) or 0))
+                    table.insert(lines, "")
+                    
+                    -- Duration stats
+                    table.insert(lines, "|cFFFFD700Performance:|r")
+                    table.insert(lines, string.format("  |cFF00FF00Average Duration:|r %.1f seconds", normalizedStats.avgDuration or 0))
+                    if normalizedStats.avgDuration and normalizedStats.avgDuration > 0 then
+                        local minutes = math.floor(normalizedStats.avgDuration / 60)
+                        local seconds = normalizedStats.avgDuration % 60
+                        table.insert(lines, string.format("  |cFFAAAA00(~%d min %d sec)|r", minutes, seconds))
+                    end
+                    table.insert(lines, "")
+                    
+                    -- Per-affix breakdown if available
+                    if decoded.byAffix and type(decoded.byAffix) == 'table' then
+                        table.insert(lines, "|cFFFFD700Stats by Affix:|r")
+                        for affixId, affixData in pairs(decoded.byAffix) do
+                            if type(affixData) == 'table' then
+                                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(tonumber(affixId)) or ("Affix " .. affixId)
+                                local aWins = tonumber(affixData.Alliance) or 0
+                                local hWins = tonumber(affixData.Horde) or 0
+                                local affixTotal = aWins + hWins
+                                if affixTotal > 0 then
+                                    table.insert(lines, string.format("  |cFFFFFFFF%s:|r A:%d H:%d (Total: %d)", 
+                                        affixName, aWins, hWins, affixTotal))
+                                end
+                            end
+                        end
+                        table.insert(lines, "")
+                    end
+                    
+                    -- Win reasons if available
+                    if decoded.reasons and type(decoded.reasons) == 'table' then
+                        table.insert(lines, "|cFFFFD700Win Reasons:|r")
+                        for reason, count in pairs(decoded.reasons) do
+                            if tonumber(count) and tonumber(count) > 0 then
+                                table.insert(lines, string.format("  |cFFFFFFFF%s:|r %d", 
+                                    tostring(reason):gsub("^%l", string.upper), count))
+                            end
+                        end
+                        table.insert(lines, "")
+                    end
+                    
+                    table.insert(lines, "|cFFAAAA00Click 'Refresh' to update statistics|r")
+                    
+                    HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Updated Stats UI with improved formatted layout')
                 end)
             end
             
@@ -687,6 +776,23 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug:|r JSON decode failed: ' .. tostring(decoded))
             end)
         end
+        return
+    end
+    
+    -- Queue status response
+    if msg:match("^QUEUE_STATUS") then
+        pcall(function()
+            if type(HLBG.HandleQueueStatus) == 'function' then
+                HLBG.HandleQueueStatus(msg)
+                if DEFAULT_CHAT_FRAME then
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Queue status received and processed')
+                end
+            else
+                if DEFAULT_CHAT_FRAME then
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG Debug:|r HandleQueueStatus function not available (will be loaded from HLBG_Queue_Client.lua)')
+                end
+            end
+        end)
         return
     end
 end)

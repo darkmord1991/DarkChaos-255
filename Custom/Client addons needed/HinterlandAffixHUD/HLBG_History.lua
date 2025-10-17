@@ -60,7 +60,7 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
 
     if type(rows) ~= 'table' then rows = {} end
     ui.page = tonumber(page) or ui.page or 1
-    ui.per  = tonumber(per)  or ui.per  or 15
+    ui.per  = tonumber(per)  or ui.per  or 25
     ui.total= tonumber(total)or ui.total or #rows
     ui.sortKey = sortKey or ui.sortKey or 'id'
     ui.sortDir = sortDir or ui.sortDir or 'DESC'

@@ -35,5 +35,8 @@ HLBG_Settings.lua
 # Handlers for data processing
 HLBG_Handlers.lua
 
+# Queue system client
+HLBG_Queue_Client.lua
+
 # Debug helper
 HLBG_DebugUI.lua

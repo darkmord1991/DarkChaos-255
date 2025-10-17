@@ -2,6 +2,26 @@
 
 HLBG.UI = HLBG.UI or {}
 
+-- Initialize SavedVariables with defaults if not exists
+if not HinterlandAffixHUDDB then
+    HinterlandAffixHUDDB = {
+        hudEnabled = true,
+        debugMode = false,
+        showHudEverywhere = false,
+        hudScale = 1.0,
+        hudAlpha = 0.9,
+        enableTelemetry = false
+    }
+end
+
+-- Ensure all expected keys exist (in case old SavedVariables missing keys)
+HinterlandAffixHUDDB.hudEnabled = (HinterlandAffixHUDDB.hudEnabled ~= nil) and HinterlandAffixHUDDB.hudEnabled or true
+HinterlandAffixHUDDB.debugMode = HinterlandAffixHUDDB.debugMode or false
+HinterlandAffixHUDDB.showHudEverywhere = HinterlandAffixHUDDB.showHudEverywhere or false
+HinterlandAffixHUDDB.hudScale = HinterlandAffixHUDDB.hudScale or 1.0
+HinterlandAffixHUDDB.hudAlpha = HinterlandAffixHUDDB.hudAlpha or 0.9
+HinterlandAffixHUDDB.enableTelemetry = HinterlandAffixHUDDB.enableTelemetry or false
+
 
 
 -- Essential UI creation (no duplicates)
@@ -107,10 +127,24 @@ HLBG.UI.History:Hide()
 
 -- Only create the scroll/content/controls if Content is missing
 if not HLBG.UI.History.Content then
-    -- Create Scroll and Content
+    -- Create Scroll and Content with mouse wheel support
     HLBG.UI.History.Scroll = HLBG.UI.History.Scroll or CreateFrame("ScrollFrame", "HLBG_HistoryScroll", HLBG.UI.History, "UIPanelScrollFrameTemplate")
     HLBG.UI.History.Scroll:SetPoint("TOPLEFT", 16, -85)  -- Moved down more to make room for headers
-    HLBG.UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 16)
+    HLBG.UI.History.Scroll:SetPoint("BOTTOMRIGHT", -36, 50)  -- Leave room for pagination buttons
+    HLBG.UI.History.Scroll:EnableMouseWheel(true)
+    HLBG.UI.History.Scroll:SetScript("OnMouseWheel", function(self, delta)
+        local current = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local scrollStep = 44  -- Height of two rows (22*2) for smoother scrolling
+        
+        if delta < 0 then
+            -- Scroll down
+            self:SetVerticalScroll(math.min(maxScroll, current + scrollStep))
+        else
+            -- Scroll up
+            self:SetVerticalScroll(math.max(0, current - scrollStep))
+        end
+    end)
     
     -- Add column headers
     if not HLBG.UI.History.Headers then
@@ -158,12 +192,13 @@ if not HLBG.UI.History.Content then
     HLBG.UI.History.sortDir = HLBG.UI.History.sortDir or 'DESC'
     HLBG.UI.History.lastRows = HLBG.UI.History.lastRows or {}
 
-    -- Placeholder and test button
+    -- Placeholder and test button (hidden when history loads)
     local histBtn = HLBG.UI.History.HistBtn or CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
     histBtn:SetSize(120, 32)
     histBtn:SetPoint("BOTTOM", HLBG.UI.History, "BOTTOM", 0, 40)
     histBtn:SetText("Test History")
     histBtn:SetScript("OnClick", function() DEFAULT_CHAT_FRAME:AddMessage("History tab button clicked!") end)
+    histBtn:Hide()  -- Hide test button - not needed in production
     HLBG.UI.History.HistBtn = histBtn
 
     local histText = HLBG.UI.History.Placeholder or HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -184,13 +219,17 @@ if not HLBG.UI.History.Content then
     if prevBtn:GetFontString() then prevBtn:GetFontString():SetTextColor(1,0.82,0,1) end
     prevBtn:SetScript("OnClick", function()
         local ui = HLBG.UI.History
-        if ui.page and ui.page > 1 then
-            ui.page = ui.page - 1
-            -- Request previous page from server
-            local cmd = string.format(".hlbg historyui %d %d %s %s", ui.page, ui.per or 15, ui.sortKey or "id", ui.sortDir or "DESC")
-            ChatFrameEditBox:SetText(cmd)
-            ChatEdit_SendText(ChatFrameEditBox, 0)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting page " .. ui.page)
+        local currentPage = tonumber(ui.page) or 1
+        if currentPage > 1 then
+            local newPage = currentPage - 1
+            -- Request previous page from server (don't update ui.page yet - let server response do it)
+            local cmd = string.format(".hlbg historyui %d %d %s %s", newPage, ui.per or 25, ui.sortKey or "id", ui.sortDir or "DESC")
+            local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
+            if editBox then
+                editBox:SetText(cmd)
+                ChatEdit_SendText(editBox, 0)
+            end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting page %d (current: %d)", newPage, currentPage))
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Already on first page")
         end
@@ -201,21 +240,25 @@ if not HLBG.UI.History.Content then
     nextBtn:SetSize(50, 20)
     nextBtn:SetPoint("BOTTOMRIGHT", HLBG.UI.History, "BOTTOMRIGHT", -50, 20)
     nextBtn:SetText("Next")
-    nextBtn:SetNormalTexture("Interface/Buttons/UI-Panel-Button-Red")
-    nextBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-Button-Red")
-    if nextBtn:GetFontString() then nextBtn:GetFontString():SetTextColor(1,0.82,0,1) end
     nextBtn:SetScript("OnClick", function()
         local ui = HLBG.UI.History
-        local maxPage = math.ceil((ui.total or 0) / (ui.per or 15))
-        if ui.page and ui.page < maxPage then
-            ui.page = ui.page + 1
-            -- Request next page from server
-            local cmd = string.format(".hlbg historyui %d %d %s %s", ui.page, ui.per or 15, ui.sortKey or "id", ui.sortDir or "DESC")
-            ChatFrameEditBox:SetText(cmd)
-            ChatEdit_SendText(ChatFrameEditBox, 0)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting page " .. ui.page)
+        local currentPage = tonumber(ui.page) or 1
+        local totalRecords = tonumber(ui.total) or 0
+        local perPage = tonumber(ui.per) or 25
+        local maxPage = (totalRecords > 0) and math.max(1, math.ceil(totalRecords / perPage)) or 1
+        
+        if currentPage < maxPage then
+            local newPage = currentPage + 1
+            -- Request next page from server (don't update ui.page yet - let server response do it)
+            local cmd = string.format(".hlbg historyui %d %d %s %s", newPage, perPage, ui.sortKey or "id", ui.sortDir or "DESC")
+            local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
+            if editBox then
+                editBox:SetText(cmd)
+                ChatEdit_SendText(editBox, 0)
+            end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting page %d of %d (current: %d)", newPage, maxPage, currentPage))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Already on last page (page " .. ui.page .. " of " .. maxPage .. ")")
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG:|r Already on last page (page %d of %d)", currentPage, maxPage))
         end
     end)
     HLBG.UI.History.NextBtn = nextBtn
@@ -224,11 +267,18 @@ if not HLBG.UI.History.Content then
     pageText:SetPoint("BOTTOM", HLBG.UI.History, "BOTTOM", 0, 25)
     pageText:SetText("Page 1 / 1")
     HLBG.UI.History.PageText = pageText
+    
+    -- Create Nav table for History function compatibility
+    HLBG.UI.History.Nav = HLBG.UI.History.Nav or {}
+    HLBG.UI.History.Nav.PageText = pageText
+    HLBG.UI.History.Nav.Prev = prevBtn
+    HLBG.UI.History.Nav.Next = nextBtn
 end
 
 if not HLBG.UI.Stats.Content then
     HLBG.UI.Stats.Content = CreateFrame("Frame", nil, HLBG.UI.Stats)
     HLBG.UI.Stats.Content:SetAllPoints()
+    HLBG.UI.Stats.Content:Show()  -- Explicitly show
     
     -- Create scrollable stats frame
     local statsScroll = CreateFrame("ScrollFrame", "HLBG_StatsScrollFrame", HLBG.UI.Stats.Content, "UIPanelScrollFrameTemplate")
@@ -279,12 +329,15 @@ Loading...
     local refreshStatsBtn = CreateFrame("Button", nil, HLBG.UI.Stats.Content, "UIPanelButtonTemplate")
     refreshStatsBtn:SetSize(100, 25)
     refreshStatsBtn:SetPoint("TOPRIGHT", HLBG.UI.Stats.Content, "TOPRIGHT", -40, -55)
-    refreshStatsBtn:SetText("Refresh")
+    refreshStatsBtn:SetText("Refresh")  -- Set button text
     refreshStatsBtn:SetScript("OnClick", function()
-        -- Request stats from server via chat command
-        local cmd = ".hlbg stats"
-        ChatFrameEditBox:SetText(cmd)
-        ChatEdit_SendText(ChatFrameEditBox, 0)
+        -- Request stats from server via chat command (.hlbg statsui is the correct command)
+        local cmd = ".hlbg statsui"
+        local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
+        if editBox then
+            editBox:SetText(cmd)
+            ChatEdit_SendText(editBox, 0)
+        end
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting statistics...")
     end)
 end
@@ -294,49 +347,65 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
     if not HLBG.UI.Stats or not HLBG.UI.Stats.Text then return end
     
     if type(statsData) ~= "table" then
-        HLBG.UI.Stats.Text:SetText("|cFFFFAA00No statistics data available.|r\n\nUse |cFFFFFFFF.hlbg stats|r command or click Refresh.")
+        HLBG.UI.Stats.Text:SetText("|cFFFFAA00No statistics data available.|r\n\nUse |cFFFFFFFF.hlbg statsui|r command or click Refresh.")
         return
     end
     
-    -- Format stats matching scoreboard NPC output
+    -- Format stats matching actual server data structure
     local lines = {}
     table.insert(lines, "|cFFFFD700Hinterland BG Statistics|r\n")
     
-    -- Basic counts
-    table.insert(lines, string.format("|cFFFFFFFFTotal records:|r %d", statsData.total or 0))
-    table.insert(lines, string.format("|cFFFFFFFFAlliance wins:|r %d  |cFFAAAA(losses:|r %d)|r", statsData.allianceWins or 0, statsData.hordWins or 0))
-    table.insert(lines, string.format("|cFFFFFFFFHorde wins:|r %d  |cFFAAAA(losses:|r %d)|r", statsData.hordeWins or 0, statsData.allianceWins or 0))
-    table.insert(lines, string.format("|cFFFFFFFFDraws:|r %d  |cFFAAAAManual resets:|r %d|r", statsData.draws or 0, statsData.manual or 0))
-    table.insert(lines, string.format("|cFFFFFFFFWin reasons:|r depletion %d, tiebreaker %d\n", statsData.depletionWins or 0, statsData.tiebreakerWins or 0))
+    -- Basic counts from actual data
+    table.insert(lines, string.format("|cFFFFFFFFTotal battles:|r %d", statsData.total or 0))
     
-    -- Streaks
-    if statsData.currentStreak then
-        table.insert(lines, string.format("|cFFFFFFFFCurrent streak:|r %s x%d", statsData.currentStreak.team or "None", statsData.currentStreak.count or 0))
-    end
-    if statsData.longestStreak then
-        table.insert(lines, string.format("|cFFFFFFFFLongest streak:|r %s x%d\n", statsData.longestStreak.team or "None", statsData.longestStreak.count or 0))
-    end
-    
-    -- Largest margin
-    if statsData.largestMargin then
-        local m = statsData.largestMargin
-        table.insert(lines, string.format("|cFFFFFFFFLargest margin:|r [%s] %s by %d (A:%d H:%d)\n", m.timestamp or "?", m.team or "?", m.margin or 0, m.alliance or 0, m.horde or 0))
+    -- Extract wins from byAffix structure
+    local allianceWins = 0
+    local hordeWins = 0
+    if statsData.byAffix then
+        for _, affixData in pairs(statsData.byAffix) do
+            if type(affixData) == "table" then
+                allianceWins = allianceWins + (affixData.Alliance or 0)
+                hordeWins = hordeWins + (affixData.Horde or 0)
+            end
+        end
     end
     
-    -- Top winners by affix
-    if statsData.topWinnersByAffix and #statsData.topWinnersByAffix > 0 then
-        table.insert(lines, "|cFFFFD700Top winners by affix:|r")
-        for _, entry in ipairs(statsData.topWinnersByAffix) do
-            table.insert(lines, string.format("- %s: %s wins x%d", entry.affix or "?", entry.team or "?", entry.count or 0))
+    table.insert(lines, string.format("|cFFFFFFFFAlliance wins:|r %d  |cFFAAAA(losses: %d)|r", allianceWins, hordeWins))
+    table.insert(lines, string.format("|cFFFFFFFFHorde wins:|r %d  |cFFAAAA(losses: %d)|r", hordeWins, allianceWins))
+    table.insert(lines, string.format("|cFFFFFFFFDraws:|r %d", statsData.draws or 0))
+    
+    -- Win reasons from actual data structure
+    if statsData.reasons then
+        local reasons = statsData.reasons
+        table.insert(lines, string.format("|cFFFFFFFFWin reasons:|r depletion %d, tiebreaker %d, manual %d\n", 
+            reasons.depletion or 0, reasons.tiebreaker or 0, reasons.manual or 0))
+    end
+    
+    -- Streaks using actual field names
+    table.insert(lines, string.format("|cFFFFFFFFCurrent streak:|r %s x%d", 
+        statsData.currentStreakTeam or "None", statsData.currentStreakLen or 0))
+    table.insert(lines, string.format("|cFFFFFFFFLongest streak:|r %s x%d\n", 
+        statsData.longestStreakTeam or "None", statsData.longestStreakLen or 0))
+    
+    -- Top affixes by matches
+    if statsData.topAffixesByMatches and #statsData.topAffixesByMatches > 0 then
+        table.insert(lines, "|cFFFFD700Top affixes by matches:|r")
+        for _, entry in ipairs(statsData.topAffixesByMatches) do
+            local affixName = HLBG.GetAffixName(entry.affix or 0)
+            table.insert(lines, string.format("- %s: %d matches", affixName, entry.count or 0))
         end
         table.insert(lines, "")
     end
     
-    -- Average scores
-    if statsData.averageScores and #statsData.averageScores > 0 then
+    -- Average scores per affix
+    if statsData.avgScorePerAffix then
         table.insert(lines, "|cFFFFD700Average score per affix:|r")
-        for _, entry in ipairs(statsData.averageScores) do
-            table.insert(lines, string.format("- %s: A:%.1f H:%.1f (n=%d)", entry.affix or "?", entry.avgAlliance or 0, entry.avgHorde or 0, entry.count or 0))
+        for affixId, scores in pairs(statsData.avgScorePerAffix) do
+            if type(scores) == "table" then
+                local affixName = HLBG.GetAffixName(tonumber(affixId) or 0)
+                table.insert(lines, string.format("- %s: A:%.1f H:%.1f (n=%d)", 
+                    affixName, scores.A or 0, scores.H or 0, scores.n or 0))
+            end
         end
     end
     
@@ -348,10 +417,11 @@ end
 if not HLBG.UI.Info.Content then
     HLBG.UI.Info.Content = CreateFrame("Frame", nil, HLBG.UI.Info)
     HLBG.UI.Info.Content:SetAllPoints()
+    HLBG.UI.Info.Content:Show()  -- Explicitly show
     
-    -- Info content (scrollable text) - no title, tabs are already labeled
+    -- Info content (scrollable text) - positioned lower to avoid tab overlap
     local infoScroll = CreateFrame("ScrollFrame", "HLBG_InfoScrollFrame", HLBG.UI.Info.Content, "UIPanelScrollFrameTemplate")
-    infoScroll:SetPoint("TOPLEFT", HLBG.UI.Info.Content, "TOPLEFT", 16, -50)
+    infoScroll:SetPoint("TOPLEFT", HLBG.UI.Info.Content, "TOPLEFT", 16, -60)  -- Moved down from -50 to -60
     infoScroll:SetPoint("BOTTOMRIGHT", HLBG.UI.Info.Content, "BOTTOMRIGHT", -32, 20)
     
     local infoContent = CreateFrame("Frame", nil, infoScroll)
@@ -385,10 +455,10 @@ Special modifiers that change gameplay each season. Check the HUD for the curren
         C_Timer.After(0.1, HLBG.UpdateInfo)
     end
 end
-
 if not HLBG.UI.Settings.Content then
     HLBG.UI.Settings.Content = CreateFrame("Frame", nil, HLBG.UI.Settings)
     HLBG.UI.Settings.Content:SetAllPoints()
+    HLBG.UI.Settings.Content:Show()  -- Explicitly show
     
     -- Settings title
     local title = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -449,7 +519,7 @@ if not HLBG.UI.Settings.Content then
     scaleSlider:SetMinMaxValues(0.5, 2.0)
     scaleSlider:SetValue(HinterlandAffixHUDDB.hudScale or 1.0)
     scaleSlider:SetValueStep(0.1)
-    scaleSlider:SetObeyStepOnDrag(true)
+    -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
     scaleSlider:SetWidth(200)
     _G[scaleSlider:GetName().."Low"]:SetText("0.5")
     _G[scaleSlider:GetName().."High"]:SetText("2.0")
@@ -467,7 +537,7 @@ if not HLBG.UI.Settings.Content then
     alphaSlider:SetMinMaxValues(0.1, 1.0)
     alphaSlider:SetValue(HinterlandAffixHUDDB.hudAlpha or 0.9)
     alphaSlider:SetValueStep(0.05)
-    alphaSlider:SetObeyStepOnDrag(true)
+    -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
     alphaSlider:SetWidth(200)
     _G[alphaSlider:GetName().."Low"]:SetText("10%")
     _G[alphaSlider:GetName().."High"]:SetText("100%")
@@ -515,62 +585,68 @@ end
 if not HLBG.UI.Queue.Content then
     HLBG.UI.Queue.Content = CreateFrame("Frame", nil, HLBG.UI.Queue)
     HLBG.UI.Queue.Content:SetAllPoints()
-    
-    -- Queue title
-    local title = HLBG.UI.Queue.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", HLBG.UI.Queue.Content, "TOP", 0, -75)
-    title:SetText("|cFFFFD700Battleground Queue|r")
+    HLBG.UI.Queue.Content:Show()  -- Explicitly show
     
     -- Queue status text
-    local statusText = HLBG.UI.Queue.Content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    statusText:SetPoint("TOP", HLBG.UI.Queue.Content, "TOP", 0, -110)
-    statusText:SetWidth(500)
+    local statusText = HLBG.UI.Queue.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    statusText:SetPoint("TOP", HLBG.UI.Queue.Content, "TOP", 0, -60)
+    statusText:SetWidth(560)
     statusText:SetJustifyH("CENTER")
-    statusText:SetText("|cFF00FF00Not in queue|r")
+    statusText:SetText("|cFFAAAAANot in queue|r\n\nUse the button below to join")
     HLBG.UI.Queue.StatusText = statusText
     
-    -- Queue button
-    local queueBtn = CreateFrame("Button", "HLBG_QueueButton", HLBG.UI.Queue.Content, "UIPanelButtonTemplate")
-    queueBtn:SetSize(180, 35)
+    -- Join/Leave Queue button
+    local queueBtn = CreateFrame("Button", nil, HLBG.UI.Queue.Content, "UIPanelButtonTemplate")
+    queueBtn:SetSize(140, 35)
     queueBtn:SetPoint("TOP", statusText, "BOTTOM", 0, -30)
-    queueBtn:SetText("Join Hinterland BG")
-    queueBtn:SetScript("OnClick", function(self)
-        -- Toggle queue state
-        local inQueue = HLBG._queueState and HLBG._queueState.inQueue or false
-        if inQueue then
-            -- Leave queue
-            local cmd = ".queue leave"
-            ChatFrameEditBox:SetText(cmd)
-            ChatEdit_SendText(ChatFrameEditBox, 0)
-            HLBG._queueState = { inQueue = false }
-            statusText:SetText("|cFFAAAAALeft queue|r")
-            self:SetText("Join Hinterland BG")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Left battleground queue")
+    queueBtn:SetText("Join Queue")
+    if queueBtn:GetFontString() then
+        queueBtn:GetFontString():SetTextColor(0.2, 1, 0.2, 1)  -- Green initially
+    end
+    queueBtn:SetScript("OnClick", function()
+        if HLBG.IsInQueue then
+            HLBG.LeaveQueue()
         else
-            -- Join queue
-            local cmd = ".queue join hinterland"
-            ChatFrameEditBox:SetText(cmd)
-            ChatEdit_SendText(ChatFrameEditBox, 0)
-            HLBG._queueState = { inQueue = true, joinTime = time() }
-            statusText:SetText("|cFF00FF00Queued for Hinterland BG|r")
-            self:SetText("Leave Queue")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joined battleground queue")
+            HLBG.JoinQueue()
         end
     end)
-    HLBG.UI.Queue.QueueButton = queueBtn
+    HLBG.UI.Queue.JoinButton = queueBtn
     
-    -- Queue info text
+    -- Refresh button
+    local refreshBtn = CreateFrame("Button", nil, HLBG.UI.Queue.Content, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(100, 25)
+    refreshBtn:SetPoint("TOP", queueBtn, "BOTTOM", 0, -15)
+    refreshBtn:SetText("Refresh")
+    refreshBtn:SetScript("OnClick", function()
+        HLBG.RequestQueueStatus()
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Refreshing queue status...")
+    end)
+    
+    -- Info text about queue system
     local infoText = HLBG.UI.Queue.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("TOP", queueBtn, "BOTTOM", 0, -20)
+    infoText:SetPoint("TOP", refreshBtn, "BOTTOM", 0, -30)
     infoText:SetWidth(500)
-    infoText:SetJustifyH("CENTER")
-    infoText:SetText([[|cFFAAAAAAQueue system is server-controlled.
-Button sends queue commands automatically.
+    infoText:SetJustifyH("LEFT")
+    infoText:SetText([[|cFFFFD700How to Join Hinterland BG:|r
 
-You can also use commands manually:
-• |cFFFFFFFF.queue join hinterland|r - Join queue
-• |cFFFFFFFF.queue leave|r - Leave queue
-• |cFFFFFFFF.queue status|r - Check queue status|r]])
+To participate in Hinterland Battleground, currently you need to:
+
+1. Travel to the Hinterland BG entrance
+2. Talk to the Battlemaster NPC to queue
+3. Alternatively, use the PvP UI if queue system is enabled
+
+|cFFAAAAAANote: Automated queue commands (.hlbgq join/leave) are being developed.
+Check with server administrators for the current queue method.|r]])
+    HLBG.UI.Queue.InfoText = infoText
+    
+    -- Auto-request queue status when tab is shown
+    HLBG.UI.Queue:SetScript("OnShow", function()
+        if type(HLBG.RequestQueueStatus) == 'function' then
+            C_Timer.After(0.3, function()  -- Small delay to ensure AIO ready
+                pcall(HLBG.RequestQueueStatus)
+            end)
+        end
+    end)
     
     -- Initialize queue state
     if not HLBG._queueState then
@@ -611,6 +687,8 @@ function ShowTab(i)
     if HLBG.UI.Queue then HLBG.UI.Queue:Hide() end
     if i == 1 and HLBG.UI.History then
         HLBG.UI.History:Show()
+        -- Explicitly show Content frame (shouldn't be needed but ensures visibility)
+        if HLBG.UI.History.Content then HLBG.UI.History.Content:Show() end
         -- Re-render History tab with existing data when shown
         if HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 and type(HLBG.History) == 'function' then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800HLBG Debug:|r Re-rendering History with existing data")
@@ -654,10 +732,22 @@ function ShowTab(i)
             end
         end
     end
-    if i == 2 and HLBG.UI.Stats then HLBG.UI.Stats:Show() end
-    if i == 3 and HLBG.UI.Info then HLBG.UI.Info:Show() end
-    if i == 4 and HLBG.UI.Settings then HLBG.UI.Settings:Show() end
-    if i == 5 and HLBG.UI.Queue then HLBG.UI.Queue:Show() end
+    if i == 2 and HLBG.UI.Stats then 
+        HLBG.UI.Stats:Show()
+        if HLBG.UI.Stats.Content then HLBG.UI.Stats.Content:Show() end
+    end
+    if i == 3 and HLBG.UI.Info then 
+        HLBG.UI.Info:Show()
+        if HLBG.UI.Info.Content then HLBG.UI.Info.Content:Show() end
+    end
+    if i == 4 and HLBG.UI.Settings then 
+        HLBG.UI.Settings:Show()
+        if HLBG.UI.Settings.Content then HLBG.UI.Settings.Content:Show() end
+    end
+    if i == 5 and HLBG.UI.Queue then 
+        HLBG.UI.Queue:Show()
+        if HLBG.UI.Queue.Content then HLBG.UI.Queue.Content:Show() end
+    end
     
     -- Update saved tab
     if HinterlandAffixHUDDB then
