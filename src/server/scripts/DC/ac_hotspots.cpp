@@ -602,10 +602,11 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
         // Shuffle rectangles to try them in random order
         std::shuffle(allowedCoords.begin(), allowedCoords.end(), gen);
 
-        Map* map = sMapMgr->FindMap(candidateMapId, 0);
+        // Ensure a base (non-instanced) map object exists so we can query terrain height
+        Map* map = sMapMgr->CreateBaseMap(candidateMapId);
         if (!map)
         {
-            LOG_WARN("scripts", "GetRandomHotspotPosition: could not find Map object for map id {} (skipping)", candidateMapId);
+            LOG_WARN("scripts", "GetRandomHotspotPosition: could not create/find Map object for map id {} (skipping)", candidateMapId);
             continue;
         }
 
@@ -685,7 +686,8 @@ static bool SpawnHotspot()
     // Spawn visual marker GameObject if enabled
     if (sHotspotsConfig.spawnVisualMarker)
     {
-        if (Map* map = sMapMgr->FindMap(mapId, 0))
+    // Ensure base map exists when creating visual markers
+    if (Map* map = sMapMgr->CreateBaseMap(mapId))
         {
             // Create GameObject from template
             if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
@@ -819,7 +821,8 @@ static void CleanupExpiredHotspots()
             // Remove visual marker GameObject if it exists
             if (!it->gameObjectGuid.IsEmpty())
             {
-                if (Map* m = sMapMgr->FindMap(it->mapId, 0))
+                // Ensure base map exists for cleanup operations
+                if (Map* m = sMapMgr->CreateBaseMap(it->mapId))
                 {
                     if (GameObject* go = m->GetGameObject(it->gameObjectGuid))
                     {
@@ -931,6 +934,15 @@ public:
             // Config option: Hotspots.ClientDataPath (default: "Data" or server's data dir)
             std::string clientDataPath = sConfigMgr->GetOption<std::string>("Hotspots.ClientDataPath", "Data");
             TryLoadBoundsFromClientData(clientDataPath);
+
+            // Debug: report loaded map bounds count and presence of map 37
+            {
+                size_t count = sMapBounds.size();
+                bool has37 = (sMapBounds.find(37) != sMapBounds.end());
+                LOG_INFO("scripts", "Hotspots: loaded map bounds count = {} ; map 37 present = {}", count, has37);
+                if (!has37)
+                    LOG_WARN("scripts", "Hotspots: map 37 not found in loaded map bounds - check dc_map_bounds or var/map_bounds.csv");
+            }
 
             // If initialPopulateCount is 0, populate up to maxActive
             uint32 toSpawn = sHotspotsConfig.initialPopulateCount == 0 ? sHotspotsConfig.maxActive : sHotspotsConfig.initialPopulateCount;
