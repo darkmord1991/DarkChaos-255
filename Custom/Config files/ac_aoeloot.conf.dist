@@ -151,3 +151,7 @@ AoELoot.IgnoreTapped = 1
 #                     0 (Disabled)
 
 AoELoot.PlayersOnly = 1
+
+# Number of seconds after the client sends an autostore packet where we consider autostore "recent"
+# Used only when AoELoot.AutoLoot = 2 (respect player's client autostore)
+AoELoot.AutoStoreWindowSeconds = 5

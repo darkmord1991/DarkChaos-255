@@ -34,6 +34,7 @@ struct AoELootConfig
     float range = 30.0f;
     uint32 maxCorpses = 10;
     uint8 autoLoot = 0; // 0 = disabled, 1 = forced, 2 = player's setting
+    uint32 autoStoreWindowSeconds = 5; // window to consider a recent client autostore (seconds)
     bool allowInGroup = true;
     bool showMessage = true;
     bool playersOnly = true;
@@ -51,6 +52,7 @@ struct AoELootConfig
         playersOnly = sConfigMgr->GetOption<bool>("AoELoot.PlayersOnly", true);
         ignoreTapped = sConfigMgr->GetOption<bool>("AoELoot.IgnoreTapped", true);
         questItems = sConfigMgr->GetOption<bool>("AoELoot.QuestItems", true);
+    autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
 
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
@@ -74,7 +76,8 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 {
     if (!player || !creature) return false;
     if (!creature->IsCorpse()) return false;
-    if (!creature->HasLoot()) return false;
+    // Creature::HasLoot() does not exist in this repo; check the loot container instead
+    if (creature->loot.empty()) return false;
     if (sAoEConfig.playersOnly && player->GetTypeId() != TYPEID_PLAYER) return false;
     if (sAoEConfig.ignoreTapped)
     {
@@ -109,11 +112,12 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
 
     nearby.remove_if([&](Creature* c) -> bool
     {
-        if (!c) return true;
-        if (c->GetGUID() == mainCreature->GetGUID()) return true;
-        if (!c->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)) return true;
-        if (!c->HasLoot()) return true;
-        if (!player->isAllowedToLoot(c)) return true;
+    if (!c) return true;
+    if (c->GetGUID() == mainCreature->GetGUID()) return true;
+    if (!c->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)) return true;
+    // Creature::HasLoot() does not exist here; check loot container state
+    if (c->loot.empty()) return true;
+    if (!player->isAllowedToLoot(c)) return true;
         return false;
     });
 
@@ -209,7 +213,7 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
             auto it = sPlayerAutoStoreTimestamp.find(p->GetGUID());
             if (it == sPlayerAutoStoreTimestamp.end()) return false;
             uint64 now = GameTime::GetGameTime().count();
-            return (now - it->second) <= 10;
+            return (now - it->second) <= sAoEConfig.autoStoreWindowSeconds;
         }
         return false;
     };
