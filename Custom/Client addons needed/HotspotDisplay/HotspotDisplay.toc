@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Hotspot Display
+## Notes: Shows XP hotspot locations on map with XP+ text overlay
+## Author: DarkChaos Team
+## Version: 1.0
+## SavedVariables: HotspotDisplayDB
+
+Core.lua

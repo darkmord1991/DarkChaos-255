@@ -65,7 +65,7 @@ struct Hotspot
 
     bool IsActive() const
     {
-        return GameTime::GetGameTime() < expireTime;
+        return GameTime::GetGameTime().count() < expireTime;
     }
 
     bool IsPlayerInRange(Player* player) const
@@ -288,7 +288,7 @@ static void SpawnHotspot()
     hotspot.x = x;
     hotspot.y = y;
     hotspot.z = z;
-    hotspot.spawnTime = GameTime::GetGameTime();
+    hotspot.spawnTime = GameTime::GetGameTime().count();
     hotspot.expireTime = hotspot.spawnTime + (sHotspotsConfig.duration * MINUTE);
 
     // Spawn visual marker GameObject if enabled
