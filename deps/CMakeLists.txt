@@ -34,6 +34,8 @@ option(AC_BUILD_G3DLITE "Build g3dlite (optional, only needed for map extractor)
 
 if (BUILD_APPLICATION_WORLDSERVER OR BUILD_TOOLS_MAPS)
   add_subdirectory(zlib)
+  # g3dlite required for common collision and model code; include in-tree build
+  add_subdirectory(g3dlite)
   add_subdirectory(recastnavigation)
 endif()
   # g3dlite removed: map extractor is no longer built in-tree
