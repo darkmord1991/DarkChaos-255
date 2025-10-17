@@ -194,8 +194,8 @@ local function EnsurePvPTab()
         local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
         if type(sendDot) == 'function' then
             sendDot('.hlbg live players')
-            sendDot('.hlbg historyui 1 5 id DESC')
-            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 5, season, 'id', 'DESC'))
+            sendDot('.hlbg historyui 1 25 id DESC')
+            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 25, season, 'id', 'DESC'))
             sendDot('.hlbg statsui')
             sendDot(string.format('.hlbg statsui %d', season))
         end
@@ -214,8 +214,8 @@ local function EnsurePvPHeaderButton()
         if type(ShowTab) == 'function' then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
         if _G.AIO and _G.AIO.Handle then
             local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 25, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
+            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 25, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
             _G.AIO.Handle("HLBG", "Request", "STATS")
             _G.AIO.Handle("HLBG", "Request", "STATS", season)
         end
@@ -223,8 +223,8 @@ local function EnsurePvPHeaderButton()
         local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
         if type(sendDot) == 'function' then
             sendDot('.hlbg live players')
-            sendDot('.hlbg historyui 1 5 id DESC')
-            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 5, season, 'id', 'DESC'))
+            sendDot('.hlbg historyui 1 25 id DESC')
+            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 25, season, 'id', 'DESC'))
             sendDot('.hlbg statsui')
             sendDot(string.format('.hlbg statsui %d', season))
         end
@@ -581,7 +581,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
             end)
             
-            local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+            local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             if ok then
                 pcall(function()
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r HistoryStr call succeeded!')
@@ -604,7 +604,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 pcall(HLBG.History, rows, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or #rows, total, 'id', 'DESC')
             elseif type(HLBG.HistoryStr) == 'function' then
                 -- Fall back to whatever the UI parser can do
-                pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC')
+                pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             end
         end
         return

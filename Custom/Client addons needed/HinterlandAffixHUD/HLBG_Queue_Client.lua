@@ -77,11 +77,45 @@ end
 function HLBG.HandleQueueStatus(statusString)
     if type(statusString) ~= 'string' then return end
     
-    -- Parse status packet: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|TOTAL=12|STATE=WAITING"
-    local inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
-    local position = tonumber(statusString:match("POSITION=(%d+)")) or 0
-    local total = tonumber(statusString:match("TOTAL=(%d+)")) or 0
-    local state = statusString:match("STATE=(%w+)") or "UNKNOWN"
+    -- Debug: Show what we received
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
+    end
+    
+    -- Parse status packet - support multiple formats:
+    -- Format 1: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|TOTAL=12|STATE=WAITING"
+    -- Format 2: "IN_QUEUE=1 POSITION=5 TOTAL=12 STATE=WAITING"
+    -- Format 3: Simple text like "Not in queue" or "Position: 1/5"
+    
+    local inQueue = false
+    local position = 0
+    local total = 0
+    local state = "UNKNOWN"
+    
+    -- Try structured format first
+    if statusString:match("IN_QUEUE=") then
+        inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
+        position = tonumber(statusString:match("POSITION=(%d+)")) or 0
+        total = tonumber(statusString:match("TOTAL=(%d+)")) or 0
+        state = statusString:match("STATE=(%w+)") or "UNKNOWN"
+    -- Try simple text format
+    elseif statusString:lower():match("not in queue") or statusString:lower():match("not queued") then
+        inQueue = false
+        position = 0
+        total = 0
+        state = "NOT_QUEUED"
+    elseif statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)") then
+        inQueue = true
+        position = tonumber(statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)")) or 1
+        total = tonumber(statusString:match("/%s*(%d+)") or statusString:match("total[:%s]+(%d+)")) or position
+        state = "WAITING"
+    else
+        -- Unknown format - show as-is
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG Queue:|r %s", statusString))
+        end
+        return
+    end
     
     -- Update global state
     HLBG.IsInQueue = inQueue

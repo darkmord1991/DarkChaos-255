@@ -66,6 +66,14 @@ if not HLBG.UI.Frame then
     end)
     closeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     HLBG.UI.Frame.CloseBtn = closeBtn
+    
+    -- Hide the ? button if it exists (added by frame template)
+    if HLBG.UI.Frame.portraitFrame and HLBG.UI.Frame.portraitFrame.CloseButton then
+        HLBG.UI.Frame.portraitFrame.CloseButton:Hide()
+    end
+    -- Alternative location for ? button
+    local helpBtn = _G["HLBG_MainHelpButton"] or _G["HLBG_MainPortrait"]
+    if helpBtn then helpBtn:Hide() end
 
     -- Refresh button
     local refreshBtn = CreateFrame("Button", nil, HLBG.UI.Frame, "UIPanelButtonTemplate")
@@ -282,7 +290,7 @@ if not HLBG.UI.Stats.Content then
     
     -- Create scrollable stats frame
     local statsScroll = CreateFrame("ScrollFrame", "HLBG_StatsScrollFrame", HLBG.UI.Stats.Content, "UIPanelScrollFrameTemplate")
-    statsScroll:SetPoint("TOPLEFT", HLBG.UI.Stats.Content, "TOPLEFT", 16, -50)
+    statsScroll:SetPoint("TOPLEFT", HLBG.UI.Stats.Content, "TOPLEFT", 16, -80)
     statsScroll:SetPoint("BOTTOMRIGHT", HLBG.UI.Stats.Content, "BOTTOMRIGHT", -32, 20)
     
     local statsScrollChild = CreateFrame("Frame", nil, statsScroll)
@@ -618,8 +626,27 @@ if not HLBG.UI.Queue.Content then
     refreshBtn:SetPoint("TOP", queueBtn, "BOTTOM", 0, -15)
     refreshBtn:SetText("Refresh")
     refreshBtn:SetScript("OnClick", function()
+        -- Show "waiting" indicator
+        if HLBG.UI.Queue.StatusText then
+            HLBG.UI.Queue.StatusText:SetText("|cFFFFAA00Requesting queue status...|r\n\nWaiting for server response...")
+        end
         HLBG.RequestQueueStatus()
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Refreshing queue status...")
+        
+        -- Set timeout: if no response after 3 seconds, show error
+        if C_Timer and C_Timer.After then
+            C_Timer.After(3, function()
+                -- Only show timeout if status text still shows "Requesting..."
+                if HLBG.UI.Queue.StatusText and HLBG.UI.Queue.StatusText:GetText():match("Requesting") then
+                    HLBG.UI.Queue.StatusText:SetText(
+                        "|cFFFF5555No response from server|r\n\n" ..
+                        "Queue system may not be implemented yet.\n" ..
+                        "Try talking to the Battlemaster NPC instead.\n\n" ..
+                        "|cFFAAAA00Note:|r Queue commands (.hlbgq) are in development.")
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF5555HLBG Queue:|r No response received. Queue system may not be active on this server.")
+                end
+            end)
+        end
     end)
     
     -- Info text about queue system
@@ -705,7 +732,7 @@ function ShowTab(i)
                             HLBG._showTabRetryScheduled = false
                             -- Re-request via AIO and fallback chat commands
                             local page = HLBG.UI.History.page or 1
-                            local per = HLBG.UI.History.per or 5
+                            local per = HLBG.UI.History.per or 25
                             local sk = HLBG.UI.History.sortKey or 'id'
                             local sd = HLBG.UI.History.sortDir or 'DESC'
                             if _G.AIO and _G.AIO.Handle then
@@ -725,8 +752,8 @@ function ShowTab(i)
                     else
                         -- Fallback without C_Timer: do a simple request and log
                         HLBG._showTabRetryScheduled = false
-                        if _G.AIO and _G.AIO.Handle then pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC') end
-                        if type(HLBG.safeExecSlash) == 'function' then pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', HLBG.UI.History.page or 1, HLBG.UI.History.per or 5, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')) end
+                        if _G.AIO and _G.AIO.Handle then pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', HLBG.UI.History.page or 1, HLBG.UI.History.per or 25, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC') end
+                        if type(HLBG.safeExecSlash) == 'function' then pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', HLBG.UI.History.page or 1, HLBG.UI.History.per or 25, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')) end
                     end
                 end)
             end
