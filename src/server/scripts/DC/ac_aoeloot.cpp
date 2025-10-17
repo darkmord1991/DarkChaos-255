@@ -17,6 +17,15 @@
 // GameTime provides GetGameTime()/GetGameTimeMS()
 #include "GameTime.h"
 
+#include "Creature.h"
+#include "LootMgr.h"
+#include "Group.h"
+#include "CellImpl.h"
+#include "Log.h"
+#include "Mail.h"
+#include "DatabaseEnv.h"
+#include "Item.h"
+
 #include <vector>
 #include <unordered_map>
 
@@ -110,7 +119,7 @@ class AoELootCommand : public CommandScript
 public:
     AoELootCommand() : CommandScript("AoELootCommand") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static std::vector<ChatCommand> aoeTable =
         {
@@ -129,7 +138,6 @@ public:
             #include "Creature.h"
             #include "ObjectAccessor.h"
             #include "LootMgr.h"
-            #include "Loot.h"
             #include "Chat.h"
             #include "Config.h"
             #include "WorldPacket.h"
@@ -564,7 +572,7 @@ public:
             public:
                 AoELootCommandScript() : CommandScript("AoELootCommandScript") { }
 
-                std::vector<ChatCommand> GetCommands() const override
+                ChatCommandTable GetCommands() const override
                 {
                     static std::vector<ChatCommand> aoeTable =
                     {
