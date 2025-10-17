@@ -31,6 +31,8 @@
 #include <unordered_map>
 #include <vector>
 #include <random>
+#include <filesystem>
+#include <fstream>
 
 using namespace Acore::ChatCommands;
 
@@ -58,6 +60,283 @@ struct HotspotsConfig
 };
 
 static HotspotsConfig sHotspotsConfig;
+
+// Minimal server-side map bounds used to normalize world coordinates into 0..1 for client helpers.
+// These are approximate and can be improved later with DBC-driven values.
+static std::unordered_map<uint32, std::array<float,4>> sMapBounds;
+
+// Build map bounds from DBC WorldMapArea entries. This attempts to compute accurate
+// map extents by aggregating all WorldMapArea entries for a given map_id.
+static void BuildMapBoundsFromDBC()
+{
+    sMapBounds.clear();
+
+    // Iterate all WorldMapArea entries and aggregate extents per map_id
+    for (WorldMapAreaEntry const* entry : sWorldMapAreaStore)
+    {
+        if (!entry)
+            continue;
+
+        uint32 mapId = entry->map_id;
+        float x1 = entry->x1;
+        float x2 = entry->x2;
+        float y1 = entry->y1;
+        float y2 = entry->y2;
+
+        // Some entries may be invalid; skip them
+        if (!(x2 > x1 && y2 > y1))
+            continue;
+
+        auto it = sMapBounds.find(mapId);
+        if (it == sMapBounds.end())
+        {
+            sMapBounds.emplace(mapId, std::array<float,4>{x1, x2, y1, y2});
+        }
+        else
+        {
+            auto &b = it->second;
+            b[0] = std::min(b[0], x1);
+            b[1] = std::max(b[1], x2);
+            b[2] = std::min(b[2], y1);
+            b[3] = std::max(b[3], y2);
+        }
+    }
+
+    LOG_INFO("scripts", "Built map bounds from WorldMapArea.dbc for {} maps", sMapBounds.size());
+    // Log top maps for quick inspection
+    int printed = 0;
+    for (auto const& kv : sMapBounds)
+    {
+        if (printed >= 12) break;
+        uint32 mapId = kv.first;
+        auto const& b = kv.second;
+        LOG_INFO("scripts", "MapBounds mapId={} minX={} maxX={} minY={} maxY={}", mapId, b[0], b[1], b[2], b[3]);
+        ++printed;
+    }
+
+    // Dump full map bounds to file for offline inspection
+    std::string dumpPath = "var/log/hotspot_map_bounds.log";
+    std::ofstream ofs(dumpPath, std::ios::out | std::ios::trunc);
+    if (ofs)
+    {
+        ofs << "mapId,minX,maxX,minY,maxY\n";
+        for (auto const& kv : sMapBounds)
+        {
+            auto const& b = kv.second;
+            ofs << kv.first << "," << b[0] << "," << b[1] << "," << b[2] << "," << b[3] << "\n";
+        }
+        ofs.close();
+        LOG_INFO("scripts", "Wrote full map bounds dump to {}", dumpPath);
+    }
+}
+
+// Load additional map bounds from an optional CSV file: var/map_bounds.csv
+// CSV format: mapId,minX,maxX,minY,maxY,source
+static void LoadMapBoundsFromCSV()
+{
+    std::string csvPath = "var/map_bounds.csv";
+    if (!std::filesystem::exists(csvPath))
+        return;
+
+    std::ifstream ifs(csvPath);
+    if (!ifs)
+    {
+        LOG_WARN("scripts", "Could not open map bounds CSV {}", csvPath);
+        return;
+    }
+
+    std::string line;
+    // skip header if present
+    if (std::getline(ifs, line))
+    {
+        if (line.rfind("mapId", 0) != 0)
+            ; // first line is data
+    }
+
+    while (std::getline(ifs, line))
+    {
+        if (line.empty()) continue;
+        std::istringstream ss(line);
+        std::string tok;
+        uint32 mapId = 0;
+        float minX=0, maxX=0, minY=0, maxY=0;
+
+        // simple CSV split by comma
+        std::vector<std::string> cols;
+        while (std::getline(ss, tok, ',')) cols.push_back(tok);
+        if (cols.size() < 5) continue;
+        if (Optional<uint32> mv = Acore::StringTo<uint32>(cols[0]))
+            mapId = *mv;
+        try { minX = std::stof(cols[1]); maxX = std::stof(cols[2]); minY = std::stof(cols[3]); maxY = std::stof(cols[4]); }
+        catch (...) { continue; }
+
+        // Do not overwrite existing DBC-derived bounds unless CSV explicitly intended to override
+        if (sMapBounds.find(mapId) == sMapBounds.end())
+        {
+            sMapBounds.emplace(mapId, std::array<float,4>{minX, maxX, minY, maxY});
+            LOG_INFO("scripts", "Loaded map bounds from CSV for map {} -> [{},{},{},{}]", mapId, minX, maxX, minY, maxY);
+        }
+    }
+
+    ifs.close();
+}
+
+// Try runtime WDT/ADT parsing using included extractor headers to discover which ADT tiles exist
+// and compute tile-based bounds for maps missing DBC rows.
+// This is a conservative tile-based approach using ADT presence. It requires client data available
+// under the configured data path (default: "Data/" or "data/World/Maps/").
+static void TryLoadBoundsFromClientData(const std::string& clientDataPath)
+{
+    // Look for World/Maps folder inside clientDataPath
+    std::string mapsRoot = clientDataPath;
+    if (mapsRoot.back() != '/' && mapsRoot.back() != '\\')
+        mapsRoot += '/';
+    mapsRoot += "World/Maps/";
+
+    if (!std::filesystem::exists(mapsRoot))
+    {
+        // Try lowercase 'data' layout
+        mapsRoot = clientDataPath;
+        if (mapsRoot.back() != '/' && mapsRoot.back() != '\\')
+            mapsRoot += '/';
+        mapsRoot += "data/World/Maps/";
+        if (!std::filesystem::exists(mapsRoot))
+        {
+            LOG_INFO("scripts", "Client map data path not found for ADT/WDT parsing: {}", clientDataPath);
+            return;
+        }
+    }
+
+    // For each map directory present, try to open WDT and scan tiles
+    for (auto const& mapDirEntry : std::filesystem::directory_iterator(mapsRoot))
+    {
+        if (!mapDirEntry.is_directory()) continue;
+        std::string mapName = mapDirEntry.path().filename().string();
+
+        // attempt to find map id from name via DBC (map name -> map id) by scanning sMapStore
+        // We will scan sMapStore for an entry whose internal_name matches mapName
+        uint32 mapId = 0;
+        for (MapEntry const* me : sMapStore)
+        {
+            if (!me) continue;
+            if (me->name && me->name[0] && mapName == me->name)
+            {
+                mapId = me->ID;
+                break;
+            }
+        }
+
+        if (mapId == 0)
+            continue;
+
+        // If we already have bounds (from DBC or CSV) skip
+        if (sMapBounds.find(mapId) != sMapBounds.end())
+            continue;
+
+        // Compose WDT path
+        std::string wdtPath = mapsRoot + mapName + "/" + mapName + ".wdt";
+        if (!std::filesystem::exists(wdtPath))
+            continue;
+
+        // Use WDTFile to detect existing tiles if extractor headers are available.
+#if defined(__has_include)
+#if __has_include(<wdtfile.h>) && __has_include(<adtfile.h>)
+#include <wdtfile.h>
+#include <adtfile.h>
+        char wdtCStr[1024]; strcpy(wdtCStr, wdtPath.c_str());
+        char mapNameCStr[256]; strcpy(mapNameCStr, mapName.c_str());
+        WDTFile WDT(wdtCStr, mapNameCStr);
+        if (!WDT.init(mapId))
+        {
+            continue;
+        }
+
+        int minTileX = INT_MAX, maxTileX = INT_MIN, minTileY = INT_MAX, maxTileY = INT_MIN;
+        for (int tx = 0; tx < 64; ++tx)
+        {
+            for (int ty = 0; ty < 64; ++ty)
+            {
+                if (ADTFile* ADT = WDT.GetMap(tx, ty))
+                {
+                    // Tile exists
+                    minTileX = std::min(minTileX, tx);
+                    maxTileX = std::max(maxTileX, tx);
+                    minTileY = std::min(minTileY, ty);
+                    maxTileY = std::max(maxTileY, ty);
+                    delete ADT;
+                }
+            }
+        }
+
+        if (minTileX <= maxTileX && minTileY <= maxTileY)
+        {
+            // World tile size in WoW units (approx). ADT tile is 533.3333333 units.
+            const float TILE_SIZE = 533.3333333f;
+            float minX = minTileX * TILE_SIZE;
+            float maxX = (maxTileX + 1) * TILE_SIZE;
+            float minY = minTileY * TILE_SIZE;
+            float maxY = (maxTileY + 1) * TILE_SIZE;
+
+            sMapBounds.emplace(mapId, std::array<float,4>{minX, maxX, minY, maxY});
+            LOG_INFO("scripts", "Computed map bounds from WDT/ADT for map {} ({}): tiles x={}..{} y={}..{} -> bounds [{}, {}, {}, {}]",
+                     mapId, mapName, minTileX, maxTileX, minTileY, maxTileY, minX, maxX, minY, maxY);
+        }
+#else
+        LOG_WARN("scripts", "WDT/ADT parser headers not available at compile time; skipping ADT/WDT parse for {}", mapName);
+#endif
+#else
+        LOG_WARN("scripts", "Compiler does not support __has_include; skipping ADT/WDT runtime parsing for {}", mapName);
+#endif
+    }
+}
+
+// Compute normalized 0..1 coordinates for a world position using DBC WorldMapArea entries when possible.
+// Returns true if normalized coords were computed, false if caller should fallback.
+static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float y, float& outNx, float& outNy)
+{
+    // Try DBC WorldMapArea for the zone
+    if (WorldMapAreaEntry const* maEntry = sWorldMapAreaStore.LookupEntry(zoneId))
+    {
+        // Use maEntry bounds: x1..x2 and y1..y2
+        float x1 = maEntry->x1;
+        float x2 = maEntry->x2;
+        float y1 = maEntry->y1;
+        float y2 = maEntry->y2;
+
+        if (x2 > x1 && y2 > y1)
+        {
+            float nx = (x - x1) / (x2 - x1);
+            float ny = (y - y1) / (y2 - y1);
+            // clamp
+            nx = std::max(0.0f, std::min(1.0f, nx));
+            ny = std::max(0.0f, std::min(1.0f, ny));
+            outNx = nx;
+            outNy = ny;
+            return true;
+        }
+    }
+
+    // Fallback: check sMapBounds for approximate map extents
+    auto it = sMapBounds.find(mapId);
+    if (it != sMapBounds.end())
+    {
+        auto b = it->second;
+        float minX = b[0]; float maxX = b[1];
+        float minY = b[2]; float maxY = b[3];
+        if (maxX > minX && maxY > minY)
+        {
+            float nx = (x - minX) / (maxX - minX);
+            float ny = (y - minY) / (maxY - minY);
+            nx = std::max(0.0f, std::min(1.0f, nx));
+            ny = std::max(0.0f, std::min(1.0f, ny));
+            outNx = nx;
+            outNy = ny;
+            return true;
+        }
+    }
+
+    return false;
+}
 
 // Hotspot data structure
 struct Hotspot
@@ -447,7 +726,66 @@ static bool SpawnHotspot()
            << hotspot.x << ", " << hotspot.y << ", " << hotspot.z << ")"
            << "! (+" << sHotspotsConfig.experienceBonus << "% XP)";
 
-        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
+      sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
+
+      // Send a structured message for addons to parse reliably
+      // Format: HOTSPOT_ADDON|map:<mapId>|zone:<zoneId>|x:<x>|y:<y>|z:<z>|id:<id>|dur:<seconds>|icon:<spellId>
+      std::ostringstream addon;
+      addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
+          << "|zone:" << hotspot.zoneId
+          << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
+          << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
+          << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
+          << "|id:" << hotspot.id
+          << "|dur:" << (sHotspotsConfig.duration * MINUTE)
+          << "|icon:" << sHotspotsConfig.buffSpell;
+
+    // Compute normalized coordinates (nx, ny) using DBC when possible, fallback to map bounds
+    float nx = 0.0f, ny = 0.0f;
+    if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
+    {
+        addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+            << "|ny:" << std::fixed << std::setprecision(4) << ny;
+    }
+
+      // Send structured addon packet to relevant sessions so addons receive CHAT_MSG_ADDON-style events
+      // Compose message with short prefix and tab separator (clients expect prefix\tpayload)
+      std::string addonMsg = std::string("HOTSPOT\t") + addon.str();
+      WorldPacket data;
+      ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, nullptr, nullptr, addonMsg);
+
+      // Broadcast only to players on the same map and (optionally) within announce radius
+      WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+      const float announceRadius = sHotspotsConfig.announceRadius;
+      const float announceRadius2 = announceRadius * announceRadius;
+      for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+      {
+          WorldSession* sess = itr->second;
+          if (!sess)
+              continue;
+          Player* plr = sess->GetPlayer();
+          if (!plr)
+              continue;
+
+          // Only notify players on the same map
+          if (plr->GetMapId() != hotspot.mapId)
+              continue;
+
+          // If announceRadius <= 0, notify all players on the same map
+          if (announceRadius <= 0.0f)
+          {
+              sess->SendPacket(&data);
+              continue;
+          }
+
+          // Distance squared check (3D)
+          float dx = plr->GetPositionX() - hotspot.x;
+          float dy = plr->GetPositionY() - hotspot.y;
+          float dz = plr->GetPositionZ() - hotspot.z;
+          float dist2 = dx*dx + dy*dy + dz*dz;
+          if (dist2 <= announceRadius2)
+              sess->SendPacket(&data);
+      }
     }
 
     return true;
@@ -529,6 +867,17 @@ public:
             LOG_INFO("server.loading", ">> - Enabled Maps: {}", sHotspotsConfig.enabledMaps.size());
             // Initialize spawn timer origin so respawnDelay is measured from server start
             sLastSpawnCheck = GameTime::GetGameTime().count();
+
+            // Build DBC-derived map bounds used for normalized coordinates
+            BuildMapBoundsFromDBC();
+
+            // Load optional CSV-provided bounds (var/map_bounds.csv) which can override or provide missing maps
+            LoadMapBoundsFromCSV();
+
+            // Try runtime ADT/WDT parsing of client data path to fill missing maps
+            // Config option: Hotspots.ClientDataPath (default: "Data" or server's data dir)
+            std::string clientDataPath = sConfigMgr->GetOption<std::string>("Hotspots.ClientDataPath", "Data");
+            TryLoadBoundsFromClientData(clientDataPath);
 
             // If initialPopulateCount is 0, populate up to maxActive
             uint32 toSpawn = sHotspotsConfig.initialPopulateCount == 0 ? sHotspotsConfig.maxActive : sHotspotsConfig.initialPopulateCount;
