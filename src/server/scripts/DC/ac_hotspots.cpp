@@ -133,6 +133,24 @@ static std::vector<uint32> ParseUInt32List(std::string const& str)
     return result;
 }
 
+    // Helper: escape braces for fmt-style logging when message may contain '{' or '}'
+    static std::string EscapeBraces(std::string const& s)
+    {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s)
+        {
+            if (c == '{' || c == '}')
+            {
+                out.push_back(c);
+                out.push_back(c);
+            }
+            else
+                out.push_back(c);
+        }
+        return out;
+    }
+
 // Load configuration
 static void LoadHotspotsConfig()
 {
@@ -202,13 +220,9 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    // Pick random enabled map
-    std::uniform_int_distribution<size_t> mapDist(0, sHotspotsConfig.enabledMaps.size() - 1);
-    outMapId = sHotspotsConfig.enabledMaps[mapDist(gen)];
-
-    // TODO: In a production system, you'd query valid zones/coordinates from world data
-    // For now, use hardcoded safe coordinates per map (placeholder)
-    // Replace this with actual zone coordinate lookups from your DB or terrain data
+    // Copy and shuffle enabled maps so we try maps in random order and can fall back
+    std::vector<uint32> maps = sHotspotsConfig.enabledMaps;
+    std::shuffle(maps.begin(), maps.end(), gen);
 
     struct MapCoords
     {
@@ -216,75 +230,118 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
         uint32 zoneId;
     };
 
-    std::vector<MapCoords> coords;
+    const int attemptsPerRect = 12; // higher attempts per rectangle
+    const int rectsPerMap = 6; // not used directly but indicative
 
-    switch (outMapId)
+    for (uint32 candidateMapId : maps)
     {
-        case 0: // Eastern Kingdoms - sample zones
-            coords = {
-                {-9000.0f, -8000.0f, -1000.0f, 0.0f, 50.0f, 1},      // Dun Morogh
-                {-5000.0f, -4000.0f, -3000.0f, -2000.0f, 50.0f, 10}, // Duskwood
-                {-11000.0f, -10000.0f, 1000.0f, 2000.0f, 50.0f, 85}, // Tirisfal Glades
-            };
-            break;
-        case 1: // Kalimdor - sample zones
-            coords = {
-                {9000.0f, 10000.0f, 1000.0f, 2000.0f, 50.0f, 141},   // Teldrassil
-                {-3000.0f, -2000.0f, -5000.0f, -4000.0f, 50.0f, 331}, // Ashenvale
-                {-7000.0f, -6000.0f, -4000.0f, -3000.0f, 50.0f, 17},  // Barrens
-            };
-            break;
-        case 530: // Outland - sample zones
-            coords = {
-                {-2000.0f, -1000.0f, 5000.0f, 6000.0f, 100.0f, 3524}, // Hellfire Peninsula
-                {2000.0f, 3000.0f, 5000.0f, 6000.0f, 100.0f, 3520},   // Shadowmoon Valley
-            };
-            break;
-        case 571: // Northrend - sample zones
-            coords = {
-                {2000.0f, 3000.0f, 5000.0f, 6000.0f, 100.0f, 3537},  // Borean Tundra
-                {4000.0f, 5000.0f, 1000.0f, 2000.0f, 100.0f, 495},   // Howling Fjord
-            };
-            break;
-        default:
-            LOG_WARN("scripts", "GetRandomHotspotPosition: unsupported map id {}", outMapId);
-            return false;
+        std::vector<MapCoords> coords;
+
+        switch (candidateMapId)
+        {
+            case 0: // Eastern Kingdoms - sample zones
+                coords = {
+                    {-9000.0f, -8000.0f, -1000.0f, 0.0f, 50.0f, 1},      // Dun Morogh
+                    {-5000.0f, -4000.0f, -3000.0f, -2000.0f, 50.0f, 10}, // Duskwood
+                    {-11000.0f, -10000.0f, 1000.0f, 2000.0f, 50.0f, 85}, // Tirisfal Glades
+                };
+                break;
+            case 1: // Kalimdor - sample zones
+                coords = {
+                    {9000.0f, 10000.0f, 1000.0f, 2000.0f, 50.0f, 141},   // Teldrassil
+                    {-3000.0f, -2000.0f, -5000.0f, -4000.0f, 50.0f, 331}, // Ashenvale
+                    {-7000.0f, -6000.0f, -4000.0f, -3000.0f, 50.0f, 17},  // Barrens
+                };
+                break;
+            case 530: // Outland - sample zones
+                coords = {
+                    {-2000.0f, -1000.0f, 5000.0f, 6000.0f, 100.0f, 3524}, // Hellfire Peninsula
+                    {2000.0f, 3000.0f, 5000.0f, 6000.0f, 100.0f, 3520},   // Shadowmoon Valley
+                };
+                break;
+            case 571: // Northrend - sample zones
+                coords = {
+                    {2000.0f, 3000.0f, 5000.0f, 6000.0f, 100.0f, 3537},  // Borean Tundra
+                    {4000.0f, 5000.0f, 1000.0f, 2000.0f, 100.0f, 495},   // Howling Fjord
+                };
+                break;
+            case 37: // Azshara Crater - sample sub-areas based on reported coordinates (zone 268)
+                coords = {
+                    // northern rim area
+                    {0.0f, 300.0f, 900.0f, 1200.0f, 295.0f, 268},
+                    // central crater near reported point
+                    {50.0f, 200.0f, 980.0f, 1060.0f, 295.0f, 268},
+                    // western approach
+                    {-100.0f, 100.0f, 850.0f, 1050.0f, 295.0f, 268},
+                    // eastern slope
+                    {100.0f, 400.0f, 1000.0f, 1300.0f, 295.0f, 268},
+                };
+                break;
+            default:
+                LOG_WARN("scripts", "GetRandomHotspotPosition: unsupported map id {} (skipping)", candidateMapId);
+                continue;
+        }
+
+        if (coords.empty())
+        {
+            LOG_WARN("scripts", "GetRandomHotspotPosition: no coordinate presets defined for map {} (skipping)", candidateMapId);
+            continue;
+        }
+
+        // Filter by allowed zones
+        std::vector<MapCoords> allowedCoords;
+        for (auto const& coord : coords)
+        {
+            if (IsZoneAllowed(coord.zoneId))
+                allowedCoords.push_back(coord);
+        }
+
+        if (allowedCoords.empty())
+        {
+            LOG_WARN("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones for map {}. enabledZones={} excludedZones={}",
+                     candidateMapId, sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
+            continue;
+        }
+
+        // Shuffle rectangles to try them in random order
+        std::shuffle(allowedCoords.begin(), allowedCoords.end(), gen);
+
+        Map* map = sMapMgr->FindMap(candidateMapId, 0);
+        if (!map)
+        {
+            LOG_WARN("scripts", "GetRandomHotspotPosition: could not find Map object for map id {} (skipping)", candidateMapId);
+            continue;
+        }
+
+        // For each rect try several random points and validate ground
+        for (auto const& rect : allowedCoords)
+        {
+            std::uniform_real_distribution<float> xDist(rect.minX, rect.maxX);
+            std::uniform_real_distribution<float> yDist(rect.minY, rect.maxY);
+
+            for (int a = 0; a < attemptsPerRect; ++a)
+            {
+                float candX = xDist(gen);
+                float candY = yDist(gen);
+
+                float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
+
+                if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
+                {
+                    outMapId = candidateMapId;
+                    outX = candX;
+                    outY = candY;
+                    outZ = groundZ;
+                    outZoneId = rect.zoneId;
+                    return true;
+                }
+            }
+        }
+        // Try next map if this one failed
     }
 
-    if (coords.empty())
-    {
-    LOG_WARN("scripts", "GetRandomHotspotPosition: no coordinate presets defined for map {}", outMapId);
-        return false;
-    }
-
-    // Filter by allowed zones
-    std::vector<MapCoords> allowedCoords;
-    for (auto const& coord : coords)
-    {
-        if (IsZoneAllowed(coord.zoneId))
-            allowedCoords.push_back(coord);
-    }
-
-    if (allowedCoords.empty())
-    {
-    LOG_WARN("scripts", "GetRandomHotspotPosition: no allowed coordinates after filtering zones. enabledZones={} excludedZones={}", sHotspotsConfig.enabledZones.size(), sHotspotsConfig.excludedZones.size());
-        return false;
-    }
-
-    // Pick random allowed zone
-    std::uniform_int_distribution<size_t> zoneDist(0, allowedCoords.size() - 1);
-    MapCoords const& chosen = allowedCoords[zoneDist(gen)];
-
-    // Generate random position within zone bounds
-    std::uniform_real_distribution<float> xDist(chosen.minX, chosen.maxX);
-    std::uniform_real_distribution<float> yDist(chosen.minY, chosen.maxY);
-
-    outX = xDist(gen);
-    outY = yDist(gen);
-    outZ = chosen.z;
-    outZoneId = chosen.zoneId;
-
-    return true;
+    LOG_WARN("scripts", "GetRandomHotspotPosition: no valid ground found across enabled maps");
+    return false;
 }
 
 // Spawn a new hotspot
@@ -315,7 +372,7 @@ static bool SpawnHotspot()
             }
             ss << "}";
         }
-    LOG_ERROR("scripts", "{}", ss.str());
+    LOG_ERROR("scripts", "{}", EscapeBraces(ss.str()));
         return false;
     }
 
@@ -631,12 +688,12 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
+    handler->PSendSysMessage("Active Hotspots: %u", sActiveHotspots.size());
         for (auto const& hotspot : sActiveHotspots)
         {
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
             handler->PSendSysMessage(
-                "  ID: {} | Map: {} | Zone: {} | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
+                "  ID: %u | Map: %u | Zone: %u | Pos: (%.1f, %.1f, %.1f) | Time Left: %um",
                 hotspot.id, hotspot.mapId, hotspot.zoneId,
                 hotspot.x, hotspot.y, hotspot.z,
                 remaining / 60
@@ -659,7 +716,7 @@ public:
     {
         size_t count = sActiveHotspots.size();
         sActiveHotspots.clear();
-        handler->PSendSysMessage("Cleared {} hotspot(s).", count);
+    handler->PSendSysMessage("Cleared %u hotspot(s).", count);
         return true;
     }
 
@@ -707,7 +764,7 @@ public:
 
             if (!targetHotspot)
             {
-                handler->PSendSysMessage("Hotspot ID {} not found.", hotspotId);
+                handler->PSendSysMessage("Hotspot ID %u not found.", hotspotId);
                 return true;
             }
         }
@@ -721,7 +778,7 @@ public:
         if (player->TeleportTo(targetHotspot->mapId, targetHotspot->x, targetHotspot->y, 
                                targetHotspot->z, player->GetOrientation()))
         {
-            handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} at ({:.1f}, {:.1f}, {:.1f})",
+            handler->PSendSysMessage("Teleported to Hotspot ID %u on map %u at (%.1f, %.1f, %.1f)",
                                     targetHotspot->id, targetHotspot->mapId,
                                     targetHotspot->x, targetHotspot->y, targetHotspot->z);
         }
