@@ -1,0 +1,3 @@
+// map_bounds_extractor.cpp.disabled
+// Disabled in-tree: use tools/README-map-bounds.md for instructions to build externally.
+// Original file renamed to avoid building g3dlite during core compile.

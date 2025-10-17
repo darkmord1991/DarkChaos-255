@@ -30,9 +30,15 @@ if ((APPS_BUILD AND (NOT APPS_BUILD STREQUAL "none")) OR BUILD_TOOLS_DB_IMPORT)
   add_subdirectory(mysql)
 endif()
 
+option(AC_BUILD_G3DLITE "Build g3dlite (optional, only needed for map extractor)" OFF)
+
 if (BUILD_APPLICATION_WORLDSERVER OR BUILD_TOOLS_MAPS)
   add_subdirectory(zlib)
-  add_subdirectory(g3dlite)
+  if (AC_BUILD_G3DLITE)
+    add_subdirectory(g3dlite)
+  else()
+    message(STATUS "AC_BUILD_G3DLITE=OFF: skipping g3dlite (map extractor disabled)")
+  endif()
   add_subdirectory(recastnavigation)
 endif()
 
