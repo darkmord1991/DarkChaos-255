@@ -1,0 +1,153 @@
+##
+
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
+
+##
+
+# DarkChaos AOE Loot System Configuration# DarkChaos AOE Loot System Configuration
+
+##
+
+
+
+######################################################################################################################################################################################################
+
+# AOE LOOT SYSTEM SETTINGS# AOE LOOT SYSTEM SETTINGS
+
+######################################################################################################################################################################################################
+
+
+
+##
+
+#    AoELoot.Enable#    AoELoot.Enable
+
+#        Description: Enable the AOE Loot system (multi-loot from nearby corpses)#        Description: Enable the AOE Loot system (multi-loot from nearby corpses)
+
+#        Default:     1 (Enabled)#        Default:     1 (Enabled)
+
+#                     0 (Disabled)#                     0 (Disabled)
+
+
+
+AoELoot.Enable = 1AoELoot.Enable = 1
+
+
+
+##
+
+#    AoELoot.Range#    AoELoot.Range
+
+#        Description: Maximum range to collect loot from corpses (in yards)#        Description: Maximum range to loot corpses from (in yards)
+
+#        Default:     30.0#        Default:     30.0
+
+
+
+AoELoot.Range = 30.0AoELoot.Range = 30.0
+
+
+
+##
+
+#    AoELoot.MaxCorpses#    AoELoot.MaxCorpses
+
+#        Description: Maximum number of corpses to loot at once#        Description: Maximum number of corpses to loot at once
+
+#        Default:     10#        Default:     10
+
+
+
+AoELoot.MaxCorpses = 10AoELoot.MaxCorpses = 10
+
+
+
+##
+
+#    AoELoot.ShowMessage#    AoELoot.AutoLoot
+
+#        Description: Show message to players on login about AOE loot#        Description: Automatically loot all items (respects player's AutoLoot setting if 2)
+
+#        Default:     1 (Enabled)#                     0 = Disabled (open loot windows normally)
+
+#                     0 (Disabled)#                     1 = Force auto-loot all corpses
+
+#                     2 = Use player's AutoLoot setting
+
+AoELoot.ShowMessage = 1#        Default:     2
+
+
+
+#AoELoot.AutoLoot = 2
+
+#    AoELoot.AllowInGroup
+
+#        Description: Allow AOE looting when in a group/raid#
+
+#        Default:     1 (Enabled)#    AoELoot.LootDelay
+
+#                     0 (Disabled)#        Description: Delay between looting each corpse (in milliseconds)
+
+#                     Prevents server lag from mass looting
+
+AoELoot.AllowInGroup = 1#        Default:     50
+
+
+
+#AoELoot.LootDelay = 50
+
+# IMPORTANT NOTE:
+
+#   Consider changing corpse decay rate in worldserver.conf to allow time for looting:#
+
+#   #    AoELoot.ShowCount
+
+#   Rate.Corpse.Decay.Looted = 0.1  (or lower)#        Description: Show how many corpses were looted
+
+#   #        Default:     1 (Enabled)
+
+#   This prevents corpses from disappearing too quickly after being looted.#                     0 (Disabled)
+
+#
+
+AoELoot.ShowCount = 1
+
+#
+#    AoELoot.QuestItems
+#        Description: Include quest items in AOE loot
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+
+AoELoot.QuestItems = 1
+
+#
+#    AoELoot.Money
+#        Description: Include money in AOE loot
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+
+AoELoot.Money = 1
+
+#
+#    AoELoot.RequireLineOfSight
+#        Description: Require line of sight to corpses for AOE looting
+#        Default:     0 (Disabled)
+#                     1 (Enabled)
+
+AoELoot.RequireLineOfSight = 0
+
+#
+#    AoELoot.IgnoreTapped
+#        Description: Skip corpses that are tapped by other players/groups
+#        Default:     1 (Enabled - only loot your own kills)
+#                     0 (Disabled - can loot any lootable corpse)
+
+AoELoot.IgnoreTapped = 1
+
+#
+#    AoELoot.PlayersOnly
+#        Description: Only allow players to use AOE loot (not NPCs/pets)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+
+AoELoot.PlayersOnly = 1
