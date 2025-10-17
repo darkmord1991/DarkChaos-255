@@ -305,7 +305,7 @@ static bool SpawnHotspot()
             }
             ss << "}";
         }
-        LOG_WARNING("scripts", "%s", ss.str().c_str());
+    LOG_ERROR("scripts", "%s", ss.str().c_str());
         return false;
     }
 
