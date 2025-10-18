@@ -401,4 +401,3 @@ void AddSC_ac_aoeloot()
     new AoELootCommandScript();
 }
 
-}
