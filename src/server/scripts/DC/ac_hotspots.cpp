@@ -1110,7 +1110,7 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     if (hotspot && !hasBuffAura)
     {
         LOG_INFO("scripts", "APPLYING BUFF: Player in hotspot but no aura yet");
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID %u nearby (zone %u)", hotspot->id, hotspot->zoneId);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
         if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
         {
             LOG_INFO("scripts", "Casting aura spell {}", sHotspotsConfig.auraSpell);
@@ -1127,13 +1127,13 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
         else
             LOG_WARN("scripts", "Buff spell {} not found", sHotspotsConfig.buffSpell);
             
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id %u", sHotspotsConfig.buffSpell);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id {}", sHotspotsConfig.buffSpell);
     }
     else if (!hotspot && hasBuffAura)
     {
         LOG_INFO("scripts", "REMOVING BUFF: Player not in hotspot but has aura");
         player->RemoveAura(sHotspotsConfig.buffSpell);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id %u", sHotspotsConfig.buffSpell);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id {}", sHotspotsConfig.buffSpell);
     }
     else if (hotspot && hasBuffAura)
     {
@@ -1403,7 +1403,7 @@ private:
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFD700[Hotspot]|r You have left the XP Hotspot."
                 );
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r removed buff spell id %u", sHotspotsConfig.buffSpell);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r removed buff spell id {}", sHotspotsConfig.buffSpell);
         }
     }
 };
