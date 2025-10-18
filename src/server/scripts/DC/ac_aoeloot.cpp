@@ -77,7 +77,6 @@ static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
 static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 {
     if (!player || !creature) return false;
-    if (!creature->IsCorpse()) return false;
     // Creature::HasLoot() does not exist in this repo; check the loot container instead
     if (creature->loot.empty()) return false;
     if (sAoEConfig.playersOnly && player->GetTypeId() != TYPEID_PLAYER) return false;
@@ -126,6 +125,14 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     if (!player->isAllowedToLoot(c)) return true;
         return false;
     });
+
+    // Debug: list remaining nearby corpses after filtering
+    LOG_DEBUG("scripts", "AoELoot: after filter nearby corpses count = {}", nearby.size());
+    for (Creature* c : nearby)
+    {
+        if (!c) continue;
+        LOG_DEBUG("scripts", "AoELoot: nearby corpse GUID={} entry={} loot_items={} quest_items={} gold={}", c->GetGUID().ToString(), c->GetEntry(), c->loot.items.size(), c->loot.quest_items.size(), c->loot.gold);
+    }
 
     if (nearby.empty())
     {
