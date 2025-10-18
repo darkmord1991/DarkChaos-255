@@ -693,7 +693,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                     const auto& b = itb->second;
                     std::uniform_real_distribution<float> xb(b[0], b[1]);
                     std::uniform_real_distribution<float> yb(b[2], b[3]);
-                    const int fallbackAttempts = 128;
+                    const int fallbackAttempts = 512; // increase attempts to improve chance of finding valid ground
 
                     // We'll need a Map* for sampling; create it once and reuse below
                     Map* map = nullptr;
@@ -709,28 +709,54 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                     }
                     mapCreated = true;
 
+                    // Log bounds for debug
+                    LOG_DEBUG("scripts", "GetRandomHotspotPosition: fallback sampling bounds for map {} -> [{}, {}, {}, {}]", candidateMapId, b[0], b[1], b[2], b[3]);
+
                     for (int fa = 0; fa < fallbackAttempts; ++fa)
                     {
-                            float candX = xb(gen);
-                            float candY = yb(gen);
-                            float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
-                            if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
+                        float candX = xb(gen);
+                        float candY = yb(gen);
+
+                        // Try regular height lookup (vmap + grid)
+                        float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
+
+                        // If no valid ground found, try again disabling VMAP search to use grid height
+                        if ((!std::isfinite(groundZ) || groundZ <= MIN_HEIGHT))
+                        {
+                            float groundZNoVmap = map->GetHeight(candX, candY, MAX_HEIGHT, /*checkVMap=*/false);
+                            if (std::isfinite(groundZNoVmap) && groundZNoVmap > MIN_HEIGHT)
+                                groundZ = groundZNoVmap;
+                        }
+
+                        // If still no ground, check water level as a last resort
+                        if ((!std::isfinite(groundZ) || groundZ <= MIN_HEIGHT))
+                        {
+                            float waterZ = map->GetWaterLevel(candX, candY);
+                            if (std::isfinite(waterZ) && waterZ > MIN_HEIGHT)
+                                groundZ = waterZ;
+                        }
+
+                        // Diagnostic: occasionally log sampled points that failed to find ground
+                        if (fa < 6 && (!std::isfinite(groundZ) || groundZ <= MIN_HEIGHT))
+                            LOG_DEBUG("scripts", "GetRandomHotspotPosition: sample failed map {} candidate ({:.1f},{:.1f}) -> groundZ={}", candidateMapId, candX, candY, groundZ);
+
+                        if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
+                        {
+                            // Resolve zone id for sampled point
+                            uint32 resolvedZone = sMapMgr->GetZoneId(0, candidateMapId, candX, candY, groundZ);
+                            // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all)
+                            if (IsZoneAllowed(candidateMapId, resolvedZone))
                             {
-                                // Resolve zone id for sampled point
-                                uint32 resolvedZone = sMapMgr->GetZoneId(0, candidateMapId, candX, candY, groundZ);
-                                // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all)
-                                if (IsZoneAllowed(candidateMapId, resolvedZone))
-                                {
-                                    outMapId = candidateMapId;
-                                    outX = candX;
-                                    outY = candY;
-                                    outZ = groundZ;
-                                    outZoneId = resolvedZone;
-                                    LOG_INFO("scripts", "GetRandomHotspotPosition: fallback sampling succeeded for map {} at ({:.1f},{:.1f},{:.1f}) zone {}", candidateMapId, outX, outY, outZ, outZoneId);
-                                    return true;
-                                }
-                                // otherwise continue sampling
+                                outMapId = candidateMapId;
+                                outX = candX;
+                                outY = candY;
+                                outZ = groundZ;
+                                outZoneId = resolvedZone;
+                                LOG_INFO("scripts", "GetRandomHotspotPosition: fallback sampling succeeded for map {} at ({:.1f},{:.1f},{:.1f}) zone {}", candidateMapId, outX, outY, outZ, outZoneId);
+                                return true;
                             }
+                            // otherwise continue sampling
+                        }
                     }
                     LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but fallback sampling found no valid ground", candidateMapId);
                     continue;
