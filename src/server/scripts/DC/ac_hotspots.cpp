@@ -1483,6 +1483,14 @@ public:
 
 void AddSC_ac_hotspots()
 {
+    // Populate map bounds from available sources so normalized coordinate helpers work.
+    BuildMapBoundsFromDBC();
+    LoadMapBoundsFromCSV();
+    // Allow optional client data path via config (e.g., "Hotspots.ClientDataPath")
+    std::string clientDataPath = sConfigMgr->GetOption<std::string>("Hotspots.ClientDataPath", std::string(""));
+    if (!clientDataPath.empty())
+        TryLoadBoundsFromClientData(clientDataPath);
+
     new HotspotsWorldScript();
     new HotspotsPlayerScript();
     new HotspotsPlayerGainXP();

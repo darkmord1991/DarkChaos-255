@@ -33,6 +33,7 @@ struct AoELootConfig
     bool enabled = true;
     float range = 30.0f;
     uint32 maxCorpses = 10;
+    uint8 maxMergeSlots = 15; // default safe client window (leave one slot spare)
     uint8 autoLoot = 0; // 0 = disabled, 1 = forced, 2 = player's setting
     uint32 autoStoreWindowSeconds = 5; // window to consider a recent client autostore (seconds)
     bool allowInGroup = true;
@@ -52,6 +53,7 @@ struct AoELootConfig
         playersOnly = sConfigMgr->GetOption<bool>("AoELoot.PlayersOnly", true);
         ignoreTapped = sConfigMgr->GetOption<bool>("AoELoot.IgnoreTapped", true);
         questItems = sConfigMgr->GetOption<bool>("AoELoot.QuestItems", true);
+        maxMergeSlots = sConfigMgr->GetOption<uint8>("AoELoot.MaxMergeSlots", 15u);
     autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
 
         if (range < 5.0f) range = 5.0f;
@@ -145,8 +147,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     std::vector<LootItem> questItemsToAdd;
     uint32 totalGold = mainLoot->gold;
 
-    // Limit to 15 merge slots to avoid overflowing the client 16-slot window
-    const size_t MAX_MERGE_SLOTS = 15;
+    // Limit merge slots (configurable; default 15 to avoid overflowing client 16-slot window)
+    const size_t MAX_MERGE_SLOTS = sAoEConfig.maxMergeSlots;
 
     size_t processed = 0;
     for (Creature* corpse : corpses)
@@ -342,7 +344,9 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: attempting to merge nearby corpses...");
     }
 
-        if (!CanPlayerLootCorpse(player, creature)) return true;
+            // Ensure the main target is lootable (dynamic flag present) before attempting AoE merge
+            if (!creature->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)) return true;
+            if (!CanPlayerLootCorpse(player, creature)) return true;
         if (player->GetGroup() && !sAoEConfig.allowInGroup) return true;
 
         bool handled = PerformAoELoot(player, creature);
