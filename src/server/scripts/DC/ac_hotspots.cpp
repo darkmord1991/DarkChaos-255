@@ -943,9 +943,10 @@ static bool SpawnHotspot()
 
       // Send structured addon packet to relevant sessions so addons receive CHAT_MSG_ADDON-style events
       // Compose message with short prefix and tab separator (clients expect prefix\tpayload)
-      std::string addonMsg = std::string("HOTSPOT\t") + addon.str();
-      WorldPacket data;
-      ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, nullptr, nullptr, addonMsg);
+    std::string addonMsg = std::string("HOTSPOT\t") + addon.str();
+    WorldPacket data;
+    // Build as addon message so client addons receive CHAT_MSG_ADDON events
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
 
       // Broadcast only to players on the same map and (optionally) within announce radius
       WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
@@ -1465,10 +1466,10 @@ public:
         }
 
         // Teleport player
-        if (player->TeleportTo(targetHotspot->mapId, targetHotspot->x, targetHotspot->y, 
+        if (player->TeleportTo(targetHotspot->mapId, targetHotspot->x, targetHotspot->y,
                                targetHotspot->z, player->GetOrientation()))
         {
-            handler->PSendSysMessage("Teleported to Hotspot ID %u on map %u at (%.1f, %.1f, %.1f)",
+            handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} at ({:.1f}, {:.1f}, {:.1f})",
                                     targetHotspot->id, targetHotspot->mapId,
                                     targetHotspot->x, targetHotspot->y, targetHotspot->z);
         }

@@ -29,11 +29,11 @@
 using namespace Acore::ChatCommands;
 
 // Helper to format copper amount into Gold/Silver/Copper string
-static std::string formatCoins(uint32 copper)
+static std::string formatCoins(uint64_t copper)
 {
-    uint32 g = copper / 10000;
-    uint32 s = (copper % 10000) / 100;
-    uint32 c = copper % 100;
+    uint64_t g = copper / 10000;
+    uint64_t s = (copper % 10000) / 100;
+    uint64_t c = copper % 100;
     std::ostringstream ss;
     if (g > 0) ss << g << " Gold ";
     if (s > 0) ss << s << " Silver ";
@@ -55,6 +55,7 @@ struct AoELootConfig
     bool playersOnly = true;
     bool ignoreTapped = true;
     bool questItems = true;
+    bool debugPerCorpse = false;
 
     void Load()
     {
@@ -68,8 +69,10 @@ struct AoELootConfig
         ignoreTapped = sConfigMgr->GetOption<bool>("AoELoot.IgnoreTapped", true);
         questItems = sConfigMgr->GetOption<bool>("AoELoot.QuestItems", true);
         maxMergeSlots = sConfigMgr->GetOption<uint8>("AoELoot.MaxMergeSlots", 15u);
-    autoCreditGold = sConfigMgr->GetOption<bool>("AoELoot.AutoCreditGold", true);
-    autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
+        // debug per-corpse merge contributions
+        debugPerCorpse = sConfigMgr->GetOption<bool>("AoELoot.DebugPerCorpse", false);
+        autoCreditGold = sConfigMgr->GetOption<bool>("AoELoot.AutoCreditGold", true);
+        autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
 
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
@@ -84,7 +87,8 @@ struct PlayerAoELootData
 {
     uint64 lastAoELoot = 0;
     uint32 lootedThisSession = 0;
-    uint32 lastCreditedGold = 0; // in copper
+    uint64 lastCreditedGold = 0; // in copper
+    uint64 accumulatedCreditedGold = 0; // accumulated credited copper for the session
 };
 
 static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
@@ -180,10 +184,18 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         Loot* loot = &corpse->loot;
         if (!loot || loot->isLooted()) continue;
 
+        // Per-corpse contribution counters (for optional debug logging)
+        uint32 addedItemsFromCorpse = 0;
+        uint32 addedQuestItemsFromCorpse = 0;
+        uint32 addedGoldFromCorpse = 0;
+
         if (loot->gold > 0)
         {
             if (totalGold < std::numeric_limits<uint32>::max() - loot->gold)
+            {
                 totalGold += loot->gold;
+                addedGoldFromCorpse = loot->gold;
+            }
         }
 
         for (auto const& it : loot->items)
@@ -193,6 +205,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= MAX_MERGE_SLOTS) break;
             itemsToAdd.push_back(it);
+            ++addedItemsFromCorpse;
         }
         for (auto const& it : loot->quest_items)
         {
@@ -200,12 +213,19 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= MAX_MERGE_SLOTS) break;
             questItemsToAdd.push_back(it);
+            ++addedQuestItemsFromCorpse;
         }
 
         loot->clear();
         corpse->AllLootRemovedFromCorpse();
         corpse->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
         processed++;
+
+        if (sAoEConfig.debugPerCorpse)
+        {
+            LOG_INFO("scripts", "AoELoot: merged from corpse GUID={} entry={} -> items_added={} quest_items_added={} gold_added={}",
+                     corpse->GetGUID().ToString(), corpse->GetEntry(), addedItemsFromCorpse, addedQuestItemsFromCorpse, addedGoldFromCorpse);
+        }
     }
 
     if (processed == 0)
@@ -228,6 +248,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     }
 
     mainLoot->gold = totalGold;
+    // keep a copy of the merged gold total before any auto-crediting clears mainLoot->gold
+    uint32 mergedGold = totalGold;
 
     PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
     data.lastAoELoot = GameTime::GetGameTime().count();
@@ -282,7 +304,17 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         for (auto const& it : mainLoot->items) storeOrMail(it);
         for (auto const& it : mainLoot->quest_items) storeOrMail(it);
 
-        if (mainLoot->gold > 0) player->ModifyMoney(mainLoot->gold);
+        if (mainLoot->gold > 0)
+        {
+            player->ModifyMoney(mainLoot->gold);
+            PlayerAoELootData& pdata = sPlayerLootData[player->GetGUID()];
+            pdata.lastCreditedGold = mainLoot->gold;
+            pdata.accumulatedCreditedGold += mainLoot->gold;
+            // persist immediately
+            try {
+                CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), pdata.accumulatedCreditedGold);
+            } catch (...) { /* non-fatal */ }
+        }
 
         if (!mailItems.empty())
         {
@@ -320,6 +352,11 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // record for stats
     PlayerAoELootData& pdata = sPlayerLootData[player->GetGUID()];
     pdata.lastCreditedGold = credited;
+    pdata.accumulatedCreditedGold += credited;
+        // persist immediately
+        try {
+            CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), pdata.accumulatedCreditedGold);
+        } catch (...) { /* ignore */ }
         // convert copper to g/s/c
         uint32 g = credited / 10000;
         uint32 s = (credited % 10000) / 100;
@@ -344,9 +381,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
         if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s).";
         ChatHandler(player->GetSession()).SendNotification(ss.str());
-        LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mainLoot->gold);
+        LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mergedGold);
         if (sAoEConfig.showMessage)
-            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), mainLoot->gold);
+            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), mergedGold);
     }
     return true;
 }
@@ -413,11 +450,30 @@ public:
         if (!player) return;
         if (sAoEConfig.showMessage)
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled. Loot one corpse to loot nearby corpses.");
+        // Load persisted accumulated credited gold from character DB if table exists
+        try {
+            QueryResult result = CharacterDatabase.Query("SELECT accumulated FROM dc_aoeloot_credits WHERE guid = {}", player->GetGUID().GetCounter());
+            if (result)
+            {
+                Field* f = result->Fetch();
+                uint64 acc = f[0].Get<uint64>();
+                PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+                data.accumulatedCreditedGold = acc;
+            }
+        } catch (...) { /* ignore if table missing */ }
     }
 
     void OnLogout(Player* player)
     {
         if (!player) return;
+        // Persist accumulated credited gold on logout
+        auto it = sPlayerLootData.find(player->GetGUID());
+        if (it != sPlayerLootData.end())
+        {
+            try {
+                CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), it->second.accumulatedCreditedGold);
+            } catch (...) { /* ignore */ }
+        }
         sPlayerLootData.erase(player->GetGUID());
         sPlayerAutoStoreTimestamp.erase(player->GetGUID());
     }
@@ -435,6 +491,7 @@ public:
             ChatCommandBuilder("info",   HandleInfo,   SEC_PLAYER,        Console::No),
             ChatCommandBuilder("reload", HandleReload, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("stats",  HandleStats,  SEC_GAMEMASTER,    Console::No),
+            ChatCommandBuilder("top",    HandleTop,    SEC_PLAYER,        Console::No),
             ChatCommandBuilder("force",  HandleForce,  SEC_GAMEMASTER,    Console::No),
         };
 
@@ -483,6 +540,41 @@ public:
             {
                 handler->PSendSysMessage("  Last credited: {}", formatCoins(d.lastCreditedGold));
             }
+            if (d.accumulatedCreditedGold > 0)
+            {
+                handler->PSendSysMessage("  Accumulated credited (this session): {}", formatCoins(d.accumulatedCreditedGold));
+            }
+        return true;
+    }
+
+    static bool HandleTop(ChatHandler* handler, char const* /*args*/)
+    {
+        // Query top 10 characters by accumulated credited gold
+        handler->SendSysMessage("AoE Loot Top Accumulators:");
+        try
+        {
+            QueryResult result = CharacterDatabase.Query("SELECT guid, accumulated FROM dc_aoeloot_credits ORDER BY accumulated DESC LIMIT 10");
+            if (!result)
+            {
+                handler->SendSysMessage("  (no data)");
+                return true;
+            }
+            int rank = 1;
+            do
+            {
+                Field* f = result->Fetch();
+                uint32 guid = f[0].Get<uint32>();
+                uint64 acc = f[1].Get<uint64>();
+                std::string name = "(unknown)";
+                if (PreparedQueryResult res2 = CharacterDatabase.PQuery("SELECT name FROM characters WHERE guid = %u", guid))
+                {
+                    name = res2->Fetch()[0].Get<std::string>();
+                }
+                handler->PSendSysMessage("  %u. %s - %s", rank, name.c_str(), formatCoins(acc).c_str());
+                ++rank;
+            } while (result->NextRow());
+        }
+        catch (...) { handler->SendSysMessage("Error querying AoE loot leaderboard (table may be missing)."); }
         return true;
     }
 
