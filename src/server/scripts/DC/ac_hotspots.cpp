@@ -1054,6 +1054,31 @@ static Hotspot const* GetPlayerHotspot(Player* player)
     return nullptr;
 }
 
+// Immediate helper to evaluate and apply hotspot effects for a player (used for teleport/GM checks)
+static void CheckPlayerHotspotStatusImmediate(Player* player)
+{
+    if (!player || !sHotspotsConfig.enabled)
+        return;
+
+    Hotspot const* hotspot = GetPlayerHotspot(player);
+    bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
+
+    if (hotspot && !hasBuffAura)
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID %u nearby (zone %u)", hotspot->id, hotspot->zoneId);
+        if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+        if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            player->CastSpell(player, sHotspotsConfig.buffSpell, true);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id %u", sHotspotsConfig.buffSpell);
+    }
+    else if (!hotspot && hasBuffAura)
+    {
+        player->RemoveAura(sHotspotsConfig.buffSpell);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id %u", sHotspotsConfig.buffSpell);
+    }
+}
+
 // World script for periodic updates
 class HotspotsWorldScript : public WorldScript
 {
@@ -1558,6 +1583,9 @@ public:
             handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} (zone {}) at ({:.1f}, {:.1f}, {:.1f})",
                                     targetHotspot->id, targetHotspot->mapId, zoneName,
                                     targetHotspot->x, targetHotspot->y, targetHotspot->z);
+
+            // Immediately check hotspot status for the player (apply buff/debug messages)
+            CheckPlayerHotspotStatusImmediate(player);
         }
         else
         {
