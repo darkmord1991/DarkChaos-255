@@ -1326,6 +1326,7 @@ public:
         {
             ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
@@ -1334,7 +1335,9 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            ChatCommandBuilder("hotspots", hotspotsCommandTable)
+            ChatCommandBuilder("hotspots", hotspotsCommandTable),
+            // alias for convenience
+            ChatCommandBuilder("hotspot", hotspotsCommandTable)
         };
 
         return commandTable;
@@ -1366,9 +1369,70 @@ public:
     static bool HandleHotspotsSpawnCommand(ChatHandler* handler, char const* /*args*/)
     {
         if (SpawnHotspot())
+        {
             handler->SendSysMessage("Spawned a new hotspot.");
+        }
         else
+        {
             handler->SendSysMessage("Failed to spawn a new hotspot (see server logs for details).");
+            // Provide extra immediate debug info to the GM to aid diagnosis
+            handler->PSendSysMessage("Hotspots debug: enabledMapsCount={} mapBoundsCount={} maxActive={} active={}",
+                                    sHotspotsConfig.enabledMaps.size(), sMapBounds.size(), sHotspotsConfig.maxActive, sActiveHotspots.size());
+            handler->PSendSysMessage("Run 'hotspots dump' to get more detailed info.");
+        }
+        return true;
+    }
+
+    static bool HandleHotspotsTestMsgCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("No player session available to send test message to.");
+            return true;
+        }
+
+        // Compose a synthetic hotspot payload based on the player's current position
+        uint32 mapId = player->GetMapId();
+        uint32 zoneId = player->GetZoneId();
+        float x = player->GetPositionX();
+        float y = player->GetPositionY();
+        float z = player->GetPositionZ();
+
+        std::ostringstream addon;
+        addon << "HOTSPOT_ADDON|map:" << mapId
+              << "|zone:" << zoneId
+              << "|x:" << std::fixed << std::setprecision(2) << x
+              << "|y:" << std::fixed << std::setprecision(2) << y
+              << "|z:" << std::fixed << std::setprecision(2) << z
+              << "|id:9999|dur:60|icon:" << sHotspotsConfig.buffSpell
+              << "|bonus:" << sHotspotsConfig.experienceBonus;
+
+        // Compute normalized coords if possible
+        float nx = 0.0f, ny = 0.0f;
+        if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
+        {
+            addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+                  << "|ny:" << std::fixed << std::setprecision(4) << ny;
+        }
+
+        std::string rawPayload = addon.str();
+        for (char &ch : rawPayload)
+        {
+            if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+        }
+
+        // Send only to the issuing player's session
+        WorldPacket data;
+        std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
+        if (WorldSession* sess = handler->GetSession())
+        {
+            sess->SendPacket(&data);
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, rawPayload, sess->GetPlayer());
+            handler->SendSysMessage("Sent synthetic HOTSPOT_ADDON test message to your client.");
+        }
+
         return true;
     }
 
