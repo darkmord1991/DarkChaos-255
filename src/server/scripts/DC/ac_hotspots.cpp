@@ -950,12 +950,9 @@ static bool SpawnHotspot()
         {
                 if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
         }
-        std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
-        WorldPacket data;
-        // Build as addon message so client addons receive CHAT_MSG_ADDON events
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
+    std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
 
-        // Also send a lightweight system fallback message carrying the compact HOTSPOT_ADDON payload
+    // Also send a lightweight system fallback message carrying the compact HOTSPOT_ADDON payload
         // so addons that parse system channel (older clients) can receive a safe text-only form.
         std::string systemFallback = std::string("HOTSPOT_ADDON|") + rawPayload.substr(std::string("HOTSPOT_ADDON|").size());
 
@@ -979,8 +976,10 @@ static bool SpawnHotspot()
           // If announceRadius <= 0, notify all players on the same map
           if (announceRadius <= 0.0f)
           {
-              // Send addon packet and a lightweight system fallback for older addons
-              sess->SendPacket(&data);
+              // Build and send addon packet per-recipient using the player's GUID as sender/receiver
+              WorldPacket pkt;
+              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
+              sess->SendPacket(&pkt);
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
               continue;
           }
@@ -992,7 +991,9 @@ static bool SpawnHotspot()
           float dist2 = dx*dx + dy*dy + dz*dz;
           if (dist2 <= announceRadius2)
           {
-              sess->SendPacket(&data);
+              WorldPacket pkt;
+              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
+              sess->SendPacket(&pkt);
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
           }
       }
