@@ -931,7 +931,8 @@ static bool SpawnHotspot()
           << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
           << "|id:" << hotspot.id
           << "|dur:" << (sHotspotsConfig.duration * MINUTE)
-          << "|icon:" << sHotspotsConfig.buffSpell;
+          << "|icon:" << sHotspotsConfig.buffSpell
+          << "|bonus:" << sHotspotsConfig.experienceBonus;
 
     // Compute normalized coordinates (nx, ny) using DBC when possible, fallback to map bounds
     float nx = 0.0f, ny = 0.0f;
