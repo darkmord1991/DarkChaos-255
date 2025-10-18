@@ -711,20 +711,26 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
                     for (int fa = 0; fa < fallbackAttempts; ++fa)
                     {
-                        float candX = xb(gen);
-                        float candY = yb(gen);
-                        float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
-                        if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
-                        {
-                            outMapId = candidateMapId;
-                            outX = candX;
-                            outY = candY;
-                            outZ = groundZ;
-                            // Resolve zone id for sampled point
-                            outZoneId = sMapMgr->GetZoneId(0, candidateMapId, outX, outY, outZ);
-                            LOG_INFO("scripts", "GetRandomHotspotPosition: fallback sampling succeeded for map {} at ({:.1f},{:.1f},{:.1f}) zone {}", candidateMapId, outX, outY, outZ, outZoneId);
-                            return true;
-                        }
+                            float candX = xb(gen);
+                            float candY = yb(gen);
+                            float groundZ = map->GetHeight(candX, candY, MAX_HEIGHT);
+                            if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
+                            {
+                                // Resolve zone id for sampled point
+                                uint32 resolvedZone = sMapMgr->GetZoneId(0, candidateMapId, candX, candY, groundZ);
+                                // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all)
+                                if (IsZoneAllowed(candidateMapId, resolvedZone))
+                                {
+                                    outMapId = candidateMapId;
+                                    outX = candX;
+                                    outY = candY;
+                                    outZ = groundZ;
+                                    outZoneId = resolvedZone;
+                                    LOG_INFO("scripts", "GetRandomHotspotPosition: fallback sampling succeeded for map {} at ({:.1f},{:.1f},{:.1f}) zone {}", candidateMapId, outX, outY, outZ, outZoneId);
+                                    return true;
+                                }
+                                // otherwise continue sampling
+                            }
                     }
                     LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but fallback sampling found no valid ground", candidateMapId);
                     continue;
@@ -1100,7 +1106,7 @@ public:
                         ss << kv.second[i];
                     }
                     ss << "}";
-                    LOG_INFO("scripts", "{}", ss.str());
+                    LOG_INFO("scripts", "{}", EscapeBraces(ss.str()));
 
                     // Compare against preset zone ids for this map
                     auto presets = GetPresetZoneIdsForMap(mid);
@@ -1118,7 +1124,7 @@ public:
                         ps << presets[i];
                     }
                     ps << "}";
-                    LOG_INFO("scripts", "{}", ps.str());
+                    LOG_INFO("scripts", "{}", EscapeBraces(ps.str()));
 
                     // Which presets are allowed by the config?
                     std::vector<uint32> allowedPresetZones;
@@ -1136,7 +1142,7 @@ public:
                         ap << allowedPresetZones[i];
                     }
                     ap << "}";
-                    LOG_INFO("scripts", "{}", ap.str());
+                    LOG_INFO("scripts", "{}", EscapeBraces(ap.str()));
                 }
             }
 
