@@ -126,6 +126,8 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
     if (nearby.empty())
     {
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
+        if (sAoEConfig.showMessage)
+            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
         return;
     }
 
@@ -179,6 +181,8 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
     if (processed == 0)
     {
         LOG_DEBUG("scripts", "AoELoot: processed == 0 after scanning {} corpses for player {}", corpses.size(), player->GetGUID().ToString());
+        if (sAoEConfig.showMessage)
+            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: found nearby corpses but none were eligible for merging");
         return;
     }
 
@@ -285,6 +289,8 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s).";
         ChatHandler(player->GetSession()).SendNotification(ss.str());
         LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mainLoot->gold);
+        if (sAoEConfig.showMessage)
+            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), mainLoot->gold);
     }
 }
 
@@ -325,6 +331,8 @@ public:
     if (!creature) return true;
 
     LOG_DEBUG("scripts", "AoELoot: player {} looting creature {} (entry {}). Will attempt AoE merge.", player->GetGUID().ToString(), creature->GetGUID().ToString(), creature->GetEntry());
+    if (sAoEConfig.showMessage)
+        ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: attempting to merge nearby corpses...");
 
         if (!CanPlayerLootCorpse(player, creature)) return true;
         if (player->GetGroup() && !sAoEConfig.allowInGroup) return true;

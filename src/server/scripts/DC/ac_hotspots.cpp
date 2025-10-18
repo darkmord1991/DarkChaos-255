@@ -697,7 +697,6 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
                     // We'll need a Map* for sampling; create it once and reuse below
                     Map* map = nullptr;
-                    bool mapCreated = false;
 
                     // If we also might use preset rectangles later, create the map only when needed.
                     // Here, allowedCoords is empty, so we only create the map for fallback sampling.
@@ -743,7 +742,8 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                         if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
                         {
                             // Resolve zone id for sampled point
-                            uint32 resolvedZone = sMapMgr->GetZoneId(0, candidateMapId, candX, candY, groundZ);
+                            uint32 resolvedZone = sMapMgr->GetZoneId(PHASEMASK_NORMAL, candidateMapId, candX, candY, groundZ);
+                            LOG_DEBUG("scripts", "GetRandomHotspotPosition: sampled point resolved to zone {} on map {}", resolvedZone, candidateMapId);
                             // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all)
                             if (IsZoneAllowed(candidateMapId, resolvedZone))
                             {
