@@ -1269,6 +1269,8 @@ private:
         if (hotspot && !hasBuffAura)
         {
             // Player entered hotspot
+                // Debug: inform the player server detected entry (temporary)
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r detected hotspot ID %u nearby (zone %u)", hotspot->id, hotspot->zoneId);
             // Apply entry visual (temporary cloud aura)
             if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
                 player->CastSpell(player, sHotspotsConfig.auraSpell, true);
@@ -1276,20 +1278,21 @@ private:
             // Apply persistent buff (flag icon)
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
                 player->CastSpell(player, sHotspotsConfig.buffSpell, true);
-
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}%% experience from kills!",
-                sHotspotsConfig.experienceBonus
-            );
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}%% experience from kills!",
+                    sHotspotsConfig.experienceBonus
+                );
+                // Debug: confirm buff applied
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r applied buff spell id %u", sHotspotsConfig.buffSpell);
         }
         else if (!hotspot && hasBuffAura)
         {
             // Player left hotspot
             player->RemoveAura(sHotspotsConfig.buffSpell);
-
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cFFFFD700[Hotspot]|r You have left the XP Hotspot."
-            );
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFFFFD700[Hotspot]|r You have left the XP Hotspot."
+                );
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r removed buff spell id %u", sHotspotsConfig.buffSpell);
         }
     }
 };
@@ -1548,8 +1551,12 @@ public:
         if (player->TeleportTo(targetHotspot->mapId, targetHotspot->x, targetHotspot->y,
                                targetHotspot->z, player->GetOrientation()))
         {
-            handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} at ({:.1f}, {:.1f}, {:.1f})",
-                                    targetHotspot->id, targetHotspot->mapId,
+            std::string zoneName = "Unknown";
+            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(targetHotspot->zoneId))
+                zoneName = area->area_name[0] ? area->area_name[0] : zoneName;
+
+            handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} (zone {}) at ({:.1f}, {:.1f}, {:.1f})",
+                                    targetHotspot->id, targetHotspot->mapId, zoneName,
                                     targetHotspot->x, targetHotspot->y, targetHotspot->z);
         }
         else
