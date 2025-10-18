@@ -389,10 +389,7 @@ struct Hotspot
             return false;
         
         if (player->GetMapId() != mapId)
-        {
-            LOG_DEBUG("scripts", "IsPlayerInRange: map mismatch (player map={} vs hotspot map={})", player->GetMapId(), mapId);
             return false;
-        }
 
         float dx = player->GetPositionX() - x;
         float dy = player->GetPositionY() - y;
@@ -400,7 +397,6 @@ struct Hotspot
         float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
         
         bool inRange = dist <= sHotspotsConfig.radius;
-        LOG_DEBUG("scripts", "IsPlayerInRange: hotspot #{} dist={:.2f} vs radius={:.2f} -> {}", id, dist, sHotspotsConfig.radius, inRange);
         
         return inRange;
     }
@@ -1086,26 +1082,15 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     if (!player || !sHotspotsConfig.enabled)
         return;
 
-    LOG_INFO("scripts", "=== CheckPlayerHotspotStatusImmediate for {} ===", player->GetName());
-    LOG_INFO("scripts", "Player location: map={} zone={} pos=({:.1f}, {:.1f}, {:.1f})", 
-             player->GetMapId(), player->GetZoneId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
-    LOG_INFO("scripts", "Active hotspots count: {}", sActiveHotspots.size());
-    
-    for (size_t i = 0; i < sActiveHotspots.size(); ++i)
-    {
-        Hotspot const& hs = sActiveHotspots[i];
-        float dx = player->GetPositionX() - hs.x;
-        float dy = player->GetPositionY() - hs.y;
-        float dz = player->GetPositionZ() - hs.z;
-        float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-        LOG_INFO("scripts", "  Hotspot #{}: map={} zone={} pos=({:.1f},{:.1f},{:.1f}) dist={:.1f} (radius={})",
-                 hs.id, hs.mapId, hs.zoneId, hs.x, hs.y, hs.z, dist, sHotspotsConfig.radius);
-    }
+    LOG_INFO("scripts", "=== CheckPlayerHotspotStatusImmediate START for {} ===", player->GetName());
+    LOG_INFO("scripts", "Player: map={} pos=({:.1f},{:.1f},{:.1f})", 
+             player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+    LOG_INFO("scripts", "Active hotspots: {}", sActiveHotspots.size());
 
     Hotspot const* hotspot = GetPlayerHotspot(player);
     bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
 
-    LOG_INFO("scripts", "GetPlayerHotspot returned: {} | hasBuffAura: {}", hotspot != nullptr, hasBuffAura);
+    LOG_INFO("scripts", "Result: hotspot={} hasBuffAura={}", hotspot != nullptr, hasBuffAura);
 
     if (hotspot && !hasBuffAura)
     {
@@ -1143,7 +1128,7 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     {
         LOG_INFO("scripts", "NO ACTION: Player not in any hotspot");
     }
-    LOG_INFO("scripts", "=== End CheckPlayerHotspotStatusImmediate ===");
+    LOG_INFO("scripts", "=== CheckPlayerHotspotStatusImmediate END ===");
 }
 
 // World script for periodic updates
@@ -1674,7 +1659,9 @@ public:
                      player->GetName(), targetHotspot->id, targetHotspot->x, targetHotspot->y, targetHotspot->z);
 
             // Immediately check hotspot status for the player (apply buff/debug messages)
+            LOG_INFO("scripts", "About to call CheckPlayerHotspotStatusImmediate for player {}", player->GetName());
             CheckPlayerHotspotStatusImmediate(player);
+            LOG_INFO("scripts", "Returned from CheckPlayerHotspotStatusImmediate");
         }
         else
         {
