@@ -941,12 +941,22 @@ static bool SpawnHotspot()
             << "|ny:" << std::fixed << std::setprecision(4) << ny;
     }
 
-      // Send structured addon packet to relevant sessions so addons receive CHAT_MSG_ADDON-style events
-      // Compose message with short prefix and tab separator (clients expect prefix\tpayload)
-    std::string addonMsg = std::string("HOTSPOT\t") + addon.str();
-    WorldPacket data;
-    // Build as addon message so client addons receive CHAT_MSG_ADDON events
-    ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
+            // Send structured addon packet to relevant sessions so addons receive CHAT_MSG_ADDON-style events
+            // Compose message with short prefix and tab separator (clients expect prefix\tpayload)
+        std::string rawPayload = addon.str();
+        // Sanitize payload: remove any accidental control chars (tabs/newlines) which can confuse clients
+        for (char &ch : rawPayload)
+        {
+                if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+        }
+        std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
+        WorldPacket data;
+        // Build as addon message so client addons receive CHAT_MSG_ADDON events
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
+
+        // Also send a lightweight system fallback message carrying the compact HOTSPOT_ADDON payload
+        // so addons that parse system channel (older clients) can receive a safe text-only form.
+        std::string systemFallback = std::string("HOTSPOT_ADDON|") + rawPayload.substr(std::string("HOTSPOT_ADDON|").size());
 
       // Broadcast only to players on the same map and (optionally) within announce radius
       WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
@@ -968,7 +978,9 @@ static bool SpawnHotspot()
           // If announceRadius <= 0, notify all players on the same map
           if (announceRadius <= 0.0f)
           {
+              // Send addon packet and a lightweight system fallback for older addons
               sess->SendPacket(&data);
+              sess->SendServerMessage(SERVER_MSG_STRING, systemFallback);
               continue;
           }
 
@@ -978,7 +990,10 @@ static bool SpawnHotspot()
           float dz = plr->GetPositionZ() - hotspot.z;
           float dist2 = dx*dx + dy*dy + dz*dz;
           if (dist2 <= announceRadius2)
+          {
               sess->SendPacket(&data);
+              sess->SendServerMessage(SERVER_MSG_STRING, systemFallback);
+          }
       }
     }
 

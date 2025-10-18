@@ -368,15 +368,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         uint32 s = (credited % 10000) / 100;
         uint32 c = credited % 100;
         LOG_INFO("scripts", "AoELoot: credited {}c ({}g {}s {}c) to player {} (solo merged gold)", credited, g, s, c, player->GetGUID().ToString());
-        if (sAoEConfig.showMessage)
-        {
-            if (g > 0)
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Gold {} Silver {} Copper from merged corpses.", g, s, c);
-            else if (s > 0)
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Silver {} Copper from merged corpses.", s, c);
-            else
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Copper from merged corpses.", c);
-        }
+        // Don't emit a separate solo-credit message here; we'll include the credited amount
+        // in the consolidated notification below. Log kept above already.
     }
 
     player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
@@ -385,11 +378,12 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     {
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
-        if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s).";
+        if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s). ";
+        if (mergedGold > 0) ss << "Gold: " << formatCoins(mergedGold) << ".";
         ChatHandler(player->GetSession()).SendNotification(ss.str());
-        LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mergedGold);
+        LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold_copper: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mergedGold);
         if (sAoEConfig.showMessage)
-            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), mergedGold);
+            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), formatCoins(mergedGold));
     }
     return true;
 }
