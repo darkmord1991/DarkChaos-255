@@ -706,7 +706,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                         LOG_WARN("scripts", "GetRandomHotspotPosition: could not create/find Map object for map id {} during fallback sampling (skipping)", candidateMapId);
                         continue;
                     }
-                    mapCreated = true;
+                    (void)map; // keep the variable reference semantics; actual ownership handled by MapMgr
 
                     // Log bounds for debug
                     LOG_DEBUG("scripts", "GetRandomHotspotPosition: fallback sampling bounds for map {} -> [{}, {}, {}, {}]", candidateMapId, b[0], b[1], b[2], b[3]);

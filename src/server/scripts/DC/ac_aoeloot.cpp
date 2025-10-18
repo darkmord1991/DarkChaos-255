@@ -101,7 +101,9 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
     return true;
 }
 
-static void PerformAoELoot(Player* player, Creature* mainCreature)
+// Return true if we handled the loot packet (sent loot window / auto-looted / mailed),
+// false to let normal packet processing continue.
+static bool PerformAoELoot(Player* player, Creature* mainCreature)
 {
     if (!player || !mainCreature) return;
     Loot* mainLoot = &mainCreature->loot;
@@ -143,6 +145,9 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
     std::vector<LootItem> questItemsToAdd;
     uint32 totalGold = mainLoot->gold;
 
+    // Limit to 15 merge slots to avoid overflowing the client 16-slot window
+    const size_t MAX_MERGE_SLOTS = 15;
+
     size_t processed = 0;
     for (Creature* corpse : corpses)
     {
@@ -161,14 +166,14 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
             if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
             if (!sAoEConfig.questItems && it.needs_quest) continue;
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
-            if (projected >= 16) break;
+            if (projected >= MAX_MERGE_SLOTS) break;
             itemsToAdd.push_back(it);
         }
         for (auto const& it : loot->quest_items)
         {
             if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
-            if (projected >= 16) break;
+            if (projected >= MAX_MERGE_SLOTS) break;
             questItemsToAdd.push_back(it);
         }
 
@@ -183,17 +188,17 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         LOG_DEBUG("scripts", "AoELoot: processed == 0 after scanning {} corpses for player {}", corpses.size(), player->GetGUID().ToString());
         if (sAoEConfig.showMessage)
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: found nearby corpses but none were eligible for merging");
-        return;
+        return false;
     }
 
     for (auto const& it : itemsToAdd)
     {
-        if (mainLoot->items.size() + mainLoot->quest_items.size() >= 16) break;
+        if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
         mainLoot->items.push_back(it);
     }
     for (auto const& it : questItemsToAdd)
     {
-        if (mainLoot->items.size() + mainLoot->quest_items.size() >= 16) break;
+        if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
         mainLoot->quest_items.push_back(it);
     }
 
@@ -277,12 +282,12 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         mainLoot->clear();
         mainCreature->AllLootRemovedFromCorpse();
         mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-        return;
+        return true;
     }
 
     player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
 
-    if (sAoEConfig.showMessage && processed > 0)
+        if (sAoEConfig.showMessage && processed > 0)
     {
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
@@ -292,6 +297,7 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         if (sAoEConfig.showMessage)
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), mainLoot->gold);
     }
+    return true;
 }
 
 class AoELootServerScript : public ServerScript
@@ -332,13 +338,15 @@ public:
 
     LOG_DEBUG("scripts", "AoELoot: player {} looting creature {} (entry {}). Will attempt AoE merge.", player->GetGUID().ToString(), creature->GetGUID().ToString(), creature->GetEntry());
     if (sAoEConfig.showMessage)
+    {
         ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: attempting to merge nearby corpses...");
+    }
 
         if (!CanPlayerLootCorpse(player, creature)) return true;
         if (player->GetGroup() && !sAoEConfig.allowInGroup) return true;
 
-        PerformAoELoot(player, creature);
-        return false; // we handled it
+        bool handled = PerformAoELoot(player, creature);
+        return handled ? false : true; // if handled -> block original packet (we already sent loot), otherwise let packet continue
     }
 };
 
