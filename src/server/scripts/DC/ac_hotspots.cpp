@@ -385,16 +385,24 @@ struct Hotspot
 
     bool IsPlayerInRange(Player* player) const
     {
-        if (!player || player->GetMapId() != mapId)
+        if (!player)
             return false;
+        
+        if (player->GetMapId() != mapId)
+        {
+            LOG_DEBUG("scripts", "IsPlayerInRange: map mismatch (player map={} vs hotspot map={})", player->GetMapId(), mapId);
+            return false;
+        }
 
-        float dist = std::sqrt(
-            std::pow(player->GetPositionX() - x, 2) +
-            std::pow(player->GetPositionY() - y, 2) +
-            std::pow(player->GetPositionZ() - z, 2)
-        );
-
-        return dist <= sHotspotsConfig.radius;
+        float dx = player->GetPositionX() - x;
+        float dy = player->GetPositionY() - y;
+        float dz = player->GetPositionZ() - z;
+        float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        
+        bool inRange = dist <= sHotspotsConfig.radius;
+        LOG_DEBUG("scripts", "IsPlayerInRange: hotspot #{} dist={:.2f} vs radius={:.2f} -> {}", id, dist, sHotspotsConfig.radius, inRange);
+        
+        return inRange;
     }
 
     bool IsPlayerNearby(Player* player) const
@@ -1078,23 +1086,64 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     if (!player || !sHotspotsConfig.enabled)
         return;
 
+    LOG_INFO("scripts", "=== CheckPlayerHotspotStatusImmediate for {} ===", player->GetName());
+    LOG_INFO("scripts", "Player location: map={} zone={} pos=({:.1f}, {:.1f}, {:.1f})", 
+             player->GetMapId(), player->GetZoneId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+    LOG_INFO("scripts", "Active hotspots count: {}", sActiveHotspots.size());
+    
+    for (size_t i = 0; i < sActiveHotspots.size(); ++i)
+    {
+        Hotspot const& hs = sActiveHotspots[i];
+        float dx = player->GetPositionX() - hs.x;
+        float dy = player->GetPositionY() - hs.y;
+        float dz = player->GetPositionZ() - hs.z;
+        float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        LOG_INFO("scripts", "  Hotspot #{}: map={} zone={} pos=({:.1f},{:.1f},{:.1f}) dist={:.1f} (radius={})",
+                 hs.id, hs.mapId, hs.zoneId, hs.x, hs.y, hs.z, dist, sHotspotsConfig.radius);
+    }
+
     Hotspot const* hotspot = GetPlayerHotspot(player);
     bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
 
+    LOG_INFO("scripts", "GetPlayerHotspot returned: {} | hasBuffAura: {}", hotspot != nullptr, hasBuffAura);
+
     if (hotspot && !hasBuffAura)
     {
+        LOG_INFO("scripts", "APPLYING BUFF: Player in hotspot but no aura yet");
         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID %u nearby (zone %u)", hotspot->id, hotspot->zoneId);
         if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+        {
+            LOG_INFO("scripts", "Casting aura spell {}", sHotspotsConfig.auraSpell);
             player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+        }
+        else
+            LOG_WARN("scripts", "Aura spell {} not found", sHotspotsConfig.auraSpell);
+            
         if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        {
+            LOG_INFO("scripts", "Casting buff spell {}", sHotspotsConfig.buffSpell);
             player->CastSpell(player, sHotspotsConfig.buffSpell, true);
+        }
+        else
+            LOG_WARN("scripts", "Buff spell {} not found", sHotspotsConfig.buffSpell);
+            
         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id %u", sHotspotsConfig.buffSpell);
     }
     else if (!hotspot && hasBuffAura)
     {
+        LOG_INFO("scripts", "REMOVING BUFF: Player not in hotspot but has aura");
         player->RemoveAura(sHotspotsConfig.buffSpell);
         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id %u", sHotspotsConfig.buffSpell);
     }
+    else if (hotspot && hasBuffAura)
+    {
+        LOG_INFO("scripts", "ALREADY BUFFED: Player in hotspot and has aura");
+    }
+    else
+    {
+        LOG_INFO("scripts", "NO ACTION: Player not in any hotspot");
+    }
+    LOG_INFO("scripts", "=== End CheckPlayerHotspotStatusImmediate ===");
 }
 
 // World script for periodic updates
