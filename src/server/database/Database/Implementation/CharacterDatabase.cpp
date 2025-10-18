@@ -620,6 +620,11 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     // world_state
     PrepareStatement(CHAR_SEL_WORLD_STATE, "SELECT Id, Data FROM world_state", CONNECTION_SYNCH);
     PrepareStatement(CHAR_REP_WORLD_STATE, "REPLACE INTO world_state (Id, Data) VALUES(?, ?)", CONNECTION_ASYNC);
+
+    // DarkChaos AoE loot persistence statements
+    PrepareStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID, "SELECT accumulated FROM dc_aoeloot_credits WHERE guid = ?", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_SEL_DC_AOELOOT_TOP10, "SELECT guid, accumulated FROM dc_aoeloot_credits ORDER BY accumulated DESC LIMIT 10", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED, "REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES (?, ?)", CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

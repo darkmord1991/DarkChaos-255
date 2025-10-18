@@ -531,6 +531,11 @@ enum CharacterDatabaseStatements : uint32
     CHAR_SEL_WORLD_STATE,
     CHAR_REP_WORLD_STATE,
 
+    // DarkChaos AoE loot persisted accumulators
+    CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID,
+    CHAR_SEL_DC_AOELOOT_TOP10,
+    CHAR_REP_DC_AOELOOT_ACCUMULATED,
+
     MAX_CHARACTERDATABASE_STATEMENTS
 };
 

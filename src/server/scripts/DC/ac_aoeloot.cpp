@@ -304,7 +304,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         for (auto const& it : mainLoot->items) storeOrMail(it);
         for (auto const& it : mainLoot->quest_items) storeOrMail(it);
 
-        if (mainLoot->gold > 0)
+            if (mainLoot->gold > 0)
         {
             player->ModifyMoney(mainLoot->gold);
             PlayerAoELootData& pdata = sPlayerLootData[player->GetGUID()];
@@ -312,7 +312,10 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             pdata.accumulatedCreditedGold += mainLoot->gold;
             // persist immediately
             try {
-                CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), pdata.accumulatedCreditedGold);
+                CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED);
+                stmt->SetData(0, player->GetGUID().GetCounter());
+                stmt->SetData(1, pdata.accumulatedCreditedGold);
+                CharacterDatabase.Execute(stmt);
             } catch (...) { /* non-fatal */ }
         }
 
@@ -355,7 +358,10 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     pdata.accumulatedCreditedGold += credited;
         // persist immediately
         try {
-            CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), pdata.accumulatedCreditedGold);
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED);
+            stmt->SetData(0, player->GetGUID().GetCounter());
+            stmt->SetData(1, pdata.accumulatedCreditedGold);
+            CharacterDatabase.Execute(stmt);
         } catch (...) { /* ignore */ }
         // convert copper to g/s/c
         uint32 g = credited / 10000;
@@ -452,7 +458,9 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled. Loot one corpse to loot nearby corpses.");
         // Load persisted accumulated credited gold from character DB if table exists
         try {
-            QueryResult result = CharacterDatabase.Query("SELECT accumulated FROM dc_aoeloot_credits WHERE guid = {}", player->GetGUID().GetCounter());
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID);
+            stmt->SetData(0, player->GetGUID().GetCounter());
+            PreparedQueryResult result = CharacterDatabase.Query(stmt);
             if (result)
             {
                 Field* f = result->Fetch();
@@ -471,7 +479,10 @@ public:
         if (it != sPlayerLootData.end())
         {
             try {
-                CharacterDatabase.Execute("REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES({}, {})", player->GetGUID().GetCounter(), it->second.accumulatedCreditedGold);
+                CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED);
+                stmt->SetData(0, player->GetGUID().GetCounter());
+                stmt->SetData(1, it->second.accumulatedCreditedGold);
+                CharacterDatabase.Execute(stmt);
             } catch (...) { /* ignore */ }
         }
         sPlayerLootData.erase(player->GetGUID());
@@ -553,7 +564,8 @@ public:
         handler->SendSysMessage("AoE Loot Top Accumulators:");
         try
         {
-            QueryResult result = CharacterDatabase.Query("SELECT guid, accumulated FROM dc_aoeloot_credits ORDER BY accumulated DESC LIMIT 10");
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_AOELOOT_TOP10);
+            PreparedQueryResult result = CharacterDatabase.Query(stmt);
             if (!result)
             {
                 handler->SendSysMessage("  (no data)");
@@ -566,7 +578,9 @@ public:
                 uint32 guid = f[0].Get<uint32>();
                 uint64 acc = f[1].Get<uint64>();
                 std::string name = "(unknown)";
-                if (PreparedQueryResult res2 = CharacterDatabase.PQuery("SELECT name FROM characters WHERE guid = %u", guid))
+                CharacterDatabasePreparedStatement* nameStmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DATA_BY_GUID);
+                nameStmt->SetData(0, guid);
+                if (PreparedQueryResult res2 = CharacterDatabase.Query(nameStmt))
                 {
                     name = res2->Fetch()[0].Get<std::string>();
                 }
