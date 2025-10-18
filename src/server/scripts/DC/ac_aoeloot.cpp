@@ -130,7 +130,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
         if (sAoEConfig.showMessage)
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
-        return;
+        return false;
     }
 
     std::vector<Creature*> corpses;
@@ -382,6 +382,7 @@ public:
             ChatCommandBuilder("info",   HandleInfo,   SEC_PLAYER,        Console::No),
             ChatCommandBuilder("reload", HandleReload, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("stats",  HandleStats,  SEC_GAMEMASTER,    Console::No),
+            ChatCommandBuilder("force",  HandleForce,  SEC_GAMEMASTER,    Console::No),
         };
 
         static ChatCommandTable commandTable =
@@ -423,6 +424,39 @@ public:
             }
             PlayerAoELootData const& d = it->second;
             handler->PSendSysMessage("AoE Loot stats for {}: Corpses looted: {}", target->GetName(), d.lootedThisSession);
+        return true;
+    }
+
+    static bool HandleForce(ChatHandler* handler, char const* args)
+    {
+        Player* plr = handler->getSelectedPlayerOrSelf();
+        if (!plr) return false;
+
+        Creature* target = nullptr;
+        if (args && *args)
+        {
+            if (Optional<uint64> maybe = Acore::StringTo<uint64>(args))
+            {
+                ObjectGuid guid(*maybe);
+                target = ObjectAccessor::GetCreature(*plr, guid);
+            }
+        }
+
+        if (!target)
+            target = plr->GetSelectedCreature();
+
+        if (!target)
+        {
+            handler->PSendSysMessage("No creature selected or valid GUID provided.");
+            return true;
+        }
+
+        bool handled = PerformAoELoot(plr, target);
+        if (handled)
+            handler->PSendSysMessage("AoE Loot: merge attempted and handled for creature %s (entry %u).", target->GetGUID().ToString().c_str(), target->GetEntry());
+        else
+            handler->PSendSysMessage("AoE Loot: merge attempted but nothing was merged for creature %s (entry %u).", target->GetGUID().ToString().c_str(), target->GetEntry());
+
         return true;
     }
 };
