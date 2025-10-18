@@ -953,8 +953,16 @@ static bool SpawnHotspot()
     std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
 
     // Also send a lightweight system fallback message carrying the compact HOTSPOT_ADDON payload
-        // so addons that parse system channel (older clients) can receive a safe text-only form.
-        std::string systemFallback = std::string("HOTSPOT_ADDON|") + rawPayload.substr(std::string("HOTSPOT_ADDON|").size());
+    // so addons that parse system channel (older clients) can receive a safe text-only form.
+    std::string systemFallback = std::string("HOTSPOT_ADDON|") + rawPayload.substr(std::string("HOTSPOT_ADDON|").size());
+
+    // Safety: cap systemFallback length to avoid client issues with extremely long addon payloads
+    const size_t kMaxFallbackLen = 512;
+    if (systemFallback.size() > kMaxFallbackLen)
+    {
+        systemFallback.resize(kMaxFallbackLen);
+        systemFallback += "...";
+    }
 
       // Broadcast only to players on the same map and (optionally) within announce radius
       WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
@@ -976,10 +984,8 @@ static bool SpawnHotspot()
           // If announceRadius <= 0, notify all players on the same map
           if (announceRadius <= 0.0f)
           {
-              // Build and send addon packet per-recipient using the player's GUID as sender/receiver
-              WorldPacket pkt;
-              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
-              sess->SendPacket(&pkt);
+              // NOTE: sending CHAT_MSG_ADDON has been disabled due to client crashes in some environments.
+              // Send only the safe system fallback text to avoid crashing clients.
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
               continue;
           }
@@ -991,9 +997,8 @@ static bool SpawnHotspot()
           float dist2 = dx*dx + dy*dy + dz*dz;
           if (dist2 <= announceRadius2)
           {
-              WorldPacket pkt;
-              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
-              sess->SendPacket(&pkt);
+              // NOTE: sending CHAT_MSG_ADDON has been disabled due to client crashes in some environments.
+              // Send only the safe system fallback text to avoid crashing clients.
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
           }
       }
