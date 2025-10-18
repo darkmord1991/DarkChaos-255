@@ -328,11 +328,11 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         if (sAoEConfig.showMessage)
         {
             if (g > 0)
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Gold %u Silver %u Copper from merged corpses.", g, s, c);
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Gold {} Silver {} Copper from merged corpses.", g, s, c);
             else if (s > 0)
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Silver %u Copper from merged corpses.", s, c);
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Silver {} Copper from merged corpses.", s, c);
             else
-                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Copper from merged corpses.", c);
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited {} Copper from merged corpses.", c);
         }
     }
 
@@ -512,9 +512,9 @@ public:
 
         bool handled = PerformAoELoot(plr, target);
         if (handled)
-            handler->PSendSysMessage("AoE Loot: merge attempted and handled for creature %s (entry %u).", target->GetGUID().ToString().c_str(), target->GetEntry());
+            handler->PSendSysMessage("AoE Loot: merge attempted and handled for creature {} (entry {}).", target->GetGUID().ToString().c_str(), target->GetEntry());
         else
-            handler->PSendSysMessage("AoE Loot: merge attempted but nothing was merged for creature %s (entry %u).", target->GetGUID().ToString().c_str(), target->GetEntry());
+            handler->PSendSysMessage("AoE Loot: merge attempted but nothing was merged for creature {} (entry {}).", target->GetGUID().ToString().c_str(), target->GetEntry());
 
         return true;
     }
