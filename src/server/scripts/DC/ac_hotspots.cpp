@@ -980,7 +980,7 @@ static bool SpawnHotspot()
           {
               // Send addon packet and a lightweight system fallback for older addons
               sess->SendPacket(&data);
-              sess->SendServerMessage(SERVER_MSG_STRING, systemFallback);
+              sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
               continue;
           }
 
@@ -992,7 +992,7 @@ static bool SpawnHotspot()
           if (dist2 <= announceRadius2)
           {
               sess->SendPacket(&data);
-              sess->SendServerMessage(SERVER_MSG_STRING, systemFallback);
+              sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, systemFallback, plr);
           }
       }
     }

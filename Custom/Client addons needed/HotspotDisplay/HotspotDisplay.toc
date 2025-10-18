@@ -5,4 +5,8 @@
 ## Version: 1.0
 ## SavedVariables: HotspotDisplayDB
 
+# Default core (original)
 Core.lua
+
+# Polished Wrath 3.3.5a-compatible implementation (optional)
+Core_wrath.lua
