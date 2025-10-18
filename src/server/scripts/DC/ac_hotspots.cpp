@@ -1422,15 +1422,14 @@ public:
             if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
         }
 
-        // Send only to the issuing player's session
-        WorldPacket data;
-        std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, nullptr, nullptr, addonMsg);
+        // Safer test: only send the system-text fallback to the player's session to avoid triggering
+        // CHAT_MSG_ADDON handling code paths that can crash some clients in test scenarios.
         if (WorldSession* sess = handler->GetSession())
         {
-            sess->SendPacket(&data);
             sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, rawPayload, sess->GetPlayer());
-            handler->SendSysMessage("Sent synthetic HOTSPOT_ADDON test message to your client.");
+            handler->SendSysMessage("Sent synthetic HOTSPOT_ADDON fallback test message to your client (system text).");
+            LOG_INFO("scripts", "Hotspots: sent synthetic system-only test message to player {} (map={}, pos={:.1f},{:.1f})",
+                     handler->GetSession()->GetPlayer() ? handler->GetSession()->GetPlayer()->GetName().c_str() : "<unknown>", mapId, x, y);
         }
 
         return true;

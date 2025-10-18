@@ -170,30 +170,36 @@ local function RegisterHotspotFromData(data)
     -- server sends bonus in announce text as experienceBonus; prefer explicit 'bonus' key if present
     if data.bonus then bonus = DefensiveToNumber(data.bonus) end
     activeHotspots[id] = { map = map, zone = zone, x = x, y = y, nx = nx, ny = ny, expire = GetTime() + dur, icon = icon, bonus = bonus }
+    -- If this looks like a synthetic/test hotspot (IDs reserved >=9000), don't create UI — register-only mode
+    local isTestHotspot = (id and type(id) == "number" and id >= 9000)
+    if not isTestHotspot then
+        -- Defer UI work: create pins/labels in a safe, pcall-wrapped function after a short delay
+        local function SafeCreatePins(hotspotId)
+            pcall(function()
+                local info = activeHotspots[hotspotId]
+                if not info then return end
+                local wpin = CreateWorldPin(hotspotId, info)
+                if wpin then PositionWorldPin(wpin, info) end
+                local mpin = CreateMinimapPin(hotspotId, info)
+                if mpin then PositionMinimapPin(mpin, info) end
+                local lbl = CreateWorldLabel(hotspotId, info)
+                if lbl then
+                    if info.bonus then lbl:SetText("XP+"..tostring(info.bonus).."%") else lbl:SetText("XP+") end
+                    -- position label defensively
+                    local ok, px, py = pcall(function() return (Astrolabe and Astrolabe.WorldToMapPixels and Astrolabe.WorldToMapPixels(WorldMapFrame, info.nx, info.ny)) end)
+                    if ok and px and py then lbl:ClearAllPoints(); lbl:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", px, py - 14); end
+                    if HotspotDisplayDB.showWorldLabels then lbl:Show() else lbl:Hide() end
+                end
+                if mpin then if HotspotDisplayDB.showMinimapPins then mpin:Show() else mpin:Hide() end end
+            end)
+        end
 
-    -- Defer UI work: create pins/labels in a safe, pcall-wrapped function after a short delay
-    local function SafeCreatePins(hotspotId)
-        pcall(function()
-            local info = activeHotspots[hotspotId]
-            if not info then return end
-            local wpin = CreateWorldPin(hotspotId, info)
-            if wpin then PositionWorldPin(wpin, info) end
-            local mpin = CreateMinimapPin(hotspotId, info)
-            if mpin then PositionMinimapPin(mpin, info) end
-            local lbl = CreateWorldLabel(hotspotId, info)
-            if lbl then
-                if info.bonus then lbl:SetText("XP+"..tostring(info.bonus).."%") else lbl:SetText("XP+") end
-                -- position label defensively
-                local ok, px, py = pcall(function() return (Astrolabe and Astrolabe.WorldToMapPixels and Astrolabe.WorldToMapPixels(WorldMapFrame, info.nx, info.ny)) end)
-                if ok and px and py then lbl:ClearAllPoints(); lbl:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", px, py - 14); end
-                if HotspotDisplayDB.showWorldLabels then lbl:Show() else lbl:Hide() end
-            end
-            if mpin then if HotspotDisplayDB.showMinimapPins then mpin:Show() else mpin:Hide() end end
-        end)
+        -- Schedule with a short delay so UI globals are initialized and race conditions avoided
+        C_Timer.After(0.05, function() SafeCreatePins(id) end)
+    else
+        -- For test hotspots, just log minimal info to chat for visibility (no UI)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r (test) Hotspot #"..id.." registered (no UI created)")
     end
-
-    -- Schedule with a short delay so UI globals are initialized and race conditions avoided
-    C_Timer.After(0.05, function() SafeCreatePins(id) end)
     -- Announce to chat
     DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r Hotspot #"..id.." registered")
     -- Note: visibility and creation are handled by SafeCreatePins scheduled above
