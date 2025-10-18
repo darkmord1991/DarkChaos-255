@@ -1295,21 +1295,23 @@ private:
         if (hotspot && !hasBuffAura)
         {
             // Player entered hotspot
-                // Debug: inform the player server detected entry (temporary)
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r detected hotspot ID %u nearby (zone %u)", hotspot->id, hotspot->zoneId);
+            // Debug: inform the player server detected entry (temporary)
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
+
             // Apply entry visual (temporary cloud aura)
             if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            {
                 player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+            }
 
             // Apply persistent buff (flag icon)
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            {
                 player->CastSpell(player, sHotspotsConfig.buffSpell, true);
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}%% experience from kills!",
-                    sHotspotsConfig.experienceBonus
-                );
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
                 // Debug: confirm buff applied
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r applied buff spell id %u", sHotspotsConfig.buffSpell);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r applied buff spell id {}", sHotspotsConfig.buffSpell);
+            }
         }
         else if (!hotspot && hasBuffAura)
         {
