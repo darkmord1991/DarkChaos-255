@@ -28,12 +28,26 @@
 
 using namespace Acore::ChatCommands;
 
+// Helper to format copper amount into Gold/Silver/Copper string
+static std::string formatCoins(uint32 copper)
+{
+    uint32 g = copper / 10000;
+    uint32 s = (copper % 10000) / 100;
+    uint32 c = copper % 100;
+    std::ostringstream ss;
+    if (g > 0) ss << g << " Gold ";
+    if (s > 0) ss << s << " Silver ";
+    ss << c << " Copper";
+    return ss.str();
+}
+
 struct AoELootConfig
 {
     bool enabled = true;
     float range = 30.0f;
     uint32 maxCorpses = 10;
     uint8 maxMergeSlots = 15; // default safe client window (leave one slot spare)
+    bool autoCreditGold = true;
     uint8 autoLoot = 0; // 0 = disabled, 1 = forced, 2 = player's setting
     uint32 autoStoreWindowSeconds = 5; // window to consider a recent client autostore (seconds)
     bool allowInGroup = true;
@@ -54,6 +68,7 @@ struct AoELootConfig
         ignoreTapped = sConfigMgr->GetOption<bool>("AoELoot.IgnoreTapped", true);
         questItems = sConfigMgr->GetOption<bool>("AoELoot.QuestItems", true);
         maxMergeSlots = sConfigMgr->GetOption<uint8>("AoELoot.MaxMergeSlots", 15u);
+    autoCreditGold = sConfigMgr->GetOption<bool>("AoELoot.AutoCreditGold", true);
     autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
 
         if (range < 5.0f) range = 5.0f;
@@ -69,6 +84,7 @@ struct PlayerAoELootData
 {
     uint64 lastAoELoot = 0;
     uint32 lootedThisSession = 0;
+    uint32 lastCreditedGold = 0; // in copper
 };
 
 static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
@@ -294,6 +310,32 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         return true;
     }
 
+    // Auto-credit merged gold to solo looter (leave items for the player to pick).
+    // If in a group, leave gold in the loot so group/master-loot logic can distribute it.
+    if (mainLoot->gold > 0 && !player->GetGroup())
+    {
+        uint32 credited = mainLoot->gold;
+    player->ModifyMoney(credited);
+    mainLoot->gold = 0;
+    // record for stats
+    PlayerAoELootData& pdata = sPlayerLootData[player->GetGUID()];
+    pdata.lastCreditedGold = credited;
+        // convert copper to g/s/c
+        uint32 g = credited / 10000;
+        uint32 s = (credited % 10000) / 100;
+        uint32 c = credited % 100;
+        LOG_INFO("scripts", "AoELoot: credited {}c ({}g {}s {}c) to player {} (solo merged gold)", credited, g, s, c, player->GetGUID().ToString());
+        if (sAoEConfig.showMessage)
+        {
+            if (g > 0)
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Gold %u Silver %u Copper from merged corpses.", g, s, c);
+            else if (s > 0)
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Silver %u Copper from merged corpses.", s, c);
+            else
+                ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: credited %u Copper from merged corpses.", c);
+        }
+    }
+
     player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
 
         if (sAoEConfig.showMessage && processed > 0)
@@ -412,6 +454,8 @@ public:
             handler->PSendSysMessage("  Range: {:.1f} yards", sAoEConfig.range);
             handler->PSendSysMessage("  Max Corpses: {}", sAoEConfig.maxCorpses);
             handler->PSendSysMessage("  Auto-Loot: {}", sAoEConfig.autoLoot == 0 ? "Disabled" : sAoEConfig.autoLoot == 1 ? "Forced" : "Player Setting");
+            handler->PSendSysMessage("  Max Merge Slots: {}", sAoEConfig.maxMergeSlots);
+            handler->PSendSysMessage("  Auto Credit Gold: {}", sAoEConfig.autoCreditGold ? "Enabled" : "Disabled");
         }
         return true;
     }
@@ -435,6 +479,10 @@ public:
             }
             PlayerAoELootData const& d = it->second;
             handler->PSendSysMessage("AoE Loot stats for {}: Corpses looted: {}", target->GetName(), d.lootedThisSession);
+            if (d.lastCreditedGold > 0)
+            {
+                handler->PSendSysMessage("  Last credited: {}", formatCoins(d.lastCreditedGold));
+            }
         return true;
     }
 

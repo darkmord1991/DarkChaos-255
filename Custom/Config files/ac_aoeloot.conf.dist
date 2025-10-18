@@ -155,3 +155,18 @@ AoELoot.PlayersOnly = 1
 # Number of seconds after the client sends an autostore packet where we consider autostore "recent"
 # Used only when AoELoot.AutoLoot = 2 (respect player's client autostore)
 AoELoot.AutoStoreWindowSeconds = 5
+
+#    AoELoot.MaxMergeSlots
+#        Description: Maximum number of item slots to merge into the client's loot window.
+#                     Clients have a 16-slot window; default is 15 to leave one spare slot.
+#        Default:     15
+
+AoELoot.MaxMergeSlots = 15
+
+#    AoELoot.AutoCreditGold
+#        Description: When enabled, merged gold from nearby corpses is automatically credited
+#                     to the looter when they are solo (not in a group). When disabled, gold
+#                     remains in the loot window for normal group/master-loot handling.
+#        Default:     1 (Enabled)
+
+AoELoot.AutoCreditGold = 1
