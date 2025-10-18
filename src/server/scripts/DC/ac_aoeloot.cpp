@@ -110,6 +110,8 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
     std::list<Creature*> nearby;
     player->GetDeadCreatureListInGrid(nearby, sAoEConfig.range);
 
+    LOG_DEBUG("scripts", "AoELoot: found {} nearby dead creatures within range {:.1f} for player {}", nearby.size(), sAoEConfig.range, player->GetGUID().ToString());
+
     nearby.remove_if([&](Creature* c) -> bool
     {
     if (!c) return true;
@@ -121,7 +123,11 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         return false;
     });
 
-    if (nearby.empty()) return;
+    if (nearby.empty())
+    {
+        LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
+        return;
+    }
 
     std::vector<Creature*> corpses;
     corpses.reserve(sAoEConfig.maxCorpses);
@@ -170,7 +176,11 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         processed++;
     }
 
-    if (processed == 0) return;
+    if (processed == 0)
+    {
+        LOG_DEBUG("scripts", "AoELoot: processed == 0 after scanning {} corpses for player {}", corpses.size(), player->GetGUID().ToString());
+        return;
+    }
 
     for (auto const& it : itemsToAdd)
     {
@@ -274,6 +284,7 @@ static void PerformAoELoot(Player* player, Creature* mainCreature)
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
         if (itemsToAdd.size() > 0) ss << "Collected " << itemsToAdd.size() << " item(s).";
         ChatHandler(player->GetSession()).SendNotification(ss.str());
+        LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mainLoot->gold);
     }
 }
 
@@ -289,7 +300,12 @@ public:
 
         if (packet.GetOpcode() == CMSG_AUTOSTORE_LOOT_ITEM)
         {
-            if (session->GetPlayer()) sPlayerAutoStoreTimestamp[session->GetPlayer()->GetGUID()] = GameTime::GetGameTime().count();
+            if (session->GetPlayer()) 
+            {
+                auto guid = session->GetPlayer()->GetGUID();
+                sPlayerAutoStoreTimestamp[guid] = GameTime::GetGameTime().count();
+                LOG_DEBUG("scripts", "AoELoot: recorded autostore opcode for player {}", guid.ToString());
+            }
             return true;
         }
 
@@ -303,10 +319,12 @@ public:
         packet >> guid;
         packet.rpos(0);
 
-        if (!guid || !guid.IsCreature()) return true;
+    if (!guid || !guid.IsCreature()) return true;
 
         Creature* creature = ObjectAccessor::GetCreature(*player, guid);
-        if (!creature) return true;
+    if (!creature) return true;
+
+    LOG_DEBUG("scripts", "AoELoot: player {} looting creature {} (entry {}). Will attempt AoE merge.", player->GetGUID().ToString(), creature->GetGUID().ToString(), creature->GetEntry());
 
         if (!CanPlayerLootCorpse(player, creature)) return true;
         if (player->GetGroup() && !sAoEConfig.allowInGroup) return true;

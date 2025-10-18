@@ -1331,12 +1331,12 @@ public:
             return true;
         }
 
-    handler->PSendSysMessage("Active Hotspots: %u", sActiveHotspots.size());
+    handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
         for (auto const& hotspot : sActiveHotspots)
         {
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
             handler->PSendSysMessage(
-                "  ID: %u | Map: %u | Zone: %u | Pos: (%.1f, %.1f, %.1f) | Time Left: %um",
+                "  ID: {} | Map: {} | Zone: {} | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
                 hotspot.id, hotspot.mapId, hotspot.zoneId,
                 hotspot.x, hotspot.y, hotspot.z,
                 remaining / 60
