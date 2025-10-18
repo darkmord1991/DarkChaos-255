@@ -69,6 +69,8 @@ struct HotspotsConfig
     uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
     uint32 auraSpell = 24171;                // Entry visual (cloud)
     uint32 buffSpell = 23768;                // Persistent buff (flag icon)
+                                             // Note: 23768 is Essence of Wintergrasp (test this!)
+                                             // Other options: varies by server; test with spell IDs that have flag icons
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
     float announceRadius = 500.0f;           // yards
     std::vector<uint32> enabledMaps;
@@ -966,6 +968,7 @@ static bool SpawnHotspot()
       WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
       const float announceRadius = sHotspotsConfig.announceRadius;
       const float announceRadius2 = announceRadius * announceRadius;
+      int announcedCount = 0;
       for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
       {
           WorldSession* sess = itr->second;
@@ -979,8 +982,26 @@ static bool SpawnHotspot()
           if (plr->GetMapId() != hotspot.mapId)
               continue;
 
+          bool shouldAnnounce = false;
           // If announceRadius <= 0, notify all players on the same map
           if (announceRadius <= 0.0f)
+          {
+              shouldAnnounce = true;
+          }
+          else
+          {
+              // Distance squared check (3D)
+              float dx = plr->GetPositionX() - hotspot.x;
+              float dy = plr->GetPositionY() - hotspot.y;
+              float dz = plr->GetPositionZ() - hotspot.z;
+              float dist2 = dx*dx + dy*dy + dz*dz;
+              if (dist2 <= announceRadius2)
+              {
+                  shouldAnnounce = true;
+              }
+          }
+
+          if (shouldAnnounce)
           {
               // Send system message so players know a hotspot appeared
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), plr);
@@ -989,25 +1010,10 @@ static bool SpawnHotspot()
               WorldPacket pkt;
               ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
               sess->SendPacket(&pkt);
-              continue;
-          }
-
-          // Distance squared check (3D)
-          float dx = plr->GetPositionX() - hotspot.x;
-          float dy = plr->GetPositionY() - hotspot.y;
-          float dz = plr->GetPositionZ() - hotspot.z;
-          float dist2 = dx*dx + dy*dy + dz*dz;
-          if (dist2 <= announceRadius2)
-          {
-              // Send system message so players know a hotspot is nearby
-              sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), plr);
-              
-              // Send addon packet to enable addon visualization
-              WorldPacket pkt;
-              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
-              sess->SendPacket(&pkt);
+              announcedCount++;
           }
       }
+      LOG_DEBUG("scripts", "Hotspot #{} broadcast: {} players notified on map {}", hotspot.id, announcedCount, hotspot.mapId);
     }
 
     return true;
@@ -1303,30 +1309,47 @@ private:
         Hotspot const* hotspot = GetPlayerHotspot(player);
         bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
 
+        LOG_DEBUG("scripts", "CheckPlayerHotspotStatus for {} (map={}, pos={:.1f},{:.1f}): hotspotFound={} hasBuffAura={}",
+                 player->GetName(), player->GetMapId(), player->GetPositionX(), player->GetPositionY(),
+                 hotspot != nullptr, hasBuffAura);
+
         if (hotspot && !hasBuffAura)
         {
             // Player entered hotspot
+            LOG_INFO("scripts", "Player {} entered Hotspot #{} (zone {}, map {})", player->GetName(), hotspot->id, hotspot->zoneId, hotspot->mapId);
+            
             // Debug: inform the player server detected entry (temporary)
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
 
             // Apply entry visual (temporary cloud aura)
             if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
             {
+                LOG_DEBUG("scripts", "Casting aura spell {} on player {}", sHotspotsConfig.auraSpell, player->GetName());
                 player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+            }
+            else
+            {
+                LOG_WARN("scripts", "Aura spell {} not found in spell manager", sHotspotsConfig.auraSpell);
             }
 
             // Apply persistent buff (flag icon)
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
             {
+                LOG_DEBUG("scripts", "Casting buff spell {} on player {}", sHotspotsConfig.buffSpell, player->GetName());
                 player->CastSpell(player, sHotspotsConfig.buffSpell, true);
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
                 // Debug: confirm buff applied
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r applied buff spell id {}", sHotspotsConfig.buffSpell);
             }
+            else
+            {
+                LOG_WARN("scripts", "Buff spell {} not found in spell manager", sHotspotsConfig.buffSpell);
+            }
         }
         else if (!hotspot && hasBuffAura)
         {
             // Player left hotspot
+            LOG_INFO("scripts", "Player {} left Hotspot (no longer in range)", player->GetName());
             player->RemoveAura(sHotspotsConfig.buffSpell);
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFD700[Hotspot]|r You have left the XP Hotspot."
@@ -1597,6 +1620,9 @@ public:
             handler->PSendSysMessage("Teleported to Hotspot ID {} on map {} (zone {}) at ({:.1f}, {:.1f}, {:.1f})",
                                     targetHotspot->id, targetHotspot->mapId, zoneName,
                                     targetHotspot->x, targetHotspot->y, targetHotspot->z);
+
+            LOG_INFO("scripts", "Player {} teleported to Hotspot #{} at ({:.1f}, {:.1f}, {:.1f})", 
+                     player->GetName(), targetHotspot->id, targetHotspot->x, targetHotspot->y, targetHotspot->z);
 
             // Immediately check hotspot status for the player (apply buff/debug messages)
             CheckPlayerHotspotStatusImmediate(player);
