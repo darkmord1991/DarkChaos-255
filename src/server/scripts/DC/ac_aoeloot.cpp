@@ -360,12 +360,12 @@ public:
 
     static bool HandleInfo(ChatHandler* handler, char const* /*args*/)
     {
-        handler->PSendSysMessage("AoE Loot: %s", sAoEConfig.enabled ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("AoE Loot: {}", sAoEConfig.enabled ? "Enabled" : "Disabled");
         if (sAoEConfig.enabled)
         {
-            handler->PSendSysMessage("  Range: %.1f yards", sAoEConfig.range);
-            handler->PSendSysMessage("  Max Corpses: %u", sAoEConfig.maxCorpses);
-            handler->PSendSysMessage("  Auto-Loot: %s", sAoEConfig.autoLoot == 0 ? "Disabled" : sAoEConfig.autoLoot == 1 ? "Forced" : "Player Setting");
+            handler->PSendSysMessage("  Range: {:.1f} yards", sAoEConfig.range);
+            handler->PSendSysMessage("  Max Corpses: {}", sAoEConfig.maxCorpses);
+            handler->PSendSysMessage("  Auto-Loot: {}", sAoEConfig.autoLoot == 0 ? "Disabled" : sAoEConfig.autoLoot == 1 ? "Forced" : "Player Setting");
         }
         return true;
     }
@@ -382,13 +382,13 @@ public:
         Player* target = handler->getSelectedPlayerOrSelf();
         if (!target) return false;
         auto it = sPlayerLootData.find(target->GetGUID());
-        if (it == sPlayerLootData.end())
-        {
-            handler->PSendSysMessage("%s has not used AoE loot yet.", target->GetName());
-            return true;
-        }
-        PlayerAoELootData const& d = it->second;
-        handler->PSendSysMessage("AoE Loot stats for %s: Corpses looted: %u", target->GetName(), d.lootedThisSession);
+            if (it == sPlayerLootData.end())
+            {
+                handler->PSendSysMessage("{} has not used AoE loot yet.", target->GetName());
+                return true;
+            }
+            PlayerAoELootData const& d = it->second;
+            handler->PSendSysMessage("AoE Loot stats for {}: Corpses looted: {}", target->GetName(), d.lootedThisSession);
         return true;
     }
 };
@@ -399,4 +399,6 @@ void AddSC_ac_aoeloot()
     new AoELootServerScript();
     new AoELootPlayerScript();
     new AoELootCommandScript();
+}
+
 }
