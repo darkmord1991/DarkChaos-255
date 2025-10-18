@@ -105,9 +105,9 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 // false to let normal packet processing continue.
 static bool PerformAoELoot(Player* player, Creature* mainCreature)
 {
-    if (!player || !mainCreature) return;
+    if (!player || !mainCreature) return false;
     Loot* mainLoot = &mainCreature->loot;
-    if (!mainLoot) return;
+    if (!mainLoot) return false;
 
     std::list<Creature*> nearby;
     player->GetDeadCreatureListInGrid(nearby, sAoEConfig.range);
@@ -214,12 +214,12 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         if (method == MASTER_LOOT)
         {
             group->MasterLoot(mainLoot, mainCreature);
-            return;
+            return true;
         }
         else if (method == NEED_BEFORE_GREED || method == GROUP_LOOT || method == FREE_FOR_ALL)
         {
             group->GroupLoot(mainLoot, mainCreature);
-            return;
+            return true;
         }
     }
 
