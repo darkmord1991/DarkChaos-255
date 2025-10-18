@@ -871,15 +871,25 @@ static bool SpawnHotspot()
                 float ang = 0.0f;
                 // Map doesn't expose a GetPhaseMask(); use default phase mask (0) for world markers.
                 uint32 phaseMask = 0;
+
+                // Prefer ground-sampled Z to avoid placing markers underwater or inside terrain.
+                float markerZ = z;
+                float sampledZ = map->GetHeight(x, y, z);
+                if (!std::isnan(sampledZ) && std::isfinite(sampledZ))
+                {
+                    markerZ = sampledZ + 0.5f; // lift slightly above ground
+                    hotspot.z = markerZ; // update hotspot record so in-range checks and messages use ground Z
+                }
+
                 if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
-                              map, phaseMask, x, y, z, ang, G3D::Quat(), 255, GO_STATE_READY))
+                              map, phaseMask, x, y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
                 {
                     go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
                     map->AddToMap(go);
                     hotspot.gameObjectGuid = go->GetGUID();
-                    
+
                     LOG_DEBUG("scripts", "Hotspot #{} spawned GameObject marker (GUID: {}) at ({}, {}, {}) on map {}",
-                              hotspot.id, go->GetGUID().ToString(), x, y, z, mapId);
+                              hotspot.id, go->GetGUID().ToString(), hotspot.x, hotspot.y, hotspot.z, mapId);
                 }
                 else
                 {
