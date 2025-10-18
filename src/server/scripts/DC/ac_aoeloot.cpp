@@ -443,7 +443,7 @@ public:
         }
 
         if (!target)
-            target = plr->GetSelectedCreature();
+            target = handler->getSelectedCreature();
 
         if (!target)
         {
