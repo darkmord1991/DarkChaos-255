@@ -166,9 +166,8 @@ local function RegisterHotspotFromData(data)
     local nx = DefensiveToNumber(data.nx)
     local ny = DefensiveToNumber(data.ny)
     local icon = DefensiveToNumber(data.icon)
-    local bonus = DefensiveToNumber(data.icon) and nil or DefensiveToNumber(data.bonus)
-    -- server sends bonus in announce text as experienceBonus; prefer explicit 'bonus' key if present
-    if data.bonus then bonus = DefensiveToNumber(data.bonus) end
+    -- server may send bonus as 'bonus' or 'experienceBonus'; prefer numeric values when present
+    local bonus = DefensiveToNumber(data.bonus) or DefensiveToNumber(data.experienceBonus)
     activeHotspots[id] = { map = map, zone = zone, x = x, y = y, nx = nx, ny = ny, expire = GetTime() + dur, icon = icon, bonus = bonus }
     -- If this looks like a synthetic/test hotspot (IDs reserved >=9000), don't create UI — register-only mode
     local isTestHotspot = (id and type(id) == "number" and id >= 9000)

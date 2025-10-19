@@ -1619,6 +1619,45 @@ public:
 
         sActiveHotspots.push_back(hotspot);
 
+        // Spawn visual marker GameObject if enabled (mirror SpawnHotspot behavior)
+        if (sHotspotsConfig.spawnVisualMarker)
+        {
+            if (Map* map = GetBaseMapSafe(mapId))
+            {
+                if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+                {
+                    GameObject* go = new GameObject();
+                    float ang = 0.0f;
+                    uint32 phaseMask = 0;
+
+                    // Prefer ground-sampled Z to avoid placing markers underwater or inside terrain.
+                    float markerZ = z;
+                    float sampledZ = map->GetHeight(x, y, z);
+                    if (!std::isnan(sampledZ) && std::isfinite(sampledZ))
+                    {
+                        markerZ = sampledZ + 0.5f;
+                        // update hotspot z for consistency
+                        sActiveHotspots.back().z = markerZ;
+                    }
+
+                    if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                                  map, phaseMask, x, y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
+                    {
+                        go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
+                        map->AddToMap(go);
+                        sActiveHotspots.back().gameObjectGuid = go->GetGUID();
+                        LOG_DEBUG("scripts", "Hotspot #{} spawned GameObject marker (GUID: {}) at ({}, {}, {}) on map {}",
+                                  sActiveHotspots.back().id, go->GetGUID().ToString(), sActiveHotspots.back().x, sActiveHotspots.back().y, sActiveHotspots.back().z, mapId);
+                    }
+                    else
+                    {
+                        delete go;
+                        LOG_ERROR("scripts", "Failed to create hotspot marker GameObject (spawnhere)");
+                    }
+                }
+            }
+        }
+
         std::string zoneName = "Unknown Zone";
         if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
             zoneName = area->area_name[0] ? area->area_name[0] : "Unknown Zone";
@@ -1702,7 +1741,7 @@ public:
                 p->CastSpell(p, sHotspotsConfig.buffSpell, true);
 
             if (p->GetSession())
-                ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +%u%% experience from kills!", sHotspotsConfig.experienceBonus);
+                ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
         }
 
         return true;
