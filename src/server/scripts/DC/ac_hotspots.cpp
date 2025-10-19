@@ -1368,7 +1368,7 @@ public:
         }
     }
 
-    void OnPlayerResurrect(Player* player)
+    void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool /*applySickness*/) override
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
@@ -1445,7 +1445,7 @@ class HotspotsPlayerGainXP : public PlayerScript
 public:
     HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* victim)
+    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;

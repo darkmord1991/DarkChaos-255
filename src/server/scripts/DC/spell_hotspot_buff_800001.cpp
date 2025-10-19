@@ -52,5 +52,5 @@ class spell_hotspot_buff_800001_aura : public AuraScript
 // Register the aura script
 void AddSC_spell_hotspot_buff_800001()
 {
-    RegisterAuraScript(spell_hotspot_buff_800001_aura);
+    new AuraScript_impl<spell_hotspot_buff_800001_aura>();
 }
