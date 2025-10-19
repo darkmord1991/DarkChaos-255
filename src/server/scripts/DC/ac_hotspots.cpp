@@ -440,7 +440,6 @@ bool IsPlayerInHotspot(Player* player)
     uint32 mapId = player->GetMapId();
     float x = player->GetPositionX();
     float y = player->GetPositionY();
-    float z = player->GetPositionZ();
     
     for (const auto& hotspot : sActiveHotspots)
     {
