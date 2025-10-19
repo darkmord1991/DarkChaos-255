@@ -371,48 +371,8 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
     return false;
 }
 
-// Build a standardized addon payload string for a hotspot. Includes optional texture field if configured.
-static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds)
-{
-    std::ostringstream addon;
-    addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
-          << "|zone:" << hotspot.zoneId
-          << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
-          << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
-          << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
-          << "|id:" << hotspot.id
-          << "|dur:" << durationSeconds
-          << "|icon:" << sHotspotsConfig.buffSpell
-          << "|bonus:" << sHotspotsConfig.experienceBonus;
-
-    float nx = 0.0f, ny = 0.0f;
-    if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
-    {
-        addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-              << "|ny:" << std::fixed << std::setprecision(4) << ny;
-    }
-
-    // Optionally include an explicit texture path to help clients without spell texture DB
-    if (sHotspotsConfig.includeTextureInAddon)
-    {
-        // Prefer configured explicit texture path if present, otherwise try to derive from spell icon id
-        if (!sHotspotsConfig.buffTexture.empty())
-        {
-            addon << "|tex:" << sHotspotsConfig.buffTexture;
-        }
-        else if (SpellInfo const* si = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
-        {
-            // SpellInfo exposes SpellIconID which client addons might map to texture names.
-            // We include the numeric id as fallback so addons can build a texture path.
-            addon << "|texid:" << si->SpellIconID;
-        }
-    }
-
-    std::string raw = addon.str();
-    for (char &ch : raw)
-        if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-    return raw;
-}
+// Forward declaration of BuildHotspotAddonPayload - implementation placed after Hotspot struct
+static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds);
 
 // Hotspot data structure
 struct Hotspot
@@ -464,6 +424,50 @@ struct Hotspot
         return dist <= sHotspotsConfig.announceRadius;
     }
 };
+
+// Build a standardized addon payload string for a hotspot. Includes optional texture field if configured.
+static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds)
+{
+    std::ostringstream addon;
+    addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
+          << "|zone:" << hotspot.zoneId
+          << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
+          << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
+          << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
+          << "|id:" << hotspot.id
+          << "|dur:" << durationSeconds
+          << "|icon:" << sHotspotsConfig.buffSpell
+          << "|bonus:" << sHotspotsConfig.experienceBonus;
+
+    float nx = 0.0f, ny = 0.0f;
+    if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
+    {
+        addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+              << "|ny:" << std::fixed << std::setprecision(4) << ny;
+    }
+
+    // Optionally include an explicit texture path to help clients without spell texture DB
+    if (sHotspotsConfig.includeTextureInAddon)
+    {
+        // Prefer configured explicit texture path if present, otherwise try to derive from spell icon id
+        if (!sHotspotsConfig.buffTexture.empty())
+        {
+            addon << "|tex:" << sHotspotsConfig.buffTexture;
+        }
+        else if (SpellInfo const* si = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        {
+            // SpellInfo exposes SpellIconID which client addons might map to texture names.
+            // We include the numeric id as fallback so addons can build a texture path.
+            addon << "|texid:" << si->SpellIconID;
+        }
+    }
+
+    std::string raw = addon.str();
+    for (char &ch : raw)
+        if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+    return raw;
+}
+
 
 // Global hotspots storage
 static std::vector<Hotspot> sActiveHotspots;
