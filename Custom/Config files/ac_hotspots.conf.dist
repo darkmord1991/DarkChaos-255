@@ -186,6 +186,17 @@ Hotspots.MarkerGameObjectEntry = 179976
 Hotspots.ClientDataPath = "Data"
 
 #
+#    Hotspots.SendAddonPackets
+#        Description: When enabled the server will send CHAT_MSG_ADDON packets with
+#                     a HOTSPOT prefix to connected clients in addition to the
+#                     system-text fallback. Some custom clients or addons may
+#                     mishandle ADDON packets; enable only if your client/addon
+#                     supports it. Default is OFF (0) to be conservative/safe.
+#        Default:     0 (Disabled)
+
+Hotspots.SendAddonPackets = 0
+
+#
 # IMPORTANT NOTES:
 #
 # For "XP+" text display on the map (like Project Ascension):

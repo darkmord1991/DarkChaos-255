@@ -82,6 +82,7 @@ struct HotspotsConfig
     bool announceExpire = true;
     bool spawnVisualMarker = true;           // Spawn GameObject marker
     uint32 markerGameObjectEntry = 179976;   // Alliance Flag (shows on map)
+    bool sendAddonPackets = false;           // whether to send CHAT_MSG_ADDON packets (unsafe on some clients)
 };
 
 static HotspotsConfig sHotspotsConfig;
@@ -573,6 +574,7 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.announceExpire = sConfigMgr->GetOption<bool>("Hotspots.AnnounceExpire", true);
     sHotspotsConfig.spawnVisualMarker = sConfigMgr->GetOption<bool>("Hotspots.SpawnVisualMarker", true);
     sHotspotsConfig.markerGameObjectEntry = sConfigMgr->GetOption<uint32>("Hotspots.MarkerGameObjectEntry", 179976);
+    sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
 
     std::string mapsStr = sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", "0,1,530,571");
     sHotspotsConfig.enabledMaps = ParseUInt32List(mapsStr);
@@ -1044,10 +1046,13 @@ static bool SpawnHotspot()
               // Send system message so players know a hotspot appeared
               sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), plr);
               
-              // Send addon packet to enable addon visualization
-              WorldPacket pkt;
-              ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
-              sess->SendPacket(&pkt);
+              // Optionally send addon packet to enable addon visualization (disabled by default)
+              if (sHotspotsConfig.sendAddonPackets)
+              {
+                  WorldPacket pkt;
+                  ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
+                  sess->SendPacket(&pkt);
+              }
               announcedCount++;
           }
       }
@@ -1524,6 +1529,7 @@ public:
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
@@ -1665,11 +1671,14 @@ public:
             // Send system fallback message
             ChatHandler(sess).SendSysMessage(rawPayload);
 
-            // Send an ADDON packet so addons receive CHAT_MSG_ADDON
-            std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
-            WorldPacket pkt;
-            ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
-            sess->SendPacket(&pkt);
+            // Optionally send an ADDON packet so addons receive CHAT_MSG_ADDON
+            if (sHotspotsConfig.sendAddonPackets)
+            {
+                std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
+                WorldPacket pkt;
+                ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
+                sess->SendPacket(&pkt);
+            }
             LOG_DEBUG("scripts", "Hotspot spawnhere: sent ADDON payload to {} -> {}", p->GetName(), rawPayload);
 
             // If the player is within hotspot radius, record them for buff application
@@ -1883,6 +1892,35 @@ public:
         else
         {
             handler->SendSysMessage("Failed to teleport to hotspot.");
+        }
+
+        return true;
+    }
+
+    static bool HandleHotspotsAddonPacketsCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Hotspots.SendAddonPackets is currently: %s", sHotspotsConfig.sendAddonPackets ? "ON" : "OFF");
+            handler->PSendSysMessage("Usage: .hotspot addonpackets on|off");
+            return true;
+        }
+
+        std::string a = args;
+        for (auto &c : a) c = std::tolower(c);
+        if (a == "on")
+        {
+            sHotspotsConfig.sendAddonPackets = true;
+            handler->SendSysMessage("Hotspot addon packet sending ENABLED (will persist until restart unless you change config).");
+        }
+        else if (a == "off")
+        {
+            sHotspotsConfig.sendAddonPackets = false;
+            handler->SendSysMessage("Hotspot addon packet sending DISABLED.");
+        }
+        else
+        {
+            handler->PSendSysMessage("Unknown argument '%s' — use on or off", args);
         }
 
         return true;
