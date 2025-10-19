@@ -196,6 +196,41 @@ Hotspots.ClientDataPath = "Data"
 
 Hotspots.SendAddonPackets = 0
 
+#    Hotspots.IncludeTextureInAddon
+#        Description: When enabled the server will include an explicit texture
+#                     field in the HOTSPOT_ADDON payloads to help clients that
+#                     cannot resolve spell icon IDs to texture paths. If enabled
+#                     the server will prefer Hotspots.BuffTexture (if non-empty)
+#                     and otherwise fall back to sending a numeric texid derived
+#                     from the buff spell's SpellIconID.
+#        Default:     0 (Disabled)
+
+Hotspots.IncludeTextureInAddon = 0
+
+#    Hotspots.BuffTexture
+#        Description: Explicit texture path to include in HOTSPOT_ADDON when
+#                     Hotspots.IncludeTextureInAddon is enabled. Use a client
+#                     texture path such as Interface\\Icons\\INV_Misc_Map_01
+#                     (escape backslashes according to your config format).
+#        Default:     "" (empty)
+
+Hotspots.BuffTexture = ""
+
+#    Hotspots.GmBypassLimit
+#        Description: When true, GM/manual spawn commands (e.g. .hotspot spawnhere)
+#                     are allowed to bypass Hotspots.MaxActive so administrators
+#                     can create additional hotspots for events.
+#        Default:     1 (Enabled)
+
+Hotspots.GmBypassLimit = 1
+
+#    Hotspots.AllowWorldwideSpawn
+#        Description: When true, the .hotspot spawnworld admin command is enabled
+#                     and may create hotspots across all configured Hotspots.EnabledMaps.
+#        Default:     1 (Enabled)
+
+Hotspots.AllowWorldwideSpawn = 1
+
 #
 # IMPORTANT NOTES:
 #

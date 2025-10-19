@@ -85,6 +85,8 @@ struct HotspotsConfig
     bool spawnVisualMarker = true;           // Spawn GameObject marker
     uint32 markerGameObjectEntry = 179976;   // Alliance Flag (shows on map)
     bool sendAddonPackets = false;           // whether to send CHAT_MSG_ADDON packets (unsafe on some clients)
+    bool gmBypassLimit = true;                // allow GM/manual spawns to bypass maxActive limit
+    bool allowWorldwideSpawn = true;          // allow spawning hotspots across all enabled maps via command
 };
 
 static HotspotsConfig sHotspotsConfig;
@@ -465,6 +467,8 @@ static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durati
     std::string raw = addon.str();
     for (char &ch : raw)
         if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+    // Debug: log constructed addon payload so server operators can verify texture/icon fields
+    LOG_INFO("scripts", "BuildHotspotAddonPayload -> {}", EscapeBraces(raw));
     return raw;
 }
 
@@ -631,6 +635,8 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
     sHotspotsConfig.includeTextureInAddon = sConfigMgr->GetOption<bool>("Hotspots.IncludeTextureInAddon", false);
     sHotspotsConfig.buffTexture = sConfigMgr->GetOption<std::string>("Hotspots.BuffTexture", std::string(""));
+    sHotspotsConfig.gmBypassLimit = sConfigMgr->GetOption<bool>("Hotspots.GmBypassLimit", true);
+    sHotspotsConfig.allowWorldwideSpawn = sConfigMgr->GetOption<bool>("Hotspots.AllowWorldwideSpawn", true);
 
     std::string mapsStr = sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", "0,1,530,571");
     sHotspotsConfig.enabledMaps = ParseUInt32List(mapsStr);
@@ -1588,6 +1594,7 @@ public:
             ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("spawnworld", HandleHotspotsSpawnWorldCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
@@ -1669,8 +1676,8 @@ public:
         float y = player->GetPositionY();
         float z = player->GetPositionZ();
 
-        // Prevent manual spawn if we've reached max active hotspots
-        if (sActiveHotspots.size() >= sHotspotsConfig.maxActive)
+        // Allow GM bypass of the active limit when configured
+        if (sActiveHotspots.size() >= sHotspotsConfig.maxActive && !sHotspotsConfig.gmBypassLimit)
         {
             handler->SendSysMessage("Cannot spawn hotspot: max active hotspots reached.");
             return true;
@@ -2050,6 +2057,139 @@ public:
             target->CastSpell(target, sHotspotsConfig.buffSpell, true);
 
         handler->PSendSysMessage("Applied hotspot aura/buff to %s.", target->GetName().c_str());
+        return true;
+    }
+
+    static bool HandleHotspotsSpawnWorldCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!sHotspotsConfig.allowWorldwideSpawn)
+        {
+            handler->SendSysMessage("Worldwide spawn command is disabled in configuration.");
+            return true;
+        }
+
+        if (sHotspotsConfig.enabledMaps.empty())
+        {
+            handler->SendSysMessage("No enabled maps configured for hotspots.");
+            return true;
+        }
+
+        int created = 0;
+        for (uint32 mapId : sHotspotsConfig.enabledMaps)
+        {
+            // Avoid creating duplicates on maps that already have an active hotspot
+            bool already = false;
+            for (auto const& h : sActiveHotspots)
+            {
+                if (h.mapId == mapId) { already = true; break; }
+            }
+            if (already) continue;
+
+            float cx = 0.0f, cy = 0.0f, cz = 0.0f;
+            uint32 zid = 0;
+            auto it = sMapBounds.find(mapId);
+            if (it != sMapBounds.end())
+            {
+                auto const& b = it->second;
+                cx = (b[0] + b[1]) * 0.5f;
+                cy = (b[2] + b[3]) * 0.5f;
+                // try to sample ground Z via a base map if available
+                if (Map* map = GetBaseMapSafe(mapId))
+                {
+                    float g = map->GetHeight(cx, cy, MAX_HEIGHT);
+                    if (std::isfinite(g) && g > MIN_HEIGHT) cz = g;
+                }
+            }
+            else
+            {
+                // skip maps without bounds to avoid spawning in unknown coords
+                LOG_WARN("scripts", "SpawnWorld: skipping map {} (no bounds entry)", mapId);
+                continue;
+            }
+
+            Hotspot hotspot;
+            hotspot.id = sNextHotspotId++;
+            hotspot.mapId = mapId;
+            hotspot.zoneId = zid;
+            hotspot.x = cx;
+            hotspot.y = cy;
+            hotspot.z = cz;
+            hotspot.spawnTime = GameTime::GetGameTime().count();
+            hotspot.expireTime = hotspot.spawnTime + (sHotspotsConfig.duration * MINUTE);
+
+            // spawn visual marker if enabled
+            if (sHotspotsConfig.spawnVisualMarker)
+            {
+                if (Map* map = GetBaseMapSafe(mapId))
+                {
+                    if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+                    {
+                        GameObject* go = new GameObject();
+                        float ang = 0.0f; uint32 phaseMask = 0;
+                        float markerZ = hotspot.z;
+                        if (std::isnan(markerZ) || !std::isfinite(markerZ)) markerZ = 0.0f;
+                        if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                                      map, phaseMask, hotspot.x, hotspot.y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
+                        {
+                            go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
+                            map->AddToMap(go);
+                            hotspot.gameObjectGuid = go->GetGUID();
+                        }
+                        else
+                        {
+                            delete go;
+                        }
+                    }
+                }
+            }
+
+            sActiveHotspots.push_back(hotspot);
+            // Prepare addon payload and announce to players on this map
+            Hotspot tmp = hotspot;
+            std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(sHotspotsConfig.duration * MINUTE));
+            std::string humanMsg;
+            {
+                std::ostringstream ss2;
+                std::string zoneName = "Unknown";
+                if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+                    zoneName = area->area_name[0] ? area->area_name[0] : zoneName;
+                ss2 << "Hotspot spawned in " << zoneName << " (" << hotspot.mapId << ") (+" << sHotspotsConfig.experienceBonus << "% XP)!";
+                humanMsg = ss2.str();
+            }
+
+            int announced = 0;
+            for (auto const& kv : sWorldSessionMgr->GetAllSessions())
+            {
+                WorldSession* sess = kv.second;
+                if (!sess) continue;
+                Player* p = sess->GetPlayer();
+                if (!p) continue;
+                if (p->GetMapId() != mapId) continue;
+
+                // Send human-friendly system message to players on this map
+                sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, humanMsg, p);
+
+                // Send structured payload as system fallback
+                ChatHandler(sess).SendSysMessage(rawPayload);
+
+                // Optionally send CHAT_MSG_ADDON packet
+                if (sHotspotsConfig.sendAddonPackets)
+                {
+                    std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
+                    WorldPacket pkt;
+                    ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
+                    sess->SendPacket(&pkt);
+                }
+
+                announced++;
+            }
+
+            LOG_DEBUG("scripts", "SpawnWorld: hotspot #{} on map {} announced to {} players", hotspot.id, mapId, announced);
+
+            created++;
+        }
+
+        handler->PSendSysMessage("Spawned worldwide hotspots on %d map(s)", created);
         return true;
     }
 
