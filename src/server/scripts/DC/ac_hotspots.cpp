@@ -97,6 +97,8 @@ static std::unordered_map<uint32, std::array<float,4>> sMapBounds;
 
 // Forward declaration of Hotspot so helper prototypes can reference it before the full definition.
 struct Hotspot;
+// Forward declaration for EscapeBraces used by logging in helpers defined earlier
+static std::string EscapeBraces(std::string const& s);
 
 // Helper: create or get a base (non-instanced) Map object safely and log on failure.
 static Map* GetBaseMapSafe(uint32 mapId)
