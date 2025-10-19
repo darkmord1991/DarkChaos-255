@@ -1553,9 +1553,9 @@ public:
         for (auto const& hotspot : sActiveHotspots)
         {
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
-            std::string zoneName = sObjectMgr->GetAreaName(hotspot.zoneId, 0);
-            if (zoneName.empty())
-                zoneName = "Unknown Zone";
+            std::string zoneName = "Unknown Zone";
+            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+                zoneName = area->area_name;
             
             handler->PSendSysMessage(
                 "  ID: {} | Map: {} | Zone: {} ({}) | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
@@ -1613,9 +1613,9 @@ public:
 
         sActiveHotspots.push_back(hotspot);
 
-        std::string zoneName = sObjectMgr->GetAreaName(zoneId, 0);
-        if (zoneName.empty())
-            zoneName = "Unknown Zone";
+        std::string zoneName = "Unknown Zone";
+        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
+            zoneName = area->area_name;
 
         handler->PSendSysMessage("Spawned hotspot {} at {}: {}, {:.1f}, {:.1f}, {:.1f}", 
                                 hotspot.id, zoneName, mapId, x, y, z);
