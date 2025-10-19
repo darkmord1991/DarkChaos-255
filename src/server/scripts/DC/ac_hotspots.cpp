@@ -99,41 +99,6 @@ static Map* GetBaseMapSafe(uint32 mapId)
     return map;
 }
 
-// Public accessor functions for other scripts to query hotspot state
-uint32 GetHotspotXPBonusPercentage()
-{
-    return sHotspotsConfig.experienceBonus;
-}
-
-uint32 GetHotspotBuffSpellId()
-{
-    return sHotspotsConfig.buffSpell;
-}
-
-bool IsPlayerInHotspot(Player* player)
-{
-    if (!player || !sHotspotsConfig.enabled)
-        return false;
-    
-    uint32 mapId = player->GetMapId();
-    float x = player->GetPositionX();
-    float y = player->GetPositionY();
-    float z = player->GetPositionZ();
-    
-    for (const auto& hotspot : sActiveHotspots)
-    {
-        if (hotspot.mapId != mapId)
-            continue;
-        
-        float dist = std::sqrt((x - hotspot.x) * (x - hotspot.x) + 
-                               (y - hotspot.y) * (y - hotspot.y));
-        if (dist <= sHotspotsConfig.radius)
-            return true;
-    }
-    
-    return false;
-}
-
 // Build map bounds from DBC WorldMapArea entries. This attempts to compute accurate
 // map extents by aggregating all WorldMapArea entries for a given map_id.
 static void BuildMapBoundsFromDBC()
@@ -455,6 +420,41 @@ struct Hotspot
 static std::vector<Hotspot> sActiveHotspots;
 static uint32 sNextHotspotId = 1;
 static time_t sLastSpawnCheck = 0;
+
+// Public accessor functions for other scripts to query hotspot state
+uint32 GetHotspotXPBonusPercentage()
+{
+    return sHotspotsConfig.experienceBonus;
+}
+
+uint32 GetHotspotBuffSpellId()
+{
+    return sHotspotsConfig.buffSpell;
+}
+
+bool IsPlayerInHotspot(Player* player)
+{
+    if (!player || !sHotspotsConfig.enabled)
+        return false;
+    
+    uint32 mapId = player->GetMapId();
+    float x = player->GetPositionX();
+    float y = player->GetPositionY();
+    float z = player->GetPositionZ();
+    
+    for (const auto& hotspot : sActiveHotspots)
+    {
+        if (hotspot.mapId != mapId)
+            continue;
+        
+        float dist = std::sqrt((x - hotspot.x) * (x - hotspot.x) + 
+                               (y - hotspot.y) * (y - hotspot.y));
+        if (dist <= sHotspotsConfig.radius)
+            return true;
+    }
+    
+    return false;
+}
 
 // Helper: parse comma-separated uint32 list
 static std::vector<uint32> ParseUInt32List(std::string const& str)
