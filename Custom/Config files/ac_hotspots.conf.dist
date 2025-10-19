@@ -61,16 +61,22 @@ Hotspots.InitialPopulateCount = 0
 
 #
 #    Hotspots.AuraSpell
-#        Description: Visual aura spell ID shown when entering hotspot
-#        Default:     800001 (Custom Hotspot XP Buff - see spell_hotspot_buff_800001.cpp)
+#        Description: DEPRECATED - No longer used. Visual effect is now from BuffSpell.
+#                     Kept for backward compatibility only.
+#        Default:     800001
 
 Hotspots.AuraSpell = 800001
 
 #
 #    Hotspots.BuffSpell
-#        Description: Buff spell ID shown while in hotspot (flag icon)
-#                     This spell should have a script in spell_hotspot_buff_800001.cpp
-#                     that handles XP bonus application via PlayerScript hook
+#        Description: Buff spell ID that serves as both visual effect AND XP bonus handler
+#                     - Shows as buff icon in player's buff bar
+#                     - Has aura script in spell_hotspot_buff_800001.cpp
+#                     - Triggers XP bonus via PlayerScript hook (checks HasAura of this spell)
+#                     
+#                     NOTE: Use ONLY ONE spell ID for both effects to avoid conflicts!
+#                     Using Arcane Intellect (42995) as AuraSpell + 800001 as BuffSpell will cause
+#                     interference. Instead, just use 800001 for both.
 #        Default:     800001 (Custom Hotspot XP Buff)
 
 Hotspots.BuffSpell = 800001

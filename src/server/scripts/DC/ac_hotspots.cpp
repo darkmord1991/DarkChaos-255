@@ -1368,46 +1368,24 @@ public:
         }
     }
 
-private:
+    private:
     void CheckPlayerHotspotStatus(Player* player)
     {
         if (!player)
             return;
 
         Hotspot const* hotspot = GetPlayerHotspot(player);
-        bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
-
-        LOG_DEBUG("scripts", "CheckPlayerHotspotStatus for {} (map={}, pos={:.1f},{:.1f}): hotspotFound={} hasBuffAura={}",
-                 player->GetName(), player->GetMapId(), player->GetPositionX(), player->GetPositionY(),
-                 hotspot != nullptr, hasBuffAura);
-
-        if (hotspot && !hasBuffAura)
+        bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);        if (hotspot && !hasBuffAura)
         {
             // Player entered hotspot
             LOG_INFO("scripts", "Player {} entered Hotspot #{} (zone {}, map {})", player->GetName(), hotspot->id, hotspot->zoneId, hotspot->mapId);
             
-            // Debug: inform the player server detected entry (temporary)
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
-
-            // Apply entry visual (temporary cloud aura)
-            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
-            {
-                LOG_DEBUG("scripts", "Casting aura spell {} on player {}", sHotspotsConfig.auraSpell, player->GetName());
-                player->CastSpell(player, sHotspotsConfig.auraSpell, true);
-            }
-            else
-            {
-                LOG_WARN("scripts", "Aura spell {} not found in spell manager", sHotspotsConfig.auraSpell);
-            }
-
-            // Apply persistent buff (flag icon)
+            // Apply persistent buff (this is both the visual effect AND the XP bonus handler)
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
             {
                 LOG_DEBUG("scripts", "Casting buff spell {} on player {}", sHotspotsConfig.buffSpell, player->GetName());
                 player->CastSpell(player, sHotspotsConfig.buffSpell, true);
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
-                // Debug: confirm buff applied
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r applied buff spell id {}", sHotspotsConfig.buffSpell);
             }
             else
             {
@@ -1419,10 +1397,9 @@ private:
             // Player left hotspot
             LOG_INFO("scripts", "Player {} left Hotspot (no longer in range)", player->GetName());
             player->RemoveAura(sHotspotsConfig.buffSpell);
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFFFFD700[Hotspot]|r You have left the XP Hotspot."
-                );
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r removed buff spell id {}", sHotspotsConfig.buffSpell);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFFFF6347[Hotspot Notice]|r You have left the XP Hotspot zone. XP bonus deactivated."
+            );
         }
     }
 };
@@ -1433,7 +1410,7 @@ class HotspotsPlayerGainXP : public PlayerScript
 public:
     HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/)
+    void OnGiveXP(Player* player, uint32& amount, Unit* victim)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
@@ -1441,8 +1418,17 @@ public:
         // Check if player is in hotspot
         if (player->HasAura(sHotspotsConfig.buffSpell))
         {
+            uint32 originalAmount = amount;
             uint32 bonus = (amount * sHotspotsConfig.experienceBonus) / 100;
             amount += bonus;
+            
+            // Send visible notification to player about the bonus
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFFFFD700[Hotspot XP]|r +{} XP ({} base + {}% bonus = {} total)",
+                bonus, originalAmount, sHotspotsConfig.experienceBonus, amount);
+            
+            LOG_DEBUG("scripts", "Hotspot XP Bonus: {} gained +{} XP ({} -> {})", 
+                    player->GetName(), bonus, originalAmount, amount);
         }
     }
 };
@@ -1464,6 +1450,7 @@ public:
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
+            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No),
         };
 
         static ChatCommandTable commandTable =
@@ -1700,6 +1687,55 @@ public:
         else
         {
             handler->SendSysMessage("Failed to teleport to hotspot.");
+        }
+
+        return true;
+    }
+
+    static bool HandleHotspotsStatusCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("You must be in-game to check hotspot status.");
+            return true;
+        }
+
+        if (!sHotspotsConfig.enabled)
+        {
+            handler->SendSysMessage("Hotspot system is disabled.");
+            return true;
+        }
+
+        handler->SendSysMessage("=== Your Hotspot Status ===");
+        
+        bool inHotspot = IsPlayerInHotspot(player);
+        bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
+        
+        handler->PSendSysMessage("In Hotspot: {}", inHotspot ? "YES" : "NO");
+        handler->PSendSysMessage("Has Buff Aura: {}", hasBuffAura ? "YES" : "NO");
+        
+        if (hasBuffAura)
+        {
+            handler->PSendSysMessage("|cFFFFD700XP Bonus: +{}%|r", sHotspotsConfig.experienceBonus);
+            float multiplier = 1.0f + (sHotspotsConfig.experienceBonus / 100.0f);
+            handler->PSendSysMessage("-> All XP gains are multiplied by {:.1f}x!", multiplier);
+        }
+        
+        Hotspot const* nearbyHotspot = GetPlayerHotspot(player);
+        if (nearbyHotspot)
+        {
+            time_t remaining = nearbyHotspot->expireTime - GameTime::GetGameTime().count();
+            std::string zoneName = "Unknown";
+            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(nearbyHotspot->zoneId))
+                zoneName = area->area_name[0] ? area->area_name[0] : zoneName;
+                
+            handler->PSendSysMessage("Nearby Hotspot: ID {} (zone: {}, expires in {}m)",
+                                    nearbyHotspot->id, zoneName, remaining / 60);
+        }
+        else if (!inHotspot)
+        {
+            handler->SendSysMessage("No hotspots nearby (>150 yards away).");
         }
 
         return true;
