@@ -1504,8 +1504,8 @@ public:
         else
         {
             // Debug: player gaining XP but no hotspot buff
-            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff, has aura count: {})", 
-                    player->GetName(), amount, player->GetAuraCount());
+            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff, aura count: {})", 
+                    player->GetName(), amount, player->GetAuraCount(sHotspotsConfig.buffSpell));
         }
     }
 };
