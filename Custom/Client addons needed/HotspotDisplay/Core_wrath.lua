@@ -385,7 +385,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 -- Cleanup expired hotspots periodically
-C_Timer.NewTicker(5, function()
+-- Wrath-compatible ticker using frame OnUpdate instead of C_Timer (which doesn't exist in Wrath)
+local tickerFrame = CreateFrame("Frame")
+local tickerElapsed = 0
+tickerFrame:SetScript("OnUpdate", function(self, elapsed)
+    tickerElapsed = tickerElapsed + elapsed
+    if tickerElapsed < 5 then return end
+    tickerElapsed = 0
     local now = GetTime()
     for id,info in pairs(activeHotspots) do
         if info.expire and info.expire <= now then

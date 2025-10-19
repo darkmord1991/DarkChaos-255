@@ -4,3 +4,4 @@ Patch-C -> Custom Currency
 Patch-D -> ItemExtendedCost
 Patch-E -> Item
 Patch-F -> Worldstates for HLBG
+Patch-G -> Spellstuff
