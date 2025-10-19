@@ -421,6 +421,8 @@ struct Hotspot
 static std::vector<Hotspot> sActiveHotspots;
 static uint32 sNextHotspotId = 1;
 static time_t sLastSpawnCheck = 0;
+// Per-player apply retries: when a buff cast does not result in an aura, retry a few times
+static std::unordered_map<ObjectGuid, int> sBuffApplyRetries;
 
 // Public accessor functions for other scripts to query hotspot state
 uint32 GetHotspotXPBonusPercentage()
@@ -1404,6 +1406,25 @@ public:
         {
             sLastCheck[guid] = now;
             CheckPlayerHotspotStatus(player);
+            // If there are pending retries for this player and player still lacks aura, try again
+            auto it = sBuffApplyRetries.find(guid);
+            if (it != sBuffApplyRetries.end())
+            {
+                if (!player->HasAura(sHotspotsConfig.buffSpell) && it->second > 0)
+                {
+                    LOG_INFO("scripts", "Retrying hotspot buff application for {} ({} retries left)", player->GetName(), it->second);
+                    if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+                        player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+                    if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+                        player->CastSpell(player, sHotspotsConfig.buffSpell, true);
+                    it->second -= 1;
+                }
+                else
+                {
+                    // Aura applied or retries exhausted: clear entry
+                    sBuffApplyRetries.erase(it);
+                }
+            }
         }
     }
 
@@ -1455,11 +1476,23 @@ public:
             }
             
             // Apply persistent buff (this is the ONLY buff for XP bonus)
+            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            {
+                LOG_DEBUG("scripts", "Casting aura spell {} on player {}", sHotspotsConfig.auraSpell, player->GetName());
+                player->CastSpell(player, sHotspotsConfig.auraSpell, true);
+            }
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(buffSpellId))
             {
                 LOG_DEBUG("scripts", "Casting buff spell {} on player {}", buffSpellId, player->GetName());
                 player->CastSpell(player, buffSpellId, true);
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
+
+                // If the aura was not registered immediately, schedule retries (up to 3 attempts)
+                if (!player->HasAura(buffSpellId))
+                {
+                    LOG_WARN("scripts", "Initial buff cast did not result in aura for {} — scheduling retries", player->GetName());
+                    sBuffApplyRetries[player->GetGUID()] = 3;
+                }
             }
             else
             {
@@ -1474,6 +1507,8 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFF6347[Hotspot Notice]|r You have left the XP Hotspot zone. XP bonus deactivated."
             );
+            // Remove any pending retries
+            sBuffApplyRetries.erase(player->GetGUID());
         }
     }
 };
@@ -1500,11 +1535,11 @@ public:
             
             // Send visible notification to player about the bonus
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cFFFFD700[Hotspot XP]|r +{} XP ({} base + {}% bonus = {} total)",
+                "|cFFFFD700[Hotspot XP]|r +%u XP (%u base + %u%% bonus = %u total)",
                 bonus, originalAmount, sHotspotsConfig.experienceBonus, amount);
-            
-            LOG_DEBUG("scripts", "Hotspot XP Bonus: {} gained +{} XP ({} -> {})", 
-                    player->GetName(), bonus, originalAmount, amount);
+
+            LOG_INFO("scripts", "Hotspot XP Bonus applied to {}: base={} bonus={} final={}", 
+                    player->GetName(), originalAmount, bonus, amount);
         }
         else
         {
@@ -1529,11 +1564,13 @@ public:
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
+            ChatCommandBuilder("forcebuff", HandleHotspotsForceBuffCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No),
         };
 
@@ -1799,6 +1836,44 @@ public:
         return true;
     }
 
+    static bool HandleHotspotsTestXPCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("No player session available to test XP on.");
+            return true;
+        }
+
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Usage: .hotspot testxp <amount>");
+            return true;
+        }
+
+        if (Optional<uint32> maybe = Acore::StringTo<uint32>(args))
+        {
+            uint32 base = *maybe;
+            bool hasBuff = player->HasAura(sHotspotsConfig.buffSpell);
+            uint32 bonus = 0;
+            uint32 total = base;
+            if (hasBuff && sHotspotsConfig.enabled)
+            {
+                bonus = (base * sHotspotsConfig.experienceBonus) / 100;
+                total = base + bonus;
+            }
+
+            handler->PSendSysMessage("Hotspot Test XP: base=%u hasBuff=%s bonus=%u total=%u", base, hasBuff ? "YES" : "NO", bonus, total);
+            LOG_INFO("scripts", "Hotspot TestXP for {}: base={} hasBuff={} bonus={} total={}", player->GetName(), base, hasBuff, bonus, total);
+        }
+        else
+        {
+            handler->PSendSysMessage("Invalid amount '%s'", args);
+        }
+
+        return true;
+    }
+
     static bool HandleHotspotsClearCommand(ChatHandler* handler, char const* /*args*/)
     {
         size_t count = sActiveHotspots.size();
@@ -1933,6 +2008,50 @@ public:
             handler->SendSysMessage("Failed to teleport to hotspot.");
         }
 
+        return true;
+    }
+
+    static bool HandleHotspotsForceBuffCommand(ChatHandler* handler, char const* args)
+    {
+        if (!handler->GetSession())
+            return false;
+
+        Player* src = handler->GetSession()->GetPlayer();
+        if (!src)
+            return false;
+
+        // usage: .hotspot forcebuff me | <playername>
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Usage: .hotspot forcebuff me | <playername>");
+            return true;
+        }
+
+        std::string a = args;
+        if (a == "me")
+        {
+            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+                src->CastSpell(src, sHotspotsConfig.auraSpell, true);
+            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+                src->CastSpell(src, sHotspotsConfig.buffSpell, true);
+            handler->SendSysMessage("Applied hotspot aura/buff to yourself.");
+            return true;
+        }
+
+        // find player by name
+        Player* target = ObjectAccessor::FindPlayerByName(a.c_str(), false);
+        if (!target)
+        {
+            handler->PSendSysMessage("Player '%s' not found or not online.", args);
+            return true;
+        }
+
+        if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            target->CastSpell(target, sHotspotsConfig.auraSpell, true);
+        if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            target->CastSpell(target, sHotspotsConfig.buffSpell, true);
+
+        handler->PSendSysMessage("Applied hotspot aura/buff to %s.", target->GetName().c_str());
         return true;
     }
 
