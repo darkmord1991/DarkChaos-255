@@ -1627,6 +1627,8 @@ public:
 
         // Send addon message to all players. GetAllSessions() returns a map<id, WorldSession*>,
         // so iterate pairs and use .second to access the WorldSession*.
+        // Send messages to sessions and collect players that should be buffed, apply buffs after loop
+        std::vector<Player*> playersToBuff;
         for (auto const& kv : sWorldSessionMgr->GetAllSessions())
         {
             WorldSession* sess = kv.second;
@@ -1636,16 +1638,16 @@ public:
             if (!p)
                 continue;
 
-        std::ostringstream addon;
-        addon << "HOTSPOT_ADDON|map:" << mapId
-            << "|zone:" << zoneId
-            << "|x:" << std::fixed << std::setprecision(2) << x
-            << "|y:" << std::fixed << std::setprecision(2) << y
-            << "|z:" << std::fixed << std::setprecision(2) << z
-            << "|id:" << hotspot.id
-            << "|dur:" << (sHotspotsConfig.duration * MINUTE)
-            << "|icon:" << sHotspotsConfig.buffSpell
-            << "|bonus:" << sHotspotsConfig.experienceBonus;
+            std::ostringstream addon;
+            addon << "HOTSPOT_ADDON|map:" << mapId
+                  << "|zone:" << zoneId
+                  << "|x:" << std::fixed << std::setprecision(2) << x
+                  << "|y:" << std::fixed << std::setprecision(2) << y
+                  << "|z:" << std::fixed << std::setprecision(2) << z
+                  << "|id:" << hotspot.id
+                  << "|dur:" << (sHotspotsConfig.duration * MINUTE)
+                  << "|icon:" << sHotspotsConfig.buffSpell
+                  << "|bonus:" << sHotspotsConfig.experienceBonus;
 
             float nx = 0.0f, ny = 0.0f;
             if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
@@ -1660,29 +1662,38 @@ public:
                 if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
             }
 
-            // Send system fallback message and also an addon-style packet so addons can pick it up.
+            // Send system fallback message
             ChatHandler(sess).SendSysMessage(rawPayload);
 
-            // Build and send an ADDON chat packet (prefix\tpayload) so the client's CHAT_MSG_ADDON handler fires.
+            // Send an ADDON packet so addons receive CHAT_MSG_ADDON
             std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
             WorldPacket pkt;
             ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
             sess->SendPacket(&pkt);
+            LOG_DEBUG("scripts", "Hotspot spawnhere: sent ADDON payload to {} -> {}", p->GetName(), rawPayload);
 
-            // Additionally, if the player is within hotspot radius, apply the hotspot aura and buff immediately
+            // If the player is within hotspot radius, record them for buff application
             float dx = p->GetPositionX() - x;
             float dy = p->GetPositionY() - y;
             float dz = p->GetPositionZ() - z;
             float dist2 = dx*dx + dy*dy + dz*dz;
             if (dist2 <= (sHotspotsConfig.radius * sHotspotsConfig.radius))
-            {
-                // Apply aura and buff spells
-                if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
-                    p->CastSpell(p, sHotspotsConfig.auraSpell, true);
-                if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
-                    p->CastSpell(p, sHotspotsConfig.buffSpell, true);
+                playersToBuff.push_back(p);
+        }
+
+        // Apply buffs after we've finished iterating sessions to avoid side-effects while iterating
+        for (Player* p : playersToBuff)
+        {
+            if (!p || !p->IsInWorld())
+                continue;
+
+            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+                p->CastSpell(p, sHotspotsConfig.auraSpell, true);
+            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+                p->CastSpell(p, sHotspotsConfig.buffSpell, true);
+
+            if (p->GetSession())
                 ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +%u%% experience from kills!", sHotspotsConfig.experienceBonus);
-            }
         }
 
         return true;
