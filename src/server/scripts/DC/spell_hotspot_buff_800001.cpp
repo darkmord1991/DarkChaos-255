@@ -17,18 +17,6 @@
 extern uint32 GetHotspotXPBonusPercentage();
 extern uint32 GetHotspotBuffSpellId();
 
-// Spell Script: Apply XP multiplier while aura is active
-class spell_hotspot_buff_800001 : public SpellScript
-{
-    PrepareSpellScript(spell_hotspot_buff_800001);
-
-    void Register() override
-    {
-        // This spell script doesn't modify the spell cast itself,
-        // instead we use the Aura Effect script below
-    }
-};
-
 // Aura Effect Script: Handle the XP bonus application
 class spell_hotspot_buff_800001_aura : public AuraScript
 {
@@ -61,9 +49,8 @@ class spell_hotspot_buff_800001_aura : public AuraScript
     }
 };
 
-// Register the scripts
+// Register the aura script
 void AddSC_spell_hotspot_buff_800001()
 {
-    RegisterSpellScript(spell_hotspot_buff_800001);
     RegisterAuraScript(spell_hotspot_buff_800001_aura);
 }
