@@ -48,9 +48,3 @@ class spell_hotspot_buff_800001_aura : public AuraScript
         OnEffectRemove += AuraEffectRemoveFn(spell_hotspot_buff_800001_aura::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
-
-// Register the aura script
-void AddSC_spell_hotspot_buff_800001()
-{
-    new AuraScript_impl<spell_hotspot_buff_800001_aura>();
-}
