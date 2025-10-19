@@ -1522,6 +1522,7 @@ public:
         {
             ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
             ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
@@ -1548,13 +1549,17 @@ public:
             return true;
         }
 
-    handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
+        handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
         for (auto const& hotspot : sActiveHotspots)
         {
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
+            std::string zoneName = sObjectMgr->GetAreaName(hotspot.zoneId, 0);
+            if (zoneName.empty())
+                zoneName = "Unknown Zone";
+            
             handler->PSendSysMessage(
-                "  ID: {} | Map: {} | Zone: {} | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
-                hotspot.id, hotspot.mapId, hotspot.zoneId,
+                "  ID: {} | Map: {} | Zone: {} ({}) | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
+                hotspot.id, hotspot.mapId, zoneName, hotspot.zoneId,
                 hotspot.x, hotspot.y, hotspot.z,
                 remaining / 60
             );
@@ -1577,6 +1582,82 @@ public:
                                     sHotspotsConfig.enabledMaps.size(), sMapBounds.size(), sHotspotsConfig.maxActive, sActiveHotspots.size());
             handler->PSendSysMessage("Run 'hotspots dump' to get more detailed info.");
         }
+        return true;
+    }
+
+    static bool HandleHotspotsSpawnHereCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("No player session available.");
+            return true;
+        }
+
+        // Create a hotspot at player's current location
+        uint32 mapId = player->GetMapId();
+        uint32 zoneId = player->GetZoneId();
+        float x = player->GetPositionX();
+        float y = player->GetPositionY();
+        float z = player->GetPositionZ();
+
+        Hotspot hotspot;
+        hotspot.id = sNextHotspotId++;
+        hotspot.mapId = mapId;
+        hotspot.zoneId = zoneId;
+        hotspot.x = x;
+        hotspot.y = y;
+        hotspot.z = z;
+        hotspot.spawnTime = GameTime::GetGameTime().count();
+        hotspot.expireTime = hotspot.spawnTime + (sHotspotsConfig.duration * MINUTE);
+
+        sActiveHotspots.push_back(hotspot);
+
+        std::string zoneName = sObjectMgr->GetAreaName(zoneId, 0);
+        if (zoneName.empty())
+            zoneName = "Unknown Zone";
+
+        handler->PSendSysMessage("Spawned hotspot {} at {}: {}, {:.1f}, {:.1f}, {:.1f}", 
+                                hotspot.id, zoneName, mapId, x, y, z);
+
+        // Broadcast to all players
+        std::ostringstream ss;
+        ss << "Hotspot spawned in " << zoneName << " (+{}% XP)!";
+        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
+
+        // Send addon message to all players
+        for (const auto& sess : sWorldSessionMgr->GetAllSessions())
+        {
+            if (sess->GetPlayer())
+            {
+                std::ostringstream addon;
+                addon << "HOTSPOT_ADDON|map:" << mapId
+                      << "|zone:" << zoneId
+                      << "|x:" << std::fixed << std::setprecision(2) << x
+                      << "|y:" << std::fixed << std::setprecision(2) << y
+                      << "|z:" << std::fixed << std::setprecision(2) << z
+                      << "|id:" << hotspot.id
+                      << "|dur:" << (sHotspotsConfig.duration * MINUTE)
+                      << "|icon:" << sHotspotsConfig.buffSpell
+                      << "|bonus:" << sHotspotsConfig.experienceBonus;
+
+                float nx = 0.0f, ny = 0.0f;
+                if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
+                {
+                    addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+                          << "|ny:" << std::fixed << std::setprecision(4) << ny;
+                }
+
+                std::string rawPayload = addon.str();
+                for (char &ch : rawPayload)
+                {
+                    if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+                }
+
+                ChatHandler(sess).SendSysMessage(rawPayload);
+            }
+        }
+
         return true;
     }
 
