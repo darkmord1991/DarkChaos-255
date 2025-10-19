@@ -1349,6 +1349,40 @@ public:
 
         // Check if player logged in inside a hotspot
         CheckPlayerHotspotStatus(player);
+        
+        // Send all active hotspots to the addon when player logs in
+        if (player->GetSession())
+        {
+            for (const auto& hotspot : sActiveHotspots)
+            {
+                std::ostringstream addon;
+                addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
+                      << "|zone:" << hotspot.zoneId
+                      << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
+                      << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
+                      << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
+                      << "|id:" << hotspot.id
+                      << "|dur:" << (hotspot.expirationTime - time(nullptr))
+                      << "|icon:" << sHotspotsConfig.buffSpell
+                      << "|bonus:" << sHotspotsConfig.experienceBonus;
+                
+                float nx = 0.0f, ny = 0.0f;
+                if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
+                {
+                    addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+                          << "|ny:" << std::fixed << std::setprecision(4) << ny;
+                }
+                
+                std::string rawPayload = addon.str();
+                for (char &ch : rawPayload)
+                {
+                    if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+                }
+                
+                // Send via chat system message (fallback method - works like addon message)
+                ChatHandler(player->GetSession()).SendSysMessage(rawPayload);
+            }
+        }
     }
 
     void OnUpdate(Player* player, uint32 /*diff*/)
@@ -1450,8 +1484,10 @@ public:
         if (!sHotspotsConfig.enabled || !player)
             return;
 
-        // Check if player is in hotspot
-        if (player->HasAura(sHotspotsConfig.buffSpell))
+        // Check if player has hotspot buff aura
+        bool hasHotspotBuff = player->HasAura(sHotspotsConfig.buffSpell);
+        
+        if (hasHotspotBuff)
         {
             uint32 originalAmount = amount;
             uint32 bonus = (amount * sHotspotsConfig.experienceBonus) / 100;
@@ -1464,6 +1500,12 @@ public:
             
             LOG_DEBUG("scripts", "Hotspot XP Bonus: {} gained +{} XP ({} -> {})", 
                     player->GetName(), bonus, originalAmount, amount);
+        }
+        else
+        {
+            // Debug: player gaining XP but no hotspot buff
+            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff, has aura count: {})", 
+                    player->GetName(), amount, player->GetAuraCount());
         }
     }
 };
