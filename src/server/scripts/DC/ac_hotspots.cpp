@@ -1625,37 +1625,42 @@ public:
         ss << "Hotspot spawned in " << zoneName << " (+{}% XP)!";
         sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
 
-        // Send addon message to all players
-        for (const auto& sess : sWorldSessionMgr->GetAllSessions())
+        // Send addon message to all players. GetAllSessions() returns a map<id, WorldSession*>,
+        // so iterate pairs and use .second to access the WorldSession*.
+        for (auto const& kv : sWorldSessionMgr->GetAllSessions())
         {
-            if (sess->GetPlayer())
+            WorldSession* sess = kv.second;
+            if (!sess)
+                continue;
+            Player* p = sess->GetPlayer();
+            if (!p)
+                continue;
+
+            std::ostringstream addon;
+            addon << "HOTSPOT_ADDON|map:" << mapId
+                  << "|zone:" << zoneId
+                  << "|x:" << std::fixed << std::setprecision(2) << x
+                  << "|y:" << std::fixed << std::setprecision(2) << y
+                  << "|z:" << std::fixed << std::setprecision(2) << z
+                  << "|id:" << hotspot.id
+                  << "|dur:" << (sHotspotsConfig.duration * MINUTE)
+                  << "|icon:" << sHotspotsConfig.buffSpell
+                  << "|bonus:" << sHotspotsConfig.experienceBonus;
+
+            float nx = 0.0f, ny = 0.0f;
+            if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
             {
-                std::ostringstream addon;
-                addon << "HOTSPOT_ADDON|map:" << mapId
-                      << "|zone:" << zoneId
-                      << "|x:" << std::fixed << std::setprecision(2) << x
-                      << "|y:" << std::fixed << std::setprecision(2) << y
-                      << "|z:" << std::fixed << std::setprecision(2) << z
-                      << "|id:" << hotspot.id
-                      << "|dur:" << (sHotspotsConfig.duration * MINUTE)
-                      << "|icon:" << sHotspotsConfig.buffSpell
-                      << "|bonus:" << sHotspotsConfig.experienceBonus;
-
-                float nx = 0.0f, ny = 0.0f;
-                if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
-                {
-                    addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-                          << "|ny:" << std::fixed << std::setprecision(4) << ny;
-                }
-
-                std::string rawPayload = addon.str();
-                for (char &ch : rawPayload)
-                {
-                    if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-                }
-
-                ChatHandler(sess).SendSysMessage(rawPayload);
+                addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+                      << "|ny:" << std::fixed << std::setprecision(4) << ny;
             }
+
+            std::string rawPayload = addon.str();
+            for (char &ch : rawPayload)
+            {
+                if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+            }
+
+            ChatHandler(sess).SendSysMessage(rawPayload);
         }
 
         return true;
