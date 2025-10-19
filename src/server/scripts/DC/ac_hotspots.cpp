@@ -67,10 +67,10 @@ struct HotspotsConfig
     uint32 maxActive = 5;
     uint32 respawnDelay = 30;                // minutes
     uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
-    uint32 auraSpell = 24171;                // Entry visual (cloud)
-    uint32 buffSpell = 23768;                // Persistent buff (flag icon)
-                                             // Note: 23768 is Essence of Wintergrasp (test this!)
-                                             // Other options: varies by server; test with spell IDs that have flag icons
+    uint32 auraSpell = 25906;                // Arcane Intellect (visual marker on entry; blue glow)
+    uint32 buffSpell = 25906;                // Same as aura for now - can use player spell ID for XP bonus handling
+                                             // Note: 25906 (Arcane Intellect) is safe and exists in Wrath DBCs
+                                             // Custom XP bonus is applied via server-side GainXP hook, not spell effect
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
     float announceRadius = 500.0f;           // yards
     std::vector<uint32> enabledMaps;
@@ -97,6 +97,41 @@ static Map* GetBaseMapSafe(uint32 mapId)
     if (!map)
         LOG_WARN("scripts", "GetBaseMapSafe: could not create/find Map object for map id {}", mapId);
     return map;
+}
+
+// Public accessor functions for other scripts to query hotspot state
+uint32 GetHotspotXPBonusPercentage()
+{
+    return sHotspotsConfig.experienceBonus;
+}
+
+uint32 GetHotspotBuffSpellId()
+{
+    return sHotspotsConfig.buffSpell;
+}
+
+bool IsPlayerInHotspot(Player* player)
+{
+    if (!player || !sHotspotsConfig.enabled)
+        return false;
+    
+    uint32 mapId = player->GetMapId();
+    float x = player->GetPositionX();
+    float y = player->GetPositionY();
+    float z = player->GetPositionZ();
+    
+    for (const auto& hotspot : sActiveHotspots)
+    {
+        if (hotspot.mapId != mapId)
+            continue;
+        
+        float dist = std::sqrt((x - hotspot.x) * (x - hotspot.x) + 
+                               (y - hotspot.y) * (y - hotspot.y));
+        if (dist <= sHotspotsConfig.radius)
+            return true;
+    }
+    
+    return false;
 }
 
 // Build map bounds from DBC WorldMapArea entries. This attempts to compute accurate
@@ -531,8 +566,8 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.radius = sConfigMgr->GetOption<float>("Hotspots.Radius", 150.0f);
     sHotspotsConfig.maxActive = sConfigMgr->GetOption<uint32>("Hotspots.MaxActive", 5);
     sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 30);
-    sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 24171);
-    sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 23768);
+    sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 25906);
+    sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 25906);
     sHotspotsConfig.minimapIcon = sConfigMgr->GetOption<uint32>("Hotspots.MinimapIcon", 1);
     sHotspotsConfig.announceRadius = sConfigMgr->GetOption<float>("Hotspots.AnnounceRadius", 500.0f);
     sHotspotsConfig.announceSpawn = sConfigMgr->GetOption<bool>("Hotspots.AnnounceSpawn", true);
