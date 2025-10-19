@@ -961,7 +961,7 @@ static bool SpawnHotspot()
 
         std::string zoneName = "Unknown";
         if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
-            zoneName = area->area_name[0];
+            zoneName = area->area_name[0] ? area->area_name[0] : "Unknown";
 
         std::ostringstream ss;
         ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot has appeared in " << mapName
@@ -1555,7 +1555,7 @@ public:
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
             std::string zoneName = "Unknown Zone";
             if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
-                zoneName = area->area_name;
+                zoneName = area->area_name[0] ? area->area_name[0] : "Unknown Zone";
             
             handler->PSendSysMessage(
                 "  ID: {} | Map: {} | Zone: {} ({}) | Pos: ({:.1f}, {:.1f}, {:.1f}) | Time Left: {}m",
@@ -1615,7 +1615,7 @@ public:
 
         std::string zoneName = "Unknown Zone";
         if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
-            zoneName = area->area_name;
+            zoneName = area->area_name[0] ? area->area_name[0] : "Unknown Zone";
 
         handler->PSendSysMessage("Spawned hotspot {} at {}: {}, {:.1f}, {:.1f}, {:.1f}", 
                                 hotspot.id, zoneName, mapId, x, y, z);
