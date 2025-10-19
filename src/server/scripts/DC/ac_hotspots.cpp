@@ -1362,7 +1362,7 @@ public:
                       << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
                       << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
                       << "|id:" << hotspot.id
-                      << "|dur:" << (hotspot.expirationTime - time(nullptr))
+                      << "|dur:" << (hotspot.expireTime - time(nullptr))
                       << "|icon:" << sHotspotsConfig.buffSpell
                       << "|bonus:" << sHotspotsConfig.experienceBonus;
                 
