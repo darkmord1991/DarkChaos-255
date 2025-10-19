@@ -93,6 +93,9 @@ static HotspotsConfig sHotspotsConfig;
 // These are approximate and can be improved later with DBC-driven values.
 static std::unordered_map<uint32, std::array<float,4>> sMapBounds;
 
+// Forward declaration of Hotspot so helper prototypes can reference it before the full definition.
+struct Hotspot;
+
 // Helper: create or get a base (non-instanced) Map object safely and log on failure.
 static Map* GetBaseMapSafe(uint32 mapId)
 {

@@ -52,6 +52,9 @@ local function ResolveHotspotTexture(info)
     local default2 = "Interface\\Icons\\INV_BannerPVP_01"
     -- Prefer explicit server-provided texture path
     if info and info.tex and type(info.tex) == "string" and info.tex ~= "" then
+        local msg = "HotspotDisplay: using server |tex -> "..tostring(info.tex)
+        pcall(AddDebugLog, msg)
+        if HotspotDisplayDB.devMode then pcall(function() DEFAULT_CHAT_FRAME:AddMessage(msg) end) end
         return info.tex
     end
     -- Next, prefer a server-provided numeric texture id (texid) which we try to resolve to a texture
@@ -76,7 +79,12 @@ local function ResolveHotspotTexture(info)
                 local n, r, icon = GetSpellInfo(sid)
                 return icon
             end)
-            if ok and tex and tex ~= "" then return tex end
+            if ok and tex and tex ~= "" then
+                local msg = "HotspotDisplay: resolved |texid "..tostring(tid).." -> "..tostring(tex)
+                pcall(AddDebugLog, msg)
+                if HotspotDisplayDB.devMode then pcall(function() DEFAULT_CHAT_FRAME:AddMessage(msg) end) end
+                return tex
+            end
         end
     end
 
