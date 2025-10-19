@@ -67,10 +67,10 @@ struct HotspotsConfig
     uint32 maxActive = 5;
     uint32 respawnDelay = 30;                // minutes
     uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
-    uint32 auraSpell = 25906;                // Arcane Intellect (visual marker on entry; blue glow)
-    uint32 buffSpell = 25906;                // Same as aura for now - can use player spell ID for XP bonus handling
-                                             // Note: 25906 (Arcane Intellect) is safe and exists in Wrath DBCs
-                                             // Custom XP bonus is applied via server-side GainXP hook, not spell effect
+    uint32 auraSpell = 800001;               // Custom hotspot XP buff spell
+    uint32 buffSpell = 800001;               // Custom hotspot XP buff spell with spellscript that handles XP multiplication
+                                             // Spell ID 800001 must have a spellscript that applies the XP bonus
+                                             // See: src/server/scripts/DC/spell_hotspot_buff_800001.cpp
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
     float announceRadius = 500.0f;           // yards
     std::vector<uint32> enabledMaps;
@@ -566,8 +566,8 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.radius = sConfigMgr->GetOption<float>("Hotspots.Radius", 150.0f);
     sHotspotsConfig.maxActive = sConfigMgr->GetOption<uint32>("Hotspots.MaxActive", 5);
     sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 30);
-    sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 25906);
-    sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 25906);
+    sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 800001);
+    sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 800001);
     sHotspotsConfig.minimapIcon = sConfigMgr->GetOption<uint32>("Hotspots.MinimapIcon", 1);
     sHotspotsConfig.announceRadius = sConfigMgr->GetOption<float>("Hotspots.AnnounceRadius", 500.0f);
     sHotspotsConfig.announceSpawn = sConfigMgr->GetOption<bool>("Hotspots.AnnounceSpawn", true);

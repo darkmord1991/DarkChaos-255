@@ -62,16 +62,18 @@ Hotspots.InitialPopulateCount = 0
 #
 #    Hotspots.AuraSpell
 #        Description: Visual aura spell ID shown when entering hotspot
-#        Default:     24171 (Hallow's End Candy)
+#        Default:     800001 (Custom Hotspot XP Buff - see spell_hotspot_buff_800001.cpp)
 
-Hotspots.AuraSpell = 24171
+Hotspots.AuraSpell = 800001
 
 #
 #    Hotspots.BuffSpell
 #        Description: Buff spell ID shown while in hotspot (flag icon)
-#        Default:     23768 (Sayge's Dark Fortune of Strength)
+#                     This spell should have a script in spell_hotspot_buff_800001.cpp
+#                     that handles XP bonus application via PlayerScript hook
+#        Default:     800001 (Custom Hotspot XP Buff)
 
-Hotspots.BuffSpell = 23768
+Hotspots.BuffSpell = 800001
 
 #
 #    Hotspots.MinimapIcon
