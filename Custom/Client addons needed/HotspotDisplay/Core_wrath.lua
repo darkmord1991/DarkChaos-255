@@ -45,6 +45,47 @@ local function ParsePayload(msg)
     return data
 end
 
+-- Resolve an icon/texture for a hotspot. Prefer server-provided spell icon (info.icon) when available,
+-- otherwise fall back to user-chosen iconChoice or bundled defaults.
+local function ResolveHotspotTexture(info)
+    local default1 = "Interface\\Icons\\INV_Misc_Map_01"
+    local default2 = "Interface\\Icons\\INV_BannerPVP_01"
+    -- Prefer explicit server-provided texture path
+    if info and info.tex and type(info.tex) == "string" and info.tex ~= "" then
+        return info.tex
+    end
+    -- Next, prefer a server-provided numeric texture id (texid) which we try to resolve to a texture
+    if info and info.texid then
+        local tid = tonumber(info.texid)
+        if tid then
+            local ok, tex = pcall(function()
+                if GetSpellTexture then return GetSpellTexture(tid) end
+                local n, r, icon = GetSpellInfo(tid)
+                return icon
+            end)
+            if ok and tex and tex ~= "" then return tex end
+        end
+    end
+    -- Try server-provided numeric icon (spell id)
+    if info and info.icon then
+        local sid = tonumber(info.icon)
+        if sid then
+            -- Prefer GetSpellTexture when available, else try GetSpellInfo
+            local ok, tex = pcall(function()
+                if GetSpellTexture then return GetSpellTexture(sid) end
+                local n, r, icon = GetSpellInfo(sid)
+                return icon
+            end)
+            if ok and tex and tex ~= "" then return tex end
+        end
+    end
+
+    -- Fallback to saved iconChoice
+    local iconChoice = HotspotDisplayDB.iconChoice or 1
+    if type(iconChoice) == "string" then return iconChoice end
+    if iconChoice == 1 then return default1 else return default2 end
+end
+
 local function AddDebugLog(msg)
     if not msg then return end
     local t = date("%H:%M:%S")
@@ -66,7 +107,7 @@ local function CreateWorldPin(id, info)
     pin:SetSize(20,20)
     pin.texture = pin:CreateTexture(nil, "OVERLAY")
     pin.texture:SetAllPoints()
-    pin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+    pin.texture:SetTexture(ResolveHotspotTexture(info))
     pin:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Hotspot #"..tostring(id))
@@ -101,7 +142,7 @@ local function CreateMinimapPin(id, info)
     pin:SetSize(14,14)
     pin.texture = pin:CreateTexture(nil, "OVERLAY")
     pin.texture:SetAllPoints()
-    pin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+    pin.texture:SetTexture(ResolveHotspotTexture(info))
     pin:Hide()
     minimapPins[id] = pin
     return pin
@@ -185,9 +226,11 @@ local function RegisterHotspotFromData(data)
     local nx = DefensiveToNumber(data.nx)
     local ny = DefensiveToNumber(data.ny)
     local icon = DefensiveToNumber(data.icon)
+    local tex = data.tex
+    local texid = DefensiveToNumber(data.texid)
     -- server may send bonus as 'bonus' or 'experienceBonus'; prefer numeric values when present
     local bonus = DefensiveToNumber(data.bonus) or DefensiveToNumber(data.experienceBonus)
-    activeHotspots[id] = { map = map, zone = zone, x = x, y = y, nx = nx, ny = ny, expire = GetTime() + dur, icon = icon, bonus = bonus }
+    activeHotspots[id] = { map = map, zone = zone, x = x, y = y, nx = nx, ny = ny, expire = GetTime() + dur, icon = icon, tex = tex, texid = texid, bonus = bonus }
     -- Update global indicator whenever hotspots list changes
     pcall(function() UpdateGlobalIndicator() end)
     -- If this looks like a synthetic/test hotspot (IDs reserved >=9000), don't create UI — register-only mode

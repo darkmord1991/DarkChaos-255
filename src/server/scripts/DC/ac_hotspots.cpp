@@ -73,6 +73,8 @@ struct HotspotsConfig
                                              // See: src/server/scripts/DC/spell_hotspot_buff_800001.cpp
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
     float announceRadius = 500.0f;           // yards
+    bool includeTextureInAddon = false;      // include a |tex:<path> field in addon payload if provided
+    std::string buffTexture = "";          // explicit texture path to include (e.g. Interface\\Icons\\INV_Misc_Map_01)
     std::vector<uint32> enabledMaps;
     std::vector<uint32> enabledZones;
     std::vector<uint32> excludedZones;
@@ -366,6 +368,49 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
     return false;
 }
 
+// Build a standardized addon payload string for a hotspot. Includes optional texture field if configured.
+static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds)
+{
+    std::ostringstream addon;
+    addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
+          << "|zone:" << hotspot.zoneId
+          << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
+          << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
+          << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
+          << "|id:" << hotspot.id
+          << "|dur:" << durationSeconds
+          << "|icon:" << sHotspotsConfig.buffSpell
+          << "|bonus:" << sHotspotsConfig.experienceBonus;
+
+    float nx = 0.0f, ny = 0.0f;
+    if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
+    {
+        addon << "|nx:" << std::fixed << std::setprecision(4) << nx
+              << "|ny:" << std::fixed << std::setprecision(4) << ny;
+    }
+
+    // Optionally include an explicit texture path to help clients without spell texture DB
+    if (sHotspotsConfig.includeTextureInAddon)
+    {
+        // Prefer configured explicit texture path if present, otherwise try to derive from spell icon id
+        if (!sHotspotsConfig.buffTexture.empty())
+        {
+            addon << "|tex:" << sHotspotsConfig.buffTexture;
+        }
+        else if (SpellInfo const* si = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        {
+            // SpellInfo exposes SpellIconID which client addons might map to texture names.
+            // We include the numeric id as fallback so addons can build a texture path.
+            addon << "|texid:" << si->SpellIconID;
+        }
+    }
+
+    std::string raw = addon.str();
+    for (char &ch : raw)
+        if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+    return raw;
+}
+
 // Hotspot data structure
 struct Hotspot
 {
@@ -577,6 +622,8 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.spawnVisualMarker = sConfigMgr->GetOption<bool>("Hotspots.SpawnVisualMarker", true);
     sHotspotsConfig.markerGameObjectEntry = sConfigMgr->GetOption<uint32>("Hotspots.MarkerGameObjectEntry", 179976);
     sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
+    sHotspotsConfig.includeTextureInAddon = sConfigMgr->GetOption<bool>("Hotspots.IncludeTextureInAddon", false);
+    sHotspotsConfig.buffTexture = sConfigMgr->GetOption<std::string>("Hotspots.BuffTexture", std::string(""));
 
     std::string mapsStr = sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", "0,1,530,571");
     sHotspotsConfig.enabledMaps = ParseUInt32List(mapsStr);
@@ -779,9 +826,11 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                                 groundZ = waterZ;
                         }
 
-                        // Diagnostic: occasionally log sampled points that failed to find ground
-                        if (fa < 6 && (!std::isfinite(groundZ) || groundZ <= MIN_HEIGHT))
-                            LOG_DEBUG("scripts", "GetRandomHotspotPosition: sample failed map {} candidate ({:.1f},{:.1f}) -> groundZ={}", candidateMapId, candX, candY, groundZ);
+                        // Record first few sampled points for diagnostic when sampling ultimately fails
+                        if (fa < 12)
+                        {
+                            LOG_DEBUG("scripts", "GetRandomHotspotPosition: sample map {} cand#{} ({:.1f},{:.1f}) -> groundZ={}", candidateMapId, fa, candX, candY, groundZ);
+                        }
 
                         if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
                         {
@@ -802,7 +851,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                             // otherwise continue sampling
                         }
                     }
-                    LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but fallback sampling found no valid ground", candidateMapId);
+                    LOG_WARN("scripts", "GetRandomHotspotPosition: per-map enabled zones present for map {} but fallback sampling found no valid ground. See previous DEBUG lines for sampled candidates and groundZ values. Bounds used: [{}, {}, {}, {}]", candidateMapId, b[0], b[1], b[2], b[3]);
                     continue;
                 }
                 else
@@ -977,34 +1026,8 @@ static bool SpawnHotspot()
 
       // Send a structured message for addons to parse reliably
       // Format: HOTSPOT_ADDON|map:<mapId>|zone:<zoneId>|x:<x>|y:<y>|z:<z>|id:<id>|dur:<seconds>|icon:<spellId>
-      std::ostringstream addon;
-      addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
-          << "|zone:" << hotspot.zoneId
-          << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
-          << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
-          << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
-          << "|id:" << hotspot.id
-          << "|dur:" << (sHotspotsConfig.duration * MINUTE)
-          << "|icon:" << sHotspotsConfig.buffSpell
-          << "|bonus:" << sHotspotsConfig.experienceBonus;
-
-    // Compute normalized coordinates (nx, ny) using DBC when possible, fallback to map bounds
-    float nx = 0.0f, ny = 0.0f;
-    if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
-    {
-        addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-            << "|ny:" << std::fixed << std::setprecision(4) << ny;
-    }
-
-            // Send structured addon packet to relevant sessions so addons receive CHAT_MSG_ADDON-style events
-            // Compose message with short prefix and tab separator (clients expect prefix\tpayload)
-        std::string rawPayload = addon.str();
-        // Sanitize payload: remove any accidental control chars (tabs/newlines) which can confuse clients
-        for (char &ch : rawPayload)
-        {
-                if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-        }
-    std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
+        std::string rawPayload = BuildHotspotAddonPayload(hotspot, static_cast<int32>(sHotspotsConfig.duration * MINUTE));
+        std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
 
       // Broadcast only to players on the same map and (optionally) within announce radius
       WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
@@ -1380,13 +1403,8 @@ public:
                           << "|ny:" << std::fixed << std::setprecision(4) << ny;
                 }
                 
-                std::string rawPayload = addon.str();
-                for (char &ch : rawPayload)
-                {
-                    if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-                }
-                
-                // Send via chat system message (fallback method - works like addon message)
+                Hotspot tmp = hotspot; // copy to pass into helper
+                std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(hotspot.expireTime - time(nullptr)));
                 ChatHandler(player->GetSession()).SendSysMessage(rawPayload);
             }
         }
@@ -1644,6 +1662,13 @@ public:
         float y = player->GetPositionY();
         float z = player->GetPositionZ();
 
+        // Prevent manual spawn if we've reached max active hotspots
+        if (sActiveHotspots.size() >= sHotspotsConfig.maxActive)
+        {
+            handler->SendSysMessage("Cannot spawn hotspot: max active hotspots reached.");
+            return true;
+        }
+
         Hotspot hotspot;
         hotspot.id = sNextHotspotId++;
         hotspot.mapId = mapId;
@@ -1720,29 +1745,8 @@ public:
             if (!p)
                 continue;
 
-            std::ostringstream addon;
-            addon << "HOTSPOT_ADDON|map:" << mapId
-                  << "|zone:" << zoneId
-                  << "|x:" << std::fixed << std::setprecision(2) << x
-                  << "|y:" << std::fixed << std::setprecision(2) << y
-                  << "|z:" << std::fixed << std::setprecision(2) << z
-                  << "|id:" << hotspot.id
-                  << "|dur:" << (sHotspotsConfig.duration * MINUTE)
-                  << "|icon:" << sHotspotsConfig.buffSpell
-                  << "|bonus:" << sHotspotsConfig.experienceBonus;
-
-            float nx = 0.0f, ny = 0.0f;
-            if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
-            {
-                addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-                      << "|ny:" << std::fixed << std::setprecision(4) << ny;
-            }
-
-            std::string rawPayload = addon.str();
-            for (char &ch : rawPayload)
-            {
-                if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-            }
+            Hotspot tmp = hotspot; // copy for helper
+            std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(sHotspotsConfig.duration * MINUTE));
 
             // Send system fallback message
             ChatHandler(sess).SendSysMessage(rawPayload);
@@ -1800,28 +1804,15 @@ public:
         float y = player->GetPositionY();
         float z = player->GetPositionZ();
 
-        std::ostringstream addon;
-        addon << "HOTSPOT_ADDON|map:" << mapId
-              << "|zone:" << zoneId
-              << "|x:" << std::fixed << std::setprecision(2) << x
-              << "|y:" << std::fixed << std::setprecision(2) << y
-              << "|z:" << std::fixed << std::setprecision(2) << z
-              << "|id:9999|dur:60|icon:" << sHotspotsConfig.buffSpell
-              << "|bonus:" << sHotspotsConfig.experienceBonus;
+        Hotspot tmp;
+        tmp.id = 9999;
+        tmp.mapId = mapId;
+        tmp.zoneId = zoneId;
+        tmp.x = x;
+        tmp.y = y;
+        tmp.z = z;
 
-        // Compute normalized coords if possible
-        float nx = 0.0f, ny = 0.0f;
-        if (ComputeNormalizedCoords(mapId, zoneId, x, y, nx, ny))
-        {
-            addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-                  << "|ny:" << std::fixed << std::setprecision(4) << ny;
-        }
-
-        std::string rawPayload = addon.str();
-        for (char &ch : rawPayload)
-        {
-            if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-        }
+        std::string rawPayload = BuildHotspotAddonPayload(tmp, 60);
 
         // Safer test: only send the system-text fallback to the player's session to avoid triggering
         // CHAT_MSG_ADDON handling code paths that can crash some clients in test scenarios.
