@@ -1368,6 +1368,26 @@ public:
         }
     }
 
+    void OnPlayerResurrect(Player* player)
+    {
+        if (!sHotspotsConfig.enabled || !player)
+            return;
+
+        // Reapply buff after resurrection if player is in hotspot
+        LOG_DEBUG("scripts", "Player {} resurrected, checking hotspot status", player->GetName());
+        CheckPlayerHotspotStatus(player);
+    }
+
+    void OnTeleport(Player* player, uint32 /*mapid*/, float /*x*/, float /*y*/, float /*z*/, float /*ori*/, uint32 /*options*/, Unit* /*target*/)
+    {
+        if (!sHotspotsConfig.enabled || !player)
+            return;
+
+        // Check hotspot status after teleport (e.g., random teleport, hearthstone, portal)
+        LOG_DEBUG("scripts", "Player {} teleported, checking hotspot status", player->GetName());
+        CheckPlayerHotspotStatus(player);
+    }
+
     private:
     void CheckPlayerHotspotStatus(Player* player)
     {
@@ -1375,21 +1395,36 @@ public:
             return;
 
         Hotspot const* hotspot = GetPlayerHotspot(player);
-        bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);        if (hotspot && !hasBuffAura)
+        bool hasBuffAura = player->HasAura(sHotspotsConfig.buffSpell);
+
+        // Case 1: Player is in hotspot but doesn't have buff (needs to be applied or reapplied)
+        if (hotspot && !hasBuffAura)
         {
             // Player entered hotspot
             LOG_INFO("scripts", "Player {} entered Hotspot #{} (zone {}, map {})", player->GetName(), hotspot->id, hotspot->zoneId, hotspot->mapId);
             
-            // Apply persistent buff (this is both the visual effect AND the XP bonus handler)
-            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            // Remove any conflicting buffs that might interfere (e.g., Arcane Intellect if somehow applied)
+            // This prevents buff replacement issues
+            uint32 buffSpellId = sHotspotsConfig.buffSpell;
+            if (SpellInfo const* existingBuff = sSpellMgr->GetSpellInfo(42995)) // Arcane Intellect
             {
-                LOG_DEBUG("scripts", "Casting buff spell {} on player {}", sHotspotsConfig.buffSpell, player->GetName());
-                player->CastSpell(player, sHotspotsConfig.buffSpell, true);
+                if (player->HasAura(42995))
+                {
+                    LOG_DEBUG("scripts", "Removing Arcane Intellect (42995) from {} to prevent buff conflicts", player->GetName());
+                    player->RemoveAura(42995);
+                }
+            }
+            
+            // Apply persistent buff (this is the ONLY buff for XP bonus)
+            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(buffSpellId))
+            {
+                LOG_DEBUG("scripts", "Casting buff spell {} on player {}", buffSpellId, player->GetName());
+                player->CastSpell(player, buffSpellId, true);
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
             }
             else
             {
-                LOG_WARN("scripts", "Buff spell {} not found in spell manager", sHotspotsConfig.buffSpell);
+                LOG_WARN("scripts", "Buff spell {} not found in spell manager", buffSpellId);
             }
         }
         else if (!hotspot && hasBuffAura)
