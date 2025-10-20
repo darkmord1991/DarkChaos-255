@@ -1588,13 +1588,17 @@ public:
         std::string victimName = "<none>";
         if (victim)
         {
-            if (Unit::GetUnitTypeId(victim) == TYPEID_UNIT)
+            // Use the instance method GetTypeId() on the victim to determine its runtime type
+            if (victim->GetTypeId() == TYPEID_UNIT)
             {
                 if (Creature* c = victim->ToCreature())
                     victimName = c->GetName();
             }
-            else if (victim->ToPlayer())
-                victimName = victim->ToPlayer()->GetName();
+            else if (victim->GetTypeId() == TYPEID_PLAYER)
+            {
+                if (Player* pVictim = victim->ToPlayer())
+                    victimName = pVictim->GetName();
+            }
         }
 
         LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP from victim {} (buffCount={} auraCount={}) pos=({:.1f},{:.1f},{:.1f}) map={}",
