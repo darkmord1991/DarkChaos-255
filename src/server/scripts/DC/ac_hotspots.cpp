@@ -492,6 +492,9 @@ static uint32 sNextHotspotId = 1;
 static time_t sLastSpawnCheck = 0;
 // Per-player apply retries: when a buff cast does not result in an aura, retry a few times
 static std::unordered_map<ObjectGuid, int> sBuffApplyRetries;
+// Per-player hotspot expiry map: GUID -> expireTime (time_t). This acts as a server-side
+// persistent flag indicating the player is considered 'in a hotspot' until expireTime.
+static std::unordered_map<ObjectGuid, time_t> sPlayerHotspotExpiry;
 
 // Public accessor functions for other scripts to query hotspot state
 uint32 GetHotspotXPBonusPercentage()
@@ -1162,6 +1165,16 @@ static void CleanupExpiredHotspots()
             ++it;
         }
     }
+
+    // Clean up per-player server-side hotspot expiry flags that have passed
+    time_t now = GameTime::GetGameTime().count();
+    for (auto itr = sPlayerHotspotExpiry.begin(); itr != sPlayerHotspotExpiry.end(); )
+    {
+        if (itr->second <= now)
+            itr = sPlayerHotspotExpiry.erase(itr);
+        else
+            ++itr;
+    }
 }
 
 // Check if player is in any hotspot
@@ -1535,6 +1548,8 @@ public:
                     LOG_WARN("scripts", "Initial buff cast did not result in aura for {} — scheduling retries", player->GetName());
                     sBuffApplyRetries[player->GetGUID()] = 3;
                 }
+                // Server-side persistent flag: mark player as in-hotspot until hotspot expire time
+                sPlayerHotspotExpiry[player->GetGUID()] = hotspot->expireTime;
             }
             else
             {
@@ -1551,6 +1566,8 @@ public:
             );
             // Remove any pending retries
             sBuffApplyRetries.erase(player->GetGUID());
+            // Clear server-side persistent hotspot flag
+            sPlayerHotspotExpiry.erase(player->GetGUID());
         }
     }
 };
@@ -1576,6 +1593,24 @@ public:
 
         // Consider player 'buffed' if either the buff or the aura is present
         bool isBuffed = hasHotspotBuff || hasHotspotAura;
+
+        // Also consider server-side persistent flag as a fallback: if the player has an
+        // active expiry entry in sPlayerHotspotExpiry and it hasn't expired, treat them as buffed.
+        auto itExpiry = sPlayerHotspotExpiry.find(player->GetGUID());
+        if (!isBuffed && itExpiry != sPlayerHotspotExpiry.end())
+        {
+            time_t now = GameTime::GetGameTime().count();
+            if (itExpiry->second > now)
+            {
+                isBuffed = true;
+                LOG_INFO("scripts", "OnGiveXP: player {} treated as in-hotspot via server-side expiry (expire at {})", player->GetName(), itExpiry->second);
+            }
+            else
+            {
+                // expiry passed: clear stale entry
+                sPlayerHotspotExpiry.erase(itExpiry);
+            }
+        }
 
         if (isBuffed)
         {
@@ -1821,6 +1856,8 @@ public:
 
             if (p->GetSession())
                 ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience from kills!", sHotspotsConfig.experienceBonus);
+            // mark player server-side as in-hotspot until hotspot expiry
+            sPlayerHotspotExpiry[p->GetGUID()] = hotspot.expireTime;
         }
 
         return true;
@@ -2063,6 +2100,8 @@ public:
                 src->CastSpell(src, sHotspotsConfig.auraSpell, true);
             if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
                 src->CastSpell(src, sHotspotsConfig.buffSpell, true);
+            // set server-side hotspot expiry for the caller (duration from now)
+            sPlayerHotspotExpiry[src->GetGUID()] = GameTime::GetGameTime().count() + (sHotspotsConfig.duration * MINUTE);
             handler->SendSysMessage("Applied hotspot aura/buff to yourself.");
             return true;
         }
@@ -2079,6 +2118,8 @@ public:
             target->CastSpell(target, sHotspotsConfig.auraSpell, true);
         if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
             target->CastSpell(target, sHotspotsConfig.buffSpell, true);
+        // set server-side hotspot expiry for target
+        sPlayerHotspotExpiry[target->GetGUID()] = GameTime::GetGameTime().count() + (sHotspotsConfig.duration * MINUTE);
 
         handler->PSendSysMessage("Applied hotspot aura/buff to %s.", target->GetName().c_str());
         return true;

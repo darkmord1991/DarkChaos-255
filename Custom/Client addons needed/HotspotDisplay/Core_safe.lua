@@ -152,3 +152,13 @@ C_Timer.NewTicker(5, function()
 end)
 
 DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Loaded v"..ADDON_VERSION)
+-- One-time server-visible debug message so operators can see the client addon is active
+-- Note: this sends a normal SAY chat message which will be visible in server logs.
+local function AnnounceAddonToServer()
+    local msg = string.format("[HOTSPOT_CLIENT_LOADED] %s v%s", ADDON_NAME, ADDON_VERSION)
+    -- Safe guard: pcall in case the API is unavailable in some clients
+    pcall(function() SendChatMessage(msg, "SAY") end)
+end
+
+-- Announce once after a short delay to allow player login to complete
+C_Timer.After(1.5, AnnounceAddonToServer)
