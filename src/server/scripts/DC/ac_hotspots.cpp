@@ -1975,12 +1975,16 @@ public:
         }
 
         std::string arg = args;
+        // Determine actor (player name) for logging; console handlers won't have a player session
+        std::string actor = "Console";
+        if (handler && handler->GetSession() && handler->GetSession()->GetPlayer())
+            actor = handler->GetSession()->GetPlayer()->GetName();
         // allow common tokens
         if (arg == "off" || arg == "disable" || arg == "0")
         {
             sHotspotsConfig.experienceBonus = 0;
             handler->PSendSysMessage("Hotspot XP bonus disabled (set to 0%).");
-            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = 0 by {}", handler->GetName());
+            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = 0 by {}", actor);
             return true;
         }
 
@@ -1990,7 +1994,7 @@ public:
             uint32 cfg = sConfigMgr->GetOption<uint32>("Hotspots.ExperienceBonus", 100);
             sHotspotsConfig.experienceBonus = cfg;
             handler->PSendSysMessage("Hotspot XP bonus enabled (set to {}%).", sHotspotsConfig.experienceBonus);
-            LOG_INFO("scripts", "Hotspots: runtime restored experienceBonus = {} by {}", sHotspotsConfig.experienceBonus, handler->GetName());
+            LOG_INFO("scripts", "Hotspots: runtime restored experienceBonus = {} by {}", sHotspotsConfig.experienceBonus, actor);
             return true;
         }
 
@@ -1999,7 +2003,7 @@ public:
             uint32 val = *maybe;
             sHotspotsConfig.experienceBonus = val;
             handler->PSendSysMessage("Hotspot XP bonus set to {}%", val);
-            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = {} by {}", val, handler->GetName());
+            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = {} by {}", val, actor);
             return true;
         }
 
