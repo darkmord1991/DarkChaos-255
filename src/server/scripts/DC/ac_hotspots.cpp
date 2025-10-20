@@ -1674,6 +1674,7 @@ public:
             ChatCommandBuilder("spawnworld", HandleHotspotsSpawnWorldCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("setbonus", HandleHotspotsSetBonusCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
@@ -1960,6 +1961,49 @@ public:
             handler->PSendSysMessage("Invalid amount '{}'", args);
         }
 
+        return true;
+    }
+
+    static bool HandleHotspotsSetBonusCommand(ChatHandler* handler, char const* args)
+    {
+        // Usage: .hotspot setbonus <percent|off>
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Usage: .hotspot setbonus <percent|off>");
+            handler->PSendSysMessage("Current hotspot XP bonus = {}%", sHotspotsConfig.experienceBonus);
+            return true;
+        }
+
+        std::string arg = args;
+        // allow common tokens
+        if (arg == "off" || arg == "disable" || arg == "0")
+        {
+            sHotspotsConfig.experienceBonus = 0;
+            handler->PSendSysMessage("Hotspot XP bonus disabled (set to 0%).");
+            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = 0 by {}", handler->GetName());
+            return true;
+        }
+
+        if (arg == "on" || arg == "enable")
+        {
+            // restore to configured value from config file if available
+            uint32 cfg = sConfigMgr->GetOption<uint32>("Hotspots.ExperienceBonus", 100);
+            sHotspotsConfig.experienceBonus = cfg;
+            handler->PSendSysMessage("Hotspot XP bonus enabled (set to {}%).", sHotspotsConfig.experienceBonus);
+            LOG_INFO("scripts", "Hotspots: runtime restored experienceBonus = {} by {}", sHotspotsConfig.experienceBonus, handler->GetName());
+            return true;
+        }
+
+        if (Optional<uint32> maybe = Acore::StringTo<uint32>(arg))
+        {
+            uint32 val = *maybe;
+            sHotspotsConfig.experienceBonus = val;
+            handler->PSendSysMessage("Hotspot XP bonus set to {}%", val);
+            LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = {} by {}", val, handler->GetName());
+            return true;
+        }
+
+        handler->PSendSysMessage("Invalid argument '{}'. Use a number, 'off' or 'on'.", args);
         return true;
     }
 
