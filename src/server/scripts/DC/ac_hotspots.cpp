@@ -1578,14 +1578,28 @@ class HotspotsPlayerGainXP : public PlayerScript
 public:
     HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/)
+    void OnGiveXP(Player* player, uint32& amount, Unit* victim)
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
         // Debug entry: always log the XP event and aura counts for diagnostics
         uint32 buffCount = player->GetAuraCount(sHotspotsConfig.buffSpell);
         uint32 auraCount = player->GetAuraCount(sHotspotsConfig.auraSpell);
-        LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP (buffCount={} auraCount={})", player->GetName(), amount, buffCount, auraCount);
+        std::string victimName = "<none>";
+        if (victim)
+        {
+            if (Unit::GetUnitTypeId(victim) == TYPEID_UNIT)
+            {
+                if (Creature* c = victim->ToCreature())
+                    victimName = c->GetName();
+            }
+            else if (victim->ToPlayer())
+                victimName = victim->ToPlayer()->GetName();
+        }
+
+        LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP from victim {} (buffCount={} auraCount={}) pos=({:.1f},{:.1f},{:.1f}) map={}",
+                 player->GetName(), amount, victimName.c_str(), buffCount, auraCount,
+                 player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId());
 
         // Check if player has hotspot buff aura or the auxiliary aura (some spell setups apply one or the other)
         bool hasHotspotBuff = player->HasAura(sHotspotsConfig.buffSpell);
@@ -1617,20 +1631,25 @@ public:
             uint32 originalAmount = amount;
             uint32 bonus = (amount * sHotspotsConfig.experienceBonus) / 100;
             amount += bonus;
-            
+
             // Send visible notification to player about the bonus
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFFD700[Hotspot XP]|r +%u XP (%u base + %u%% bonus = %u total)",
                 bonus, originalAmount, sHotspotsConfig.experienceBonus, amount);
 
-            LOG_INFO("scripts", "Hotspot XP Bonus applied to {}: base={} bonus={} final={}", 
-                    player->GetName(), originalAmount, bonus, amount);
+            LOG_INFO("scripts", "Hotspot XP Bonus applied to {}: victim={} base={} bonus={} final={} (serverFlag={})",
+                    player->GetName(), victimName.c_str(), originalAmount, bonus, amount,
+                    (sPlayerHotspotExpiry.find(player->GetGUID()) != sPlayerHotspotExpiry.end()));
         }
         else
         {
-            // Debug: player gaining XP but no hotspot buff/aura. Log counts for both spells to help troubleshooting.
-            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff). buffCount={} auraCount={}", 
-                    player->GetName(), amount, player->GetAuraCount(sHotspotsConfig.buffSpell), player->GetAuraCount(sHotspotsConfig.auraSpell));
+            // Player is not considered buffed. Log comprehensive diagnostic info to trace why.
+            bool hasServerFlag = (sPlayerHotspotExpiry.find(player->GetGUID()) != sPlayerHotspotExpiry.end());
+            Hotspot const* nearby = GetPlayerHotspot(player);
+            int nearbyId = nearby ? nearby->id : 0;
+            LOG_INFO("scripts", "Hotspot: {} gained {} XP (NOT buffed). buffCount={} auraCount={} serverFlag={} nearbyHotspotId={} pos=({:.1f},{:.1f},{:.1f}) map={}",
+                     player->GetName(), amount, buffCount, auraCount, hasServerFlag, nearbyId,
+                     player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId());
         }
     }
 };
