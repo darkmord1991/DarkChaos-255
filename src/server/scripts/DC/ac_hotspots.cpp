@@ -1675,7 +1675,7 @@ public:
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("setbonus", HandleHotspotsSetBonusCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("bonus", HandleHotspotsBonusCommand, SEC_PLAYER, Console::No),
+            ChatCommandBuilder("bonus", HandleHotspotsShowBonusCommand, SEC_PLAYER, Console::No),
             ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
