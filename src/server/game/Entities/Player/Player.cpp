@@ -2439,7 +2439,7 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
 
     // Instrumentation: log actual GiveXP calls so we can correlate XP award and hotspot aura state (temporary).
     LOG_INFO("scripts", "InstrumentXP: Player::GiveXP -> player {} receiving {} XP (victimGUID={} entry={}) hasAura800001={} pos=({:.1f},{:.1f},{:.1f}) map={}",
-             GetName(), xp, victim ? victim->GetGUID() : ObjectGuid::Empty, victim ? (victim->ToCreature() ? victim->ToCreature()->GetEntry() : 0) : 0,
+             GetName(), xp, victim ? victim->GetGUID().ToString() : ObjectGuid::Empty.ToString(), victim ? (victim->ToCreature() ? victim->ToCreature()->GetEntry() : 0) : 0,
              HasAura(800001) ? 1 : 0, GetPositionX(), GetPositionY(), GetPositionZ(), GetMapId());
 
     SendLogXPGain(xp, victim, bonus_xp, recruitAFriend, group_rate);
