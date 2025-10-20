@@ -570,9 +570,15 @@
             // Optional global announcement with final scores
             if (_worldAnnounceOnExpiry)
             {
-                char announce[200];
-                snprintf(announce, sizeof(announce), "[Hinterland BG] Time's up! Final score: Alliance %u — Horde %u%s", (unsigned)_ally_gathered, (unsigned)_horde_gathered, winner==TEAM_ALLIANCE?" (Alliance win)":winner==TEAM_HORDE?" (Horde win)":" (Draw)");
-                ChatHandler(nullptr).SendGlobalSysMessage(announce);
+                std::ostringstream ss;
+                ss << "[Hinterland BG] Time's up! Final score: Alliance " << _ally_gathered << "  Horde " << _horde_gathered;
+                if (winner == TEAM_ALLIANCE)
+                    ss << " (Alliance win)";
+                else if (winner == TEAM_HORDE)
+                    ss << " (Horde win)";
+                else
+                    ss << " (Draw)";
+                ChatHandler(nullptr).SendGlobalSysMessage(ss.str());
             }
 
             if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
@@ -1029,12 +1035,17 @@
                 float wint = GetAffixWeatherIntensity(_activeAffix);
                 if (wint <= 0.0f) wint = 0.50f; pct = uint32(std::lround(wint * 100.0f));
                 switch (wtype) { case 1: wname = "Rain"; break; case 2: wname = "Snow"; break; case 3: wname = "Storm"; break; default: wname = "Fine"; break; }
-                snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s — Weather: %s (%u%%)", aff, wname, pct);
+                std::ostringstream ss;
+                ss << "[Hinterland BG] Affix active: " << aff << " \u2014 Weather: " << wname << " (" << pct << "%)";
+                if (Map* m = GetMap())
+                    m->SendZoneText(OutdoorPvPHLBuffZones[0], ss.str().c_str());
             }
             else
-                snprintf(line, sizeof(line), "[Hinterland BG] Affix active: %s", aff);
-            if (Map* m = GetMap())
-                m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
+            {
+                std::string s = std::string("[Hinterland BG] Affix active: ") + aff;
+                if (Map* m = GetMap())
+                    m->SendZoneText(OutdoorPvPHLBuffZones[0], s.c_str());
+            }
         }
     }
 

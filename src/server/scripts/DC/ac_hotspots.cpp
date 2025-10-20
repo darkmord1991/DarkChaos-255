@@ -1388,7 +1388,7 @@ public:
             for (uint32 i = 0; i < toSpawn; ++i)
             {
                 if (!SpawnHotspot())
-                    LOG_DEBUG("scripts", "SpawnHotspot() returned false during initial population (i=%u)", i);
+                    LOG_DEBUG("scripts", "SpawnHotspot() returned false during initial population (i={})", i);
             }
         }
     }
@@ -1675,6 +1675,7 @@ public:
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("setbonus", HandleHotspotsSetBonusCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("bonus", HandleHotspotsBonusCommand, SEC_PLAYER, Console::No),
             ChatCommandBuilder("addonpackets", HandleHotspotsAddonPacketsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
@@ -1682,6 +1683,7 @@ public:
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
             ChatCommandBuilder("forcebuff", HandleHotspotsForceBuffCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No),
+            ChatCommandBuilder("bonus", HandleHotspotsShowBonusCommand, SEC_PLAYER, Console::No),
         };
 
         static ChatCommandTable commandTable =
@@ -1701,6 +1703,8 @@ public:
             handler->SendSysMessage("No active hotspots.");
             return true;
         }
+
+            
 
         handler->PSendSysMessage("Active Hotspots: {}", sActiveHotspots.size());
         for (auto const& hotspot : sActiveHotspots)
@@ -2008,6 +2012,15 @@ public:
         }
 
         handler->PSendSysMessage("Invalid argument '{}'. Use a number, 'off' or 'on'.", args);
+        return true;
+    }
+
+    static bool HandleHotspotsShowBonusCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        // Show current hotspot configuration to player
+        handler->PSendSysMessage("Hotspots enabled = {}", sHotspotsConfig.enabled ? "YES" : "NO");
+        handler->PSendSysMessage("Current hotspot XP bonus = {}%", sHotspotsConfig.experienceBonus);
+        handler->PSendSysMessage("Hotspot radius = {} yards", static_cast<uint32>(sHotspotsConfig.radius));
         return true;
     }
 

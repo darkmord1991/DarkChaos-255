@@ -125,7 +125,7 @@ public:
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
                 hl->SetStatsIncludeManualResets(set);
-                handler->PSendSysMessage("Stats will %sinclude manual resets.", set ? "" : "not ");
+                handler->PSendSysMessage("Stats will {}include manual resets.", set ? "" : "not ");
                 return true;
             }
         }

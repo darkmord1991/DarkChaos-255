@@ -50,10 +50,15 @@ local function AddHotspotFromData(data)
         tex = tex, texid = texid,
         expire = now + cappedDur,
         icon = icon,
+        bonus = tonumber(data.bonus) or nil,
     }
     local posStr = tostring(x)..","..tostring(y)
     if nx and ny then posStr = string.format("nx=%.3f,ny=%.3f", nx, ny) end
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s", id, posStr))
+    if hotspots[id].bonus then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s - XP Bonus: +%d%%", id, posStr, hotspots[id].bonus))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s", id, posStr))
+    end
     -- Update minimap immediately when a new hotspot arrives
     UpdateMinimap()
 end
