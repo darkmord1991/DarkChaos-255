@@ -166,8 +166,12 @@ void KillRewarder::_RewardXP(Player* player, float rate)
         for (Unit::AuraEffectList::const_iterator i = auras.begin(); i != auras.end(); ++i)
             AddPct(xp, (*i)->GetAmount());
 
-        // 4.2.3. Give XP to player.
-        sScriptMgr->OnPlayerGiveXP(player, xp, _victim, PlayerXPSource::XPSOURCE_KILL);
+    // 4.2.3. Give XP to player.
+    // Instrumentation: log award attempts so we can debug hotspot XP behavior (temporary).
+    LOG_INFO("scripts", "InstrumentXP: KillRewarder -> player {} about to be given {} XP for victim {} (entry {}) hasAura800001={} pos=(%.1f,%.1f,%.1f) map={}",
+         player->GetName(), xp, _victim ? _victim->GetGUID() : ObjectGuid::Empty, _victim ? _victim->GetEntry() : 0,
+         player->HasAura(800001) ? 1 : 0, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId());
+    sScriptMgr->OnPlayerGiveXP(player, xp, _victim, PlayerXPSource::XPSOURCE_KILL);
         player->GiveXP(xp, _victim, _groupRate);
         if (Pet* pet = player->GetPet())
             // 4.2.4. If player has pet, reward pet with XP (100% for single player, 50% for group case).
