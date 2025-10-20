@@ -1578,7 +1578,7 @@ class HotspotsPlayerGainXP : public PlayerScript
 public:
     HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* victim)
+    void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 /*xpSource*/) override
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
@@ -1601,9 +1601,9 @@ public:
             }
         }
 
-        LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP from victim {} (buffCount={} auraCount={}) pos=({:.1f},{:.1f},{:.1f}) map={}",
-                 player->GetName(), amount, victimName.c_str(), buffCount, auraCount,
-                 player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId());
+    LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP from victim {} (buffCount={} auraCount={}) pos=({:.1f},{:.1f},{:.1f}) map={}",
+         player->GetName(), amount, victimName.c_str(), buffCount, auraCount,
+         player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId());
 
         // Check if player has hotspot buff aura or the auxiliary aura (some spell setups apply one or the other)
         bool hasHotspotBuff = player->HasAura(sHotspotsConfig.buffSpell);
