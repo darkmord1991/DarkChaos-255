@@ -27,8 +27,8 @@ class spell_hotspot_buff_800001_aura : public AuraScript
         Player* player = GetTarget()->ToPlayer();
         if (player)
         {
-            LOG_DEBUG("scripts.spell", "Hotspot XP Buff (800001) applied to player {}",
-                    player->GetName());
+        LOG_INFO("scripts.spell", "Hotspot XP Buff (800001) applied to player {}",
+            player->GetName());
         }
     }
 
@@ -37,8 +37,8 @@ class spell_hotspot_buff_800001_aura : public AuraScript
         Player* player = GetTarget()->ToPlayer();
         if (player)
         {
-            LOG_DEBUG("scripts.spell", "Hotspot XP Buff (800001) removed from player {}",
-                    player->GetName());
+        LOG_INFO("scripts.spell", "Hotspot XP Buff (800001) removed from player {}",
+            player->GetName());
         }
     }
 

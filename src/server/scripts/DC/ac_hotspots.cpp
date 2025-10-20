@@ -404,14 +404,13 @@ struct Hotspot
         if (player->GetMapId() != mapId)
             return false;
 
+        // Use squared-distance comparison to avoid costly sqrt() calls
         float dx = player->GetPositionX() - x;
         float dy = player->GetPositionY() - y;
         float dz = player->GetPositionZ() - z;
-        float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-        
-        bool inRange = dist <= sHotspotsConfig.radius;
-        
-        return inRange;
+        float dist2 = dx*dx + dy*dy + dz*dz;
+
+        return dist2 <= (sHotspotsConfig.radius * sHotspotsConfig.radius);
     }
 
     bool IsPlayerNearby(Player* player) const
@@ -419,13 +418,13 @@ struct Hotspot
         if (!player || player->GetMapId() != mapId)
             return false;
 
-        float dist = std::sqrt(
-            std::pow(player->GetPositionX() - x, 2) +
-            std::pow(player->GetPositionY() - y, 2) +
-            std::pow(player->GetPositionZ() - z, 2)
-        );
+        // squared-distance check (3D)
+        float dx = player->GetPositionX() - x;
+        float dy = player->GetPositionY() - y;
+        float dz = player->GetPositionZ() - z;
+        float dist2 = dx*dx + dy*dy + dz*dz;
 
-        return dist <= sHotspotsConfig.announceRadius;
+        return dist2 <= (sHotspotsConfig.announceRadius * sHotspotsConfig.announceRadius);
     }
 };
 
@@ -453,16 +452,28 @@ static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durati
     // Optionally include an explicit texture path to help clients without spell texture DB
     if (sHotspotsConfig.includeTextureInAddon)
     {
-        // Prefer configured explicit texture path if present, otherwise try to derive from spell icon id
+        // Prefer configured explicit texture path if present
         if (!sHotspotsConfig.buffTexture.empty())
         {
             addon << "|tex:" << sHotspotsConfig.buffTexture;
+            LOG_DEBUG("scripts", "BuildHotspotAddonPayload: using explicit buffTexture='{}' for hotspot id {}", sHotspotsConfig.buffTexture, hotspot.id);
         }
-        else if (SpellInfo const* si = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        else
         {
-            // SpellInfo exposes SpellIconID which client addons might map to texture names.
-            // We include the numeric id as fallback so addons can build a texture path.
-            addon << "|texid:" << si->SpellIconID;
+            // Try to derive from spell icon id
+            SpellInfo const* si = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell);
+            if (si && si->SpellIconID)
+            {
+                addon << "|texid:" << si->SpellIconID;
+                LOG_DEBUG("scripts", "BuildHotspotAddonPayload: using texid={} (spell {}) for hotspot id {}", si->SpellIconID, sHotspotsConfig.buffSpell, hotspot.id);
+            }
+            else
+            {
+                // Fallback to a safe default texture path so addons have something to show
+                const std::string fallbackTex = "Interface\\Icons\\INV_Misc_Map_01";
+                addon << "|tex:" << fallbackTex;
+                LOG_WARN("scripts", "BuildHotspotAddonPayload: no spell icon id and no buffTexture configured for buffSpell {} - sending fallback tex {} for hotspot id {}", sHotspotsConfig.buffSpell, fallbackTex, hotspot.id);
+            }
         }
     }
 
@@ -501,15 +512,16 @@ bool IsPlayerInHotspot(Player* player)
     uint32 mapId = player->GetMapId();
     float x = player->GetPositionX();
     float y = player->GetPositionY();
-    
+    float radius2 = sHotspotsConfig.radius * sHotspotsConfig.radius;
+
     for (const auto& hotspot : sActiveHotspots)
     {
         if (hotspot.mapId != mapId)
             continue;
-        
-        float dist = std::sqrt((x - hotspot.x) * (x - hotspot.x) + 
-                               (y - hotspot.y) * (y - hotspot.y));
-        if (dist <= sHotspotsConfig.radius)
+        float dx = x - hotspot.x;
+        float dy = y - hotspot.y;
+        float dist2 = dx*dx + dy*dy;
+        if (dist2 <= radius2)
             return true;
     }
     
@@ -527,13 +539,17 @@ static std::vector<uint32> ParseUInt32List(std::string const& str)
     std::string token;
     while (std::getline(ss, token, ','))
     {
-        token.erase(0, token.find_first_not_of(" \t\r\n"));
-        token.erase(token.find_last_not_of(" \t\r\n") + 1);
-        if (!token.empty())
-        {
-            if (Optional<uint32> val = Acore::StringTo<uint32>(token))
-                result.push_back(*val);
-        }
+        // trim
+        size_t start = token.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            continue;
+        size_t end = token.find_last_not_of(" \t\r\n");
+        std::string t = token.substr(start, end - start + 1);
+        if (t.empty())
+            continue;
+
+        if (Optional<uint32> val = Acore::StringTo<uint32>(t))
+            result.push_back(*val);
     }
     return result;
 }
@@ -717,7 +733,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
         uint32 zoneId;
     };
 
-    const int attemptsPerRect = 12; // higher attempts per rectangle
+    const int attemptsPerRect = 48; // higher attempts per rectangle (increased for better chance on irregular terrain)
     const int rectsPerMap = 6; // not used directly but indicative
     (void)rectsPerMap;
 
@@ -744,9 +760,10 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                 };
                 break;
             case 530: // Outland - sample zones
+                // Sample a few representative rectangles in Outland (map 530)
                 coords = {
-                    {-2000.0f, -1000.0f, 5000.0f, 6000.0f, 100.0f, 3524}, // Hellfire Peninsula
-                    {2000.0f, 3000.0f, 5000.0f, 6000.0f, 100.0f, 3520},   // Shadowmoon Valley
+                    { 2200.0f, 5200.0f, -3500.0f, -1500.0f, 100.0f, 3524 }, // Hellfire Peninsula-like area
+                    { 600.0f, 2600.0f, 400.0f, 2600.0f, 150.0f, 3520 }     // Shadowmoon-like area
                 };
                 break;
             case 571: // Northrend - sample zones
@@ -799,7 +816,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                     const auto& b = itb->second;
                     std::uniform_real_distribution<float> xb(b[0], b[1]);
                     std::uniform_real_distribution<float> yb(b[2], b[3]);
-                    const int fallbackAttempts = 512; // increase attempts to improve chance of finding valid ground
+                    const int fallbackAttempts = 2048; // increase attempts to improve chance of finding valid ground
 
                     // We'll need a Map* for sampling; create it once and reuse below
                     Map* map = nullptr;
@@ -989,7 +1006,12 @@ static bool SpawnHotspot()
                     hotspot.z = markerZ; // update hotspot record so in-range checks and messages use ground Z
                 }
 
-                if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                // Generate a low guid once and reuse it for logging and creation
+                uint32 lowGuid = map->GenerateLowGuid<HighGuid::GameObject>();
+                LOG_DEBUG("scripts", "Attempting to create hotspot marker GO entry={} lowGuid={} on map {} at ({:.1f},{:.1f},{:.1f})",
+                          sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId, x, y, markerZ);
+
+                if (go->Create(lowGuid, sHotspotsConfig.markerGameObjectEntry,
                               map, phaseMask, x, y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
                 {
                     go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
@@ -1002,7 +1024,7 @@ static bool SpawnHotspot()
                 else
                 {
                     delete go;
-                    LOG_ERROR("scripts", "Failed to create hotspot marker GameObject");
+                    LOG_ERROR("scripts", "Failed to create hotspot marker GameObject (entry={} lowGuid={} map={})", sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId);
                 }
             }
         }
@@ -1094,6 +1116,8 @@ static bool SpawnHotspot()
                   sess->SendPacket(&pkt);
               }
               announcedCount++;
+              // INFO log for operator visibility: indicate this player was notified
+              LOG_INFO("scripts", "Hotspot #{} announce: sent payload to player {} (guid {}) on map {}", hotspot.id, plr->GetName(), plr->GetGUID().ToString(), plr->GetMapId());
           }
       }
       LOG_DEBUG("scripts", "Hotspot #{} broadcast: {} players notified on map {}", hotspot.id, announcedCount, hotspot.mapId);
@@ -1143,10 +1167,10 @@ static void CleanupExpiredHotspots()
 // Check if player is in any hotspot
 static Hotspot const* GetPlayerHotspot(Player* player)
 {
-    if (!player)
+    if (!player || !sHotspotsConfig.enabled)
         return nullptr;
 
-    for (auto const& hotspot : sActiveHotspots)
+    for (const Hotspot& hotspot : sActiveHotspots)
     {
         if (hotspot.IsPlayerInRange(player))
             return &hotspot;
@@ -1174,7 +1198,7 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     if (hotspot && !hasBuffAura)
     {
         LOG_INFO("scripts", "APPLYING BUFF: Player in hotspot but no aura yet");
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
         if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
         {
             LOG_INFO("scripts", "Casting aura spell {}", sHotspotsConfig.auraSpell);
@@ -1191,13 +1215,13 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
         else
             LOG_WARN("scripts", "Buff spell {} not found", sHotspotsConfig.buffSpell);
             
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id {}", sHotspotsConfig.buffSpell);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate applied buff spell id {}", sHotspotsConfig.buffSpell);
     }
     else if (!hotspot && hasBuffAura)
     {
         LOG_INFO("scripts", "REMOVING BUFF: Player not in hotspot but has aura");
         player->RemoveAura(sHotspotsConfig.buffSpell);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id {}", sHotspotsConfig.buffSpell);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate removed buff spell id {}", sHotspotsConfig.buffSpell);
     }
     else if (hotspot && hasBuffAura)
     {
@@ -1400,27 +1424,12 @@ public:
         {
             for (const auto& hotspot : sActiveHotspots)
             {
-                std::ostringstream addon;
-                addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
-                      << "|zone:" << hotspot.zoneId
-                      << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
-                      << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
-                      << "|z:" << std::fixed << std::setprecision(2) << hotspot.z
-                      << "|id:" << hotspot.id
-                      << "|dur:" << (hotspot.expireTime - time(nullptr))
-                      << "|icon:" << sHotspotsConfig.buffSpell
-                      << "|bonus:" << sHotspotsConfig.experienceBonus;
-                
-                float nx = 0.0f, ny = 0.0f;
-                if (ComputeNormalizedCoords(hotspot.mapId, hotspot.zoneId, hotspot.x, hotspot.y, nx, ny))
-                {
-                    addon << "|nx:" << std::fixed << std::setprecision(4) << nx
-                          << "|ny:" << std::fixed << std::setprecision(4) << ny;
-                }
-                
+                // Build a canonical payload via the centralized helper so both
+                // login-time sends and live spawn broadcasts remain identical.
                 Hotspot tmp = hotspot; // copy to pass into helper
-                std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(hotspot.expireTime - time(nullptr)));
+                std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count()));
                 ChatHandler(player->GetSession()).SendSysMessage(rawPayload);
+                LOG_INFO("scripts", "Login: sent hotspot payload to {} -> {}", player->GetName(), rawPayload);
             }
         }
     }
@@ -1556,11 +1565,19 @@ public:
     {
         if (!sHotspotsConfig.enabled || !player)
             return;
+        // Debug entry: always log the XP event and aura counts for diagnostics
+        uint32 buffCount = player->GetAuraCount(sHotspotsConfig.buffSpell);
+        uint32 auraCount = player->GetAuraCount(sHotspotsConfig.auraSpell);
+        LOG_INFO("scripts", "OnGiveXP: player {} gaining {} XP (buffCount={} auraCount={})", player->GetName(), amount, buffCount, auraCount);
 
-        // Check if player has hotspot buff aura
+        // Check if player has hotspot buff aura or the auxiliary aura (some spell setups apply one or the other)
         bool hasHotspotBuff = player->HasAura(sHotspotsConfig.buffSpell);
-        
-        if (hasHotspotBuff)
+        bool hasHotspotAura = player->HasAura(sHotspotsConfig.auraSpell);
+
+        // Consider player 'buffed' if either the buff or the aura is present
+        bool isBuffed = hasHotspotBuff || hasHotspotAura;
+
+        if (isBuffed)
         {
             uint32 originalAmount = amount;
             uint32 bonus = (amount * sHotspotsConfig.experienceBonus) / 100;
@@ -1576,9 +1593,9 @@ public:
         }
         else
         {
-            // Debug: player gaining XP but no hotspot buff
-            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff, aura count: {})", 
-                    player->GetName(), amount, player->GetAuraCount(sHotspotsConfig.buffSpell));
+            // Debug: player gaining XP but no hotspot buff/aura. Log counts for both spells to help troubleshooting.
+            LOG_DEBUG("scripts", "Hotspot: {} gained {} XP (no hotspot buff). buffCount={} auraCount={}", 
+                    player->GetName(), amount, player->GetAuraCount(sHotspotsConfig.buffSpell), player->GetAuraCount(sHotspotsConfig.auraSpell));
         }
     }
 };
@@ -1718,7 +1735,11 @@ public:
                         sActiveHotspots.back().z = markerZ;
                     }
 
-                    if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                    uint32 lowGuid = map->GenerateLowGuid<HighGuid::GameObject>();
+                    LOG_DEBUG("scripts", "Attempting to create hotspot marker GO entry={} lowGuid={} on map {} at ({:.1f},{:.1f},{:.1f}) (spawnhere)",
+                              sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId, x, y, markerZ);
+
+                    if (go->Create(lowGuid, sHotspotsConfig.markerGameObjectEntry,
                                   map, phaseMask, x, y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
                     {
                         go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
@@ -1730,7 +1751,7 @@ public:
                     else
                     {
                         delete go;
-                        LOG_ERROR("scripts", "Failed to create hotspot marker GameObject (spawnhere)");
+                        LOG_ERROR("scripts", "Failed to create hotspot marker GameObject (spawnhere) entry={} lowGuid={} map={}", sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId);
                     }
                 }
             }
@@ -1782,7 +1803,8 @@ public:
             float dy = p->GetPositionY() - y;
             float dz = p->GetPositionZ() - z;
             float dist2 = dx*dx + dy*dy + dz*dz;
-            if (dist2 <= (sHotspotsConfig.radius * sHotspotsConfig.radius))
+            float radius2 = sHotspotsConfig.radius * sHotspotsConfig.radius;
+            if (dist2 <= radius2)
                 playersToBuff.push_back(p);
         }
 
@@ -1870,7 +1892,7 @@ public:
                 total = base + bonus;
             }
 
-            handler->PSendSysMessage("Hotspot Test XP: base=%u hasBuff=%s bonus=%u total=%u", base, hasBuff ? "YES" : "NO", bonus, total);
+            handler->PSendSysMessage("Hotspot Test XP: base={} hasBuff={} bonus={} total={}", base, hasBuff ? "YES" : "NO", bonus, total);
             LOG_INFO("scripts", "Hotspot TestXP for {}: base={} hasBuff={} bonus={} total={}", player->GetName(), base, hasBuff, bonus, total);
         }
         else
@@ -2130,7 +2152,11 @@ public:
                         float ang = 0.0f; uint32 phaseMask = 0;
                         float markerZ = hotspot.z;
                         if (std::isnan(markerZ) || !std::isfinite(markerZ)) markerZ = 0.0f;
-                        if (go->Create(map->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry,
+                        uint32 lowGuid = map->GenerateLowGuid<HighGuid::GameObject>();
+                        LOG_DEBUG("scripts", "SpawnWorld: creating hotspot GO entry={} lowGuid={} map={} at ({:.1f},{:.1f},{:.1f})",
+                                  sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId, hotspot.x, hotspot.y, markerZ);
+
+                        if (go->Create(lowGuid, sHotspotsConfig.markerGameObjectEntry,
                                       map, phaseMask, hotspot.x, hotspot.y, markerZ, ang, G3D::Quat(), 255, GO_STATE_READY))
                         {
                             go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
@@ -2140,6 +2166,7 @@ public:
                         else
                         {
                             delete go;
+                            LOG_ERROR("scripts", "SpawnWorld: failed to create hotspot GO entry={} lowGuid={} map={}", sHotspotsConfig.markerGameObjectEntry, lowGuid, mapId);
                         }
                     }
                 }
