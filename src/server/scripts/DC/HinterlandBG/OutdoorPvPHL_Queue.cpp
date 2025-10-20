@@ -49,7 +49,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     std::string playerName = player->GetName();
     uint32 queueSize = GetQueuedPlayerCount();
     
-    ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterland BG queue. Position: %u", queueSize);
+    ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterland BG queue. Position: {}", queueSize);
     
     // Notify zone if we're getting close to battle start
     if (queueSize >= _minPlayersToStart && _bgState == BG_STATE_CLEANUP)
@@ -121,9 +121,9 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
     
     ChatHandler ch(player->GetSession());
     ch.PSendSysMessage("=== Hinterland BG Queue Status ===");
-    ch.PSendSysMessage("Total players in queue: %u", totalQueued);
-    ch.PSendSysMessage("Alliance: %u | Horde: %u", allianceQueued, hordeQueued);
-    ch.PSendSysMessage("Minimum players to start: %u", _minPlayersToStart);
+    ch.PSendSysMessage("Total players in queue: {}", totalQueued);
+    ch.PSendSysMessage("Alliance: {} | Horde: {}", allianceQueued, hordeQueued);
+    ch.PSendSysMessage("Minimum players to start: {}", _minPlayersToStart);
     
     if (IsPlayerInQueue(player))
     {
@@ -139,7 +139,7 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
             // Use .count() to get an integral seconds value and compute wait time
             // against the stored uint32 joinTime.
             uint32 waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - it->joinTime);
-            ch.PSendSysMessage("Your position: %u | Wait time: %u seconds", position, waitTime);
+            ch.PSendSysMessage("Your position: {} | Wait time: {} seconds", position, waitTime);
         }
     }
     
@@ -219,14 +219,14 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
                 teleportCount++;
                 // _warmupTimeRemaining is stored in milliseconds. Convert to seconds for messaging.
                 uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
-                ChatHandler(player->GetSession()).PSendSysMessage("Welcome to Hinterland Battleground! Warmup phase: %u seconds remaining.", warmupSec);
+                ChatHandler(player->GetSession()).PSendSysMessage("Welcome to Hinterland Battleground! Warmup phase: {} seconds remaining.", warmupSec);
             }
         }
         else
         {
             // Player is already in zone, just send notification
             uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
-            ChatHandler(player->GetSession()).PSendSysMessage("Hinterland Battle warmup phase has started! %u seconds until battle begins.", warmupSec);
+            ChatHandler(player->GetSession()).PSendSysMessage("Hinterland Battle warmup phase has started! {} seconds until battle begins.", warmupSec);
         }
     }
 
@@ -275,7 +275,7 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
     uint32 memberCount = group->GetMembersCount();
     if (memberCount > _maxGroupSize)
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Group is too large for Hinterland BG (max %u players).", _maxGroupSize);
+        ChatHandler(leader->GetSession()).PSendSysMessage("Group is too large for Hinterland BG (max {} players).", _maxGroupSize);
         return false;
     }
 
@@ -304,7 +304,7 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
         }
     });
 
-    ChatHandler(leader->GetSession()).PSendSysMessage("Added %u group members to Hinterland BG queue.", addedCount);
+    ChatHandler(leader->GetSession()).PSendSysMessage("Added {} group members to Hinterland BG queue.", addedCount);
     return true;
 }
 
@@ -340,7 +340,7 @@ bool OutdoorPvPHL::RemoveGroupFromQueue(Player* leader)
 
     if (removedCount > 0)
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Removed %u group members from Hinterland BG queue.", removedCount);
+    ChatHandler(leader->GetSession()).PSendSysMessage("Removed {} group members from Hinterland BG queue.", removedCount);
     }
     else
     {

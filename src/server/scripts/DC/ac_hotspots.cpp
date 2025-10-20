@@ -1957,7 +1957,7 @@ public:
         }
         else
         {
-            handler->PSendSysMessage("Invalid amount '%s'", args);
+            handler->PSendSysMessage("Invalid amount '{}'", args);
         }
 
         return true;
@@ -2133,7 +2133,7 @@ public:
         Player* target = ObjectAccessor::FindPlayerByName(a.c_str(), false);
         if (!target)
         {
-            handler->PSendSysMessage("Player '%s' not found or not online.", args);
+            handler->PSendSysMessage("Player '{}' not found or not online.", args);
             return true;
         }
 
@@ -2144,7 +2144,7 @@ public:
         // set server-side hotspot expiry for target
         sPlayerHotspotExpiry[target->GetGUID()] = GameTime::GetGameTime().count() + (sHotspotsConfig.duration * MINUTE);
 
-        handler->PSendSysMessage("Applied hotspot aura/buff to %s.", target->GetName().c_str());
+    handler->PSendSysMessage("Applied hotspot aura/buff to {}.", target->GetName().c_str());
         return true;
     }
 
@@ -2282,7 +2282,7 @@ public:
             created++;
         }
 
-        handler->PSendSysMessage("Spawned worldwide hotspots on %d map(s)", created);
+    handler->PSendSysMessage("Spawned worldwide hotspots on {} map(s)", created);
         return true;
     }
 
@@ -2290,7 +2290,7 @@ public:
     {
         if (!args || !*args)
         {
-            handler->PSendSysMessage("Hotspots.SendAddonPackets is currently: %s", sHotspotsConfig.sendAddonPackets ? "ON" : "OFF");
+            handler->PSendSysMessage("Hotspots.SendAddonPackets is currently: {}", sHotspotsConfig.sendAddonPackets ? "ON" : "OFF");
             handler->PSendSysMessage("Usage: .hotspot addonpackets on|off");
             return true;
         }
@@ -2309,7 +2309,7 @@ public:
         }
         else
         {
-            handler->PSendSysMessage("Unknown argument '%s' — use on or off", args);
+            handler->PSendSysMessage("Unknown argument '{}' — use on or off", args);
         }
 
         return true;

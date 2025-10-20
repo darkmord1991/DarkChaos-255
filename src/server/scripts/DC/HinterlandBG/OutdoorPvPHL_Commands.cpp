@@ -108,7 +108,7 @@ void OutdoorPvPHL::HandleAdminQueueClear(Player* admin)
     uint32 clearedCount = GetQueuedPlayerCount();
     ClearQueue();
     
-    ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Cleared %u players from queue.", clearedCount);
+    ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Cleared {} players from queue.", clearedCount);
     LOG_INFO("bg.battleground", "HLBG: Admin {} cleared queue ({} players)", admin->GetName(), clearedCount);
 }
 
@@ -134,7 +134,7 @@ void OutdoorPvPHL::HandleAdminQueueList(Player* admin)
         std::string teamName = (entry.teamId == TEAM_ALLIANCE) ? "Alliance" : "Horde";
         uint32 waitTime = GameTime::GetGameTime().count() - entry.joinTime;
         
-        ch.PSendSysMessage("%u. %s (%s) - %u seconds", position, playerName.c_str(), teamName.c_str(), waitTime);
+    ch.PSendSysMessage("{}. {} ({}) - {} seconds", position, playerName.c_str(), teamName.c_str(), waitTime);
         position++;
     }
 }
@@ -146,7 +146,7 @@ void OutdoorPvPHL::HandleAdminForceWarmup(Player* admin)
 
     if (_bgState != BG_STATE_CLEANUP)
     {
-        ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Can only force warmup from cleanup state. Current state: %u", static_cast<uint32>(_bgState));
+    ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Can only force warmup from cleanup state. Current state: {}", static_cast<uint32>(_bgState));
         return;
     }
 
@@ -157,7 +157,7 @@ void OutdoorPvPHL::HandleAdminForceWarmup(Player* admin)
     }
 
     StartWarmupPhase();
-    ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Forced warmup phase start with %u queued players.", GetQueuedPlayerCount());
+    ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Forced warmup phase start with {} queued players.", GetQueuedPlayerCount());
     LOG_INFO("bg.battleground", "HLBG: Admin {} forced warmup start", admin->GetName());
 }
 
@@ -175,11 +175,11 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
         {
             bool newEnabled = (std::string(value) == "1" || std::string(value) == "true" || std::string(value) == "on");
             _queueEnabled = newEnabled;
-            ch.PSendSysMessage("HLBG Admin: Queue enabled = %s", _queueEnabled ? "true" : "false");
+            ch.PSendSysMessage("HLBG Admin: Queue enabled = {}", _queueEnabled ? "true" : "false");
         }
         else
         {
-            ch.PSendSysMessage("HLBG Admin: Queue enabled = %s", _queueEnabled ? "true" : "false");
+            ch.PSendSysMessage("HLBG Admin: Queue enabled = {}", _queueEnabled ? "true" : "false");
         }
     }
     else if (settingStr == "minplayers")
@@ -189,8 +189,8 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
             uint32 newMin = static_cast<uint32>(std::strtoul(value, nullptr, 10));
             if (newMin > 0 && newMin <= 40)
             {
-                _minPlayersToStart = newMin;
-                ch.PSendSysMessage("HLBG Admin: Minimum players to start = %u", _minPlayersToStart);
+                    _minPlayersToStart = newMin;
+                    ch.PSendSysMessage("HLBG Admin: Minimum players to start = {}", _minPlayersToStart);
             }
             else
             {
@@ -199,7 +199,7 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
         }
         else
         {
-            ch.PSendSysMessage("HLBG Admin: Minimum players to start = %u", _minPlayersToStart);
+            ch.PSendSysMessage("HLBG Admin: Minimum players to start = {}", _minPlayersToStart);
         }
     }
     else if (settingStr == "maxgroupsize")
@@ -209,8 +209,8 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
             uint32 newMax = static_cast<uint32>(std::strtoul(value, nullptr, 10));
             if (newMax > 0 && newMax <= 40)
             {
-                _maxGroupSize = newMax;
-                ch.PSendSysMessage("HLBG Admin: Maximum group size = %u", _maxGroupSize);
+                    _maxGroupSize = newMax;
+                    ch.PSendSysMessage("HLBG Admin: Maximum group size = {}", _maxGroupSize);
             }
             else
             {
@@ -219,7 +219,7 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
         }
         else
         {
-            ch.PSendSysMessage("HLBG Admin: Maximum group size = %u", _maxGroupSize);
+            ch.PSendSysMessage("HLBG Admin: Maximum group size = {}", _maxGroupSize);
         }
     }
     else

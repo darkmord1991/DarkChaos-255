@@ -53,7 +53,7 @@ local function AddHotspotFromData(data)
     }
     local posStr = tostring(x)..","..tostring(y)
     if nx and ny then posStr = string.format("nx=%.3f,ny=%.3f", nx, ny) end
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #"..id.." registered at "..posStr)
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s", id, posStr))
     -- Update minimap immediately when a new hotspot arrives
     UpdateMinimap()
 end
@@ -151,7 +151,7 @@ C_Timer.NewTicker(5, function()
     if removed then UpdateMinimap() end
 end)
 
-DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Loaded v"..ADDON_VERSION)
+DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Loaded v%s", ADDON_VERSION))
 -- One-time server-visible debug message so operators can see the client addon is active
 -- Note: this sends a normal SAY chat message which will be visible in server logs.
 local function AnnounceAddonToServer()

@@ -52,7 +52,7 @@ public:
         std::vector<Position> path;
         if (DC_AC_Flight::FlightPathHelper::CalculateSmartPathForObject(player, dest, path) && !path.empty())
         {
-            handler->PSendSysMessage("FlightHelper: path found with %u points.", (uint32)path.size());
+            handler->PSendSysMessage("FlightHelper: path found with {} points.", (uint32)path.size());
             for (auto const& p : path)
             {
                 player->SummonCreature(VISUAL_WAYPOINT, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), 0.0f, TEMPSUMMON_TIMED_DESPAWN, 9000);

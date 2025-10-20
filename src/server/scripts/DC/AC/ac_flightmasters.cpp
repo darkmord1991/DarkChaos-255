@@ -600,7 +600,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                                 nudgez += 8.0f; // stronger nudge on repeat failures
                                 if (Player* p = GetPassengerPlayer())
                                     if (p->IsGameMaster())
-                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased micro-nudge at {} (failcount=%u).", NodeLabel(_index), static_cast<uint32>(_nodeFailCount[_index]));
+                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased micro-nudge at {} (failcount={}).", NodeLabel(_index), static_cast<uint32>(_nodeFailCount[_index]));
                             }
                             Position nudgePos(nudgex, nudgey, nudgez, 0.0f);
                             me->GetMotionMaster()->Clear();
@@ -1556,7 +1556,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     Creature* taxi = creature->SummonCreature(NPC_AC_GRYPHON_TAXI, where, TEMPSUMMON_TIMED_DESPAWN, 300000);
     if (!taxi)
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry %u).", static_cast<uint32>(NPC_AC_GRYPHON_TAXI));
+        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] Failed to summon gryphon (entry {}).", static_cast<uint32>(NPC_AC_GRYPHON_TAXI));
         return false;
     }
     taxi->setActive(true);
@@ -1571,7 +1571,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     taxi->SetHealth(taxi->GetMaxHealth());
     if (!taxi->GetVehicleKit())
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry %u and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
+        ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry {} and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
     taxi->DespawnOrUnsummon(1000ms);
         return false;
     }
@@ -1789,13 +1789,13 @@ public:
             iss >> idx >> esc >> extraZ;
             if (idx >= static_cast<uint32>(kPathLength))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Invalid index %u (path length %u).", idx, static_cast<uint32>(kPathLength));
+                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Invalid index {} (path length {}).", idx, static_cast<uint32>(kPathLength));
                 return;
             }
             // Update global defaults vector (affects subsequent flights / instances reading defaults)
             // We intentionally allow small race here; it's a tuning helper, not a strict API.
             const_cast<ac_gryphon_taxi_800011AI::NodeConfig&>(ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
-            ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node %u: escalation=%u extraZ=%.1f (applies to new flights/instances).", idx, esc, extraZ);
+            ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node {}: escalation={} extraZ={:.1f} (applies to new flights/instances).", idx, esc, extraZ);
             // Also update any active taxi instances near the player (apply instantly)
             uint32 updated = 0;
             {
@@ -1816,7 +1816,7 @@ public:
                 }
             }
             if (updated > 0)
-                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Applied config to %u active taxi instances near you.", updated);
+                ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Applied config to {} active taxi instances near you.", updated);
             return;
         }
         else if (sub == "failreset")
