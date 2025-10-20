@@ -1683,7 +1683,6 @@ public:
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
             ChatCommandBuilder("forcebuff", HandleHotspotsForceBuffCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No),
-            ChatCommandBuilder("bonus", HandleHotspotsShowBonusCommand, SEC_PLAYER, Console::No),
         };
 
         static ChatCommandTable commandTable =
@@ -1989,6 +1988,12 @@ public:
             sHotspotsConfig.experienceBonus = 0;
             handler->PSendSysMessage("Hotspot XP bonus disabled (set to 0%).");
             LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = 0 by {}", actor);
+            // Broadcast to all players
+            {
+                std::ostringstream ss;
+                ss << "|cFF00FF00[Hotspots]|r " << actor << " has disabled hotspot XP bonus (set to 0%).";
+                ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
+            }
             return true;
         }
 
@@ -1999,6 +2004,12 @@ public:
             sHotspotsConfig.experienceBonus = cfg;
             handler->PSendSysMessage("Hotspot XP bonus enabled (set to {}%).", sHotspotsConfig.experienceBonus);
             LOG_INFO("scripts", "Hotspots: runtime restored experienceBonus = {} by {}", sHotspotsConfig.experienceBonus, actor);
+            // Broadcast to all players
+            {
+                std::ostringstream ss;
+                ss << "|cFF00FF00[Hotspots]|r " << actor << " restored hotspot XP bonus to " << sHotspotsConfig.experienceBonus << "%";
+                ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
+            }
             return true;
         }
 
@@ -2008,6 +2019,12 @@ public:
             sHotspotsConfig.experienceBonus = val;
             handler->PSendSysMessage("Hotspot XP bonus set to {}%", val);
             LOG_INFO("scripts", "Hotspots: runtime set experienceBonus = {} by {}", val, actor);
+            // Broadcast to all players
+            {
+                std::ostringstream ss;
+                ss << "|cFF00FF00[Hotspots]|r " << actor << " set hotspot XP bonus to " << val << "%";
+                ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
+            }
             return true;
         }
 
