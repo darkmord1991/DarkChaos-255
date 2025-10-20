@@ -578,7 +578,7 @@
                     ss << " (Horde win)";
                 else
                     ss << " (Draw)";
-                ChatHandler(nullptr).SendGlobalSysMessage(ss.str());
+                ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
             }
 
             if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)
