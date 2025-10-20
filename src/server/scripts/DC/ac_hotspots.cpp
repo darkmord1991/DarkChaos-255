@@ -1638,7 +1638,7 @@ public:
 
             // Send visible notification to player about the bonus
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cFFFFD700[Hotspot XP]|r +%u XP (%u base + %u%% bonus = %u total)",
+                "|cFFFFD700[Hotspot XP]|r +{} XP ({} base + {}% bonus = {} total)",
                 bonus, originalAmount, sHotspotsConfig.experienceBonus, amount);
 
             LOG_INFO("scripts", "Hotspot XP Bonus applied to {}: victim={} base={} bonus={} final={} (serverFlag={})",
@@ -1967,7 +1967,7 @@ public:
     {
         size_t count = sActiveHotspots.size();
         sActiveHotspots.clear();
-    handler->PSendSysMessage("Cleared %u hotspot(s).", count);
+    handler->PSendSysMessage("Cleared {} hotspot(s).", count);
         return true;
     }
 
@@ -2062,7 +2062,7 @@ public:
 
             if (!targetHotspot)
             {
-                handler->PSendSysMessage("Hotspot ID %u not found.", hotspotId);
+                handler->PSendSysMessage("Hotspot ID {} not found.", hotspotId);
                 return true;
             }
         }

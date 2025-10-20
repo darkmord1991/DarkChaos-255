@@ -578,7 +578,7 @@ public:
                 {
                     name = res2->Fetch()[0].Get<std::string>();
                 }
-                handler->PSendSysMessage("  %u. %s - %s", rank, name.c_str(), formatCoins(acc).c_str());
+                handler->PSendSysMessage("  {}. {} - {}", rank, name.c_str(), formatCoins(acc).c_str());
                 ++rank;
             } while (result->NextRow());
         }
