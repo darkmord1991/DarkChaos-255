@@ -29,6 +29,7 @@ void AddSC_hl_scoreboard(); // location: scripts\DC\HinterlandBG\HL_ScoreboardNP
 void AddSC_hlbg_addon(); // location: scripts\DC\HinterlandBG\hlbg_addon.cpp
 void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
+void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -47,4 +48,5 @@ void AddDCScripts()
     AddSC_hlbg_addon();
     AddSC_ac_hotspots();
     AddSC_ac_aoeloot();
+    AddBattleForGilneasScripts();
 }

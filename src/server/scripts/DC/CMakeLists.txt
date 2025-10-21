@@ -22,11 +22,17 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Admin.cpp
 )
 
+# DC Gilneas Battle for Gilneas implementation
+set(SCRIPTS_DC_Gilneas
+    Gilneas/BattlegroundBFG.cpp
+)
+
 # Add sources to AzerothCore scripts
 set(SCRIPTS_WORLD
     ${SCRIPTS_WORLD}
     ${SCRIPTS_DC_AC}
     ${SCRIPTS_DC_HinterlandBG}
+    ${SCRIPTS_DC_Gilneas}
 )
 
 # Expose module config to the modules installer
