@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: DC-MapExtension
+## Notes: Map extension addon for DarkChaos - show custom map backgrounds and POIs (Wrath 3.3.5a)
+## Author: DarkChaos team
+## SavedVariables: DCMapExtensionDB
+
+Core.lua
+README.md
+Textures/azshara_crater.blp
