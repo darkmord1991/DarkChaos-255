@@ -1,10 +1,10 @@
---[[
+--[[]]
 Name: AstrolabeMapMonitor
 Revision: $Rev: 44 $
 $Date: 2007-03-30 19:56:21 +0100 (Fri, 30 Mar 2007) $
 Author(s): Esamynn (esamynn@wowinterface.com)
 Inspired By: Gatherer by Norganna
-             MapLibrary by Kristofer Karlsson (krka@kth.se)
+			 MapLibrary by Kristofer Karlsson (krka@kth.se)
 Website: http://esamynn.wowinterface.com/
 Documentation: http://www.esamynn.org/wiki/Astrolabe/World_Map_Monitor
 SVN: http://esamynn.org/svn/astrolabe/
@@ -137,7 +137,7 @@ function AstrolabeMapMonitor:MonitorWorldMap( worldMapFrame )
 	-- check argument types
 	argcheck(worldMapFrame, 2, "table");
 	assert((worldMapFrame.SetParent), "Usage Message");
-	
+    
 	local TrackedWorldMaps = self.TrackedWorldMaps;
 	if ( TrackedWorldMaps[worldMapFrame] ) then
 		return 1;
@@ -185,7 +185,7 @@ function AstrolabeMapMonitor:RegisterAstrolabeLibrary( lib, majorVersionString )
 	-- check argument types
 	argcheck(lib, 2, "table");
 	argcheck(majorVersionString, 3, "string");
-	
+    
 	self.AstrolabeLibrarys[lib] = majorVersionString;
 	self:Update();
 end
@@ -233,3 +233,4 @@ local function activate( newInstance, oldInstance )
 end
 
 DongleStub:Register(AstrolabeMapMonitor, activate)
+

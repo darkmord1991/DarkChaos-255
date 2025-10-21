@@ -10,6 +10,11 @@ HotspotDisplaySafeDB = HotspotDisplaySafeDB or {
     userIcon = "Interface\\Icons\\INV_Misc_Map_01",
     userSize = 20,
     keepAcrossZones = false,
+    serverAnnounce = false, -- if true, send a SAY message to the server announcing the addon; default OFF to avoid spamming logs
+    debugUI = false, -- enable to show local debug messages about missing UI frames (Minimap/WorldMap)
+    hotspotIcon = "Interface\\Icons\\INV_Misc_Map_01", -- default icon for hotspots when payload doesn't provide a texture
+    minimapRadius = 0.5, -- normalized distance threshold for showing pins on minimap
+    showTransport = false, -- show visible traces for whether data came via ADDON or SYSTEM
 }
 
 local db = HotspotDisplaySafeDB
@@ -17,21 +22,89 @@ local db = HotspotDisplaySafeDB
 -- Optional map libraries (Astrolabe/LibMap) detection
 -- Optional map libraries (Astrolabe/LibMap) detection
 local MapLib = nil
+local MapLibSource = "none"
 -- Prefer LibStub-installed libraries
 if type(LibStub) == "function" then
     MapLib = LibStub("LibMap-1.0", true) or LibStub("Astrolabe-1.0", true)
+    if MapLib then MapLibSource = "LibStub" end
 end
 -- Fallback: if Astrolabe is present as a global (DongleStub-style), use it
 if not MapLib and type(Astrolabe) == "table" then
     MapLib = Astrolabe
+    MapLibSource = "DongleStub/global Astrolabe"
 end
 -- If we detected something useful, inform the user; otherwise print a hint about installation
 if MapLib then
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Map library detected: using for improved pin placement.")
+    -- Attempt to query version/detail from the detected library for debug purposes
+    local verMsg = ""
+    local ok, a, b = pcall(function()
+        if type(MapLib.GetVersion) == "function" then
+            return MapLib:GetVersion()
+        elseif type(MapLib.GetLibraryVersion) == "function" then
+            return MapLib:GetLibraryVersion()
+        end
+        return nil
+    end)
+    if ok and a then
+        if type(a) == "string" and b == nil then
+            verMsg = string.format(" version=%s", tostring(a))
+        elseif type(a) == "string" and b then
+            verMsg = string.format(" version=%s/%s", tostring(a), tostring(b))
+        elseif type(a) == "number" then
+            verMsg = string.format(" version=%s", tostring(a))
+        end
+    end
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Map library detected (%s)%s: using for improved pin placement.", MapLibSource, verMsg))
 else
     -- Friendly hint: the addon works without the library, but placement will be best-effort
     DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r No map library detected (LibStub/Astrolabe). Pins will use best-effort placement. To improve accuracy, install Astrolabe or LibMap in the " .. "\"Custom\\Client addons needed\\!Astrolabe\" folder or alongside the addon.")
 end
+
+-- C_Timer compatibility shim for clients that don't expose C_Timer
+if not C_Timer then
+    local _timers = {}
+    local _frame = CreateFrame("Frame")
+    _frame:SetScript("OnUpdate", function(self, elapsed)
+        for i = #_timers, 1, -1 do
+            local t = _timers[i]
+            t._time = t._time - elapsed
+            if t._time <= 0 then
+                -- safe pcall
+                pcall(t._func)
+                if t._type == "ticker" then
+                    t._time = t._interval
+                else
+                    table.remove(_timers, i)
+                end
+            end
+        end
+    end)
+
+    C_Timer = {}
+    function C_Timer.NewTicker(interval, func)
+        local t = { _time = interval, _interval = interval, _func = func, _type = "ticker" }
+        table.insert(_timers, t)
+        return {
+            Cancel = function()
+                for i = #_timers, 1, -1 do if _timers[i] == t then table.remove(_timers, i); break end end
+            end
+        }
+    end
+
+    function C_Timer.After(delay, func)
+        local t = { _time = delay, _func = func, _type = "after" }
+        table.insert(_timers, t)
+        return {
+            Cancel = function()
+                for i = #_timers, 1, -1 do if _timers[i] == t then table.remove(_timers, i); break end end
+            end
+        }
+    end
+end
+
+-- Forward declarations for functions that may be referenced earlier in the file
+local UpdateMinimap, UpdateWorldmapPins, GetPlayerNormalizedPosition, ToggleOverlay
+
 
 local function parsePayload(payload)
     -- payload expected like: HOTSPOT_ADDON|map:1|zone:141|x:123.45|y:67.89|z:..|id:3|dur:3600|icon:23768|nx:0.5|ny:0.5
@@ -39,11 +112,13 @@ local function parsePayload(payload)
     if not payload then return data end
     local s = tostring(payload)
 
-    -- Normalize known prefixes
-    if s:sub(1,12) == "HOTSPOT_ADDON" then
-        s = s:sub(13)
-    elseif s:sub(1,7) == "HOTSPOT" and s:sub(8,8) == "\t" then
-        s = s:sub(9)
+    -- Normalize known prefixes: if payload is prefixed like "HOTSPOT...|rest", remove up to the first '|'
+    local pipe = s:find("|")
+    if pipe then
+        local prefix = s:sub(1, pipe-1)
+        if type(prefix) == "string" and prefix:match("^HOTSPOT") then
+            s = s:sub(pipe+1)
+        end
     end
 
     -- split by '|'
@@ -67,6 +142,9 @@ local function AddHotspotFromData(data)
     local icon = tonumber(data.icon) or nil
     local nx = tonumber(data.nx) or nil
     local ny = tonumber(data.ny) or nil
+    -- ensure normalized coords are numbers when available
+    if nx then nx = tonumber(nx) end
+    if ny then ny = tonumber(ny) end
     local tex = data.tex or nil
     local texid = tonumber(data.texid) or nil
     local now = time()
@@ -87,6 +165,9 @@ local function AddHotspotFromData(data)
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s", id, posStr))
     end
     -- Update minimap and world map immediately when a new hotspot arrives
+    if nx and ny then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Parsed hotspot coords nx=%.4f ny=%.4f", nx, ny))
+    end
     UpdateMinimap()
     UpdateWorldmapPins()
 end
@@ -117,18 +198,55 @@ f:RegisterEvent("CHAT_MSG_SYSTEM")
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "CHAT_MSG_ADDON" then
-        local prefix, msg, channel, sender = ...
-        if prefix == "HOTSPOT" and msg then
-            -- msg likely 'HOTSPOT_ADDON|...'
-            local data = parsePayload(msg)
-            AddHotspotFromData(data)
+        local prefix, message = ...
+        if prefix and type(prefix) == "string" and prefix:upper():find("HOTSPOT") and message then
+            -- Visible trace: received via addon channel (honor saved setting)
+            if db.showTransport then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Received HOTSPOT via ADDON channel") end
+            if db.debugUI then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r (debug) ADDON prefix='"..tostring(prefix).."' payloadlen="..tostring(#message))
+            end
+            local data = parsePayload(message)
+            pcall(function() AddHotspotFromData(data) end)
         end
+        return
     elseif event == "CHAT_MSG_SYSTEM" then
         local msg = ...
-        if type(msg) == "string" and msg:sub(1,12) == "HOTSPOT_ADDON" then
+        if msg and type(msg) == "string" and msg:find("HOTSPOT") then
+            -- Visible trace: received via system text fallback (honor saved setting)
+            if db.showTransport then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Received HOTSPOT via SYSTEM chat fallback") end
+            if db.debugUI then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r (debug) SYSTEM payloadlen="..tostring(#msg))
+            end
             local data = parsePayload(msg)
-            AddHotspotFromData(data)
+            pcall(function() AddHotspotFromData(data) end)
         end
+        return
+    end
+end)
+
+-- Register the addon message prefix so CHAT_MSG_ADDON will be delivered (where API exists)
+pcall(function()
+    if type(RegisterAddonMessagePrefix) == "function" then
+        pcall(RegisterAddonMessagePrefix, "HOTSPOT")
+    end
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.RegisterAddonMessagePrefix) == "function" then
+        pcall(C_ChatInfo.RegisterAddonMessagePrefix, "HOTSPOT")
+    end
+end)
+
+-- If registration APIs are available, print a confirmation so users/operators can see the client
+pcall(function()
+    local registered = false
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.RegisterAddonMessagePrefix) == "function" then
+        -- modern API doesn't provide a query method; assume success if no error
+        registered = true
+    elseif type(RegisterAddonMessagePrefix) == "function" then
+        registered = true
+    end
+    if registered then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Registered addon prefix 'HOTSPOT' for CHAT_MSG_ADDON handling (if supported by client).")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Could not register addon prefix API not present; will parse system chat fallback messages instead.")
     end
 end)
 
@@ -136,6 +254,7 @@ end)
 local minimapPin = nil
 local function EnsureMinimapPin()
     if minimapPin then return end
+    if not Minimap then return end -- Minimap may not exist in some contexts
     minimapPin = CreateFrame("Frame", "HotspotDisplaySafe_MinimapPin", Minimap)
     minimapPin:SetSize(16,16)
     minimapPin.texture = minimapPin:CreateTexture(nil, "OVERLAY")
@@ -160,7 +279,9 @@ local function EnsureMinimapPin()
     minimapPin:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
-local function UpdateMinimap()
+UpdateMinimap = function()
+    -- skip minimap updates if Minimap is unavailable
+    if not Minimap then return end
     EnsureMinimapPin()
     -- choose nearest hotspot in same map (best-effort using zone id)
     local bestId, best = nil, nil
@@ -183,7 +304,7 @@ local function UpdateMinimap()
     end
 
     if not best then
-        minimapPin:Hide()
+        if minimapPin then minimapPin:Hide() end
         return
     end
 
@@ -192,21 +313,53 @@ local function UpdateMinimap()
         local nx = tonumber(best.nx)
         local ny = tonumber(best.ny)
         if nx and ny then
-            minimapPin.texture:Show()
-            -- convert normalized 0..1 to minimap offset (approx). Note: this is best-effort and
-            -- will not be pixel-perfect across different map scales.
-            local offsetX = (nx - 0.5) * (Minimap:GetWidth())
-            local offsetY = (ny - 0.5) * (Minimap:GetHeight())
-            minimapPin:ClearAllPoints()
-            minimapPin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-            minimapPin:Show()
+            if minimapPin and minimapPin.texture then minimapPin.texture:Show() end
+            -- Try using MapLib (Astrolabe/LibMap) for more accurate placement when available
+            if MapLib and minimapPin then
+                local ok, err = pcall(function()
+                    if type(MapLib.PlaceIconOnMinimap) == "function" then
+                        MapLib:PlaceIconOnMinimap(minimapPin, best.map or 0, nx, ny)
+                    elseif type(MapLib.PlaceIcon) == "function" then
+                        MapLib:PlaceIcon(minimapPin, best.map or 0, nx, ny)
+                    else
+                        error("MapLib has no placement API")
+                    end
+                end)
+                if ok then
+                    if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r MapLib placed minimap pin (debug)") end
+                    return
+                end
+            end
+            -- compute distance to player in normalized coords; hide pin if beyond radius
+            local px, py = GetPlayerNormalizedPosition()
+            local radius = tonumber(db.minimapRadius) or 0.5
+            if px and py and (math.abs(nx - px) > radius or math.abs(ny - py) > radius) then
+                if minimapPin then minimapPin:Hide() end
+                return
+            end
+            -- convert normalized coordinates to minimap pixel offset relative to player position.
+            -- This places the icon at the correct location around the player's minimap center.
+            local offsetX, offsetY
+            if px and py then
+                offsetX = (nx - px) * (Minimap:GetWidth())
+                offsetY = (ny - py) * (Minimap:GetHeight())
+            else
+                -- fallback: center-based placement
+                offsetX = (nx - 0.5) * (Minimap:GetWidth())
+                offsetY = (ny - 0.5) * (Minimap:GetHeight())
+            end
+            if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Minimap coords px=%.4f,py=%.4f nx=%.4f,ny=%.4f offset=(%.2f,%.2f)", tonumber(px) or 0, tonumber(py) or 0, tonumber(nx) or 0, tonumber(ny) or 0, offsetX, offsetY)) end
+            if minimapPin then
+                minimapPin:ClearAllPoints()
+                minimapPin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                minimapPin:Show()
+            end
             return
         end
     end
 
     -- Fallback: just show a generic pin
-    minimapPin.texture:Show()
-    minimapPin:Show()
+    if minimapPin and minimapPin.texture then minimapPin.texture:Show(); minimapPin:Show() end
 end
 
 -- World map pins (show all active hotspots on world map)
@@ -220,12 +373,21 @@ end
 
 local function EnsureWorldMapContainer()
     if not WorldMapFrame then return nil end
-    -- prefer ScrollContainer canvas if available
-    local container = WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer:GetCanvas() or WorldMapFrame.ScrollContainer or WorldMapFrame
+    -- prefer ScrollContainer canvas if available; guard calls with pcall where necessary
+    local container = nil
+    if WorldMapFrame.ScrollContainer then
+        if type(WorldMapFrame.ScrollContainer.GetCanvas) == "function" then
+            container = WorldMapFrame.ScrollContainer:GetCanvas()
+        else
+            container = WorldMapFrame.ScrollContainer
+        end
+    else
+        container = WorldMapFrame
+    end
     return container
 end
 
-local function UpdateWorldmapPins()
+UpdateWorldmapPins = function()
     ClearWorldmapPins()
     local container = EnsureWorldMapContainer()
     if not container then return end
@@ -245,18 +407,49 @@ local function UpdateWorldmapPins()
                 pin.texture = pin:CreateTexture(nil, "OVERLAY")
                 pin.texture:SetAllPoints()
                 local tex = h.tex and h.tex or (h.icon and ("Interface\\Icons\\INV_Misc_Map_01") )
-                pin.texture:SetTexture(tex or db.userIcon)
+                -- prefer hotspot texture if available (payload tex > payload icon > db.hotspotIcon > db.userIcon)
+                local chosenTex = tex or (h.icon and ("Interface\\Icons\\INV_Misc_Map_01")) or db.hotspotIcon or db.userIcon
+                pin.texture:SetTexture(chosenTex)
                 pin:SetFrameStrata("HIGH")
 
                 local function UpdatePin()
                     if not nx or not ny then return end
+                    -- Try to use MapLib for world map placement when available
+                    if MapLib then
+                        local ok = pcall(function()
+                            if type(MapLib.PlaceIconOnWorldMap) == "function" then
+                                MapLib:PlaceIconOnWorldMap(pin, h.map or 0, nx, ny)
+                            elseif type(MapLib.PlaceIcon) == "function" then
+                                MapLib:PlaceIcon(pin, h.map or 0, nx, ny)
+                            else
+                                error("MapLib has no worldmap placement API")
+                            end
+                        end)
+                        if ok then
+                            if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r MapLib placed worldmap pin #%d (debug)", id)) end
+                            return
+                        end
+                    end
+                    if type(container.GetWidth) ~= "function" or type(container.GetHeight) ~= "function" then return end
                     local w = container:GetWidth()
                     local hgt = container:GetHeight()
-                    local offsetX = (nx - 0.5) * w
-                    local offsetY = (ny - 0.5) * hgt
-                    pin:ClearAllPoints()
-                    pin:SetPoint("CENTER", container, "CENTER", offsetX, offsetY)
-                    pin:Show()
+                    -- Treat container as canvas; place pins relative to canvas TOPLEFT
+                    local canvas = container
+                    local canvasW = canvas:GetWidth()
+                    local canvasH = canvas:GetHeight()
+                    local pinW, pinH = pin:GetWidth() or ((db.userSize or 20) + 8), pin:GetHeight() or ((db.userSize or 20) + 8)
+                    local x = nx * canvasW - (pinW / 2)
+                    local y = ny * canvasH - (pinH / 2)
+                    local ok = pcall(function()
+                        pin:ClearAllPoints()
+                        pin:SetPoint("TOPLEFT", canvas, "TOPLEFT", x, -y)
+                        pin:Show()
+                    end)
+                    if ok then
+                        if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r WorldMap pin #%d placed on canvas TOPLEFT (debug) pos=(%.2f,%.2f) canvas=(%.0f,%.0f)", id, x, y, canvasW, canvasH)) end
+                    else
+                        pin:Hide()
+                    end
                 end
 
                 pin:SetScript("OnUpdate", UpdatePin)
@@ -295,12 +488,67 @@ DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Lo
 -- Note: this sends a normal SAY chat message which will be visible in server logs.
 local function AnnounceAddonToServer()
     local msg = string.format("[HOTSPOT_CLIENT_LOADED] %s v%s", ADDON_NAME, ADDON_VERSION)
-    -- Safe guard: pcall in case the API is unavailable in some clients
-    pcall(function() SendChatMessage(msg, "SAY") end)
+    -- Only announce to server if user explicitly enabled it in saved vars; otherwise print locally
+    if db.serverAnnounce then
+        -- Safe guard: pcall in case the API is unavailable in some clients
+        pcall(function() SendChatMessage(msg, "SAY") end)
+    else
+        -- local-only notification so the player knows the addon loaded without spamming the server
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r (local) %s", msg))
+    end
 end
 
 -- Announce once after a short delay to allow player login to complete
 C_Timer.After(1.5, AnnounceAddonToServer)
+
+-- Deferred retry: some clients create UI frames after addons run; retry pin setup for a short while
+local function StartDeferredPinRetry()
+    local tries = 0
+    local maxTries = 12 -- try for ~12 seconds
+    local ticker = nil
+    local minimapReported = false
+    local worldmapReported = false
+    ticker = C_Timer.NewTicker(1, function()
+        tries = tries + 1
+        -- report missing frames one-time if debug enabled
+        if not minimapReported and not Minimap then
+            minimapReported = true
+            if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Debug: Minimap not available yet; retrying...") end
+        end
+        local container = EnsureWorldMapContainer()
+        if not worldmapReported and not container then
+            worldmapReported = true
+            if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Debug: WorldMap container not available yet; retrying...") end
+        end
+        -- attempt to ensure minimap pin and worldmap pins (no-ops if frames are missing)
+        pcall(function()
+            if not minimapPin and Minimap then EnsureMinimapPin() end
+            -- if user placed a personal pin earlier but Minimap was missing, recreate it from saved settings
+            if userMinimapPin == nil and db.userIcon and Minimap then
+                -- Do not automatically create a user pin unless the user explicitly used the command; keep no auto-creation
+            end
+            -- Try updating worldmap pins if the container is now available
+            UpdateWorldmapPins()
+        end)
+
+        if (minimapPin and (next(hotspots) ~= nil or userMinimapPin)) or tries >= maxTries then
+            if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Debug: Deferred pin retry finished (success or timeout).") end
+            ticker:Cancel()
+        end
+    end)
+end
+
+-- Kick off a deferred retry after login and on zone changes where frames may arrive late
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+f:RegisterEvent("ZONE_CHANGED")
+f:RegisterEvent("ZONE_CHANGED_INDOORS")
+f:HookScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_ENTERING_WORLD" or event:find("ZONE_CHANGED") then
+        -- start retrying pin setup shortly after zone changes
+        C_Timer.After(0.5, StartDeferredPinRetry)
+    end
+end)
 
 -- Debug command: spawn a test hotspot at player's current position
 SLASH_HOTSPOTDEBUG1 = "/hotspotdebug"
@@ -353,6 +601,7 @@ local function RemoveUserPins()
 end
 
 local function CreateUserMinimapPin(nx, ny, tex)
+    if not Minimap then return end
     EnsureMinimapPin()
     -- create or reuse a dedicated pin frame for the user
     if userMinimapPin then userMinimapPin:Hide(); userMinimapPin:SetScript("OnUpdate", nil) end
@@ -364,12 +613,37 @@ local function CreateUserMinimapPin(nx, ny, tex)
     userMinimapPin:SetFrameStrata("HIGH")
 
     local function UpdatePin()
-        if not nx or not ny then return end
-        local offsetX = (nx - 0.5) * (Minimap:GetWidth())
-        local offsetY = (ny - 0.5) * (Minimap:GetHeight())
-        userMinimapPin:ClearAllPoints()
-        userMinimapPin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-        userMinimapPin:Show()
+        if not nx or not ny or not Minimap then return end
+        -- Try MapLib if available
+        if MapLib and userMinimapPin then
+            local ok = pcall(function()
+                if type(MapLib.PlaceIconOnMinimap) == "function" then
+                    MapLib:PlaceIconOnMinimap(userMinimapPin, nil, nx, ny)
+                elseif type(MapLib.PlaceIcon) == "function" then
+                    MapLib:PlaceIcon(userMinimapPin, nil, nx, ny)
+                else
+                    error("MapLib has no placement API")
+                end
+            end)
+            if ok then
+                if db.debugUI then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r MapLib placed personal minimap pin (debug)") end
+                return
+            end
+        end
+        local px, py = GetPlayerNormalizedPosition()
+        local offsetX, offsetY
+        if px and py then
+            offsetX = (nx - px) * (Minimap:GetWidth())
+            offsetY = (ny - py) * (Minimap:GetHeight())
+        else
+            offsetX = (nx - 0.5) * (Minimap:GetWidth())
+            offsetY = (ny - 0.5) * (Minimap:GetHeight())
+        end
+        if userMinimapPin then
+            userMinimapPin:ClearAllPoints()
+            userMinimapPin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+            userMinimapPin:Show()
+        end
     end
 
     userMinimapPin:SetScript("OnUpdate", UpdatePin)
@@ -418,7 +692,7 @@ local function CreateUserWorldmapPin(nx, ny, tex)
 end
 
 -- Helper: try multiple APIs to get player's normalized position on current map
-local function GetPlayerNormalizedPosition()
+GetPlayerNormalizedPosition = function()
     -- Try C_Map API first
     local ok, mapID = pcall(function()
         if C_Map and C_Map.GetBestMapForUnit then return C_Map.GetBestMapForUnit("player") end
@@ -492,6 +766,13 @@ SlashCmdList["HOTSPOTICONSET"] = function(msg)
 
     local parts = {}
     for token in string.gmatch(msg, "%S+") do table.insert(parts, token) end
+    -- support subcommands: 'hotspot <texture>' to set hotspot-specific icon
+    if #parts >= 2 and string.lower(parts[1]) == "hotspot" then
+        db.hotspotIcon = parts[2]
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r hotspot icon set to %s", tostring(db.hotspotIcon)))
+        return
+    end
+
     if #parts >= 1 then
         local icon = parts[1]
         -- allow numeric icon id to be formatted into a texture if desired; leave as-is otherwise
@@ -508,6 +789,140 @@ SlashCmdList["HOTSPOTICONSET"] = function(msg)
     end
 
     DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Settings saved: icon=%s size=%d keepAcrossZones=%s", db.userIcon, db.userSize, tostring(db.keepAcrossZones)))
+end
+
+-- Slash to toggle server announcement (runtime)
+SLASH_HOTSPOTANNOUNCE1 = "/hotspotannounce"
+SlashCmdList["HOTSPOTANNOUNCE"] = function(msg)
+    local a = msg and msg:match("%S+") or nil
+    if not a or a == "" then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r serverAnnounce=%s (use '/hotspotannounce on' or 'off')", tostring(db.serverAnnounce)))
+        return
+    end
+    a = string.lower(a)
+    if a == "on" or a == "1" or a == "true" then
+        db.serverAnnounce = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r serverAnnounce enabled (the addon will SAY on load).")
+    elseif a == "off" or a == "0" or a == "false" then
+        db.serverAnnounce = false
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r serverAnnounce disabled (local-only notification).")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Usage: /hotspotannounce on|off")
+    end
+end
+
+-- Slash to toggle UI debug reporting for the deferred retry
+SLASH_HOTSPOTDEBUGUI1 = "/hotspotdebugui"
+SlashCmdList["HOTSPOTDEBUGUI"] = function(msg)
+    local a = msg and msg:match("%S+") or nil
+    if not a or a == "" then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r debugUI=%s (use '/hotspotdebugui on' or 'off')", tostring(db.debugUI)))
+        return
+    end
+    a = string.lower(a)
+    if a == "on" or a == "1" or a == "true" then
+        db.debugUI = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r debugUI enabled: deferred retry will report missing frames.")
+    elseif a == "off" or a == "0" or a == "false" then
+        db.debugUI = false
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r debugUI disabled.")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Usage: /hotspotdebugui on|off")
+    end
+end
+
+-- Slash to show current status and hotspot counts
+SLASH_HOTSPOTSTATUS1 = "/hotspotstatus"
+SlashCmdList["HOTSPOTSTATUS"] = function(msg)
+    local hotspotCount = 0
+    for _ in pairs(hotspots) do hotspotCount = hotspotCount + 1 end
+    local worldPins = 0
+    for _ in pairs(worldmapPins) do worldPins = worldPins + 1 end
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Status: serverAnnounce=%s debugUI=%s userIcon=%s size=%d keepAcrossZones=%s", tostring(db.serverAnnounce), tostring(db.debugUI), tostring(db.userIcon), tonumber(db.userSize) or 0, tostring(db.keepAcrossZones)))
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Active hotspots: %d  WorldMap pins: %d  Personal pins: %s", hotspotCount, worldPins, (userMinimapPin or userWorldmapPin) and "present" or "none"))
+end
+
+-- Slash to toggle the overlay
+SLASH_HOTSPOTOVERLAY1 = "/hotspotoverlay"
+SlashCmdList["HOTSPOTOVERLAY"] = function(msg)
+    local a = msg and msg:match("%S+") or nil
+    if not a or a == "" then
+        ToggleOverlay(nil)
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Overlay %s", overlayVisible and "enabled" or "disabled"))
+        return
+    end
+    a = string.lower(a)
+    if a == "on" or a == "1" or a == "true" then
+        ToggleOverlay(true); DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Overlay enabled")
+    elseif a == "off" or a == "0" or a == "false" then
+        ToggleOverlay(false); DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Overlay disabled")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Usage: /hotspotoverlay [on|off]")
+    end
+end
+
+-- Slash to toggle transport traces (ADDON vs SYSTEM) visibility
+SLASH_HOTSPOTTRANSPORT1 = "/hotspottransport"
+SlashCmdList["HOTSPOTTRANSPORT"] = function(msg)
+    local a = msg and msg:match("%S+") or nil
+    if not a or a == "" then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r showTransport=%s (use '/hotspottransport on' or 'off')", tostring(db.showTransport)))
+        return
+    end
+    a = string.lower(a)
+    if a == "on" or a == "1" or a == "true" then
+        db.showTransport = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r showTransport enabled")
+    elseif a == "off" or a == "0" or a == "false" then
+        db.showTransport = false
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r showTransport disabled")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Usage: /hotspottransport on|off")
+    end
+end
+
+-- Texture picker UI for hotspot icon selection
+local pickerFrame = nil
+local pickerPresets = {
+    "Interface\\Icons\\INV_Misc_Gift_01",
+    "Interface\\Icons\\INV_Misc_Map_01",
+    "Interface\\Icons\\INV_Misc_Coin_01",
+    "Interface\\Icons\\INV_Misc_EngGizmos_08",
+}
+
+local function ShowPicker()
+    if pickerFrame then pickerFrame:Show(); return end
+    pickerFrame = CreateFrame("Frame", "HotspotDisplaySafe_Picker", UIParent, "BackdropTemplate")
+    pickerFrame:SetSize(220, 60)
+    pickerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    pickerFrame:SetBackdrop({bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "", tile = true, tileSize = 16})
+    pickerFrame.title = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    pickerFrame.title:SetPoint("TOP", pickerFrame, "TOP", 0, -6)
+    pickerFrame.title:SetText("Hotspot Icon Picker")
+    for i,tex in ipairs(pickerPresets) do
+        local btn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+        btn:SetSize(40,40)
+        btn:SetPoint("LEFT", pickerFrame, "LEFT", 10 + (i-1)*50, -20)
+        btn.icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.icon:SetAllPoints()
+        btn.icon:SetTexture(tex)
+        btn:SetScript("OnClick", function()
+            db.hotspotIcon = tex
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r hotspot icon set to %s", tostring(tex)))
+            pickerFrame:Hide()
+            UpdateWorldmapPins(); UpdateMinimap()
+        end)
+    end
+    local close = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+    close:SetSize(60,20)
+    close:SetPoint("BOTTOMRIGHT", pickerFrame, "BOTTOMRIGHT", -8, 8)
+    close:SetText("Close")
+    close:SetScript("OnClick", function() pickerFrame:Hide() end)
+end
+
+SLASH_HOTSPOTPICKER1 = "/hotspotpicker"
+SlashCmdList["HOTSPOTPICKER"] = function(msg)
+    ShowPicker()
 end
 
 -- Automatically remove personal pin when a hotspot that matches location expires
@@ -536,6 +951,61 @@ local function CleanupExpiredHotspotPins()
         end
     end
     if removed then UpdateMinimap() end
+end
+
+-- Small non-invasive overlay listing active hotspots
+local overlayFrame = nil
+local overlayVisible = false
+
+local function UpdateOverlay()
+    if not overlayVisible then return end
+    if not overlayFrame then
+        overlayFrame = CreateFrame("Frame", "HotspotDisplaySafe_Overlay", UIParent)
+        overlayFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -100)
+        overlayFrame:SetSize(220, 120)
+        overlayFrame.bg = overlayFrame:CreateTexture(nil, "BACKGROUND")
+        overlayFrame.bg:SetAllPoints()
+        -- Use SetColorTexture if available (newer clients); otherwise fall back to SetTexture(r,g,b,a)
+        if type(overlayFrame.bg.SetColorTexture) == "function" then
+            overlayFrame.bg:SetColorTexture(0,0,0,0.5)
+        else
+            -- Older clients accept SetTexture(r,g,b,a)
+            overlayFrame.bg:SetTexture(0,0,0,0.5)
+        end
+        overlayFrame.text = overlayFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        overlayFrame.text:SetPoint("TOPLEFT", overlayFrame, "TOPLEFT", 6, -6)
+        overlayFrame.text:SetJustifyH("LEFT")
+    end
+
+    local lines = {}
+    local now = time()
+    for id,h in pairs(hotspots) do
+        if h.expire and h.expire > now then
+            local rem = math.max(0, h.expire - now)
+            table.insert(lines, string.format("#%d  +%s%%  %ds", id, tostring(h.bonus or "0"), rem))
+        end
+    end
+    table.sort(lines)
+    if #lines == 0 then
+        overlayFrame.text:SetText("Hotspots: none")
+    else
+        local txt = "Hotspots:\n"
+        for i=1, math.min(5, #lines) do txt = txt .. lines[i] .. "\n" end
+        overlayFrame.text:SetText(txt)
+    end
+    overlayFrame:Show()
+end
+
+ToggleOverlay = function(on)
+    overlayVisible = (on == nil) and not overlayVisible or (on and true) or false
+    if overlayVisible then UpdateOverlay() else if overlayFrame then overlayFrame:Hide() end end
+end
+
+-- ensure overlay updates when hotspots change/expire
+local _orig_AddHotspotFromData = AddHotspotFromData
+AddHotspotFromData = function(data)
+    _orig_AddHotspotFromData(data)
+    pcall(UpdateOverlay)
 end
 
 -- Run expiration cleanup frequently

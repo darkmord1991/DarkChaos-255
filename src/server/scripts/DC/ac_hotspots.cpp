@@ -1114,9 +1114,47 @@ static bool SpawnHotspot()
               // Optionally send addon packet to enable addon visualization (disabled by default)
               if (sHotspotsConfig.sendAddonPackets)
               {
-                  WorldPacket pkt;
-                  ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsg);
-                  sess->SendPacket(&pkt);
+                  // Guard payload length to avoid sending oversized addon messages that
+                  // could break some clients. If payload is too large, skip the ADDON packet
+                  // and rely on the system-text fallback which was already sent above.
+                  const size_t MAX_ADDON_PAYLOAD = 512; // conservative limit in bytes
+                  // Build a trimmed payload that omits optional |tex:... tokens to keep ADDON packets compact
+                  std::string trimmedPayload;
+                  {
+                      trimmedPayload.reserve(rawPayload.size());
+                      size_t pos = 0;
+                      while (pos < rawPayload.size())
+                      {
+                          size_t tpos = rawPayload.find("|tex:", pos);
+                          if (tpos == std::string::npos)
+                          {
+                              trimmedPayload.append(rawPayload.substr(pos));
+                              break;
+                          }
+                          // append up to the tex token
+                          trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
+                          // skip the tex token and its value until next '|' or end
+                          size_t valStart = tpos + 5; // length of "|tex:"
+                          size_t nextPipe = rawPayload.find('|', valStart);
+                          if (nextPipe == std::string::npos)
+                              pos = rawPayload.size();
+                          else
+                              pos = nextPipe; // keep the '|' for the next token parsing
+                      }
+                  }
+                  if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
+                  {
+                      std::string addonMsgTrimmed = std::string("HOTSPOT\t") + trimmedPayload;
+                      WorldPacket pkt;
+                      ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsgTrimmed);
+                      sess->SendPacket(&pkt);
+                  }
+                  else
+                  {
+                      LOG_WARN("scripts", "Hotspot #{} trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send to {}", hotspot.id, trimmedPayload.size(), plr->GetName());
+                      std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
+                      LOG_INFO("scripts", "Hotspot #{} payload preview (first {} chars): {}", hotspot.id, preview.size(), EscapeBraces(preview));
+                  }
               }
               announcedCount++;
               // INFO log for operator visibility: indicate this player was notified
@@ -1673,6 +1711,7 @@ public:
             ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("spawnworld", HandleHotspotsSpawnWorldCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("testmsg", HandleHotspotsTestMsgCommand, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("testpayload", HandleHotspotsTestPayloadCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("testxp", HandleHotspotsTestXPCommand, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("setbonus", HandleHotspotsSetBonusCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("bonus", HandleHotspotsShowBonusCommand, SEC_PLAYER, Console::No),
@@ -1853,10 +1892,42 @@ public:
             // Optionally send an ADDON packet so addons receive CHAT_MSG_ADDON
             if (sHotspotsConfig.sendAddonPackets)
             {
-                std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
-                WorldPacket pkt;
-                ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
-                sess->SendPacket(&pkt);
+                const size_t MAX_ADDON_PAYLOAD = 240; // keep consistent with other send points
+                // Trim optional |tex: tokens before sending addon packet
+                std::string trimmedPayload;
+                {
+                    trimmedPayload.reserve(rawPayload.size());
+                    size_t pos = 0;
+                    while (pos < rawPayload.size())
+                    {
+                        size_t tpos = rawPayload.find("|tex:", pos);
+                        if (tpos == std::string::npos)
+                        {
+                            trimmedPayload.append(rawPayload.substr(pos));
+                            break;
+                        }
+                        trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
+                        size_t valStart = tpos + 5;
+                        size_t nextPipe = rawPayload.find('|', valStart);
+                        if (nextPipe == std::string::npos)
+                            pos = rawPayload.size();
+                        else
+                            pos = nextPipe;
+                    }
+                }
+                if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
+                {
+                    std::string addonMsg = std::string("HOTSPOT\t") + trimmedPayload;
+                    WorldPacket pkt;
+                    ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
+                    sess->SendPacket(&pkt);
+                }
+                else
+                {
+                    LOG_WARN("scripts", "Hotspot spawnhere: trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send to {}", trimmedPayload.size(), p->GetName());
+                    std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
+                    LOG_INFO("scripts", "Hotspot spawnhere payload preview (first {} chars): {}", preview.size(), EscapeBraces(preview));
+                }
             }
             LOG_DEBUG("scripts", "Hotspot spawnhere: sent ADDON payload to {} -> {}", p->GetName(), rawPayload);
 
@@ -1925,6 +1996,61 @@ public:
             LOG_INFO("scripts", "Hotspots: sent synthetic system-only test message to player {} (map={}, pos={:.1f},{:.1f})",
                      handler->GetSession()->GetPlayer() ? handler->GetSession()->GetPlayer()->GetName().c_str() : "<unknown>", mapId, x, y);
         }
+
+        return true;
+    }
+
+    static bool HandleHotspotsTestPayloadCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("No player session available to test payload.");
+            return true;
+        }
+
+        // Build a synthetic hotspot payload for testing
+        Hotspot tmp;
+        tmp.id = 99999;
+        tmp.mapId = player->GetMapId();
+        tmp.zoneId = player->GetZoneId();
+        tmp.x = player->GetPositionX();
+        tmp.y = player->GetPositionY();
+        tmp.z = player->GetPositionZ();
+
+        std::string rawPayload = BuildHotspotAddonPayload(tmp, 3600);
+
+        // Trim optional |tex: tokens using the same algorithm as sending code
+        std::string trimmedPayload;
+        trimmedPayload.reserve(rawPayload.size());
+        size_t pos = 0;
+        while (pos < rawPayload.size())
+        {
+            size_t tpos = rawPayload.find("|tex:", pos);
+            if (tpos == std::string::npos)
+            {
+                trimmedPayload.append(rawPayload.substr(pos));
+                break;
+            }
+            trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
+            size_t valStart = tpos + 5;
+            size_t nextPipe = rawPayload.find('|', valStart);
+            if (nextPipe == std::string::npos)
+                pos = rawPayload.size();
+            else
+                pos = nextPipe;
+        }
+
+        const size_t MAX_ADDON_PAYLOAD = 512;
+        handler->PSendSysMessage("Hotspot test payload (raw length=%u, trimmed length=%u)", (unsigned)rawPayload.size(), (unsigned)trimmedPayload.size());
+        if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
+            handler->PSendSysMessage("Trimmed payload would be sent as ADDON (<= %u bytes)", (unsigned)MAX_ADDON_PAYLOAD);
+        else
+            handler->PSendSysMessage("Trimmed payload still too long for ADDON (limit %u bytes)", (unsigned)MAX_ADDON_PAYLOAD);
+
+        // show preview of trimmed payload to help debug
+        std::string preview = trimmedPayload.substr(0, std::min<size_t>(trimmedPayload.size(), 400));
+        handler->PSendSysMessage("Trimmed payload preview: %s", preview.c_str());
 
         return true;
     }
@@ -2346,10 +2472,43 @@ public:
                 // Optionally send CHAT_MSG_ADDON packet
                 if (sHotspotsConfig.sendAddonPackets)
                 {
-                    std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
-                    WorldPacket pkt;
-                    ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
-                    sess->SendPacket(&pkt);
+                    const size_t MAX_ADDON_PAYLOAD = 240;
+                    // Trim optional |tex: tokens from the raw payload before sending
+                    std::string trimmedPayload;
+                    {
+                        trimmedPayload.reserve(rawPayload.size());
+                        size_t pos = 0;
+                        while (pos < rawPayload.size())
+                        {
+                            size_t tpos = rawPayload.find("|tex:", pos);
+                            if (tpos == std::string::npos)
+                            {
+                                trimmedPayload.append(rawPayload.substr(pos));
+                                break;
+                            }
+                            trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
+                            size_t valStart = tpos + 5;
+                            size_t nextPipe = rawPayload.find('|', valStart);
+                            if (nextPipe == std::string::npos)
+                                pos = rawPayload.size();
+                            else
+                                pos = nextPipe;
+                        }
+                    }
+
+                    if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
+                    {
+                        std::string addonMsg = std::string("HOTSPOT\t") + trimmedPayload;
+                        WorldPacket pkt;
+                        ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
+                        sess->SendPacket(&pkt);
+                    }
+                    else
+                    {
+                        LOG_WARN("scripts", "SpawnWorld: hotspot #{} trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send", hotspot.id, trimmedPayload.size());
+                        std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
+                        LOG_INFO("scripts", "SpawnWorld hotspot #{} payload preview (first {} chars): {}", hotspot.id, preview.size(), EscapeBraces(preview));
+                    }
                 }
 
                 announced++;

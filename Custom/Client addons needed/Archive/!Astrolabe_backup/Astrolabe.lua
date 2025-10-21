@@ -1,0 +1,2 @@
+-- Backup copy of original Astrolabe.lua moved from !Astrolabe
+-- This file was archived to avoid duplicate library copies in the workspace.

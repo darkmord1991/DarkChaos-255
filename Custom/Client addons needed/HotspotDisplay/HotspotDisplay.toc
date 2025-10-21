@@ -10,3 +10,9 @@ Core.lua
 
 # Polished Wrath 3.3.5a-compatible implementation (optional)
 Core_wrath.lua
+
+# Safe replacement that uses Astrolabe when available
+Libs/Astrolabe/DongleStub.lua
+Libs/Astrolabe/Astrolabe.lua
+Libs/Astrolabe/AstrolabeMapMonitor.lua
+Core_safe.lua
