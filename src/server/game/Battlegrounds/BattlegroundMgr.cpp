@@ -988,7 +988,7 @@ std::unordered_map<int, BattlegroundQueueTypeId> BattlegroundMgr::bgToQueue =
     { BATTLEGROUND_SA, BATTLEGROUND_QUEUE_SA},
     { BATTLEGROUND_IC, BATTLEGROUND_QUEUE_IC},
     { BATTLEGROUND_RB, BATTLEGROUND_QUEUE_RB},
-    { BATTLEGROUND_BFG, BattlegroundQueueTypeId(13) }, // Battle for Gilneas (custom)
+    { 120, BattlegroundQueueTypeId(13) }, // Battle for Gilneas (custom) (was BATTLEGROUND_BFG)
     // Arena Battlegrounds
     { BATTLEGROUND_NA, BattlegroundQueueTypeId(0)},        // Nagrand Arena
     { BATTLEGROUND_BE, BattlegroundQueueTypeId(0)},        // Blade's Edge Arena
@@ -1008,7 +1008,7 @@ std::unordered_map<int, BattlegroundTypeId> BattlegroundMgr::queueToBg =
     { BATTLEGROUND_QUEUE_SA,    BATTLEGROUND_SA },
     { BATTLEGROUND_QUEUE_IC,    BATTLEGROUND_IC },
     { BATTLEGROUND_QUEUE_RB,    BATTLEGROUND_RB },
-    { BATTLEGROUND_QUEUE_BFG,   BattlegroundTypeId(120) }, // map template id for BFG
+    { 13,   BattlegroundTypeId(120) }, // map template id for BFG (was BATTLEGROUND_QUEUE_BFG -> 13)
     { BATTLEGROUND_QUEUE_2v2,   BATTLEGROUND_AA },
     { BATTLEGROUND_QUEUE_3v3,   BATTLEGROUND_AA },
     { BATTLEGROUND_QUEUE_5v5,   BATTLEGROUND_AA },
@@ -1027,7 +1027,7 @@ std::unordered_map<int, Battleground*> BattlegroundMgr::bgtypeToBattleground =
     { BATTLEGROUND_DS, new BattlegroundDS },
     { BATTLEGROUND_RV, new BattlegroundRV },
     { BATTLEGROUND_IC, new BattlegroundIC },
-    { BATTLEGROUND_BFG, new BattlegroundBFG },
+    { 120, new BattlegroundBFG }, // was BATTLEGROUND_BFG
     { BATTLEGROUND_AA, new Battleground },
     { BATTLEGROUND_RB, new Battleground },
 };
