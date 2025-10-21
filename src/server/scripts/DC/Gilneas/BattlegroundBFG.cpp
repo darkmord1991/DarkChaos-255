@@ -17,11 +17,20 @@
 #include "Util.h"
 #include "WorldSession.h"
 
+#include "MiscPackets.h"
+
 #include "GameGraveyard.h"
 #include <unordered_map>
 
+// Some forks provide a PopulateGraveyard helper. The current tree doesn't expose
+// a free function with that name, but the original script calls it. Add a
+// local stub so the script compiles. It can be expanded later to modify
+// graveyard links via sGraveyard if desired.
+static void PopulateGraveyard(uint32 /*id*/) {}
+
 #include "ScriptMgr.h"
 #include "Config.h"
+#include <chrono>
 
 // adding Battleground to the core battlegrounds list
 BattlegroundTypeId BATTLEGROUND_BFG = BattlegroundTypeId(120); // value from BattlemasterList.dbc
@@ -83,10 +92,10 @@ void BattlegroundBFG::PostUpdateImpl(uint32 diff)
                     NodeOccupied(node);
                     // Message to chatlog
                     char buf[256];
-                    uint8 type = teamId == TEAM_ALLIANCE ? CHAT_MSG_BG_SYSTEM_ALLIANCE : CHAT_MSG_BG_SYSTEM_HORDE;
-                    sprintf(buf, GetAcoreString(LANG_BG_BFG_NODE_TAKEN), (teamId == TEAM_ALLIANCE) ? GetAcoreString(LANG_BG_BFG_ALLY) : GetAcoreString(LANG_BG_BFG_HORDE), _GetNodeNameId(node));
+                    ChatMsg type = teamId == TEAM_ALLIANCE ? CHAT_MSG_BG_SYSTEM_ALLIANCE : CHAT_MSG_BG_SYSTEM_HORDE;
+                    sprintf(buf, sObjectMgr->GetAcoreString(LANG_BG_BFG_NODE_TAKEN, sWorld->GetDefaultDbcLocale()).c_str(), (teamId == TEAM_ALLIANCE) ? sObjectMgr->GetAcoreString(LANG_BG_BFG_ALLY, sWorld->GetDefaultDbcLocale()).c_str() : sObjectMgr->GetAcoreString(LANG_BG_BFG_HORDE, sWorld->GetDefaultDbcLocale()).c_str(), _GetNodeNameId(node));
                     WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, type, LANG_UNIVERSAL, NULL, NULL, buf);
+                    ChatHandler::BuildChatPacket(data, type, LANG_UNIVERSAL, nullptr, nullptr, buf);
                     SendPacketToAll(&data);
                     PlaySoundToAll(GILNEAS_BG_SOUND_NODE_CAPTURED_ALLIANCE + teamId);
                     break;
@@ -114,16 +123,16 @@ void BattlegroundBFG::PostUpdateImpl(uint32 diff)
                         if (information < uint8(m_TeamScores[teamId] / GILNEAS_BG_WARNING_NEAR_VICTORY_SCORE))
                         {
                             if (teamId == TEAM_ALLIANCE)
-                                SendMessageToAll(LANG_BG_BFG_ALLY_NEAR_VICTORY, CHAT_MSG_BG_SYSTEM_NEUTRAL);
+                                SendBroadcastText(LANG_BG_BFG_ALLY_NEAR_VICTORY, CHAT_MSG_BG_SYSTEM_NEUTRAL);
                             else
-                                SendMessageToAll(LANG_BG_BFG_HORDE_NEAR_VICTORY, CHAT_MSG_BG_SYSTEM_NEUTRAL);
+                                SendBroadcastText(LANG_BG_BFG_HORDE_NEAR_VICTORY, CHAT_MSG_BG_SYSTEM_NEUTRAL);
                             PlaySoundToAll(GILNEAS_BG_SOUND_NEAR_VICTORY);
                         }
 
                         if (m_TeamScores[teamId] >= GILNEAS_BG_MAX_TEAM_SCORE)
                             EndBattleground(teamId);
 
-                        _bgEvents.ScheduleEvent(eventId, GILNEAS_BG_TickIntervals[honorRewards]);
+                        _bgEvents.ScheduleEvent(eventId, std::chrono::milliseconds(GILNEAS_BG_TickIntervals[honorRewards]));
                     }
                     break;
                 }
@@ -167,15 +176,17 @@ void BattlegroundBFG::AddPlayer(Player* player)
 {
     Battleground::AddPlayer(player);
     BattlegroundBFGScore* sc = new BattlegroundBFGScore(player->GetGUID());
-    PlayerScores[player->GetGUID()] = sc;
-    player->SendDirectMessage(WorldPackets::Misc::StartMirrorTimer(MIRROR_TYPE_PVP, BG_EVENT_START_BATTLE, 0, 0, 0, false).Write());
+    PlayerScores.emplace(player->GetGUID().GetCounter(), sc);
+    // Start the PVP mirror timer: (timerType, currentValue, maxValue, scale/regen, paused, spellID)
+    // Use FATIGUE_TIMER (engine's MirrorTimerType) for PvP mirror bar since MIRROR_TYPE_PVP is not defined in this tree
+    player->SendDirectMessage(WorldPackets::Misc::StartMirrorTimer(FATIGUE_TIMER, BG_EVENT_START_BATTLE, 0, 0, false, 0).Write());
 }
 
 void BattlegroundBFG::RemovePlayer(Player* player) {
     // Implement any cleanup needed when a player leaves
 }
 
-void BattlegroundBFG::HandleAreaTrigger(Player* /* player*/, uint32 trigger)
+void BattlegroundBFG::HandleAreaTrigger(Player* player, uint32 trigger)
 {
     if (GetStatus() != STATUS_IN_PROGRESS)
         return;
@@ -211,7 +222,7 @@ void BattlegroundBFG::CreateBanner(uint8 node, bool delay)
     // Just put it into the queue
     if (delay)
     {
-        _bgEvents.RescheduleEvent(BG_BFG_EVENT_UPDATE_BANNER_LIGHTHOUSE+node, BG_BFG_BANNER_UPDATE_TIME);
+        _bgEvents.RescheduleEvent(BG_BFG_EVENT_UPDATE_BANNER_LIGHTHOUSE+node, std::chrono::milliseconds(BG_BFG_BANNER_UPDATE_TIME));
         return;
     }
 
@@ -284,7 +295,7 @@ void BattlegroundBFG::NodeOccupied(uint8 node)
     //     CastSpellOnTeam(SPELL_AB_QUEST_REWARD_4_BASES, _capturePointInfo[node]._ownerTeamId);
 
     if (_controlledPoints[_capturePointInfo[node]._ownerTeamId] == 1)
-        _bgEvents.ScheduleEvent((_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE) ? BG_BFG_EVENT_ALLIANCE_TICK : BG_BFG_EVENT_HORDE_TICK, GILNEAS_BG_TickIntervals[_controlledPoints[_capturePointInfo[node]._ownerTeamId]]);
+        _bgEvents.ScheduleEvent((_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE) ? BG_BFG_EVENT_ALLIANCE_TICK : BG_BFG_EVENT_HORDE_TICK, std::chrono::milliseconds(GILNEAS_BG_TickIntervals[_controlledPoints[_capturePointInfo[node]._ownerTeamId]]));
 
     Creature* trigger = GetBgMap()->GetCreature(BgCreatures[GILNEAS_BG_ALL_NODES_COUNT + node]);
     if (!trigger)
@@ -358,10 +369,10 @@ void BattlegroundBFG::EventPlayerClickedOnFlag(Player* player, GameObject* gameO
     // Cancel previous capture events
     _bgEvents.CancelEvent(BG_BFG_EVENT_CAPTURE_LIGHTHOUSE + node);
     // Schedule new capture event
-    _bgEvents.ScheduleEvent(BG_BFG_EVENT_CAPTURE_LIGHTHOUSE + node, GILNEAS_BG_FLAG_CAPTURING_TIME);
+    _bgEvents.ScheduleEvent(BG_BFG_EVENT_CAPTURE_LIGHTHOUSE + node, std::chrono::milliseconds(GILNEAS_BG_FLAG_CAPTURING_TIME));
 
     SendNodeUpdate(node);
-    SendMessageToAll(LANG_BG_BFG_NODE_CLAIMED, CHAT_MSG_BG_SYSTEM_NEUTRAL, player);
+    SendBroadcastText(LANG_BG_BFG_NODE_CLAIMED, CHAT_MSG_BG_SYSTEM_NEUTRAL, player);
     
     PlaySoundToAll(sound);
 }
@@ -494,11 +505,19 @@ bool BattlegroundBFG::UpdatePlayerScore(Player* player, uint32 type, uint32 valu
     switch (type)
     {
         case SCORE_BASES_ASSAULTED:
-            ((BattlegroundBFGScore*)PlayerScores[player->GetGUID()])->BasesAssaulted += value;
+            {
+                auto itr = PlayerScores.find(player->GetGUID().GetCounter());
+                if (itr != PlayerScores.end())
+                    ((BattlegroundBFGScore*)itr->second)->BasesAssaulted += value;
+            }
             player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE, GILNEAS_BG_OBJECTIVE_ASSAULT_BASE);
             break;
         case SCORE_BASES_DEFENDED:
-            ((BattlegroundBFGScore*)PlayerScores[player->GetGUID()])->BasesDefended += value;
+            {
+                auto itr = PlayerScores.find(player->GetGUID().GetCounter());
+                if (itr != PlayerScores.end())
+                    ((BattlegroundBFGScore*)itr->second)->BasesDefended += value;
+            }
             player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE, GILNEAS_BG_OBJECTIVE_DEFEND_BASE);
             break;
         default:
