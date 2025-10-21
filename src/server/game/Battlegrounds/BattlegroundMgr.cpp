@@ -24,7 +24,7 @@
 #include "BattlegroundDS.h"
 #include "BattlegroundEY.h"
 #include "BattlegroundIC.h"
-#include "BattlegroundBFG.h"
+#include "../../scripts/DC/Gilneas/BattlegroundBFG.h"
 #include "BattlegroundNA.h"
 #include "BattlegroundQueue.h"
 #include "BattlegroundRL.h"
