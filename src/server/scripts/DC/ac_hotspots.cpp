@@ -1118,23 +1118,34 @@ static bool SpawnHotspot()
                   // could break some clients. If payload is too large, skip the ADDON packet
                   // and rely on the system-text fallback which was already sent above.
                   const size_t MAX_ADDON_PAYLOAD = 512; // conservative limit in bytes
-                  // Build a trimmed payload that omits optional |tex:... tokens to keep ADDON packets compact
+                  // Build a trimmed payload that omits optional texture tokens (|tex:... and |texid:...) to keep ADDON packets compact
                   std::string trimmedPayload;
                   {
                       trimmedPayload.reserve(rawPayload.size());
                       size_t pos = 0;
                       while (pos < rawPayload.size())
                       {
-                          size_t tpos = rawPayload.find("|tex:", pos);
-                          if (tpos == std::string::npos)
+                          // find next occurrence of either token
+                          size_t tpos_tex = rawPayload.find("|tex:", pos);
+                          size_t tpos_texid = rawPayload.find("|texid:", pos);
+                          size_t tpos;
+                          size_t tokenLen;
+                          if (tpos_tex == std::string::npos && tpos_texid == std::string::npos)
                           {
+                              // no tokens left
                               trimmedPayload.append(rawPayload.substr(pos));
                               break;
                           }
-                          // append up to the tex token
+                          if (tpos_tex == std::string::npos) { tpos = tpos_texid; tokenLen = 7; }
+                          else if (tpos_texid == std::string::npos) { tpos = tpos_tex; tokenLen = 5; }
+                          else if (tpos_tex < tpos_texid) { tpos = tpos_tex; tokenLen = 5; }
+                          else { tpos = tpos_texid; tokenLen = 7; }
+
+                          // append up to the token
                           trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
-                          // skip the tex token and its value until next '|' or end
-                          size_t valStart = tpos + 5; // length of "|tex:"
+
+                          // skip the token and its value until next '|' or end
+                          size_t valStart = tpos + tokenLen; // length of token ("|tex:" or "|texid:")
                           size_t nextPipe = rawPayload.find('|', valStart);
                           if (nextPipe == std::string::npos)
                               pos = rawPayload.size();
@@ -1982,20 +1993,28 @@ public:
 
         std::string rawPayload = BuildHotspotAddonPayload(tmp, 3600);
 
-        // Trim optional |tex: tokens using the same algorithm as sending code
+        // Trim optional texture tokens (|tex: and |texid:) using the same algorithm as sending code
         std::string trimmedPayload;
         trimmedPayload.reserve(rawPayload.size());
         size_t pos = 0;
         while (pos < rawPayload.size())
         {
-            size_t tpos = rawPayload.find("|tex:", pos);
-            if (tpos == std::string::npos)
+            size_t tpos_tex = rawPayload.find("|tex:", pos);
+            size_t tpos_texid = rawPayload.find("|texid:", pos);
+            size_t tpos;
+            size_t tokenLen;
+            if (tpos_tex == std::string::npos && tpos_texid == std::string::npos)
             {
                 trimmedPayload.append(rawPayload.substr(pos));
                 break;
             }
+            if (tpos_tex == std::string::npos) { tpos = tpos_texid; tokenLen = 7; }
+            else if (tpos_texid == std::string::npos) { tpos = tpos_tex; tokenLen = 5; }
+            else if (tpos_tex < tpos_texid) { tpos = tpos_tex; tokenLen = 5; }
+            else { tpos = tpos_texid; tokenLen = 7; }
+
             trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
-            size_t valStart = tpos + 5;
+            size_t valStart = tpos + tokenLen;
             size_t nextPipe = rawPayload.find('|', valStart);
             if (nextPipe == std::string::npos)
                 pos = rawPayload.size();
@@ -2004,15 +2023,15 @@ public:
         }
 
         const size_t MAX_ADDON_PAYLOAD = 512;
-        handler->PSendSysMessage("Hotspot test payload (raw length=%u, trimmed length=%u)", (unsigned)rawPayload.size(), (unsigned)trimmedPayload.size());
+        handler->PSendSysMessage("Hotspot test payload (raw length={}, trimmed length={})", (unsigned)rawPayload.size(), (unsigned)trimmedPayload.size());
         if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
-            handler->PSendSysMessage("Trimmed payload would be sent as ADDON (<= %u bytes)", (unsigned)MAX_ADDON_PAYLOAD);
+            handler->PSendSysMessage("Trimmed payload would be sent as ADDON (<= {} bytes)", (unsigned)MAX_ADDON_PAYLOAD);
         else
-            handler->PSendSysMessage("Trimmed payload still too long for ADDON (limit %u bytes)", (unsigned)MAX_ADDON_PAYLOAD);
+            handler->PSendSysMessage("Trimmed payload still too long for ADDON (limit {} bytes)", (unsigned)MAX_ADDON_PAYLOAD);
 
         // show preview of trimmed payload to help debug
         std::string preview = trimmedPayload.substr(0, std::min<size_t>(trimmedPayload.size(), 400));
-        handler->PSendSysMessage("Trimmed payload preview: %s", preview.c_str());
+        handler->PSendSysMessage("Trimmed payload preview: {}", preview);
 
         return true;
     }
@@ -2434,22 +2453,31 @@ public:
                 // Optionally send CHAT_MSG_ADDON packet
                 if (sHotspotsConfig.sendAddonPackets)
                 {
-                    const size_t MAX_ADDON_PAYLOAD = 240;
-                    // Trim optional |tex: tokens from the raw payload before sending
+                    const size_t MAX_ADDON_PAYLOAD = 512;
+                    // Trim optional texture tokens (|tex: and |texid:) from the raw payload before sending
                     std::string trimmedPayload;
                     {
                         trimmedPayload.reserve(rawPayload.size());
                         size_t pos = 0;
                         while (pos < rawPayload.size())
                         {
-                            size_t tpos = rawPayload.find("|tex:", pos);
-                            if (tpos == std::string::npos)
+                            size_t tpos_tex = rawPayload.find("|tex:", pos);
+                            size_t tpos_texid = rawPayload.find("|texid:", pos);
+                            size_t tpos;
+                            size_t tokenLen;
+                            if (tpos_tex == std::string::npos && tpos_texid == std::string::npos)
                             {
                                 trimmedPayload.append(rawPayload.substr(pos));
                                 break;
                             }
+                            if (tpos_tex == std::string::npos) { tpos = tpos_texid; tokenLen = 7; }
+                            else if (tpos_texid == std::string::npos) { tpos = tpos_tex; tokenLen = 5; }
+                            else if (tpos_tex < tpos_texid) { tpos = tpos_tex; tokenLen = 5; }
+                            else { tpos = tpos_texid; tokenLen = 7; }
+
                             trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
-                            size_t valStart = tpos + 5;
+
+                            size_t valStart = tpos + tokenLen;
                             size_t nextPipe = rawPayload.find('|', valStart);
                             if (nextPipe == std::string::npos)
                                 pos = rawPayload.size();

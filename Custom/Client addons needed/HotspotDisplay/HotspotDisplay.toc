@@ -12,6 +12,7 @@ Core.lua
 Core_wrath.lua
 
 # Safe replacement that uses Astrolabe when available
+Libs/LibStub/LibStub.lua
 Libs/Astrolabe/DongleStub.lua
 Libs/Astrolabe/Astrolabe.lua
 Libs/Astrolabe/AstrolabeMapMonitor.lua
