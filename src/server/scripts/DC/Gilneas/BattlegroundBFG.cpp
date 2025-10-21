@@ -225,18 +225,20 @@ void BattlegroundBFG::DeleteBanner(uint8 node)
     SpawnBGObject(node*GILNEAS_BG_OBJECT_PER_NODE + GILNEAS_BG_OBJECT_AURA_ALLY + _capturePointInfo[node]._ownerTeamId, RESPAWN_ONE_DAY);
 }
 
-void BattlegroundBFG::FillInitialWorldStates(WorldPacket& data)
+void BattlegroundBFG::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
 {
     const uint8 plusArray[] = { 0, 2, 3, 0, 1 };
 
+    packet.Worldstates.reserve(10);
+
     // Node icons
     for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
-        data << uint32(_capturePointInfo[node]._iconNone) << uint32((_capturePointInfo[node]._state == GILNEAS_BG_NODE_TYPE_NEUTRAL) ? 1 : 0);
+        packet.Worldstates.emplace_back(_capturePointInfo[node]._iconNone, (_capturePointInfo[node]._state == GILNEAS_BG_NODE_TYPE_NEUTRAL) ? 1 : 0);
 
     // Node occupied states
     for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
         for (uint8 i = 1; i < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++i)
-            data << uint32(_capturePointInfo[node]._iconCapture + plusArray[i]) << uint32((_capturePointInfo[node]._state == i) ? 1 : 0);
+            packet.Worldstates.emplace_back(_capturePointInfo[node]._iconCapture + plusArray[i], (_capturePointInfo[node]._state == i) ? 1 : 0);
 
     // How many bases each team owns
     uint8 ally = 0, horde = 0;
@@ -246,11 +248,11 @@ void BattlegroundBFG::FillInitialWorldStates(WorldPacket& data)
         else
             ++horde;
 
-    data << uint32(GILNEAS_BG_OP_RESOURCES_MAX)        << uint32(GILNEAS_BG_MAX_TEAM_SCORE);
-    data << uint32(GILNEAS_BG_OP_RESOURCES_WARNING)    << uint32(GILNEAS_BG_WARNING_NEAR_VICTORY_SCORE);
-    data << uint32(GILNEAS_BG_OP_RESOURCES_ALLY)       << uint32(m_TeamScores[TEAM_ALLIANCE]);
-    data << uint32(GILNEAS_BG_OP_RESOURCES_HORDE)      << uint32(m_TeamScores[TEAM_HORDE]);
-    data << uint32(0x745) << uint32(0x2);           // 37 1861 unk
+    packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_MAX, GILNEAS_BG_MAX_TEAM_SCORE);
+    packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_WARNING, GILNEAS_BG_WARNING_NEAR_VICTORY_SCORE);
+    packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_ALLY, m_TeamScores[TEAM_ALLIANCE]);
+    packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_HORDE, m_TeamScores[TEAM_HORDE]);
+    packet.Worldstates.emplace_back(0x745, 0x2); // unk
 }
 
 
@@ -582,9 +584,9 @@ void AddBattleForGilneasScripts() {
     //     *data << uint32(((BattlegroundBFGScore*)itr2->second)->BasesDefended);       // bases defended
 	// };
 
-    Player::bgZoneIdToFillWorldStates[5449] = [](Battleground* bg, WorldPacket& data) {
-        if (bg && bg->GetBgTypeID(true) == BATTLEGROUND_BFG) {
-          bg->FillInitialWorldStates(data);
-        }
-    };
+        Player::bgZoneIdToFillWorldStates[5449] = [](Battleground* bg, WorldPackets::WorldState::InitWorldStates& packet) {
+                if (bg && bg->GetBgTypeID(true) == BATTLEGROUND_BFG) {
+                    bg->FillInitialWorldStates(packet);
+                }
+        };
 }
