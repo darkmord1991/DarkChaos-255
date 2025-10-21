@@ -1,2 +1,0 @@
-// MOVED: original content archived to tools/_removed/map_bounds_extractor/
-// This placeholder file remains to preserve repository layout.
