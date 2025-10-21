@@ -1,3 +1,8 @@
+only two Patches Right now, they were merged!
+Patch-A -> AllRaces All Classes
+Patch-B -> ALL DC stuff
+
+------------------------------------
 Patch-A -> AllRaces All Classes
 Patch-B -> Custom Currency
 Patch-C -> Custom Currency
