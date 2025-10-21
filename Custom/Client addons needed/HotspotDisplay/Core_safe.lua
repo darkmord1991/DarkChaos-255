@@ -14,6 +14,25 @@ HotspotDisplaySafeDB = HotspotDisplaySafeDB or {
 
 local db = HotspotDisplaySafeDB
 
+-- Optional map libraries (Astrolabe/LibMap) detection
+-- Optional map libraries (Astrolabe/LibMap) detection
+local MapLib = nil
+-- Prefer LibStub-installed libraries
+if type(LibStub) == "function" then
+    MapLib = LibStub("LibMap-1.0", true) or LibStub("Astrolabe-1.0", true)
+end
+-- Fallback: if Astrolabe is present as a global (DongleStub-style), use it
+if not MapLib and type(Astrolabe) == "table" then
+    MapLib = Astrolabe
+end
+-- If we detected something useful, inform the user; otherwise print a hint about installation
+if MapLib then
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Map library detected: using for improved pin placement.")
+else
+    -- Friendly hint: the addon works without the library, but placement will be best-effort
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r No map library detected (LibStub/Astrolabe). Pins will use best-effort placement. To improve accuracy, install Astrolabe or LibMap in the " .. "\"Custom\\Client addons needed\\!Astrolabe\" folder or alongside the addon.")
+end
+
 local function parsePayload(payload)
     -- payload expected like: HOTSPOT_ADDON|map:1|zone:141|x:123.45|y:67.89|z:..|id:3|dur:3600|icon:23768|nx:0.5|ny:0.5
     local data = {}
@@ -67,8 +86,29 @@ local function AddHotspotFromData(data)
     else
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Hotspot #%d registered at %s", id, posStr))
     end
-    -- Update minimap immediately when a new hotspot arrives
+    -- Update minimap and world map immediately when a new hotspot arrives
     UpdateMinimap()
+    UpdateWorldmapPins()
+end
+
+-- Helper: choose a best hotspot for quick tooltip display (nearest or first)
+local function GetBestHotspot()
+    local now = time()
+    local bestId, best, bestDist
+    local px, py = GetPlayerNormalizedPosition()
+    for id,h in pairs(hotspots) do
+        if h.expire and h.expire <= now then hotspots[id]=nil else
+            if px and py and h.nx and h.ny then
+                local dx = px - tonumber(h.nx)
+                local dy = py - tonumber(h.ny)
+                local d2 = dx*dx + dy*dy
+                if not bestDist or d2 < bestDist then bestDist = d2; bestId = id; best = h end
+            elseif not best then
+                bestId = id; best = h
+            end
+        end
+    end
+    return bestId, best
 end
 
 local f = CreateFrame("Frame")
@@ -103,6 +143,21 @@ local function EnsureMinimapPin()
     minimapPin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
     minimapPin:SetFrameStrata("MEDIUM")
     minimapPin:Hide()
+    -- Tooltip when hovering minimap pin
+    minimapPin:SetScript("OnEnter", function(self)
+        local id, h = GetBestHotspot()
+        if not h then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(string.format("Hotspot #%s", tostring(id)))
+        if h.bonus then GameTooltip:AddLine(string.format("XP Bonus: +%d%%", tonumber(h.bonus)), 1,1,0) end
+        if h.expire then
+            local remaining = math.max(0, h.expire - time())
+            GameTooltip:AddLine(string.format("Expires in %d sec", remaining))
+        end
+        GameTooltip:Show()
+    end)
+    minimapPin:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 local function UpdateMinimap()
@@ -154,6 +209,77 @@ local function UpdateMinimap()
     minimapPin:Show()
 end
 
+-- World map pins (show all active hotspots on world map)
+local worldmapPins = {}
+local function ClearWorldmapPins()
+    for _,pin in pairs(worldmapPins) do
+        if pin then pin:Hide(); pin:SetScript("OnUpdate", nil) end
+    end
+    wipe(worldmapPins)
+end
+
+local function EnsureWorldMapContainer()
+    if not WorldMapFrame then return nil end
+    -- prefer ScrollContainer canvas if available
+    local container = WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer:GetCanvas() or WorldMapFrame.ScrollContainer or WorldMapFrame
+    return container
+end
+
+local function UpdateWorldmapPins()
+    ClearWorldmapPins()
+    local container = EnsureWorldMapContainer()
+    if not container then return end
+
+    local now = time()
+    local added = 0
+    for id,h in pairs(hotspots) do
+        if h.expire and h.expire <= now then
+            hotspots[id] = nil
+        else
+            local nx = tonumber(h.nx)
+            local ny = tonumber(h.ny)
+            if nx and ny then
+                added = added + 1
+                local pin = CreateFrame("Frame", "HotspotDisplaySafe_Pin_"..tostring(id), container)
+                pin:SetSize((db.userSize or 20) + 8, (db.userSize or 20) + 8)
+                pin.texture = pin:CreateTexture(nil, "OVERLAY")
+                pin.texture:SetAllPoints()
+                local tex = h.tex and h.tex or (h.icon and ("Interface\\Icons\\INV_Misc_Map_01") )
+                pin.texture:SetTexture(tex or db.userIcon)
+                pin:SetFrameStrata("HIGH")
+
+                local function UpdatePin()
+                    if not nx or not ny then return end
+                    local w = container:GetWidth()
+                    local hgt = container:GetHeight()
+                    local offsetX = (nx - 0.5) * w
+                    local offsetY = (ny - 0.5) * hgt
+                    pin:ClearAllPoints()
+                    pin:SetPoint("CENTER", container, "CENTER", offsetX, offsetY)
+                    pin:Show()
+                end
+
+                pin:SetScript("OnUpdate", UpdatePin)
+                UpdatePin()
+                worldmapPins[id] = pin
+                -- tooltip for world map pin
+                pin:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+                    GameTooltip:ClearLines()
+                    GameTooltip:AddLine(string.format("Hotspot #%s", tostring(id)))
+                    if h.bonus then GameTooltip:AddLine(string.format("XP Bonus: +%d%%", tonumber(h.bonus)), 1,1,0) end
+                    if h.expire then
+                        local remaining = math.max(0, h.expire - time())
+                        GameTooltip:AddLine(string.format("Expires in %d sec", remaining))
+                    end
+                    GameTooltip:Show()
+                end)
+                pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+        end
+    end
+end
+
 -- Periodic cleanup
 C_Timer.NewTicker(5, function()
     local now = time()
@@ -175,6 +301,39 @@ end
 
 -- Announce once after a short delay to allow player login to complete
 C_Timer.After(1.5, AnnounceAddonToServer)
+
+-- Debug command: spawn a test hotspot at player's current position
+SLASH_HOTSPOTDEBUG1 = "/hotspotdebug"
+SlashCmdList["HOTSPOTDEBUG"] = function(msg)
+    local nx, ny = GetPlayerNormalizedPosition()
+    if not nx or not ny then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplaySafe]|r Could not get your map position.")
+        return
+    end
+    local id = math.random(100000,999999)
+    local data = { id = tostring(id), nx = tostring(nx), ny = tostring(ny), dur = "600", bonus = "100", tex = db.userIcon }
+    AddHotspotFromData(data)
+    UpdateWorldmapPins()
+    UpdateMinimap()
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFD700[HotspotDisplaySafe]|r Debug hotspot #%d created at (%.3f, %.3f). Open your map (M) to see it.", id, nx, ny))
+end
+
+-- Notify when the world map is opened that HotspotDisplay is active
+if WorldMapFrame then
+    WorldMapFrame:HookScript("OnShow", function()
+        -- small on-map notification
+        if HOTSPOT_DISPLAY_MAP_NOTICE == nil then
+            HOTSPOT_DISPLAY_MAP_NOTICE = CreateFrame("Frame", nil, WorldMapFrame)
+            HOTSPOT_DISPLAY_MAP_NOTICE:SetSize(300,24)
+            HOTSPOT_DISPLAY_MAP_NOTICE.text = HOTSPOT_DISPLAY_MAP_NOTICE:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            HOTSPOT_DISPLAY_MAP_NOTICE.text:SetPoint("TOP", WorldMapFrame, "TOP", 0, -20)
+        end
+        HOTSPOT_DISPLAY_MAP_NOTICE.text:SetText("Hotspot Display Active")
+        C_Timer.After(3, function() if HOTSPOT_DISPLAY_MAP_NOTICE and HOTSPOT_DISPLAY_MAP_NOTICE.text then HOTSPOT_DISPLAY_MAP_NOTICE.text:SetText("") end end)
+        -- ensure pins are up-to-date
+        UpdateWorldmapPins()
+    end)
+end
 
 -- Personal hotspot icon (toggle) placed at player's current location
 local userMinimapPin = nil
@@ -215,6 +374,15 @@ local function CreateUserMinimapPin(nx, ny, tex)
 
     userMinimapPin:SetScript("OnUpdate", UpdatePin)
     UpdatePin()
+    -- tooltip for personal minimap pin
+    userMinimapPin:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("Personal Hotspot Icon")
+        GameTooltip:AddLine(string.format("Coords: %.3f, %.3f", nx or 0, ny or 0))
+        GameTooltip:Show()
+    end)
+    userMinimapPin:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 local function CreateUserWorldmapPin(nx, ny, tex)
