@@ -1886,50 +1886,12 @@ public:
             Hotspot tmp = hotspot; // copy for helper
             std::string rawPayload = BuildHotspotAddonPayload(tmp, static_cast<int32>(sHotspotsConfig.duration * MINUTE));
 
-            // Send system fallback message
+            // Send system fallback message only for the interactive spawnhere command
             ChatHandler(sess).SendSysMessage(rawPayload);
-
-            // Optionally send an ADDON packet so addons receive CHAT_MSG_ADDON
+            // For safety, do not send ADDON packets from the interactive spawnhere loop as some clients
+            // have proved unstable when receiving ad-hoc ADDON packets from GM commands.
             if (sHotspotsConfig.sendAddonPackets)
-            {
-                const size_t MAX_ADDON_PAYLOAD = 240; // keep consistent with other send points
-                // Trim optional |tex: tokens before sending addon packet
-                std::string trimmedPayload;
-                {
-                    trimmedPayload.reserve(rawPayload.size());
-                    size_t pos = 0;
-                    while (pos < rawPayload.size())
-                    {
-                        size_t tpos = rawPayload.find("|tex:", pos);
-                        if (tpos == std::string::npos)
-                        {
-                            trimmedPayload.append(rawPayload.substr(pos));
-                            break;
-                        }
-                        trimmedPayload.append(rawPayload.substr(pos, tpos - pos));
-                        size_t valStart = tpos + 5;
-                        size_t nextPipe = rawPayload.find('|', valStart);
-                        if (nextPipe == std::string::npos)
-                            pos = rawPayload.size();
-                        else
-                            pos = nextPipe;
-                    }
-                }
-                if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
-                {
-                    std::string addonMsg = std::string("HOTSPOT\t") + trimmedPayload;
-                    WorldPacket pkt;
-                    ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
-                    sess->SendPacket(&pkt);
-                }
-                else
-                {
-                    LOG_WARN("scripts", "Hotspot spawnhere: trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send to {}", trimmedPayload.size(), p->GetName());
-                    std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
-                    LOG_INFO("scripts", "Hotspot spawnhere payload preview (first {} chars): {}", preview.size(), EscapeBraces(preview));
-                }
-            }
-            LOG_DEBUG("scripts", "Hotspot spawnhere: sent ADDON payload to {} -> {}", p->GetName(), rawPayload);
+                LOG_INFO("scripts", "Hotspot spawnhere: sHotspotsConfig.sendAddonPackets enabled but ADDON packet suppressed for safety for player {}", p->GetName());
 
             // If the player is within hotspot radius, record them for buff application
             float dx = p->GetPositionX() - x;
