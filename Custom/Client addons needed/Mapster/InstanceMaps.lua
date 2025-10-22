@@ -12,6 +12,9 @@ local Maps = Mapster:NewModule(MODNAME, "AceHook-3.0")
 local LBZ = LibStub("LibBabble-Zone-3.0", true)
 local BZ = LBZ and LBZ:GetLookupTable() or setmetatable({}, {__index = function(t,k) return k end})
 
+-- Special-case map id for our custom Azshara Crater overlay
+local AZ_ID = 37
+
 -- Data mostly from http://www.wowwiki.com/API_SetMapByID
 local data = {
 	-- Northrend Instances
@@ -151,6 +154,22 @@ end
 
 local zoomOverride
 
+-- If WDM (DungeonMaps/MicroDungeons) is present, expose a combined "Dark Chaos" zone list
+local function TryInjectDarkChaos(self)
+	-- Force the "darkchaos" continent to contain only Azshara Crater (map id 37).
+	-- This intentionally ignores any other zones provided by WDM so the user
+	-- sees only the Azshara Crater entry under Dark Chaos.
+	local AZ_NAME = L["Azshara Crater"] or "Azshara Crater"
+	local AZ_ID = 37
+
+	self.zone_names = self.zone_names or {}
+	self.zone_data = self.zone_data or {}
+
+	-- single-entry array and data table
+	self.zone_names["darkchaos"] = { AZ_NAME }
+	self.zone_data["darkchaos"] = { [1] = AZ_ID }
+end
+
 function Maps:OnInitialize()
 	--[[
 	self.db = Mapster.db:RegisterNamespace(MODNAME, defaults)
@@ -167,8 +186,10 @@ function Maps:OnInitialize()
 		local names = {}
 		local name_data = {}
 		for name, zdata in pairs(idata) do
-			tinsert(names, BZ[name])
-			name_data[BZ[name]] = zdata
+			-- safe lookup: fall back to the literal name if LibBabble doesn't have a translation
+			local locName = BZ and (BZ[name] or name) or name
+			tinsert(names, locName)
+			name_data[locName] = zdata
 		end
 		table.sort(names)
 		self.zone_names[key] = names
@@ -191,6 +212,8 @@ function Maps:OnEnable()
 	
 	self:SecureHook("SetMapZoom")
 	self:SecureHook("SetMapToCurrentZone", "SetMapZoom")
+	-- attempt to import WDM/Dark Chaos maps into our data structures
+	TryInjectDarkChaos(self)
 end
 
 function Maps:OnDisable()
@@ -263,6 +286,16 @@ function Maps:WorldMapFrame_LoadContinents()
 	info.checked = nil
 	info.arg1 = "bgs"
 	UIDropDownMenu_AddButton(info)
+
+	-- ensure WDM maps are injected (handles WDM loading after Mapster)
+	pcall(TryInjectDarkChaos, self)
+
+	-- Dark Chaos (custom maps from WDM)
+	info.text = L["Dark Chaos"]
+	info.func = MapsterContinentButton_OnClick
+	info.checked = nil
+	info.arg1 = "darkchaos"
+	UIDropDownMenu_AddButton(info)
 end
 
 function Maps:WorldMapZoneDropDown_Update()
@@ -274,7 +307,30 @@ end
 local function MapsterZoneButton_OnClick(frame)
 	UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, frame:GetID())
 	Maps.mapZone = frame:GetID()
-	SetMapByID(Maps:GetZoneData())
+	local mapId = Maps:GetZoneData()
+	-- debug log: print selected zone name and resolved mapId
+	local selectedName = select(frame:GetID(), unpack(Maps.zone_names[Maps.mapCont] or {}))
+	DEFAULT_CHAT_FRAME:AddMessage(('[Mapster] Selected zone: %s -> resolved mapId: %s'):format(tostring(selectedName), tostring(mapId)))
+	-- more diagnostics: print internal state and Blizzard's zone name at same index for current continent
+	local currentMapContinent = GetCurrentMapContinent()
+	local blizZoneName = nil
+	if type(currentMapContinent) == "number" then
+		blizZoneName = select(frame:GetID(), GetMapZones(currentMapContinent))
+	end
+	DEFAULT_CHAT_FRAME:AddMessage(('[Mapster] mapCont=%s mapZoneIndex=%s map_data_at_index=%s | Blizzard continent=%s blizZoneAtIndex=%s'):format(tostring(Maps.mapCont), tostring(frame:GetID()), tostring((Maps.zone_data[Maps.mapCont] and Maps.zone_data[Maps.mapCont][frame:GetID()]) or "nil"), tostring(currentMapContinent), tostring(blizZoneName)))
+	-- if the selected zone matches our Azshara localized name, force the AZ_ID
+	local AZ_NAME = L["Azshara Crater"]
+	if selectedName == AZ_NAME then
+		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Forcing Azshara mapId to '..tostring(AZ_ID))
+		mapId = AZ_ID
+	end
+	SetMapByID(mapId)
+	-- If DC-MapExtension is present and the selected map is Azshara Crater, ensure its background is shown
+	if mapId == AZ_ID and DCMap_BackgroundFrame then
+		if DCMap_BackgroundFrame.Show then pcall(DCMap_BackgroundFrame.Show, DCMap_BackgroundFrame) end
+	elseif DCMap_BackgroundFrame then
+		if DCMap_BackgroundFrame.Hide then pcall(DCMap_BackgroundFrame.Hide, DCMap_BackgroundFrame) end
+	end
 end
 
 local function Mapster_LoadZones(...)
@@ -288,9 +344,10 @@ local function Mapster_LoadZones(...)
 end
 
 function Maps:WorldMapZoneDropDown_Initialize()
-	if self.mapCont then
+	if self.mapCont and self.zone_names and self.zone_names[self.mapCont] then
 		Mapster_LoadZones(unpack(self.zone_names[self.mapCont]))
 	else
+		-- fallback to original behaviour (handles Blizz and other addons)
 		self.hooks.WorldMapZoneDropDown_Initialize()
 	end
 end

@@ -1033,6 +1033,16 @@ local errata = {
 	['*'] = {},
 }
 
+-- Custom single-texture backgrounds (fallback): mapFileName -> texture path
+-- This lets Mapster show a single BLP (from an AddOn folder) when no tiled overlays/DBC are available.
+local customSingleBackgrounds = {
+	-- try a few likely map file names for Azshara Crater / MapID 37
+	["PVPZone02"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
+	["Azshara"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
+	["AzsharaCrater"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
+}
+
+
 local db
 local defaults = {
 	profile = {
@@ -1313,7 +1323,38 @@ end
 
 function FogClear:UpdateWorldMapOverlays()
 	if not WorldMapFrame:IsShown() then return end
+	-- Try to draw tiled overlays first
 	updateOverlayTextures(WorldMapDetailFrame, "WorldMapOverlay%d", 1, 0)
+
+	-- If no overlays were provided by the DBC for this map, try the custom single-background fallback.
+	local mapFileName = GetMapInfo()
+	if not mapFileName then return end
+	local overlayMap = self.overlays[mapFileName]
+	local hasOverlays = overlayMap and next(overlayMap)
+	if not hasOverlays then
+		-- try to find a custom single background
+		local path = customSingleBackgrounds[mapFileName]
+		if path then
+			-- create frame on first use
+			if not self.singleBgFrame then
+				self.singleBgFrame = CreateFrame("Frame", "Mapster_CustomSingleBG", WorldMapDetailFrame)
+				self.singleBgFrame:SetAllPoints(WorldMapDetailFrame)
+				self.singleBgTex = self.singleBgFrame:CreateTexture(nil, "ARTWORK")
+				self.singleBgTex:SetAllPoints(self.singleBgFrame)
+			end
+			-- try to set texture (pcall because file might not exist)
+			local ok = pcall(self.singleBgTex.SetTexture, self.singleBgTex, path)
+			if ok then
+				self.singleBgFrame:Show()
+			else
+				if self.singleBgFrame then self.singleBgFrame:Hide() end
+			end
+		else
+			if self.singleBgFrame then self.singleBgFrame:Hide() end
+		end
+	else
+		if self.singleBgFrame then self.singleBgFrame:Hide() end
+	end
 end
 
 function FogClear:UpdateBattlefieldMinimapOverlays()

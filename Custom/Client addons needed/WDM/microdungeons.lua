@@ -27,6 +27,7 @@ local data = {
     { -- Kalimdor
         ["Ashenvale"] = 43,
         ["Azshara"] = 181,
+    ["Azshara Crater"] = 37,
         ["Azuremyst Isle"] = 464,
         ["Bloodmyst Isle"] = 476,
         ["Darkshore"] = 42,
@@ -147,15 +148,18 @@ local mdlevels = {
 function MD:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("WDMdb", defaults, true)
     
-    self.zone_names = {}
-    self.zone_data = {}
+    -- defensive: ensure these tables exist even if OnEnable/OnInitialize order is odd
+    self.zone_names = self.zone_names or {}
+    self.zone_data = self.zone_data or {}
 
     for key, idata in pairs(data) do
         local names = {}
         local name_data = {}
         for name, zdata in pairs(idata) do
-            tinsert(names, BZ[name])
-            name_data[BZ[name]] = zdata
+            -- safe lookup: fall back to the literal name if LibBabble doesn't have a translation
+            local locName = BZ and (BZ[name] or name) or name
+            tinsert(names, locName)
+            name_data[locName] = zdata
         end
         table.sort(names)
         self.zone_names[key] = names
@@ -191,8 +195,12 @@ function MD:OnInitialize()
 
     for key, value in pairs(subzones) do
         local names = {}
-        local lkey = BZ[key]
-        for name, zdata in pairs(value) do tinsert(names, BSZ[name]) end
+        -- safe lookup for the parent key and subzone names
+        local lkey = BZ and (BZ[key] or key) or key
+        for name, zdata in pairs(value) do
+            local subLoc = BSZ and (BSZ[name] or name) or name
+            tinsert(names, subLoc)
+        end
         table.sort(names)
 
         self.sub_zones[lkey] = names
@@ -203,6 +211,12 @@ function MD:OnInitialize()
 end
 
 function MD:OnEnable()
+    -- ensure internal tables exist before hooks run
+    self.zone_names = self.zone_names or {}
+    self.zone_data = self.zone_data or {}
+    self.mdlevels = self.mdlevels or {}
+    self.sub_zones = self.sub_zones or {}
+
     self:SecureHook("WorldMapLevelDropDown_Update")
     self:SecureHook("WorldMapZoneDropDown_Update")
     WorldMapLevelUpButton:HookScript("OnClick", DungeonMapLevelUp_OnClick)
@@ -211,7 +225,7 @@ end
 
 function MD:WorldMapLevelDropDown_Update()
     local mapName, _, _ = GetMapInfo()
-    if not self.mdlevels[mapName] or not self.db.profile.microdungeons then return end
+    if not self.mdlevels or not mapName or not self.mdlevels[mapName] or not self.db.profile.microdungeons then return end
 
     UIDropDownMenu_Initialize(WorldMapLevelDropDown,
                               MicroDungeonLevelDropDown_Initialize);
@@ -234,7 +248,7 @@ end
 
 function DungeonMapLevelUp_OnClick(self)
     local mapName, _, _ = GetMapInfo()
-    if not MD.mdlevels[mapName] then return end
+    if not MD.mdlevels or not MD.mdlevels[mapName] then return end
 
     if GetCurrentMicroDungeonLevel() > 1 then
         UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown,
@@ -246,7 +260,7 @@ end
 
 function DungeonMapLevelDown_OnClick(self)
     local mapName, _, _ = GetMapInfo()
-    if not MD.mdlevels[mapName] then return end
+    if not MD.mdlevels or not MD.mdlevels[mapName] then return end
 
     if GetCurrentMicroDungeonLevel() < #MD.mdlevels[mapName] then
         UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown,
@@ -258,6 +272,7 @@ end
 
 function GetCurrentMicroDungeonLevel()
     local mapName, _, _ = GetMapInfo()
+    if not MD.mdlevels or not mapName then return end
     local curmdlist = MD.mdlevels[mapName]
     local match = tonumber(string.match(mapName, "%d+"))
     if match == nil then match = 0 end
@@ -268,7 +283,8 @@ end
 function MicroDungeonLevelDropDown_Initialize()
     local info = UIDropDownMenu_CreateInfo()
     local level = GetCurrentMicroDungeonLevel()
-    local curmd = MD.mdlevels[GetMapInfo()]
+    local curmd = MD.mdlevels and MD.mdlevels[GetMapInfo()]
+    if not curmd then return end
 
     for i = 1, #curmd do
         local mapname = curmd[i][1]:upper();
@@ -283,11 +299,12 @@ end
 
 function MicroDungeonLevelButton_OnClick(self)
     UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown, self:GetID());
+    if not MD.mdlevels or not MD.mdlevels[GetMapInfo()] then return end
     SetMapByID(MD.mdlevels[GetMapInfo()][self:GetID()][3]);
 end
 
 function MD:WorldMapZoneDropDown_Update()
-    if not self.zone_names[GetCurrentMapContinent()] or not self.db.profile.microdungeons then return end
+    if not self.zone_names or not self.zone_names[GetCurrentMapContinent()] or not self.db.profile.microdungeons then return end
     UIDropDownMenu_Initialize(WorldMapZoneDropDown,
                               WDMZoneDropDown_Initialize);
     UIDropDownMenu_SetWidth(WorldMapZoneDropDown, 130);
@@ -303,7 +320,9 @@ end
 
 function WDMZoneDropDown_Initialize()
     local info = UIDropDownMenu_CreateInfo();
+    if not MD.zone_names then return end
     local zone_names = MD.zone_names[GetCurrentMapContinent()];
+    if not zone_names then return end
     for k, v in pairs(zone_names) do
         info.text = v;
         info.func = WDMZoneButton_OnClick;
@@ -315,6 +334,7 @@ end
 
 function WDMZoneButton_OnClick(self)
     UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, self:GetID());
+    if not MD.zone_data or not MD.zone_data[GetCurrentMapContinent()] then return end
     SetMapByID(MD.zone_data[GetCurrentMapContinent()][self:GetID()]);
 end
 
@@ -322,6 +342,7 @@ function MD:WDM2Blizz()
     local blizMapID = GetCurrentMapZone()
     if blizMapID == 0 then return nil end
     local blizMapName = select(blizMapID, GetMapZones(GetCurrentMapContinent()))
+    if not self.zone_names or not self.zone_names[GetCurrentMapContinent()] then return nil end
     for k, v in pairs(self.zone_names[GetCurrentMapContinent()]) do
         if v == blizMapName then
             return k

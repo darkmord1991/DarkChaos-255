@@ -20,9 +20,19 @@ for namespace, db in pairs(data) do
 	end
 end
 
+-- Toggle whether LibBabble should print missing-translation warnings to chat.
+-- Set to true to silence warnings (useful for custom zone names added at runtime).
+local LIBBABBLE_SILENT = true
 local function warn(message)
-	local _, ret = pcall(error, message, 3)
-	geterrorhandler()(ret)
+	if LIBBABBLE_SILENT then return end
+	-- Avoid escalating to the global error handler which can cause Blizzard_DebugTools
+	-- to try formatting stack traces with nil values and create recursive errors.
+	-- Instead, print the warning safely to the default chat frame or console.
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, message)
+	else
+		print(message)
+	end
 end
 
 local lookup_mt = { __index = function(self, key)

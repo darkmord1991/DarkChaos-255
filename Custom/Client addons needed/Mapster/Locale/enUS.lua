@@ -39,6 +39,10 @@ L["Hide the borders of the minimized map."] = true
 L["Hide the surrounding textures around the BattleMap, only leaving you with the pure map overlays."] = true
 L["Instance Maps"] = true
 L["Mapster allows you to control various aspects of your World Map. You can change the style of the map, control the plugins that extend the map with new functionality, and configure different profiles for every of your characters."] = true
+
+-- Dark Chaos custom maps
+L["Dark Chaos"] = true
+L["Azshara Crater"] = true
 L["(Mini) Disable Mouse"] = true
 L["(Mini) Hide Border"] = true
 L["Minimized Alpha"] = true
