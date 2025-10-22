@@ -22,11 +22,33 @@
 #include "GameGraveyard.h"
 #include <unordered_map>
 
-// Some forks provide a PopulateGraveyard helper. The current tree doesn't expose
-// a free function with that name, but the original script calls it. Add a
-// local stub so the script compiles. It can be expanded later to modify
-// graveyard links via sGraveyard if desired.
-static void PopulateGraveyard(uint32 /*id*/) {}
+// Helper to (add/remove) graveyard links for this battleground.
+// The original mod used a PopulateGraveyard helper; here we implement
+// an explicit helper that maps node indices to safe-loc ids and updates
+// the graveyard links for zone 5449 (Battle for Gilneas area id used by this BG).
+static void UpdateGraveyardForNodeIndex(uint8 graveyardIndex, TeamId teamId, bool add)
+{
+    if (graveyardIndex >= GILNEAS_BG_ALL_NODES_COUNT)
+        return;
+
+    uint32 safeLocId = GILNEAS_BG_GraveyardIds[graveyardIndex];
+    uint32 zoneId = 5449; // Battle for Gilneas
+
+    if (add)
+    {
+        // Ensure opposing team link removed first to avoid duplicates/conflicts
+        if (teamId == TEAM_ALLIANCE)
+            sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, TEAM_HORDE, false);
+        else if (teamId == TEAM_HORDE)
+            sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, TEAM_ALLIANCE, false);
+
+        sGraveyard->AddGraveyardLink(safeLocId, zoneId, teamId, false);
+    }
+    else
+    {
+        sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, teamId, false);
+    }
+}
 
 #include "ScriptMgr.h"
 #include "Config.h"
@@ -97,7 +119,7 @@ void BattlegroundBFG::PostUpdateImpl(uint32 diff)
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, type, LANG_UNIVERSAL, nullptr, nullptr, buf);
                     SendPacketToAll(&data);
-                    PlaySoundToAll(GILNEAS_BG_SOUND_NODE_CAPTURED_ALLIANCE + teamId);
+                    PlaySoundToAll(GILNEAS_BG_SOUND_NODE_CAPTURED_ALLIANCE + static_cast<uint32>(teamId));
                     break;
                 }
                 case BG_BFG_EVENT_ALLIANCE_TICK:
@@ -254,10 +276,12 @@ void BattlegroundBFG::FillInitialWorldStates(WorldPackets::WorldState::InitWorld
     // How many bases each team owns
     uint8 ally = 0, horde = 0;
     for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
-        if (_capturePointInfo[node]._ownerTeamId != TEAM_NEUTRAL)
+    {
+        if (_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE)
             ++ally;
-        else
+        else if (_capturePointInfo[node]._ownerTeamId == TEAM_HORDE)
             ++horde;
+    }
 
     packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_MAX, GILNEAS_BG_MAX_TEAM_SCORE);
     packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_WARNING, GILNEAS_BG_WARNING_NEAR_VICTORY_SCORE);
@@ -306,20 +330,26 @@ void BattlegroundBFG::NodeOccupied(uint8 node)
         trigger->SetFaction(_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE ? FACTION_ALLIANCE_GENERIC : FACTION_HORDE_GENERIC);
         trigger->CastSpell(trigger, SPELL_HONORABLE_DEFENDER_25Y, false);
     }
+    // Ensure graveyard links reflect ownership of this node
+    if (_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE || _capturePointInfo[node]._ownerTeamId == TEAM_HORDE)
+        UpdateGraveyardForNodeIndex(node, _capturePointInfo[node]._ownerTeamId, true);
 }
 
 void BattlegroundBFG::NodeDeoccupied(uint8 node)
 {
     if (_capturePointInfo[node]._ownerTeamId != TEAM_NEUTRAL)
     {
-        --_controlledPoints[_capturePointInfo[node]._ownerTeamId];
-        
-        if (DelCreature(GILNEAS_BG_ALL_NODES_COUNT + node))
-            PopulateGraveyard(GILNEAS_BG_ALL_NODES_COUNT + node);
-        
-        if (DelCreature(node))
-            PopulateGraveyard(node);
-            
+        TeamId prevOwner = _capturePointInfo[node]._ownerTeamId;
+        --_controlledPoints[prevOwner];
+
+        // If any of the node-related creatures were removed, remove the graveyard link
+        if (DelCreature(GILNEAS_BG_ALL_NODES_COUNT + node) || DelCreature(node))
+            UpdateGraveyardForNodeIndex(node, prevOwner, false);
+
+        // Mark node neutral
+        _capturePointInfo[node]._ownerTeamId = TEAM_NEUTRAL;
+        _capturePointInfo[node]._state = GILNEAS_BG_NODE_TYPE_NEUTRAL;
+
         ApplyPhaseMask();
     }
 }
@@ -351,7 +381,7 @@ void BattlegroundBFG::EventPlayerClickedOnFlag(Player* player, GameObject* gameO
     if (_capturePointInfo[node]._state == GILNEAS_BG_NODE_TYPE_NEUTRAL)
     {
         UpdatePlayerScore(player, SCORE_BASES_ASSAULTED, 1);
-        _capturePointInfo[node]._state = static_cast<uint8>(GILNEAS_BG_NODE_STATUS_ALLY_CONTESTED) + player->GetTeamId();
+    _capturePointInfo[node]._state = static_cast<uint8>(GILNEAS_BG_NODE_STATUS_ALLY_CONTESTED) + static_cast<uint8>(player->GetTeamId());
         // message = LANG_BG_AB_NODE_CLAIMED;
         sound = GILNEAS_BG_SOUND_NODE_CLAIMED;
     }
@@ -362,7 +392,7 @@ void BattlegroundBFG::EventPlayerClickedOnFlag(Player* player, GameObject* gameO
         else
             UpdatePlayerScore(player, SCORE_BASES_ASSAULTED, 1);
         _capturePointInfo[node]._ownerTeamId = TEAM_NEUTRAL;
-        _capturePointInfo[node]._state = static_cast<uint8>(GILNEAS_BG_NODE_STATUS_ALLY_CONTESTED) + player->GetTeamId();
+    _capturePointInfo[node]._state = static_cast<uint8>(GILNEAS_BG_NODE_STATUS_ALLY_CONTESTED) + static_cast<uint8>(player->GetTeamId());
         // message = LANG_BG_AB_NODE_ASSAULTED;
     }
 
@@ -474,7 +504,7 @@ void BattlegroundBFG::EndBattleground(TeamId winnerTeamId)
 
 GraveyardStruct const* BattlegroundBFG::GetClosestGraveyard(Player* player)
 {
-    GraveyardStruct const* entry = sGraveyard->GetGraveyard(GILNEAS_BG_GraveyardIds[static_cast<uint8>(GILNEAS_BG_SPIRIT_ALLIANCE) + player->GetTeamId()]);
+    GraveyardStruct const* entry = sGraveyard->GetGraveyard(GILNEAS_BG_GraveyardIds[static_cast<uint8>(GILNEAS_BG_SPIRIT_ALLIANCE) + static_cast<uint8>(player->GetTeamId())]);
     GraveyardStruct const* nearestEntry = entry;
 
     float pX = player->GetPositionX();
@@ -552,7 +582,7 @@ void BattlegroundBFG::ApplyPhaseMask()
     uint32 phaseMask = 1;
     for (uint32 i = GILNEAS_BG_NODE_LIGHTHOUSE; i < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++i)
         if (_capturePointInfo[i]._ownerTeamId != TEAM_NEUTRAL)
-            phaseMask |= 1 << (i*2+1 + _capturePointInfo[i]._ownerTeamId);
+            phaseMask |= 1u << (i*2+1 + static_cast<uint32>(_capturePointInfo[i]._ownerTeamId));
 
     const BattlegroundPlayerMap& bgPlayerMap = GetPlayers();
     for (BattlegroundPlayerMap::const_iterator itr = bgPlayerMap.begin(); itr != bgPlayerMap.end(); ++itr)
