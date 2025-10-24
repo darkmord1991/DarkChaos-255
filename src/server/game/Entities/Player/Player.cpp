@@ -4902,12 +4902,33 @@ uint32 Player::DurabilityRepair(uint16 pos, bool cost, float discountMod, bool g
             DurabilityCostsEntry const* dcost = sDurabilityCostsStore.LookupEntry(ditemProto->ItemLevel);
             if (!dcost)
             {
+                // Fallback: try to find the nearest lower item level entry so high-level items
+                // (e.g. custom or later-expansion ilvls) can still be repaired using the closest rule.
+                for (int32 lvl = int32(ditemProto->ItemLevel) - 1; lvl >= 0; --lvl)
+                {
+                    dcost = sDurabilityCostsStore.LookupEntry(uint32(lvl));
+                    if (dcost)
+                        break;
+                }
+            }
+            if (!dcost)
+            {
                 LOG_ERROR("entities.player", "RepairDurability: Wrong item lvl {}", ditemProto->ItemLevel);
                 return TotalCost;
             }
 
             uint32 dQualitymodEntryId = (ditemProto->Quality + 1) * 2;
             DurabilityQualityEntry const* dQualitymodEntry = sDurabilityQualityStore.LookupEntry(dQualitymodEntryId);
+            if (!dQualitymodEntry)
+            {
+                // Fallback: try to use a default quality mod entry or nearest lower id
+                for (int32 qid = int32(dQualitymodEntryId) - 1; qid >= 0; --qid)
+                {
+                    dQualitymodEntry = sDurabilityQualityStore.LookupEntry(uint32(qid));
+                    if (dQualitymodEntry)
+                        break;
+                }
+            }
             if (!dQualitymodEntry)
             {
                 LOG_ERROR("entities.player", "RepairDurability: Wrong dQualityModEntry {}", dQualitymodEntryId);

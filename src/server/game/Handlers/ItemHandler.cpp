@@ -671,6 +671,16 @@ void WorldSession::HandleSellItemOpcode(WorldPackets::Item::SellItem& packet)
                         DurabilityCostsEntry const* dcost = sDurabilityCostsStore.LookupEntry(pProto->ItemLevel);
                         if (!dcost)
                         {
+                            // Try nearest lower item level entry as a fallback so high ilvl items still work
+                            for (int32 lvl = int32(pProto->ItemLevel) - 1; lvl >= 0; --lvl)
+                            {
+                                dcost = sDurabilityCostsStore.LookupEntry(uint32(lvl));
+                                if (dcost)
+                                    break;
+                            }
+                        }
+                        if (!dcost)
+                        {
                             _player->SendSellError(SELL_ERR_CANT_SELL_ITEM, creature, packet.ItemGuid, 0);
                             LOG_ERROR("network.opcode", "WORLD: HandleSellItemOpcode - Wrong item lvl {} for item {} count = {}", pProto->ItemLevel, pItem->GetEntry(), packet.Count);
                             return;
@@ -678,6 +688,15 @@ void WorldSession::HandleSellItemOpcode(WorldPackets::Item::SellItem& packet)
 
                         uint32 dQualitymodEntryId = (pProto->Quality + 1) * 2;
                         DurabilityQualityEntry const* dQualitymodEntry = sDurabilityQualityStore.LookupEntry(dQualitymodEntryId);
+                        if (!dQualitymodEntry)
+                        {
+                            for (int32 qid = int32(dQualitymodEntryId) - 1; qid >= 0; --qid)
+                            {
+                                dQualitymodEntry = sDurabilityQualityStore.LookupEntry(uint32(qid));
+                                if (dQualitymodEntry)
+                                    break;
+                            }
+                        }
                         if (!dQualitymodEntry)
                         {
                             _player->SendSellError(SELL_ERR_CANT_SELL_ITEM, creature, packet.ItemGuid, 0);
