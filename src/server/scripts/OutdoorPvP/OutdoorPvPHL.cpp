@@ -1026,7 +1026,6 @@
         {
             const char* aff = "Unknown"; // label only for text
             switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
-            char line[160];
             // Append weather line for consistency with addon fallback
             const char* wname = "Fine"; uint32 pct = 50;
             if (_affixWeatherEnabled)

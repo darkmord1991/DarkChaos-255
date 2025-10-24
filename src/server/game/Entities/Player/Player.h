@@ -2868,6 +2868,8 @@ protected:
 
     uint32 m_zoneUpdateId;
     uint32 m_zoneUpdateTimer;
+    // timestamp of last DCRXP addon send (seconds since epoch) to throttle updates
+    uint32 m_lastDCRXPSendTime;
     uint32 m_areaUpdateId;
 
     uint32 m_deathTimer;

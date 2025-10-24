@@ -91,12 +91,16 @@
 #include "WorldStatePackets.h"
 #include <cmath>
 #include <queue>
+#include <ctime>
 
 /// @todo: this import is not necessary for compilation and marked as unused by the IDE
 //  however, for some reasons removing it would cause a damn linking issue
 //  there is probably some underlying problem with imports which should properly addressed
 //  see: https://github.com/azerothcore/azerothcore-wotlk/issues/9766
 #include "GridNotifiersImpl.h"
+
+// forward declaration for the helper added in DC_AddonHelpers.cpp
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
 
 enum CharacterFlags
 {
@@ -185,6 +189,7 @@ Player::Player(WorldSession* session): Unit(), m_mover(this)
 
     m_zoneUpdateId = uint32(-1);
     m_zoneUpdateTimer = 0;
+    m_lastDCRXPSendTime = 0;
 
     m_nextSave = sWorld->getIntConfig(CONFIG_INTERVAL_SAVE);
 
@@ -1722,6 +1727,18 @@ void Player::AddToWorld()
     for (uint8 i = PLAYER_SLOT_START; i < PLAYER_SLOT_END; ++i)
         if (m_items[i])
             m_items[i]->AddToWorld();
+
+    // Send an initial XP snapshot to client addons on login (throttled via m_lastDCRXPSendTime)
+    if (m_session)
+    {
+        time_t now = time(nullptr);
+        if (now == -1) now = 0;
+        // send immediately and set the last-send timestamp so GiveXP/GiveLevel won't resend right away
+        uint32 curXP = GetUInt32Value(PLAYER_XP);
+        uint32 nextLvlXP = GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+        SendXPAddonToPlayer(this, curXP, nextLvlXP, GetLevel());
+        m_lastDCRXPSendTime = uint32(now);
+    }
 }
 
 void Player::RemoveFromWorld()
@@ -2461,6 +2478,18 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
     }
 
     SetUInt32Value(PLAYER_XP, newXP);
+    // Throttle DCRXP addon sends to at most once every 5 seconds per player
+    {
+        time_t now = time(nullptr);
+        if (now == -1) now = 0;
+        if (uint32(now) - m_lastDCRXPSendTime >= 5)
+        {
+            uint32 curXP2 = GetUInt32Value(PLAYER_XP);
+            uint32 nextLvlXP2 = GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            SendXPAddonToPlayer(this, curXP2, nextLvlXP2, GetLevel());
+            m_lastDCRXPSendTime = uint32(now);
+        }
+    }
 }
 
 // Update player to next level
@@ -2510,6 +2539,19 @@ void Player::GiveLevel(uint8 level)
     _RemoveAllAuraStatMods();
 
     SetLevel(level);
+
+    // After level gain, immediately (but throttled) send updated XP/max values to client addons
+    {
+        time_t now = time(nullptr);
+        if (now == -1) now = 0;
+        if (uint32(now) - m_lastDCRXPSendTime >= 5)
+        {
+            uint32 curXP = GetUInt32Value(PLAYER_XP);
+            uint32 nextLvlXP = GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            SendXPAddonToPlayer(this, curXP, nextLvlXP, GetLevel());
+            m_lastDCRXPSendTime = uint32(now);
+        }
+    }
 
     UpdateSkillsForLevel();
 
