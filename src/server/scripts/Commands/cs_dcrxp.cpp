@@ -60,7 +60,7 @@ public:
             // send current server-side XP info for that player
             uint32 xp = target->GetUInt32Value(PLAYER_XP);
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
-            uint32 level = target->getLevel();
+            uint32 level = target->GetLevel();
 
             SendXPAddonToPlayer(target, xp, xpMax, level);
             handler->PSendSysMessage("Sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
