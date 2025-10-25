@@ -10,11 +10,10 @@ if DCRestoreXPDB.point == nil then DCRestoreXPDB.point = "BOTTOM" end
 if DCRestoreXPDB.locked == nil then DCRestoreXPDB.locked = true end
 if DCRestoreXPDB.useBlizzard == nil then DCRestoreXPDB.useBlizzard = true end
 if DCRestoreXPDB.forceApply == nil then DCRestoreXPDB.forceApply = false end
-if DCRestoreXPDB.debug == nil then DCRestoreXPDB.debug = true end
+if DCRestoreXPDB.debug == nil then DCRestoreXPDB.debug = false end
 -- Control whether debug messages are also posted to the UIErrorsFrame (on-screen announcements)
 if DCRestoreXPDB.debugUiErrors == nil then DCRestoreXPDB.debugUiErrors = false end
 
--- Try to find Blizzard's XP bar frame (several legacy names exist)
 local function FindBlizzardXPBar()
     local names = { "MainMenuExpBar", "MainMenuXPBar", "MainMenuBarExpBar" }
     for _, n in ipairs(names) do
@@ -32,6 +31,10 @@ local fallbackBar = nil
 local bg, text
 
 -- Debug helper
+local function DBG(msg)
+    if msg then DEFAULT_CHAT_FRAME:AddMessage("[DCRXP DBG] " .. tostring(msg)) end
+end
+
 local function Debug(msg)
     if not DCRestoreXPDB.debug then return end
     if type(msg) ~= "string" then msg = tostring(msg) end
@@ -271,11 +274,18 @@ end
 local function ApplyServerXP(sxp, sxpMax, slevel)
     local clientMax = (UnitXPMax("player") or 0)
     Debug(string.format("ApplyServerXP called: sxp=%s sxpMax=%s slevel=%s clientMax=%s", tostring(sxp), tostring(sxpMax), tostring(slevel), tostring(clientMax)))
-    -- Only override client values when client reports no xpMax, or when server-reported max is larger
+    -- Only override client values when client reports no xpMax, or when server-reported max is larger.
+    -- However, if the client currently has zero XP (UnitXP == 0) we should still apply server values
+    -- because some clients report a valid XPMax but reset current XP to 0 at login.
+    local clientXP = (UnitXP("player") or 0)
     if not DCRestoreXPDB.forceApply then
         if clientMax ~= 0 and (not sxpMax or sxpMax <= clientMax) then
-            Debug("Client reports valid XPMax and server sxpMax is not larger; skipping apply")
-            return
+            if clientXP > 0 then
+                Debug(string.format("Client reports valid XPMax=%d and server sxpMax=%s <= clientMax; clientXP=%d -> skipping apply", clientMax, tostring(sxpMax), clientXP))
+                return
+            else
+                Debug(string.format("Client reports XPMax=%d but clientXP=%d -> applying server values to restore bar", clientMax, clientXP))
+            end
         end
     else
         Debug("forceApply is enabled; applying server values regardless of client XPMax")
@@ -301,6 +311,21 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
     end
     if sxpMax and sxpMax > 0 then
         SetBarMinMaxAndAnimate(target, 0, sxpMax, sxp)
+        -- Ensure the target bar is visible and anchored correctly
+        if type(target.Show) == "function" then target:Show() end
+        if type(target.SetAlpha) == "function" then target:SetAlpha(1) end
+        if type(target.SetFrameStrata) == "function" then target:SetFrameStrata("HIGH") end
+        if type(target.SetFrameLevel) == "function" then pcall(target.SetFrameLevel, target, 200) end
+        -- Log visibility and anchor info for debugging
+        local vis = (type(target.IsShown) == "function" and target:IsShown()) or false
+        local px, py, panchor = nil, nil, nil
+        local p = { target:GetPoint() }
+        if #p >= 4 then
+            panchor = tostring(p[1])
+            px = tostring(p[3])
+            py = tostring(p[4])
+        end
+        Debug(string.format("FallbackVisible=%s name=%s point=%s x=%s y=%s width=%s height=%s", tostring(vis), tostring(target:GetName() or "anon"), tostring(panchor or "nil"), tostring(px or "nil"), tostring(py or "nil"), tostring(target:GetWidth() or "nil"), tostring(target:GetHeight() or "nil")))
     else
         if type(target.Hide) == "function" then target:Hide() end
     end
@@ -441,15 +466,17 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
         end
 
         -- Send the handshake immediately and a few times afterwards until we receive
-        -- a DCRXP response. This is conservative but cheap; it uses a small retry
-        -- cadence and will stop after N attempts.
+        -- a DCRXP response. We'll stop retrying once we receive any DCRXP payload
+        -- to avoid duplicate server replies. The retry frame is stored so it can
+        -- be cancelled from the CHAT_MSG_ADDON handler.
         do
             local attempts = 0
             local maxAttempts = 6
             local interval = 0.5
             -- immediate send
             SendDCRXPRequest()
-            local reqFrame = CreateFrame("Frame")
+            reqFrame = CreateFrame("Frame")
+            reqFrame._acc = 0
             reqFrame:SetScript("OnUpdate", function(self, dt)
                 if attempts >= maxAttempts then
                     self:SetScript("OnUpdate", nil)
@@ -469,17 +496,37 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
         local prefix = arg1
         local message = select(1, ...)
         Debug("CHAT_MSG_ADDON received: prefix=" .. tostring(prefix) .. " message=" .. tostring(message))
-        -- also print to chat for normal debug visibility
-        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
-            DEFAULT_CHAT_FRAME:AddMessage("[DCRXP RX] " .. tostring(prefix) .. " " .. tostring(message))
-        else
-            print("[DCRXP RX] " .. tostring(prefix) .. " " .. tostring(message))
+        -- also print to chat for normal debug visibility (only when debug is enabled)
+        if DCRestoreXPDB.debug then
+            if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+                DEFAULT_CHAT_FRAME:AddMessage("[DCRXP RX] " .. tostring(prefix) .. " " .. tostring(message))
+            else
+                print("[DCRXP RX] " .. tostring(prefix) .. " " .. tostring(message))
+            end
         end
         -- optionally make this visible in the UI for quick verification (toggle via /dcrxp uimsg on/off)
         if DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
             pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "[DCRXP RX] " .. tostring(prefix) .. " " .. tostring(message))
         end
-        if prefix == "DCRXP" and message then
+            -- Deduplicate identical payloads and stop the handshake retries once we've
+            -- received at least one server snapshot.
+            if prefix == "DCRXP" and message then
+                -- cancel request retries on first valid server reply
+                if reqFrame and type(reqFrame.SetScript) == "function" then
+                    reqFrame:SetScript("OnUpdate", nil)
+                    Debug("Cancelled DCRXP_REQ retry frame after receiving server snapshot")
+                end
+                -- simple dedupe: ignore identical messages received within 1 second
+                local now = GetTime and GetTime() or (time and time())
+                if not now then now = 0 end
+                if message == (ev.__lastPayload or "") and ev.__lastPayloadTime and (now - ev.__lastPayloadTime) < 1.0 then
+                    Debug("Ignored duplicate DCRXP payload")
+                    return
+                end
+                ev.__lastPayload = message
+                ev.__lastPayloadTime = now
+                -- proceed
+            
             -- expected payload: "XP|<xp>|<xpMax>|<level>"
             local parts = {}
             for p in string.gmatch(message, "([^|]+)") do table.insert(parts, p) end
@@ -488,6 +535,8 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
                 local sxpMax = tonumber(parts[3]) or 0
                 local slevel = tonumber(parts[4]) or UnitLevel("player")
                 Debug(string.format("DCRXP payload parsed: sxp=%d sxpMax=%d slevel=%d", sxp, sxpMax, slevel))
+                -- Mark that we've received a server snapshot so the retry loop can stop
+                ev.__gotSnapshot = true
                 -- Delegate server-provided XP to a helper so we can reuse it for the test button
                 Debug("Applying server-provided XP (if client reports no XPMax or server prefers)")
                 ApplyServerXP(sxp, sxpMax, slevel)
