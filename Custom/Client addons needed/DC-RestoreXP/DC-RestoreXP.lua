@@ -278,11 +278,18 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
     -- However, if the client currently has zero XP (UnitXP == 0) we should still apply server values
     -- because some clients report a valid XPMax but reset current XP to 0 at login.
     local clientXP = (UnitXP("player") or 0)
+    -- Determine whether this is a server-side high-level player (where client UI can't represent levels)
+    local highLevel = (slevel and type(slevel) == "number" and slevel > 79)
     if not DCRestoreXPDB.forceApply then
         if clientMax ~= 0 and (not sxpMax or sxpMax <= clientMax) then
             if clientXP > 0 then
-                Debug(string.format("Client reports valid XPMax=%d and server sxpMax=%s <= clientMax; clientXP=%d -> skipping apply", clientMax, tostring(sxpMax), clientXP))
-                return
+                if highLevel then
+                    -- For high-level servers prefer the fallback bar even if the client reports a valid XP
+                    Debug(string.format("High-level player (slevel=%d): overriding client-skip logic and applying server values to fallback bar", slevel))
+                else
+                    Debug(string.format("Client reports valid XPMax=%d and server sxpMax=%s <= clientMax; clientXP=%d -> skipping apply", clientMax, tostring(sxpMax), clientXP))
+                    return
+                end
             else
                 Debug(string.format("Client reports XPMax=%d but clientXP=%d -> applying server values to restore bar", clientMax, clientXP))
             end

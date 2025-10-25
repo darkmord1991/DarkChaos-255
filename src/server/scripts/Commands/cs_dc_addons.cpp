@@ -118,7 +118,9 @@ public:
             uint32 nextXP = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
             bool noXp = target->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-            handler->PSendSysMessage("Info: %s level=%u xp=%u xpMax=%u XPBlocked=%u", target->GetName(), level, curXP, nextXP, noXp ? 1 : 0);
+            // Print a fuller, correctly-formatted info line so admins can diagnose XP issues.
+            handler->PSendSysMessage("Info: {} guid={} level={} xp={} xpMax={} XPBlocked={}",
+                                     target->GetName(), target->GetGUID().GetCounter(), level, curXP, nextXP, noXp ? 1 : 0);
             return true;
         }
 
