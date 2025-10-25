@@ -66,8 +66,46 @@ public:
             handler->PSendSysMessage("Sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
             return true;
         }
+        else if (sub == "sendforce")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dcrxp sendforce <playername>");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string playerName((*it).data(), (*it).size());
+            Player* target = ObjectAccessor::FindPlayerByName(playerName, false);
+            if (!target)
+            {
+                handler->PSendSysMessage("Player '%s' not found.", playerName.c_str());
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            // Immediately send a DCRXP addon packet to the player, bypassing any throttles.
+            uint32 xp = target->GetUInt32Value(PLAYER_XP);
+            uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            uint32 level = target->GetLevel();
+            SendXPAddonToPlayer(target, xp, xpMax, level);
+            handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
+            return true;
+        }
         else if (sub == "grant")
         {
+            // Expect: grant <playername> <amount>
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dcrxp grant <playername> <amount>");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string playerName((*it).data(), (*it).size());
+
             ++it;
             if (it == args.end())
             {
@@ -91,7 +129,6 @@ public:
                 return false;
             }
 
-            // find the player again (target variable still in scope)
             Player* receiver = ObjectAccessor::FindPlayerByName(playerName, false);
             if (!receiver)
             {

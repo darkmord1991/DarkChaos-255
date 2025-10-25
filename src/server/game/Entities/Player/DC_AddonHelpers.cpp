@@ -6,6 +6,7 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "Chat.h"
+#include "Log.h"
 #include <string>
 
 // Compose and send a CHAT_MSG_ADDON style packet that addons can consume via CHAT_MSG_ADDON
@@ -23,6 +24,8 @@ void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level)
 
     if (WorldSession* s = player->GetSession())
     {
+        // Log a confirmation so GiveXP -> addon packet flows can be correlated in server logs
+        LOG_INFO("addons.dcrxp", "SendXPAddonToPlayer: sending DCRXP to {} (guid={}, xp={}, xpMax={}, level={})", player->GetName(), player->GetGUID().ToString(), xp, xpMax, level);
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
         s->SendPacket(&data);
