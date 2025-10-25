@@ -423,6 +423,47 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
                 end
             end)
         end)
+        -- Send a small client->server handshake request so the server can reply with
+        -- current XP values when the client is ready. This avoids race conditions
+        -- where the server sends its initial snapshot before the addon is ready.
+        local function SendDCRXPRequest()
+            if type(SendAddonMessage) ~= "function" then
+                Debug("SendAddonMessage not available; cannot request server XP snapshot")
+                return
+            end
+            local target = UnitName("player") or ""
+            local ok, err = pcall(SendAddonMessage, "DCRXP_REQ", "REQ", "WHISPER", target)
+            if ok then
+                Debug("Sent DCRXP_REQ handshake to server (whisper to self)")
+            else
+                Debug("Failed to SendAddonMessage DCRXP_REQ: " .. tostring(err))
+            end
+        end
+
+        -- Send the handshake immediately and a few times afterwards until we receive
+        -- a DCRXP response. This is conservative but cheap; it uses a small retry
+        -- cadence and will stop after N attempts.
+        do
+            local attempts = 0
+            local maxAttempts = 6
+            local interval = 0.5
+            -- immediate send
+            SendDCRXPRequest()
+            local reqFrame = CreateFrame("Frame")
+            reqFrame:SetScript("OnUpdate", function(self, dt)
+                if attempts >= maxAttempts then
+                    self:SetScript("OnUpdate", nil)
+                    return
+                end
+                self._acc = (self._acc or 0) + dt
+                if self._acc >= interval then
+                    self._acc = 0
+                    attempts = attempts + 1
+                    Debug(string.format("DCRXP_REQ retry %d/%d", attempts, maxAttempts))
+                    SendDCRXPRequest()
+                end
+            end)
+        end
     elseif event == "CHAT_MSG_ADDON" then
         -- For 3.3.5a the handler receives (prefix, message, channel, sender) as varargs
         local prefix = arg1

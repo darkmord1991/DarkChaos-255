@@ -22,7 +22,8 @@ public:
     {
         static ChatCommandTable commandTable =
         {
-            { "dcrxp", HandleDCRXPCommand, SEC_GAMEMASTER, Console::No }
+            { "dcrxp", HandleDCRXPCommand, SEC_GAMEMASTER, Console::No },
+            { "dcxrp", HandleDCRXPCommand, SEC_GAMEMASTER, Console::No } // common typo alias
         };
         return commandTable;
     }
@@ -38,7 +39,17 @@ public:
 
         auto it = args.begin();
         std::string_view sub = *it;
-    if (sub == "send")
+        // Normalize subcommand: lowercase and strip common punctuation so users
+        // can use variants like "sendforce-self" or typos like "dcxrp" when
+        // attempting subcommands. Do not modify the original arg list.
+        std::string subNorm;
+        subNorm.reserve(sub.size());
+        for (char c : sub)
+        {
+            if (c == '-' || c == '_' || c == ' ') continue;
+            subNorm.push_back(std::tolower(static_cast<unsigned char>(c)));
+        }
+    if (subNorm == "send")
         {
             ++it;
             if (it == args.end())
@@ -66,21 +77,32 @@ public:
             handler->PSendSysMessage("Sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
             return true;
         }
-        else if (sub == "sendforce")
+        else if (subNorm == "sendforce" || subNorm == "sendforceself")
         {
             ++it;
-            if (it == args.end())
+            // If the subcommand included a "self" suffix (sendforce-self) we allow
+            // omitting the target name and send to the GM's player directly.
+            bool targetIsSelf = (subNorm.find("self") != std::string::npos);
+            if (!targetIsSelf && it == args.end())
             {
                 handler->PSendSysMessage("Usage: .dcrxp sendforce <playername>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
+            Player* target = nullptr;
+            if (targetIsSelf)
+            {
+                target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            }
+            else
+            {
+                std::string playerName((*it).data(), (*it).size());
+                target = ObjectAccessor::FindPlayerByName(playerName, false);
+            }
 
-            std::string playerName((*it).data(), (*it).size());
-            Player* target = ObjectAccessor::FindPlayerByName(playerName, false);
             if (!target)
             {
-                handler->PSendSysMessage("Player '%s' not found.", playerName.c_str());
+                handler->PSendSysMessage("Player not found or invalid target.");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -93,7 +115,7 @@ public:
             handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
             return true;
         }
-        else if (sub == "grant")
+    else if (subNorm == "grant")
         {
             // Expect: grant <playername> <amount>
             ++it;
@@ -143,7 +165,7 @@ public:
             handler->PSendSysMessage("Granted %u XP to %s", uint32(amount), playerName.c_str());
             return true;
         }
-        else if (sub == "grantself")
+    else if (subNorm == "grantself")
         {
             ++it;
             if (it == args.end())
@@ -181,7 +203,7 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("Unknown subcommand. Usage: .dcrxp send <playername>");
+    handler->PSendSysMessage("Unknown subcommand. Usage: .dcrxp send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt>");
         handler->SetSentErrorMessage(true);
         return false;
     }
