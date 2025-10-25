@@ -1,8 +1,28 @@
 /*
  * Consolidated DC addon-related commands.
- * Contains handlers for:
- *  - .dcrxp  (send, sendforce, grant, grantself, etc.)
- *  - .givexp (givexp <player|self> <amount>)
+ *
+ * Commands (single entry: .dc):
+ *  - .dc send <playername>
+ *      Send the current server XP snapshot to <playername> (addon-style whisper)
+ *  - .dc sendforce <playername> | .dc sendforce-self
+ *      Force-send the current server XP snapshot, bypassing throttles. Use -self to target yourself.
+ *  - .dc grant <playername> <amount>
+ *      Grant <amount> XP to <playername> using server GiveXP path.
+ *  - .dc grantself <amount>
+ *      Grant <amount> XP to your own character.
+ *  - .dc givexp <playername> <amount>  (alias form exposed via .dc)
+ *  - .dc givexp self <amount>
+ *
+ * Examples:
+ *  .dc send Alice
+ *  .dc sendforce-self
+ *  .dc grant Bob 100000
+ *  .dc givexp self 50000
+ *
+ * Notes:
+ *  - This file consolidates DC-related GM commands into a single top-level command
+ *    (".dc") to keep addon administration in one place. After changing this C++ file
+ *    you must rebuild the server so the command is compiled and registered.
  */
 #include "CommandScript.h"
 #include "Chat.h"
