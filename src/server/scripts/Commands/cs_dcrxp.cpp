@@ -213,4 +213,6 @@ public:
 void AddSC_dcrxp_commandscript()
 {
     new dcrxp_commandscript();
+    // Log script registration so it's obvious in server logs that the command is available
+    LOG_INFO("scripts.dcrxp", "dcrxp command script registered");
 }

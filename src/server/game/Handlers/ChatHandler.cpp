@@ -291,6 +291,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
             uint32 curXP = sender->GetUInt32Value(PLAYER_XP);
             uint32 nextLvlXP = sender->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = sender->GetLevel();
+            LOG_INFO("addons.dcrxp", "Received DCRXP_REQ from {} (guid={}) - replying with XP snapshot (xp={}, xpMax={}, level={})", sender->GetName(), sender->GetGUID().ToString(), curXP, nextLvlXP, level);
             SendXPAddonToPlayer(sender, curXP, nextLvlXP, level);
             return;
         }
