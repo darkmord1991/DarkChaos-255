@@ -88,29 +88,49 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
     if type(barObj.SetMinMaxValues) == "function" then barObj:SetMinMaxValues(minv or 0, maxv or 1) end
     -- update text immediately
     local rested = (GetXPExhaustion() or 0)
-    if barObj == blizBar then
-        if not blizBar.__dcrxp_text then
-            blizBar.__dcrxp_text = blizBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        -- place text above the Blizzard bar to avoid overlap with action buttons
-        blizBar.__dcrxp_text:SetPoint("BOTTOM", blizBar, "TOP", 0, 2)
-        end
-        if type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
-            local pctf = 0
-            if maxv and maxv > 0 then pctf = ((value or 0) * 100) / maxv end
-            -- Colorize percent: green >=100, yellow >=50, orange >=25, red otherwise
-            local color = "|cFFFF4500" -- orange-red default
-            if pctf >= 100 then color = "|cFF00FF00" elseif pctf >= 50 then color = "|cFFFFFF00" elseif pctf >= 25 then color = "|cFFFFA500" end
-            local pcttext = string.format("%.1f%%", pctf)
-            -- center the text on the bar and center-justify it
-            blizBar.__dcrxp_text:ClearAllPoints()
-            blizBar.__dcrxp_text:SetPoint("CENTER", blizBar, "CENTER", 0, 0)
-            if type(blizBar.__dcrxp_text.SetJustifyH) == "function" then blizBar.__dcrxp_text:SetJustifyH("CENTER") end
-            blizBar.__dcrxp_text:SetFormattedText("Level %d  XP: %d / %d  %s%s|r  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, color, pcttext, rested)
-        end
+        if barObj == blizBar then
+            -- ensure a compact centered text + background for readability on dense HUDs
+            if not blizBar.__dcrxp_text then
+                blizBar.__dcrxp_text = blizBar:CreateFontString(nil, "OVERLAY")
+                local fName, fSize, fFlags = GameFontNormalSmall:GetFont()
+                blizBar.__dcrxp_text:SetFont(fName, math.max((fSize or 10) - 1, 8), fFlags)
+                if not blizBar.__dcrxp_textBg then
+                    blizBar.__dcrxp_textBg = blizBar:CreateTexture(nil, "OVERLAY")
+                    blizBar.__dcrxp_textBg:SetColorTexture(0, 0, 0, 0.55)
+                    blizBar.__dcrxp_textBg:SetPoint("CENTER", blizBar, "CENTER", 0, 0)
+                    blizBar.__dcrxp_textBg:SetSize(300, blizBar:GetHeight() or 13)
+                end
+                blizBar.__dcrxp_text:SetPoint("CENTER", blizBar.__dcrxp_textBg, "CENTER", 0, 0)
+            end
+            -- color main bar blue when rested, otherwise violet
+            if rested and rested > 0 then
+                if type(barObj.SetStatusBarColor) == "function" then barObj:SetStatusBarColor(0.0, 0.5, 1.0) end
+            else
+                if type(barObj.SetStatusBarColor) == "function" then barObj:SetStatusBarColor(0.64, 0.27, 0.86) end
+            end
+            if type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
+                -- Blizzard bar text is updated elsewhere; nothing to change here. Keep the block balanced.
+            end
     else
+        -- ensure a small background box for the fallback bar text
+        if not barObj.__dcrxp_textBg then
+            local tb = barObj:CreateTexture(nil, "OVERLAY")
+            tb:SetColorTexture(0, 0, 0, 0.55)
+            tb:SetPoint("CENTER", barObj, "CENTER", 0, 0)
+            tb:SetSize(math.min((barObj:GetWidth() or 512) * 0.75, 600), barObj:GetHeight() or 13)
+            barObj.__dcrxp_textBg = tb
+        end
         if not text and barObj.CreateFontString then
-            text = barObj:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            text:SetPoint("CENTER", barObj, "CENTER")
+            text = barObj:CreateFontString(nil, "OVERLAY")
+            local fName, fSize, fFlags = GameFontNormalSmall:GetFont()
+            text:SetFont(fName, math.max((fSize or 10) - 1, 8), fFlags)
+            text:SetPoint("CENTER", barObj.__dcrxp_textBg, "CENTER", 0, 0)
+        end
+        -- color main bar blue when rested, otherwise violet
+        if rested and rested > 0 then
+            if type(barObj.SetStatusBarColor) == "function" then barObj:SetStatusBarColor(0.0, 0.5, 1.0) end
+        else
+            if type(barObj.SetStatusBarColor) == "function" then barObj:SetStatusBarColor(0.64, 0.27, 0.86) end
         end
         if text and type(text.SetFormattedText) == "function" then
             local pctf = 0
@@ -182,16 +202,35 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
     end
 end
 
+-- Send a small client->server handshake request so the server can reply with
+-- current XP values when the client is ready. This helper is used on login
+-- and also after level changes to avoid flicker from client-side updates.
+local function SendDCRXPRequest()
+    if type(SendAddonMessage) ~= "function" then
+        Debug("SendAddonMessage not available; cannot request server XP snapshot")
+        return
+    end
+    local target = UnitName("player") or ""
+    local ok, err = pcall(SendAddonMessage, "DCRXP_REQ", "REQ", "WHISPER", target)
+    if ok then
+        Debug("Sent DCRXP_REQ handshake to server (whisper to self)")
+    else
+        Debug("Failed to SendAddonMessage DCRXP_REQ: " .. tostring(err))
+    end
+end
+
 -- Create our own bar styled to match Blizzard when no blizBar is available or user disabled reuse
 local function CreateFallbackBar()
     -- Create a fallback XP status bar that mirrors MainMenuBar's layout and textures
     local b = CreateFrame("StatusBar", "DCRestoreXPBar", UIParent)
     -- Prefer a compact width so the bar is readable on most HUD layouts. If Blizzard's bar exists
     -- mirror its height, otherwise use a sensible default width/height that won't be clipped.
-    local defaultW, defaultH = 512, 16
+    -- slightly shorter height to avoid clipping on compact HUDs
+    local defaultW, defaultH = 512, 13
     if blizBar then
         local w = blizBar:GetWidth() or defaultW
-        local h = blizBar:GetHeight() or defaultH
+        -- cap the reused bar height so our fallback/overlay doesn't extend off-screen
+        local h = math.min((blizBar:GetHeight() or defaultH), defaultH)
         b:SetSize(math.min(w, 1024), h)
         b:SetPoint("CENTER", blizBar, "CENTER")
     else
@@ -206,6 +245,11 @@ local function CreateFallbackBar()
     -- Base statusbar texture (matches MainMenuBar's BarTexture)
     local barTex = "Interface\\TargetingFrame\\UI-StatusBar"
     b:SetStatusBarTexture(barTex)
+    -- Use Blizzard-like XP color (purple) for the fallback bar so it visually matches the client
+    -- RGB chosen to be close to the default MainMenuBar XP tint
+    if type(b.SetStatusBarColor) == "function" then
+        b:SetStatusBarColor(0.64, 0.27, 0.86)
+    end
     if b:GetStatusBarTexture() and type(b:GetStatusBarTexture().SetHorizTile) == "function" then
         b:GetStatusBarTexture():SetHorizTile(false)
     end
@@ -221,9 +265,10 @@ local function CreateFallbackBar()
 
     -- Center text
     text = b:CreateFontString(nil, "OVERLAY")
-    -- Use a slightly larger font for readability on dense UIs
+    -- Use a slightly smaller font to avoid clipping; keep a sensible minimum
     local fontName, fontSize, fontFlags = GameFontNormalSmall:GetFont()
-    text:SetFont(fontName, (fontSize or 10) + 2, fontFlags)
+    local chosenSize = math.max((fontSize or 10) - 1, 8)
+    text:SetFont(fontName, chosenSize, fontFlags)
     text:SetPoint("CENTER", b, "CENTER")
 
     -- Add the four decorative bar slices from UI-MainMenuBar-Dwarf to mimic Blizzard art
@@ -242,11 +287,12 @@ local function CreateFallbackBar()
         tex:SetTexCoord(0, 1.0, si.top, si.bottom)
     end
 
-    -- Rested/exhaustion visuals
+    -- Rested/exhaustion visuals (overlay uses the Blizzard rested-blue by default)
     local rested = b:CreateTexture(nil, "ARTWORK")
     rested:SetAllPoints(b)
     rested:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
     rested:Hide()
+    rested:SetVertexColor(0.0, 0.5, 1.0, 0.25)
     b.restedOverlay = rested
 
     -- Exhaustion tick (small button with textures) positioned relative to the bar
@@ -403,6 +449,15 @@ local function UpdateXP()
     local level = UnitLevel("player") or 0
     Debug(string.format("Player XP=%d XPMax=%d Level=%d", xp, xpMax, level))
     if xpMax and xpMax > 0 then
+        -- If the client reports a valid XPMax and the player is below level 80 we
+        -- should prefer the client's native bar and hide our fallback overlay.
+        if bar == fallbackBar and level and level < 80 then
+            Debug("Player below level 80: hiding fallback bar and preferring client XP bar")
+            if type(fallbackBar.Hide) == "function" then fallbackBar:Hide() end
+            if blizBar and type(blizBar.SetMinMaxValues) == "function" then
+                bar = blizBar
+            end
+        end
         -- animate client-driven updates as well so behavior matches Blizzard
         SetBarMinMaxAndAnimate(bar, 0, xpMax, xp)
         Debug("Bar shown (client XP)")
@@ -448,6 +503,16 @@ ev:RegisterEvent("CHAT_MSG_ADDON")
 ev:SetScript("OnEvent", function(self, event, arg1, ...)
     Debug("Event fired: " .. tostring(event))
     if event == "UNIT_LEVEL" and arg1 ~= "player" then return end
+    -- When the player levels up ask the server for a fresh snapshot so we display
+    -- server-authored XP values (prevents client-side flicker when grants/levels occur)
+    if event == "PLAYER_LEVEL_UP" or (event == "UNIT_LEVEL" and arg1 == "player") then
+        local now = GetTime and GetTime() or (time and time()) or 0
+        ev.__lastServerApplyTime = now
+        ev.__serverForced = true
+        -- ask the server for an updated snapshot; the CHAT_MSG_ADDON handler will apply it
+        SendDCRXPRequest()
+        -- continue to UpdateXP() below (we still want the local UI to update if needed)
+    end
     -- Slight delay on login to ensure unit data is available
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         -- C_Timer was introduced after 3.3.5; provide a local fallback for older clients
@@ -495,22 +560,7 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
                 end
             end)
         end)
-        -- Send a small client->server handshake request so the server can reply with
-        -- current XP values when the client is ready. This avoids race conditions
-        -- where the server sends its initial snapshot before the addon is ready.
-        local function SendDCRXPRequest()
-            if type(SendAddonMessage) ~= "function" then
-                Debug("SendAddonMessage not available; cannot request server XP snapshot")
-                return
-            end
-            local target = UnitName("player") or ""
-            local ok, err = pcall(SendAddonMessage, "DCRXP_REQ", "REQ", "WHISPER", target)
-            if ok then
-                Debug("Sent DCRXP_REQ handshake to server (whisper to self)")
-            else
-                Debug("Failed to SendAddonMessage DCRXP_REQ: " .. tostring(err))
-            end
-        end
+        -- Request server snapshot helper (defined at top-level so we can reuse it)
 
         -- Send the handshake immediately and a few times afterwards until we receive
         -- a DCRXP response. We'll stop retrying once we receive any DCRXP payload
