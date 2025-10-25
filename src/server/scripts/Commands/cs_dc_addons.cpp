@@ -97,6 +97,31 @@ public:
             return true;
         }
 
+        if (subNorm == "info")
+        {
+            ++it;
+            Player* target = nullptr;
+            if (it == args.end() || *it == "self")
+                target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            else
+            {
+                std::string playerName((*it).data(), (*it).size());
+                target = ObjectAccessor::FindPlayerByName(playerName, false);
+            }
+            if (!target)
+            {
+                handler->PSendSysMessage("Player not found.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+            uint32 curXP = target->GetUInt32Value(PLAYER_XP);
+            uint32 nextXP = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            uint32 level = target->GetLevel();
+            bool noXp = target->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+            handler->PSendSysMessage("Info: %s level=%u xp=%u xpMax=%u XPBlocked=%u", target->GetName(), level, curXP, nextXP, noXp ? 1 : 0);
+            return true;
+        }
+
         if (subNorm == "sendforce" || subNorm == "sendforceself")
         {
             ++it;
