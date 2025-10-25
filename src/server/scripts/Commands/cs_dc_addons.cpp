@@ -84,7 +84,7 @@ public:
             Player* target = ObjectAccessor::FindPlayerByName(playerName, false);
             if (!target)
             {
-                handler->PSendSysMessage("Player '%s' not found.", playerName.c_str());
+                handler->PSendSysMessage("Player '{}' not found.", playerName);
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -93,7 +93,7 @@ public:
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
             SendXPAddonToPlayer(target, xp, xpMax, level);
-            handler->PSendSysMessage("Sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
+            handler->PSendSysMessage("Sent DCRXP addon message to {} (xp={} xpMax={} level={})", playerName, xp, xpMax, level);
             return true;
         }
 
@@ -129,7 +129,7 @@ public:
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
             SendXPAddonToPlayer(target, xp, xpMax, level);
-            handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", target->GetName().c_str(), xp, xpMax, level);
+            handler->PSendSysMessage("Force-sent DCRXP addon message to {} (xp={} xpMax={} level={})", target->GetName(), xp, xpMax, level);
             return true;
         }
 
@@ -157,7 +157,7 @@ public:
             try { amount = std::stoull(amountStr); } catch (...) { amount = 0; }
             if (amount == 0)
             {
-                handler->PSendSysMessage("Invalid amount '%s'", amountStr.c_str());
+                handler->PSendSysMessage("Invalid amount '{}'", amountStr);
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -165,13 +165,13 @@ public:
             Player* receiver = ObjectAccessor::FindPlayerByName(playerName, false);
             if (!receiver)
             {
-                handler->PSendSysMessage("Player '%s' not found.", playerName.c_str());
+                handler->PSendSysMessage("Player '{}' not found.", playerName);
                 handler->SetSentErrorMessage(true);
                 return false;
             }
 
             receiver->GiveXP(uint32(amount), nullptr, 1.0f, false);
-            handler->PSendSysMessage("Granted %u XP to %s", uint32(amount), playerName.c_str());
+            handler->PSendSysMessage("Granted {} XP to {}", uint32(amount), playerName);
             return true;
         }
 
@@ -190,7 +190,7 @@ public:
             try { amount = std::stoull(amountStr); } catch (...) { amount = 0; }
             if (amount == 0)
             {
-                handler->PSendSysMessage("Invalid amount '%s'", amountStr.c_str());
+                handler->PSendSysMessage("Invalid amount '{}'", amountStr);
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -204,7 +204,7 @@ public:
             }
 
             self->GiveXP(uint32(amount), nullptr, 1.0f, false);
-            handler->PSendSysMessage("Granted %u XP to yourself", uint32(amount));
+            handler->PSendSysMessage("Granted {} XP to yourself", uint32(amount));
             return true;
         }
 
