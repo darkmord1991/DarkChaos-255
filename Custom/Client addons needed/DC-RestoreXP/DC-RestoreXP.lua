@@ -95,7 +95,9 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
         blizBar.__dcrxp_text:SetPoint("BOTTOM", blizBar, "TOP", 0, 2)
         end
         if type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
-            blizBar.__dcrxp_text:SetFormattedText("Level %d  XP: %d / %d  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, rested)
+            local pct = 0
+            if maxv and maxv > 0 then pct = math.floor((value or 0) * 100 / maxv) end
+            blizBar.__dcrxp_text:SetFormattedText("Level %d  XP: %d / %d  (%d%%)  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, pct, rested)
         end
     else
         if not text and barObj.CreateFontString then
@@ -103,7 +105,9 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
             text:SetPoint("CENTER", barObj, "CENTER")
         end
         if text and type(text.SetFormattedText) == "function" then
-            text:SetFormattedText("Level %d  XP: %d / %d  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, rested)
+            local pct = 0
+            if maxv and maxv > 0 then pct = math.floor((value or 0) * 100 / maxv) end
+            text:SetFormattedText("Level %d  XP: %d / %d  (%d%%)  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, pct, rested)
         end
     end
     -- animate value change (use Blizzard-like timing)
@@ -382,7 +386,8 @@ local function UpdateXP()
             if type(bar.SetMinMaxValues) == "function" then bar:SetMinMaxValues(0, 1) end
             if type(bar.SetValue) == "function" then bar:SetValue(0) end
             if text and type(text.SetFormattedText) == "function" then
-                text:SetFormattedText("Level %d  XP: %d / %s  (waiting for server)", level, 0, "?")
+                -- show 0% until server snapshot arrives
+                text:SetFormattedText("Level %d  XP: %d / %s  (%d%%)  (waiting for server)", level, 0, "?", 0)
             end
             if type(bar.Show) == "function" then bar:Show() end
         else
