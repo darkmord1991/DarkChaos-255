@@ -160,8 +160,8 @@ public:
                 return false;
             }
 
-            // Give real XP via the server GiveXP path. Use nullptr victim and default rates.
-            receiver->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            // Give real XP via the admin force path so we succeed even if XP is blocked.
+            receiver->GiveXPForce(uint32(amount), nullptr, 1.0f, false);
 
             handler->PSendSysMessage("Granted %u XP to %s", uint32(amount), playerName.c_str());
             return true;
@@ -199,7 +199,7 @@ public:
                 return false;
             }
 
-            self->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            self->GiveXPForce(uint32(amount), nullptr, 1.0f, false);
             handler->PSendSysMessage("Granted %u XP to yourself", uint32(amount));
             return true;
         }

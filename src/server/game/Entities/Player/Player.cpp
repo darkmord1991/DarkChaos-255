@@ -2481,6 +2481,26 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
     }
 }
 
+// Admin/utility: force-give XP even if PLAYER_FLAGS_NO_XP_GAIN is set.
+// Implementation note: temporarily remove the NO_XP_GAIN flag, call normal GiveXP,
+// then restore the flag if it was present. This avoids widespread signature changes
+// while giving administrators a way to bypass the flag in a controlled manner.
+void Player::GiveXPForce(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
+{
+    // Quick-path: if xp < 1 or not alive checks will be handled by GiveXP itself.
+    bool hadNoXpFlag = HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+
+    if (hadNoXpFlag)
+        RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+
+    // Call the normal implementation which will now run unhindered by the flag.
+    GiveXP(xp, victim, group_rate, isLFGReward);
+
+    // Restore the flag to preserve original player state.
+    if (hadNoXpFlag)
+        SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+}
+
 // Update player to next level
 // Current player experience not update (must be update by caller)
 void Player::GiveLevel(uint8 level)
@@ -2541,6 +2561,11 @@ void Player::GiveLevel(uint8 level)
             m_lastDCRXPSendTime = uint32(now);
         }
     }
+
+    // If we've reached the configured server max level, ensure XP gain is disabled.
+    // This sets the PLAYER_FLAGS_NO_XP_GAIN flag so further GiveXP calls will be blocked.
+    if (level >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
 
     UpdateSkillsForLevel();
 
@@ -2641,6 +2666,11 @@ void Player::InitStatsForLevel(bool reapplyMods)
     sScriptMgr->OnPlayerSetMaxLevel(this, maxPlayerLevel);
     SetUInt32Value(PLAYER_FIELD_MAX_LEVEL, maxPlayerLevel);
     SetUInt32Value(PLAYER_NEXT_LEVEL_XP, sObjectMgr->GetXPForLevel(GetLevel()));
+
+    // If the player is already at or above configured max level when initializing stats,
+    // ensure XP gain is disabled so server behaviour is consistent on login/reset.
+    if (GetLevel() >= maxPlayerLevel)
+        SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
 
     // reset before any aura state sources (health set/aura apply)
     SetUInt32Value(UNIT_FIELD_AURASTATE, 0);

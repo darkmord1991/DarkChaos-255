@@ -1174,6 +1174,10 @@ public:
     void SetPvPDeath(bool on) { if (on) m_ExtraFlags |= PLAYER_EXTRA_PVP_DEATH; else m_ExtraFlags &= ~PLAYER_EXTRA_PVP_DEATH; }
 
     void GiveXP(uint32 xp, Unit* victim, float group_rate = 1.0f, bool isLFGReward = false);
+    // Admin/utility: force-give XP even if PLAYER_FLAGS_NO_XP_GAIN is set.
+    // This temporarily clears the flag, performs the GiveXP logic, and restores the flag.
+    // Use only for admin-forced grants; normal game logic should continue to call GiveXP().
+    void GiveXPForce(uint32 xp, Unit* victim, float group_rate = 1.0f, bool isLFGReward = false);
     void GiveLevel(uint8 level);
 
     void InitStatsForLevel(bool reapplyMods = false);

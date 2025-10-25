@@ -95,9 +95,17 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
         blizBar.__dcrxp_text:SetPoint("BOTTOM", blizBar, "TOP", 0, 2)
         end
         if type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
-            local pct = 0
-            if maxv and maxv > 0 then pct = math.floor((value or 0) * 100 / maxv) end
-            blizBar.__dcrxp_text:SetFormattedText("Level %d  XP: %d / %d  (%d%%)  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, pct, rested)
+            local pctf = 0
+            if maxv and maxv > 0 then pctf = ((value or 0) * 100) / maxv end
+            -- Colorize percent: green >=100, yellow >=50, orange >=25, red otherwise
+            local color = "|cFFFF4500" -- orange-red default
+            if pctf >= 100 then color = "|cFF00FF00" elseif pctf >= 50 then color = "|cFFFFFF00" elseif pctf >= 25 then color = "|cFFFFA500" end
+            local pcttext = string.format("%.1f%%", pctf)
+            -- center the text on the bar and center-justify it
+            blizBar.__dcrxp_text:ClearAllPoints()
+            blizBar.__dcrxp_text:SetPoint("CENTER", blizBar, "CENTER", 0, 0)
+            if type(blizBar.__dcrxp_text.SetJustifyH) == "function" then blizBar.__dcrxp_text:SetJustifyH("CENTER") end
+            blizBar.__dcrxp_text:SetFormattedText("Level %d  XP: %d / %d  %s%s|r  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, color, pcttext, rested)
         end
     else
         if not text and barObj.CreateFontString then
@@ -105,9 +113,16 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
             text:SetPoint("CENTER", barObj, "CENTER")
         end
         if text and type(text.SetFormattedText) == "function" then
-            local pct = 0
-            if maxv and maxv > 0 then pct = math.floor((value or 0) * 100 / maxv) end
-            text:SetFormattedText("Level %d  XP: %d / %d  (%d%%)  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, pct, rested)
+            local pctf = 0
+            if maxv and maxv > 0 then pctf = ((value or 0) * 100) / maxv end
+            local color = "|cFFFF4500"
+            if pctf >= 100 then color = "|cFF00FF00" elseif pctf >= 50 then color = "|cFFFFFF00" elseif pctf >= 25 then color = "|cFFFFA500" end
+            local pcttext = string.format("%.1f%%", pctf)
+            -- center the fallback text on the bar and center-justify it
+            text:ClearAllPoints()
+            text:SetPoint("CENTER", bar, "CENTER", 0, 0)
+            if type(text.SetJustifyH) == "function" then text:SetJustifyH("CENTER") end
+            text:SetFormattedText("Level %d  XP: %d / %d  %s%s|r  (rested %d)", UnitLevel("player") or 0, value or 0, maxv or 0, color, pcttext, rested)
         end
     end
     -- animate value change (use Blizzard-like timing)
@@ -150,6 +165,20 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
                 end
             end
         end
+    end
+    -- adjust text color for contrast when bar is filled
+    local pct = 0
+    if maxv and maxv > 0 then pct = ((value or 0) * 100) / maxv end
+    local fgColor = {1, 1, 1}
+    if pct >= 50 then
+        -- when bar is more filled, use dark text for contrast
+        fgColor = {0, 0, 0}
+    end
+    -- apply color to whichever text exists on this bar
+    if barObj == blizBar and blizBar.__dcrxp_text and type(blizBar.__dcrxp_text.SetTextColor) == "function" then
+        pcall(blizBar.__dcrxp_text.SetTextColor, blizBar.__dcrxp_text, fgColor[1], fgColor[2], fgColor[3])
+    elseif text and type(text.SetTextColor) == "function" and barObj == fallbackBar then
+        pcall(text.SetTextColor, text, fgColor[1], fgColor[2], fgColor[3])
     end
 end
 
@@ -337,6 +366,12 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
             py = tostring(p[4])
         end
         Debug(string.format("FallbackVisible=%s name=%s point=%s x=%s y=%s width=%s height=%s", tostring(vis), tostring(target:GetName() or "anon"), tostring(panchor or "nil"), tostring(px or "nil"), tostring(py or "nil"), tostring(target:GetWidth() or "nil"), tostring(target:GetHeight() or "nil")))
+        -- record last server-driven apply so UpdateXP (client-driven) won't immediately override
+        if ev then
+            local now = GetTime and GetTime() or (time and time()) or 0
+            ev.__lastServerApplyTime = now
+            ev.__serverForced = true
+        end
     else
         if type(target.Hide) == "function" then target:Hide() end
     end
@@ -555,6 +590,17 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
                 Debug("ApplyServerXP() completed")
             end
         end
+    elseif event == "PLAYER_XP_UPDATE" then
+        -- If we recently applied a server snapshot, skip the next client XP update
+        -- to avoid immediate override/flicker. Use a small debounce window (~1.2s).
+        local now = GetTime and GetTime() or (time and time()) or 0
+        if ev.__lastServerApplyTime and ev.__serverForced and (now - ev.__lastServerApplyTime) < 1.2 then
+            Debug("Skipped PLAYER_XP_UPDATE because a recent server snapshot was applied")
+            -- Clear the forced marker so subsequent client updates run normally
+            ev.__serverForced = nil
+            return
+        end
+        UpdateXP()
     else
         UpdateXP()
     end

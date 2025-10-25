@@ -198,7 +198,8 @@ public:
             }
 
             uint32 beforeXP = receiver->GetUInt32Value(PLAYER_XP);
-            receiver->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            // Use admin force-give so we can grant XP even if the player has NO_XP_GAIN set.
+            receiver->GiveXPForce(uint32(amount), nullptr, 1.0f, false);
             uint32 afterXP = receiver->GetUInt32Value(PLAYER_XP);
             if (afterXP == beforeXP)
             {
@@ -243,7 +244,7 @@ public:
 
             Player* selfPlayer = self;
             uint32 beforeSelfXP = selfPlayer->GetUInt32Value(PLAYER_XP);
-            selfPlayer->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            selfPlayer->GiveXPForce(uint32(amount), nullptr, 1.0f, false);
             uint32 afterSelfXP = selfPlayer->GetUInt32Value(PLAYER_XP);
             if (afterSelfXP == beforeSelfXP)
             {
@@ -254,6 +255,40 @@ public:
                 SendXPAddonToPlayer(selfPlayer, afterSelfXP, selfPlayer->GetUInt32Value(PLAYER_NEXT_LEVEL_XP), selfPlayer->GetLevel());
                 handler->PSendSysMessage("Granted {} XP to yourself (now xp={} xpMax={})", uint32(amount), afterSelfXP, selfPlayer->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
             }
+            return true;
+        }
+
+        if (subNorm == "clearflag")
+        {
+            ++it;
+            Player* target = nullptr;
+            if (it == args.end() || *it == "self")
+                target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            else
+            {
+                std::string playerName((*it).data(), (*it).size());
+                target = ObjectAccessor::FindPlayerByName(playerName, false);
+            }
+
+            if (!target)
+            {
+                handler->PSendSysMessage("Player not found.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            if (!target->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
+            {
+                handler->PSendSysMessage("Player {} does not have the NO_XP_GAIN flag set.", target->GetName());
+                return true;
+            }
+
+            target->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+            handler->PSendSysMessage("Cleared NO_XP_GAIN flag for {} (guid={}).", target->GetName(), target->GetGUID().GetCounter());
+            // Immediately send an addon snapshot so client refreshes
+            uint32 curXP = target->GetUInt32Value(PLAYER_XP);
+            uint32 nextXP = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            SendXPAddonToPlayer(target, curXP, nextXP, target->GetLevel());
             return true;
         }
 
@@ -317,7 +352,8 @@ public:
             return false;
         }
 
-    target->GiveXP(uint32(amount), nullptr, 1.0f, false);
+    // Use force variant for admin/gm command to bypass XP-block flag when needed.
+    target->GiveXPForce(uint32(amount), nullptr, 1.0f, false);
     // after GiveXP, send snapshot so client updates immediately (grant via .givexp alias)
     uint32 curXP = target->GetUInt32Value(PLAYER_XP);
     uint32 nextXP = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
