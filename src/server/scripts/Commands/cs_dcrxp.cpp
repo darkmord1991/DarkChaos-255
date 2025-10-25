@@ -112,7 +112,8 @@ public:
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
             SendXPAddonToPlayer(target, xp, xpMax, level);
-            handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
+            // Use the resolved target name for messaging (may be self or explicit target)
+            handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", target->GetName().c_str(), xp, xpMax, level);
             return true;
         }
     else if (subNorm == "grant")
