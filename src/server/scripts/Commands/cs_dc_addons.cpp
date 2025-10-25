@@ -170,8 +170,19 @@ public:
                 return false;
             }
 
+            uint32 beforeXP = receiver->GetUInt32Value(PLAYER_XP);
             receiver->GiveXP(uint32(amount), nullptr, 1.0f, false);
-            handler->PSendSysMessage("Granted {} XP to {}", uint32(amount), playerName);
+            uint32 afterXP = receiver->GetUInt32Value(PLAYER_XP);
+            if (afterXP == beforeXP)
+            {
+                handler->PSendSysMessage("No XP applied to {} (maybe at max level or XP blocked). Current xp={} xpMax={}", playerName, afterXP, receiver->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
+            }
+            else
+            {
+                // Immediately send an addon snapshot so client can update right away
+                SendXPAddonToPlayer(receiver, afterXP, receiver->GetUInt32Value(PLAYER_NEXT_LEVEL_XP), receiver->GetLevel());
+                handler->PSendSysMessage("Granted {} XP to {} (now xp={} xpMax={})", uint32(amount), playerName, afterXP, receiver->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
+            }
             return true;
         }
 
@@ -203,8 +214,19 @@ public:
                 return false;
             }
 
-            self->GiveXP(uint32(amount), nullptr, 1.0f, false);
-            handler->PSendSysMessage("Granted {} XP to yourself", uint32(amount));
+            Player* selfPlayer = self;
+            uint32 beforeSelfXP = selfPlayer->GetUInt32Value(PLAYER_XP);
+            selfPlayer->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            uint32 afterSelfXP = selfPlayer->GetUInt32Value(PLAYER_XP);
+            if (afterSelfXP == beforeSelfXP)
+            {
+                handler->PSendSysMessage("No XP applied to yourself (maybe at max level or XP blocked). Current xp={} xpMax={}", afterSelfXP, selfPlayer->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
+            }
+            else
+            {
+                SendXPAddonToPlayer(selfPlayer, afterSelfXP, selfPlayer->GetUInt32Value(PLAYER_NEXT_LEVEL_XP), selfPlayer->GetLevel());
+                handler->PSendSysMessage("Granted {} XP to yourself (now xp={} xpMax={})", uint32(amount), afterSelfXP, selfPlayer->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
+            }
             return true;
         }
 
@@ -268,8 +290,12 @@ public:
             return false;
         }
 
-        target->GiveXP(uint32(amount), nullptr, 1.0f, false);
-        handler->PSendSysMessage("Granted %u XP to %s", uint32(amount), target->GetName().c_str());
+    target->GiveXP(uint32(amount), nullptr, 1.0f, false);
+    // after GiveXP, send snapshot so client updates immediately (grant via .givexp alias)
+    uint32 curXP = target->GetUInt32Value(PLAYER_XP);
+    uint32 nextXP = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+    SendXPAddonToPlayer(target, curXP, nextXP, target->GetLevel());
+    handler->PSendSysMessage("Granted {} XP to {}", uint32(amount), target->GetName());
         return true;
     }
 };
