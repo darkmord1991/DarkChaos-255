@@ -38,7 +38,7 @@ public:
 
         auto it = args.begin();
         std::string_view sub = *it;
-        if (sub == "send")
+    if (sub == "send")
         {
             ++it;
             if (it == args.end())
@@ -64,6 +64,83 @@ public:
 
             SendXPAddonToPlayer(target, xp, xpMax, level);
             handler->PSendSysMessage("Sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", playerName.c_str(), xp, xpMax, level);
+            return true;
+        }
+        else if (sub == "grant")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dcrxp grant <playername> <amount>");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string amountStr((*it).data(), (*it).size());
+            uint64 amount = 0;
+            try
+            {
+                amount = std::stoull(amountStr);
+            }
+            catch (...) { amount = 0; }
+
+            if (amount == 0)
+            {
+                handler->PSendSysMessage("Invalid amount '%s'", amountStr.c_str());
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            // find the player again (target variable still in scope)
+            Player* receiver = ObjectAccessor::FindPlayerByName(playerName, false);
+            if (!receiver)
+            {
+                handler->PSendSysMessage("Player '%s' not found.", playerName.c_str());
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            // Give real XP via the server GiveXP path. Use nullptr victim and default rates.
+            receiver->GiveXP(uint32(amount), nullptr, 1.0f, false);
+
+            handler->PSendSysMessage("Granted %u XP to %s", uint32(amount), playerName.c_str());
+            return true;
+        }
+        else if (sub == "grantself")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dcrxp grantself <amount>");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string amountStr((*it).data(), (*it).size());
+            uint64 amount = 0;
+            try
+            {
+                amount = std::stoull(amountStr);
+            }
+            catch (...) { amount = 0; }
+
+            if (amount == 0)
+            {
+                handler->PSendSysMessage("Invalid amount '%s'", amountStr.c_str());
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            Player* self = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            if (!self)
+            {
+                handler->PSendSysMessage("Couldn't identify your player session.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            self->GiveXP(uint32(amount), nullptr, 1.0f, false);
+            handler->PSendSysMessage("Granted %u XP to yourself", uint32(amount));
             return true;
         }
 

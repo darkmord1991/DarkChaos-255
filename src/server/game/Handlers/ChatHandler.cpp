@@ -40,6 +40,9 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+// forward-declare the canonical helper implemented in DC_AddonHelpers.cpp
+// (keeps this change minimal and avoids adding a new header)
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
 
 inline bool isNasty(uint8 c)
 {
@@ -272,6 +275,25 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
     if (type == CHAT_MSG_GUILD && lang == LANG_ADDON && _warden && _warden->ProcessLuaCheckResponse(msg))
     {
         return;
+    }
+
+    // Quick handshake: client addons can send a one-shot request to ask for current XP values.
+    // If a client sends an addon-whisper starting with "DCRXP_REQ" we immediately reply with
+    // a DCRXP addon packet containing the player's XP/xpMax/level. This implements a simple
+    // client->server handshake so the client can request data when it's ready (avoids timing
+    // races on login). The canonical SendXPAddonToPlayer helper composes a CHAT_MSG_ADDON reply.
+    if (lang == LANG_ADDON && type == CHAT_MSG_WHISPER)
+    {
+        static const std::string dcrxpPrefix = "DCRXP_REQ";
+        if (msg.rfind(dcrxpPrefix, 0) == 0)
+        {
+            // Grab current XP values and reply immediately (bypass other parsing)
+            uint32 curXP = sender->GetUInt32Value(PLAYER_XP);
+            uint32 nextLvlXP = sender->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
+            uint32 level = sender->GetLevel();
+            SendXPAddonToPlayer(sender, curXP, nextLvlXP, level);
+            return;
+        }
     }
 
     // pussywizard:
