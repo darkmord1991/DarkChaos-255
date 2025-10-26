@@ -1,6 +1,6 @@
 -- HLBG_Queue_Client.lua
 -- Client-side queue system integration for Hinterland BG
--- Add to HinterlandAffixHUD addon or merge into existing HLBG_Handlers.lua
+-- Part of the DC HLBG Addon (merge into HLBG_Handlers.lua if you prefer a single file)
 
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
@@ -183,7 +183,7 @@ function HLBG.HandleQueueStatus(statusString)
     end
     
     -- Debug output
-    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) then
+    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
             "|cFF33FF99HLBG Queue:|r InQueue=%s Pos=%d/%d State=%s",
             tostring(inQueue), position, total, state))

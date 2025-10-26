@@ -2,14 +2,14 @@
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 
 -- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
-HinterlandAffixHUDDB = HinterlandAffixHUDDB or {}
--- Force HUD enabled by default for new installations and reset any disabled state
-HinterlandAffixHUDDB.hudEnabled = true
-if HinterlandAffixHUDDB.hudScale == nil then HinterlandAffixHUDDB.hudScale = 1.0 end
-if HinterlandAffixHUDDB.hudAlpha == nil then HinterlandAffixHUDDB.hudAlpha = 0.9 end
-if HinterlandAffixHUDDB.showHudInWarmup == nil then HinterlandAffixHUDDB.showHudInWarmup = true end
-if HinterlandAffixHUDDB.showHudEverywhere == nil then HinterlandAffixHUDDB.showHudEverywhere = false end
-if HinterlandAffixHUDDB.enableTelemetry == nil then HinterlandAffixHUDDB.enableTelemetry = false end -- Disabled by default
+-- migrate to a DC-prefixed saved vars table so addon appears as "DC HLBG Addon"
+DCHLBGDB = DCHLBGDB or {}
+if DCHLBGDB.hudEnabled == nil then DCHLBGDB.hudEnabled = true end
+if DCHLBGDB.hudScale == nil then DCHLBGDB.hudScale = 1.0 end
+if DCHLBGDB.hudAlpha == nil then DCHLBGDB.hudAlpha = 0.9 end
+if DCHLBGDB.showHudInWarmup == nil then DCHLBGDB.showHudInWarmup = true end
+if DCHLBGDB.showHudEverywhere == nil then DCHLBGDB.showHudEverywhere = false end
+if DCHLBGDB.enableTelemetry == nil then DCHLBGDB.enableTelemetry = false end -- Disabled by default
 
 HLBG.UI = HLBG.UI or {}
 -- Use a single canonical frame name so reloads don't create multiple HUDs
@@ -41,7 +41,7 @@ HUD:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
 
 -- Drag functionality
 HUD:SetScript("OnDragStart", function(self)
-    if not HinterlandAffixHUDDB.hudLocked then
+    if not DCHLBGDB.hudLocked then
         self:StartMoving()
     end
 end)
@@ -50,7 +50,7 @@ HUD:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     -- Save position
     local point, _, relativePoint, x, y = self:GetPoint()
-    HinterlandAffixHUDDB.hudPosition = {
+    DCHLBGDB.hudPosition = {
         point = point,
         relativePoint = relativePoint,
         x = x,
@@ -73,7 +73,7 @@ HUD.titleBar:SetBackdropColor(0.1, 0.3, 0.5, 0.9)
 -- Title text
 HUD.title = HUD.titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 HUD.title:SetPoint("LEFT", HUD.titleBar, "LEFT", 8, 0)
-HUD.title:SetText("Hinterland Battleground")
+HUD.title:SetText("DC HLBG Addon")
 HUD.title:SetTextColor(1, 1, 1, 1)
 
 -- Phase indicator (Warmup/Live/Ended)
@@ -371,7 +371,7 @@ function HLBG.UpdateModernHUD(data)
     HUD.affixText:SetText("Affix: " .. affixName)
     
     -- Update telemetry if enabled
-    if HinterlandAffixHUDDB.enableTelemetry then
+    if DCHLBGDB.enableTelemetry then
         HUD.telemetryFrame:Show()
         
         -- Get ping
@@ -410,20 +410,20 @@ function HLBG.ApplyHUDSettings()
     if not HUD then return end
     
     -- Apply scale
-    HUD:SetScale(HinterlandAffixHUDDB.hudScale or 1.0)
-    
+    HUD:SetScale(DCHLBGDB.hudScale or 1.0)
+
     -- Apply alpha
-    HUD:SetAlpha(HinterlandAffixHUDDB.hudAlpha or 0.9)
-    
+    HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
+
     -- Apply position
-    if HinterlandAffixHUDDB.hudPosition then
-        local pos = HinterlandAffixHUDDB.hudPosition
+    if DCHLBGDB.hudPosition then
+        local pos = DCHLBGDB.hudPosition
         HUD:ClearAllPoints()
         HUD:SetPoint(pos.point or "TOP", UIParent, pos.relativePoint or "TOP", pos.x or 0, pos.y or -100)
     end
-    
+
     -- Apply font size
-    local fontSize = HinterlandAffixHUDDB.fontSize or "Normal"
+    local fontSize = DCHLBGDB.fontSize or "Normal"
     local fontTemplate = "GameFontHighlight"
     if fontSize == "Small" then
         fontTemplate = "GameFontHighlightSmall"
@@ -445,7 +445,7 @@ function HLBG.UpdateHUDVisibility()
     if not HUD then return end
     
     -- Check if HUD is enabled
-    if not HinterlandAffixHUDDB.hudEnabled then
+    if not DCHLBGDB.hudEnabled then
         HUD:Hide()
         return
     end
@@ -453,30 +453,33 @@ function HLBG.UpdateHUDVisibility()
     -- Check location restrictions
     local shouldShow = false
     
-    if HinterlandAffixHUDDB.showHudEverywhere then
+    if DCHLBGDB.showHudEverywhere then
         shouldShow = true
     else
         -- Only show in specific zones/instances
         local inHinterlands = false
         local inBattleground = false
         
-        -- Check zone name
-        if type(GetRealZoneText) == "function" then
-            local zone = GetRealZoneText()
-            inHinterlands = (zone == "The Hinterlands")
-        end
-        
-        -- Check subzone for custom battleground area
-        if type(GetSubZoneText) == "function" then
-            local subzone = GetSubZoneText()
-            if subzone and (subzone:match("Hinterland") or subzone:match("Battleground")) then
-                inHinterlands = true
+        -- Only show in specific zone: prefer map area ID 47 (The Hinterlands)
+        if type(GetCurrentMapAreaID) == "function" then
+            local id = GetCurrentMapAreaID()
+            inHinterlands = (id == 47)
+        else
+            -- Fallback to zone name and subzone checks if map id not available
+            if type(GetRealZoneText) == "function" then
+                local zone = GetRealZoneText()
+                inHinterlands = (zone == "The Hinterlands")
+            end
+            if type(GetSubZoneText) == "function" then
+                local subzone = GetSubZoneText()
+                if subzone and (subzone:match("Hinterland") or subzone:match("Battleground")) then
+                    inHinterlands = true
+                end
             end
         end
-        
-        -- Check if in battleground instance (WoW 3.3.5 compatible)
+
+        -- Also check battlefield/activity/status as a fallback indicator
         if type(GetBattlefieldStatus) == "function" then
-            -- In 3.3.5, check first few battlefield slots (usually 1-4)
             for i = 1, 4 do
                 local status, _, instanceID = GetBattlefieldStatus(i)
                 if status == "active" then
@@ -485,17 +488,11 @@ function HLBG.UpdateHUDVisibility()
                 end
             end
         end
-        
-        -- Also check if we're receiving HLBG STATUS messages (best indicator we're in the BG)
         if HLBG._lastStatus and HLBG._lastStatus.A and HLBG._lastStatus.H then
             local lastUpdate = HLBG._lastStatusTime or 0
-            local now = GetTime()
-            -- If we received a status update in last 30 seconds, we're probably in the BG
-            if (now - lastUpdate) < 30 then
-                inBattleground = true
-            end
+            local now = GetTime and GetTime() or 0
+            if (now - lastUpdate) < 30 then inBattleground = true end
         end
-        
         shouldShow = inHinterlands or inBattleground
         
         -- DEBUG: Log visibility decision
@@ -529,7 +526,7 @@ function HLBG.InitializeModernHUD()
     end)
     
     -- Set up less frequent telemetry updates to prevent blinking
-    if HinterlandAffixHUDDB.enableTelemetry then
+    if DCHLBGDB.enableTelemetry then
         local telemetryFrame = CreateFrame("Frame")
         telemetryFrame:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = (self.elapsed or 0) + elapsed
@@ -683,7 +680,7 @@ HLBG.UpdateHUD = function()
         -- CRITICAL FIX: Force HUD visible before update
         if HUD then
             HUD:Show()
-            HUD:SetAlpha(HinterlandAffixHUDDB.hudAlpha or 0.9)
+            HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                 DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[UpdateHUD]|r HUD visible=%s alpha=%.2f", tostring(HUD:IsShown()), HUD:GetAlpha()))
             end
@@ -759,8 +756,7 @@ pcall(function()
         HLBG.UI.HUD:Hide()
         HLBG.UI.HUD:SetScript('OnUpdate', nil)
     end
-    local legacy = _G["HinterlandAffixHUD"]
-    if legacy and legacy.Hide then legacy:Hide() end
+    -- legacy global reference removed; prefer the modern HUD and explicitly hide known legacy frames below
     local worldstate = _G["WorldStateAlwaysUpFrame"]
     if worldstate and worldstate.Hide then worldstate:Hide() end
     if _G['HLBG_HUD'] and type(_G['HLBG_HUD'].Hide) == 'function' then
@@ -775,7 +771,7 @@ end)
 -- Create a reference so HLBG.HUD points to the modern HUD for compatibility
 HLBG.HUD = {
     frame = HLBG.UI.ModernHUD,
-    enabled = function() return HinterlandAffixHUDDB and HinterlandAffixHUDDB.hudEnabled end,
+    enabled = function() return DCHLBGDB and DCHLBGDB.hudEnabled end,
     Update = function() if HLBG.UI.ModernHUD and HLBG.UI.ModernHUD.Update then HLBG.UI.ModernHUD:Update() end end
 }
 

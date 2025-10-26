@@ -6,8 +6,8 @@ RES = RES or {}
 HLBG.RES = HLBG.RES or RES
 
 -- Debug buffer: SavedVariables-backed ring buffer for developer diagnostics
-HinterlandAffixHUD_DebugLog = HinterlandAffixHUD_DebugLog or {}
-HLBG.DebugBuffer = HLBG.DebugBuffer or HinterlandAffixHUD_DebugLog
+DCHLBG_DebugLog = DCHLBG_DebugLog or {}
+HLBG.DebugBuffer = HLBG.DebugBuffer or DCHLBG_DebugLog
 HLBG._debugMax = HLBG._debugMax or 500
 
 -- Safe serializer (limited depth, detects cycles, truncates long strings)
@@ -54,10 +54,10 @@ function HLBG.DebugLog(kind, payload)
         if #s > 1000 then s = s:sub(1,1000) .. '...[truncated]' end
         entry.data = s
     end
-    HinterlandAffixHUD_DebugLog = HinterlandAffixHUD_DebugLog or {}
-    table.insert(HinterlandAffixHUD_DebugLog, 1, entry)
-    while #HinterlandAffixHUD_DebugLog > (HLBG._debugMax or 500) do table.remove(HinterlandAffixHUD_DebugLog) end
-    HLBG.DebugBuffer = HinterlandAffixHUD_DebugLog
+    DCHLBG_DebugLog = DCHLBG_DebugLog or {}
+    table.insert(DCHLBG_DebugLog, 1, entry)
+    while #DCHLBG_DebugLog > (HLBG._debugMax or 500) do table.remove(DCHLBG_DebugLog) end
+    HLBG.DebugBuffer = DCHLBG_DebugLog
     return entry
 end
 
@@ -69,9 +69,9 @@ SLASH_HLBGDUMP1 = '/hlbgdumpbuf'
 SLASH_HLBGDUMP2 = '.hlbgdumpbuf'
 SlashCmdList['HLBGDUMP'] = function(msg)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Debug buffer size: ' .. tostring(#(HinterlandAffixHUD_DebugLog or {})))
-        for i = 1, math.min(20, #HinterlandAffixHUD_DebugLog) do
-            local e = HinterlandAffixHUD_DebugLog[i]
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Debug buffer size: ' .. tostring(#(DCHLBG_DebugLog or {})))
+        for i = 1, math.min(20, #DCHLBG_DebugLog) do
+            local e = DCHLBG_DebugLog[i]
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFFFCC66[%d]|r %s %s', i, tostring(e.ts or 0), tostring((e.kind or '')) ) )
             DEFAULT_CHAT_FRAME:AddMessage('  ' .. (tostring(e.data or ''):sub(1,400)))
         end
@@ -81,8 +81,8 @@ end
 SLASH_HLBGCLR1 = '/hlbgclearbuf'
 SLASH_HLBGCLR2 = '.hlbgclearbuf'
 SlashCmdList['HLBGCLR'] = function()
-    HinterlandAffixHUD_DebugLog = {}
-    HLBG.DebugBuffer = HinterlandAffixHUD_DebugLog
+    DCHLBG_DebugLog = {}
+    HLBG.DebugBuffer = DCHLBG_DebugLog
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Debug buffer cleared') end
 end
 
@@ -116,8 +116,8 @@ function HLBG.ShowDebugWindow()
         dumpBtn:SetPoint('TOPLEFT', frame, 'TOPLEFT', 12, -36)
         dumpBtn:SetText('Clear Buffer')
         dumpBtn:SetScript('OnClick', function()
-            HinterlandAffixHUD_DebugLog = {}
-            HLBG.DebugBuffer = HinterlandAffixHUD_DebugLog
+            DCHLBG_DebugLog = {}
+            HLBG.DebugBuffer = DCHLBG_DebugLog
         end)
 
         local scroll = CreateFrame('ScrollFrame', nil, frame)
@@ -128,8 +128,8 @@ function HLBG.ShowDebugWindow()
         scroll:SetScrollChild(content)
 
         local y = -6
-        for i = 1, math.min(#(HinterlandAffixHUD_DebugLog or {}), 200) do
-            local e = HinterlandAffixHUD_DebugLog[i]
+        for i = 1, math.min(#(DCHLBG_DebugLog or {}), 200) do
+            local e = DCHLBG_DebugLog[i]
             if not e then break end
             local line = content:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
             line:SetPoint('TOPLEFT', content, 'TOPLEFT', 4, y)
@@ -158,7 +158,7 @@ zoneWatcher:RegisterEvent("ZONE_CHANGED_INDOORS")
 zoneWatcher:SetScript("OnEvent", function()
     if InHinterlands() then
         if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
-        if HinterlandAffixHUDDB and HinterlandAffixHUDDB.useAddonHud and type(HLBG.HideBlizzHUDDeep) == 'function' then pcall(HLBG.HideBlizzHUDDeep) end
+        if DCHLBGDB and DCHLBGDB.useAddonHud and type(HLBG.HideBlizzHUDDeep) == 'function' then pcall(HLBG.HideBlizzHUDDeep) end
     else
         if HLBG.UI and HLBG.UI.HUD then pcall(function() HLBG.UI.HUD:Hide() end) end
         if HLBG.UI and HLBG.UI.Affix then pcall(function() HLBG.UI.Affix:Hide() end) end
@@ -181,7 +181,7 @@ local function EnsurePvPTab()
         if PVPFrameLeft then PVPFrameLeft:Hide() end
         if PVPFrameRight then PVPFrameRight:Hide() end
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
-        if type(ShowTab) == 'function' then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
+    if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
         if _G.AIO and _G.AIO.Handle then
             local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
@@ -211,7 +211,7 @@ local function EnsurePvPHeaderButton()
     btn:SetText("HLBG")
     btn:SetScript("OnClick", function()
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
-        if type(ShowTab) == 'function' then pcall(ShowTab, HinterlandAffixHUDDB.lastInnerTab or 1) end
+    if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
         if _G.AIO and _G.AIO.Handle then
             local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
             _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 25, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
@@ -287,9 +287,9 @@ end)
         -- Print a trimmed preview and store full content in debug buffer
         local preview = (string.len(s) > 400) and (s:sub(1,400) .. '...[truncated]') or s
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG sanitized TSV preview:|r ' .. preview) end
-        HinterlandAffixHUD_DebugLog = HinterlandAffixHUD_DebugLog or {}
-        table.insert(HinterlandAffixHUD_DebugLog, 1, string.format('[HLBG_SANITIZED] %s', s))
-        while #HinterlandAffixHUD_DebugLog > 500 do table.remove(HinterlandAffixHUD_DebugLog) end
+    DCHLBG_DebugLog = DCHLBG_DebugLog or {}
+    table.insert(DCHLBG_DebugLog, 1, string.format('[HLBG_SANITIZED] %s', s))
+    while #DCHLBG_DebugLog > 500 do table.remove(DCHLBG_DebugLog) end
     end
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
@@ -297,7 +297,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     if tostring(prefix) ~= "HLBG" then return end
     -- Optionally capture the raw incoming message into debug buffer
     pcall(function()
-        local should = HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        local should = HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if should then
             HLBG.DebugLog('AIO_RAW', { prefix = prefix, msg = msg })
         end
@@ -305,7 +305,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     -- Dev: lightweight receipt log for addon messages (only when dev mode true)
     pcall(function()
-        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local preview = (type(msg)=='string' and (msg:sub(1,180) .. ( #msg>180 and '...[truncated]' or '' )) ) or tostring(msg)
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Received AIO msg prefix=%s len=%d preview=%s', tostring(prefix), (type(msg)=='string' and #msg) or 0, preview))
@@ -335,7 +335,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     -- STATUS messages
     if msg:match("^STATUS|") then
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('STATUS', msg) end end)
+        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('STATUS', msg) end end)
         local A = tonumber(msg:match("A=(%d+)") or 0) or 0
         local H = tonumber(msg:match("H=(%d+)") or 0) or 0
         local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
@@ -385,7 +385,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- AFFIX messages
     local aff = msg:match("^AFFIX|(.*)$")
     if aff then
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('AFFIX', aff) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('AFFIX', aff) end end)
         HLBG._affixText = tostring(aff)
         if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
         -- Always hide legacy floating chip to avoid duplicate Affix text
@@ -396,12 +396,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- Warmup notice
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end; return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('WARMUP', warm) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('WARMUP', warm) end end)
 
     -- Queue status
     local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
     if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end; return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('QUEUE', q) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('QUEUE', q) end end)
 
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
@@ -409,7 +409,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
         end)
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('RESULTS_JSON', { raw = rj, parsed = ok and decoded or nil }) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('RESULTS_JSON', { raw = rj, parsed = ok and decoded or nil }) end end)
         if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
         return
     end
@@ -426,14 +426,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             return table.concat(out)
         end
     htsv = strip_high_bytes(htsv)
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('HISTORY_TSV_RAW', htsv) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('HISTORY_TSV_RAW', htsv) end end)
     local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or htsv:match('^TOTAL=(%d+)%s*') or 0)) or 0
     htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', ''):gsub('^TOTAL=%d+%s*', '')
     -- Convert common row separators into real newlines. Some servers use '||' or single '|' between rows.
     htsv = htsv:gsub('%|%|', '\n')
     -- Dev-only: report whether handler converted pipes into newlines
     pcall(function()
-        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundPipe = htsv:find('%|') and true or false
             local foundNl = htsv:find('\n') and true or false
@@ -442,7 +442,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     end)
     if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|', '\n') end
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('HISTORY_TSV_POSTSANIT', { total = total, sanit = htsv }) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('HISTORY_TSV_POSTSANIT', { total = total, sanit = htsv }) end end)
         if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
     end
@@ -453,7 +453,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
         end)
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('STATS_JSON', { raw = sj, parsed = ok and decoded or nil }) end end)
+        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('STATS_JSON', { raw = sj, parsed = ok and decoded or nil }) end end)
         if ok and type(decoded) == 'table' then
             if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
             if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
@@ -476,14 +476,14 @@ chatFrame:RegisterEvent('CHAT_MSG_WHISPER')
 chatFrame:SetScript('OnEvent', function(_, ev, msg)
     if type(msg) ~= 'string' then return end
     pcall(function()
-        if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then
+        if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then
             HLBG.DebugLog('CHAT_IN', { event = ev, msg = msg })
         end
     end)
     -- STATUS (chat fallback)
     local b = msg:match('%[HLBG_STATUS%]%s*(.*)')
     if b then
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('CHAT_STATUS', b) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_STATUS', b) end end)
         RES = RES or {}
         local A = tonumber(b:match('%f[%w]A=(%d+)') or 0) or 0
         local H = tonumber(b:match('%f[%w]H=(%d+)') or 0) or 0
@@ -507,11 +507,11 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     -- Warmup
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('CHAT_WARMUP', warm) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_WARMUP', warm) end end)
     -- Queue
     local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
     if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('CHAT_QUEUE', q) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_QUEUE', q) end end)
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
@@ -524,15 +524,15 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     -- History TSV
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode) then HLBG.DebugLog('CHAT_HISTORY_TSV_RAW', htsv) end end)
+    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_HISTORY_TSV_RAW', htsv) end end)
         local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
         -- Strip TOTAL prefix
         htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', '')
     -- If multi-row separator exists, convert to newlines for HistoryStr
     -- Dev-only: report pipe/newline state before conversion
-    pcall(function()
-        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        pcall(function()
+            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
@@ -544,7 +544,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|','\n') end
     -- Dev-only: report pipe/newline state after conversion
     pcall(function()
-        local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
@@ -555,7 +555,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         local hasTabs = htsv:find('\t') and true or false
         local hasNL   = htsv:find('\n') and true or false
         pcall(function()
-            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)
+            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv))
             end

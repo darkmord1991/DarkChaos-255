@@ -109,6 +109,6 @@ function Ast.WorldToMinimapOffset(minimapFrame, playerNx_or_mapId, playerNy_or_x
     return ox, oy
 end
 
-return Ast
 -- Expose globally for WoW addon loading (if file is included via TOC)
 _G.HotspotDisplay_Astrolabe = Ast
+return Ast

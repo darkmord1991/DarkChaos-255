@@ -5,5 +5,4 @@
 ## SavedVariables: DCMapExtensionDB
 
 Core.lua
-README.md
 Textures/azshara_crater.blp

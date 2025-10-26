@@ -6,10 +6,10 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
     -- Debug: announce stats invocation in dev mode and add to debug buffer
     pcall(function()
         local msg = string.format('HLBG.Stats invoked payloadType=%s', type(stats))
-        if not HinterlandAffixHUD_DebugLog then HinterlandAffixHUD_DebugLog = {} end
-        table.insert(HinterlandAffixHUD_DebugLog, 1, msg)
-        while #HinterlandAffixHUD_DebugLog > 400 do table.remove(HinterlandAffixHUD_DebugLog) end
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffixHUDDB.devMode)) then
+        if not DCHLBG_DebugLog then DCHLBG_DebugLog = {} end
+        table.insert(DCHLBG_DebugLog, 1, msg)
+        while #DCHLBG_DebugLog > 400 do table.remove(DCHLBG_DebugLog) end
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r '..msg)
         end
     end)

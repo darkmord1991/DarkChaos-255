@@ -3,24 +3,28 @@
 HLBG.UI = HLBG.UI or {}
 
 -- Initialize SavedVariables with defaults if not exists
-if not HinterlandAffixHUDDB then
-    HinterlandAffixHUDDB = {
-        hudEnabled = true,
-        debugMode = false,
-        showHudEverywhere = false,
-        hudScale = 1.0,
-        hudAlpha = 0.9,
-        enableTelemetry = false
-    }
+-- Migrate saved variables to DCHLBGDB (new name). If the old table exists, copy values to preserve user settings.
+if not DCHLBGDB then
+    DCHLBGDB = {}
+    if HinterlandAffixHUDDB and type(HinterlandAffixHUDDB) == 'table' then
+        -- migrate known keys from old table, then clear the legacy table
+        for k,v in pairs(HinterlandAffixHUDDB) do DCHLBGDB[k] = v end
+        -- mark that a migration happened (useful for debugging)
+        DCHLBGDB._migratedFromHinterlandAffixHUD = true
+        if HLBG and HLBG.Debug then pcall(HLBG.Debug, "Migrated settings from HinterlandAffixHUDDB to DCHLBGDB") end
+        -- Clear the legacy table to avoid accidental future writes to the old global
+        for k in pairs(HinterlandAffixHUDDB) do HinterlandAffixHUDDB[k] = nil end
+        HinterlandAffixHUDDB = nil
+    end
 end
 
--- Ensure all expected keys exist (in case old SavedVariables missing keys)
-HinterlandAffixHUDDB.hudEnabled = (HinterlandAffixHUDDB.hudEnabled ~= nil) and HinterlandAffixHUDDB.hudEnabled or true
-HinterlandAffixHUDDB.debugMode = HinterlandAffixHUDDB.debugMode or false
-HinterlandAffixHUDDB.showHudEverywhere = HinterlandAffixHUDDB.showHudEverywhere or false
-HinterlandAffixHUDDB.hudScale = HinterlandAffixHUDDB.hudScale or 1.0
-HinterlandAffixHUDDB.hudAlpha = HinterlandAffixHUDDB.hudAlpha or 0.9
-HinterlandAffixHUDDB.enableTelemetry = HinterlandAffixHUDDB.enableTelemetry or false
+-- Ensure all expected keys exist with sensible defaults
+DCHLBGDB.hudEnabled = (DCHLBGDB.hudEnabled ~= nil) and DCHLBGDB.hudEnabled or true
+DCHLBGDB.debugMode = DCHLBGDB.debugMode or false
+DCHLBGDB.showHudEverywhere = DCHLBGDB.showHudEverywhere or false
+DCHLBGDB.hudScale = DCHLBGDB.hudScale or 1.0
+DCHLBGDB.hudAlpha = DCHLBGDB.hudAlpha or 0.9
+DCHLBGDB.enableTelemetry = DCHLBGDB.enableTelemetry or false
 
 
 
@@ -51,7 +55,7 @@ if not HLBG.UI.Frame then
     -- Title text directly on main frame, no extra bar
     local titleText = HLBG.UI.Frame:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     titleText:SetPoint("TOPLEFT", HLBG.UI.Frame, "TOPLEFT", 18, -14)
-    titleText:SetText("Hinterland Battleground")
+    titleText:SetText("DC HLBG Addon")
     titleText:SetTextColor(1, 0.82, 0, 1)
     HLBG.UI.Frame.TitleText = titleText
 
@@ -478,10 +482,10 @@ if not HLBG.UI.Settings.Content then
     -- HUD Enable/Disable Checkbox
     local hudEnabledCheck = CreateFrame("CheckButton", "HLBG_HUDEnabledCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
     hudEnabledCheck:SetPoint("TOPLEFT", 40, yOffset)
-    hudEnabledCheck:SetChecked(HinterlandAffixHUDDB.hudEnabled ~= false)
+    hudEnabledCheck:SetChecked(DCHLBGDB.hudEnabled ~= false)
     hudEnabledCheck:SetScript("OnClick", function(self)
-        HinterlandAffixHUDDB.hudEnabled = self:GetChecked()
-        if HinterlandAffixHUDDB.hudEnabled then
+        DCHLBGDB.hudEnabled = self:GetChecked()
+        if DCHLBGDB.hudEnabled then
             if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:Show() end
             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r HUD enabled")
         else
@@ -497,10 +501,10 @@ if not HLBG.UI.Settings.Content then
     -- Debug Mode Checkbox
     local debugCheck = CreateFrame("CheckButton", "HLBG_DebugCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
     debugCheck:SetPoint("TOPLEFT", 40, yOffset)
-    debugCheck:SetChecked(HinterlandAffixHUDDB.debugMode or false)
+    debugCheck:SetChecked(DCHLBGDB.debugMode or false)
     debugCheck:SetScript("OnClick", function(self)
-        HinterlandAffixHUDDB.debugMode = self:GetChecked()
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Debug mode %s", HinterlandAffixHUDDB.debugMode and "enabled" or "disabled"))
+        DCHLBGDB.debugMode = self:GetChecked()
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Debug mode %s", DCHLBGDB.debugMode and "enabled" or "disabled"))
     end)
     local debugLabel = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     debugLabel:SetPoint("LEFT", debugCheck, "RIGHT", 5, 0)
@@ -510,10 +514,10 @@ if not HLBG.UI.Settings.Content then
     -- Show HUD Everywhere Checkbox
     local showEverywhereCheck = CreateFrame("CheckButton", "HLBG_ShowEverywhereCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
     showEverywhereCheck:SetPoint("TOPLEFT", 40, yOffset)
-    showEverywhereCheck:SetChecked(HinterlandAffixHUDDB.showHudEverywhere or false)
+    showEverywhereCheck:SetChecked(DCHLBGDB.showHudEverywhere or false)
     showEverywhereCheck:SetScript("OnClick", function(self)
-        HinterlandAffixHUDDB.showHudEverywhere = self:GetChecked()
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r HUD visibility: %s", HinterlandAffixHUDDB.showHudEverywhere and "show everywhere" or "battleground only"))
+        DCHLBGDB.showHudEverywhere = self:GetChecked()
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r HUD visibility: %s", DCHLBGDB.showHudEverywhere and "show everywhere" or "battleground only"))
         if HLBG.UpdateHUDVisibility then HLBG.UpdateHUDVisibility() end
     end)
     local showEverywhereLabel = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -525,7 +529,7 @@ if not HLBG.UI.Settings.Content then
     local scaleSlider = CreateFrame("Slider", "HLBG_ScaleSlider", HLBG.UI.Settings.Content, "OptionsSliderTemplate")
     scaleSlider:SetPoint("TOPLEFT", 40, yOffset)
     scaleSlider:SetMinMaxValues(0.5, 2.0)
-    scaleSlider:SetValue(HinterlandAffixHUDDB.hudScale or 1.0)
+    scaleSlider:SetValue(DCHLBGDB.hudScale or 1.0)
     scaleSlider:SetValueStep(0.1)
     -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
     scaleSlider:SetWidth(200)
@@ -533,7 +537,7 @@ if not HLBG.UI.Settings.Content then
     _G[scaleSlider:GetName().."High"]:SetText("2.0")
     _G[scaleSlider:GetName().."Text"]:SetText("HUD Scale")
     scaleSlider:SetScript("OnValueChanged", function(self, value)
-        HinterlandAffixHUDDB.hudScale = value
+        DCHLBGDB.hudScale = value
         if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:SetScale(value) end
         _G[self:GetName().."Text"]:SetText(string.format("HUD Scale: %.1f", value))
     end)
@@ -543,7 +547,7 @@ if not HLBG.UI.Settings.Content then
     local alphaSlider = CreateFrame("Slider", "HLBG_AlphaSlider", HLBG.UI.Settings.Content, "OptionsSliderTemplate")
     alphaSlider:SetPoint("TOPLEFT", 40, yOffset)
     alphaSlider:SetMinMaxValues(0.1, 1.0)
-    alphaSlider:SetValue(HinterlandAffixHUDDB.hudAlpha or 0.9)
+    alphaSlider:SetValue(DCHLBGDB.hudAlpha or 0.9)
     alphaSlider:SetValueStep(0.05)
     -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
     alphaSlider:SetWidth(200)
@@ -551,7 +555,7 @@ if not HLBG.UI.Settings.Content then
     _G[alphaSlider:GetName().."High"]:SetText("100%")
     _G[alphaSlider:GetName().."Text"]:SetText("HUD Transparency")
     alphaSlider:SetScript("OnValueChanged", function(self, value)
-        HinterlandAffixHUDDB.hudAlpha = value
+        DCHLBGDB.hudAlpha = value
         if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:SetAlpha(value) end
         _G[self:GetName().."Text"]:SetText(string.format("HUD Alpha: %d%%", value * 100))
     end)
@@ -563,11 +567,11 @@ if not HLBG.UI.Settings.Content then
     resetBtn:SetPoint("TOPLEFT", 40, yOffset)
     resetBtn:SetText("Reset to Defaults")
     resetBtn:SetScript("OnClick", function()
-        HinterlandAffixHUDDB.hudEnabled = true
-        HinterlandAffixHUDDB.debugMode = false
-        HinterlandAffixHUDDB.showHudEverywhere = false
-        HinterlandAffixHUDDB.hudScale = 1.0
-        HinterlandAffixHUDDB.hudAlpha = 0.9
+    DCHLBGDB.hudEnabled = true
+    DCHLBGDB.debugMode = false
+    DCHLBGDB.showHudEverywhere = false
+    DCHLBGDB.hudScale = 1.0
+    DCHLBGDB.hudAlpha = 0.9
         -- Update UI
         hudEnabledCheck:SetChecked(true)
         debugCheck:SetChecked(false)
@@ -587,7 +591,7 @@ if not HLBG.UI.Settings.Content then
     infoText:SetPoint("BOTTOM", HLBG.UI.Settings.Content, "BOTTOM", 0, 30)
     infoText:SetWidth(500)
     infoText:SetJustifyH("CENTER")
-    infoText:SetText("|cFFAAAAAASettings are saved in:\nWTF/Account/<ACCOUNT>/SavedVariables/HinterlandAffixHUD.lua|r")
+    infoText:SetText("|cFFAAAAAASettings are saved in:\nWTF/Account/<ACCOUNT>/SavedVariables/DCHLBG.lua|r")
 end
 
 if not HLBG.UI.Queue.Content then
@@ -777,8 +781,8 @@ function ShowTab(i)
     end
     
     -- Update saved tab
-    if HinterlandAffixHUDDB then
-        HinterlandAffixHUDDB.lastInnerTab = i
+    if DCHLBGDB then
+        DCHLBGDB.lastInnerTab = i
     end
 end
 

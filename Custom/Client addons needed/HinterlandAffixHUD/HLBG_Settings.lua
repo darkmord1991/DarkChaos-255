@@ -22,33 +22,33 @@ HLBG.DefaultSettings = {
 -- Load saved settings or apply defaults
 function HLBG.LoadSettings()
     -- Initialize saved variables if needed
-    if not HinterlandAffixHUDDB then 
-        HinterlandAffixHUDDB = {} 
+    if not DCHLBGDB then 
+        DCHLBGDB = {} 
     end
     
     -- Apply defaults for any missing settings
     for setting, defaultValue in pairs(HLBG.DefaultSettings) do
-        if HinterlandAffixHUDDB[setting] == nil then
-            HinterlandAffixHUDDB[setting] = defaultValue
+        if DCHLBGDB[setting] == nil then
+            DCHLBGDB[setting] = defaultValue
         end
     end
     
     -- Apply loaded settings to the addon
-    for setting, value in pairs(HinterlandAffixHUDDB) do
+    for setting, value in pairs(DCHLBGDB) do
         HLBG[setting] = value
     end
     
     -- Log settings loaded if in dev mode
     if HLBG.devMode and HLBG.Debug then
-        HLBG.Debug("Settings loaded", HinterlandAffixHUDDB)
+        HLBG.Debug("Settings loaded", DCHLBGDB)
     end
 end
 
 -- Save a setting
 function HLBG.SaveSetting(setting, value)
     -- Update saved variables
-    if not HinterlandAffixHUDDB then HinterlandAffixHUDDB = {} end
-    HinterlandAffixHUDDB[setting] = value
+    if not DCHLBGDB then DCHLBGDB = {} end
+    DCHLBGDB[setting] = value
     
     -- Update current settings
     HLBG[setting] = value
@@ -99,7 +99,7 @@ end
 function HLBG.CreateCheckbox(parent, text, setting, description, yOffset)
     local checkbox = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
     checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yOffset)
-    checkbox:SetChecked(HinterlandAffixHUDDB[setting])
+    checkbox:SetChecked(DCHLBGDB[setting])
     checkbox.setting = setting
     
     -- Set text
@@ -137,7 +137,7 @@ function HLBG.CreateSlider(parent, text, setting, min, max, step, yOffset)
     slider:SetHeight(20)
     slider:SetMinMaxValues(min, max)
     slider:SetValueStep(step)
-    slider:SetValue(HinterlandAffixHUDDB[setting])
+    slider:SetValue(DCHLBGDB[setting])
     slider.setting = setting
     
     -- Set text
@@ -148,7 +148,7 @@ function HLBG.CreateSlider(parent, text, setting, min, max, step, yOffset)
     -- Set value text
     local valueText = slider:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
-    valueText:SetText(format("%.2f", HinterlandAffixHUDDB[setting]))
+    valueText:SetText(format("%.2f", DCHLBGDB[setting]))
     slider.valueText = valueText
     
     -- Set change handler
@@ -176,7 +176,7 @@ function HLBG.CreateDropdown(parent, text, setting, options, yOffset)
     
     -- Initialize the dropdown
     UIDropDownMenu_SetWidth(dropdown, 180)
-    UIDropDownMenu_SetText(dropdown, options[HinterlandAffixHUDDB[setting]])
+    UIDropDownMenu_SetText(dropdown, options[DCHLBGDB[setting]])
     
     UIDropDownMenu_Initialize(dropdown, function(self)
         local info = UIDropDownMenu_CreateInfo()
@@ -187,7 +187,7 @@ function HLBG.CreateDropdown(parent, text, setting, options, yOffset)
                 UIDropDownMenu_SetText(dropdown, self:GetText())
                 HLBG.SaveSetting(dropdown.setting, self.value)
             end
-            info.checked = (value == HinterlandAffixHUDDB[setting])
+            info.checked = (value == DCHLBGDB[setting])
             UIDropDownMenu_AddButton(info)
         end
     end)
@@ -214,7 +214,7 @@ function HLBG.UpdateSettings()
     -- Create title
     local title = settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", settings.Content, "TOP", 0, -10)
-    title:SetText("Hinterland Battleground Settings")
+    title:SetText("DC HLBG Addon Settings")
     table.insert(settings.Content.children, title)
     
     -- Create sections
@@ -309,7 +309,8 @@ function HLBG.UpdateSettings()
             button1 = "Yes",
             button2 = "No",
             OnAccept = function()
-                HinterlandAffixHUDDB = HLBG.DefaultSettings
+                DCHLBGDB = {}
+                for k,v in pairs(HLBG.DefaultSettings) do DCHLBGDB[k] = v end
                 HLBG.LoadSettings()
                 HLBG.UpdateSettings()
                 HLBG.ApplySettings()
@@ -360,4 +361,145 @@ end
 SLASH_HLBGCONFIG1 = "/hlbgconfig"
 SlashCmdList["HLBGCONFIG"] = function(msg)
     HLBG.OpenUI("Settings")
+end
+
+-- Register a simple Interface -> AddOns panel so settings appear in the Blizzard options
+if type(InterfaceOptions_AddCategory) == 'function' then
+    local panel = CreateFrame('Frame', 'DCHLBG_InterfaceOptions', UIParent)
+    panel.name = 'DC HLBG Addon'
+    panel:Hide()
+    panel:SetScript('OnShow', function(self)
+        -- Ensure settings UI exists and update content
+        HLBG.LoadSettings()
+        if HLBG and HLBG.UpdateSettings then pcall(HLBG.UpdateSettings) end
+    end)
+    local title = panel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+    title:SetPoint('TOPLEFT', 16, -16)
+    title:SetText('DC HLBG Addon')
+    -- Create native Interface Options controls (checkboxes, slider, dropdown)
+    if not panel._nativeControlsCreated then
+        panel._nativeControlsCreated = true
+        local y = -48
+
+        -- Helper: create a checkbutton using the Interface template
+        local function makeCheck(name, text, setting)
+            local cb = CreateFrame("CheckButton", name, panel, "InterfaceOptionsCheckButtonTemplate")
+            cb:SetPoint("TOPLEFT", 16, y)
+            cb:SetHitRectInsets(0, -100, 0, 0)
+            _G[name .. "Text"]:SetText(text)
+            cb:SetChecked(DCHLBGDB and DCHLBGDB[setting])
+            cb:SetScript("OnClick", function(self)
+                HLBG.SaveSetting(setting, self:GetChecked())
+            end)
+            y = y - 28
+            return cb
+        end
+
+        -- HUD enabled
+        makeCheck("DCHLBG_Opt_HUDEnabled", "Enable HUD", "hudEnabled")
+
+        -- Chat updates
+        makeCheck("DCHLBG_Opt_ChatUpdates", "Show Chat Updates", "chatUpdates")
+
+        -- Developer mode
+        makeCheck("DCHLBG_Opt_DevMode", "Developer Mode", "devMode")
+
+        -- HUD Scale slider
+        local hudScale = CreateFrame("Slider", "DCHLBG_Opt_HUDScale", panel, "OptionsSliderTemplate")
+        hudScale:SetPoint("TOPLEFT", 24, y)
+        hudScale:SetWidth(220)
+        hudScale:SetMinMaxValues(0.5, 2.0)
+        hudScale:SetValueStep(0.1)
+        hudScale:SetValue((DCHLBGDB and DCHLBGDB.hudScale) or 1.0)
+        hudScale.Text:SetText("HUD Scale")
+        hudScale.Low:SetText("0.5")
+        hudScale.High:SetText("2.0")
+        local hudScaleVal = hudScale:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        hudScaleVal:SetPoint("TOP", hudScale, "BOTTOM", 0, 0)
+        hudScaleVal:SetText(format("%.1f", hudScale:GetValue()))
+        hudScale:SetScript("OnValueChanged", function(self, value)
+            value = floor(value * 10 + 0.5) / 10
+            HLBG.SaveSetting("hudScale", value)
+            hudScaleVal:SetText(format("%.1f", value))
+        end)
+        y = y - 50
+
+        -- HUD Position dropdown
+        local ddName = "DCHLBG_Opt_HUDPosition"
+        local dd = CreateFrame("Frame", ddName, panel, "UIDropDownMenuTemplate")
+        dd:SetPoint("TOPLEFT", 16, y)
+        local posOptions = { ["TOP"] = "Top", ["BOTTOM"] = "Bottom", ["TOPLEFT"] = "Top Left", ["TOPRIGHT"] = "Top Right", ["BOTTOMLEFT"] = "Bottom Left", ["BOTTOMRIGHT"] = "Bottom Right" }
+        UIDropDownMenu_SetWidth(dd, 180)
+        UIDropDownMenu_SetText(dd, posOptions[(DCHLBGDB and DCHLBGDB.hudPosition) or "TOP"])
+        UIDropDownMenu_Initialize(dd, function(self)
+            local info = UIDropDownMenu_CreateInfo()
+            for value, name in pairs(posOptions) do
+                info.text = name
+                info.value = value
+                info.func = function(self)
+                    UIDropDownMenu_SetText(dd, self:GetText())
+                    HLBG.SaveSetting("hudPosition", self.value)
+                end
+                info.checked = (value == ((DCHLBGDB and DCHLBGDB.hudPosition) or "TOP"))
+                UIDropDownMenu_AddButton(info)
+            end
+        end)
+        y = y - 36
+        -- Additional options mirroring the in-addon settings
+        -- Chat-related toggles
+        makeCheck("DCHLBG_Opt_KillWhispers", "Show Kill Whispers", "showKillWhispers")
+        makeCheck("DCHLBG_Opt_ResourceUpdates", "Show Resource Updates", "showResourceUpdates")
+
+        -- Gameplay toggles
+        makeCheck("DCHLBG_Opt_AutoTeleport", "Auto-teleport When Ready", "autoTeleport")
+        makeCheck("DCHLBG_Opt_NotifyStart", "Match Start Notification", "notifyMatchStart")
+        makeCheck("DCHLBG_Opt_NotifyEnd", "Match End Notification", "notifyMatchEnd")
+
+        -- Season dropdown (0 = current/all)
+        local seasonOptions = { [0] = "Current/All", [1] = "Season 1", [2] = "Season 2", [3] = "Season 3" }
+        local ddSeason = CreateFrame("Frame", "DCHLBG_Opt_Season", panel, "UIDropDownMenuTemplate")
+        ddSeason:SetPoint("TOPLEFT", 16, y)
+        UIDropDownMenu_SetWidth(ddSeason, 180)
+        UIDropDownMenu_SetText(ddSeason, seasonOptions[(DCHLBGDB and DCHLBGDB.season) or 0])
+        UIDropDownMenu_Initialize(ddSeason, function(self)
+            local info = UIDropDownMenu_CreateInfo()
+            for value, name in pairs(seasonOptions) do
+                info.text = name
+                info.value = value
+                info.func = function(self)
+                    UIDropDownMenu_SetText(ddSeason, self:GetText())
+                    HLBG.SaveSetting("season", self.value)
+                end
+                info.checked = (value == ((DCHLBGDB and DCHLBGDB.season) or 0))
+                UIDropDownMenu_AddButton(info)
+            end
+        end)
+        y = y - 36
+
+        -- Native Reset button for the Interface panel
+        local nativeReset = CreateFrame("Button", "DCHLBG_Native_Reset", panel, "UIPanelButtonTemplate")
+        nativeReset:SetSize(140, 24)
+        nativeReset:SetPoint("TOPLEFT", 16, y)
+        nativeReset:SetText("Reset to Defaults")
+        nativeReset:SetScript("OnClick", function()
+            StaticPopupDialogs["DCHLBG_NATIVE_RESET"] = {
+                text = "Reset DC HLBG settings to defaults?",
+                button1 = "Yes",
+                button2 = "No",
+                OnAccept = function()
+                    DCHLBGDB = {}
+                    for k,v in pairs(HLBG.DefaultSettings) do DCHLBGDB[k] = v end
+                    HLBG.LoadSettings(); HLBG.ApplySettings()
+                    if panel:IsShown() and HLBG.UpdateSettings then pcall(HLBG.UpdateSettings) end
+                end,
+                timeout = 0,
+                whileDead = true,
+                hideOnEscape = true,
+                preferredIndex = 3
+            }
+            StaticPopup_Show("DCHLBG_NATIVE_RESET")
+        end)
+        y = y - 36
+    end
+    InterfaceOptions_AddCategory(panel)
 end

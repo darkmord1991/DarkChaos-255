@@ -443,9 +443,9 @@ local function EnsureHotspotList()
     end
 
     -- icon options
-    createMiniButton(200, -16, "Interface\Icons\INV_Misc_Map_01", HotspotListFrame, function()
+    createMiniButton(200, -16, "Interface\\Icons\\INV_Misc_Map_01", HotspotListFrame, function()
         HotspotListFrame.iconChoice = 1; HotspotDisplayDB.iconChoice = 1; UpdateGlobalIndicator(); end)
-    createMiniButton(230, -16, "Interface\Icons\INV_BannerPVP_01", HotspotListFrame, function()
+    createMiniButton(230, -16, "Interface\\Icons\\INV_BannerPVP_01", HotspotListFrame, function()
         HotspotListFrame.iconChoice = 2; HotspotDisplayDB.iconChoice = 2; UpdateGlobalIndicator(); end)
 
     -- color swatches (simple)

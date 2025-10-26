@@ -1,4 +1,4 @@
---[[]]
+--[[
 Name: AstrolabeMapMonitor
 Revision: $Rev: 44 $
 $Date: 2007-03-30 19:56:21 +0100 (Fri, 30 Mar 2007) $

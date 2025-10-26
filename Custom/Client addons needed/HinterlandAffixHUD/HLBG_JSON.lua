@@ -272,7 +272,7 @@ function HLBG.RunJsonDecodeTests()
     end
 
     -- saved variable container for persisted test results
-    HinterlandAffixHUD_JsonTestResults = HinterlandAffixHUD_JsonTestResults or {}
+    DCHLBG_JsonTestResults = DCHLBG_JsonTestResults or {}
     local run = { ts = time(), results = {} }
 
     local passed = 0
@@ -297,23 +297,23 @@ function HLBG.RunJsonDecodeTests()
     end
 
     run.summary = string.format('%d/%d', passed, #tests)
-    table.insert(HinterlandAffixHUD_JsonTestResults, 1, run)
+    table.insert(DCHLBG_JsonTestResults, 1, run)
     -- keep last 20 runs
-    while #HinterlandAffixHUD_JsonTestResults > 20 do table.remove(HinterlandAffixHUD_JsonTestResults) end
+    while #DCHLBG_JsonTestResults > 20 do table.remove(DCHLBG_JsonTestResults) end
 
-    DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON tests finished: %s passed (saved to HinterlandAffixHUD_JsonTestResults)', run.summary))
+    DEFAULT_CHAT_FRAME:AddMessage(string.format('HLBG JSON tests finished: %s passed (saved to DCHLBG_JsonTestResults)', run.summary))
 end
 
 -- Print saved JSON test run(s) to chat. Usage: /hlbgjsontestrun [n]
 function HLBG.PrintJsonTestRun(n)
     n = tonumber(n) or 1
-    if not HinterlandAffixHUD_JsonTestResults or #HinterlandAffixHUD_JsonTestResults == 0 then
+    if not DCHLBG_JsonTestResults or #DCHLBG_JsonTestResults == 0 then
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG JSON tests: no saved runs found") end
         return
     end
     if n < 1 then n = 1 end
-    if n > #HinterlandAffixHUD_JsonTestResults then n = #HinterlandAffixHUD_JsonTestResults end
-    local run = HinterlandAffixHUD_JsonTestResults[n]
+    if n > #DCHLBG_JsonTestResults then n = #DCHLBG_JsonTestResults end
+    local run = DCHLBG_JsonTestResults[n]
     if not run then
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("HLBG JSON tests: run not found") end
         return
@@ -333,7 +333,7 @@ function HLBG.PrintJsonTestRun(n)
 end
 
 -- Register JSON test-related slash commands
-if HLBG.safeRegisterSlash then
+    if HLBG.safeRegisterSlash then
     HLBG.safeRegisterSlash("HLBGJSON", "/hlbgjsontest", HLBG.RunJsonDecodeTests)
     HLBG.safeRegisterSlash("HLBGJSONRUN", "/hlbgjsontestrun", HLBG.PrintJsonTestRun)
 else

@@ -46,7 +46,6 @@ if type(InterfaceOptions_AddCategory) ~= "function" then
         end
     end)
 end
-
 local blizBar = FindBlizzardXPBar()
 local bar = nil
 local fallbackBar = nil
@@ -78,7 +77,7 @@ local function EnsureDCRXPTextForBar(frame)
         -- choose a safe font size similar to the fallback bar
         local fontName, fontSize, fontFlags = GameFontNormalSmall and GameFontNormalSmall:GetFont()
         local chosenSize = math.max((fontSize or 10) - 1, 8)
-        if type(fs.SetFont) == "function" then pcall(fs.SetFont, fs, fontName or "Fonts\FRIZQT__.TTF", chosenSize, fontFlags) end
+    if type(fs.SetFont) == "function" then pcall(fs.SetFont, fs, fontName or "Fonts\\FRIZQT__.TTF", chosenSize, fontFlags) end
         if type(fs.SetPoint) == "function" then pcall(fs.SetPoint, fs, "CENTER", frame, "CENTER") end
         if type(fs.SetJustifyH) == "function" then pcall(fs.SetJustifyH, fs, "CENTER") end
         pcall(fs.SetText, fs, "")
@@ -315,45 +314,47 @@ end
 
 -- Debug helper
 local function DBG(msg)
-    if msg then DEFAULT_CHAT_FRAME:AddMessage("[DCRXP DBG] " .. tostring(msg)) end
+    -- small debug helper that delegates to Debug and respects the debug flag
+    if not DCRestoreXPDB or not DCRestoreXPDB.debug then return end
+    Debug("[DCRXP DBG] " .. tostring(msg))
 end
-
 local function Debug(msg)
-    if not DCRestoreXPDB.debug then return end
+    if not DCRestoreXPDB or not DCRestoreXPDB.debug then return end
     if type(msg) ~= "string" then msg = tostring(msg) end
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("[DC-RestoreXP] " .. msg)
+    local out = "[DC-RestoreXP] " .. msg
+    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, out)
+    else
+        pcall(print, out)
     end
-    -- also fallback to print() so messages show even when chat addons hide the default frame
-    print("[DC-RestoreXP] " .. msg)
     -- optionally emit a UI error-frame message for prominent visibility during testing
     if DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
-        pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "[DC-RestoreXP] " .. msg)
+        pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, out)
     end
 end
+-- end of file
 
 -- Compatibility helper: Set a solid color on a texture across client versions.
 local function SetSolidColorTexture(tex, r, g, b, a)
     if not tex then return end
-    -- Prefer the modern API when available
-    if type(tex.SetColorTexture) == "function" then
-        pcall(tex.SetColorTexture, tex, r or 0, g or 0, b or 0, a or 1)
+    r = r or 0; g = g or 0; b = b or 0; a = (a == nil) and 1 or a
+
+    -- Try several strategies, each wrapped in pcall so failures cannot throw.
+    -- 1) Modern API: :SetColorTexture(r,g,b,a)
+    local ok = pcall(function() if type(tex.SetColorTexture) == "function" then tex:SetColorTexture(r, g, b, a) end end)
+    if ok then return end
+
+    -- 2) Older numeric SetTexture(r,g,b,a)
+    ok = pcall(function() if type(tex.SetTexture) == "function" then tex:SetTexture(r, g, b, a) end end)
+    if ok then
+        pcall(function() if type(tex.SetAlpha) == "function" then tex:SetAlpha(a) end end)
         return
     end
-    -- Older clients often only expose SetTexture; try numeric args first
-    if type(tex.SetTexture) == "function" then
-        local ok = pcall(tex.SetTexture, tex, r or 0, g or 0, b or 0, a or 1)
-        if ok then
-            -- Some SetTexture implementations ignore alpha, so set alpha if possible
-            if type(tex.SetAlpha) == "function" and a then pcall(tex.SetAlpha, tex, a) end
-            return
-        end
-        -- Fall back to using a simple background texture and vertex color
-        pcall(tex.SetTexture, tex, "Interface\\Tooltips\\UI-Tooltip-Background")
-        if type(tex.SetVertexColor) == "function" then pcall(tex.SetVertexColor, tex, r or 0, g or 0, b or 0, a or 1) end
-        return
-    end
-    -- Nothing we can do; silently return
+
+    -- 3) Fallback to a solid background texture + vertex color
+    pcall(function() if type(tex.SetTexture) == "function" then tex:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background") end end)
+    pcall(function() if type(tex.SetVertexColor) == "function" then tex:SetVertexColor(r, g, b, a) end end)
+    return
 end
 
 -- Color constants for formatted text
@@ -757,6 +758,41 @@ local function CreateFallbackBar()
     b:SetFrameStrata("HIGH")
     b:SetFrameLevel(200)
     b:SetClampedToScreen(true)
+
+    -- Allow the fallback bar to be dragged by the user at any time and persist
+    -- its bottom-left coordinates into the saved DB so it doesn't get stuck
+    -- at the bottom-left of the screen unintentionally.
+    if type(b.EnableMouse) == "function" then
+        pcall(function()
+            b:EnableMouse(true)
+            b:SetMovable(true)
+            b:RegisterForDrag("LeftButton")
+            b:SetScript("OnDragStart", function(self)
+                if type(self.StartMoving) == "function" then pcall(self.StartMoving, self) end
+            end)
+            b:SetScript("OnDragStop", function(self)
+                if type(self.StopMovingOrSizing) == "function" then pcall(self.StopMovingOrSizing, self) end
+                -- Save the new bottom-left position (screen absolute) for future restores
+                local left = (type(self.GetLeft) == "function" and self:GetLeft())
+                local bottom = (type(self.GetBottom) == "function" and self:GetBottom())
+                if left and bottom then
+                    DCRestoreXPDB.point = "BOTTOMLEFT"
+                    DCRestoreXPDB.anchor = "BOTTOMLEFT"
+                    DCRestoreXPDB.x = left
+                    DCRestoreXPDB.y = bottom
+                else
+                    -- fallback: capture GetPoint() tuple
+                    local p = { self:GetPoint() }
+                    if #p >= 4 then
+                        DCRestoreXPDB.point = p[1] or DCRestoreXPDB.point
+                        DCRestoreXPDB.anchor = (type(p[2]) == "string" and p[2]) or DCRestoreXPDB.anchor
+                        DCRestoreXPDB.x = tonumber(p[4]) or DCRestoreXPDB.x
+                        DCRestoreXPDB.y = tonumber(p[5]) or DCRestoreXPDB.y
+                    end
+                end
+            end)
+        end)
+    end
 
     -- Base statusbar texture (matches MainMenuBar's BarTexture)
     local barTex = "Interface\\TargetingFrame\\UI-StatusBar"

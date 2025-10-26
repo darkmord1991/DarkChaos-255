@@ -284,7 +284,7 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
         HLBG._lastSanitizedTSV = tsv
 
         pcall(function()
-            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffHUDDB.devMode)
+            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                 local cnt = 0
                 local preview = {}
@@ -298,7 +298,7 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
         end)
 
         pcall(function()
-            local dev = HLBG._devMode or (HinterlandAffixHUDDB and HinterlandAffHUDDB.devMode)
+            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             local escN = 0; tsv, escN = tsv:gsub('\\n', '\n')
             local escT = 0; tsv, escT = tsv:gsub('\\t', '\t')
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (escN > 0 or escT > 0) then
