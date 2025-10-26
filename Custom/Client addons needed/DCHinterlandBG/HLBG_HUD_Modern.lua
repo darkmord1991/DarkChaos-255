@@ -18,6 +18,15 @@ if not HLBG.UI.ModernHUD or not _G['HLBG_ModernHUD'] then
 end
 local HUD = HLBG.UI.ModernHUD
 
+-- Simple debug print helper (only prints when devMode is enabled in saved vars)
+local function DebugPrint(msg)
+    local enabled = (DCHLBGDB and DCHLBGDB.devMode) or HLBG.devMode
+    if not enabled then return end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, msg)
+    end
+end
+
 -- HUD Setup
 HUD:SetSize(400, 120)
 HUD:SetPoint("TOP", UIParent, "TOP", 0, -100)
@@ -189,10 +198,8 @@ end
 
 -- Update HUD data with throttling to prevent blinking
 function HLBG.UpdateModernHUD(data)
-    -- CRITICAL DEBUG: Log function entry FIRST
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFF00FF[UpdateModernHUD]|r FUNCTION CALLED! HUD=%s data=%s", tostring(HUD ~= nil), tostring(data ~= nil)))
-    end
+    -- Debug: Log function entry (only when devMode enabled)
+    DebugPrint(string.format("|cFFFF00FF[UpdateModernHUD]|r FUNCTION CALLED! HUD=%s data=%s", tostring(HUD ~= nil), tostring(data ~= nil)))
     
     if not HUD then 
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -207,27 +214,19 @@ function HLBG.UpdateModernHUD(data)
     -- Check if this is manual test data (bypass throttling for test data)
     local isTestData = data and (data.allianceResources == 450 and data.hordeResources == 450 and data.timeLeft == 2243)
     
-    -- DEBUG: After freeze check
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[UpdateModernHUD]|r After freeze check, isTestData=" .. tostring(isTestData))
-    end
+    -- Debug: After freeze check
+    DebugPrint("|cFFFF00FF[UpdateModernHUD]|r After freeze check, isTestData=" .. tostring(isTestData))
     
     -- CRITICAL FIX: REMOVED internal throttle - UpdateHUD already throttles!
     -- This was causing the HUD to never update because UpdateHUD throttles at 1s
     -- and UpdateModernHUD was throttling at 2s, so updates were blocked forever
     
-    -- DEBUG: After throttle removal
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[UpdateModernHUD]|r Internal throttle removed, proceeding with update")
-    end
+    DebugPrint("|cFFFF00FF[UpdateModernHUD]|r Internal throttle removed, proceeding with update")
     
     -- allow updates even when HUD hidden so telemetry and internal state stay consistent
     data = data or {}
     
-    -- DEBUG: After data init
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[UpdateModernHUD]|r Data initialized")
-    end
+    DebugPrint("|cFFFF00FF[UpdateModernHUD]|r Data initialized")
     
     -- Prefer authoritative worldstate when available
     local auth = nil
@@ -239,43 +238,32 @@ function HLBG.UpdateModernHUD(data)
         for k,v in pairs(auth) do if data[k] == nil then data[k] = v end end
     end
     
-    -- DEBUG: After auth check
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[UpdateModernHUD]|r After auth check")
-    end
+    DebugPrint("|cFFFF00FF[UpdateModernHUD]|r After auth check")
     
     -- Update resources
     local allianceRes = tonumber(data.allianceResources or data.A or 0) or 0
     local hordeRes = tonumber(data.hordeResources or data.H or 0) or 0
     
-    -- EXTENSIVE DEBUG: Log input data
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[UpdateModernHUD]|r Input: A=%s H=%s allianceRes=%d hordeRes=%d", 
+    DebugPrint(string.format("|cFFFFAA00[UpdateModernHUD]|r Input: A=%s H=%s allianceRes=%d hordeRes=%d", 
             tostring(data.A), tostring(data.allianceResources), allianceRes, hordeRes))
-    end
     
     -- Clamp resources to sane bounds to avoid occasional spikes from malformed input
     local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi else return v end end
     allianceRes = clamp(math.floor(allianceRes), 0, 500)
     hordeRes = clamp(math.floor(hordeRes), 0, 500)
     
-    -- EXTENSIVE DEBUG: Check if HUD text elements exist
+    -- Check HUD text elements exist; report only if devMode enabled
     if not HUD.allianceText or not HUD.hordeText then
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFF0000[UpdateModernHUD ERROR]|r HUD elements missing! allianceText=%s hordeText=%s", 
-                tostring(HUD.allianceText ~= nil), tostring(HUD.hordeText ~= nil)))
-        end
+        DebugPrint(string.format("|cFFFF0000[UpdateModernHUD ERROR]|r HUD elements missing! allianceText=%s hordeText=%s", 
+            tostring(HUD.allianceText ~= nil), tostring(HUD.hordeText ~= nil)))
         return
     end
     
     HUD.allianceText:SetText("Alliance: " .. allianceRes)
     HUD.hordeText:SetText("Horde: " .. hordeRes)
     
-    -- EXTENSIVE DEBUG: Confirm text was set
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00[UpdateModernHUD]|r Set text: Alliance=%s Horde=%s", 
+    DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Set text: Alliance=%s Horde=%s", 
             HUD.allianceText:GetText(), HUD.hordeText:GetText()))
-    end
     
     -- Update player counts
     local alliancePlayers = tonumber(data.alliancePlayers or data.APC or 0) or 0
@@ -284,11 +272,8 @@ function HLBG.UpdateModernHUD(data)
     HUD.alliancePlayers:SetText("Players: " .. alliancePlayers)
     HUD.hordePlayers:SetText("Players: " .. hordePlayers)
     
-    -- DEBUG: Log player counts
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%d Horde=%d (APC=%s HPC=%s)", 
+    DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%d Horde=%d (APC=%s HPC=%s)", 
             alliancePlayers, hordePlayers, tostring(data.APC), tostring(data.HPC)))
-    end
     
     -- Update timer - CRITICAL FIX: END is epoch timestamp, convert to remaining seconds
     -- Timer sync: Store server END timestamp and sync every 30s to prevent client drift
@@ -319,9 +304,7 @@ function HLBG.UpdateModernHUD(data)
         if math.abs(drift) > 2 then -- More than 2 second drift
             HLBG._timerSync.clientOffset = drift
             timeLeft = expected
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[Timer Sync]|r Corrected %+.1fs drift", drift))
-            end
+            DebugPrint(string.format("|cFFFFAA00[Timer Sync]|r Corrected %+.1fs drift", drift))
         end
         HLBG._timerSync.lastSyncTime = currentTime
     end
@@ -331,9 +314,8 @@ function HLBG.UpdateModernHUD(data)
     local MAX_TIME = 2 * 3600 -- 2 hours maximum
     if timeLeft > MAX_TIME then timeLeft = MAX_TIME end
     
-    -- DEBUG: Log timer calculation (reduced frequency to avoid spam)
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (not HLBG._lastTimerDebug or (currentTime - HLBG._lastTimerDebug) >= 10) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00[UpdateModernHUD]|r Timer: END=%d current=%d remaining=%d offset=%+.1f", 
+    if (not HLBG._lastTimerDebug or (currentTime - HLBG._lastTimerDebug) >= 10) then
+        DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Timer: END=%d current=%d remaining=%d offset=%+.1f", 
             endTime, currentTime, timeLeft, HLBG._timerSync.clientOffset))
         HLBG._lastTimerDebug = currentTime
     end
@@ -612,26 +594,19 @@ end
 -- Improved HUD update with worldstate-first approach (no more blinking)
 local oldUpdateHUD = HLBG.UpdateHUD
 HLBG.UpdateHUD = function()
-    -- EXTENSIVE DEBUG: Log entry
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFAA00FF[UpdateHUD]|r Called")
-    end
+    DebugPrint("|cFFAA00FF[UpdateHUD]|r Called")
     
     -- Throttle updates to prevent blinking (max once per 1 second - reduced from 3s)
     local now = GetTime()
     HLBG._lastHUDUpdate = HLBG._lastHUDUpdate or 0
     local timeSinceLastUpdate = now - HLBG._lastHUDUpdate
     if timeSinceLastUpdate < 1.0 then
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate))
-        end
+        DebugPrint(string.format("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate))
         return -- Skip update to prevent blinking
     end
     HLBG._lastHUDUpdate = now
     
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFAA[UpdateHUD]|r Proceeding (throttle passed)")
-    end
+    DebugPrint("|cFF00FFAA[UpdateHUD]|r Proceeding (throttle passed)")
     
     -- Primary: Use improved worldstate reader (server-driven, real-time)
     local hudData = HLBG.ReadWorldstateData()
@@ -640,11 +615,8 @@ HLBG.UpdateHUD = function()
     local status = HLBG._lastStatus or {}
     local res = _G.RES or {}
     
-    -- EXTENSIVE DEBUG: Log data sources
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s", 
+    DebugPrint(string.format("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s", 
             tostring(hudData.allianceResources), tostring(status.A), tostring(res.A)))
-    end
     
     -- Combine data with worldstates taking priority (server-authoritative)
     local finalData = {
@@ -673,17 +645,13 @@ HLBG.UpdateHUD = function()
     
     -- Update the HUD with stable, non-blinking data
     if type(HLBG.UpdateModernHUD) == 'function' then
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData")
-        end
+        DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData")
         
         -- CRITICAL FIX: Force HUD visible before update
-        if HUD then
+            if HUD then
             HUD:Show()
             HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[UpdateHUD]|r HUD visible=%s alpha=%.2f", tostring(HUD:IsShown()), HUD:GetAlpha()))
-            end
+            DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD visible=%s alpha=%.2f", tostring(HUD:IsShown()), HUD:GetAlpha()))
         end
         
         -- Call UpdateModernHUD

@@ -35,6 +35,7 @@ local lastCheckTime = 0
 local playerInHotspot = false
 local pulseDirection = 1
 local pulseAlpha = 1.0
+local minimapPin = nil
 
 -- Active hotspots table keyed by id
 local activeHotspots = {} -- { [id] = {map,zone,x,y,z,expire,icon} }
@@ -48,8 +49,13 @@ if success and ast then Astrolabe = ast end
 if not Astrolabe and _G and _G.HotspotDisplay_Astrolabe then Astrolabe = _G.HotspotDisplay_Astrolabe end
 
 -- Helper: Print messages to chat
+-- Helper: Print messages to chat (gated by debug flag)
+HotspotDisplayDB = HotspotDisplayDB or {}
 local function Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot Display]|r " .. msg)
+    if not HotspotDisplayDB.debug then return end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "|cFFFFD700[Hotspot Display]|r " .. tostring(msg))
+    end
 end
 
 -- Helper: Check if player has hotspot buff
@@ -92,8 +98,27 @@ end
 
 -- Create a simple minimap pin (not a true world-accurate pin, but indicates presence)
 local function CreateMinimapPin()
-    -- Legacy single minimap pin kept for backwards compat; we now use per-hotspot pins
-    return
+    -- Legacy single minimap pin kept for backwards compat; create a simple anchored indicator
+    if minimapPin and minimapPin.texture then return minimapPin end
+    if not Minimap then return nil end
+    local mp = CreateFrame("Button", "HotspotDisplay_LegacyMinimapPin", Minimap)
+    mp:SetSize(16,16)
+    mp.texture = mp:CreateTexture(nil, "OVERLAY")
+    mp.texture:SetAllPoints()
+    mp.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+    mp:SetFrameStrata("MEDIUM")
+    mp:Hide()
+    mp:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("Hotspot nearby")
+        GameTooltip:Show()
+    end)
+    mp:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    mp:SetScript("OnClick", function()
+        if not WorldMapFrame or not WorldMapFrame:IsShown() then ToggleWorldMap() end
+    end)
+    minimapPin = mp
+    return minimapPin
 end
 
 -- Create a clickable worldmap pin for a hotspot
@@ -198,14 +223,36 @@ local function UpdateWorldMapPins()
             if Astrolabe then
                 -- Prefer server-provided normalized coords (nx,ny) for maximum accuracy
                 if h.nx and h.ny then
-                    local pixelX, pixelY = Astrolabe.WorldToMapPixels(WorldMapFrame, h.nx, h.ny)
-                    pin:ClearAllPoints()
-                    pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", pixelX, pixelY)
+                    -- Try Astrolabe and fall back to simple normalization if it errors or returns nil
+                    local ok, px, py = pcall(function() return Astrolabe.WorldToMapPixels(WorldMapFrame, h.nx, h.ny) end)
+                    px = tonumber(px); py = tonumber(py)
+                    if ok and px and py then
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", px, py)
+                    else
+                        local nx = tonumber(h.nx) or 0
+                        local ny = tonumber(h.ny) or 0
+                        local pixelX = nx * frameWidth
+                        local pixelY = -ny * frameHeight
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", pixelX, pixelY)
+                    end
                 else
-                    -- Astrolabe can accept world coords and mapId to compute normalized pixel positions
-                    local pixelX, pixelY = Astrolabe.WorldToMapPixels(WorldMapFrame, h.map or 0, tonumber(h.x) or 0, tonumber(h.y) or 0)
-                    pin:ClearAllPoints()
-                    pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", pixelX, pixelY)
+                    local ok, px, py = pcall(function() return Astrolabe.WorldToMapPixels(WorldMapFrame, h.map or 0, tonumber(h.x) or 0, tonumber(h.y) or 0) end)
+                    px = tonumber(px); py = tonumber(py)
+                    if ok and px and py then
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", px, py)
+                    else
+                        local nx = tonumber(h.x) or 0
+                        local ny = tonumber(h.y) or 0
+                        if nx > 1 then nx = nx / 100 end
+                        if ny > 1 then ny = ny / 100 end
+                        local pixelX = nx * frameWidth
+                        local pixelY = -ny * frameHeight
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", pixelX, pixelY)
+                    end
                 end
             else
                 -- fallback: normalize coords roughly and position
@@ -237,17 +284,41 @@ local function UpdateMinimapPins()
                 -- compute normalized coordinates
                 local hx, hy
                 if Astrolabe then
-                    -- Prefer server-provided normalized coords when available
-                    local hx, hy
-                    if h.nx and h.ny then
-                        hx, hy = h.nx, h.ny
-                    else
-                        hx, hy = Astrolabe.WorldCoordsToNormalized(h.map or 0, tonumber(h.x) or 0, tonumber(h.y) or 0)
-                    end
-                    local ox, oy = Astrolabe.WorldToMinimapOffset(Minimap, px, py, hx, hy)
-                    pin:ClearAllPoints()
-                    pin:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
-                    pin:Show()
+                        -- Prefer server-provided normalized coords when available, but guard Astrolabe calls
+                        local hx, hy
+                        if h.nx and h.ny then
+                            hx, hy = tonumber(h.nx) or 0, tonumber(h.ny) or 0
+                        else
+                            local ok, nhx, nhy = pcall(function() return Astrolabe.WorldCoordsToNormalized(h.map or 0, tonumber(h.x) or 0, tonumber(h.y) or 0) end)
+                            nhx = tonumber(nhx); nhy = tonumber(nhy)
+                            if ok and nhx and nhy then
+                                hx, hy = nhx, nhy
+                            else
+                                hx, hy = tonumber(h.x) or 0, tonumber(h.y) or 0
+                            end
+                        end
+                        local ok, ox, oy = pcall(function() return Astrolabe.WorldToMinimapOffset(Minimap, px, py, hx, hy) end)
+                        ox = tonumber(ox); oy = tonumber(oy)
+                        if ok and ox and oy then
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", Minimap, "CENTER", ox, oy)
+                            pin:Show()
+                        else
+                            -- fallback: approximate offset relative to player/minimap center
+                            local hx_n = tonumber(h.x) or 0
+                            local hy_n = tonumber(h.y) or 0
+                            if hx_n > 1 then hx_n = hx_n / 100 end
+                            if hy_n > 1 then hy_n = hy_n / 100 end
+                            local dx = (hx_n - px)
+                            local dy = (hy_n - py)
+                            local dist = math.sqrt(dx*dx + dy*dy)
+                            local radius = (Minimap:GetWidth() / 2) - 6
+                            local angle = math.atan2(dy, dx)
+                            local r = math.min(radius, dist * radius * 1.6)
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", Minimap, "CENTER", r * math.cos(angle), r * math.sin(angle))
+                            pin:Show()
+                        end
                 else
                     -- fallback to previous approximate positioning
                     local hx_n = tonumber(h.x) or 0
@@ -555,7 +626,7 @@ if WorldMapFrame then
 end
 
 -- Hook WorldMapFrame to update overlay
-eventFrame:SetScript("OnUpdate", OnUpdate)
+-- NOTE: OnUpdate handler is set below along with cleanup to avoid duplicate handlers
 
 -- Slash command
 SLASH_HOTSPOT1 = "/hotspot"
@@ -623,6 +694,58 @@ end
 
 -- Initialize
 Print("Initializing...")
+
+-- Create a native Interface -> AddOns options panel
+if type(InterfaceOptions_AddCategory) == 'function' then
+    local panel = CreateFrame('Frame', 'HotspotDisplay_InterfaceOptions', UIParent)
+    panel.name = 'Hotspot Display'
+    panel:Hide()
+    panel:SetScript('OnShow', function(self)
+        -- nothing heavy here; we rely on saved vars
+    end)
+
+    local title = panel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+    title:SetPoint('TOPLEFT', 16, -16)
+    title:SetText('Hotspot Display')
+
+    -- checkbox helper
+    local function makeCheck(name, text, setting, y)
+        local cb = CreateFrame('CheckButton', name, panel, 'InterfaceOptionsCheckButtonTemplate')
+        cb:SetPoint('TOPLEFT', 16, y)
+        _G[name .. 'Text']:SetText(text)
+        cb:SetChecked(HotspotDisplayDB[setting])
+        cb:SetScript('OnClick', function(self) HotspotDisplayDB[setting] = self:GetChecked() end)
+        return cb
+    end
+
+    local y = -48
+    makeCheck('HotspotOpt_Enable', 'Enable Hotspot Display', 'enabled', y); y = y - 28
+    makeCheck('HotspotOpt_ShowText', 'Show Map Text', 'showText', y); y = y - 28
+    makeCheck('HotspotOpt_ShowMinimap', 'Show Minimap Pins', 'showMinimap', y); y = y - 28
+    makeCheck('HotspotOpt_Debug', 'Enable Debug Chat Output', 'debug', y); y = y - 36
+
+    -- text size slider
+    local sizeSlider = CreateFrame('Slider', 'HotspotOpt_TextSize', panel, 'OptionsSliderTemplate')
+    sizeSlider:SetPoint('TOPLEFT', 24, y)
+    sizeSlider:SetWidth(200)
+    sizeSlider:SetMinMaxValues(10, 30)
+    sizeSlider:SetValueStep(1)
+    sizeSlider:SetValue(HotspotDisplayDB.textSize or 16)
+    sizeSlider.Text:SetText('Text Size')
+    sizeSlider.Low:SetText('10')
+    sizeSlider.High:SetText('30')
+    sizeSlider:SetScript('OnValueChanged', function(self, val)
+        HotspotDisplayDB.textSize = math.floor(val + 0.5)
+        if overlayText then overlayText:SetFont('Fonts\\FRIZQT__.TTF', HotspotDisplayDB.textSize, 'OUTLINE') end
+    end)
+    -- Prefer the dedicated options container when present
+    if type(InterfaceOptions_AddCategory) == 'function' and InterfaceOptionsFramePanelContainer then
+        panel:SetParent(InterfaceOptionsFramePanelContainer)
+        InterfaceOptions_AddCategory(panel)
+    else
+        InterfaceOptions_AddCategory(panel)
+    end
+end
 
 -- Periodic cleanup and update
 eventFrame:SetScript("OnUpdate", function(self, elapsed)

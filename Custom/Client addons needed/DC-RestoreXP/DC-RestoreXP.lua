@@ -253,6 +253,16 @@ local function SetBarPosition(target, mode)
         pcall(function()
             target:ClearAllPoints()
             local tx, ty = DCRestoreXPDB.x, DCRestoreXPDB.y
+            -- clamp helper: keep saved coords within reasonable screen bounds to avoid off-screen placement
+            local function clamp_coord(v, low, high)
+                if type(v) ~= "number" then return nil end
+                if v < low then return low end
+                if v > high then return high end
+                return v
+            end
+            local clamped = false
+            -- sensible screen-relative bounds; allow large screens but prevent extreme off-screen positions
+            local MIN_COORD, MAX_COORD = -2000, 2000
             if (type(tx) ~= "number") or (type(ty) ~= "number") or math.abs(tx) > 5000 or math.abs(ty) > 5000 then
                 Debug("Saved bar coords invalid at apply-time; using defaults")
                 if not defaultFallbackMsgShown then
@@ -267,8 +277,18 @@ local function SetBarPosition(target, mode)
                     end
                 end
                 tx, ty = 0, 60
+            else
+                local ntx = clamp_coord(tx, MIN_COORD, MAX_COORD)
+                local nty = clamp_coord(ty, MIN_COORD, MAX_COORD)
+                if ntx ~= tx or nty ~= ty then
+                    clamped = true
+                    tx, ty = ntx or tx, nty or ty
+                end
             end
             target:SetPoint(DCRestoreXPDB.point or "BOTTOM", UIParent, DCRestoreXPDB.anchor or "BOTTOM", tx, ty)
+            if clamped and DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
+                pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "DC-RestoreXP: saved position was out-of-bounds and was clamped for visibility.")
+            end
         end)
         resync_used_saved_pos = true
         StartResyncLoop()
@@ -309,6 +329,16 @@ local function StrongShow(obj)
         if type(obj.SetParent) == "function" then pcall(obj.SetParent, obj, UIParent) end
         if type(obj.SetAlpha) == "function" then obj:SetAlpha(1) end
         if type(obj.Show) == "function" then obj:Show() end
+    end)
+    -- If this object was previously moved off-screen by StrongHide, it may still
+    -- have an off-screen anchor (e.g. CENTER -10000,-10000). When showing the
+    -- fallback bar, ensure it is re-positioned to either the saved coords or
+    -- snapped to the Blizzard bar so it becomes visible again.
+    pcall(function()
+        if obj == fallbackBar or (type(obj.GetName) == "function" and obj:GetName() == "DCRestoreXPBar") then
+            -- prefer saved placement; SetBarPosition will clamp invalid values
+            pcall(function() SetBarPosition(obj, "saved") end)
+        end
     end)
 end
 
@@ -747,12 +777,19 @@ local function CreateFallbackBar()
         -- cap the reused bar height so our fallback/overlay doesn't extend off-screen
         local h = math.min((blizBar:GetHeight() or defaultH), defaultH)
         b:SetSize(math.min(w, 1024), h)
-        b:SetPoint("CENTER", blizBar, "CENTER")
+        -- Do not anchor directly to Blizzard's frame here. Use centralized positioning
+        -- logic so saved positions and the resync loop are consistently applied.
+        -- This avoids cases where the bar ends up stuck off-screen or at a stale
+        -- position when other addons move/Hide/Show Blizzard frames during init.
+        b:SetSize(math.min(w, 1024), h)
+        -- Defer placement to SetBarPosition which will try to snap to Blizzard or
+        -- fall back to saved coords and start the resync loop if needed.
+        pcall(function() SetBarPosition(b, "saved") end)
     else
         b:SetSize(defaultW, defaultH)
         -- Use centralized positioning helper so we always start the resync loop when
         -- using saved coordinates.
-        SetBarPosition(b, "saved")
+        pcall(function() SetBarPosition(b, "saved") end)
     end
     -- Make sure the bar is on top of most UI elements and clamped so it remains visible
     b:SetFrameStrata("HIGH")
