@@ -1036,10 +1036,7 @@ local errata = {
 -- Custom single-texture backgrounds (fallback): mapFileName -> texture path
 -- This lets Mapster show a single BLP (from an AddOn folder) when no tiled overlays/DBC are available.
 local customSingleBackgrounds = {
-	-- try a few likely map file names for Azshara Crater / MapID 37
-	["PVPZone02"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
-	["Azshara"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
-	["AzsharaCrater"] = "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
+	-- single-file background cleanup: no bundled single-file Azshara texture by default
 }
 
 
