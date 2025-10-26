@@ -16,6 +16,22 @@ addon.availableTextures = {
     "Interface\\AddOns\\DC-MapExtension\\Textures\\azshara_crater.blp",
 }
 
+-- Include packaged AzsharaCrater BLP tiles (if present) so they can be tested directly
+local azsharaBLPs = {
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater1.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater2.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater3.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater4.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater5.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater6.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater7.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater8.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater9.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater10.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater11.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater12.blp",
+}
+
 DCMap_HotspotsSaved = DCMap_HotspotsSaved or {}
 
 addon.forcedTexture = addon.forcedTexture or "auto" -- "auto", "png", "blp"
@@ -246,10 +262,11 @@ end
 local function RenderHotspotsForMap(mapId)
     ClearAllPOIs()
     if not DCMap_HotspotsSaved[mapId] then return end
+    local mapFrame = _G["DCMap_StitchFrame"] or WorldMapDetailFrame
     for _, hs in ipairs(DCMap_HotspotsSaved[mapId]) do
         if hs.nx and hs.ny then
             local label = hs.label or ("Hotspot #" .. tostring(hs.id))
-            local poi = CreatePOI(WorldMapDetailFrame, hs.nx, hs.ny, label, hs.id)
+            local poi = CreatePOI(mapFrame, hs.nx, hs.ny, label, hs.id)
             if poi then addon.poiFrames[hs.id] = poi end
         end
     end
@@ -297,6 +314,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         local currentMapID = GetCurrentMapAreaID() or 0
         ShowMapBackgroundIfNeeded(currentMapID)
         RenderHotspotsForMap(currentMapID)
+        -- if we have a stitched overlay, reflow it so it stays aligned with the map
+        local st = _G["DCMap_StitchFrame"]
+        if st and st.Reflow then pcall(st.Reflow, st) end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix = arg1; local message = arg2
         if message == nil and prefix ~= nil then message = prefix; prefix = nil end
@@ -516,6 +536,381 @@ do
             end
         end
         applyNext()
+    end)
+
+    -- Test Azshara tiled BLPs specifically (cycles the AzsharaCrater*.blp files)
+    local azBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    azBtn:SetSize(140, 22)
+    azBtn:SetPoint("LEFT", fullBtn, "RIGHT", 8, 0)
+    azBtn:SetText("Test Azshara BLPs")
+    azBtn:SetScript("OnClick", function()
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: starting Azshara BLP tiled test...") end
+        local fs = _G["DCMap_FullscreenTestFrame"]
+        if not fs then
+            fs = CreateFrame("Frame", "DCMap_FullscreenTestFrame", UIParent)
+            fs:SetAllPoints(UIParent)
+            fs.tex = fs:CreateTexture(nil, "FULLSCREEN")
+            fs.tex:SetAllPoints(fs)
+            fs.tex:SetDrawLayer("ARTWORK", 9999)
+        end
+        fs:Show()
+        local idx = 1
+        local function applyNextAz()
+            local path = azsharaBLPs[idx]
+            if not path then
+                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: Azshara BLP test finished") end
+                if fs then fs:Hide() end
+                return
+            end
+            local ok, err = DiagnosticCheckTexture(path)
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                if ok then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, " - "..path.." : Diagnostic OK")
+                else pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, " - "..path.." : Diagnostic failed: "..tostring(err)) end
+            end
+            if fs and fs.tex then pcall(fs.tex.SetTexture, fs.tex, path) end
+            -- also attempt to set map background immediately if available
+            if addon and addon.bgTex and addon.bgTex.SetTexture then pcall(addon.bgTex.SetTexture, addon.bgTex, path) end
+            idx = idx + 1
+            if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+                C_Timer.After(1.0, applyNextAz)
+            else
+                local t = 0
+                fs:SetScript("OnUpdate", function(self, elapsed)
+                    t = t + elapsed
+                    if t >= 1.0 then self:SetScript("OnUpdate", nil); applyNextAz() end
+                end)
+            end
+        end
+        applyNextAz()
+    end)
+
+    -- Stitch Azshara tiles into a grid on the map or fullscreen for testing
+    local stitchBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    stitchBtn:SetSize(120, 22)
+    stitchBtn:SetPoint("LEFT", azBtn, "RIGHT", 8, 0)
+    stitchBtn:SetText("Stitch Azshara")
+    stitchBtn:SetScript("OnClick", function()
+        -- default grid: 4 columns x 3 rows (matches 12 files)
+        local cols, rows = 4, 3
+
+        -- Prefer to parent the stitch to the world map detail frame when the world map is open
+        local parent
+        if type(WorldMapFrame) == "table" and WorldMapFrame:IsShown() and WorldMapDetailFrame then
+            parent = WorldMapDetailFrame
+        else
+            parent = addon.background or WorldMapDetailFrame or UIParent
+        end
+        local pw = (parent.GetWidth and parent:GetWidth()) or UIParent:GetWidth()
+        local ph = (parent.GetHeight and parent:GetHeight()) or UIParent:GetHeight()
+        if not pw or not ph then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: unable to determine parent size for stitching") end
+            return
+        end
+
+        -- create container
+        local container = _G["DCMap_StitchFrame"]
+        if container and container.Destroy then
+            pcall(container.Hide, container)
+        end
+    container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+    container:SetAllPoints(parent)
+        container:SetFrameStrata("HIGH")
+        -- helper: reflow tiles when container/parent size changes
+        container._cols = cols
+        container._rows = rows
+        container._order = nil
+        container._paths = azsharaBLPs
+        function container:Reflow()
+            local pw = (parent.GetWidth and parent:GetWidth()) or UIParent:GetWidth()
+            local ph = (parent.GetHeight and parent.GetHeight()) or UIParent:GetHeight()
+            if not pw or not ph then return end
+            local tileW = pw / (self._cols or 1)
+            local tileH = ph / (self._rows or 1)
+            for idx, tex in ipairs(self._tiles or {}) do
+                if tex then
+                    local c = ((idx - 1) % (self._cols or 1)) + 1
+                    local r = math.floor((idx - 1) / (self._cols or 1)) + 1
+                    local left = (c - 1) * tileW
+                    local top = (r - 1) * tileH
+                    tex:SetSize(tileW, tileH)
+                    tex:ClearAllPoints()
+                    tex:SetPoint("TOPLEFT", self, "TOPLEFT", left, -top)
+                end
+            end
+            -- reposition player marker if present
+            if self._playerMarker then
+                -- force immediate update
+                if type(GetPlayerMapPosition) == "function" then
+                    local nx, ny = GetPlayerMapPosition("player")
+                    if nx and ny then
+                        local px = nx * pw
+                        local py = ny * ph
+                        self._playerMarker:ClearAllPoints()
+                        self._playerMarker:SetPoint("CENTER", self, "TOPLEFT", px, -py)
+                    end
+                end
+            end
+        end
+    container:SetScript("OnSizeChanged", function(self, w, h) if self.Reflow then pcall(self.Reflow, self) end end)
+        -- lightweight OnUpdate to update player marker periodically
+        container._playerTimer = 0
+        container:SetScript("OnUpdate", function(self, elapsed)
+            self._playerTimer = (self._playerTimer or 0) + elapsed
+            if self._playerTimer < 0.2 then return end
+            self._playerTimer = 0
+            if self._playerMarker then
+                if type(GetPlayerMapPosition) == "function" then
+                    local nx, ny = GetPlayerMapPosition("player")
+                    if nx and ny then
+                        local pw = (self.GetWidth and self:GetWidth()) or UIParent:GetWidth()
+                        local ph = (self.GetHeight and self:GetHeight()) or UIParent:GetHeight()
+                        local px = nx * pw
+                        local py = ny * ph
+                        pcall(self._playerMarker.ClearAllPoints, self._playerMarker)
+                        pcall(self._playerMarker.SetPoint, self._playerMarker, "CENTER", self, "TOPLEFT", px, -py)
+                    end
+                end
+            end
+        end)
+
+        -- remove old tiles if present
+        if container._tiles then
+            for i, t in ipairs(container._tiles) do if t and t.SetTexture then pcall(t.SetTexture, t, nil); pcall(t.Hide, t) end end
+        end
+    container._tiles = {}
+
+        local tileW = pw / cols
+        local tileH = ph / rows
+
+        for r = 1, rows do
+            for c = 1, cols do
+                local idx = (r - 1) * cols + c
+                local path = azsharaBLPs[idx]
+                if not path then break end
+                local tex = container:CreateTexture(nil, "ARTWORK")
+                tex:SetSize(tileW, tileH)
+                local left = (c - 1) * tileW
+                local top = (r - 1) * tileH
+                -- anchor by TOPLEFT offset
+                tex:SetPoint("TOPLEFT", container, "TOPLEFT", left, -top)
+                tex:SetTexCoord(0, 1, 0, 1)
+                local ok, err = pcall(function() tex:SetTexture(path) end)
+                if IsDebugEnabled() and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    if ok then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: stitch SetTexture OK -> %s (tile %d)", tostring(path), idx))
+                    else pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: stitch SetTexture FAILED -> %s (tile %d) : %s", tostring(path), idx, tostring(err))) end
+                end
+                table.insert(container._tiles, tex)
+            end
+        end
+        -- create or update player marker on the stitched container
+        if not container._playerMarker then
+            local pm = container:CreateTexture(nil, "OVERLAY")
+            pm:SetSize(16, 16)
+            if pm.SetColorTexture then pcall(pm.SetColorTexture, pm, 1, 0, 0, 1) else pcall(pm.SetTexture, pm, "Interface\\Icons\\INV_Misc_Map_02"); pcall(pm.SetVertexColor, pm, 1, 0, 0) end
+            pm:SetDrawLayer("OVERLAY", 9999)
+            container._playerMarker = pm
+        end
+        if container.Reflow then pcall(container.Reflow, container) end
+        -- auto-hide/show when world map toggles
+        if type(WorldMapFrame) == "table" and WorldMapFrame:IsShown() and WorldMapDetailFrame then
+            pcall(container.Show, container)
+        else
+            -- keep visible as overlay for quick testing
+            pcall(container.Show, container)
+        end
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: Azshara stitch applied ("..tostring(cols).."x"..tostring(rows)..")") end
+    end)
+
+    local clearStitchBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    clearStitchBtn:SetSize(80, 22)
+    clearStitchBtn:SetPoint("LEFT", stitchBtn, "RIGHT", 8, 0)
+    clearStitchBtn:SetText("Clear")
+    clearStitchBtn:SetScript("OnClick", function()
+        local container = _G["DCMap_StitchFrame"]
+        if container and container._tiles then
+            for i, t in ipairs(container._tiles) do if t and t.SetTexture then pcall(t.SetTexture, t, nil); pcall(t.Hide, t) end end
+            container._tiles = nil
+            if container._playerMarker then pcall(container._playerMarker.SetTexture, container._playerMarker, nil); pcall(container._playerMarker.Hide, container._playerMarker); container._playerMarker = nil end
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: Azshara stitch cleared") end
+        else
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: no Azshara stitch present") end
+        end
+    end)
+
+    -- Grid options: allow custom columns/rows and per-tile ordering
+    local gridLbl = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    gridLbl:SetPoint("TOPLEFT", fullBtn, "BOTTOMLEFT", 0, -36)
+    gridLbl:SetText("Stitch grid (cols x rows):")
+
+    local colsEdit = CreateFrame("EditBox", "DCMap_StitchCols", panel, "InputBoxTemplate")
+    colsEdit:SetSize(40, 22)
+    colsEdit:SetPoint("LEFT", gridLbl, "RIGHT", 8, 0)
+    colsEdit:SetAutoFocus(false)
+    colsEdit:SetNumeric(true)
+    colsEdit:SetText("4")
+
+    local rowsEdit = CreateFrame("EditBox", "DCMap_StitchRows", panel, "InputBoxTemplate")
+    rowsEdit:SetSize(40, 22)
+    rowsEdit:SetPoint("LEFT", colsEdit, "RIGHT", 8, 0)
+    rowsEdit:SetAutoFocus(false)
+    rowsEdit:SetNumeric(true)
+    rowsEdit:SetText("3")
+
+    local orderLbl = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    orderLbl:SetPoint("TOPLEFT", gridLbl, "BOTTOMLEFT", 0, -8)
+    orderLbl:SetText("Tile order (comma-separated indices, optional):")
+
+    local orderEdit = CreateFrame("EditBox", "DCMap_StitchOrder", panel, "InputBoxTemplate")
+    orderEdit:SetSize(360, 22)
+    orderEdit:SetPoint("LEFT", orderLbl, "RIGHT", 8, 0)
+    orderEdit:SetAutoFocus(false)
+    orderEdit:SetText("")
+
+    local stitchCustomBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    stitchCustomBtn:SetSize(120, 22)
+    stitchCustomBtn:SetPoint("TOPLEFT", orderLbl, "BOTTOMLEFT", 0, -8)
+    stitchCustomBtn:SetText("Stitch Custom")
+    stitchCustomBtn:SetScript("OnClick", function()
+        local cols = tonumber(colsEdit:GetText()) or 4
+        local rows = tonumber(rowsEdit:GetText()) or 3
+        if cols <= 0 or rows <= 0 then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: invalid cols/rows") end
+            return
+        end
+        -- parse order string
+        local orderStr = orderEdit:GetText() or ""
+        local order = {}
+        if orderStr and orderStr:match('%S') then
+            for token in orderStr:gmatch("([^,%s]+)") do
+                local n = tonumber(token)
+                if n then table.insert(order, n) end
+            end
+        end
+
+        -- build stitch using specified cols/rows and optional order
+        -- Prefer to parent the stitch to the world map detail frame when the world map is open
+        local parent
+        if type(WorldMapFrame) == "table" and WorldMapFrame:IsShown() and WorldMapDetailFrame then
+            parent = WorldMapDetailFrame
+        else
+            parent = addon.background or WorldMapDetailFrame or UIParent
+        end
+        local pw = (parent.GetWidth and parent:GetWidth()) or UIParent:GetWidth()
+        local ph = (parent.GetHeight and parent.GetHeight()) or UIParent:GetHeight()
+        if not pw or not ph then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: unable to determine parent size for stitching") end
+            return
+        end
+
+        local container = _G["DCMap_StitchFrame"]
+        if container and container.Destroy then pcall(container.Hide, container) end
+        container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+        container:SetAllPoints(parent)
+        container:SetFrameStrata("HIGH")
+        container._cols = cols
+        container._rows = rows
+        container._paths = azsharaBLPs
+        function container:Reflow()
+            local pw = (parent.GetWidth and parent:GetWidth()) or UIParent:GetWidth()
+            local ph = (parent.GetHeight and parent:GetHeight()) or UIParent:GetHeight()
+            if not pw or not ph then return end
+            local tileW = pw / (self._cols or 1)
+            local tileH = ph / (self._rows or 1)
+            for idx, tex in ipairs(self._tiles or {}) do
+                if tex then
+                    local c = ((idx - 1) % (self._cols or 1)) + 1
+                    local r = math.floor((idx - 1) / (self._cols or 1)) + 1
+                    local left = (c - 1) * tileW
+                    local top = (r - 1) * tileH
+                    tex:SetSize(tileW, tileH)
+                    tex:ClearAllPoints()
+                    tex:SetPoint("TOPLEFT", self, "TOPLEFT", left, -top)
+                end
+            end
+            if self._playerMarker then
+                if type(GetPlayerMapPosition) == "function" then
+                    local nx, ny = GetPlayerMapPosition("player")
+                    if nx and ny then
+                        local px = nx * pw
+                        local py = ny * ph
+                        self._playerMarker:ClearAllPoints()
+                        self._playerMarker:SetPoint("CENTER", self, "TOPLEFT", px, -py)
+                    end
+                end
+            end
+        end
+        container:SetScript("OnSizeChanged", function(self, w, h) if self.Reflow then pcall(self.Reflow, self) end end)
+        container._playerTimer = 0
+        container:SetScript("OnUpdate", function(self, elapsed)
+            self._playerTimer = (self._playerTimer or 0) + elapsed
+            if self._playerTimer < 0.2 then return end
+            self._playerTimer = 0
+            if self._playerMarker then
+                if type(GetPlayerMapPosition) == "function" then
+                    local nx, ny = GetPlayerMapPosition("player")
+                    if nx and ny then
+                        local pw = (self.GetWidth and self:GetWidth()) or UIParent:GetWidth()
+                        local ph = (self.GetHeight and self:GetHeight()) or UIParent:GetHeight()
+                        local px = nx * pw
+                        local py = ny * ph
+                        pcall(self._playerMarker.ClearAllPoints, self._playerMarker)
+                        pcall(self._playerMarker.SetPoint, self._playerMarker, "CENTER", self, "TOPLEFT", px, -py)
+                    end
+                end
+            end
+        end)
+        if container._tiles then
+            for i, t in ipairs(container._tiles) do if t and t.SetTexture then pcall(t.SetTexture, t, nil); pcall(t.Hide, t) end end
+        end
+        container._tiles = {}
+
+        local tileW = pw / cols
+        local tileH = ph / rows
+        local total = cols * rows
+
+        for idx = 1, total do
+            local useIndex = order[idx] or idx
+            local path = azsharaBLPs[useIndex]
+            if not path then
+                if IsDebugEnabled() and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: no tile for index %d (requested %d)", idx, useIndex)) end
+                -- create an empty placeholder to keep layout consistent
+                local tex = container:CreateTexture(nil, "ARTWORK")
+                local c = ((idx - 1) % cols) + 1
+                local r = math.floor((idx - 1) / cols) + 1
+                local left = (c - 1) * tileW
+                local top = (r - 1) * tileH
+                tex:SetSize(tileW, tileH)
+                tex:SetPoint("TOPLEFT", container, "TOPLEFT", left, -top)
+                tex:Hide()
+                table.insert(container._tiles, tex)
+            else
+                local tex = container:CreateTexture(nil, "ARTWORK")
+                local c = ((idx - 1) % cols) + 1
+                local r = math.floor((idx - 1) / cols) + 1
+                local left = (c - 1) * tileW
+                local top = (r - 1) * tileH
+                tex:SetSize(tileW, tileH)
+                tex:SetPoint("TOPLEFT", container, "TOPLEFT", left, -top)
+                tex:SetTexCoord(0, 1, 0, 1)
+                local ok, err = pcall(function() tex:SetTexture(path) end)
+                if IsDebugEnabled() and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    if ok then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: stitch SetTexture OK -> %s (cell %d uses tile %d)", tostring(path), idx, useIndex))
+                    else pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: stitch SetTexture FAILED -> %s (cell %d uses tile %d) : %s", tostring(path), idx, useIndex, tostring(err))) end
+                end
+                table.insert(container._tiles, tex)
+            end
+        end
+        -- create or update player marker on the stitched container
+        if not container._playerMarker then
+            local pm = container:CreateTexture(nil, "OVERLAY")
+            pm:SetSize(16, 16)
+            if pm.SetColorTexture then pcall(pm.SetColorTexture, pm, 1, 0, 0, 1) else pcall(pm.SetTexture, pm, "Interface\\Icons\\INV_Misc_Map_02"); pcall(pm.SetVertexColor, pm, 1, 0, 0) end
+            pm:SetDrawLayer("OVERLAY", 9999)
+            container._playerMarker = pm
+        end
+        if container.Reflow then pcall(container.Reflow, container) end
+        if type(WorldMapFrame) == "table" and WorldMapFrame:IsShown() and WorldMapDetailFrame then pcall(container.Show, container) else pcall(container.Show, container) end
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: custom stitch applied (%dx%d)", cols, rows)) end
     end)
 
     panel.refresh = function(self)
