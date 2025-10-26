@@ -14,6 +14,14 @@ if DCRestoreXPDB.debug == nil then DCRestoreXPDB.debug = false end
 -- Control whether debug messages are also posted to the UIErrorsFrame (on-screen announcements)
 if DCRestoreXPDB.debugUiErrors == nil then DCRestoreXPDB.debugUiErrors = false end
 if DCRestoreXPDB.hideText == nil then DCRestoreXPDB.hideText = false end
+-- Persistent toggle to keep the fallback bar visible for diagnostics
+if DCRestoreXPDB.debugShowFallback == nil then DCRestoreXPDB.debugShowFallback = false end
+
+-- Early init guard: prevent the file from running twice (duplicate event frames/logs)
+if _G.__DCRestoreXP_Initialized then
+    return
+end
+_G.__DCRestoreXP_Initialized = true
 
 local function FindBlizzardXPBar()
     local names = { "MainMenuExpBar", "MainMenuXPBar", "MainMenuBarExpBar" }
@@ -26,16 +34,251 @@ local function FindBlizzardXPBar()
     return nil
 end
 
+-- If Interface options can't be registered at load (rare), register on PLAYER_LOGIN
+if type(InterfaceOptions_AddCategory) ~= "function" then
+    local reg = CreateFrame("Frame")
+    reg:RegisterEvent("PLAYER_LOGIN")
+    reg:SetScript("OnEvent", function(self, event, ...)
+        if type(InterfaceOptions_AddCategory) == "function" then
+            pcall(CreateOptionsPanel)
+            self:UnregisterAllEvents()
+            self:SetScript("OnEvent", nil)
+        end
+    end)
+end
+
 local blizBar = FindBlizzardXPBar()
 local bar = nil
 local fallbackBar = nil
 local bg, text
 
--- Prevent the addon from initializing twice if the file is (somehow) loaded multiple times
-if _G.__DCRestoreXP_Initialized then
-    return
+-- Track if eager creation of __dcrxp_text failed so we don't spam logs repeatedly
+local __dcrxp_creation_failed = 0
+
+-- Safe logger used during very early init before Debug() is defined. Honors
+-- the debug flag so we don't spam messages in production.
+local function SafeEarlyLog(msg)
+    if not DCRestoreXPDB or not DCRestoreXPDB.debug then return end
+    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] " .. tostring(msg))
+        return
+    end
+    pcall(print, "[DC-RestoreXP] " .. tostring(msg))
 end
-_G.__DCRestoreXP_Initialized = true
+
+-- Ensure a frame has a __dcrxp_text FontString and background texture attached.
+-- This is defensive: creating children on Blizzard-owned frames can fail on some clients
+-- or when other addons manipulate the UI during init. We pcall the creation and
+-- instrument failures via SafeEarlyLog(). Returns true on success, false on failure.
+local function EnsureDCRXPTextForBar(frame)
+    if not frame then return false end
+    if frame.__dcrxp_text then return true end
+    local ok, res = pcall(function()
+        local fs = frame:CreateFontString(nil, "OVERLAY")
+        -- choose a safe font size similar to the fallback bar
+        local fontName, fontSize, fontFlags = GameFontNormalSmall and GameFontNormalSmall:GetFont()
+        local chosenSize = math.max((fontSize or 10) - 1, 8)
+        if type(fs.SetFont) == "function" then pcall(fs.SetFont, fs, fontName or "Fonts\FRIZQT__.TTF", chosenSize, fontFlags) end
+        if type(fs.SetPoint) == "function" then pcall(fs.SetPoint, fs, "CENTER", frame, "CENTER") end
+        if type(fs.SetJustifyH) == "function" then pcall(fs.SetJustifyH, fs, "CENTER") end
+        pcall(fs.SetText, fs, "")
+        local bgtex = frame:CreateTexture(nil, "BACKGROUND")
+        if type(bgtex.SetAllPoints) == "function" then pcall(bgtex.SetAllPoints, bgtex, frame) end
+        -- Prefer the compatibility helper if present; otherwise fall back safely
+        if type(SetSolidColorTexture) == "function" then
+            pcall(SetSolidColorTexture, bgtex, 0, 0, 0, 0)
+        else
+            -- try a texture + vertex color fallback
+            pcall(bgtex.SetTexture, bgtex, "Interface\\Tooltips\\UI-Tooltip-Background")
+            if type(bgtex.SetVertexColor) == "function" then pcall(bgtex.SetVertexColor, bgtex, 0, 0, 0, 0) end
+        end
+        frame.__dcrxp_text = fs
+        frame.__dcrxp_textBg = bgtex
+        return fs
+    end)
+    if not ok then
+        __dcrxp_creation_failed = (__dcrxp_creation_failed or 0) + 1
+        -- Only emit a debug message for the first few failures to avoid chat spam
+        if __dcrxp_creation_failed <= 3 then
+            SafeEarlyLog("Failed to eagerly create __dcrxp_text for frame: " .. tostring(res))
+        end
+        return false
+    end
+    return true
+end
+
+-- Resync/snapping helpers: if we had to place the fallback at the saved DB position
+-- because Blizzard info was unavailable, try to re-snap to the Blizzard bar for a
+-- short window after login in case it gets created later by FrameXML or other addons.
+local RESYNC_INTERVAL = 0.1
+local RESYNC_MAX_ATTEMPTS = 30 -- ~3 seconds
+local resync_attempts = 0
+local resync_active = false
+local resync_used_saved_pos = false
+local resync_uierror_shown = false
+-- One-time message flag: when we fall back to defaults due to invalid saved coords
+local defaultFallbackMsgShown = false
+
+local function SnapFallbackToBliz()
+    if not blizBar or not fallbackBar then return false end
+    local left = (type(blizBar.GetLeft) == "function" and blizBar:GetLeft())
+    local bottom = (type(blizBar.GetBottom) == "function" and blizBar:GetBottom())
+    -- Validate absolute coords: sometimes GetLeft/GetBottom can return
+    -- garbage (off-screen) if the Blizzard bar is hidden or moved; clamp
+    -- wildly out-of-range values to avoid placing our fallback off-screen.
+    local function coords_reasonable(x, y)
+        if not x or not y then return false end
+        if math.abs(x) > 5000 or math.abs(y) > 5000 then return false end
+        return true
+    end
+
+    if left and bottom and coords_reasonable(left, bottom) then
+        pcall(function()
+            fallbackBar:ClearAllPoints()
+            fallbackBar:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+            if type(blizBar.GetWidth) == "function" and type(fallbackBar.SetSize) == "function" then
+                fallbackBar:SetSize(blizBar:GetWidth() or fallbackBar:GetWidth(), blizBar:GetHeight() or fallbackBar:GetHeight())
+            end
+        end)
+        return true
+    end
+    -- try mirroring GetPoint() as fallback
+    if type(blizBar.GetPoint) == "function" then
+        local p = { blizBar:GetPoint() }
+        if #p >= 4 then
+            local point = p[1]
+            local relative = p[2]
+            local relPoint = p[3]
+            local ox = p[4]
+            local oy = p[5]
+            if type(relative) == "string" and _G[relative] then relative = _G[relative] end
+            pcall(function()
+                fallbackBar:ClearAllPoints()
+                if relative then
+                    fallbackBar:SetPoint(point, relative, relPoint, ox, oy)
+                else
+                    fallbackBar:SetPoint(point, relPoint, ox, oy)
+                end
+            end)
+            return true
+        end
+    end
+    return false
+end
+
+local function StartResyncLoop()
+    if resync_active then return end
+    resync_active = true
+    resync_attempts = 0
+    if not resync_used_saved_pos then
+        resync_active = false
+        return
+    end
+    local function step()
+        resync_attempts = resync_attempts + 1
+        if SnapFallbackToBliz() then
+            -- snapped successfully; stop resync
+            resync_active = false
+            resync_used_saved_pos = false
+            return
+        end
+        if resync_attempts >= RESYNC_MAX_ATTEMPTS then
+            -- give up and optionally notify user once that saved pos was used
+            resync_active = false
+            if resync_used_saved_pos and not resync_uierror_shown and DCRestoreXPDB and DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
+                pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "DC-RestoreXP: could not find Blizzard XP bar; using saved position. Use /dcrxptest to diagnose or enable debug.")
+                resync_uierror_shown = true
+            end
+            return
+        end
+        -- schedule next attempt
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            C_Timer.After(RESYNC_INTERVAL, step)
+        else
+            -- OnUpdate fallback: create a small frame to wait and call step again
+            local f = CreateFrame("Frame")
+            f._acc = 0
+            f:SetScript("OnUpdate", function(self, dt)
+                self._acc = (self._acc or 0) + dt
+                if self._acc >= RESYNC_INTERVAL then
+                    self:SetScript("OnUpdate", nil)
+                    step()
+                    self = nil
+                end
+            end)
+        end
+    end
+    step()
+end
+
+-- Centralized bar positioning helper to avoid duplicate SetPoint logic.
+-- mode = "bliz" attempts to mirror the Blizzard bar (pixel-exact when possible).
+-- mode = "saved" anchors to saved DCRestoreXPDB coordinates and starts the resync loop.
+local function SetBarPosition(target, mode)
+    if not target then return end
+    mode = mode or "saved"
+    if mode == "bliz" and blizBar then
+        -- Try to snap to Blizzard bar; if that fails fall back to saved
+        if SnapFallbackToBliz() then
+            return true
+        end
+        -- Could not snap now; schedule a short reapply and fall back to saved
+        pcall(function()
+            target:ClearAllPoints()
+                    -- Validate saved DB coords before applying; if they look wildly off-screen
+                    -- use sensible defaults instead of placing the bar at an unreachable location.
+                    local tx, ty = DCRestoreXPDB.x, DCRestoreXPDB.y
+                    if (type(tx) ~= "number") or (type(ty) ~= "number") or math.abs(tx) > 5000 or math.abs(ty) > 5000 then
+                        Debug("Saved bar coords appear invalid; using defaults instead of applying saved position")
+                        -- Show a concise one-time chat/UI notice so users can find the options panel quickly.
+                        if not defaultFallbackMsgShown then
+                            defaultFallbackMsgShown = true
+                            if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+                                pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                            else
+                                pcall(print, "[DC-RestoreXP] Saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                            end
+                            if DCRestoreXPDB and DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
+                                pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "DC-RestoreXP: saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                            end
+                        end
+                        tx, ty = 0, 60
+                    end
+                    target:SetPoint(DCRestoreXPDB.point or "BOTTOM", UIParent, DCRestoreXPDB.anchor or "BOTTOM", tx, ty)
+        end)
+        resync_used_saved_pos = true
+        StartResyncLoop()
+        return false
+    else
+        -- Saved position
+        pcall(function()
+            target:ClearAllPoints()
+            local tx, ty = DCRestoreXPDB.x, DCRestoreXPDB.y
+            if (type(tx) ~= "number") or (type(ty) ~= "number") or math.abs(tx) > 5000 or math.abs(ty) > 5000 then
+                Debug("Saved bar coords invalid at apply-time; using defaults")
+                if not defaultFallbackMsgShown then
+                    defaultFallbackMsgShown = true
+                    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+                        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                    else
+                        pcall(print, "[DC-RestoreXP] Saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                    end
+                    if DCRestoreXPDB and DCRestoreXPDB.debugUiErrors and UIErrorsFrame and type(UIErrorsFrame.AddMessage) == "function" then
+                        pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, "DC-RestoreXP: saved bar position invalid; using defaults. Open Interface -> DC-RestoreXP to reposition and save.")
+                    end
+                end
+                tx, ty = 0, 60
+            end
+            target:SetPoint(DCRestoreXPDB.point or "BOTTOM", UIParent, DCRestoreXPDB.anchor or "BOTTOM", tx, ty)
+        end)
+        resync_used_saved_pos = true
+        StartResyncLoop()
+        return true
+    end
+end
+
+-- Prevent the addon from initializing twice if the file is (somehow) loaded multiple times
+
 
 -- Strong hide/show helpers: perform a stronger hide that also moves the frame off-screen
 -- and sets alpha to 0 so other addons that re-show textures are less likely to visually
@@ -43,9 +286,16 @@ _G.__DCRestoreXP_Initialized = true
 local function StrongHide(obj)
     if not obj then return end
     pcall(function()
+        -- If this object is the currently active bar we should not move it off-screen;
+        -- callers that want to hide the active bar should still be able to call Hide()
+        -- but avoid relocating the frame which causes visual flicker and lost anchors.
+        local movingOffscreen = true
+        if obj == bar then
+            movingOffscreen = false
+        end
         if type(obj.Hide) == "function" then obj:Hide() end
         if type(obj.SetAlpha) == "function" then obj:SetAlpha(0) end
-        if type(obj.ClearAllPoints) == "function" and type(obj.SetPoint) == "function" then
+        if movingOffscreen and type(obj.ClearAllPoints) == "function" and type(obj.SetPoint) == "function" then
             obj:ClearAllPoints()
             -- move offscreen to avoid draw-layer conflicts
             obj:SetPoint("CENTER", UIParent, "CENTER", -10000, -10000)
@@ -360,7 +610,7 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
             else
                 if type(barObj.SetStatusBarColor) == "function" then barObj:SetStatusBarColor(0.64, 0.27, 0.86) end
             end
-            if type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
+            if blizBar.__dcrxp_text and type(blizBar.__dcrxp_text.SetFormattedText) == "function" then
                 -- Blizzard bar text is updated elsewhere; nothing to change here. Keep the block balanced.
             end
     else
@@ -499,7 +749,9 @@ local function CreateFallbackBar()
         b:SetPoint("CENTER", blizBar, "CENTER")
     else
         b:SetSize(defaultW, defaultH)
-        b:SetPoint(DCRestoreXPDB.point, UIParent, DCRestoreXPDB.anchor, DCRestoreXPDB.x, DCRestoreXPDB.y)
+        -- Use centralized positioning helper so we always start the resync loop when
+        -- using saved coordinates.
+        SetBarPosition(b, "saved")
     end
     -- Make sure the bar is on top of most UI elements and clamped so it remains visible
     b:SetFrameStrata("HIGH")
@@ -587,6 +839,9 @@ local function CreateFallbackBar()
     -- Expose the Blizzard global name used in FrameXML for the exhaustion/rested fill
     if not _G["ExhaustionLevelFillBar"] then _G["ExhaustionLevelFillBar"] = exhaustionFill end
 
+    -- Attach our text/bg references to the bar so callers can access them uniformly
+    b.__dcrxp_text = text
+    b.__dcrxp_textBg = bg
     return b
 end
 
@@ -602,6 +857,65 @@ bar = nil
     if blizBar and DCRestoreXPDB.useBlizzard then
         bar = blizBar
         Debug("Found Blizzard XP bar; reusing it")
+        -- Eagerly ensure the Blizzard bar has our text/fontstring attached so later
+        -- code that references blizBar.__dcrxp_text won't hit a nil index. Failures
+        -- are instrumented by EnsureDCRXPTextForBar.
+        if not EnsureDCRXPTextForBar(blizBar) then
+            Debug("Eager creation of __dcrxp_text for Blizzard bar failed; will prefer fallback bar for server-provided values")
+            -- Schedule a couple of short retries and listen for a late-initialization event
+            -- so addons or FrameXML that create the Blizzard frame after we run can be handled.
+            if not creation_retry_scheduled then
+                creation_retry_scheduled = true
+                local function tryNow()
+                    if blizBar and EnsureDCRXPTextForBar(blizBar) then
+                        Debug("Successfully created __dcrxp_text for Blizzard bar on retry")
+                        creation_retry_scheduled = false
+                        -- if we created it, no further retries or events needed
+                        if creation_retry_events_frame then
+                            creation_retry_events_frame:UnregisterAllEvents()
+                            creation_retry_events_frame:SetScript("OnEvent", nil)
+                            creation_retry_events_frame = nil
+                        end
+                        return true
+                    end
+                    return false
+                end
+                -- Use C_Timer when available, else fallback to simple OnUpdate timers
+                local function scheduleDelay(delay, fn)
+                    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+                        C_Timer.After(delay, fn)
+                    else
+                        -- OnUpdate fallback: create a small frame that calls fn after delay
+                        local f = CreateFrame("Frame")
+                        f._acc = 0
+                        f:SetScript("OnUpdate", function(self, dt)
+                            self._acc = (self._acc or 0) + dt
+                            if self._acc >= delay then
+                                self:SetScript("OnUpdate", nil)
+                                fn()
+                                self = nil
+                            end
+                        end)
+                    end
+                end
+                -- Schedule two retries at 0.5s and 1.0s
+                scheduleDelay(0.5, tryNow)
+                scheduleDelay(1.0, tryNow)
+                -- Also register for PLAYER_ENTERING_WORLD in case frames are created on login
+                creation_retry_events_frame = CreateFrame("Frame")
+                creation_retry_events_frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+                creation_retry_events_frame:RegisterEvent("UI_SCALE_CHANGED")
+                creation_retry_events_frame:SetScript("OnEvent", function(self, event, ...)
+                    if blizBar and EnsureDCRXPTextForBar(blizBar) then
+                        Debug("Successfully created __dcrxp_text for Blizzard bar on event: " .. tostring(event))
+                        self:UnregisterAllEvents()
+                        self:SetScript("OnEvent", nil)
+                        creation_retry_events_frame = nil
+                        creation_retry_scheduled = false
+                    end
+                end)
+            end
+        end
         -- ensure Blizzard bar is anchored to saved position only (we will not attach text to it)
         if DCRestoreXPDB.x ~= 0 or DCRestoreXPDB.y ~= 60 then
             bar:ClearAllPoints()
@@ -671,6 +985,30 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
         if not fallbackBar then fallbackBar = CreateFallbackBar() end
         target = fallbackBar
         Debug(string.format("slevel=%d >79: forcing application to fallback bar for high-level player", slevel))
+        -- If the Blizzard bar exists, mirror its anchor, size and strata so the
+        -- fallback appears in the exact same place. Otherwise fall back to the
+        -- saved user position stored in DCRestoreXPDB.
+        if fallbackBar then
+            pcall(function()
+                -- Use centralized positioning logic to attempt mirroring the Blizzard bar
+                -- (pixel-exact where possible). If snapping fails the helper will fall
+                -- back to the saved position and start the resync loop.
+                SetBarPosition(fallbackBar, "bliz")
+
+                -- Match size/strata/framelevel where possible
+                if blizBar and type(blizBar.GetWidth) == "function" and type(fallbackBar.SetSize) == "function" then
+                    pcall(function()
+                        fallbackBar:SetSize(blizBar:GetWidth() or fallbackBar:GetWidth(), blizBar:GetHeight() or fallbackBar:GetHeight())
+                    end)
+                end
+                if blizBar and type(blizBar.GetFrameStrata) == "function" and type(fallbackBar.SetFrameStrata) == "function" then
+                    pcall(fallbackBar.SetFrameStrata, fallbackBar, blizBar:GetFrameStrata())
+                end
+                if blizBar and type(blizBar.GetFrameLevel) == "function" and type(fallbackBar.SetFrameLevel) == "function" then
+                    pcall(fallbackBar.SetFrameLevel, fallbackBar, (blizBar:GetFrameLevel() or 0) )
+                end
+            end)
+        end
     end
     if sxpMax and sxpMax > 0 then
     SetBarMinMaxAndAnimate(target, 0, sxpMax, sxp)
@@ -705,6 +1043,56 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
     end
 end
 
+-- Small smoke-test utility to verify __dcrxp_text creation on both Blizzard and fallback bars.
+-- Call via the slash command /dcrxptest or from other code. Returns boolean success.
+local function RunEnsureCreationTest()
+    local success = true
+    -- check Blizzard bar if present
+    if blizBar then
+        local ok = EnsureDCRXPTextForBar(blizBar)
+        if not ok then
+            SafeEarlyLog("RunEnsureCreationTest: blizBar creation failed")
+            success = false
+        end
+    else
+        SafeEarlyLog("RunEnsureCreationTest: blizBar not present")
+    end
+    -- ensure fallback exists and test it
+    if not fallbackBar then
+        fallbackBar = CreateFallbackBar()
+    end
+    if fallbackBar then
+        local ok2 = EnsureDCRXPTextForBar(fallbackBar)
+        if not ok2 then
+            SafeEarlyLog("RunEnsureCreationTest: fallbackBar creation failed")
+            success = false
+        end
+    else
+        SafeEarlyLog("RunEnsureCreationTest: failed to create fallbackBar")
+        success = false
+    end
+    if success then
+        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Ensure creation test: SUCCESS")
+        else
+            pcall(print, "[DC-RestoreXP] Ensure creation test: SUCCESS")
+        end
+    else
+        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Ensure creation test: FAILED (check debug)")
+        else
+            pcall(print, "[DC-RestoreXP] Ensure creation test: FAILED (check debug)")
+        end
+    end
+    return success
+end
+
+-- Add a simple slash command to run the smoke test in-game: /dcrxptest
+SLASH_DCRXPTEST1 = "/dcrxptest"
+SlashCmdList["DCRXPTEST"] = function(msg)
+    RunEnsureCreationTest()
+end
+
 -- Small test button (hidden by default). Toggle with "/dcrxp test" - useful for client-only checks.
 local testBtn = CreateFrame("Button", "DCRXPTestButton", UIParent, "UIPanelButtonTemplate")
 testBtn:SetSize(90, 22)
@@ -719,6 +1107,178 @@ testBtn:SetScript("OnClick", function()
 end)
 testBtn:Hide()
 
+-- Interface Options panel (lightweight, compatible with 3.3.5)
+local function CreateOptionsPanel()
+    if _G.DCRestoreXPOptionsPanel then return _G.DCRestoreXPOptionsPanel end
+    local panel = CreateFrame("Frame", "DCRestoreXPOptionsPanel", InterfaceOptionsFramePanelContainer)
+    panel.name = "DC-RestoreXP"
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("DC-RestoreXP")
+
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetPoint("RIGHT", panel, -16, 0)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Options for DC-RestoreXP: choose how the addon shows XP bars and where the fallback bar is positioned.")
+
+    -- Helper to create a checkbutton
+    local function MakeCheck(name, label, tooltip, x, y, dbKey)
+        local cb = CreateFrame("CheckButton", name, panel, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16 + (x or 0), -80 + (y or 0))
+        cb.text = _G[cb:GetName() .. "Text"]
+        cb.text:SetText(label)
+        if tooltip and type(cb.SetScript) == "function" then
+            cb:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(tooltip)
+                GameTooltip:Show()
+            end)
+            cb:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
+        end
+        cb:SetScript("OnClick", function(self)
+            DCRestoreXPDB[dbKey] = self:GetChecked() and true or false
+        end)
+        return cb
+    end
+
+    local cbUseBliz = MakeCheck("DCRXP_OptUseBliz", "Use Blizzard bar when available", "If enabled the addon prefers the Blizzard XP bar for normal clients.", 0, 0, "useBlizzard")
+    local cbForceApply = MakeCheck("DCRXP_OptForceApply", "Force apply server values", "Always apply server-provided XP values even for lower levels.", 0, 24, "forceApply")
+    local cbHideText = MakeCheck("DCRXP_OptHideText", "Hide text overlay", "Hide the numeric text overlay on the XP bar.", 0, 48, "hideText")
+    local cbDebug = MakeCheck("DCRXP_OptDebug", "Enable Debug messages", "Show debug messages in chat/console.", 300, 0, "debug")
+    local cbUiErr = MakeCheck("DCRXP_OptUiErr", "Show UI error on fallback", "Show a one-time UI error if the addon had to use a saved position because Blizzard bar was unavailable.", 300, 24, "debugUiErrors")
+    local cbShowFallback = MakeCheck("DCRXP_OptShowFallback", "Show fallback for debugging", "Keep the fallback bar visible for diagnostics (useful to position/save it).", 0, 72, "debugShowFallback")
+
+    -- Position save/reset
+    local saveBtn = CreateFrame("Button", "DCRXP_SavePosBtn", panel, "UIPanelButtonTemplate")
+    saveBtn:SetSize(140, 22)
+    saveBtn:SetPoint("TOPLEFT", 16, -140)
+    saveBtn:SetText("Save Bar Position")
+    saveBtn:SetScript("OnClick", function()
+        if fallbackBar then
+            local p = { fallbackBar:GetPoint() }
+            if #p >= 4 then
+                DCRestoreXPDB.point = p[1] or DCRestoreXPDB.point
+                if type(p[2]) == "string" then DCRestoreXPDB.anchor = p[2] end
+                DCRestoreXPDB.anchor = DCRestoreXPDB.anchor or DCRestoreXPDB.anchor
+                DCRestoreXPDB.x = tonumber(p[4]) or DCRestoreXPDB.x
+                DCRestoreXPDB.y = tonumber(p[5]) or DCRestoreXPDB.y
+            else
+                -- fallback: try absolute coords
+                local left = (type(fallbackBar.GetLeft) == "function" and fallbackBar:GetLeft())
+                local bottom = (type(fallbackBar.GetBottom) == "function" and fallbackBar:GetBottom())
+                if left and bottom then
+                    DCRestoreXPDB.point = "BOTTOMLEFT"
+                    DCRestoreXPDB.anchor = "BOTTOMLEFT"
+                    DCRestoreXPDB.x = left
+                    DCRestoreXPDB.y = bottom
+                end
+            end
+            if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Saved bar position") end
+        else
+            if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] No fallback bar to save position from") end
+        end
+    end)
+
+    local resetBtn = CreateFrame("Button", "DCRXP_ResetPosBtn", panel, "UIPanelButtonTemplate")
+    resetBtn:SetSize(140, 22)
+    resetBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
+    resetBtn:SetText("Reset to Default")
+    resetBtn:SetScript("OnClick", function()
+        DCRestoreXPDB.x = 0
+        DCRestoreXPDB.y = 60
+        DCRestoreXPDB.point = "BOTTOM"
+        DCRestoreXPDB.anchor = "BOTTOM"
+        if fallbackBar then
+            pcall(function() SetBarPosition(fallbackBar, "saved") end)
+        end
+        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Reset bar position to defaults") end
+    end)
+
+    -- Initialize states
+    panel.refresh = function()
+        cbUseBliz:SetChecked( DCRestoreXPDB.useBlizzard )
+        cbForceApply:SetChecked( DCRestoreXPDB.forceApply )
+        cbHideText:SetChecked( DCRestoreXPDB.hideText )
+        cbDebug:SetChecked( DCRestoreXPDB.debug )
+        cbUiErr:SetChecked( DCRestoreXPDB.debugUiErrors )
+        cbShowFallback:SetChecked( DCRestoreXPDB.debugShowFallback )
+    end
+
+    -- Refresh panel when shown so controls reflect the latest DB state
+    if type(panel.SetScript) == "function" then
+        -- Create a draggable preview handle when the panel is shown so users can
+        -- reposition the fallback bar visually and then click Save Bar Position.
+        panel:SetScript("OnShow", function(self)
+            panel.refresh()
+            -- Ensure fallback bar exists for preview and allow dragging
+            if not fallbackBar then fallbackBar = CreateFallbackBar() end
+            if fallbackBar then
+                -- make movable and interactive for preview purposes
+                pcall(function()
+                    fallbackBar:SetMovable(true)
+                    fallbackBar:EnableMouse(true)
+                    fallbackBar:SetClampedToScreen(true)
+                    -- register drag handlers
+                    fallbackBar:RegisterForDrag("LeftButton")
+                    fallbackBar:SetScript("OnDragStart", function(s) if type(s.StartMoving) == "function" then pcall(s.StartMoving, s) end end)
+                    fallbackBar:SetScript("OnDragStop", function(s)
+                        if type(s.StopMovingOrSizing) == "function" then pcall(s.StopMovingOrSizing, s) end
+                        -- update saved preview coords so Save uses the new position
+                        local left = (type(s.GetLeft) == "function" and s:GetLeft())
+                        local bottom = (type(s.GetBottom) == "function" and s:GetBottom())
+                        if left and bottom then
+                            -- store as bottom-left offsets (consistent with SetBarPosition saved mode)
+                            DCRestoreXPDB.point = "BOTTOMLEFT"
+                            DCRestoreXPDB.anchor = "BOTTOMLEFT"
+                            DCRestoreXPDB.x = left
+                            DCRestoreXPDB.y = bottom
+                        end
+                        -- apply the saved coords so the preview settles cleanly
+                        pcall(function() SetBarPosition(s, "saved") end)
+                    end)
+                end)
+                -- show it for previewing
+                StrongShow(fallbackBar)
+            end
+        end)
+        -- When options panel hides, restore fallback visibility according to user toggle
+        panel:SetScript("OnHide", function(self)
+            if fallbackBar then
+                -- remove drag scripts to avoid leaving handlers active
+                fallbackBar:SetScript("OnDragStart", nil)
+                fallbackBar:SetScript("OnDragStop", nil)
+                fallbackBar:EnableMouse(false)
+                fallbackBar:SetMovable(false)
+                -- If user didn't request persistent debug show, hide the preview
+                if not DCRestoreXPDB.debugShowFallback then
+                    StrongHide(fallbackBar)
+                end
+            end
+        end)
+    end
+
+    -- Register the panel as a top-level options category under Interface
+    InterfaceOptions_AddCategory(panel)
+    _G.DCRestoreXPOptionsPanel = panel
+    return panel
+end
+
+-- Try to register the options panel now if the Interface API is already present.
+if type(InterfaceOptions_AddCategory) == "function" then
+    pcall(CreateOptionsPanel)
+end
+
+-- Slash to open options
+SLASH_DCRXPOPTS1 = "/dcrxpoptions"
+SlashCmdList["DCRXPOPTS"] = function()
+    local panel = CreateOptionsPanel()
+    if InterfaceOptionsFrame and type(InterfaceOptionsFrame_OpenToCategory) == "function" then
+        InterfaceOptionsFrame_OpenToCategory(panel)
+    end
+end
+
 local function UpdateXP()
     Debug("UpdateXP called")
     if not UnitExists("player") then
@@ -730,6 +1290,16 @@ local function UpdateXP()
     local xpMax = UnitXPMax("player") or 0
     local level = UnitLevel("player") or 0
     Debug(string.format("Player XP=%d XPMax=%d Level=%d", xp, xpMax, level))
+    -- If the developer requested persistent debug visibility show the fallback bar
+    -- to aid diagnostics/positioning regardless of client XP state.
+    if DCRestoreXPDB.debugShowFallback then
+        if not fallbackBar then fallbackBar = CreateFallbackBar() end
+        bar = fallbackBar
+        StrongShow(fallbackBar)
+        StrongHide(blizBar)
+        -- keep preview snapped to Blizzard if possible for easier positioning
+        pcall(function() SetBarPosition(fallbackBar, "bliz") end)
+    end
     -- By default prefer Blizzard's native bar for normal clients (level < 80)
     if level and level < 80 and not DCRestoreXPDB.forceApply then
         if blizBar then
@@ -741,8 +1311,10 @@ local function UpdateXP()
         end
     else
         -- For level >=80 or when forceApply is enabled we will use/create the fallback
-        if not fallbackBar then fallbackBar = CreateFallbackBar() end
-        bar = fallbackBar
+    if not fallbackBar then fallbackBar = CreateFallbackBar() end
+    bar = fallbackBar
+    -- attempt to mirror Blizzard bar if present so the fallback sits in the Blizz-like position
+    pcall(function() SetBarPosition(fallbackBar, "bliz") end)
     end
     -- Keep visibility consistent: hide the non-selected bar so only one is shown
     if bar == blizBar then
@@ -1005,7 +1577,7 @@ SlashCmdList["DCRXP"] = function(msg)
     if cmd == "reset" or cmd == "r" then
         DCRestoreXPDB.x = 0; DCRestoreXPDB.y = 60; DCRestoreXPDB.point = "BOTTOM"; DCRestoreXPDB.anchor = "BOTTOM"
         if type(bar.ClearAllPoints) == "function" and type(bar.SetPoint) == "function" then
-            bar:ClearAllPoints(); bar:SetPoint(DCRestoreXPDB.point, UIParent, DCRestoreXPDB.anchor, DCRestoreXPDB.x, DCRestoreXPDB.y)
+            pcall(function() SetBarPosition(bar, "saved") end)
         end
         print("DC-RestoreXP: position reset")
     elseif cmd == "usebliz on" then
