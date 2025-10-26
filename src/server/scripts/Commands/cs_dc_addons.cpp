@@ -30,8 +30,9 @@
 #include "ObjectAccessor.h"
 #include "ScriptMgr.h"
 
-// forward declaration of helper implemented in DC_AddonHelpers.cpp
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
+// forward declaration of helpers implemented in DC_AddonHelpers.cpp
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
+void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 
 using namespace Acore::ChatCommands;
 
@@ -155,8 +156,41 @@ public:
             uint32 xp = target->GetUInt32Value(PLAYER_XP);
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
-            SendXPAddonToPlayer(target, xp, xpMax, level);
+            // Force-send bypasses any server-side throttles or level-based guards
+            SendXPAddonToPlayerForce(target, xp, xpMax, level);
             handler->PSendSysMessage("Force-sent DCRXP addon message to {} (xp={} xpMax={} level={})", target->GetName(), xp, xpMax, level);
+            return true;
+        }
+
+        if (subNorm == "dedupe" || subNorm == "dedupestate")
+        {
+            ++it;
+            Player* target = nullptr;
+            if (it == args.end() || *it == "self")
+                target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            else
+            {
+                std::string playerName((*it).data(), (*it).size());
+                target = ObjectAccessor::FindPlayerByName(playerName, false);
+            }
+            if (!target)
+            {
+                handler->PSendSysMessage("Player not found.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+            std::string const& key = target->GetLastDCRXPPayload();
+            uint32 t = target->GetLastDCRXPPayloadTime();
+            if (key.empty())
+            {
+                handler->PSendSysMessage("DCRXP dedupe: no recent payload recorded for %s", target->GetName());
+            }
+            else
+            {
+                time_t now = time(nullptr);
+                uint32 age = (now > (time_t)t) ? uint32(now - (time_t)t) : 0;
+                handler->PSendSysMessage("DCRXP dedupe for %s: key='%s' age=%u s (timestamp=%u)", target->GetName(), key.c_str(), age, t);
+            }
             return true;
         }
 

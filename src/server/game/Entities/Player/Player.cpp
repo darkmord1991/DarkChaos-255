@@ -100,7 +100,7 @@
 #include "GridNotifiersImpl.h"
 
 // forward declaration for the helper added in DC_AddonHelpers.cpp
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 
 enum CharacterFlags
 {

@@ -8,8 +8,9 @@
 #include "ObjectAccessor.h"
 #include "ScriptMgr.h"
 
-// forward declaration of helper implemented in DC_AddonHelpers.cpp
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
+// forward declaration of helpers implemented in DC_AddonHelpers.cpp
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
+void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 
 using namespace Acore::ChatCommands;
 
@@ -111,7 +112,8 @@ public:
             uint32 xp = target->GetUInt32Value(PLAYER_XP);
             uint32 xpMax = target->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
             uint32 level = target->GetLevel();
-            SendXPAddonToPlayer(target, xp, xpMax, level);
+            // Force-send: bypass any server-side throttles/guards
+            SendXPAddonToPlayerForce(target, xp, xpMax, level);
             // Use the resolved target name for messaging (may be self or explicit target)
             handler->PSendSysMessage("Force-sent DCRXP addon message to %s (xp=%u xpMax=%u level=%u)", target->GetName().c_str(), xp, xpMax, level);
             return true;

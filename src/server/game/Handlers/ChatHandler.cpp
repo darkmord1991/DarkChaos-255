@@ -41,8 +41,9 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 // forward-declare the canonical helper implemented in DC_AddonHelpers.cpp
-// (keeps this change minimal and avoids adding a new header)
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level);
+// Accept an optional context tag (const char* default "XP"). Kept here as a
+// forward declaration to avoid adding a new header.
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 
 inline bool isNasty(uint8 c)
 {
