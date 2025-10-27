@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "frFR")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "Ajouter cette position à Cartographer_Waypoints"
 L["Add this location to TomTom waypoints"] = "Ajouter cette position aux points de navigation de TomTom"
 L["Always show"] = "Toujours afficher"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 Je viens juste d'installer GatherMate, mais je ne vois aucun nœud sur mes cartes !
 |r
 GatherMate ne contient aucune donnée en l'état. Quand vous récoltez des herbes, des minerais, des gaz ou des poissons, GatherMate ajoutera et mettra à jour votre carte en conséquence. De plus, vérifiez vos paramètres d'affichage.
-
 |cffffd200
 Je vois des nœuds sur ma carte du monde mais pas sur ma minicarte !
 |r
 |cffffff78Minimap Button Bag|r (et sans doute d'autres addons similaires) aime phagocyter tous les boutons que nous plaçons sur la minicarte. Désactivez-le.
-
 |cffffd200
 Comment ou où puis-je obtenir des données déjà existantes ?
 |r
 Vous pouvez importer des données déjà existantes dans GatherMate des façons suivantes :
-
 1. |cffffff78GatherMate_Data|r - Cet addon LoD (chargeable à la demande) contient des données extraites de WowHead de tous les nœuds et est mis à jour toutes les semaines. Il y a des options de mise à jour automatique.
-
 2. |cffffff78GatherMate_CartImport|r - Cet addon vous permet d'importer vos bases de données des modules |cffffff78Cartographer_<Métier>|r dans GatherMate. Pour que cela fonctionne, le(s) module(s) |cffffff78Cartographer_<Métier>|r et GatherMate_CartImport doivent être chargés et activés.
-
 Notez que l'importation de données dans GatherMate n'est pas un processus automatique. Vous devez aller dans la section "Importation données" et cliquer sur le bouton "Importer".
-
 La différence avec |cffffff78Cartographer_Data|r est que l'utilisateur a le choix de la façon dont (et du moment où) les données sont modifiées. |cffffff78Cartographer_Data|r, une fois chargé, écrase simplement vos bases de données existantes sans avertissement et détruit tous les nouveaux nœuds que vous avez trouvé.
-
 |cffffd200
 Pouvez-vous ajouter le support de l'affichage des positions de choses telles que les boîtes aux lettres et les maîtres de vol ?
 |r
 À nouveau, la réponse est non. Cependant, un autre auteur a le droit de créer un addon ou un module à cet effet. Le cœur de l'addon GatherMate ne le fera jamais.
-
 |cffffd200
 J'ai trouvé un bogue ! Où puis-je le signaler ?
 |r
 Vous pouvez signaler des bogues ou faire des suggestions sur |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r
-
 Vous pouvez également nous trouver sur |cffffff78irc://irc.freenode.org/wowace|r
-
 Quand vous voulez signaler un bogue, essayez de fournir les |cffffff78étapes à suivre pour reproduire ce bogue|r, indiquez les |cffffff78messages d'erreur|r que vous avez vus, donnez le |cffffff78numéro de révision|r de GatherMate où le problème a été découvert et précisez également la |cffffff78langue de votre jeu|r.
-
 |cffffd200
 Qui a écrit cet addon qui déchire ?
 |r
@@ -160,11 +147,8 @@ L["Tracking Distance"] = "Distance de suivi"
 L["Treasure"] = "Trésors"
 L["Treasure filter"] = "Filtre des trésors"
 L["Wrath of the Lich King"] = "Wrath of the Lich King"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "frFR")
 if not NL then return end
-
 NL["Abundant Bloodsail Wreckage"] = "Débris abondants de la Voile sanglante"
 NL["Abundant Firefin Snapper School"] = "Banc abondant de lutjans de nagefeu"
 NL["Abundant Oily Blackmouth School"] = "Banc abondant de bouches-noires huileux"

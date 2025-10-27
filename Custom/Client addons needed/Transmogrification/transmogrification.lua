@@ -1,8 +1,7 @@
--- Initialize the Ace3 library.
+﻿-- Initialize the Ace3 library.
 local addonName, addon = ...
 Transmogrification = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0")
 local L = LibStub("AceLocale-3.0"):GetLocale("Transmogrification")
-
 -- Declare default AddOn options. AddOn options are saved globally.
 local defaultTransmogrificationOptions = {
 	global = {
@@ -13,12 +12,10 @@ local defaultTransmogrificationOptions = {
 		displayCollectionMessages = true
 	}
 }
-
 -- Disable the item tooltip system (if disabled) to save performance.
 function Transmogrification:HookItemTooltip()
 	if not self.db.global.displayNewAppearanceTooltip then return end
 end
-
 -- Hook into the system chat message function.
 function Transmogrification:HookChatFilter()
 	ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(self, event, msg)
@@ -31,18 +28,15 @@ function Transmogrification:HookChatFilter()
 		return false
 	end)
 end
-
 -- Apply custom Transmogrification window styling.
 function Transmogrification:ApplyWindowSettings()
 	-- Set the Transmogrification window scale.
 	if not TransmogrificationFrame then return end
 	TransmogrificationFrame:SetScale(self.db.global.windowScale)
-	
 	-- Set the Transmogrification window opacity.
 	if TransmogrificationFrame.SetAlpha then
 		TransmogrificationFrame:SetAlpha(self.db.global.windowOpacity)
 	end
-	
 	-- Lock the Transmogrification window if the player has decided to.
 	if self.db.global.windowLock then
 		TransmogrificationFrame:SetMovable(false)
@@ -52,7 +46,6 @@ function Transmogrification:ApplyWindowSettings()
 		TransmogrificationFrame:RegisterForDrag("LeftButton")
 	end
 end
-
 -- Reload prompt function.
 function Transmogrification:DisplayReloadPrompt()
 	StaticPopupDialogs["TRANSMOGRIFICATION_RELOAD_PROMPT"] = {
@@ -69,35 +62,28 @@ function Transmogrification:DisplayReloadPrompt()
 	}
 	StaticPopup_Show("TRANSMOGRIFICATION_RELOAD_PROMPT")
 end
-
 function Transmogrification:OnInitialize()
 	-- Initialize the TransmogrificationOptions database and options table.
 	self.db = LibStub("AceDB-3.0"):New("TransmogrificationOptions", defaultTransmogrificationOptions)
 	self:RegisterOptions()
-	
 	-- Register chat commands.
 	self:RegisterChatCommand("tmog", "HandleSlashCommand")
 	self:RegisterChatCommand("transmog", "HandleSlashCommand")
 	self:RegisterChatCommand("transmogrify", "HandleSlashCommand")
 	self:RegisterChatCommand("transmogrification", "HandleSlashCommand")
-	
 	-- Initialize the CollectedAppearances table if it does not already exist.
 	if CollectedAppearances == nil then
 		CollectedAppearances = {}
 	end
 end
-
 function Transmogrification:OnEnable()
 	-- Hook into the item tooltip system to (if enabled) display the "New Appearance" tooltip text.
 	self:HookItemTooltip()
-	
 	-- Hook into the system chat message function to (if enabled) hide new item appearance system messages.
 	self:HookChatFilter()
-	
 	-- Apply custom Transmogrification window styling.
 	self:ApplyWindowSettings()
 end
-
 function Transmogrification:HandleSlashCommand(input)
 	-- Display the options panel if the command argument is "config(s)", "option(s)", or "setting(s)".
 	if input:trim() == "config" or input:trim() == "configs" or input:trim() == "option" or input:trim() == "options" or input:trim() == "setting" or input:trim() == "settings" then
@@ -117,18 +103,15 @@ function Transmogrification:HandleSlashCommand(input)
 		end
 	end
 end
-
 -- Register the options window within the Interface AddOn window.
 function Transmogrification:RegisterOptions()
 	LibStub("AceConfig-3.0"):RegisterOptionsTable(addonName, GetTransmogrificationOptions)
 	self.optionsFrame = LibStub("AceConfigDialog-3.0"):AddToBlizOptions(addonName, addonName)
 end
-
 -- Register the ConsoleVariableOptions database.
 function Transmogrification:GetSettings()
 	return self.db.global
 end
-
 -- Update settings.
 function Transmogrification:UpdateSetting(key, value)
 	if self.db.global[key] ~= nil then
@@ -136,3 +119,4 @@ function Transmogrification:UpdateSetting(key, value)
 		self:ApplyWindowSettings()
 	end
 end
+

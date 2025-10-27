@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "koKR")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "현재 위치를 Cartographer_Waypoints 추가합니다."
 L["Add this location to TomTom waypoints"] = "현재 위치를 TomTom 웨이포인트에 추가합니다."
 L["Always show"] = "항상 표시"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 GatherMate를 설치했지만 제 맵에서는 어떠한 노드도 볼수가 없습니다. 무엇이 잘못된 건가요?
 |r
 GatherMate는 자신이 데이터를 만들어갑니다. 약초를 캐거나 채광, 낚시 등을 할 때 GatherMate는 맵에 그 정보를 갱신하게 됩니다. 일단은 표시 설정을 체크해보세요.
-
 |cffffd200
 월드맵에선 보이는 노드가 미니맵에선 보이지 않습니다. 무엇이 잘못된 건가요?
 |r
 |cffffff78Minimap Button Bag|r (그리고 그와 비슷한 종류의 애드온)은 미니맵의 노드 표시까지 숨기는 경우가 있습니다. 해당 애드온을 비활성화 하세요.
-
 |cffffd200
 내가 현재 가지고 있는 데이터를 어디에 그리고 어떻게 이용할 수 있나요?
 |r
 현재 가지고 계신 데이터는 GatherMate의 여러 방법으로 이용가능합니다.:
-
 1. |cffffff78GatherMate_Data|r - 이 LoD 애드온은 WowHead사이트에 한주간 수집된 모든 업데이트된 노드를 포함하고 있습니다. 자동 업데이트 설정으로 적용하세요.
-
 2. |cffffff78GatherMate_CartImport|r - 이 애드온은 |cffffff78Cartographer_<Profession>|r 의 데이터를 GatherMate로 가져올 수 있습니다. 이를 위해서는 반드시 |cffffff78Cartographer_<Profession>|r와 GatherMate_CartImport가 둘다 설치되어 있어야 합니다.
-
 GatherMate는 이 데이터 추가 기능이 자동으로 동작하지는 않습니다. 데이터 추가룰 위해서는 반드시 "추가" 버튼을 눌러 주셔야 합니다.
-
 |cffffff78Cartographer_Data|r를 선택하여 적용하게 되면 |cffffff78Cartographer_Data|r를 기존 데이터에 단순히 겹쳐쓰게 됨으로서 기존 데이터가 파괴될 가능성을 가지고 있습니다.
-
 |cffffd200
 우편함이나 그리폰(와이번) 위치를 지원한 예정이 있나요?
 |r
 그럴 계획은 없습니다. 혹시라도 다른 애드온 제작자가 추가 모듈 형식으로 가능할지는 모르지만, 현재 GatherMate 개발진은 그럴 생각이 없습니다.
-
 |cffffd200
 버그를 발견했습니다! 어디에 보고하면 되나요?
 |r
 |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r 주소로 보고해주시면 됩니다.
-
 또한, |cffffff78irc://irc.freenode.org/wowace|r로 우리를 찾아와 주셔도 됩니다.
-
 버그를 보고해 주실때는, |cffffff78버그가 어떻게 발생했는가에 대한 것|r, 가능하다면 |cffffff78오류 메시지|r에 대한 스택 트레이스, 문제가 발생된 지역(|cffffff78영문 클라이언트 또는 기타|r)과 GatherMate |cffffff78버전 번호|r를 내용에 포함시켜 주세요.
-
 |cffffd200
 누가 이 쿨~한 애드온을 만들었죠?
 |r
@@ -160,11 +147,8 @@ L["Tracking Distance"] = "표시 거리"
 L["Treasure"] = "보물상자"
 L["Treasure filter"] = "보물상자 분류"
 L["Wrath of the Lich King"] = "리치왕의 분노"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "koKR")
 if not NL then return end
-
 -- NL["Abundant Bloodsail Wreckage"] = "Abundant Bloodsail Wreckage"
 -- NL["Abundant Firefin Snapper School"] = "Abundant Firefin Snapper School"
 -- NL["Abundant Oily Blackmouth School"] = "Abundant Oily Blackmouth School"

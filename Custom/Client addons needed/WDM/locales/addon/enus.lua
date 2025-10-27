@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "enUS")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "enUS")
 if not L then return end
-
 L["debugmode_text"] = "Debug Mode"
 L["show_minimap_text"] = "World Map Icon (before Dragonflight)"
 L["show_minimap_warn_text"] = "|c00FD1A36Disable if you use addons that modify interface |r (requires interface reloading - /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "Horde Flight Points"
 L["show_taxinode_continent_alliance_text"] = "Alliance Ships"
 L["show_taxinode_continent_horde_text"] = "Horde Zeppelins"
 L["show_zonelevel_text"] = "Zone Levels"
-
 L["taxinode_acherus"] = "Acherus: The Ebon Hold"
 L["taxinode_aeriepeak"] = "Aerie Peak, The Hinterlands"
 L["taxinode_agmarshammer"] = "Agmar's Hammer, Dragonblight"
@@ -162,7 +160,6 @@ L["taxinode_zabrajin"] = "Zabra'jin, Zangarmarsh"
 L["taxinode_zimtorga"] = "Zim'Torga, Zul'Drak"
 L["taxinode_zoramgaroutpost"] = "Zoram'gar Outpost, Ashenvale"
 L["taxinode_zulaman"] = "Zul'Aman, Ghostlands"
-
 L["taxinode_continent_auberdine"] = "Ship to Auberdine"
 L["taxinode_continent_bootybay"] = "Ship to Booty Bay"
 L["taxinode_continent_brill"] = "Zeppelin to Brill"
@@ -182,3 +179,4 @@ L["taxinode_continent_unupe"] = "Ship to Unu'pe"
 L["taxinode_continent_valiancekeep"] = "Ship to Valiance Keep"
 L["taxinode_continent_vengeancelanding"] = "Zeppelin to Vengeance Landing"
 L["taxinode_continent_warsonghold"] = "Zeppelin to Warsong Hold"
+

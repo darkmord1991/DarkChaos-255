@@ -1,18 +1,14 @@
---[[
+﻿--[[
 MIT License
-
 Copyright (c) 2016 Rochet2
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
-
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,13 +17,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
-
 local char = string.char
 local type = type
 local select = select
 local sub = string.sub
 local tconcat = table.concat
-
 local basedictcompress = {}
 local basedictdecompress = {}
 for i = 0, 255 do
@@ -35,7 +29,6 @@ for i = 0, 255 do
     basedictcompress[ic] = iic
     basedictdecompress[iic] = ic
 end
-
 local function dictAddA(str, dict, a, b)
     if a >= 256 then
         a, b = 1, b+1
@@ -48,7 +41,6 @@ local function dictAddA(str, dict, a, b)
     a = a+1
     return dict, a, b
 end
-
 local function compress(input)
     if type(input) ~= "string" then
         return nil, "string expected, got "..type(input)
@@ -57,10 +49,8 @@ local function compress(input)
     if len <= 1 then
         return "u"..input
     end
-
     local dict = {}
     local a, b = 1, 2
-
     local result = {"c"}
     local resultlen = 1
     local n = 2
@@ -93,7 +83,6 @@ local function compress(input)
     end
     return tconcat(result)
 end
-
 local function dictAddB(str, dict, a, b)
     if a >= 256 then
         a, b = 1, b+1
@@ -106,16 +95,13 @@ local function dictAddB(str, dict, a, b)
     a = a+1
     return dict, a, b
 end
-
 local function decompress(input)
     if type(input) ~= "string" then
         return nil, "string expected, got "..type(input)
     end
-
     if #input < 1 then
         return nil, "invalid input - not a compressed string"
     end
-
     local control = sub(input, 1, 1)
     if control == "u" then
         return sub(input, 2)
@@ -124,14 +110,11 @@ local function decompress(input)
     end
     input = sub(input, 2)
     local len = #input
-
     if len < 2 then
         return nil, "invalid input - not a compressed string"
     end
-
     local dict = {}
     local a, b = 1, 2
-
     local result = {}
     local n = 1
     local last = sub(input, 1, 2)
@@ -158,9 +141,9 @@ local function decompress(input)
     end
     return tconcat(result)
 end
-
 lualzw = {
     compress = compress,
     decompress = decompress,
 }
 return lualzw
+

@@ -1,5 +1,4 @@
-if (GetLocale() == "esES") then
-
+﻿if (GetLocale() == "esES") then
 DUNGEON_FLOOR_AHNQIRAJ1 = "Las Puertas del Templo";
 DUNGEON_FLOOR_AHNQIRAJ2 = "El Subterráneo de la Colmena";
 DUNGEON_FLOOR_AHNQIRAJ3 = "Cámara de C'Thun";
@@ -123,7 +122,6 @@ DUNGEON_FLOOR_WAILINGCAVERNS1 = "Cuevas de los Lamentos";
 DUNGEON_FLOOR_ZULAMAN1 = "Zul'Aman";
 DUNGEON_FLOOR_ZULFARRAK = "Zul'Farrak";
 DUNGEON_FLOOR_ZULGURUB1 = "Zul'Gurub";
-
 DUNGEON_FLOOR_AZUREMYSTISLE2 = "Hoya de la Marea";
 DUNGEON_FLOOR_AZUREMYSTISLE3 = "Bastión Semprepino";
 DUNGEON_FLOOR_BADLANDS18 = "Entrada de Uldaman";
@@ -169,5 +167,5 @@ DUNGEON_FLOOR_UNGOROCRATER14 = "La Cicatriz Serpenteante";
 DUNGEON_FLOOR_WESTFALL17 = "Entrada de las Minas de la Muerte";
 DUNGEON_FLOOR_WESTFALL4 = "Mina de la Costa del Oro";
 DUNGEON_FLOOR_WESTFALL5 = "Mina de Jango";
-
 end
+

@@ -1,11 +1,9 @@
---[[
+﻿--[[
 Copyright (c) 2009, Hendrik "Nevcairiel" Leppkes < h.leppkes@gmail.com >
 All rights reserved.
 ]]
-
 local Mapster = LibStub("AceAddon-3.0"):GetAddon("Mapster")
 local L = LibStub("AceLocale-3.0"):GetLocale("Mapster")
-
 local optGetter, optSetter
 do
 	function optGetter(info)
@@ -16,7 +14,6 @@ do
 			return Mapster.db.profile[key]
 		end
 	end
-
 	function optSetter(info, value)
 		local key = info[#info]
 		if key:sub(0,5) == "mini_" then
@@ -27,7 +24,6 @@ do
 		Mapster:Refresh()
 	end
 end
-
 local options, moduleOptions = nil, {}
 local function getOptions()
 	if not options then
@@ -158,34 +154,26 @@ local function getOptions()
 			options.args[k] = (type(v) == "function") and v() or v
 		end
 	end
-	
 	return options
 end
-
-local function optFunc() 
+local function optFunc()
 	-- open the profiles tab before, so the menu expands
 	InterfaceOptionsFrame_OpenToCategory(Mapster.optionsFrames.Profiles)
 	InterfaceOptionsFrame_OpenToCategory(Mapster.optionsFrames.Mapster)
 	InterfaceOptionsFrame:Raise()
 end
-
 function Mapster:SetupOptions()
 	self.optionsFrames = {}
-
 	-- setup options table
 	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable("Mapster", getOptions)
 	self.optionsFrames.Mapster = LibStub("AceConfigDialog-3.0"):AddToBlizOptions("Mapster", nil, nil, "general")
-
 	self:RegisterModuleOptions("Profiles", LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db), "Profiles")
-
 	LibStub("AceConsole-3.0"):RegisterChatCommand( "mapster", optFunc)
 end
-
 function Mapster:RegisterModuleOptions(name, optionTbl, displayName)
 	moduleOptions[name] = optionTbl
 	self.optionsFrames[name] = LibStub("AceConfigDialog-3.0"):AddToBlizOptions("Mapster", displayName, "Mapster", name)
 end
-
 function Mapster:SetupMapButton()
 	-- create button on the worldmap to toggle the options
 	self.optionsButton = CreateFrame("Button", "MapsterOptionsButton", WorldMapFrame, "UIPanelButtonTemplate")
@@ -194,12 +182,11 @@ function Mapster:SetupMapButton()
 	self.optionsButton:SetText("Mapster")
 	self.optionsButton:ClearAllPoints()
 	self.optionsButton:SetPoint("TOPRIGHT", WorldMapPositioningGuide, "TOPRIGHT", -43, -2)
-
 	if self.db.profile.hideMapButton then
 		self.optionsButton:Hide()
 	else
 		self.optionsButton:Show()
 	end
-
 	self.optionsButton:SetScript("OnClick", optFunc)
 end
+

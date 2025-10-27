@@ -1,23 +1,19 @@
---[[-----------------------------------------------------------------------------
+﻿--[[-----------------------------------------------------------------------------
 EditBox Widget
 -------------------------------------------------------------------------------]]
 local Type, Version = "EditBox", 23
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
-
 -- Lua APIs
 local tostring, pairs = tostring, pairs
-
 -- WoW APIs
 local PlaySound = PlaySound
 local GetCursorInfo, ClearCursor, GetSpellInfo = GetCursorInfo, ClearCursor, GetSpellInfo
 local CreateFrame, UIParent = CreateFrame, UIParent
 local _G = _G
-
 -- Global vars/functions that we don't upvalue since they might get hooked, or upgraded
 -- List them here for Mikk's FindGlobals script
 -- GLOBALS: AceGUIEditBoxInsertLink, ChatFontNormal, OKAY
-
 --[[-----------------------------------------------------------------------------
 Support functions
 -------------------------------------------------------------------------------]]
@@ -25,7 +21,6 @@ if not AceGUIEditBoxInsertLink then
 	-- upgradeable hook
 	hooksecurefunc("ChatEdit_InsertLink", function(...) return _G.AceGUIEditBoxInsertLink(...) end)
 end
-
 function _G.AceGUIEditBoxInsertLink(text)
 	for i = 1, AceGUI:GetWidgetCount(Type) do
 		local editbox = _G["AceGUI-3.0EditBox"..i]
@@ -35,34 +30,28 @@ function _G.AceGUIEditBoxInsertLink(text)
 		end
 	end
 end
-
 local function ShowButton(self)
 	if not self.disablebutton then
 		self.button:Show()
 		self.editbox:SetTextInsets(0, 20, 3, 3)
 	end
 end
-
 local function HideButton(self)
 	self.button:Hide()
 	self.editbox:SetTextInsets(0, 0, 3, 3)
 end
-
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
 local function Control_OnEnter(frame)
 	frame.obj:Fire("OnEnter")
 end
-
 local function Control_OnLeave(frame)
 	frame.obj:Fire("OnLeave")
 end
-
 local function EditBox_OnEscapePressed(frame)
 	AceGUI:ClearFocus()
 end
-
 local function EditBox_OnEnterPressed(frame)
 	local self = frame.obj
 	local value = frame:GetText()
@@ -72,7 +61,6 @@ local function EditBox_OnEnterPressed(frame)
 		HideButton(self)
 	end
 end
-
 local function EditBox_OnReceiveDrag(frame)
 	local self = frame.obj
 	local type, id, info = GetCursorInfo()
@@ -89,7 +77,6 @@ local function EditBox_OnReceiveDrag(frame)
 	HideButton(self)
 	AceGUI:ClearFocus()
 end
-
 local function EditBox_OnTextChanged(frame)
 	local self = frame.obj
 	local value = frame:GetText()
@@ -99,13 +86,11 @@ local function EditBox_OnTextChanged(frame)
 		ShowButton(self)
 	end
 end
-
 local function Button_OnClick(frame)
 	local editbox = frame.obj.editbox
 	editbox:ClearFocus()
 	EditBox_OnEnterPressed(editbox)
 end
-
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -119,9 +104,7 @@ local methods = {
 		self:DisableButton(false)
 		self:SetMaxLetters(0)
 	end,
-
 	-- ["OnRelease"] = nil,
-
 	["SetDisabled"] = function(self, disabled)
 		self.disabled = disabled
 		if disabled then
@@ -135,18 +118,15 @@ local methods = {
 			self.label:SetTextColor(1,.82,0)
 		end
 	end,
-
 	["SetText"] = function(self, text)
 		self.lasttext = text or ""
 		self.editbox:SetText(text or "")
 		self.editbox:SetCursorPosition(0)
 		HideButton(self)
 	end,
-
 	["GetText"] = function(self, text)
 		return self.editbox:GetText()
 	end,
-
 	["SetLabel"] = function(self, text)
 		if text and text ~= "" then
 			self.label:SetText(text)
@@ -162,19 +142,16 @@ local methods = {
 			self.alignoffset = 12
 		end
 	end,
-
 	["DisableButton"] = function(self, disabled)
 		self.disablebutton = disabled
 		if disabled then
 			HideButton(self)
 		end
 	end,
-
 	["SetMaxLetters"] = function (self, num)
 		self.editbox:SetMaxLetters(num or 0)
 	end
 }
-
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
@@ -182,7 +159,6 @@ local function Constructor()
 	local num  = AceGUI:GetNextWidgetNum(Type)
 	local frame = CreateFrame("Frame", nil, UIParent)
 	frame:Hide()
-
 	local editbox = CreateFrame("EditBox", "AceGUI-3.0EditBox"..num, frame, "InputBoxTemplate")
 	editbox:SetAutoFocus(false)
 	editbox:SetFontObject(ChatFontNormal)
@@ -198,13 +174,11 @@ local function Constructor()
 	editbox:SetPoint("BOTTOMLEFT", 6, 0)
 	editbox:SetPoint("BOTTOMRIGHT")
 	editbox:SetHeight(19)
-
 	local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	label:SetPoint("TOPLEFT", 0, -2)
 	label:SetPoint("TOPRIGHT", 0, -2)
 	label:SetJustifyH("LEFT")
 	label:SetHeight(18)
-
 	local button = CreateFrame("Button", nil, editbox, "UIPanelButtonTemplate")
 	button:SetWidth(40)
 	button:SetHeight(20)
@@ -212,7 +186,6 @@ local function Constructor()
 	button:SetText(OKAY)
 	button:SetScript("OnClick", Button_OnClick)
 	button:Hide()
-
 	local widget = {
 		alignoffset = 30,
 		editbox     = editbox,
@@ -225,8 +198,7 @@ local function Constructor()
 		widget[method] = func
 	end
 	editbox.obj, button.obj = widget, widget
-
 	return AceGUI:RegisterAsWidget(widget)
 end
-
 AceGUI:RegisterWidgetType(Type, Constructor, Version)
+

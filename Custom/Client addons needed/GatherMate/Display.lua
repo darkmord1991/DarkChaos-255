@@ -1,7 +1,6 @@
 ﻿local GatherMate = LibStub("AceAddon-3.0"):GetAddon("GatherMate")
 local Display = GatherMate:NewModule("Display","AceEvent-3.0")
 local L = LibStub("AceLocale-3.0"):GetLocale("GatherMate")
-
 -- Current minimap pin set
 local minimapPins, minimapPinCount = {}, 0
 -- Current worldmap pin set
@@ -44,13 +43,10 @@ local inInstance
 local nodeRange = 2
 local forceNextUpdate
 local trackShow = {}
-
 local profession_to_skill = {}
 local have_prof_skill = {}
-
 local active_tracking
 local texture_to_skill = {}
-
 --[[
 	recycle a pin
 ]]
@@ -105,7 +101,6 @@ local function showPin(self)
 		else
 			tooltip:SetOwner(self, "ANCHOR_RIGHT")
 		end
-		
 		local t = db.trackColors
 		local text = format(tooltip_template, t[self.nodeType].Alpha*255, t[self.nodeType].Red*255, t[self.nodeType].Green*255, t[self.nodeType].Blue*255, self.title)
 		local lvl = GatherMate.nodeMinHarvest[self.nodeType][self.nodeID]
@@ -185,7 +180,6 @@ local function generatePinMenu(self,level)
 		info.text         = L["GatherMate Pin Options"]
 		info.notCheckable = 1
 		UIDropDownMenu_AddButton(info, level)
-
 		-- Generate a menu item for each pin the mouse is on
 		info.disabled     = nil
 		info.isTitle      = nil
@@ -199,7 +193,6 @@ local function generatePinMenu(self,level)
 				UIDropDownMenu_AddButton(info, level);
 			end
 		end
-
 		-- Cartographer_Waypoints menu item
 		if Cartographer and Cartographer.HasModule and Cartographer:HasModule("Waypoints") and Cartographer:IsModuleActive("Waypoints") then
 			info.text = L["Add this location to Cartographer_Waypoints"]
@@ -208,7 +201,6 @@ local function generatePinMenu(self,level)
 			info.arg1 = pinClickedOn
 			UIDropDownMenu_AddButton(info, level)
 		end
-
 		if TomTom then
 			info.text = L["Add this location to TomTom waypoints"]
 			info.icon = nil
@@ -216,7 +208,6 @@ local function generatePinMenu(self,level)
 			info.arg1 = pinClickedOn
 			UIDropDownMenu_AddButton(info, level)
 		end
-
 		-- Close menu item
 		info.text         = CLOSE
 		info.icon         = nil
@@ -226,7 +217,6 @@ local function generatePinMenu(self,level)
 		UIDropDownMenu_AddButton(info, level);
 	end
 end
-
 --[[
 	Setup the dropdown menu
 ]]
@@ -235,16 +225,13 @@ GatherMate_GenericDropDownMenu.displayMode = "MENU"
 GatherMate_GenericDropDownMenu.initialize = generatePinMenu
 local last_update = 0
 local listening = false
-
 local wow40 = select(4,GetBuildInfo()) >= 40000
-
 --[[
 	Enable the mod and add our event listeners and timers
 ]]
 local fullInit = false
 function Display:OnEnable()
 	db = GatherMate.db.profile
-	
 	trackingCircle = self.trackingCircle
 	nodeTextures = GatherMate.nodeTextures
 	continentData = GatherMate.continentData
@@ -281,7 +268,6 @@ function Display:OnEnable()
 	self:UpdateMaps()
 	fullInit = true
 end
-
 function Display:RegisterMapEvents()
 	self:RegisterEvent("MINIMAP_ZONE_CHANGED", "MinimapChanged")
 	self:RegisterEvent("MINIMAP_UPDATE_ZOOM", "MinimapZoom")
@@ -293,7 +279,6 @@ function Display:RegisterMapEvents()
 	self.updateFrame:Show()
 	listening = true
 end
-
 function Display:UnregisterMapEvents()
 	self:UnregisterEvent("MINIMAP_ZONE_CHANGED")
 	self:UnregisterEvent("MINIMAP_UPDATE_ZOOM")
@@ -307,7 +292,6 @@ function Display:UnregisterMapEvents()
 	self.updateFrame:Hide()
 	listening = false
 end
-
 -- Disable the mod
 function Display:OnDisable()
 	self:UnregisterMapEvents()
@@ -316,15 +300,12 @@ function Display:OnDisable()
 	self:UnregisterEvent("SKILL_LINES_CHANGED")
 	self:UnregisterEvent("MINIMAP_UPDATE_TRACKING")
 end
-
-
 function Display:SKILL_LINES_CHANGED()
 if not wow40 then
 	local skillname, isHeader
 	for k,v in pairs(have_prof_skill) do
 		have_prof_skill[k] = nil
 	end
-	
 	for i = 1, GetNumSkillLines() do
 		skillname, isHeader = GetSkillLineInfo(i)
 		if not isHeader and skillname then
@@ -339,7 +320,6 @@ end
 	self:UpdateVisibility()
 	self:UpdateMaps()
 end
-
 function Display:MINIMAP_UPDATE_TRACKING()
 if not wow40 then
 	active_tracking = texture_to_skill[GetTrackingTexture()]
@@ -347,7 +327,6 @@ end
 	self:UpdateVisibility()
 	self:UpdateMaps()
 end
-
 function Display:UpdateVisibility()
 	for k, v in pairs(GatherMate.db_types) do
 		local visible = false
@@ -360,7 +339,6 @@ function Display:UpdateVisibility()
 			visible = (active_tracking == v)
 		end
 		GatherMate.Visible[v] = visible
-
 		-- For tracking circle
 		visible = false
 		state = db.trackShow
@@ -374,26 +352,21 @@ function Display:UpdateVisibility()
 		trackShow[v] = visible
 	end
 end
-
 function Display:SetSkillTracking(skill, tracking)
 	texture_to_skill[tracking] = skill
 	if fullInit then self:MINIMAP_UPDATE_TRACKING() end
 end
-
 function Display:SetSkillProfession(skill, profession)
 	profession_to_skill[profession] = skill
 	if fullInit then self:SKILL_LINES_CHANGED() end
 end
-
 function Display:ScheduleUpdate()
 	forceNextUpdate = true
 end
-
 function Display:DataUpdate()
 	forceNextUpdate = true
 	Display:UpdateWorldMap(true)
 end
-
 function Display:ConfigChanged()
 	db = GatherMate.db.profile
 	self:UpdateVisibility()
@@ -490,7 +463,6 @@ function Display:getMiniPin(coord, nodeID, nodeType, zone, index)
 	end
 	return pin
 end
-
 function Display:addMiniPin(pin, refresh)
 	local xDist, yDist = pin.x1 - lastXY, pin.y1 - lastYY
 	-- calculate relative position and distance to the player
@@ -513,20 +485,17 @@ function Display:addMiniPin(pin, refresh)
 		pin.texture:SetTexCoord(0, 1, 0, 1)
 		pin.isCircle = false
 	end
-	
 	-- support for rotating minimap - transpose coordinates for the circular movement
 	if rotateMinimap then
 		local dx, dy = xDist, yDist
 		xDist = dx*cos - dy*sin
 		yDist = dx*sin + dy*cos
 	end
-
 	-- place pin on the map
 	local diffX, diffY, alpha = 0, 0, 1
 	-- adapt delta position to the map radius
 	diffX = xDist / mapRadius
 	diffY = yDist / mapRadius
-	
 	-- different minimap shapes
 	local isRound = true
 	if ( minimapShape and not (xDist == 0 or yDist == 0) ) then
@@ -537,7 +506,6 @@ function Display:addMiniPin(pin, refresh)
 			isRound = minimapShape[isRound + 1]
 		end
 	end
-	
 	-- calculate distance from the center of the map
 	local dist
 	if isRound then
@@ -592,7 +560,6 @@ function Display:ChangedVars(event,cvar,value)
 	end
 	forceNextUpdate = true
 end
-
 function Display:UpdateMaps()
 	inInstance = IsInInstance()
 	if inInstance and listening then
@@ -608,10 +575,8 @@ function Display:UpdateMaps()
 	self:UpdateMiniMap(true)
 	self:UpdateWorldMap(true)
 end
-
 function Display:UpdateIconPositions()
 	if not db.showMinimap or not Minimap:IsVisible() or inInstance or not zone then return end
-	
 	-- get the current map  zoom
 	local zoom = Minimap:GetZoom()
 	local diffZoom = zoom ~= lastZoom
@@ -620,17 +585,14 @@ function Display:UpdateIconPositions()
 		self:UpdateMiniMap()
 		return
 	end
-	
 	-- we have no active minimap pins, just return early
 	if minimapPinCount == 0 then return end
-	
 	-- get current player position
 	local x, y = GetPlayerMapPosition("player")
 	-- if position is 0, the player changed the worldmap to another zone, just keep the old values
 	if (x == 0 or y == 0 or GetCurrentMapZone() == 0) and not specialZones[zone] then
 		x, y = lastX, lastY
 	end
-	
 	-- for rotating minimap support
 	local facing
 	if rotateMinimap then
@@ -642,32 +604,26 @@ function Display:UpdateIconPositions()
 	else
 		facing = lastFacing
 	end
-	
 	local refresh
-	
 	local newScale = Minimap:GetScale()
 	if minimapScale ~= newScale then
 		minimapScale = newScale
 		refresh = true
 	end
-	
 	-- if the player moved, or changed the facing (rotating map) - update nodes
 	if x ~= lastX or y ~= lastY or facing ~= lastFacing or refresh then
 		-- update radius of the map
 		mapRadius = self.minimapSize[indoors][zoom] / 2
-		
 		-- we calculate the distance to the node in yards
 		local _x, _y =  GatherMate:PointToYards(x, y, zone)
 		-- update upvalues for icon placement
 		lastX, lastY = x, y
 		lastXY, lastYY = _x, _y
 		lastFacing = facing
-		
 		if rotateMinimap then
 			sin = math_sin(facing)
 			cos = math_cos(facing)
 		end
-		
 		-- iterate all nodes and check if they are still in range of our minimap display, or even still existing
 		for k,v in pairs(minimapPins) do
 			-- update the position of the node
@@ -675,32 +631,27 @@ function Display:UpdateIconPositions()
 		end
 	end
 end
-
 --[[
 	Update the minimap
 	we only care about nodes 1000 yards away
 ]]
 function Display:UpdateMiniMap(force)
 	if not db.showMinimap or not Minimap:IsVisible() or inInstance then return end
-	
 	-- update our zone info
 	zone = GetRealZoneText()
-	if not zone or zone == "" or not rawget(zoneData, zone) then 
+	if not zone or zone == "" or not rawget(zoneData, zone) then
 		zone = nil
-		return 
+		return
 	end
-	
 	-- get current player position
 	local x, y = GetPlayerMapPosition("player")
 	-- if position is 0, the player changed the worldmap to another zone, just keep the old values
 	if (x == 0 or y == 0 or GetCurrentMapZone() == 0) and not specialZones[zone] then
 		x, y = lastX, lastY
 	end
-	
 	-- get data from the API for calculations
 	local zoom = Minimap:GetZoom()
 	local diffZoom = zoom ~= lastZoom
-	
 	-- for rotating minimap support
 	local facing
 	if rotateMinimap then
@@ -712,14 +663,11 @@ function Display:UpdateMiniMap(force)
 	else
 		facing = lastFacing
 	end
-	
 	local newScale = Minimap:GetScale()
 	if minimapScale ~= newScale then
 		minimapScale = newScale
 		force = true
 	end
-	
-	
 	-- if the player moved, the zoom changed, or changed the facing (rotating map) - update nodes
 	if x ~= lastX or y ~= lastY or diffZoom or facing ~= lastFacing or force then
 		-- set upvalues to new settings
@@ -729,21 +677,17 @@ function Display:UpdateMiniMap(force)
 		minimapHeight = Minimap:GetHeight() / 2
 		minimapStrata = Minimap:GetFrameStrata()
 		minimapFrameLevel = Minimap:GetFrameLevel() + 5
-
 		-- calculate distance in yards
 		local _x, _y =  GatherMate:PointToYards(x, y, zone)
-		
 		-- update upvalues for icon placement
 		lastX, lastY = x, y
 		lastZoom = zoom
 		lastFacing = facing
 		lastXY, lastYY = _x, _y
-		
 		if rotateMinimap then
 			sin = math_sin(facing)
 			cos = math_cos(facing)
 		end
-		
 		-- iterate the node databases and add the nodes
 		for i,db_type in pairs(GatherMate.db_types) do
 			if GatherMate.Visible[db_type] then
@@ -754,7 +698,6 @@ function Display:UpdateMiniMap(force)
 				end
 			end
 		end
-		
 		minimapPinCount = 0
 		for k,v in pairs(minimapPins) do
 			if not v.keep then
@@ -767,7 +710,6 @@ function Display:UpdateMiniMap(force)
 		end
 	end
 end
-
 --[[
 	Refresh the worldmap
 	we check profile preferences for what to display
@@ -779,12 +721,9 @@ function Display:UpdateWorldMap(force)
 	if force then rememberForce = true end
 	if not WorldMapFrame:IsVisible() then return end
 	if not db.showWorldMap then clearpins(worldmapPins) return end
-
 	local zname = continentData[GetCurrentMapContinent()][GetCurrentMapZone()]
 	if not zname then clearpins(worldmapPins) return end -- player is not viewing a zone map of a continent
-
 	if not rememberForce and lastDrawnWorldMap == zname then return end -- already drawn last time, and not forced
-
 	if lastDrawnWorldMap ~= zname then
 		clearpins(worldmapPins) -- viewing different zone, so clear all the pins, else don't clear and just do pin deltas
 	end
@@ -792,7 +731,6 @@ function Display:UpdateWorldMap(force)
 	worldmapHeight = WorldMapButton:GetHeight()
 	worldmapStrata = WorldMapButton:GetFrameStrata()
 	worldmapFrameLevel = WorldMapButton:GetFrameLevel() + 5
-	
 	for i,db_type in pairs(GatherMate.db_types) do
 		if GatherMate.Visible[db_type] then
 			for coord, nodeID in GatherMate:GetNodesForZone(zname, db_type) do
@@ -800,7 +738,6 @@ function Display:UpdateWorldMap(force)
 			end
 		end
 	end
-	
 	for index, pin in pairs(worldmapPins) do
 		if pin.keep then
 			pin.keep = nil
@@ -821,7 +758,6 @@ function Display:UpdateWorldMap(force)
 	lastDrawnWorldMap = zname -- record last drawn zone name
 	rememberForce = false
 end
-
 --[[
 	This function is for external addons to call to reparent all existing
 	minimap icons to a new minimap frame.
@@ -834,3 +770,4 @@ function Display:ReparentMinimapPins(parent)
 	end
 	self:UpdateIconPositions()
 end
+

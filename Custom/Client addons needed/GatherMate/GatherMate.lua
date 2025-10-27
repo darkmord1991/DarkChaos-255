@@ -7,7 +7,6 @@
 local GatherMate = LibStub("AceAddon-3.0"):NewAddon("GatherMate","AceConsole-3.0","AceEvent-3.0")
 local L = LibStub("AceLocale-3.0"):GetLocale("GatherMate",false)
 _G["GatherMate"] = GatherMate
-
 -- locals
 local db, gmdbs, filter
 local reverseTables = {}
@@ -16,7 +15,7 @@ local defaults = {
 	profile = {
 		scale       = 0.75,
 		alpha       = 1,
-		show = { 
+		show = {
 			["Treasure"] = "always",
 			["*"] = "with_profession"
 		},
@@ -51,24 +50,22 @@ local defaults = {
 			["Fishing"]        = false,
 			["Mining"]         = false,
 			["Extract Gas"]    = false,
-			["Treasure"]	   = false,			
+			["Treasure"]	   = false,
 		},
 		importers = {
-			["*"] = { 
-				["Style"] = "Merge", 
+			["*"] = {
+				["Style"] = "Merge",
 				["Databases"] = {},
 				["lastImport"] = 0,
 				["autoImport"] = false,
 				["bcOnly"] = false,
 			},
-		}	
+		}
 	},
 }
 local floor = floor
 local next = next
-
 local wow40 = select(4,GetBuildInfo()) >= 40000
-
 --[[
 	Setup a few databases, we sub divide namespaces for resetting/importing
 	:OnInitialize() is called at ADDON_LOADED so savedvariables are loaded
@@ -78,7 +75,6 @@ function GatherMate:OnInitialize()
 	self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
 	self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileChanged")
 	self.db.RegisterCallback(self, "OnProfileReset", "OnProfileChanged")
-	
 	-- Setup our saved vars, we dont use AceDB, cause it over kills
 	-- These 4 savedvars are global and doesnt need char specific stuff in it
 	GatherMateHerbDB = GatherMateHerbDB or {}
@@ -112,7 +108,6 @@ function GatherMate:OnInitialize()
 		StaticPopup_Show("GATHERMATE_VERSION")
 	end
 end
-
 --[[
 	Register a new node DB for usage in GatherMate
 ]]
@@ -120,16 +115,14 @@ function GatherMate:RegisterDBType(name, db)
 	tinsert(self.db_types, name)
 	self.gmdbs[name] = db
 end
-
 function GatherMate:OnProfileChanged(db,name)
 	db = self.db.profile
 	filter = db.filter
-	
 	GatherMate:SendMessage("GatherMateConfigChanged")
 end
 --[[
 	create a reverse lookup table for input table (we use it for english names of nodes)
-]] 
+]]
 function GatherMate:CreateReversedTable(tbl)
 	if reverseTables[tbl] then
 		return reverseTables[tbl]
@@ -175,7 +168,6 @@ end
 function GatherMate:getXY(id)
 	return floor(id / 10000) / 10000, (id % 10000) / 10000
 end
-
 --[[
 	how big is the zone
 ]]
@@ -183,7 +175,6 @@ function GatherMate:GetZoneSize(zone)
 	local x = self.zoneData[zone]
 	if x then return x[1], x[2]	else return 0, 0 end
 end
-
 --[[
 	Convert a zone name to id
 ]]
@@ -206,7 +197,6 @@ function GatherMate:AddNode(zone, x, y, nodeType, name)
 	db[zoneID][id] = self.nodeIDs[nodeType][name]
 	self:SendMessage("GatherMateNodeAdded", zone, nodeType, id, name)
 end
-
 --[[
 	These 2 functions are only called by the importer/sharing. These
 	do NOT fire GatherMateNodeAdded or GatherMateNodeDeleted messages.
@@ -230,12 +220,10 @@ function GatherMate:DeleteNode(zoneID, coords, nodeType)
 		db[coords] = nil
 	end
 end
-
 -- Do-end block for iterator
 do
 	local emptyTbl = {}
 	local tablestack = setmetatable({}, {__mode = 'k'})
-	
 	local function dbCoordIterNearby(t, prestate)
 		if not t then return nil end
 		local data = t.data
@@ -243,7 +231,7 @@ do
 		local xLocal, yLocal, yw, yh = t.xLocal, t.yLocal, t.yw, t.yh
 		local radiusSquared, filterTable, ignoreFilter = t.radiusSquared, t.filterTable, t.ignoreFilter
 		while state do
-			if filterTable[value] or ignoreFilter then 
+			if filterTable[value] or ignoreFilter then
 				-- inline the :getXY() here in critical minimap update loop
 				local x2, y2 = floor(state / 10000) / 10000, (state % 10000) / 10000
 				local x = (x2 - xLocal) * yw
@@ -257,7 +245,6 @@ do
 		tablestack[t] = true
 		return nil, nil
 	end
-	
 	--[[
 		Find all nearby nodes within the radius of the given (x,y) for a nodeType and zone
 		this function returns an iterator
@@ -265,7 +252,6 @@ do
 	function GatherMate:FindNearbyNode(zone, x, y, nodeType, radius, ignoreFilter)
 		local tbl = next(tablestack) or {}
 		tablestack[tbl] = nil
-		
 		tbl.data = gmdbs[nodeType][self.zoneData[zone][3]] or emptyTbl
 		tbl.yw, tbl.yh = self.zoneData[zone][1], self.zoneData[zone][2]
 		tbl.radiusSquared = radius * radius
@@ -274,14 +260,13 @@ do
 		tbl.ignoreFilter = ignoreFilter
 		return dbCoordIterNearby, tbl, nil
 	end
-
 	local function dbCoordIter(t, prestate)
 		if not t then return nil end
 		local data = t.data
 		local state, value = next(data, prestate)
 		local filterTable = t.filterTable
 		while state do
-			if filterTable[value] then 
+			if filterTable[value] then
 				return state, value
 			end
 			state, value = next(data, state)
@@ -289,7 +274,6 @@ do
 		tablestack[t] = true
 		return nil, nil
 	end
-	
 	--[[
 		This function returns an iterator for the given zone and nodeType
 	]]
@@ -300,7 +284,6 @@ do
 		else
 			local tbl = next(tablestack) or {}
 			tablestack[tbl] = nil
-			
 			tbl.data = t
 			tbl.filterTable = filter[nodeType]
 			return dbCoordIter, tbl, nil
@@ -368,7 +351,6 @@ function GatherMate:RemoveNodeByID(zone, nodeType, coord)
 		self:SendMessage("GatherMateNodeDeleted", zone, nodeType, coord, t)
 	end
 end
-
 --[[
 	Function to cleanup the databases by removing nearby nodes of similar types
 ]]
@@ -392,7 +374,6 @@ function GatherMate:CleanupDB()
 	self:SendMessage("GatherMateCleanup")
 	self:Print(L["Cleanup Complete."])
 end
-
 --[[
 	Function to delete all of a specified node from a specific zone
 ]]

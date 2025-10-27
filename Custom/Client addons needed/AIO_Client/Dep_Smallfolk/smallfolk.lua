@@ -1,10 +1,8 @@
-local M = {}
+﻿local M = {}
 Smallfolk = M
 local expect_object, dump_object
 local error, tostring, pairs, type, floor, huge, concat = error, tostring, pairs, type, math.floor, math.huge, table.concat
-
 local dump_type = {}
-
 function dump_type:string(nmemo, memo, acc)
 	local nacc = #acc
 	acc[nacc + 1] = '"'
@@ -12,12 +10,10 @@ function dump_type:string(nmemo, memo, acc)
 	acc[nacc + 3] = '"'
 	return nmemo
 end
-
 function dump_type:number(nmemo, memo, acc)
 	acc[#acc + 1] = ("%.17g"):format(self)
 	return nmemo
 end
-
 function dump_type:table(nmemo, memo, acc)
     --[[
 	if memo[self] then
@@ -45,7 +41,6 @@ function dump_type:table(nmemo, memo, acc)
 	acc[#acc] = acc[#acc] == '{' and '{}' or '}'
 	return nmemo
 end
-
 function dump_object(object, nmemo, memo, acc)
 	if object == true then
 		acc[#acc + 1] = 't'
@@ -72,7 +67,6 @@ function dump_object(object, nmemo, memo, acc)
 	end
 	return nmemo
 end
-
 function M.dumps(object)
 	local nmemo = 0
 	local memo = {}
@@ -80,11 +74,9 @@ function M.dumps(object)
 	dump_object(object, nmemo, memo, acc)
 	return concat(acc)
 end
-
 local function invalid(i)
 	error('invalid input at position ' .. i)
 end
-
 local nonzero_digit = {['1'] = true, ['2'] = true, ['3'] = true, ['4'] = true, ['5'] = true, ['6'] = true, ['7'] = true, ['8'] = true, ['9'] = true}
 local is_digit = {['0'] = true, ['1'] = true, ['2'] = true, ['3'] = true, ['4'] = true, ['5'] = true, ['6'] = true, ['7'] = true, ['8'] = true, ['9'] = true}
 local function expect_number(string, start)
@@ -132,7 +124,6 @@ local function expect_number(string, start)
 	end
 	return tonumber(string:sub(start, i - 1)), i
 end
-
 local expect_object_head = {
 	t = function(string, i) return true, i end,
 	f = function(string, i) return false, i end,
@@ -199,7 +190,6 @@ expect_object_head['8'] = expect_object_head['0']
 expect_object_head['9'] = expect_object_head['0']
 expect_object_head['-'] = expect_object_head['0']
 expect_object_head['.'] = expect_object_head['0']
-
 expect_object = function(string, i, tables)
 	local head = string:sub(i, i)
 	if expect_object_head[head] then
@@ -207,12 +197,11 @@ expect_object = function(string, i, tables)
 	end
 	invalid(i)
 end
-
 function M.loads(string, maxsize)
 	if #string > (maxsize or 10000) then
 		error 'input too large'
 	end
 	return (expect_object(string, 1, {}))
 end
-
 return M
+

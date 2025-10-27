@@ -7,7 +7,6 @@
 local GatherMate = LibStub("AceAddon-3.0"):GetAddon("GatherMate")
 local NL = LibStub("AceLocale-3.0"):GetLocale("GatherMateNodes",true)
 local L = LibStub("AceLocale-3.0"):GetLocale("GatherMate")
-
 --[[
 	Zone data for heigth, width, and gathermate ID
 ]]
@@ -212,13 +211,10 @@ local zone_data = { -- {width, height, zoneID}
 	AmaniCatacombs1_ = { 300, 200, 194},
 	TidesHollow2_ = { 375, 250, 195},
 	StillpineHold3_ = { 474.9902344000002, 316.6601562599999, 196},
-
 }
 -- meta table to return 0 for all unknown zones, instances, and what not
 local emptyZoneTbl = {0,0,0}
 setmetatable(zone_data, { __index = function(t, k) ChatFrame1:AddMessage("GatherMate is missing data for "..k); return emptyZoneTbl end })
-
-
 -- empty continents include -1 for the universe, and 0 for eastern kingdoms (meta continents so to speak)
 local emptyCont = {}
 local continentList = setmetatable({ GetMapContinents() }, {__index = function() return emptyCont end})
@@ -242,12 +238,10 @@ specialZones[L["The Frozen Sea"]] = true
 specialZones[L["The North Sea"]] = true
 zoneList[L["The Frozen Sea"]] = zone_data["Northrend"]
 zoneList[L["The North Sea"]] = zone_data["Northrend"]
-
 GatherMate.zoneData = zoneList
 GatherMate.continentData = continentList
 GatherMate.specialZones = specialZones
 zone_data = nil
-
 --[[
 	Node Identifiers
 ]]
@@ -264,8 +258,8 @@ local node_ids = {
 		[NL["School of Deviate Fish"]] 			= 109, -- firefin.tga
 		[NL["Stonescale Eel Swarm"]] 			= 110, -- eel.tga
 		--[NL["Muddy Churning Water"]] 			= 111, -- ZG only fishing node
-		[NL["Highland Mixed School"]] 			= 112, -- fishhook.tga 
-		[NL["Pure Water"]] 						= 113, -- purewater.tga           
+		[NL["Highland Mixed School"]] 			= 112, -- fishhook.tga
+		[NL["Pure Water"]] 						= 113, -- purewater.tga
 		[NL["Bluefish School"]] 				= 114, -- bluefish,tga
 		--[NL["Feltail School"]] 					= 115, -- feltail.tga
 		[NL["Brackish Mixed School"]]         	= 115, -- feltail.tga
@@ -289,7 +283,7 @@ local node_ids = {
 		[NL["Schooner Wreckage"]]				= 133,
 		[NL["Waterlogged Wreckage"]]			= 134,
 		[NL["Bloodsail Wreckage"]]				= 135,
-		-- Begin tediuous prefix mapping	
+		-- Begin tediuous prefix mapping
 		[NL["Lesser Sagefish School"]]			= 136, -- sagefish.tga
 		[NL["Lesser Oily Blackmouth School"]] 	= 137, -- oilyblackmouth.tga
 		[NL["Sparse Oily Blackmouth School"]] 	= 138, -- oilyblackmouth.tga
@@ -302,7 +296,7 @@ local node_ids = {
 		[NL["Lesser Floating Debris"]] 			= 145, -- debris.tga
 		[NL["Sparse Schooner Wreckage"]]		= 146,
 		[NL["Abundant Bloodsail Wreckage"]]		= 147,
-		[NL["Teeming Floating Wreckage"]]		= 148,	
+		[NL["Teeming Floating Wreckage"]]		= 148,
 	},
 	["Mining"] = {
 		[NL["Copper Vein"]] 					= 201,
@@ -446,7 +440,6 @@ end
 GatherMate.reverseNodeIDs = reverse
 -- Special fix because "Battered Chest" (502) and "Tattered Chest" (503) both translate to "Ramponierte Truhe" in deDE
 if GetLocale() == "deDE" then GatherMate.reverseNodeIDs["Treasure"][502] = "Ramponierte Truhe" end
-
 --[[
 	Collector data for rare spawn determination
 ]]
@@ -467,9 +460,7 @@ local rare_spawns = {
 	[229] = {[228]=true}, -- rich cobalt node
 	[232] = {[231]=true}, -- rich saronite node
 	[230] = {[231]=true}, -- titanium node
-	
 	[441] = {[440]=true}, --flame cap
-	
 	[136] = {[108]=true}, -- sage fish
 	[137] = {[107]=true}, --oily
 	[138] = {[107]=true}, --oily
@@ -483,7 +474,6 @@ local rare_spawns = {
 	[146] = {[133]=true}, --schooner
 	[147] = {[135]=true}, --bloodsail
 	[148] = {[101]=true}, -- floating wreckage
-
 }
 Collector.rareNodes = rare_spawns
 -- Format zone = { "Database", "new node id"}
@@ -498,12 +488,10 @@ Collector.specials = nodeRemap
 local Display = GatherMate:GetModule("Display")
 local icon_path = "Interface\\AddOns\\GatherMate\\Artwork\\"
 Display.trackingCircle = icon_path.."track_circle.tga"
-
 Display:SetSkillTracking("Mining", "Interface\\Icons\\Spell_Nature_Earthquake")
 Display:SetSkillTracking("Herb Gathering", "Interface\\Icons\\INV_Misc_Flower_02")
 Display:SetSkillTracking("Fishing", "Interface\\Icons\\INV_Misc_Fish_02")
 Display:SetSkillTracking("Treasure", "Interface\\Icons\\Racial_Dwarf_FindTreasure")
-
 Display:SetSkillProfession("Herb Gathering", L["Herbalism"])
 Display:SetSkillProfession("Mining", L["Mining"])
 Display:SetSkillProfession("Fishing", L["Fishing"])
@@ -693,8 +681,8 @@ local node_textures = {
 		[528] = icon_path.."Treasure\\tresure.tga",
 		[529] = icon_path.."Treasure\\treasure.tga",
 		[530] = icon_path.."Treasure\\treasure.tga",
-		[531] = icon_path.."Treasure\\egg.tga",	
-		[532] = icon_path.."Treasure\\everfrost.tga",	
+		[531] = icon_path.."Treasure\\egg.tga",
+		[532] = icon_path.."Treasure\\everfrost.tga",
 		[533] = icon_path.."Treasure\\egg.tga",
 	},
 }
@@ -850,3 +838,4 @@ local minimap_shapes = {
 	["TRICORNER-BOTTOMRIGHT"] = { false, true,  true,  true },
 }
 Display.minimapShapes = minimap_shapes
+

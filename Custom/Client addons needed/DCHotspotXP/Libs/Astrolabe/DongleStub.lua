@@ -1,10 +1,8 @@
--- Fuller DongleStub compatibility shim
+﻿-- Fuller DongleStub compatibility shim
 -- Provides RegisterLibrary, Register, IsNewerVersion, GetLibrary, Embed and simple version bookkeeping
 if not DongleStub then DongleStub = {} end
-
 DongleStub._registry = DongleStub._registry or {}
 DongleStub._versions = DongleStub._versions or {}
-
 -- Check if provided minor represents a newer version than what we have
 function DongleStub:IsNewerVersion(name, minor)
     if not name then return true end
@@ -12,7 +10,6 @@ function DongleStub:IsNewerVersion(name, minor)
     if not cur then return true end
     return (tonumber(minor) or 0) > (tonumber(cur) or 0)
 end
-
 -- Register a named library; expose Astrolabe globally when present
 function DongleStub:RegisterLibrary(name, lib, minor)
     if not name or type(lib) ~= "table" then return false end
@@ -23,7 +20,6 @@ function DongleStub:RegisterLibrary(name, lib, minor)
     end
     return true
 end
-
 -- Backwards-compatible Register(lib, activateFunc)
 function DongleStub:Register(lib, activate)
     if type(lib) ~= "table" then return false end
@@ -40,11 +36,9 @@ function DongleStub:Register(lib, activate)
     if type(activate) == "function" then pcall(activate, lib) end
     return true
 end
-
 function DongleStub:GetLibrary(name)
     return self._registry[name]
 end
-
 -- Simple embed: copy functions into target table if missing
 function DongleStub:Embed(target)
     if type(target) ~= "table" then return end
@@ -52,7 +46,6 @@ function DongleStub:Embed(target)
         if type(v) == "function" and not target[k] then target[k] = v end
     end
 end
-
 -- Factory returning a simple constructor for creating tiny libs
 function DongleStub:New()
     return function(libName, minor)
@@ -61,3 +54,4 @@ function DongleStub:New()
         return lib
     end
 end
+

@@ -1,20 +1,15 @@
---[[
+﻿--[[
 Copyright (c) 2009, Hendrik "Nevcairiel" Leppkes < h.leppkes@gmail.com >
 All rights reserved.
 ]]
-
 local Mapster = LibStub("AceAddon-3.0"):GetAddon("Mapster")
 local L = LibStub("AceLocale-3.0"):GetLocale("Mapster")
-
 local MODNAME = "InstanceMaps"
 local Maps = Mapster:NewModule(MODNAME, "AceHook-3.0")
-
 local LBZ = LibStub("LibBabble-Zone-3.0", true)
 local BZ = LBZ and LBZ:GetLookupTable() or setmetatable({}, {__index = function(t,k) return k end})
-
 -- Special-case map id for our custom Azshara Crater overlay
 local AZ_ID = 37
-
 -- Data mostly from http://www.wowwiki.com/API_SetMapByID
 local data = {
 	-- Northrend Instances
@@ -75,7 +70,6 @@ local data = {
 		["Pit of Saron"] = 602,
 		["Halls of Reflection"] = 603,
 	},
-
 	-- Northrend Raids
 	rclassic = {
 		["Molten Core"] = 696,
@@ -114,7 +108,6 @@ local data = {
 		["Isle of Conquest"] = 540,
 	},
 }
-
 --[[
 local db
 local defaults = {
@@ -122,7 +115,6 @@ local defaults = {
 	}
 }
 ]]
-
 local options
 local function getOptions()
 	if not options then
@@ -148,12 +140,9 @@ local function getOptions()
 			},
 		}
 	end
-
 	return options
 end
-
 local zoomOverride
-
 -- If WDM (DungeonMaps/MicroDungeons) is present, expose a combined "Dark Chaos" zone list
 local function TryInjectDarkChaos(self)
 	-- Force the "darkchaos" continent to contain only Azshara Crater (map id 37).
@@ -161,27 +150,21 @@ local function TryInjectDarkChaos(self)
 	-- sees only the Azshara Crater entry under Dark Chaos.
 	local AZ_NAME = L["Azshara Crater"] or "Azshara Crater"
 	local AZ_ID = 37
-
 	self.zone_names = self.zone_names or {}
 	self.zone_data = self.zone_data or {}
-
 	-- single-entry array and data table
 	self.zone_names["darkchaos"] = { AZ_NAME }
 	self.zone_data["darkchaos"] = { [1] = AZ_ID }
 end
-
 function Maps:OnInitialize()
 	--[[
 	self.db = Mapster.db:RegisterNamespace(MODNAME, defaults)
 	db = self.db.profile
 	]]
-
 	self:SetEnabledState(Mapster:GetModuleEnabled(MODNAME))
 	Mapster:RegisterModuleOptions(MODNAME, getOptions, L["Instance Maps"])
-
 	self.zone_names = {}
 	self.zone_data = {}
-
 	for key, idata in pairs(data) do
 		local names = {}
 		local name_data = {}
@@ -193,7 +176,6 @@ function Maps:OnInitialize()
 		end
 		table.sort(names)
 		self.zone_names[key] = names
-
 		local zone_data = {}
 		for k,v in pairs(names) do
 			zone_data[k] = name_data[v]
@@ -202,37 +184,30 @@ function Maps:OnInitialize()
 	end
 	data = nil
 end
-
 function Maps:OnEnable()
 	self:SecureHook("WorldMapContinentsDropDown_Update")
 	self:SecureHook("WorldMapFrame_LoadContinents")
-
 	self:SecureHook("WorldMapZoneDropDown_Update")
 	self:RawHook("WorldMapZoneDropDown_Initialize", true)
-	
 	self:SecureHook("SetMapZoom")
 	self:SecureHook("SetMapToCurrentZone", "SetMapZoom")
 	-- attempt to import WDM/Dark Chaos maps into our data structures
 	TryInjectDarkChaos(self)
 end
-
 function Maps:OnDisable()
 	self:UnhookAll()
 	self.mapCont, self.mapContId, self.mapZone = nil, nil, nil
 	WorldMapContinentsDropDown_Update()
 	WorldMapZoneDropDown_Update()
 end
-
 function Maps:GetZoneData()
 	return self.zone_data[self.mapCont][self.mapZone]
 end
-
 function Maps:WorldMapContinentsDropDown_Update()
 	if self.mapCont then
 		UIDropDownMenu_SetSelectedID(WorldMapContinentDropDown, self.mapContId)
 	end
 end
-
 local function MapsterContinentButton_OnClick(frame)
 	UIDropDownMenu_SetSelectedID(WorldMapContinentDropDown, frame:GetID())
 	Maps.mapCont = frame.arg1
@@ -241,55 +216,45 @@ local function MapsterContinentButton_OnClick(frame)
 	SetMapZoom(-1)
 	zoomOverride = nil
 end
-
 function Maps:WorldMapFrame_LoadContinents()
 	local info = UIDropDownMenu_CreateInfo()
-	
 	info.text =  L["Classic Instances"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "iclassic"
 	UIDropDownMenu_AddButton(info)
-
 	info.text =  L["Classic Raids"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "rclassic"
 	UIDropDownMenu_AddButton(info)
-
 	info.text =  L["Burning Crusade Instances"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "ibc"
 	UIDropDownMenu_AddButton(info)
-
 	info.text =  L["Burning Crusade Raids"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "rbc"
 	UIDropDownMenu_AddButton(info)
-	
 	info.text =  L["Northrend Instances"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "iwrath"
 	UIDropDownMenu_AddButton(info)
-
 	info.text =  L["Northrend Raids"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "rwrath"
 	UIDropDownMenu_AddButton(info)
-
 	info.text =  L["Battlegrounds"]
 	info.func = MapsterContinentButton_OnClick
 	info.checked = nil
 	info.arg1 = "bgs"
 	UIDropDownMenu_AddButton(info)
-
 	-- ensure WDM maps are injected (handles WDM loading after Mapster)
 	pcall(TryInjectDarkChaos, self)
-
 	-- Dark Chaos (custom maps from WDM)
 	info.text = L["Dark Chaos"]
 	info.func = MapsterContinentButton_OnClick
@@ -297,13 +262,11 @@ function Maps:WorldMapFrame_LoadContinents()
 	info.arg1 = "darkchaos"
 	UIDropDownMenu_AddButton(info)
 end
-
 function Maps:WorldMapZoneDropDown_Update()
 	if self.mapZone then
 		UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, self.mapZone)
 	end
 end
-
 local function MapsterZoneButton_OnClick(frame)
 	UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, frame:GetID())
 	Maps.mapZone = frame:GetID()
@@ -332,7 +295,6 @@ local function MapsterZoneButton_OnClick(frame)
 		if DCMap_BackgroundFrame.Hide then pcall(DCMap_BackgroundFrame.Hide, DCMap_BackgroundFrame) end
 	end
 end
-
 local function Mapster_LoadZones(...)
 	local info = UIDropDownMenu_CreateInfo()
 	for i=1, select("#", ...), 1 do
@@ -342,7 +304,6 @@ local function Mapster_LoadZones(...)
 		UIDropDownMenu_AddButton(info)
 	end
 end
-
 function Maps:WorldMapZoneDropDown_Initialize()
 	if self.mapCont and self.zone_names and self.zone_names[self.mapCont] then
 		Mapster_LoadZones(unpack(self.zone_names[self.mapCont]))
@@ -351,9 +312,9 @@ function Maps:WorldMapZoneDropDown_Initialize()
 		self.hooks.WorldMapZoneDropDown_Initialize()
 	end
 end
-
 function Maps:SetMapZoom()
 	if not zoomOverride then
 		self.mapCont, self.mapContId, self.mapZone = nil, nil, nil
 	end
 end
+

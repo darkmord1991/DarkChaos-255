@@ -1,17 +1,14 @@
---[[-----------------------------------------------------------------------------
+﻿--[[-----------------------------------------------------------------------------
 InlineGroup Container
 Simple container widget that creates a visible "box" with an optional title.
 -------------------------------------------------------------------------------]]
 local Type, Version = "InlineGroup", 20
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
-
 -- Lua APIs
 local pairs = pairs
-
 -- WoW APIs
 local CreateFrame, UIParent = CreateFrame, UIParent
-
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -20,19 +17,14 @@ local methods = {
 		self:SetWidth(300)
 		self:SetHeight(100)
 	end,
-
 	-- ["OnRelease"] = nil,
-
 	["SetTitle"] = function(self,title)
 		self.titletext:SetText(title)
 	end,
-
-
 	["LayoutFinished"] = function(self, width, height)
 		if self.noAutoHeight then return end
 		self:SetHeight((height or 0) + 40)
 	end,
-
 	["OnWidthSet"] = function(self, width)
 		local content = self.content
 		local contentwidth = width - 20
@@ -42,7 +34,6 @@ local methods = {
 		content:SetWidth(contentwidth)
 		content.width = contentwidth
 	end,
-
 	["OnHeightSet"] = function(self, height)
 		local content = self.content
 		local contentheight = height - 20
@@ -53,7 +44,6 @@ local methods = {
 		content.height = contentheight
 	end
 }
-
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
@@ -63,29 +53,24 @@ local PaneBackdrop  = {
 	tile = true, tileSize = 16, edgeSize = 16,
 	insets = { left = 3, right = 3, top = 5, bottom = 3 }
 }
-
 local function Constructor()
 	local frame = CreateFrame("Frame", nil, UIParent)
 	frame:SetFrameStrata("FULLSCREEN_DIALOG")
-
 	local titletext = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	titletext:SetPoint("TOPLEFT", 14, 0)
 	titletext:SetPoint("TOPRIGHT", -14, 0)
 	titletext:SetJustifyH("LEFT")
 	titletext:SetHeight(18)
-
 	local border = CreateFrame("Frame", nil, frame)
 	border:SetPoint("TOPLEFT", 0, -17)
 	border:SetPoint("BOTTOMRIGHT", -1, 3)
 	border:SetBackdrop(PaneBackdrop)
 	border:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
 	border:SetBackdropBorderColor(0.4, 0.4, 0.4)
-
 	--Container Support
 	local content = CreateFrame("Frame", nil, border)
 	content:SetPoint("TOPLEFT", 10, -10)
 	content:SetPoint("BOTTOMRIGHT", -10, 10)
-
 	local widget = {
 		frame     = frame,
 		content   = content,
@@ -95,8 +80,7 @@ local function Constructor()
 	for method, func in pairs(methods) do
 		widget[method] = func
 	end
-
 	return AceGUI:RegisterAsContainer(widget)
 end
-
 AceGUI:RegisterWidgetType(Type, Constructor, Version)
+

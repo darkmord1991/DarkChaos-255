@@ -1,14 +1,11 @@
-local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
+﻿local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
 local MD = WDM:NewModule("MicroDungeons", "AceHook-3.0")
-
 local LBZ = LibStub("LibBabble-Zone-3.0", true)
 local BZ = LBZ and LBZ:GetLookupTable() or
                setmetatable({}, {__index = function(t, k) return k end})
-
 local LBSZ = LibStub("LibBabble-SubZone-3.0", true)
 local BSZ = LBSZ and LBSZ:GetLookupTable() or
                 setmetatable({}, {__index = function(t, k) return k end})
-
 local defaults = {
     profile = {
         ["show_minimap"] = false,
@@ -22,7 +19,6 @@ local defaults = {
         ["debugmode"] = false
     }
 }
-
 local data = {
     { -- Kalimdor
         ["Ashenvale"] = 43,
@@ -82,7 +78,6 @@ local data = {
         ["Wetlands"] = 40
     }
 }
-
 local subzones = {
     ["Elwynn Forest"] = {
         ["Fargodeep Mine"] = 1001,
@@ -97,7 +92,6 @@ local subzones = {
         ["Gnomeregan"] = 1010
     }
 }
-
 local mdlevels = {
     ["Fargodeepmine1_"] = {"Elwynn", 1, 1001},
     ["Fargodeepmine2_"] = {"Elwynn", 2, 1002},
@@ -144,14 +138,11 @@ local mdlevels = {
     ["TidesHollow2_"] = {"AzermystIsle", 2, 1042},
     ["StillpineHold3_"] = {"AzermystIsle", 3, 1043}
 }
-
 function MD:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("WDMdb", defaults, true)
-    
     -- defensive: ensure these tables exist even if OnEnable/OnInitialize order is odd
     self.zone_names = self.zone_names or {}
     self.zone_data = self.zone_data or {}
-
     for key, idata in pairs(data) do
         local names = {}
         local name_data = {}
@@ -163,36 +154,27 @@ function MD:OnInitialize()
         end
         table.sort(names)
         self.zone_names[key] = names
-
         local zone_data = {}
         for k, v in pairs(names) do zone_data[k] = name_data[v] end
         self.zone_data[key] = zone_data
     end
     data = nil
-
     self.mdlevels = {}
-
     for key, value in pairs(mdlevels) do
         if self.mdlevels[key] == nil then self.mdlevels[key] = {} end
-
         for k, v in pairs(mdlevels) do
             local k_match = string.match(k, "(.-)%d*_$") or k -- изменено здесь
             local key_match = string.match(key, "(.-)%d*_$") or key -- изменено здесь
-
             if k_match == key_match then
                 table.insert(self.mdlevels[key], v)
             end
         end
     end
-
     for key, value in pairs(self.mdlevels) do
         table.sort(value, function(a, b) return a[2] < b[2] end)
     end
-
     mdlevels = nil
-
     self.sub_zones = {}
-
     for key, value in pairs(subzones) do
         local names = {}
         -- safe lookup for the parent key and subzone names
@@ -202,38 +184,29 @@ function MD:OnInitialize()
             tinsert(names, subLoc)
         end
         table.sort(names)
-
         self.sub_zones[lkey] = names
     end
-
     subzones = nil
-
 end
-
 function MD:OnEnable()
     -- ensure internal tables exist before hooks run
     self.zone_names = self.zone_names or {}
     self.zone_data = self.zone_data or {}
     self.mdlevels = self.mdlevels or {}
     self.sub_zones = self.sub_zones or {}
-
     self:SecureHook("WorldMapLevelDropDown_Update")
     self:SecureHook("WorldMapZoneDropDown_Update")
     WorldMapLevelUpButton:HookScript("OnClick", DungeonMapLevelUp_OnClick)
     WorldMapLevelDownButton:HookScript("OnClick", DungeonMapLevelDown_OnClick)
 end
-
 function MD:WorldMapLevelDropDown_Update()
     local mapName, _, _ = GetMapInfo()
     if not self.mdlevels or not mapName or not self.mdlevels[mapName] or not self.db.profile.microdungeons then return end
-
     UIDropDownMenu_Initialize(WorldMapLevelDropDown,
                               MicroDungeonLevelDropDown_Initialize);
     UIDropDownMenu_SetWidth(WorldMapLevelDropDown, 130);
-
     UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown,
                                  GetCurrentMicroDungeonLevel());
-
     WorldMapLevelDropDown:Show();
     if (WORLDMAP_SETTINGS.size ~= WORLDMAP_WINDOWED_SIZE) then
         WorldMapLevelUpButton:Show();
@@ -245,11 +218,9 @@ function MD:WorldMapLevelDropDown_Update()
         end
     end
 end
-
 function DungeonMapLevelUp_OnClick(self)
     local mapName, _, _ = GetMapInfo()
     if not MD.mdlevels or not MD.mdlevels[mapName] then return end
-
     if GetCurrentMicroDungeonLevel() > 1 then
         UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown,
                                      GetCurrentMicroDungeonLevel() - 1);
@@ -257,11 +228,9 @@ function DungeonMapLevelUp_OnClick(self)
         PlaySound("UChatScrollButton");
     end
 end
-
 function DungeonMapLevelDown_OnClick(self)
     local mapName, _, _ = GetMapInfo()
     if not MD.mdlevels or not MD.mdlevels[mapName] then return end
-
     if GetCurrentMicroDungeonLevel() < #MD.mdlevels[mapName] then
         UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown,
                                      GetCurrentMicroDungeonLevel() + 1);
@@ -269,23 +238,19 @@ function DungeonMapLevelDown_OnClick(self)
         PlaySound("UChatScrollButton");
     end
 end
-
 function GetCurrentMicroDungeonLevel()
     local mapName, _, _ = GetMapInfo()
     if not MD.mdlevels or not mapName then return end
     local curmdlist = MD.mdlevels[mapName]
     local match = tonumber(string.match(mapName, "%d+"))
     if match == nil then match = 0 end
-
     for i = 1, #curmdlist do if curmdlist[i][2] == match then return i end end
 end
-
 function MicroDungeonLevelDropDown_Initialize()
     local info = UIDropDownMenu_CreateInfo()
     local level = GetCurrentMicroDungeonLevel()
     local curmd = MD.mdlevels and MD.mdlevels[GetMapInfo()]
     if not curmd then return end
-
     for i = 1, #curmd do
         local mapname = curmd[i][1]:upper();
         local floorNum = curmd[i][2];
@@ -296,28 +261,23 @@ function MicroDungeonLevelDropDown_Initialize()
         UIDropDownMenu_AddButton(info);
     end
 end
-
 function MicroDungeonLevelButton_OnClick(self)
     UIDropDownMenu_SetSelectedID(WorldMapLevelDropDown, self:GetID());
     if not MD.mdlevels or not MD.mdlevels[GetMapInfo()] then return end
     SetMapByID(MD.mdlevels[GetMapInfo()][self:GetID()][3]);
 end
-
 function MD:WorldMapZoneDropDown_Update()
     if not self.zone_names or not self.zone_names[GetCurrentMapContinent()] or not self.db.profile.microdungeons then return end
     UIDropDownMenu_Initialize(WorldMapZoneDropDown,
                               WDMZoneDropDown_Initialize);
     UIDropDownMenu_SetWidth(WorldMapZoneDropDown, 130);
-
     if ((GetCurrentMapContinent() == 0) or
         (GetCurrentMapContinent() == WORLDMAP_COSMIC_ID)) then
         UIDropDownMenu_ClearAll(WorldMapZoneDropDown);
     else
         UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, MD:WDM2Blizz());
     end
-
 end
-
 function WDMZoneDropDown_Initialize()
     local info = UIDropDownMenu_CreateInfo();
     if not MD.zone_names then return end
@@ -331,13 +291,11 @@ function WDMZoneDropDown_Initialize()
         UIDropDownMenu_AddButton(info);
     end
 end
-
 function WDMZoneButton_OnClick(self)
     UIDropDownMenu_SetSelectedID(WorldMapZoneDropDown, self:GetID());
     if not MD.zone_data or not MD.zone_data[GetCurrentMapContinent()] then return end
     SetMapByID(MD.zone_data[GetCurrentMapContinent()][self:GetID()]);
 end
-
 function MD:WDM2Blizz()
     local blizMapID = GetCurrentMapZone()
     if blizMapID == 0 then return nil end
@@ -350,9 +308,9 @@ function MD:WDM2Blizz()
     end
     return nil
 end
-
 function MD:OnDisable()
     self:UnhookAll()
     WorldMapLevelDropDown_Update()
     WorldMapZoneDropDown_Update()
 end
+

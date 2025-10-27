@@ -1,5 +1,4 @@
-if (GetLocale() == "enGB") then
-
+﻿if (GetLocale() == "enGB") then
 DUNGEON_FLOOR_AHNQIRAJ1 = "The Hive Undergrounds";
 DUNGEON_FLOOR_AHNQIRAJ2 = "The Temple Gates";
 DUNGEON_FLOOR_AHNQIRAJ3 = "Vault of C'Thun";
@@ -123,7 +122,6 @@ DUNGEON_FLOOR_WAILINGCAVERNS1 = "Wailing Caverns";
 DUNGEON_FLOOR_ZULAMAN1 = "Zul'Aman";
 DUNGEON_FLOOR_ZULFARRAK = "Zul' Farrak";
 DUNGEON_FLOOR_ZULGURUB1 = "Zul'Gurub";
-
 DUNGEON_FLOOR_AZUREMYSTISLE2 = "Tides' Hollow";
 DUNGEON_FLOOR_AZUREMYSTISLE3 = "Stillpine Hold";
 DUNGEON_FLOOR_BADLANDS18 = "Uldaman Entrance";
@@ -169,5 +167,5 @@ DUNGEON_FLOOR_UNGOROCRATER14 = "The Slithering Scar";
 DUNGEON_FLOOR_WESTFALL17 = "The Deadmines Entrance";
 DUNGEON_FLOOR_WESTFALL4 = "Gold Coast Quarry";
 DUNGEON_FLOOR_WESTFALL5 = "Jangolode Mine";
-
 end
+

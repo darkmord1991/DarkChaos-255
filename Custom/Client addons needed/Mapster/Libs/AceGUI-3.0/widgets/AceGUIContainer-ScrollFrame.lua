@@ -1,13 +1,9 @@
-local AceGUI = LibStub("AceGUI-3.0")
-
+﻿local AceGUI = LibStub("AceGUI-3.0")
 -- Lua APIs
 local pairs, assert, type = pairs, assert, type
 local min, max, floor = math.min, math.max, math.floor
-
 -- WoW APIs
 local CreateFrame, UIParent = CreateFrame, UIParent
-
-
 -------------
 -- Widgets --
 -------------
@@ -15,34 +11,24 @@ local CreateFrame, UIParent = CreateFrame, UIParent
 	Widgets must provide the following functions
 		Acquire() - Called when the object is aquired, should set everything to a default hidden state
 		Release() - Called when the object is Released, should remove any anchors and hide the Widget
-		
 	And the following members
 		frame - the frame or derivitive object that will be treated as the widget for size and anchoring purposes
 		type - the type of the object, same as the name given to :RegisterWidget()
-		
 	Widgets contain a table called userdata, this is a safe place to store data associated with the wigdet
 	It will be cleared automatically when a widget is released
 	Placing values directly into a widget object should be avoided
-	
 	If the Widget can act as a container for other Widgets the following
 		content - frame or derivitive that children will be anchored to
-		
 	The Widget can supply the following Optional Members
-
-
 ]]
-
 --------------------------
 -- Scroll Frame		    --
 --------------------------
 do
 	local Type = "ScrollFrame"
 	local Version = 9
-	
 	local function OnAcquire(self)
-
 	end
-	
 	local function OnRelease(self)
 		self.frame:ClearAllPoints()
 		self.frame:Hide()
@@ -58,13 +44,11 @@ do
 		self.scrollBarShown = nil
 		self.content.height, self.content.width = nil, nil
 	end
-	
 	local function SetScroll(self, value)
 		local status = self.status or self.localstatus
 		local viewheight = self.scrollframe:GetHeight()
 		local height = self.content:GetHeight()
 		local offset
-		
 		if viewheight > height then
 			offset = 0
 		else
@@ -76,11 +60,9 @@ do
 		status.offset = offset
 		status.scrollvalue = value
 	end
-	
 	local function MoveScroll(self, value)
 		local status = self.status or self.localstatus
 		local height, viewheight = self.scrollframe:GetHeight(), self.content:GetHeight()
-		
 		if height > viewheight then
 			self.scrollbar:Hide()
 		else
@@ -93,8 +75,6 @@ do
 			self.scrollbar:SetValue(min(max(status.scrollvalue + delta*(1000/(diff/45)),0), 1000))
 		end
 	end
-	
-	
 	local function FixScroll(self)
 		if self.updateLock then return end
 		self.updateLock = true
@@ -130,29 +110,23 @@ do
 		end
 		self.updateLock = nil
 	end
-
 	local function OnMouseWheel(this, value)
 		this.obj:MoveScroll(value)
 	end
-
 	local function OnScrollValueChanged(this, value)
 		this.obj:SetScroll(value)
 	end
-	
 	local function FixScrollOnUpdate(this)
 		this:SetScript("OnUpdate", nil)
 		this.obj:FixScroll()
 	end
-	
 	local function OnSizeChanged(this)
 		this:SetScript("OnUpdate", FixScrollOnUpdate)
 	end
-	
 	local function LayoutFinished(self, width, height)
 		self.content:SetHeight(height or 0 + 20)
 		self.scrollframe:SetScript("OnUpdate", FixScrollOnUpdate)
 	end
-	
 	-- called to set an external table to store status in
 	local function SetStatusTable(self, status)
 		assert(type(status) == "table")
@@ -161,26 +135,20 @@ do
 			status.scrollvalue = 0
 		end
 	end
-	
 	local function OnWidthSet(self, width)
 		local content = self.content
 		content.width = width
 	end
-	
-	
 	local function OnHeightSet(self, height)
 		local content = self.content
 		content.height = height
 	end
-	
 	local function Constructor()
 		local frame = CreateFrame("Frame", nil, UIParent)
 		local self = {}
 		self.type = Type
-	
 		self.OnRelease = OnRelease
 		self.OnAcquire = OnAcquire
-		
 		self.MoveScroll = MoveScroll
 		self.FixScroll = FixScroll
 		self.SetScroll = SetScroll
@@ -188,11 +156,9 @@ do
 		self.SetStatusTable = SetStatusTable
 		self.OnWidthSet = OnWidthSet
 		self.OnHeightSet = OnHeightSet
-		
 		self.localstatus = {}
 		self.frame = frame
 		frame.obj = self
-
 		--Container Support
 		local scrollframe = CreateFrame("ScrollFrame", nil, frame)
 		scrollframe.obj = self
@@ -202,7 +168,6 @@ do
 		scrollframe:SetScript("OnMouseWheel", OnMouseWheel)
 		scrollframe:SetScript("OnSizeChanged", OnSizeChanged)
 		self.scrollframe = scrollframe
-		
 		local content = CreateFrame("Frame", nil, scrollframe)
 		content.obj = self
 		content:SetPoint("TOPLEFT", scrollframe, "TOPLEFT", 0, 0)
@@ -210,7 +175,6 @@ do
 		content:SetHeight(400)
 		self.content = content
 		scrollframe:SetScrollChild(content)
-		
 		local num = AceGUI:GetNextWidgetNum(Type)
 		local name = ("AceConfigDialogScrollFrame%dScrollBar"):format(num)
 		local scrollbar = CreateFrame("Slider", name, scrollframe, "UIPanelScrollBarTemplate")
@@ -224,18 +188,15 @@ do
 		scrollbar:SetWidth(16)
 		scrollbar:Hide()
 		self.scrollbar = scrollbar
-		
 		local scrollbg = scrollbar:CreateTexture(nil, "BACKGROUND")
 		scrollbg:SetAllPoints(scrollbar)
 		scrollbg:SetTexture(0, 0, 0, 0.4)
-		
 		self.localstatus.scrollvalue = 0
-		
 		--self:FixScroll()
 		AceGUI:RegisterAsContainer(self)
 		--AceGUI:RegisterAsWidget(self)
 		return self
 	end
-	
 	AceGUI:RegisterWidgetType(Type,Constructor,Version)
 end
+

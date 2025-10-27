@@ -1,14 +1,11 @@
--- Mapster Locale
+﻿-- Mapster Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/mapster/localization/ ;¶
-
 local debug = false
 --[===[@debug@
 debug = true
 --@end-debug@]===]
-
 local L = LibStub("AceLocale-3.0"):NewLocale("Mapster", "enGB", true, debug)
-
 L["Accuracy"] = true
 L["Adjust the size of the Player Arrow on the Map for better visibility."] = true
 L["Alpha"] = true

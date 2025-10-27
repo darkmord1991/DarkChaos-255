@@ -1,13 +1,10 @@
---[[
+﻿--[[
 Copyright (c) 2009, Hendrik "Nevcairiel" Leppkes < h.leppkes@gmail.com >
 All rights reserved.
 ]]
-
 local Mapster = LibStub("AceAddon-3.0"):NewAddon("Mapster", "AceEvent-3.0", "AceHook-3.0")
-
 local LibWindow = LibStub("LibWindow-1.1")
 local L = LibStub("AceLocale-3.0"):GetLocale("Mapster")
-
 local defaults = {
 	profile = {
 		strata = "HIGH",
@@ -37,10 +34,8 @@ local defaults = {
 		}
 	}
 }
-
 -- Variables that are changed on "mini" mode
 local miniList = { x = true, y = true, point = true, scale = true, alpha = true, hideBorder = true, disableMouse = true }
-
 local db_
 local db = setmetatable({}, {
 	__index = function(t, k)
@@ -58,25 +53,18 @@ local db = setmetatable({}, {
 		end
 	end
 })
-
 local format = string.format
-
 local wmfOnShow, wmfStartMoving, wmfStopMoving, dropdownScaleFix
 local questObjDropDownInit, questObjDropDownUpdate
-
 function Mapster:OnInitialize()
 	self.db = LibStub("AceDB-3.0"):New("MapsterDB", defaults, true)
 	db_ = self.db.profile
-
 	self.db.RegisterCallback(self, "OnProfileChanged", "Refresh")
 	self.db.RegisterCallback(self, "OnProfileCopied", "Refresh")
 	self.db.RegisterCallback(self, "OnProfileReset", "Refresh")
-
 	self.elementsToHide = {}
-
 	self:SetupOptions()
 end
-
 local realZone
 function Mapster:OnEnable()
 	local advanced, mini = GetCVarBool("advancedWorldMap"), GetCVarBool("miniWorldMap")
@@ -91,50 +79,39 @@ function Mapster:OnEnable()
 	if advanced then
 		WorldMapFrame_ToggleAdvanced()
 	end
-
 	self:SetupMapButton()
-
 	LibWindow.RegisterConfig(WorldMapFrame, db)
-
 	local vis = WorldMapFrame:IsVisible()
 	if vis then
 		HideUIPanel(WorldMapFrame)
 	end
-
 	UIPanelWindows["WorldMapFrame"] = nil
 	WorldMapFrame:SetAttribute("UIPanelLayout-enabled", false)
 	WorldMapFrame:HookScript("OnShow", wmfOnShow)
 	WorldMapFrame:HookScript("OnHide", wmfOnHide)
 	BlackoutWorld:Hide()
 	WorldMapTitleButton:Hide()
-
 	WorldMapFrame:SetScript("OnKeyDown", nil)
-
 	WorldMapFrame:SetMovable(true)
 	WorldMapFrame:RegisterForDrag("LeftButton")
 	WorldMapFrame:SetScript("OnDragStart", wmfStartMoving)
 	WorldMapFrame:SetScript("OnDragStop", wmfStopMoving)
-
 	WorldMapFrame:SetParent(UIParent)
 	WorldMapFrame:SetToplevel(true)
 	WorldMapFrame:SetWidth(1024)
 	WorldMapFrame:SetHeight(768)
 	WorldMapFrame:SetClampedToScreen(false)
-
 	WorldMapContinentDropDownButton:SetScript("OnClick", dropdownScaleFix)
 	WorldMapZoneDropDownButton:SetScript("OnClick", dropdownScaleFix)
 	WorldMapZoneMinimapDropDownButton:SetScript("OnClick", dropdownScaleFix)
-
 	WorldMapFrameSizeDownButton:SetScript("OnClick", function() Mapster:ToggleMapSize() end)
 	WorldMapFrameSizeUpButton:SetScript("OnClick", function() Mapster:ToggleMapSize() end)
-	
 	-- Hide Quest Objectives CheckBox and replace it with a DropDown
 	WorldMapQuestShowObjectives:Hide()
 	WorldMapQuestShowObjectives:SetChecked(db.questObjectives ~= 0)
 	WorldMapQuestShowObjectives_Toggle()
 	local questObj = CreateFrame("Frame", "MapsterQuestObjectivesDropDown", WorldMapFrame, "UIDropDownMenuTemplate")
 	questObj:SetPoint("BOTTOMRIGHT", "WorldMapPositioningGuide", "BOTTOMRIGHT", -5, -2)
-	
 	local text = questObj:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	text:SetText(L["Quest Objectives"])
 	text:SetPoint("RIGHT", questObj, "LEFT", 5, 3)
@@ -142,44 +119,35 @@ function Mapster:OnEnable()
 	UIDropDownMenu_Initialize(questObj, questObjDropDownInit)
 	UIDropDownMenu_SetWidth(questObj, 150)
 	questObjDropDownUpdate()
-
 	wmfOnShow(WorldMapFrame)
 	hooksecurefunc(WorldMapTooltip, "Show", function(self)
 		self:SetFrameStrata("TOOLTIP")
 	end)
-
 	tinsert(UISpecialFrames, "WorldMapFrame")
-
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	self:RegisterEvent("PLAYER_REGEN_DISABLED")
 	self:RegisterEvent("PLAYER_REGEN_ENABLED")
-
 	if db.miniMap then
 		self:SizeDown()
 	end
 	self.miniMap = db.miniMap
-
 	self:SetPosition()
 	self:SetAlpha()
 	self:SetArrow()
 	self:UpdateBorderVisibility()
 	self:UpdateMouseInteractivity()
-
 	self:SecureHook("WorldMapFrame_DisplayQuestPOI")
 	self:SecureHook("WorldMapFrame_DisplayQuests")
 	self:SecureHook("WorldMapFrame_SetPOIMaxBounds")
 	WorldMapFrame_SetPOIMaxBounds()
-
 	if vis then
 		ShowUIPanel(WorldMapFrame)
 	end
 end
-
 local blobWasVisible, blobNewScale
 local blobHideFunc = function() blobWasVisible = nil end
 local blobShowFunc = function() blobWasVisible = true end
 local blobScaleFunc = function(self, scale) blobNewScale = scale end
-
 function Mapster:PLAYER_REGEN_DISABLED()
 	blobWasVisible = WorldMapBlobFrame:IsShown()
 	blobNewScale = nil
@@ -192,7 +160,6 @@ function Mapster:PLAYER_REGEN_DISABLED()
 	WorldMapBlobFrame.Show = blobShowFunc
 	WorldMapBlobFrame.SetScale = blobScaleFunc
 end
-
 local updateFrame = CreateFrame("Frame")
 local function restoreBlobs()
 	WorldMapBlobFrame_CalculateHitTranslations()
@@ -201,7 +168,6 @@ local function restoreBlobs()
 	end
 	updateFrame:SetScript("OnUpdate", nil)
 end
-
 function Mapster:PLAYER_REGEN_ENABLED()
 	WorldMapBlobFrame:SetParent(WorldMapFrame)
 	WorldMapBlobFrame:ClearAllPoints()
@@ -218,17 +184,14 @@ function Mapster:PLAYER_REGEN_ENABLED()
 		WorldMapBlobFrame.xRatio = nil
 		blobNewScale = nil
 	end
-
 	if WorldMapQuestScrollChildFrame.selected then
 		WorldMapBlobFrame:DrawQuestBlob(WorldMapQuestScrollChildFrame.selected.questId, false)
 	end
 end
-
 local WORLDMAP_POI_MIN_X = 12
 local WORLDMAP_POI_MIN_Y = -12
 local WORLDMAP_POI_MAX_X     -- changes based on current scale, see WorldMapFrame_SetPOIMaxBounds
 local WORLDMAP_POI_MAX_Y     -- changes based on current scale, see WorldMapFrame_SetPOIMaxBounds
-
 function Mapster:WorldMapFrame_DisplayQuestPOI(questFrame, isComplete)
 	-- Recalculate Position to adjust for Scale
 	local _, posX, posY = QuestPOIGetIconInfo(questFrame.questId)
@@ -236,7 +199,6 @@ function Mapster:WorldMapFrame_DisplayQuestPOI(questFrame, isComplete)
 		local POIscale = WORLDMAP_SETTINGS.size
 		posX = posX * WorldMapDetailFrame:GetWidth() * POIscale
 		posY = -posY * WorldMapDetailFrame:GetHeight() * POIscale
-
 		-- keep outlying POIs within map borders
 		if ( posY > WORLDMAP_POI_MIN_Y ) then
 			posY = WORLDMAP_POI_MIN_Y
@@ -252,15 +214,12 @@ function Mapster:WorldMapFrame_DisplayQuestPOI(questFrame, isComplete)
 		questFrame.poiIcon:SetScale(db.poiScale)
 	end
 end
-
 function Mapster:WorldMapFrame_SetPOIMaxBounds()
 	WORLDMAP_POI_MAX_Y = WorldMapDetailFrame:GetHeight() * -WORLDMAP_SETTINGS.size + 12;
 	WORLDMAP_POI_MAX_X = WorldMapDetailFrame:GetWidth() * WORLDMAP_SETTINGS.size + 12;
 end
-
 function Mapster:Refresh()
 	db_ = self.db.profile
-
 	for k,v in self:IterateModules() do
 		if self:GetModuleEnabled(k) and not v:IsEnabled() then
 			self:EnableModule(k)
@@ -271,20 +230,17 @@ function Mapster:Refresh()
 			v:Refresh()
 		end
 	end
-
 	if (db.miniMap and not self.miniMap) then
 		self:SizeDown()
 	elseif (not db.miniMap and self.miniMap) then
 		self:SizeUp()
 	end
 	self.miniMap = db.miniMap
-
 	self:SetStrata()
 	self:SetAlpha()
 	self:SetArrow()
 	self:SetScale()
 	self:SetPosition()
-
 	if self.optionsButton then
 		if db.hideMapButton then
 			self.optionsButton:Hide()
@@ -292,13 +248,11 @@ function Mapster:Refresh()
 			self.optionsButton:Show()
 		end
 	end
-
 	self:UpdateBorderVisibility()
 	self:UpdateMouseInteractivity()
 	self:UpdateModuleMapsizes()
 	WorldMapFrame_UpdateQuests()
 end
-
 function Mapster:ToggleMapSize()
 	self.miniMap = not self.miniMap
 	db.miniMap = self.miniMap
@@ -310,18 +264,14 @@ function Mapster:ToggleMapSize()
 	end
 	self:SetAlpha()
 	self:SetPosition()
-
 	-- Notify the modules about the map size change,
 	-- so they can re-anchor frames or stuff like that.
 	self:UpdateModuleMapsizes()
-
 	self:UpdateBorderVisibility()
 	self:UpdateMouseInteractivity()
-
 	ToggleFrame(WorldMapFrame)
 	WorldMapFrame_UpdateQuests()
 end
-
 function Mapster:UpdateModuleMapsizes()
 	for k,v in self:IterateModules() do
 		if v:IsEnabled() and type(v.UpdateMapsize) == "function" then
@@ -329,7 +279,6 @@ function Mapster:UpdateModuleMapsizes()
 		end
 	end
 end
-
 function Mapster:SizeUp()
 	WORLDMAP_SETTINGS.size = WORLDMAP_QUESTLIST_SIZE
 	-- adjust main frame
@@ -366,16 +315,12 @@ function Mapster:SizeUp()
 	WorldMapTrackQuest:SetPoint("BOTTOMLEFT", WorldMapPositioningGuide, "BOTTOMLEFT", 16, 4)
 	WorldMapFrameTitle:ClearAllPoints()
 	WorldMapFrameTitle:SetPoint("CENTER", 0, 372)
-
 	MapsterQuestObjectivesDropDown:Show()
-
 	WorldMapFrame_SetPOIMaxBounds()
 	--WorldMapQuestShowObjectives_AdjustPosition()
 	self:WorldMapFrame_DisplayQuests()
-
 	self.optionsButton:SetPoint("TOPRIGHT", WorldMapPositioningGuide, "TOPRIGHT", -43, -2)
 end
-
 function Mapster:SizeDown()
 	WORLDMAP_SETTINGS.size = WORLDMAP_WINDOWED_SIZE
 	-- adjust main frame
@@ -417,19 +362,14 @@ function Mapster:SizeDown()
 	WorldMapTrackQuest:SetPoint("BOTTOMLEFT", WorldMapDetailFrame, "BOTTOMLeft", 2, -26)
 	WorldMapFrameTitle:ClearAllPoints()
 	WorldMapFrameTitle:SetPoint("TOP", WorldMapDetailFrame, 0, 20)
-
 	MapsterQuestObjectivesDropDown:Hide()
-
 	WorldMapFrame_SetPOIMaxBounds()
 	--WorldMapQuestShowObjectives_AdjustPosition()
-
 	self.optionsButton:SetPoint("TOPRIGHT", WorldMapFrameMiniBorderRight, "TOPRIGHT", -93, -2)
 end
-
 local function getZoneId()
 	return (GetCurrentMapZone() + GetCurrentMapContinent() * 100)
 end
-
 function Mapster:ZONE_CHANGED_NEW_AREA()
 	local curZone = getZoneId()
 	if realZone == curZone or ((curZone % 100) > 0 and (GetPlayerMapPosition("player")) ~= 0) then
@@ -437,7 +377,6 @@ function Mapster:ZONE_CHANGED_NEW_AREA()
 		realZone = getZoneId()
 	end
 end
-
 local oldBFMOnUpdate
 function wmfOnShow(frame)
 	Mapster:SetStrata()
@@ -447,75 +386,59 @@ function wmfOnShow(frame)
 		oldBFMOnUpdate = BattlefieldMinimap:GetScript("OnUpdate")
 		BattlefieldMinimap:SetScript("OnUpdate", nil)
 	end
-
 	if WORLDMAP_SETTINGS.selectedQuest then
 		WorldMapFrame_SelectQuestFrame(WORLDMAP_SETTINGS.selectedQuest)
 	end
 end
-
 function wmfOnHide(frame)
 	SetMapToCurrentZone()
 	if BattlefieldMinimap then
 		BattlefieldMinimap:SetScript("OnUpdate", oldBFMOnUpdate or BattlefieldMinimap_OnUpdate)
 	end
 end
-
 function wmfStartMoving(frame)
 	Mapster:HideBlobs()
-
 	frame:StartMoving()
 end
-
 function wmfStopMoving(frame)
 	frame:StopMovingOrSizing()
 	LibWindow.SavePosition(frame)
-
 	Mapster:ShowBlobs()
 end
-
 function dropdownScaleFix(self)
 	ToggleDropDownMenu(nil, nil, self:GetParent())
 	DropDownList1:SetScale(db.scale)
 end
-
 function Mapster:ShowBlobs()
 	WorldMapBlobFrame_CalculateHitTranslations()
 	if WORLDMAP_SETTINGS.selectedQuest and not WORLDMAP_SETTINGS.selectedQuest.completed then
 		WorldMapBlobFrame:DrawQuestBlob(WORLDMAP_SETTINGS.selectedQuest.questId, true)
 	end
 end
-
 function Mapster:HideBlobs()
 	if WORLDMAP_SETTINGS.selectedQuest then
 		WorldMapBlobFrame:DrawQuestBlob(WORLDMAP_SETTINGS.selectedQuest.questId, false)
 	end
 end
-
 function Mapster:SetStrata()
 	WorldMapFrame:SetFrameStrata(db.strata)
 end
-
 function Mapster:SetAlpha()
 	WorldMapFrame:SetAlpha(db.alpha)
 end
-
 function Mapster:SetArrow()
 	PlayerArrowFrame:SetModelScale(db.arrowScale)
 	PlayerArrowEffectFrame:SetModelScale(db.arrowScale)
 end
-
 function Mapster:SetScale()
 	WorldMapFrame:SetScale(db.scale)
 end
-
 function Mapster:SetPosition()
 	LibWindow.RestorePosition(WorldMapFrame)
 end
-
 function Mapster:GetModuleEnabled(module)
 	return db.modules[module]
 end
-
 function Mapster:UpdateBorderVisibility()
 	if db.hideBorder then
 		Mapster.bordersVisible = false
@@ -556,14 +479,12 @@ function Mapster:UpdateBorderVisibility()
 		end
 		self:UpdateMapElements()
 	end
-
 	for k,v in self:IterateModules() do
 		if v:IsEnabled() and type(v.BorderVisibilityChanged) == "function" then
 			v:BorderVisibilityChanged(not db.hideBorder)
 		end
 	end
 end
-
 function Mapster:UpdateMapElements()
 	local mouseOver = WorldMapFrame:IsMouseOver()
 	if self.elementsHidden and (mouseOver or not db.hideBorder) then
@@ -585,7 +506,6 @@ function Mapster:UpdateMapElements()
 		end
 	end
 end
-
 function Mapster:UpdateMouseInteractivity()
 	if db.disableMouse then
 		WorldMapButton:EnableMouse(false)
@@ -595,25 +515,21 @@ function Mapster:UpdateMouseInteractivity()
 		WorldMapFrame:EnableMouse(true)
 	end
 end
-
 function Mapster:RefreshQuestObjectivesDisplay()
 	WorldMapQuestShowObjectives:SetChecked(db.questObjectives ~= 0)
 	WorldMapQuestShowObjectives:GetScript("OnClick")(WorldMapQuestShowObjectives)
 end
-
 function Mapster:WorldMapFrame_DisplayQuests()
 	if WORLDMAP_SETTINGS.size == WORLDMAP_WINDOWED_SIZE then return end
 	if WatchFrame.showObjectives and WorldMapFrame.numQuests > 0 then
 		if db.questObjectives == 1 then
 			WorldMapFrame_SetFullMapView()
-			
 			WorldMapBlobFrame:SetScale(WORLDMAP_FULLMAP_SIZE)
 			WorldMapBlobFrame.xRatio = nil		-- force hit recalculations
 			WorldMapFrame_SetPOIMaxBounds()
 			WorldMapFrame_UpdateQuests()
 		elseif db.questObjectives == 2 then
 			WorldMapFrame_SetQuestMapView()
-			
 			WorldMapBlobFrame:SetScale(WORLDMAP_QUESTLIST_SIZE)
 			WorldMapBlobFrame.xRatio = nil		-- force hit recalculations
 			WorldMapFrame_SetPOIMaxBounds()
@@ -621,7 +537,6 @@ function Mapster:WorldMapFrame_DisplayQuests()
 		end
 	end
 end
-
 local function hasOverlays()
 	if Mapster:GetModuleEnabled("FogClear") then
 		return Mapster:GetModule("FogClear"):RealHasOverlays()
@@ -629,7 +544,6 @@ local function hasOverlays()
 		return GetNumMapOverlays() > 0
 	end
 end
-
 function Mapster:UpdateDetailTiles()
 	if db.hideBorder and GetCurrentMapZone() > 0 and hasOverlays() then
 		for i=1, NUM_WORLDMAP_DETAIL_TILES do
@@ -641,7 +555,6 @@ function Mapster:UpdateDetailTiles()
 		end
 	end
 end
-
 function Mapster:SetModuleEnabled(module, value)
 	local old = db.modules[module]
 	db.modules[module] = value
@@ -653,23 +566,19 @@ function Mapster:SetModuleEnabled(module, value)
 		end
 	end
 end
-
 local function questObjDropDownOnClick(button)
 	UIDropDownMenu_SetSelectedValue(MapsterQuestObjectivesDropDown, button.value)
 	db.questObjectives = button.value
 	Mapster:RefreshQuestObjectivesDisplay()
 end
-
 local questObjTexts = {
 	[0] = L["Hide Completely"],
 	[1] = L["Only WorldMap Blobs"],
 	[2] = L["Blobs & Panels"],
 }
-
 function questObjDropDownInit()
 	local info = UIDropDownMenu_CreateInfo()
 	local value = db.questObjectives
-
 	for i=0,2 do
 		info.value = i
 		info.text = questObjTexts[i]
@@ -683,8 +592,8 @@ function questObjDropDownInit()
 		UIDropDownMenu_AddButton(info)
 	end
 end
-
 function questObjDropDownUpdate()
 	UIDropDownMenu_SetSelectedValue(MapsterQuestObjectivesDropDown, db.questObjectives)
 	UIDropDownMenu_SetText(MapsterQuestObjectivesDropDown,questObjTexts[db.questObjectives])
 end
+

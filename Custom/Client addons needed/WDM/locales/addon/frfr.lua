@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "frFR")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "frFR")
 if not L then return end
-
 L["debugmode_text"] = "Mode débogage"
 L["show_minimap_text"] = "Icône de la carte du monde (avant Dragonflight)"
 L["show_minimap_warn_text"] = "|c00FD1A36Désactivé si vous utilisez des modules complémentaires qui modifient l'interface |r (rechargement de l'interface requis - /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "Vols de la Horde"
 L["show_taxinode_continent_alliance_text"] = "Navires de l'Alliance"
 L["show_taxinode_continent_horde_text"] = "Dirigeables de la Horde"
 L["show_zonelevel_text"] = "Niveaux d'emplacement"
-
 L["taxinode_acherus"] = "Achérus : le fort d'Ébène"
 L["taxinode_aeriepeak"] = "Nid-de-l'Aigle, les Hinterlands"
 L["taxinode_agmarshammer"] = "Marteau d'Agmar, Désolation des dragons"
@@ -162,3 +160,4 @@ L["taxinode_zabrajin"] = "Zabra'jin, marécage de Zangar"
 L["taxinode_zimtorga"] = "Zim'Torga, Zul'Drak"
 L["taxinode_zoramgaroutpost"] = "Avant-poste de Zoram'gar, Orneval"
 L["taxinode_zulaman"] = "Zul'Aman, Terres fantômes"
+

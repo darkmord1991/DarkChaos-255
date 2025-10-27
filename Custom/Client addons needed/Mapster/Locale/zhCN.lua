@@ -1,10 +1,8 @@
--- Mapster Locale
+﻿-- Mapster Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/mapster/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("Mapster", "zhCN")
 if not L then return end
-
 L["Accuracy"] = "高精度"
 L["Adjust the size of the Player Arrow on the Map for better visibility."] = "调整地图上的玩家箭头尺寸以获得更好的视觉效果"
 L["Alpha"] = "透明度"

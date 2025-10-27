@@ -1,5 +1,4 @@
-if (GetLocale() == "ruRU") then
-
+﻿if (GetLocale() == "ruRU") then
 DUNGEON_FLOOR_AHNQIRAJ1 = "Подземелье улья";
 DUNGEON_FLOOR_AHNQIRAJ2 = "Ворота храма";
 DUNGEON_FLOOR_AHNQIRAJ3 = "Обитель К'Туна";
@@ -123,7 +122,6 @@ DUNGEON_FLOOR_WAILINGCAVERNS1 = "Пещеры Стенаний";
 DUNGEON_FLOOR_ZULAMAN1 = "Зул'Аман";
 DUNGEON_FLOOR_ZULFARRAK = "Зул'Фаррак";
 DUNGEON_FLOOR_ZULGURUB1 = "Зул'Гуруб";
-
 DUNGEON_FLOOR_AZUREMYSTISLE2 = "Пещера Приливов";
 DUNGEON_FLOOR_AZUREMYSTISLE3 = "Логово клана Тихвой";
 DUNGEON_FLOOR_BADLANDS18 = "Вход в Ульдаман";
@@ -169,5 +167,5 @@ DUNGEON_FLOOR_UNGOROCRATER14 = "Скользкий овраг";
 DUNGEON_FLOOR_WESTFALL17 = "Вход в Мертвые копи";
 DUNGEON_FLOOR_WESTFALL4 = "Прииск на Золотом Берегу";
 DUNGEON_FLOOR_WESTFALL5 = "Рудник Янго";
-
 end
+

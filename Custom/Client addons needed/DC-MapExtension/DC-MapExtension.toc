@@ -5,4 +5,4 @@
 ## SavedVariables: DCMapExtensionDB
 
 Core.lua
-Textures/azshara_crater.blp
+## (Note) Textures are loaded dynamically from the Textures/AzsharaCrater/ folder; individual BLPs are not listed here to avoid load errors

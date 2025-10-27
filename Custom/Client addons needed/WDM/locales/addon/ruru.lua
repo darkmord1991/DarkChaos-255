@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "ruRU")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "ruRU")
 if not L then return end
-
 L["debugmode_text"] = "Режим отладки"
 L["show_minimap_text"] = "Иконка карты мира (до Dragonflight)"
 L["show_minimap_warn_text"] = "|c00FD1A36Отключите, если используете аддоны, изменяющие интерфейс |r (требуется перезагрузка интерфейса - /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "Полеты Орды"
 L["show_taxinode_continent_alliance_text"] = "Корабли Альянса"
 L["show_taxinode_continent_horde_text"] = "Дирижабли Орды"
 L["show_zonelevel_text"] = "Уровни локаций"
-
 L["taxinode_acherus"] = "Акерус: Черный оплот"
 L["taxinode_aeriepeak"] = "Заоблачный пик, Внутренние земли"
 L["taxinode_agmarshammer"] = "Молот Агмара, Драконий Погост"
@@ -162,7 +160,6 @@ L["taxinode_zabrajin"] = "Забра'джин, Зангартопь"
 L["taxinode_zimtorga"] = "Зим'Торга, Зул'Драк"
 L["taxinode_zoramgaroutpost"] = "Форт Зорам'гар, Ясеневый лес"
 L["taxinode_zulaman"] = "Зул'Аман, Призрачные земли"
-
 L["taxinode_continent_auberdine"] = "Корабль в гавань Аубердина"
 L["taxinode_continent_bootybay"] = "Корабль в Пиратскую бухту"
 L["taxinode_continent_brill"] = "Дирижабль в Брилл"
@@ -182,3 +179,4 @@ L["taxinode_continent_unupe"] = "Корабль в Уну'пе"
 L["taxinode_continent_valiancekeep"] = "Корабль в крепость Отваги"
 L["taxinode_continent_vengeancelanding"] = "Дирижабль в Лагерь Возмездия"
 L["taxinode_continent_warsonghold"] = "Дирижабль в Крепость Песни Войны"
+

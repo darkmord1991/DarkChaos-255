@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "deDE")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "Diese Stelle zu Cartographer_Waypoints hinzufügen"
 L["Add this location to TomTom waypoints"] = "Diese Stelle zu TomTom hinzufügen"
 L["Always show"] = "Immer anzeigen"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 Ich habe gerade GatherMate installiert, sehe aber keine Knoten auf meiner Karte. Was mache ich falsch?
 |r
 GatherMate kommt standardmäßig ohne Daten. Wenn Du Kräuter, Erze, Gase oder Fische sammelst fügt GatherMate diese umgehend der Karte hinzu und aktualisiert die Karte. Überprüfe auch Deine 'Anzeige Einstellungen'.
-
 |cffffd200
 Ich sehe Knoten auf der Weltkarte, aber nicht auf der Minikarte! Was mache ich falsch?
 |r
 |cffffff78Minimap Button Bag|r (und möglicherweise ähnliche Addons) löscht gerne alle Buttons. Deaktiviere solche Addons.
-
 |cffffd200
 Wie oder woher kann ich bereits vorhandene Daten bekommen?
 |r
 Du kannst vorhandene Daten auf folgende Arten importieren:
-
 1. |cffffff78GatherMate_Data|r - Dieses LoD (wird beim Benutzen in den Speicher geladen) Addon enthält eine von WoWHead gesaugte Kopie aller Knoten die wöchentlich aktualisiert wird. Dafür gibt es automatische Aktualisierungsoptionen.
-
 2. |cffffff78GatherMate_CartImport|r - Dieses Addon erlaubt Dir den Import vorhandener Datenbanken aus |cffffff78Cartographer_<Profession>|r Modulen in GatherMate. Damit dies funktioniert müssen die |cffffff78Cartographer_<Profession>|r Module und GatherMate_CartImport geladen und aktiviert sein.
-
-Beachte, daß das Importieren von Daten in GatherMate kein automatisierter Prozess ist. Du mußt in 'Daten importieren' den Button 'Importieren' klicken. 
-
+Beachte, daß das Importieren von Daten in GatherMate kein automatisierter Prozess ist. Du mußt in 'Daten importieren' den Button 'Importieren' klicken.
 Dies unterscheidet sich von |cffffff78Cartographer_Data|r dahingehend, daß dem Benutzer die Wahl gegeben wird zu entscheiden wie und wann er seine Daten ändern will. |cffffff78Cartographer_Data|r überschreibt einfach Deine vorhandene Datenbank ohne Warnung und zerstört alle von Dir neu gefundenen Knoten.
-
 |cffffd200
 Könnt ihr Standorte für Postfächer, Flugmeister und dergleichen unterstützen?
 |r
 Die Antwort ist nein. Andere Addon Autoren können Addons oder Module für diese Zwecke machen. Das Basis GatherMate Addon wird dies nicht beinhalten.
-
 |cffffd200
 Ich hab einen Fehler gefunden! Wo kann ich das melden?
 |r
 Du kannst Fehler oder Vorschläge hier melden: |cffffff78http://forums.wowace.com/showthread.php?t=10367|r
-
 Alternativ kannst Du uns hier finden: |cffffff78irc://irc.freenode.org/wowace|r
-
 Wenn Du einen Fehler meldest, gib bitte folgendes an: |cffffff78Hinweise (am besten Schritt für Schritt)|r mit der man den Fehler reproduzieren kann, eine |cffffff78Fehlermeldung|r (z.B. von BugGrabber/BugSack), die |cffffff78Revisionsnummer|r von GatherMate die das Problem verursacht hat und ob Du den |cffffff78englischen Client oder einem anderen (z.B.: deDE)|r benutzt.
-
 |cffffd200
 Wer hat dieses coole Addon geschrieben?
 |r
@@ -161,11 +148,8 @@ L["Tracking Distance"] = "Anzeigeentfernung"
 L["Treasure"] = "Schatz"
 L["Treasure filter"] = "Schatz Filter"
 L["Wrath of the Lich King"] = "Wrath of the Lich King"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "deDE")
 if not NL then return end
-
 -- NL["Abundant Bloodsail Wreckage"] = "Abundant Bloodsail Wreckage"
 NL["Abundant Firefin Snapper School"] = "Ergiebiger Feuerflossenschnapperschwarm"
 NL["Abundant Oily Blackmouth School"] = "Ergiebiger Schwarm öliger Schwarzmaulfische"

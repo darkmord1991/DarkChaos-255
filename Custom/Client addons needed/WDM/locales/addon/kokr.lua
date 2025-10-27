@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "koKR")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "koKR")
 if not L then return end
-
 L["debugmode_text"] = "디버그 모드"
 L["show_minimap_text"] = "세계 지도 아이콘(Dragonflight 이전)"
 L["show_minimap_warn_text"] = "|c00FD1A36|r 인터페이스를 변경하는 애드온을 사용하는 경우 비활성화합니다(인터페이스 다시 로드 필요 - /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "호드 비행"
 L["show_taxinode_continent_alliance_text"] = "얼라이언스 선박"
 L["show_taxinode_continent_horde_text"] = "호드 비행선"
 L["show_zonelevel_text"] = "위치 수준"
-
 L["taxinode_acherus"] = "아케루스: 칠흑의 요새"
 L["taxinode_aeriepeak"] = "맹금의 봉우리 (동부 내륙지)"
 L["taxinode_agmarshammer"] = "아그마르의 망치 (용의 안식처)"
@@ -162,3 +160,4 @@ L["taxinode_zabrajin"] = "자브라진 (장가르 습지대)"
 L["taxinode_zimtorga"] = "짐토르가 (줄드락)"
 L["taxinode_zoramgaroutpost"] = "조람가르 전초기지 (잿빛 골짜기)"
 L["taxinode_zulaman"] = "줄아만, 유령의 땅"
+

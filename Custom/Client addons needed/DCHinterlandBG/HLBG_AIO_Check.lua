@@ -1,29 +1,23 @@
 ﻿-- HLBG_AIO_Check.lua - Ensures AIO is loaded before initializing HLBG
-
 -- Track that this file was loaded
 if _G.HLBG_RecordFileLoad then
     _G.HLBG_RecordFileLoad("HLBG_AIO_Check.lua")
 end
-
 -- Create or use existing namespace
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Create a frame to monitor loading state
 local aioCheckFrame = CreateFrame("Frame")
 aioCheckFrame.retryCount = 0
 aioCheckFrame.maxRetries = 10
 aioCheckFrame.initialized = false
-
 -- Function to check if AIO is available and initialize our addon
 local function CheckAIO()
     if aioCheckFrame.initialized then
         return
     end
-    
         if _G.AIO and type(_G.AIO) == "table" and type(_G.AIO.Handle) == "function" then
         -- AIO is available, we can initialize
         aioCheckFrame.initialized = true
-        
         -- Log success (defensive)
         HLBG = HLBG or {}
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -33,24 +27,19 @@ local function CheckAIO()
                 DEFAULT_CHAT_FRAME:AddMessage(tostring("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon"))
             end
         end
-        
         -- Record in the load state
         if _G.HLBG_LoadState then
             _G.HLBG_LoadState.aioVerified = true
         end
-        
         -- Unregister the update script
         aioCheckFrame:SetScript("OnUpdate", nil)
-        
         -- Ensure the HLBG table has required fields
         HLBG._lastStatus = HLBG._lastStatus or {}
         HLBG._devMode = HLBG._devMode or false
-        
         -- Trigger any initialization handlers
         if type(HLBG.InitializeAfterAIO) == "function" then
             pcall(HLBG.InitializeAfterAIO)
         end
-        
         -- Register with AIO, but only when AIO.AddHandlers isn't present.
         -- If AddHandlers exists, another module (central binder) will attach handlers for "HLBG".
         if _G.AIO and _G.AIO.RegisterEvent and not _G.AIO.AddHandlers then
@@ -66,7 +55,6 @@ local function CheckAIO()
                             pcall(HLBG.HandleAIOCommand, command, args)
                             return
                         end
-
                         -- If no handler, log in dev mode
                         if HLBG._devMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
                             HLBG = HLBG or {}
@@ -105,7 +93,6 @@ local function CheckAIO()
                     local ok, handlers = pcall(function()
                         return _G.AIO.AddHandlers("HLBG", {})
                     end)
-                    
                     if ok and type(handlers) == "table" then
                         -- Add our handler functions to the handlers table
                         handlers.Status = function(player, args)
@@ -113,31 +100,26 @@ local function CheckAIO()
                                 pcall(HLBG.HandleAIOCommand, "Status", args)
                             end
                         end
-                        
                         handlers.History = function(player, args)
                             if type(HLBG.HandleAIOCommand) == "function" then
                                 pcall(HLBG.HandleAIOCommand, "History", args)
                             end
                         end
-                        
                         handlers.Stats = function(player, args)
                             if type(HLBG.HandleAIOCommand) == "function" then
                                 pcall(HLBG.HandleAIOCommand, "Stats", args)
                             end
                         end
-                        
                         handlers.Server = function(player, args)
                             if type(HLBG.HandleAIOCommand) == "function" then
                                 pcall(HLBG.HandleAIOCommand, "Server", args)
                             end
                         end
-                        
                         handlers.Error = function(player, args)
                             if type(HLBG.HandleAIOCommand) == "function" then
                                 pcall(HLBG.HandleAIOCommand, "Error", args)
                             end
                         end
-                        
                         -- Generic handler for any command
                         handlers.Request = function(player, ...)
                             local vargs = {...}
@@ -159,10 +141,8 @@ local function CheckAIO()
                                 end)
                             end
                         end
-                        
                         HLBG._aioHandlersRegistered = true
                         HLBG._aioRegistered = true -- Mark as registered
-                        
                         if DEFAULT_CHAT_FRAME then
                             DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r AIO.AddHandlers registration successful")
                         end
@@ -178,51 +158,41 @@ local function CheckAIO()
                 end
             end
         end
-        
         return true
     else
         -- AIO not available yet, increment retry counter
         aioCheckFrame.retryCount = aioCheckFrame.retryCount + 1
-        
         if aioCheckFrame.retryCount >= aioCheckFrame.maxRetries then
             -- Too many retries, give up and show error
             aioCheckFrame:SetScript("OnUpdate", nil)
-            
             if DEFAULT_CHAT_FRAME then
                     DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Required dependency AIO_Client not found after " .. tostring(aioCheckFrame.maxRetries) .. " attempts. Please ensure AIO_Client addon is installed and enabled.")
             end
-            
             -- Record error in the load state
             if _G.HLBG_LoadState then
                 _G.HLBG_LoadState.errors = _G.HLBG_LoadState.errors or {}
                 table.insert(_G.HLBG_LoadState.errors, "AIO_Client dependency not found after " .. aioCheckFrame.maxRetries .. " attempts")
                 _G.HLBG_LoadState.aioVerified = false
             end
-            
             return false
         end
-        
         -- If this is the first retry, show message
         if aioCheckFrame.retryCount == 1 and DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Waiting for AIO_Client dependency to load...")
         end
-        
         return false
     end
 end
-
 -- Set up OnUpdate to check for AIO
 aioCheckFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Only check every 0.5 seconds
     if not self.timeSinceLastCheck then self.timeSinceLastCheck = 0 end
     self.timeSinceLastCheck = self.timeSinceLastCheck + elapsed
-    
     if self.timeSinceLastCheck >= 0.5 then
         self.timeSinceLastCheck = 0
         CheckAIO()
     end
 end)
-
 -- Also register for ADDON_LOADED event for AIO_Client
 aioCheckFrame:RegisterEvent("ADDON_LOADED")
 aioCheckFrame:SetScript("OnEvent", function(self, event, addonName)
@@ -232,13 +202,10 @@ aioCheckFrame:SetScript("OnEvent", function(self, event, addonName)
         self:UnregisterEvent("ADDON_LOADED")
     end
 end)
-
 -- Store the check function globally for use by other files
 _G.HLBG_CheckAIO = CheckAIO
-
 -- Do an initial check immediately
 CheckAIO()
-
 -- Set up a helper function for AIO commands
 function HLBG.HandleAIOCommand(command, args)
     if type(command) ~= "string" then return end
@@ -249,14 +216,12 @@ function HLBG.HandleAIOCommand(command, args)
         local t = type(args)
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Received AIO command '%s' (type %s)", tostring(cmd), tostring(t)))
     end
-    
     -- Handle different command types
     if cmd == "status" then
         -- Status update (live match data)
         if type(HLBG.Status) == "function" then pcall(HLBG.Status, args) end
         return
     end
-    
     if cmd == "history" then
         -- History data for UI - support multiple shapes from server
         local function dbg(msg)
@@ -266,7 +231,6 @@ function HLBG.HandleAIOCommand(command, args)
             dbg('History: received non-table payload; ignoring')
             return
         end
-
         -- Case A: args.rows = { ... } (preferred)
         if type(args.rows) == 'table' then
             dbg(string.format('History: rows=%d total=%s (via args.rows)', #args.rows, tostring(args.total)))
@@ -281,7 +245,6 @@ function HLBG.HandleAIOCommand(command, args)
                 return
             end
         end
-
         -- Case B: args.tsv provided
         if type(args.tsv) == 'string' and args.tsv ~= '' then
             dbg('History: received TSV payload')
@@ -311,7 +274,6 @@ function HLBG.HandleAIOCommand(command, args)
                 return
             end
         end
-
         -- Case C: positional-style table (e.g., { {row1}, {row2}, total=.. } ) or rows passed directly
         -- Detect array-like table where first element is a row table
         if #args > 0 and type(args[1]) == 'table' then
@@ -324,7 +286,6 @@ function HLBG.HandleAIOCommand(command, args)
                 return
             end
         end
-
         -- Case D: legacy single-row table
         if (args.id or args.ts or args.winner) and type(HLBG.History) == 'function' then
             dbg('History: single-row payload detected; wrapping in array')
@@ -332,11 +293,9 @@ function HLBG.HandleAIOCommand(command, args)
             pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
             return
         end
-
         dbg('History: no handler matched for payload')
         return
     end
-    
     if cmd == "stats" then
         -- Statistics summary (support table or positional)
         if type(args) ~= 'table' then
@@ -363,7 +322,6 @@ function HLBG.HandleAIOCommand(command, args)
             return
         end
     end
-    
     if cmd == "server" then
         -- Server info/welcome
         if type(args) == "table" and type(args.motd) == "string" and args.motd ~= "" then
@@ -378,7 +336,6 @@ function HLBG.HandleAIOCommand(command, args)
         end
         return
     end
-    
     if cmd == "error" then
         -- Error message from server
         if type(args) == "table" and type(args.message) == "string" then
@@ -390,7 +347,6 @@ function HLBG.HandleAIOCommand(command, args)
         end
         return
     end
-    
     -- Unknown command, log if in dev mode
     if HLBG._devMode and DEFAULT_CHAT_FRAME then
         local argsStr = ""
@@ -406,24 +362,21 @@ function HLBG.HandleAIOCommand(command, args)
         end
     end
 end
-
 -- Function to safely send commands to server via AIO
 function HLBG.SendCommand(command, args)
     if type(command) ~= "string" then return end
     args = args or {}
     if type(args) ~= "table" then args = { value = tostring(args) } end
-    
     -- Verify AIO is loaded and ready
-    if not _G.AIO or not _G.AIO.Handle then 
+    if not _G.AIO or not _G.AIO.Handle then
         if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r AIO not ready") end
         return
     end
-    
     -- Add current desired season if needed
-    if not args.season and type(HLBG._getSeason) == "function" then 
-        args.season = HLBG._getSeason() 
+    if not args.season and type(HLBG._getSeason) == "function" then
+        args.season = HLBG._getSeason()
     end
-    
     -- Send command via AIO
     _G.AIO.Handle("HLBG", command, args)
 end
+

@@ -1,6 +1,5 @@
 ﻿-- HLBG Debug UI checker
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Add a debug command to check UI state
 SLASH_HLBGUI1 = '/hlbgui'
 function SlashCmdList.HLBGUI(msg)
@@ -22,7 +21,6 @@ function SlashCmdList.HLBGUI(msg)
     DEFAULT_CHAT_FRAME:AddMessage('HLBG.History function: ' .. type(HLBG.History or 'nil'))
     DEFAULT_CHAT_FRAME:AddMessage('======================')
 end
-
 -- Add a command to force show UI
 SLASH_HLBGSHOW1 = '/hlbgshow'
 function SlashCmdList.HLBGSHOW(msg)
@@ -34,7 +32,6 @@ function SlashCmdList.HLBGSHOW(msg)
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG UI not available|r')
     end
 end
-
 -- Add a command to check row positioning
 SLASH_HLBGROWS1 = '/hlbgrows'
 function SlashCmdList.HLBGROWS(msg)
@@ -53,19 +50,16 @@ function SlashCmdList.HLBGROWS(msg)
     end
     DEFAULT_CHAT_FRAME:AddMessage('======================')
 end
-
 -- Add a test history command
 SLASH_HLBGTEST1 = '/hlbgtest'
 function SlashCmdList.HLBGTEST(msg)
     DEFAULT_CHAT_FRAME:AddMessage('|cFFFF8800Testing History with fake data...|r')
-    
     -- Create fake history data
     local testRows = {
         {id=1, season=1, seasonName="Season 1: Chaos Reborn", ts="2025-10-07 20:05:44", winner="Draw", affix=0, reason="manual"},
         {id=2, season=1, seasonName="Season 1: Chaos Reborn", ts="2025-10-07 18:30:38", winner="Horde", affix=0, reason="manual"},
         {id=3, season=1, seasonName="Season 1: Chaos Reborn", ts="2025-10-07 09:26:29", winner="Alliance", affix=3, reason="manual"}
     }
-    
     -- Call HLBG.History directly
     if HLBG and HLBG.History then
         HLBG.History(testRows, 1, 15, 3, 'id', 'DESC')
@@ -79,13 +73,11 @@ function SlashCmdList.HLBGTEST(msg)
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000Error: HLBG.History function not found!|r')
     end
 end
-
 -- Command to show main UI
 SLASH_HLBGSHOWUI1 = '/hlbgshowui'
 function SlashCmdList.HLBGSHOWUI(msg)
     if HLBG.UI and HLBG.UI.Frame then
         HLBG.UI.Frame:Show()
-        
         -- Also refresh the current tab with any stored data
         if HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 then
             DEFAULT_CHAT_FRAME:AddMessage('Refreshing History with ' .. #HLBG.UI.History.lastRows .. ' stored rows...')
@@ -93,9 +85,9 @@ function SlashCmdList.HLBGSHOWUI(msg)
                 pcall(HLBG.History, HLBG.UI.History.lastRows, 1, 15, #HLBG.UI.History.lastRows)
             end
         end
-        
         DEFAULT_CHAT_FRAME:AddMessage('|cFF00FF00HLBG:|r Main UI shown!')
     else
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG:|r Main UI not found!')
     end
 end
+

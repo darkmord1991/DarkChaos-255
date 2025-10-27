@@ -1,15 +1,12 @@
 ﻿-- HLBG_Handlers.lua
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Shared live resources state. Initialize to avoid nil indexing when STATUS messages arrive.
 RES = RES or {}
 HLBG.RES = HLBG.RES or RES
-
 -- Debug buffer: SavedVariables-backed ring buffer for developer diagnostics
 DCHLBG_DebugLog = DCHLBG_DebugLog or {}
 HLBG.DebugBuffer = HLBG.DebugBuffer or DCHLBG_DebugLog
 HLBG._debugMax = HLBG._debugMax or 500
-
 -- Safe serializer (limited depth, detects cycles, truncates long strings)
 local function _safeSerialize(val, depth, seen)
     depth = depth or 0
@@ -41,7 +38,6 @@ local function _safeSerialize(val, depth, seen)
     end
     return '<' .. t .. '>'
 end
-
 -- Push an entry into the SavedVariables-backed debug log (newest first)
 function HLBG.DebugLog(kind, payload)
     local ok, ts = pcall(function() return time() end)
@@ -60,10 +56,8 @@ function HLBG.DebugLog(kind, payload)
     HLBG.DebugBuffer = DCHLBG_DebugLog
     return entry
 end
-
 -- Runtime toggle for capture independent of devMode
 HLBG._captureIncoming = HLBG._captureIncoming or false
-
 -- Slash commands to inspect/clear the buffer
 SLASH_HLBGDUMP1 = '/hlbgdumpbuf'
 SLASH_HLBGDUMP2 = '.hlbgdumpbuf'
@@ -77,7 +71,6 @@ SlashCmdList['HLBGDUMP'] = function(msg)
         end
     end
 end
-
 SLASH_HLBGCLR1 = '/hlbgclearbuf'
 SLASH_HLBGCLR2 = '.hlbgclearbuf'
 SlashCmdList['HLBGCLR'] = function()
@@ -85,7 +78,6 @@ SlashCmdList['HLBGCLR'] = function()
     HLBG.DebugBuffer = DCHLBG_DebugLog
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Debug buffer cleared') end
 end
-
 -- Small helper to show a debug UI window listing recent entries
 function HLBG.ShowDebugWindow()
     pcall(function()
@@ -100,17 +92,14 @@ function HLBG.ShowDebugWindow()
         frame:RegisterForDrag('LeftButton')
         frame:SetScript('OnDragStart', function(s) s:StartMoving() end)
         frame:SetScript('OnDragStop', function(s) s:StopMovingOrSizing() end)
-
         local title = frame:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         title:SetPoint('TOP', frame, 'TOP', 0, -12)
         title:SetText('HLBG Debug Buffer')
-
         local close = CreateFrame('Button', nil, frame)
         close:SetSize(20,20)
         close:SetPoint('TOPRIGHT', frame, 'TOPRIGHT', -8, -8)
         close:SetNormalTexture('Interface/Buttons/UI-Panel-MinimizeButton-Up')
         close:SetScript('OnClick', function() frame:Hide() end)
-
         local dumpBtn = CreateFrame('Button', nil, frame, 'UIPanelButtonTemplate')
         dumpBtn:SetSize(120, 24)
         dumpBtn:SetPoint('TOPLEFT', frame, 'TOPLEFT', 12, -36)
@@ -119,14 +108,12 @@ function HLBG.ShowDebugWindow()
             DCHLBG_DebugLog = {}
             HLBG.DebugBuffer = DCHLBG_DebugLog
         end)
-
         local scroll = CreateFrame('ScrollFrame', nil, frame)
         scroll:SetPoint('TOPLEFT', frame, 'TOPLEFT', 12, -68)
         scroll:SetPoint('BOTTOMRIGHT', frame, 'BOTTOMRIGHT', -12, 12)
         local content = CreateFrame('Frame', nil, scroll)
         content:SetSize(560, 1)
         scroll:SetScrollChild(content)
-
         local y = -6
         for i = 1, math.min(#(DCHLBG_DebugLog or {}), 200) do
             local e = DCHLBG_DebugLog[i]
@@ -139,17 +126,14 @@ function HLBG.ShowDebugWindow()
             line:SetText(string.format('#%d [%s] %s', i, ts, tostring(e.kind or '') .. ' ' .. (tostring(e.data or ''):sub(1,300))))
             y = y - 18
         end
-
         frame:Show()
     end)
 end
-
 -- Zone watcher: show/hide HUD when entering Hinterlands
 local function InHinterlands()
     local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function') and HLBG.safeGetRealZoneText() or (GetRealZoneText and GetRealZoneText() or "")
     return z == "The Hinterlands"
 end
-
 local zoneWatcher = CreateFrame("Frame")
 zoneWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 zoneWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -165,7 +149,6 @@ zoneWatcher:SetScript("OnEvent", function()
         if type(HLBG.UnhideBlizzHUDDeep) == 'function' then pcall(HLBG.UnhideBlizzHUDDeep) end
     end
 end)
-
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
@@ -201,7 +184,6 @@ local function EnsurePvPTab()
         end
     end)
 end
-
 local function EnsurePvPHeaderButton()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
     if not _pvp or _G["PVPFrameHLBGButton"] then return end
@@ -233,7 +215,6 @@ local function EnsurePvPHeaderButton()
         if HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame:GetParent() == _pvp then HLBG.UI.Frame:Hide() end
     end)
 end
-
 -- pvp watcher: create PvP tab/header when frames are ready
 local pvpWatcher = CreateFrame("Frame")
 pvpWatcher:RegisterEvent("PLAYER_LOGIN")
@@ -252,7 +233,6 @@ pvpWatcher:SetScript("OnEvent", function(_, ev, name)
         HLBG.safeExecSlash('.hlbg statsui')
     end
 end)
-
 -- Also retry a few times after login in case of delayed creation
 do
     local tries, t = 0, 0
@@ -265,7 +245,6 @@ do
         end
     end)
 end
-
 -- Support addon-channel STATUS & AFFIX messages to drive HUD
 local eventFrame = CreateFrame("Frame")
 -- 3.3.5a requires registering addon message prefixes explicitly
@@ -274,7 +253,6 @@ pcall(function()
         RegisterAddonMessagePrefix('HLBG')
     end
 end)
-    
     -- Slash command to dump last sanitized TSV (client-side debug)
     SLASH_HLBGSANIT1 = '/hlbgsanitize'
     SLASH_HLBGSANIT2 = '.hlbgsanitize'
@@ -302,7 +280,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             HLBG.DebugLog('AIO_RAW', { prefix = prefix, msg = msg })
         end
     end)
-
     -- Dev: lightweight receipt log for addon messages (only when dev mode true)
     pcall(function()
         local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
@@ -311,7 +288,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Received AIO msg prefix=%s len=%d preview=%s', tostring(prefix), (type(msg)=='string' and #msg) or 0, preview))
         end
     end)
-
     -- Forward a compact raw sample of incoming addon messages to the server-side log (throttled)
     pcall(function()
         local send = _G.HLBG_SendClientLog or (type(HLBG) == 'table' and HLBG.SendClientLog)
@@ -330,9 +306,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             end
         end
     end)
-
     if type(msg) ~= 'string' then return end
-
     -- STATUS messages
     if msg:match("^STATUS|") then
         pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('STATUS', msg) end end)
@@ -340,12 +314,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local H = tonumber(msg:match("H=(%d+)") or 0) or 0
         local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
         local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
-        
         -- EXTENSIVE DEBUG: Log parsed values
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS PARSED]|r A=%d H=%d END=%d LOCK=%d", A, H, ENDt, LOCK))
         end
-        
         RES.A = A; RES.H = H; RES.END = ENDt; RES.LOCK = LOCK
         -- Also store in HLBG._lastStatus for UpdateHUD compatibility
         HLBG._lastStatus = HLBG._lastStatus or {}
@@ -357,17 +329,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         HLBG._lastStatus.timeLeft = ENDt
         HLBG._lastStatus.END = ENDt  -- Store END time for HUD visibility check
         HLBG._lastStatusTime = GetTime()  -- Track when we last received a STATUS message
-        
         -- EXTENSIVE DEBUG: Confirm storage
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS STORED]|r _lastStatus.A=%s RES.A=%s", tostring(HLBG._lastStatus.A), tostring(RES.A)))
         end
-        
         -- Update HUD visibility since we just received a STATUS message (we're definitely in BG now)
         if type(HLBG.UpdateHUDVisibility) == 'function' then
             pcall(HLBG.UpdateHUDVisibility)
         end
-        
         -- EXTENSIVE DEBUG: Check UpdateHUD exists and call it
         if type(HLBG.UpdateHUD) == 'function' then
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -381,7 +350,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         end
         return
     end
-
     -- AFFIX messages
     local aff = msg:match("^AFFIX|(.*)$")
     if aff then
@@ -392,17 +360,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         if HLBG.UI and HLBG.UI.Affix then pcall(function() HLBG.UI.Affix:Hide() end) end
         return
     end
-
     -- Warmup notice
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end; return end
     pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('WARMUP', warm) end end)
-
     -- Queue status
     local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
     if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end; return end
     pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('QUEUE', q) end end)
-
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
@@ -413,7 +378,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
         return
     end
-
     -- History TSV fallback
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
@@ -446,7 +410,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
         return
     end
-
     -- Stats JSON fallback
     local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
@@ -461,7 +424,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 end)
-
 -- Some servers send HLBG payloads to regular chat (not addon channel). Listen broadly
 local chatFrame = CreateFrame('Frame')
 chatFrame:RegisterEvent('CHAT_MSG_SAY')
@@ -567,7 +529,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             pcall(function()
                 DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r About to call HistoryStr')
             end)
-            
             -- Store the sanitized TSV for debugging
             HLBG._lastSanitizedTSV = htsv
             local lines = {}
@@ -576,11 +537,9 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                     table.insert(lines, line)
                 end
             end
-            
             pcall(function()
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
             end)
-            
             local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             if ok then
                 pcall(function()
@@ -615,7 +574,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         pcall(function()
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Processing STATS_JSON, length: ' .. #sj)
         end)
-        
         local ok, decoded = pcall(function()
             -- First try built-in JSON decoder if available
             if HLBG.json_decode and type(HLBG.json_decode) == 'function' then
@@ -625,31 +583,25 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             else
                 -- Fallback: Simple JSON parsing for known structure
                 local stats = {}
-                
                 -- Extract key values from JSON string manually
                 stats.draws = tonumber(sj:match('"draws":(%d+)')) or 0
                 stats.avgDuration = tonumber(sj:match('"avgDuration":(%d+)')) or 0
                 stats.season = tonumber(sj:match('"season":(%d+)')) or 1
                 stats.seasonName = sj:match('"seasonName":"([^"]+)"') or "Season 1"
-                
                 -- Extract counts object
                 local allianceCount = tonumber(sj:match('"Alliance":(%d+)')) or 0
                 local hordeCount = tonumber(sj:match('"Horde":(%d+)')) or 0
                 stats.counts = { Alliance = allianceCount, Horde = hordeCount }
-                
                 -- Calculate total battles
                 stats.totalBattles = allianceCount + hordeCount + stats.draws
-                
                 return stats
             end
         end)
-        
         if ok and type(decoded) == 'table' then
             -- Extract win counts from byAffix structure (sum across all affixes)
             local allianceWins = 0
             local hordeWins = 0
             local draws = tonumber(decoded.draws) or 0
-            
             if decoded.byAffix and type(decoded.byAffix) == 'table' then
                 for affixId, affixData in pairs(decoded.byAffix) do
                     if type(affixData) == 'table' then
@@ -658,24 +610,19 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                     end
                 end
             end
-            
             -- Also check top-level counts if present (fallback)
             if decoded.counts and type(decoded.counts) == 'table' then
                 allianceWins = allianceWins + (tonumber(decoded.counts.Alliance) or 0)
                 hordeWins = hordeWins + (tonumber(decoded.counts.Horde) or 0)
             end
-            
             local totalBattles = tonumber(decoded.total) or (allianceWins + hordeWins + draws)
-            
             pcall(function()
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles))
             end)
-            
             -- Store total if present
-            if decoded.total and HLBG.UI and HLBG.UI.History then 
+            if decoded.total and HLBG.UI and HLBG.UI.History then
                 HLBG.UI.History.total = totalBattles
             end
-            
             -- Build normalized stats object
             local normalizedStats = {
                 counts = { Alliance = allianceWins, Horde = hordeWins },
@@ -685,22 +632,19 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 season = tonumber(decoded.season) or 1,
                 seasonName = decoded.seasonName or "Season 1"
             }
-            
             -- Call stats display function with normalized data
-            if type(HLBG.Stats) == 'function' then 
-                pcall(HLBG.Stats, normalizedStats) 
+            if type(HLBG.Stats) == 'function' then
+                pcall(HLBG.Stats, normalizedStats)
                 pcall(function()
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with normalized data')
                 end)
             end
-            
             if type(HLBG.OnServerStats) == 'function' then
                 pcall(HLBG.OnServerStats, normalizedStats)
                 pcall(function()
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with normalized data')
                 end)
             end
-            
             -- Force update stats display if UI exists
             if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
                 pcall(function()
@@ -709,21 +653,19 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                     table.insert(lines, "")
                     table.insert(lines, string.format("|cFFFFD700Season:|r %s (#%d)", normalizedStats.seasonName or "Season 1", normalizedStats.season or 1))
                     table.insert(lines, "")
-                    
                     -- Battle counts
                     table.insert(lines, "|cFFFFD700Battle Summary:|r")
                     table.insert(lines, string.format("  |cFFFFFFFFTotal Battles:|r %d", totalBattles))
-                    table.insert(lines, string.format("  |cFF0099FFAlliance Wins:|r %d  |cFFAAAA00(%.1f%%)|r", 
-                        allianceWins, 
+                    table.insert(lines, string.format("  |cFF0099FFAlliance Wins:|r %d  |cFFAAAA00(%.1f%%)|r",
+                        allianceWins,
                         totalBattles > 0 and (allianceWins / totalBattles * 100) or 0))
-                    table.insert(lines, string.format("  |cFFFF0000Horde Wins:|r %d  |cFFAAAA00(%.1f%%)|r", 
-                        hordeWins, 
+                    table.insert(lines, string.format("  |cFFFF0000Horde Wins:|r %d  |cFFAAAA00(%.1f%%)|r",
+                        hordeWins,
                         totalBattles > 0 and (hordeWins / totalBattles * 100) or 0))
-                    table.insert(lines, string.format("  |cFFAAAA00Draws:|r %d  |cFFAAAA00(%.1f%%)|r", 
-                        draws, 
+                    table.insert(lines, string.format("  |cFFAAAA00Draws:|r %d  |cFFAAAA00(%.1f%%)|r",
+                        draws,
                         totalBattles > 0 and (draws / totalBattles * 100) or 0))
                     table.insert(lines, "")
-                    
                     -- Duration stats
                     table.insert(lines, "|cFFFFD700Performance:|r")
                     table.insert(lines, string.format("  |cFF00FF00Average Duration:|r %.1f seconds", normalizedStats.avgDuration or 0))
@@ -733,7 +675,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                         table.insert(lines, string.format("  |cFFAAAA00(~%d min %d sec)|r", minutes, seconds))
                     end
                     table.insert(lines, "")
-                    
                     -- Per-affix breakdown if available
                     if decoded.byAffix and type(decoded.byAffix) == 'table' then
                         table.insert(lines, "|cFFFFD700Stats by Affix:|r")
@@ -744,33 +685,29 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                                 local hWins = tonumber(affixData.Horde) or 0
                                 local affixTotal = aWins + hWins
                                 if affixTotal > 0 then
-                                    table.insert(lines, string.format("  |cFFFFFFFF%s:|r A:%d H:%d (Total: %d)", 
+                                    table.insert(lines, string.format("  |cFFFFFFFF%s:|r A:%d H:%d (Total: %d)",
                                         affixName, aWins, hWins, affixTotal))
                                 end
                             end
                         end
                         table.insert(lines, "")
                     end
-                    
                     -- Win reasons if available
                     if decoded.reasons and type(decoded.reasons) == 'table' then
                         table.insert(lines, "|cFFFFD700Win Reasons:|r")
                         for reason, count in pairs(decoded.reasons) do
                             if tonumber(count) and tonumber(count) > 0 then
-                                table.insert(lines, string.format("  |cFFFFFFFF%s:|r %d", 
+                                table.insert(lines, string.format("  |cFFFFFFFF%s:|r %d",
                                     tostring(reason):gsub("^%l", string.upper), count))
                             end
                         end
                         table.insert(lines, "")
                     end
-                    
                     table.insert(lines, "|cFFAAAA00Click 'Refresh' to update statistics|r")
-                    
                     HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Updated Stats UI with improved formatted layout')
                 end)
             end
-            
         else
             pcall(function()
                 DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug:|r JSON decode failed: ' .. tostring(decoded))
@@ -778,7 +715,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         end
         return
     end
-    
     -- Queue status response
     if msg:match("^QUEUE_STATUS") then
         pcall(function()
@@ -796,7 +732,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         return
     end
 end)
-
 -- Slash command to force reparse last sanitized TSV (dev aid)
 SLASH_HLBGREPARSE1 = '/hlbgreparse'
 SlashCmdList['HLBGREPARSE'] = function()
@@ -816,7 +751,6 @@ SlashCmdList['HLBGREPARSE'] = function()
         end
     end
 end
-
 -- Slash command to check HLBG functions and force test
 SLASH_HLBGTEST1 = '/hlbgtest'
 SlashCmdList['HLBGTEST'] = function()
@@ -842,13 +776,11 @@ SlashCmdList['HLBGTEST'] = function()
         end
     end
 end
-
 -- Force show HLBG window and create tabs manually
 SLASH_HLBGSHOW1 = '/hlbgshow'
 SlashCmdList['HLBGSHOW'] = function()
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempting to show HLBG window and create tabs...')
-        
         -- Try to show main frame
         if HLBG.UI and HLBG.UI.Frame then
             HLBG.UI.Frame:Show()
@@ -856,7 +788,6 @@ SlashCmdList['HLBGSHOW'] = function()
         else
             DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No main frame found')
         end
-        
         -- Check for tabs
         if HLBG.UI and HLBG.UI.Tabs then
             HLBG.UI.Tabs:Show()
@@ -864,19 +795,16 @@ SlashCmdList['HLBGSHOW'] = function()
         else
             DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No tabs container found')
         end
-        
         -- Try to force create History UI
         if type(HLBG._ensureUI) == 'function' then
             pcall(HLBG._ensureUI, 'History')
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted to ensure History UI')
         end
-        
         -- Try UpdateHistoryDisplay if available
         if type(HLBG.UpdateHistoryDisplay) == 'function' then
             pcall(HLBG.UpdateHistoryDisplay)
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted UpdateHistoryDisplay')
         end
-        
         -- Show tab status
         local tabCount = 0
         if HLBG.UI and HLBG.UI.Tabs then
@@ -886,26 +814,23 @@ SlashCmdList['HLBGSHOW'] = function()
             end
         end
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Found %d tabs', tabCount))
-        
         -- Report stored data
         local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Stored rows: %d', rowCount))
     end
 end
-
 -- Simple emergency window
 SLASH_HLBGTABS1 = '/hlbgtabs'
 SlashCmdList['HLBGTABS'] = function()
     local ok, err = pcall(function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Creating emergency window...')
-        
         -- Simple basic frame
         local frame = CreateFrame("Frame", "HLBG_Emergency", UIParent)
         frame:SetSize(500, 300)
         frame:SetPoint("CENTER")
         frame:SetBackdrop({
             bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-            edgeFile = "Interface/Tooltips/UI-Tooltip-Border", 
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
             tile = true, tileSize = 16, edgeSize = 16,
             insets = { left = 4, right = 4, top = 4, bottom = 4 }
         })
@@ -915,47 +840,40 @@ SlashCmdList['HLBGTABS'] = function()
         frame:RegisterForDrag("LeftButton")
         frame:SetScript("OnDragStart", function() frame:StartMoving() end)
         frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-        
         -- Title
         local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", frame, "TOP", 0, -15)
         title:SetText("HLBG History Data")
-        
         -- Close button
         local close = CreateFrame("Button", nil, frame)
         close:SetSize(20, 20)
         close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
         close:SetNormalTexture("Interface/Buttons/UI-Panel-MinimizeButton-Up")
         close:SetScript("OnClick", function() frame:Hide() end)
-        
         -- Content area
         local scroll = CreateFrame("ScrollFrame", nil, frame)
         scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
         scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 15)
-        
         local content = CreateFrame("Frame", nil, scroll)
         content:SetSize(460, 1000)
         scroll:SetScrollChild(content)
-        
         -- Show stored data
         local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
-        
         local y = -10
         local info = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         info:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         info:SetText(string.format("Stored History Rows: %d", rowCount))
         y = y - 25
-        
         if rowCount > 0 and HLBG.UI.History and HLBG.UI.History.lastRows then
             for i, row in ipairs(HLBG.UI.History.lastRows) do
                 local rowText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 rowText:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
                 rowText:SetWidth(450)
                 rowText:SetJustifyH("LEFT")
-                rowText:SetText(string.format("#%s: %s - %s vs %s (%s)", 
-                    row.id or '?', 
-                    row.seasonName or '?', 
-                    row.winner or '?', 
+                rowText:SetText(string.format("#%s: %s - %s vs %s (%s)",
+                    row.id or '?',
+                    row.seasonName or '?',
+                    row.winner or '?',
                     row.affix or '?',
                     row.reason or '?'
                 ))
@@ -967,35 +885,29 @@ SlashCmdList['HLBGTABS'] = function()
             noData:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
             noData:SetText("No history data found in HLBG.UI.History.lastRows")
         end
-        
         frame:Show()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Emergency window created and shown!')
     end)
-    
     if not ok then
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Emergency window error: ' .. tostring(err))
     end
 end
-
 -- Fix main addon window
 SLASH_HLBGFIX1 = '/hlbgfix'
 SlashCmdList['HLBGFIX'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempting to fix main addon window...')
-    
     -- Check main addon state
     local hasMainFrame = HLBG and HLBG.UI and HLBG.UI.Frame
     local hasHistoryFrame = hasMainFrame and HLBG.UI.History
     local hasData = hasHistoryFrame and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0
     local hasUpdateFunction = type(HLBG.UpdateHistoryDisplay) == 'function'
-    
     DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Main frame: %s, History frame: %s, Data: %s (%d rows), Update function: %s',
         hasMainFrame and "YES" or "NO",
-        hasHistoryFrame and "YES" or "NO", 
+        hasHistoryFrame and "YES" or "NO",
         hasData and "YES" or "NO",
         hasData and #HLBG.UI.History.lastRows or 0,
         hasUpdateFunction and "YES" or "NO"
     ))
-    
     if hasMainFrame then
         -- Show main frame and focus history tab
         HLBG.UI.Frame:Show()
@@ -1006,11 +918,10 @@ SlashCmdList['HLBGFIX'] = function()
                 DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Clicked History tab')
             end
         end
-        
         -- Force update display if we have data
         if hasData and hasUpdateFunction then
-            pcall(function() 
-                HLBG.UpdateHistoryDisplay() 
+            pcall(function()
+                HLBG.UpdateHistoryDisplay()
                 DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Called UpdateHistoryDisplay()')
             end)
         end
@@ -1018,20 +929,18 @@ SlashCmdList['HLBGFIX'] = function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Main frame not found - addon may not be loaded properly')
     end
 end
-
 -- Complete UI System Fix
 SLASH_HLBGFULLFIX1 = '/hlbgfullfix'
 SlashCmdList['HLBGFULLFIX'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Performing complete UI system fix...')
-    
     -- Step 1: AGGRESSIVELY disable ALL Modern UI functions
-    if HLBG.ApplyModernStyling then 
-        HLBG.ApplyModernStyling = function() 
+    if HLBG.ApplyModernStyling then
+        HLBG.ApplyModernStyling = function()
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Modern styling blocked!')
         end
     end
     if HLBG.ModernizeContentAreas then
-        HLBG.ModernizeContentAreas = function() 
+        HLBG.ModernizeContentAreas = function()
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r ModernizeContentAreas blocked!')
         end
     end
@@ -1042,11 +951,9 @@ SlashCmdList['HLBGFULLFIX'] = function()
         HLBG.CreateModernStatsCards = function() end
     end
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Disabled ALL Modern UI systems aggressively')
-    
     -- Step 2: Hide any conflicting HUD/windows
     if _G["HLBG_Rebuilt"] then _G["HLBG_Rebuilt"]:Hide() end
     if _G["HLBG_ModernHUD"] then _G["HLBG_ModernHUD"]:Hide() end
-    
     -- Step 3: Ensure main frame exists and is properly configured
     if not (HLBG and HLBG.UI and HLBG.UI.Frame) then
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Creating main frame - original was missing')
@@ -1061,49 +968,40 @@ SlashCmdList['HLBGFULLFIX'] = function()
         })
         HLBG.UI.Frame:SetBackdropColor(0, 0, 0, 0.8)
     end
-    
     -- Step 4: Fix frame positioning and show it
     HLBG.UI.Frame:ClearAllPoints()
     HLBG.UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     HLBG.UI.Frame:SetFrameStrata("HIGH")
     HLBG.UI.Frame:SetFrameLevel(100)
     HLBG.UI.Frame:Show()
-    
     -- Step 5: Create or fix tabs with proper positioning INSIDE the frame
     HLBG.UI.Tabs = HLBG.UI.Tabs or {}
     local tabNames = {"History", "Stats", "Info", "Settings", "Queue"}
-    
     for i = 1, 5 do
         -- Create tab if it doesn't exist
         if not HLBG.UI.Tabs[i] then
             HLBG.UI.Tabs[i] = CreateFrame("Button", "HLBG_Tab"..i, HLBG.UI.Frame)
         end
-        
         local tab = HLBG.UI.Tabs[i]
         tab:ClearAllPoints()
-        
         -- Position INSIDE the frame, not below it
         if i == 1 then
             tab:SetPoint("TOPLEFT", HLBG.UI.Frame, "TOPLEFT", 20, -40)
         else
             tab:SetPoint("LEFT", HLBG.UI.Tabs[i-1], "RIGHT", 5, 0)
         end
-        
         tab:SetSize(80, 25)
         tab:SetText(tabNames[i])
         tab:SetNormalFontObject("GameFontNormal")
-        
         -- Clear any existing backdrop and add a simple visible one
         tab:SetBackdrop(nil)
         tab:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
         tab:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
-        
         -- Ensure tab is visible and clickable
         tab:SetFrameStrata("HIGH")
         tab:SetFrameLevel(101)
         tab:EnableMouse(true)
         tab:Show()
-        
         -- Set click handler
         if i == 1 then -- History tab
             tab:SetScript("OnClick", function()
@@ -1115,7 +1013,6 @@ SlashCmdList['HLBGFULLFIX'] = function()
                         HLBG.UI.Tabs[j]:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
                     end
                 end
-                
                 -- Show history content
                 if HLBG.UI.History then
                     HLBG.UI.History:Show()
@@ -1125,7 +1022,6 @@ SlashCmdList['HLBGFULLFIX'] = function()
                     end
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History tab activated')
                 end
-                
                 -- Hide other content
                 if HLBG.UI.Stats then HLBG.UI.Stats:Hide() end
                 if HLBG.UI.Info then HLBG.UI.Info:Hide() end
@@ -1139,7 +1035,6 @@ SlashCmdList['HLBGFULLFIX'] = function()
                 for j = 3, 5 do
                     if HLBG.UI.Tabs[j] then HLBG.UI.Tabs[j]:SetBackdropColor(0.2, 0.2, 0.2, 0.9) end
                 end
-                
                 if HLBG.UI.Stats then HLBG.UI.Stats:Show() end
                 if HLBG.UI.History then HLBG.UI.History:Hide() end
                 DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Stats tab activated')
@@ -1150,14 +1045,11 @@ SlashCmdList['HLBGFULLFIX'] = function()
             end)
         end
     end
-    
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Fixed all 5 tabs with proper positioning and visibility')
-    
     -- Step 6: Activate History tab by default
     if HLBG.UI.Tabs[1] then
         HLBG.UI.Tabs[1]:GetScript("OnClick")(HLBG.UI.Tabs[1])
     end
-    
     -- Step 7: Add close button if missing
     if not HLBG.UI.Frame.closeBtn then
         local close = CreateFrame("Button", nil, HLBG.UI.Frame)
@@ -1167,34 +1059,28 @@ SlashCmdList['HLBGFULLFIX'] = function()
         close:SetScript("OnClick", function() HLBG.UI.Frame:Hide() end)
         HLBG.UI.Frame.closeBtn = close
     end
-    
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Complete UI fix applied - tabs should now be visible and functional!')
 end
-
--- Nuclear option: Show absolutely minimal working UI 
+-- Nuclear option: Show absolutely minimal working UI
 SLASH_HLBGNUCLEAR1 = '/hlbgnuclear'
 SlashCmdList['HLBGNUCLEAR'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r NUCLEAR OPTION: Creating completely isolated UI...')
-    
     -- Disable everything that might interfere
     HLBG.ApplyModernStyling = function() end
     HLBG.ModernizeContentAreas = function() end
     HLBG.UpdateModernTabStyling = function() end
     HLBG.CreateModernStatsCards = function() end
-    
     -- Hide any existing conflicting frames
     for _, frameName in ipairs({"HLBG_Main", "HLBG_Fixed", "HLBG_Rebuilt", "HLBG_ModernHUD"}) do
         local frame = _G[frameName]
         if frame and frame.Hide then frame:Hide() end
     end
-    
-    -- Create completely new, isolated frame 
+    -- Create completely new, isolated frame
     local frame = CreateFrame("Frame", "HLBG_Nuclear", UIParent)
     frame:SetSize(600, 400)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetFrameLevel(1000) -- Very high level to ensure visibility
-    
     -- Bright, obvious background so we can see it
     frame:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -1204,46 +1090,38 @@ SlashCmdList['HLBGNUCLEAR'] = function()
     })
     frame:SetBackdropColor(0.1, 0.1, 0.5, 0.9) -- Dark blue so we can see it
     frame:SetBackdropBorderColor(1, 1, 1, 1) -- White border
-    
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", frame, "TOP", 0, -15)
     title:SetText("HLBG - Nuclear Mode")
     title:SetTextColor(1, 1, 1, 1) -- White text
-    
-    -- Close button 
+    -- Close button
     local close = CreateFrame("Button", nil, frame)
     close:SetSize(20, 20)
     close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
     close:SetNormalTexture("Interface/Buttons/UI-Panel-MinimizeButton-Up")
     close:SetScript("OnClick", function() frame:Hide() end)
-    
     -- Create super simple tabs
     local tabs = {}
     local tabNames = {"History", "Stats"}
     local currentContent = nil
-    
     for i = 1, 2 do
         local tab = CreateFrame("Button", nil, frame)
         tab:SetSize(100, 30)
         tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 20 + ((i-1) * 105), -50)
         tab:SetText(tabNames[i])
         tab:SetNormalFontObject("GameFontNormal")
-        
         -- Very visible tab background
         tab:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
         tab:SetBackdropColor(0.3, 0.3, 0.3, 1)
         tab:SetFrameLevel(1001)
-        
         tab:SetScript("OnClick", function()
             -- Clear previous content
             if currentContent then currentContent:Hide() end
-            
             -- Highlight clicked tab
             for j, t in ipairs(tabs) do
                 t:SetBackdropColor(j == i and 0.5 or 0.3, j == i and 0.5 or 0.3, j == i and 0.5 or 0.3, 1)
             end
-            
             -- Create content area for this tab
             currentContent = CreateFrame("Frame", nil, frame)
             currentContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -90)
@@ -1251,13 +1129,11 @@ SlashCmdList['HLBGNUCLEAR'] = function()
             currentContent:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background"})
             currentContent:SetBackdropColor(0.05, 0.05, 0.2, 0.9) -- Dark blue content area
             currentContent:SetFrameLevel(1002)
-            
             if i == 1 then -- History tab
                 local text = currentContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 text:SetPoint("TOPLEFT", currentContent, "TOPLEFT", 10, -10)
                 text:SetText("Battle History:")
                 text:SetTextColor(1, 1, 1, 1)
-                
                 -- Show actual data from memory if available
                 local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
                 local dataText = currentContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1265,7 +1141,6 @@ SlashCmdList['HLBGNUCLEAR'] = function()
                 dataText:SetWidth(550)
                 dataText:SetJustifyH("LEFT")
                 dataText:SetTextColor(0.8, 0.8, 1, 1)
-                
                 if rowCount > 0 then
                     local lines = {string.format("Found %d stored battle entries:", rowCount)}
                     for j, row in ipairs(HLBG.UI.History.lastRows) do
@@ -1276,21 +1151,17 @@ SlashCmdList['HLBGNUCLEAR'] = function()
                 else
                     dataText:SetText("No battle history found in memory")
                 end
-                
             elseif i == 2 then -- Stats tab
                 local text = currentContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 text:SetPoint("TOPLEFT", currentContent, "TOPLEFT", 10, -10)
                 text:SetText("Statistics: Stats tab functionality not implemented in nuclear mode")
                 text:SetTextColor(1, 1, 1, 1)
             end
-            
             currentContent:Show()
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Nuclear mode - '..tabNames[i]..' tab activated')
         end)
-        
         tabs[i] = tab
     end
-    
     -- Show frame and activate History tab
     frame:Show()
     frame:EnableMouse(true)
@@ -1298,49 +1169,41 @@ SlashCmdList['HLBGNUCLEAR'] = function()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function() frame:StartMoving() end)
     frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-    
     -- Auto-click History tab
     tabs[1]:GetScript("OnClick")(tabs[1])
-    
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Nuclear mode activated - completely isolated UI should now be visible!')
 end
-
 -- Request full history data from server
-SLASH_HLBGREFRESH1 = '/hlbgrefresh'  
+SLASH_HLBGREFRESH1 = '/hlbgrefresh'
 SlashCmdList['HLBGREFRESH'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requesting fresh data from server...')
-    
     -- Request new data
     if type(SendAddonMessage) == 'function' then
         pcall(function()
             SendAddonMessage("HLBG_REQUEST", "HISTORY", "WHISPER", UnitName("player"))
-            SendAddonMessage("HLBG_REQUEST", "STATS", "WHISPER", UnitName("player")) 
+            SendAddonMessage("HLBG_REQUEST", "STATS", "WHISPER", UnitName("player"))
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent data requests via addon messages')
         end)
     end
-    
     -- Also try slash command fallbacks
     pcall(function()
         SendChatMessage(".hlbg history", "GUILD")
-        SendChatMessage(".hlbg stats", "GUILD") 
+        SendChatMessage(".hlbg stats", "GUILD")
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent fallback chat commands')
     end)
 end
-
 -- Emergency: Enhanced HistoryStr function to properly handle TSV data and display
 HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, sortDir)
     pcall(function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r HistoryStr called with TSV length: ' .. (tsv and #tsv or 0))
     end)
-    
     local rows = {}
     if type(tsv) == 'string' and tsv ~= '' then
         -- Enhanced sanitization: convert pipes to newlines if needed
-        tsv = tsv:gsub('%|%|', '\n')  
+        tsv = tsv:gsub('%|%|', '\n')
         if tsv:find('|') and not tsv:find('\n') then
             tsv = tsv:gsub('|', '\n')
         end
-        
         -- Parse TSV lines with better error handling
         for line in tsv:gmatch('[^\n]+') do
             line = line:gsub('^%s+',''):gsub('%s+$','') -- trim whitespace
@@ -1360,7 +1223,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
                         cols[#cols + 1] = col
                     end
                 end
-                
                 -- Create row if we have enough columns
                 if #cols >= 4 then
                     rows[#rows + 1] = {
@@ -1376,14 +1238,12 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
             end
         end
     end
-    
     pcall(function()
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Emergency:|r Parsed %d rows from TSV', #rows))
         if #rows > 0 then
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r First row: ID=' .. (rows[1].id or 'nil') .. ', Winner=' .. (rows[1].winner or 'nil') .. ', Season=' .. (rows[1].seasonName or 'nil'))
         end
     end)
-    
     -- Store rows in UI system
     HLBG.UI = HLBG.UI or {}
     HLBG.UI.History = HLBG.UI.History or {}
@@ -1391,7 +1251,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
     HLBG.UI.History.page = tonumber(page) or 1
     HLBG.UI.History.per = tonumber(per) or 15
     HLBG.UI.History.total = tonumber(total) or #rows
-    
     -- Try calling the real History function if available
     if type(HLBG.History) == 'function' then
         pcall(function()
@@ -1399,7 +1258,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Called HLBG.History with parsed rows')
         end)
     end
-    
     -- Try to render/update display
     if type(HLBG.UpdateHistoryDisplay) == 'function' then
         pcall(function()
@@ -1407,7 +1265,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Called UpdateHistoryDisplay')
         end)
     end
-    
     -- Force show main UI if available and populated
     if #rows > 0 and HLBG.UI and HLBG.UI.Frame then
         pcall(function()
@@ -1419,13 +1276,10 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, so
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Emergency:|r Attempted to show UI with ' .. #rows .. ' history rows')
         end)
     end
-    
     return rows -- Return parsed data for any caller that needs it
 end
-
 -- expose helpers for other files
 HLBG.EnsurePvPTab = EnsurePvPTab
 HLBG.EnsurePvPHeaderButton = EnsurePvPHeaderButton
-
 _G.HLBG = HLBG
 

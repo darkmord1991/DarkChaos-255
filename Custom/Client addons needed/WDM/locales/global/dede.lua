@@ -1,5 +1,4 @@
-if (GetLocale() == "deDE") then
-
+﻿if (GetLocale() == "deDE") then
 DUNGEON_FLOOR_AHNQIRAJ1 = "Untergrund des Schwarmbaus";
 DUNGEON_FLOOR_AHNQIRAJ2 = "Die Tempeltore";
 DUNGEON_FLOOR_AHNQIRAJ3 = "Höhle von C'Thun";
@@ -123,7 +122,6 @@ DUNGEON_FLOOR_WAILINGCAVERNS1 = "Die Höhlen des Wehklagens";
 DUNGEON_FLOOR_ZULAMAN1 = "Zul'Aman";
 DUNGEON_FLOOR_ZULFARRAK = "Zul'Farrak";
 DUNGEON_FLOOR_ZULGURUB1 = "Zul'Gurub";
-
 DUNGEON_FLOOR_AZUREMYSTISLE2 = "Gezeitenhöhle";
 DUNGEON_FLOOR_AZUREMYSTISLE3 = "Tannenruhfeste";
 DUNGEON_FLOOR_BADLANDS18 = "Eingang nach Uldaman";
@@ -169,5 +167,5 @@ DUNGEON_FLOOR_UNGOROCRATER14 = "Die Wuchernde Narbe";
 DUNGEON_FLOOR_WESTFALL17 = "Eingang zu den Todesminen";
 DUNGEON_FLOOR_WESTFALL4 = "Der Goldküstensteinbruch";
 DUNGEON_FLOOR_WESTFALL5 = "Der Jangoschacht";
-
 end
+

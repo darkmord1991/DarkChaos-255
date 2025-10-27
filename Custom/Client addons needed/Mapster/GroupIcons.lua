@@ -1,33 +1,24 @@
---[[
+﻿--[[
 Copyright (c) 2009, Hendrik "Nevcairiel" Leppkes < h.leppkes@gmail.com >
 All rights reserved.
 ]]
-
 local Mapster = LibStub("AceAddon-3.0"):GetAddon("Mapster")
 local L = LibStub("AceLocale-3.0"):GetLocale("Mapster")
-
 local MODNAME = "GroupIcons"
 local GroupIcons = Mapster:NewModule(MODNAME, "AceEvent-3.0", "AceHook-3.0")
-
 local fmt = string.format
 local sub = string.sub
 local find = string.find
-
 local _G = _G
-
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
-
 local UnitClass = UnitClass
 local GetRaidRosterInfo = GetRaidRosterInfo
 local UnitAffectingCombat = UnitAffectingCombat
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local MapUnit_IsInactive = MapUnit_IsInactive
-
 --Artwork taken from Cartographer
 local path = "Interface\\AddOns\\Mapster\\Artwork\\"
-
 local FixUnit, FixWorldMapUnits, FixBattlefieldUnits, OnUpdate, UpdateUnitIcon
-
 local options
 local function getOptions()
 	if not options then
@@ -52,21 +43,17 @@ local function getOptions()
 			}
 		}
 	end
-
 	return options
 end
-
 function GroupIcons:OnInitialize()
 	self:SetEnabledState(Mapster:GetModuleEnabled(MODNAME))
 	Mapster:RegisterModuleOptions(MODNAME, getOptions, L["Group Icons"])
 end
-
 function GroupIcons:OnEnable()
 	-- Support for !Class Colors
 	if CUSTOM_CLASS_COLORS then
 		RAID_CLASS_COLORS = CUSTOM_CLASS_COLORS
 	end
-
 	if not IsAddOnLoaded("Blizzard_BattlefieldMinimap") then
 		self:RegisterEvent("ADDON_LOADED", function(event, addon)
 			if addon == "Blizzard_BattlefieldMinimap" then
@@ -81,12 +68,10 @@ function GroupIcons:OnEnable()
 	FixWorldMapUnits(true)
 	self:RawHook("WorldMapUnit_Update", true)
 end
-
 function GroupIcons:OnDisable()
 	FixWorldMapUnits(false)
 	FixBattlefieldUnits(false)
 end
-
 function FixUnit(unit, state, isNormal)
 	local frame = _G[unit]
 	local icon = frame.icon
@@ -105,7 +90,6 @@ function FixUnit(unit, state, isNormal)
 		icon:SetTexture("Interface\\WorldMap\\WorldMapPartyIcon")
 	end
 end
-
 function FixWorldMapUnits(state)
 	for i = 1, 4 do
 		FixUnit(fmt("WorldMapParty%d", i), state, true)
@@ -114,7 +98,6 @@ function FixWorldMapUnits(state)
 		FixUnit(fmt("WorldMapRaid%d", i), state)
 	end
 end
-
 function FixBattlefieldUnits(state)
 	if BattlefieldMinimap then
 		for i = 1, 4 do
@@ -125,7 +108,6 @@ function FixBattlefieldUnits(state)
 		end
 	end
 end
-
 function OnUpdate(self, elapsed)
 	self.elapsed = self.elapsed - elapsed
 	if self.elapsed <= 0 then
@@ -133,23 +115,19 @@ function OnUpdate(self, elapsed)
 		UpdateUnitIcon(self.icon, self.unit)
 	end
 end
-
 local grouptex = path .. "Group%d"
 function UpdateUnitIcon(tex, unit)
 	-- sanity check
 	if not (tex and unit) then return end
-
 	-- grab the class filename
 	local _, fileName = UnitClass(unit)
 	if not fileName then return end
-
 	-- handle raid units, and set the correct subgroup texture
 	if find(unit, "raid", 1, true) then
 		local _, _, subgroup = GetRaidRosterInfo(sub(unit, 5))
 		if not subgroup then return end
 		tex:SetTexture(fmt(grouptex, subgroup))
 	end
-
 	-- color the texture
 	-- either by flash color
 	local t = RAID_CLASS_COLORS[fileName]
@@ -170,7 +148,7 @@ function UpdateUnitIcon(tex, unit)
 		tex:SetVertexColor(0.8, 0.8, 0.8)
 	end
 end
-
 function GroupIcons:WorldMapUnit_Update(unitFrame)
 	UpdateUnitIcon(unitFrame.icon, unitFrame.unit)
 end
+

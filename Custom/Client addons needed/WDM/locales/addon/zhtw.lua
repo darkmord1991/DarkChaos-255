@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "zhTW")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "zhTW")
 if not L then return end
-
 L["debugmode_text"] = "偵錯模式"
 L["show_minimap_text"] = "世界地圖圖示（Dragonflight 之前）"
 L["show_minimap_warn_text"] = "|c00FD1A36如果您使用更改 |r 介面的插件則停用（需要重新載入介面 - /reload）"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "部落航班"
 L["show_taxinode_Continental_alliance_text"] = "聯盟船"
 L["show_taxinode_Continue_horde_text"] = "部落飛艇"
 L["show_zonelevel_text"] = "位置等級"
-
 L["taxinode_acherus"] = "亞榭洛:黯黑堡"
 L["taxinode_aeriepeak"] = "鷹巢山，辛特蘭"
 L["taxinode_agmarshammer"] = "阿格瑪之錘，龍骨荒野"
@@ -162,3 +160,4 @@ L["taxinode_zabrajin"] = "薩布拉金，贊格沼澤"
 L["taxinode_zimtorga"] = "辛托加，祖爾德拉克"
 L["taxinode_zoramgaroutpost"] = "佐拉姆加前哨站，梣谷"
 L["taxinode_zulaman"] = "祖阿曼，鬼魂之地"
+

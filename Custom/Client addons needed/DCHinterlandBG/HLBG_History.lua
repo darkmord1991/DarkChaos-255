@@ -1,20 +1,16 @@
 ﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Clean, single-definition History implementation.
 -- Exposes: HLBG.History(rows, page, per, total, sortKey, sortDir)
 --          HLBG.HistoryStr(tsv, page, per, total, sortKey, sortDir)
 --          HLBG.HistoryApplySort(key)
-
 -- Ensure UI table exists
 HLBG.UI = HLBG.UI or {}
 HLBG.UI.History = HLBG.UI.History or {}
-
 local function ensure_ui()
     HLBG.UI = HLBG.UI or {}
     HLBG.UI.History = HLBG.UI.History or {}
     return HLBG.UI.History
 end
-
 -- Helper: sanitize and preserve valid UTF-8; adapted from prior implementation
 local function keep_valid_utf8(s)
     if type(s) ~= 'string' then return s end
@@ -41,7 +37,6 @@ local function keep_valid_utf8(s)
     end
     return table.concat(out)
 end
-
 local function sanitize_tsv(tsv)
     if type(tsv) ~= 'string' then return tsv end
     tsv = tsv:gsub('\r\n','\n'):gsub('\r','\n')
@@ -53,18 +48,15 @@ local function sanitize_tsv(tsv)
     tsv = keep_valid_utf8(tsv)
     return tsv
 end
-
 -- Main History renderer
 HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir)
     local ui = ensure_ui()
-
     if type(rows) ~= 'table' then rows = {} end
     ui.page = tonumber(page) or ui.page or 1
     ui.per  = tonumber(per)  or ui.per  or 25
     ui.total= tonumber(total)or ui.total or #rows
     ui.sortKey = sortKey or ui.sortKey or 'id'
     ui.sortDir = sortDir or ui.sortDir or 'DESC'
-
     -- Normalize rows into an array of tables
     local normalized = {}
     if #rows > 0 then normalized = rows else
@@ -86,7 +78,6 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         r.reason = r.reason or r[6]
     end
     rows = normalized
-
     -- Sort
     local asc = (tostring(ui.sortDir):upper()=='ASC')
     local key = tostring(ui.sortKey or 'id'):lower()
@@ -99,10 +90,8 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         local av,bv=val(a),val(b)
         if asc then return av<bv else return av>bv end
     end)
-
     -- Save lastRows early so UI can render later when created
     HLBG.UI.History.lastRows = rows
-
     -- Client-side pagination fallback
     local fullCount = #rows
     local needSlice = (ui.total==0) or (ui.total==fullCount and fullCount>ui.per)
@@ -116,13 +105,12 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         for i=s,e do slice[#slice+1]=rows[i] end
         rows = slice
     end
-
     -- Render
     local cont = ui.Content
     if not cont then
         -- UI content not yet created; leave lastRows stored and return so UI can pick it up later
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFFF3333HLBG Debug|r History.Content missing! UI=%s History=%s', 
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFFF3333HLBG Debug|r History.Content missing! UI=%s History=%s',
                 tostring(HLBG.UI ~= nil), tostring(HLBG.UI and HLBG.UI.History ~= nil)))
         end
         -- Dev: schedule a one-shot retry to render if UI appears shortly after
@@ -141,26 +129,23 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         end
         return
     end
-    
     -- EXTENSIVE DEBUG: Log Content frame state
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         local isShown = cont:IsShown() and "YES" or "NO"
         local width, height = cont:GetSize()
         local parent = cont:GetParent()
         local parentName = parent and parent:GetName() or "nil"
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Content]|r Shown=%s Size=%.0fx%.0f Parent=%s', 
+        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Content]|r Shown=%s Size=%.0fx%.0f Parent=%s',
             isShown, width, height, parentName))
     end
-
     ui.rows = ui.rows or {}
     -- hide old
     for i,r in ipairs(ui.rows) do if r.Hide then r:Hide() end end
-
     local function Row(i)
         local r = ui.rows[i]; if r then return r end
         r = CreateFrame('Frame', 'HLBG_HistoryRow_'..i, cont)
         r:SetSize(550, 22)  -- FIX: Set width=550px height=22px (was missing width!)
-        r:SetBackdrop({ 
+        r:SetBackdrop({
             bgFile='Interface/Tooltips/UI-Tooltip-Background',
             edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
             tile = true,
@@ -174,9 +159,9 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         for idx,name in ipairs(fields) do
             local fs = r:CreateFontString(nil,'OVERLAY','GameFontHighlightSmall')
             r[name]=fs
-            if idx==1 then 
+            if idx==1 then
                 fs:SetPoint('LEFT', r,'LEFT',8,0)  -- Increased left padding
-            else 
+            else
                 fs:SetPoint('LEFT', prev,'RIGHT',3,0)  -- Reduced spacing between columns
             end
             fs:SetWidth(widths[idx])
@@ -188,7 +173,6 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         ui.rows[i]=r
         return r
     end
-
     local y = -10  -- Start slightly below top using negative coordinates (standard ScrollFrame)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
@@ -197,17 +181,15 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         local r = Row(i)
         r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
         r.rowData=row; r.rowIndex=i
-        
         -- EXTENSIVE DEBUG: Log row frame state
         if i == 1 and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local rShown = r:IsShown() and "YES" or "NO"
             local rWidth, rHeight = r:GetSize()
             local rParent = r:GetParent()
             local rParentName = rParent and rParent:GetName() or "nil"
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Row1]|r Shown=%s Size=%.0fx%.0f Parent=%s Y=%d', 
+            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Row1]|r Shown=%s Size=%.0fx%.0f Parent=%s Y=%d',
                 rShown, rWidth, rHeight, rParentName, y))
         end
-        
         if i % 2 == 0 then
             r:SetBackdropColor(0.10,0.10,0.10,0.50)
         else
@@ -242,14 +224,12 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         end
     end
     cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding
-
     -- Ensure scroll is reset to top so the first rows are visible
     pcall(function()
         if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Scroll and HLBG.UI.History.Scroll.SetVerticalScroll then
             HLBG.UI.History.Scroll:SetVerticalScroll(0)
         end
     end)
-
     -- Hide the "Loading..." text when we have data
     if ui.EmptyText then
         if #rows > 0 then
@@ -258,12 +238,10 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
             ui.EmptyText:Show()
         end
     end
-
     -- Debug success message
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully! Content height set to %.0f', #rows, cont:GetHeight()))
     end
-
     -- Pager display
     local maxPage = math.max(1, math.ceil((ui.total or #rows)/ui.per))
     if ui.Nav and ui.Nav.PageText then
@@ -272,7 +250,6 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         if ui.Nav.Next and ui.Nav.Next.SetEnabled then ui.Nav.Next:SetEnabled(ui.page<maxPage) end
     end
 end
-
 -- TSV variant
 HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
     local tsv, page, per, total, col, dir
@@ -282,7 +259,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
     if type(tsv)=='string' and tsv~='' then
         tsv = sanitize_tsv(tsv)
         HLBG._lastSanitizedTSV = tsv
-
         pcall(function()
             local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -296,7 +272,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
                 DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', cnt, (spreview or '[none]')))
             end
         end)
-
         pcall(function()
             local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             local escN = 0; tsv, escN = tsv:gsub('\\n', '\n')
@@ -315,10 +290,8 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
             end
             HLBG._lastSanitizedTSV = tsv
         end)
-
         local meta = tsv:match('^TOTAL=(%d+)%s*%|%|') or tsv:match('^TOTAL=(%d+)%s*')
         if meta then reportedTotal=tonumber(meta) or reportedTotal; tsv = tsv:gsub('^TOTAL=%d+%s*%|%|',''):gsub('^TOTAL=%d+%s*','') end
-
         local function split_fields(line)
             local cols = {}
             local last = 1
@@ -334,7 +307,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
             end
             return cols
         end
-
         if not HLBG._parseHistLineFlexible then
             HLBG._parseHistLineFlexible = function(line)
                 if type(line) ~= 'string' then return nil end
@@ -363,7 +335,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
                 return nil
             end
         end
-
         for line in tsv:gmatch('[^\n]+') do
             line = line:gsub('^%s+',''):gsub('%s+$','')
             if line ~= '' then
@@ -404,7 +375,6 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
     end
     return HLBG.History(rows, page, per, reportedTotal, col, dir)
 end
-
 -- Sorting API
 if not HLBG.HistoryApplySort then
     function HLBG.HistoryApplySort(key)
@@ -423,7 +393,6 @@ if not HLBG.HistoryApplySort then
         end
     end
 end
-
 -- Debug announce
 if DEFAULT_CHAT_FRAME then
     DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))

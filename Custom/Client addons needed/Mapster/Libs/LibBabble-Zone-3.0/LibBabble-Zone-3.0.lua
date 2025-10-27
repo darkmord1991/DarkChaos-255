@@ -1,4 +1,4 @@
---[[
+﻿--[[
 Name: LibBabble-Zone-3.0
 Revision: $Rev: 268 $
 Maintainers: ckknight, nevcairiel, Ackis
@@ -6,16 +6,12 @@ Website: http://www.wowace.com/projects/libbabble-zone-3-0/
 Dependencies: None
 License: MIT
 ]]
-
 local MAJOR_VERSION = "LibBabble-Zone-3.0"
 local MINOR_VERSION = 90000 + tonumber(("$Rev: 268 $"):match("%d+"))
-
 if not LibStub then error(MAJOR_VERSION .. " requires LibStub.") end
 local lib = LibStub("LibBabble-3.0"):New(MAJOR_VERSION, MINOR_VERSION)
 if not lib then return end
-
 local GAME_LOCALE = GetLocale()
-
 lib:SetBaseTranslations {
 	["Ahn'kahet: The Old Kingdom"] = "Ahn'kahet: The Old Kingdom",
 	["Ahn'Qiraj"] = "Ahn'Qiraj",
@@ -270,8 +266,6 @@ lib:SetBaseTranslations {
 	["Zul'Farrak"] = "Zul'Farrak",
 	["Zul'Gurub"] = "Zul'Gurub",
 }
-
-
 if GAME_LOCALE == "enUS" then
 	lib:SetCurrentTranslations(true)
 elseif GAME_LOCALE == "deDE" then
@@ -2314,7 +2308,7 @@ elseif GAME_LOCALE == "zhTW" then
 	["Zul'Farrak"] = "祖爾法拉克",
 	["Zul'Gurub"] = "祖爾格拉布",
 }
-
 else
 	error(("%s: Locale %q not supported"):format(MAJOR_VERSION, GAME_LOCALE))
 end
+

@@ -1,7 +1,5 @@
 ﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Stats module (placeholder refactor) - future: integrate real DB-driven stats payload
-
 HLBG.Stats = HLBG.Stats or function(player, stats)
     -- Debug: announce stats invocation in dev mode and add to debug buffer
     pcall(function()
@@ -13,7 +11,6 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r '..msg)
         end
     end)
-
     stats = stats or HLBG.cachedStats or {
         counts = { Alliance = 0, Horde = 0 },
         draws = 0,
@@ -22,8 +19,6 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
         totalScore = 0,
         avgDuration = 0,
     }
-
-
     -- Minimal rendering hook (UI code still lives in main UI until further split)
     if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
         pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
@@ -60,7 +55,6 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
         end
     end
 end
-
 -- Lightweight server stats ingestion hook. Accepts either a table payload or positional params.
 -- Supported table fields: totalBattles, allianceWins, hordeWins, draws, bestScore, totalScore, avgDuration
 -- Positional form: (totalBattles, allianceWins, hordeWins, draws, bestScore, totalScore, avgDuration)

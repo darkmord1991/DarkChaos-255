@@ -1,39 +1,30 @@
---- AceTab-3.0 provides support for tab-completion.
+﻿--- AceTab-3.0 provides support for tab-completion.
 -- Note: This library is not yet finalized.
 -- @class file
 -- @name AceTab-3.0
 -- @release $Id: AceTab-3.0.lua 947 2010-06-29 16:44:48Z nevcairiel $
-
 local ACETAB_MAJOR, ACETAB_MINOR = 'AceTab-3.0', 8
 local AceTab, oldminor = LibStub:NewLibrary(ACETAB_MAJOR, ACETAB_MINOR)
-
 if not AceTab then return end -- No upgrade needed
-
 local is335 = GetBuildInfo() >= "3.3.5"
-
 AceTab.registry = AceTab.registry or {}
-
 -- local upvalues
 local _G = _G
 local pairs = pairs
 local ipairs = ipairs
 local type = type
 local registry = AceTab.registry
-
 local strfind = string.find
 local strsub = string.sub
 local strlower = string.lower
 local strformat = string.format
 local strmatch = string.match
-
 local function printf(...)
 	DEFAULT_CHAT_FRAME:AddMessage(strformat(...))
 end
-
 local function getTextBeforeCursor(this, start)
 	return strsub(this:GetText(), start or 1, this:GetCursorPosition())
 end
-
 -- Hook OnTabPressed and OnTextChanged for the frame, give it an empty matches table, and set its curMatch to 0, if we haven't done so already.
 local function hookFrame(f)
 	if f.hookedByAceTab3 then return end
@@ -61,9 +52,7 @@ local function hookFrame(f)
 	f.at3curMatch = 0
 	f.at3matches = {}
 end
-
 local firstPMLength
-
 local fallbacks, notfallbacks = {}, {}  -- classifies completions into those which have preconditions and those which do not.  Those without preconditions are only considered if no other completions have matches.
 local pmolengths = {}  -- holds the number of characters to overwrite according to pmoverwrite and the current prematch
 -- ------------------------------------------------------------------------------
@@ -101,7 +90,6 @@ function AceTab:RegisterTabCompletion(descriptor, prematches, wordlist, usagefun
 	if listenframes and type(listenframes) ~= 'string' and type(listenframes) ~= 'table' then error("Usage: RegisterTabCompletion(descriptor, prematches, wordlist, usagefunc, listenframes, postfunc, pmoverwrite): 'listenframes' - string or table expected.", 3) end
 	if postfunc and type(postfunc) ~= 'function' then error("Usage: RegisterTabCompletion(descriptor, prematches, wordlist, usagefunc, listenframes, postfunc, pmoverwrite): 'postfunc' - function expected.", 3) end
 	if pmoverwrite and type(pmoverwrite) ~= 'boolean' and type(pmoverwrite) ~= 'number' then error("Usage: RegisterTabCompletion(descriptor, prematches, wordlist, usagefunc, listenframes, postfunc, pmoverwrite): 'pmoverwrite' - boolean or number expected.", 3) end
-
 	local pmtable = type(prematches) == 'table' and prematches or {}
 	-- Mark this group as a fallback group if no value was passed.
 	if not prematches then
@@ -116,7 +104,6 @@ function AceTab:RegisterTabCompletion(descriptor, prematches, wordlist, usagefun
 			notfallbacks[descriptor] = true
 		end
 	end
-
 	-- Make listenframes into a one-element table if it was not passed a table of frames.
 	if not listenframes then  -- default
 		if is335 then
@@ -130,7 +117,6 @@ function AceTab:RegisterTabCompletion(descriptor, prematches, wordlist, usagefun
 	elseif type(listenframes) ~= 'table' or type(listenframes[0]) == 'userdata' and type(listenframes.IsObjectType) == 'function' then  -- single frame or framename
 		listenframes = { listenframes }
 	end
-	
 	-- Hook each registered listenframe and give it a matches table.
 	for _, f in pairs(listenframes) do
 		if type(f) == 'string' then
@@ -147,24 +133,20 @@ function AceTab:RegisterTabCompletion(descriptor, prematches, wordlist, usagefun
 			end
 		end
 	end
-	
 	-- Everything checks out; register this completion.
 	if not registry[descriptor] then
 		registry[descriptor] = { prematches = pmtable, wordlist = wordlist, usagefunc = usagefunc, listenframes = listenframes, postfunc = postfunc, pmoverwrite = pmoverwrite }
 	end
 end
-
 function AceTab:IsTabCompletionRegistered(descriptor)
 	return registry and registry[descriptor]
 end
-
 function AceTab:UnregisterTabCompletion(descriptor)
 	registry[descriptor] = nil
 	pmolengths[descriptor] = nil
 	fallbacks[descriptor] = nil
 	notfallbacks[descriptor] = nil
 end
-
 -- ------------------------------------------------------------------------------
 -- gcbs( s1, s2 )
 --
@@ -187,7 +169,6 @@ local function gcbs(s1, s2)
 		return gcbs(strsub(s1, 1, -2), s2)
 	end
 end
-
 local cursor  -- Holds cursor position.  Set in :OnTabPressed().
 -- ------------------------------------------------------------------------------
 -- cycleTab()
@@ -199,10 +180,8 @@ local previousLength, cMatch, matched, postmatch
 local function cycleTab(this)
 	cMatch = 0  -- Counter across all sets.  The pseudo-index relevant to this value and corresponding to the current match is held in this.at3curMatch
 	matched = false
-
 	-- Check each completion group registered to this frame.
 	for desc, compgrp in pairs(this.at3matches) do
-
 		-- Loop through the valid completions for this set.
 		for m, pm in pairs(compgrp) do
 			cMatch = cMatch + 1
@@ -216,28 +195,23 @@ local function cycleTab(this)
 		end
 		if matched then break end
 	end
-
 	-- If our index is beyond the end of the list, reset the original uncompleted substring and let the cycle start over next time tab is pressed.
 	if not matched then
 		this.at3lastMatch = this.at3origMatch
 		this.at3lastWord = this.at3origWord
 		this.at3curMatch = 1
 	end
-
 	-- Insert the completion.
 	this:HighlightText(this.at3matchStart-1, cursor)
 	this:Insert(this.at3lastWord or '')
 	this.at3_last_precursor = getTextBeforeCursor(this) or ''
 end
-
 local IsSecureCmd = IsSecureCmd
-
 local cands, candUsage = {}, {}
 local numMatches = 0
 local firstMatch, hasNonFallback, allGCBS, setGCBS, usage
 local text_precursor, text_all, text_pmendToCursor
 local matches, usagefunc  -- convenience locals
-
 -- Fill the this.at3matches[descriptor] tables with matching completion pairs for each entry, based on
 -- the partial string preceding the cursor position and using the corresponding registered wordlist.
 --
@@ -250,14 +224,11 @@ local function fillMatches(this, desc, fallback)
 	-- See what frames are registered for this completion group.  If the frame in which we pressed tab is one of them, then we start building matches.
 	for _, f in ipairs(entry.listenframes) do
 		if f == this then
-
 			-- Try each precondition string registered for this completion group.
 			for _, prematch in ipairs(entry.prematches) do
-
 				-- Test if our prematch string is satisfied.
 				-- If it is, then we find its last occurence prior to the cursor, calculate and store its pmoverwrite value (if applicable), and start considering completions.
 				if fallback then prematch = "%s" end
-
 				-- Find the last occurence of the prematch before the cursor.
 				pms, pme, pmt = nil, 1, ''
 				text_prematch, prematchEnd, prematchStart = nil, nil, nil
@@ -270,20 +241,16 @@ local function fillMatches(this, desc, fallback)
 						break
 					end
 				end
-
 				if not prematchStart and fallback then
 					prematchStart, prematchEnd, text_prematch = 0, 0, ''
 				end
 				if prematchStart then
 					-- text_pmendToCursor should be the sub-word/phrase to be completed.
 					text_pmendToCursor = strsub(text_precursor, prematchEnd + 1)
-
 					-- How many characters should we eliminate before the completion before writing it in.
 					pmolengths[desc] = entry.pmoverwrite == true and #text_prematch or entry.pmoverwrite or 0
-
 					-- This is where we will insert completions, taking the prematch overwrite into account.
 					this.at3matchStart = prematchEnd + 1 - (pmolengths[desc] or 0)
-
 					-- We're either a non-fallback set or all completions thus far have been fallback sets, and the precondition matches.
 					-- Create cands from the registered wordlist, filling it with all potential (unfiltered) completion strings.
 					local wordlist = entry.wordlist
@@ -294,7 +261,6 @@ local function fillMatches(this, desc, fallback)
 					if cands ~= false then
 						matches = this.at3matches[desc] or {}
 						for i in pairs(matches) do matches[i] = nil end
-
 						-- Check each of the entries in cands to see if it completes the word before the cursor.
 						-- Finally, increment our match count and set firstMatch, if appropriate.
 						for _, m in ipairs(cands) do
@@ -315,10 +281,8 @@ local function fillMatches(this, desc, fallback)
 		end
 	end
 end
-
 function AceTab:OnTabPressed(this)
 	if this:GetText() == '' then return true end
-
 	-- allow Blizzard to handle slash commands, themselves
 	if this == (is335 and ChatEdit_GetActiveWindow() or ChatFrameEditBox) then
 		local command = this:GetText()
@@ -330,12 +294,9 @@ function AceTab:OnTabPressed(this)
 			return true
 		end
 	end
-
 	cursor = this:GetCursorPosition()
-
 	text_all = this:GetText()
 	text_precursor = getTextBeforeCursor(this) or ''
-
 	-- If we've already found some matches and haven't done anything since the last tab press, then (continue) cycling matches.
 	-- Otherwise, reset this frame's matches and proceed to creating our list of possible completions.
 	this.at3lastMatch = this.at3curMatch > 0 and (this.at3lastMatch or this.at3origWord)
@@ -351,13 +312,11 @@ function AceTab:OnTabPressed(this)
 		this.at3lastMatch = nil
 		this.at3_last_precursor = text_precursor
 	end
-
 	numMatches = 0
 	firstMatch = nil
 	firstPMLength = 0
 	hasNonFallback = false
 	for i in pairs(pmolengths) do pmolengths[i] = nil end
-	
 	for desc in pairs(notfallbacks) do
 		fillMatches(this, desc)
 	end
@@ -366,33 +325,27 @@ function AceTab:OnTabPressed(this)
 			fillMatches(this, desc, true)
 		end
 	end
-
-	if not firstMatch then 
+	if not firstMatch then
 		this.at3_last_precursor = "\0"
 		return true
 	end
-
 	-- We want to replace the entire word with our completion, so highlight it up to the cursor.
 	-- If only one match exists, then stick it in there and append a space.
 	if numMatches == 1 then
 		-- HighlightText takes the value AFTER which the highlighting starts, so we have to subtract 1 to have it start before the first character.
 		this:HighlightText(this.at3matchStart-1, cursor)
-
 		this:Insert(firstMatch)
 		this:Insert(" ")
 	else
 		-- Otherwise, we want to begin cycling through the valid completions.
 		-- Beginning a cycle also causes the usage statement to be printed, if one exists.
-
 		-- Print usage statements for each possible completion (and gather up the GCBS of all matches while we're walking the tables).
 		allGCBS = nil
 		for desc, matches in pairs(this.at3matches) do
 			-- Don't print usage statements for fallback completion groups if we have 'real' completion groups with matches.
 			if hasNonFallback and fallbacks[desc] then break end
-			
 			-- Use the group's description as a heading for its usage statements.
 			DEFAULT_CHAT_FRAME:AddMessage(desc..":")
-
 			usagefunc = registry[desc].usagefunc
 			if not usagefunc then
 				-- No special usage processing; just print a list of the (formatted) matches.
@@ -405,7 +358,6 @@ function AceTab:OnTabPressed(this)
 				-- candUsage is the table passed to usagefunc to be filled with candidate = usage_statement pairs.
 				if type(usagefunc) == 'function' then
 					for i in pairs(candUsage) do candUsage[i] = nil end
-
 					-- usagefunc takes the greatest common substring of valid matches as one of its args, so let's find that now.
 					-- TODO: Make the GCBS function accept a vararg or table, after which we can just pass in the list of matches.
 					setGCBS = nil
@@ -414,11 +366,9 @@ function AceTab:OnTabPressed(this)
 					end
 					allGCBS = gcbs(allGCBS, setGCBS)
 					usage = usagefunc(candUsage, matches, setGCBS, strsub(text_precursor, 1, prematchEnd))
-
 					-- If the usagefunc returns a string, then the entire usage statement has been taken care of by usagefunc, and we need only to print it...
 					if type(usage) == 'string' then
 						DEFAULT_CHAT_FRAME:AddMessage(usage)
-
 					-- ...otherwise, it should have filled candUsage with candidate-usage statement pairs, and we need to print the matching ones.
 					elseif next(candUsage) and numMatches > 0 then
 						for m, fm in pairs(matches) do
@@ -427,17 +377,16 @@ function AceTab:OnTabPressed(this)
 					end
 				end
 			end
-
 			-- Replace the original string with the greatest common substring of all valid completions.
 			this.at3curMatch = 1
 			this.at3origWord = strsub(text_precursor, this.at3matchStart, this.at3matchStart + pmolengths[desc] - 1) .. allGCBS or ""
 			this.at3origMatch = allGCBS or ""
 			this.at3lastWord = this.at3origWord
 			this.at3lastMatch = this.at3origMatch
-
 			this:HighlightText(this.at3matchStart-1, cursor)
 			this:Insert(this.at3origWord)
 			this.at3_last_precursor = getTextBeforeCursor(this) or ''
 		end
 	end
 end
+

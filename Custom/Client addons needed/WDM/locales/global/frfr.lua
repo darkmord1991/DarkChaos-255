@@ -1,5 +1,4 @@
-if (GetLocale() == "frFR") then
-
+﻿if (GetLocale() == "frFR") then
 DUNGEON_FLOOR_AHNQIRAJ1 = "Les souterrains de la ruche";
 DUNGEON_FLOOR_AHNQIRAJ2 = "Portes du Temple";
 DUNGEON_FLOOR_AHNQIRAJ3 = "Caveau de C'Thun";
@@ -123,7 +122,6 @@ DUNGEON_FLOOR_WAILINGCAVERNS1 = "Cavernes des Lamentations";
 DUNGEON_FLOOR_ZULAMAN1 = "Zul'Aman";
 DUNGEON_FLOOR_ZULFARRAK = "Zul'Farrak";
 DUNGEON_FLOOR_ZULGURUB1 = "Zul'Gurub";
-
 DUNGEON_FLOOR_AZUREMYSTISLE2 = "Creux de la marée";
 DUNGEON_FLOOR_AZUREMYSTISLE3 = "Repaire des Calmepins";
 DUNGEON_FLOOR_BADLANDS18 = "Entrée d’Uldaman";
@@ -169,5 +167,5 @@ DUNGEON_FLOOR_UNGOROCRATER14 = "La Balafre sinueuse";
 DUNGEON_FLOOR_WESTFALL17 = "Entrée des Mortemines";
 DUNGEON_FLOOR_WESTFALL4 = "Carrière de la Côte de l’or";
 DUNGEON_FLOOR_WESTFALL5 = "Mine Veine-de-Jango";
-
 end
+

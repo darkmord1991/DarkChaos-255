@@ -1,10 +1,8 @@
--- GatherMate Locale
+﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "ruRU")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "Добавить эту локацию к точкам маршрута Cartographer"
 L["Add this location to TomTom waypoints"] = "Добавить эту локацию к точкам маршрута TomTom"
 L["Always show"] = "Всегда показывать"
@@ -43,41 +41,29 @@ L["FAQ_TEXT"] = [=[|cffffd200
 Я только что поставил GatherMate, но на карте нет ни одной ноды. Что не так?
 |r
 GatherMate не поставляется вместе с данными. По мере того, как вы собираете травы, добываете полезные ископаемые или рыбачите, GatherMate будет добавлять новые записи на карту. Также, проверьте настройки Внешнего вида.
-
 |cffffd200
 Я вижу ноды на карте мира, но не вижу на миникарте! Теперь-то что не так?
 |r
 |cffffff78Minimap Button Bag|r (а возможно и другие аддоны) съедают все иконки, расположенные GatherMate-ом на миникарте. Выключите их.
-
 |cffffd200
 Как и где мне получить актуальную базу?
 |r
 Вы можете импортировать актуальную базу в GatherMate следующими способами:
-
 1. |cffffff78GatherMate_Data|r - это LoD аддон содержит копию данных, добытых скриптами с WowHead (обновляется еженедельно). Есть опции автообновления
-
 2. |cffffff78GatherMate_CartImport|r - Этот аддон позволяет вам импортировать модулей |cffffff78Cartographer_<Profession>|r в GatherMate. Чтобы заработало, и |cffffff78Cartographer_<Profession>|r modules и GatherMate_CartImport должны быть загружены и активны.
-
 Заметьте, что импорт базы в GatherMate процесс не автоматический. Вам придётся самостоятельно залезть в раздел Импорт Данных и щелкнуть по кнопке "Импорт".
-
 ОТличия от |cffffff78Cartographer_Data|r в том, что пользователю даётся выбор того, как и когда модифицировать данные, |cffffff78Cartographer_Data|r при загрузке просто перезапишет существующие базы без предупреждения и уничтожить все свеженайденные ноды.
-
 |cffffd200
 Вы можете добавить отображение локаций почтовых ящиков и мастеров полёта?
 |r
 Ответ - нет. Другой аддон или модуль от другого автора могут это сделать, ядро GatherMate этого делать не будет.
-
 |cffffd200
 Я нашёл баг! Куда слать багрепорт?
 |r
 Приём багов, жалоб и предложений - на |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r
-
 Также можете найти нас на |cffffff78irc://irc.freenode.org/wowace|r
-
 Когда сообщаете о баге, убедитесь, что описали |cffffff78алгоритм воспроизведения бага|r, предоставили все |cffffff78сообщения об ошибках|r с трассировкой стека, если это возможно, предоставили |cffffff78номер ревизии|r GatherMate, в которой произошла проблема и информацию о том, |cffffff78какую языковую версию клиента вы используете|r.
-
 Примечание: баги русификации постить сюда: |cffffff78http://forums.playhard.ru/index.php?showtopic=27192|r, авторы аддона ей не занимаются.
-
 |cffffd200
 Кто написал эту прелесть?
 |r
@@ -163,11 +149,8 @@ L["Tracking Distance"] = "Радиус радара"
 L["Treasure"] = "Сокровища"
 L["Treasure filter"] = "Фильтр сокровищ"
 L["Wrath of the Lich King"] = "Wrath of the Lich King"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "ruRU")
 if not NL then return end
-
 NL["Abundant Bloodsail Wreckage"] = "Крупные обломки кораблекрушения шайки Кровавого Паруса"
 NL["Abundant Firefin Snapper School"] = "Крупный косяк огнеперого луциана"
 NL["Abundant Oily Blackmouth School"] = "Крупный косяк масляного черноротика"

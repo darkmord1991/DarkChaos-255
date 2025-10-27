@@ -1,14 +1,11 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local debug = false
 --[===[@debug@
 debug = true
 --@end-debug@]===]
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "enUS", true, debug)
-
 L["Add this location to Cartographer_Waypoints"] = true
 L["Add this location to TomTom waypoints"] = true
 L["Always show"] = true
@@ -47,39 +44,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 I just installed GatherMate, but I see no nodes on my maps. What am I doing wrong?
 |r
 GatherMate does not come with any data by itself. When you gather herbs, mine ore, collect gas or fish, GatherMate will then add and update your map accordingly. Also, check your Display Settings.
-
 |cffffd200
 I am seeing nodes on my World Map but not on my Minimap! What am I doing wrong now?
 |r
 |cffffff78Minimap Button Bag|r (and possibly other similar addons) likes to eat all the buttons we put on the Minimap. Disable them.
-
 |cffffd200
 How or where can I get existing data?
 |r
 You can import existing data into GatherMate in these ways:
-
 1. |cffffff78GatherMate_Data|r - This LoD addon contains a WowHead datamined copy of all the nodes and is updated weekly. There are auto-updating options
-
 2. |cffffff78GatherMate_CartImport|r - This addon allows you to import your existing databases in |cffffff78Cartographer_<Profession>|r modules into GatherMate. For this to work, both your |cffffff78Cartographer_<Profession>|r modules and GatherMate_CartImport must be loaded and active.
-
 Note that importing data into GatherMate is not an automatic process. You must actively go to the Import Data section and click on the "Import" button.
-
 This differs from |cffffff78Cartographer_Data|r in that the user is given the choice in how and when you want your data to be modified, |cffffff78Cartographer_Data|r when loaded will simply overwrite your existing databases without warning and destroy all new nodes that you have found.
-
 |cffffd200
 Can you add support for showing the locations of things like mailboxes and flightmasters?
 |r
 The answer is no. However, another addon author could create an addon or module for this purpose, the core GatherMate addon will not do this.
-
 |cffffd200
 I've found a bug! Where do I report it?
 |r
 You can report bugs or give suggestions at |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r
-
 Alternatively, you can also find us on |cffffff78irc://irc.freenode.org/wowace|r
-
 When reporting a bug, make sure you include the |cffffff78steps on how to reproduce the bug|r, supply any |cffffff78error messages|r with stack traces if possible, give the |cffffff78revision number|r of GatherMate the problem occured in and state whether you are using an |cffffff78English client or otherwise|r.
-
 |cffffd200
 Who wrote this cool addon?
 |r
@@ -164,10 +150,7 @@ L["Tracking Distance"] = true
 L["Treasure"] = true
 L["Treasure filter"] = true
 L["Wrath of the Lich King"] = true
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "enUS", true, debug)
-
 NL["Abundant Bloodsail Wreckage"] = true
 NL["Abundant Firefin Snapper School"] = true
 NL["Abundant Oily Blackmouth School"] = true

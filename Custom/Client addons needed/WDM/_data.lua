@@ -1,11 +1,9 @@
-local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
+﻿local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
 local DData = WDM:NewModule("DungeonData", "AceHook-3.0")
 local L = LibStub("AceLocale-3.0"):GetLocale("WDM")
-
 local Astrolabe = DongleStub("Astrolabe-0.4")
 local LBZ = LibStub("LibBabble-Zone-3.0", true)
 local BZ = LBZ and LBZ:GetLookupTable() or setmetatable({}, {__index = function(t,k) return k end})
-
 local defaults = { profile = {
     ["show_minimap"] = false,
     ["show_zonelevel"] = false,
@@ -16,23 +14,19 @@ local defaults = { profile = {
     ["show_instance"] = true,
     ["microdungeons"] = false,
     ["debugmode"] = false,
-},} 
-
+},}
 -- Texture
 local atlasTex = "Interface\\AddOns\\WDM\\Textures\\ObjectIconsAtlas"
 local atlasIcons = {
     ["dungeon"]={32, 32, 0.198242, 0.24707, 0.313477, 0.362305, false, false, "1x"},
 	["raid"]={32, 32, 0.198242, 0.24707, 0.364258, 0.413086, false, false, "1x"},
-
     ["taxinode_alliance"]={21, 21, 0.53418, 0.56543, 0.535156, 0.566406, false, false, "1x"},
 	["taxinode_horde"]={21, 21, 0.53418, 0.56543, 0.568359, 0.599609, false, false, "1x"},
 	["taxinode_neutral"]={21, 21, 0.53418, 0.56543, 0.601562, 0.632812, false, false, "1x"},
-
     ["taxinode_continent_alliance"]={28, 28, 0.77832, 0.84082, 0.12793, 0.19043, false, false, "1x"},
 	["taxinode_continent_horde"]={28, 28, 0.907227, 0.969727, 0.12793, 0.19043, false, false, "1x"},
 	["taxinode_continent_neutral"]={28, 28, 0.133789, 0.196289, 0.256836, 0.319336, false, false, "1x"},
 }
-
 -- Datas
 local contCoords = {
     [1] = { 17066.5996094,    -19733.2109375,     12799.9003906,  -11733.2998047, }, -- Kalimdor
@@ -40,7 +34,6 @@ local contCoords = {
     [3] = { 12996.0390625,    -4468.0390625,      5821.359375,    -5821.359375,   }, -- Outland
     [4] = { 9217.15234375,    -8534.24609375,     10593.375,      -1240.89001465, }, -- Northrend
 }
-
 local atlasPOI = {
         --  {   faction,   x coord,    y coord,      name }
     ["taxinode"] = {
@@ -121,8 +114,8 @@ local atlasPOI = {
             {   "horde",       1730.0,     -743.0,       L["taxinode_thebulwark"]              },
             {   "horde",       5195.0,     -4382.0,      L["taxinode_tranquillien"]            },
             {   "horde",       6976.0,     -4765.0,      L["taxinode_silvermooncity"]          },
-        },  
-        [3] = {  
+        },
+        [3] = {
             {   "neutral",     3085.0,     3600.0,       L["taxinode_area52"]                  },
             {   "neutral",     -1831.0,    5298.0,       L["taxinode_shattrath"]               },
             {   "neutral",     -3062.0,    741.0,        L["taxinode_altarofshatar"]           },
@@ -152,8 +145,8 @@ local atlasPOI = {
             {   "horde",       -3018.0,    2556.0,       L["taxinode_shadowmoonvillage"]       },
             {   "horde",       -1314.0,    2355.0,       L["taxinode_spinebreakerridge"]       },
             {   "horde",       87.0,       5213.0,       L["taxinode_swampratpost"]            },
-        },  
-        [4] = {  
+        },
+        [4] = {
             {   "neutral",     3571.0,     5957.0,       L["taxinode_amberledge"]              },
             {   "neutral",     3647.0,     244.0,        L["taxinode_wyrmresttemple"]          },
             {   "neutral",     3573.0,     6661.0,       L["taxinode_transitusshield"]         },
@@ -255,8 +248,8 @@ local atlasPOI = {
             {   "dungeon",     4141.0,     885.0,      BZ["Blackfathom Deeps"],          LFG_TYPE_DUNGEON, },
             {   "dungeon",     -4457.6,    1333.0,     BZ["Dire Maul"],                  LFG_TYPE_DUNGEON, },
             {   "raid",        -4718.5,    -3736.0,    BZ["Onyxia's Lair"],              LFG_TYPE_RAID,    },
-        },          
-        [2] = {         
+        },
+        [2] = {
             {   "dungeon",     -8780.0,    834.0,      BZ["The Stockade"],               LFG_TYPE_DUNGEON, },
             {   "dungeon",     -5163.0,    927.0,      BZ["Gnomeregan"],                 LFG_TYPE_DUNGEON, },
             {   "dungeon",     3376.0,     -3379.0,    BZ["Stratholme"],                 LFG_TYPE_DUNGEON, },
@@ -272,7 +265,6 @@ local atlasPOI = {
             {   "raid",        -11916.0,   -1219.0,    BZ["Zul'Gurub"],                  LFG_TYPE_RAID,    },
             {   "raid",        10155.5,    -4374.0,    BZ["Sunwell Plateau"],            LFG_TYPE_RAID,    },
             {   "raid",        -11112.5,   -2005.5,    BZ["Karazhan"],                   LFG_TYPE_RAID,    },
-    
         },
         [3] = {
             {   "dungeon",     -303.0,     3165.0,     BZ["The Blood Furnace"],          LFG_TYPE_DUNGEON, },
@@ -293,8 +285,6 @@ local atlasPOI = {
             {   "raid",        548.6,      6941.0,     BZ["Serpentshrine Cavern"],       LFG_TYPE_RAID,    },
             {   "raid",        3087.0,     1374.0,     BZ["The Eye"],                    LFG_TYPE_RAID,    },
             {   "raid",        -3650.0,    317.0,      BZ["Black Temple"],               LFG_TYPE_RAID,    },
-    
-    
         },
         [4] = {
             {   "dungeon",     9183.0,     -1385.0,    BZ["Halls of Lightning"],         LFG_TYPE_DUNGEON, },
@@ -324,11 +314,9 @@ local atlasPOI = {
         },
     },
 }
-
 function DData:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("WDMdb", defaults, true)
 end
-
 function DData:CreateAtlasPOI(index)
     local button = CreateFrame("Button", "WorldMapFrameAtlasPOI"..index, WorldMapButton);
         button:SetWidth(32);
@@ -337,34 +325,28 @@ function DData:CreateAtlasPOI(index)
         button:SetScript("OnEnter", WorldMapPOI_OnEnter);
         button:SetScript("OnLeave", WorldMapPOI_OnLeave);
         button:SetScript("OnClick", WorldMapPOI_OnClick);
-
     local texture = button:CreateTexture(button:GetName().."Texture", "BACKGROUND");
         texture:SetWidth(16);
         texture:SetHeight(16);
         texture:SetPoint("CENTER", 0, 0);
         texture:SetTexture(atlasTex);
-    
     local glow = button:CreateTexture(button:GetName().."GlowTexture", "OVERLAY");
         glow:SetBlendMode("ADD");
         glow:SetAlpha(0.0);
         glow:SetAllPoints(texture);
         glow:SetTexture(atlasTex);
-
     local highlight = button:CreateTexture(button:GetName().."HighlightTexture", "HIGHLIGHT");
         highlight:SetBlendMode("ADD");
         highlight:SetAlpha(0.4);
         highlight:SetAllPoints(texture);
         highlight:SetTexture(atlasTex);
 end
-
 function DData:AstrolabeCoords(xcoord, ycoord, continent)
     local conty1, conty2, contx1, contx2 = unpack(contCoords[continent]);
     local ycoord = abs(ycoord - conty1) / abs(conty2 - conty1);
     local xcoord = abs(xcoord - contx1) / abs(contx2 - contx1);
-
     return ycoord, xcoord;
 end
-
 function DData:GetListAtlasPOI(continent)
     local generated_array = {}
     local currentZone = GetCurrentMapZone()
@@ -385,22 +367,18 @@ function DData:GetListAtlasPOI(continent)
     end
     return generated_array
 end
-
-
 function DData:isBlockedPOI(category, faction)
     local playerfaction, _ = UnitFactionGroup("player")
-    return not self.db.profile["show_"..category.."_opposite"] and (( playerfaction:lower() == "horde" and faction:lower() == "alliance" ) or 
+    return not self.db.profile["show_"..category.."_opposite"] and (( playerfaction:lower() == "horde" and faction:lower() == "alliance" ) or
             ( playerfaction:lower() == "alliance" and faction:lower() == "horde" ))
 end
-
 function DData:GetAtlasTextureCoords(category, faction)
     local atc = atlasIcons[category.."_"..faction] or atlasIcons[category] or atlasIcons[faction]
     return unpack(atc)
 end
-
 -- debug
 function DData:DebugCoords()
-    if self.db.profile["debugmode"] then 
+    if self.db.profile["debugmode"] then
         local C, Z, x, y = Astrolabe:GetCurrentPlayerPosition()
         if contCoords[C] and Z == 0 then
             DEFAULT_CHAT_FRAME:AddMessage("Local coords: (y: " .. tonumber(string.format("%.3f", x)) .. ", x: " .. tonumber(string.format("%.3f", y)) .. ")" )
@@ -411,3 +389,4 @@ function DData:DebugCoords()
         end
     end
 end
+

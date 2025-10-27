@@ -1,30 +1,25 @@
--- LibBabble-3.0 is hereby placed in the Public Domain
+﻿-- LibBabble-3.0 is hereby placed in the Public Domain
 -- Credits: ckknight
 local LIBBABBLE_MAJOR, LIBBABBLE_MINOR = "LibBabble-3.0", 2
-
 local LibBabble = LibStub:NewLibrary(LIBBABBLE_MAJOR, LIBBABBLE_MINOR)
 if not LibBabble then
 	return
 end
-
 local data = LibBabble.data or {}
 for k,v in pairs(LibBabble) do
 	LibBabble[k] = nil
 end
 LibBabble.data = data
-
 local tablesToDB = {}
 for namespace, db in pairs(data) do
 	for k,v in pairs(db) do
 		tablesToDB[v] = db
 	end
 end
-
 local function warn(message)
 	local _, ret = pcall(error, message, 3)
 	geterrorhandler()(ret)
 end
-
 local lookup_mt = { __index = function(self, key)
 	local db = tablesToDB[self]
 	local current_key = db.current[key]
@@ -52,7 +47,6 @@ local lookup_mt = { __index = function(self, key)
 	rawset(self, key, key)
 	return key
 end }
-
 local function initLookup(module, lookup)
 	local db = tablesToDB[module]
 	for k in pairs(lookup) do
@@ -63,7 +57,6 @@ local function initLookup(module, lookup)
 	db.lookup = lookup
 	return lookup
 end
-
 local function initReverse(module, reverse)
 	local db = tablesToDB[module]
 	for k in pairs(reverse) do
@@ -77,10 +70,8 @@ local function initReverse(module, reverse)
 	db.reverseIterators = nil
 	return reverse
 end
-
 local prototype = {}
 local prototype_mt = {__index = prototype}
-
 --[[---------------------------------------------------------------------------
 Notes:
 	* If you try to access a nonexistent key, it will warn but allow the code to pass through.
@@ -94,7 +85,6 @@ Example:
 -----------------------------------------------------------------------------]]
 function prototype:GetLookupTable()
 	local db = tablesToDB[self]
-
 	local lookup = db.lookup
 	if lookup then
 		return lookup
@@ -114,7 +104,6 @@ Example:
 -----------------------------------------------------------------------------]]
 function prototype:GetUnstrictLookupTable()
 	local db = tablesToDB[self]
-
 	return db.current
 end
 --[[---------------------------------------------------------------------------
@@ -131,7 +120,6 @@ Example:
 -----------------------------------------------------------------------------]]
 function prototype:GetBaseLookupTable()
 	local db = tablesToDB[self]
-
 	return db.base
 end
 --[[---------------------------------------------------------------------------
@@ -148,7 +136,6 @@ Example:
 -----------------------------------------------------------------------------]]
 function prototype:GetReverseLookupTable()
 	local db = tablesToDB[self]
-
 	local reverse = db.reverse
 	if reverse then
 		return reverse
@@ -200,10 +187,8 @@ Example:
 -----------------------------------------------------------------------------]]
 function prototype:Iterate()
 	local db = tablesToDB[self]
-
 	return pairs(db.current)
 end
-
 -- #NODOC
 -- modules need to call this to set the base table
 function prototype:SetBaseTranslations(base)
@@ -226,7 +211,6 @@ function prototype:SetBaseTranslations(base)
 		end
 	end
 end
-
 local function init(module)
 	local db = tablesToDB[module]
 	if db.lookup then
@@ -237,7 +221,6 @@ local function init(module)
 	end
 	db.reverseIterators = nil
 end
-
 -- #NODOC
 -- modules need to call this to set the current table. if current is true, use the base table.
 function prototype:SetCurrentTranslations(current)
@@ -260,12 +243,10 @@ function prototype:SetCurrentTranslations(current)
 	end
 	init(self)
 end
-
 for namespace, db in pairs(data) do
 	setmetatable(db.module, prototype_mt)
 	init(db.module)
 end
-
 -- #NODOC
 -- modules need to call this to create a new namespace.
 function LibBabble:New(namespace, minor)
@@ -273,7 +254,6 @@ function LibBabble:New(namespace, minor)
 	if not module then
 		return
 	end
-
 	if not oldminor then
 		local db = {
 			module = module,
@@ -285,8 +265,7 @@ function LibBabble:New(namespace, minor)
 			module[k] = nil
 		end
 	end
-
 	setmetatable(module, prototype_mt)
-
 	return module
 end
+

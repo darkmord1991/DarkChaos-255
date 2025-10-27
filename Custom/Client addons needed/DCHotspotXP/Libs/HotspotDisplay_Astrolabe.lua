@@ -1,12 +1,10 @@
--- Small Astrolabe-like helper for HotspotDisplay
+﻿-- Small Astrolabe-like helper for HotspotDisplay
 -- Purpose: provide basic coordinate conversions for WotLK-style clients
 -- Not a full Astrolabe implementation; provides two helpers:
 --  - NormalizeCoords(x,y): ensure coords are 0..1
 --  - WorldToMapPixels(mapFrame, nx, ny): returns pixel X,Y relative to mapFrame TOPLEFT
 --  - WorldToMinimapOffset(minimapFrame, playerNx, playerNy, targetNx, targetNy): returns x,y offset relative to minimap center
-
 local Ast = {}
-
 -- Normalize coords that can be in 0..1 or 0..100 space
 function Ast.NormalizeCoords(x, y)
     local nx = tonumber(x) or 0
@@ -15,7 +13,6 @@ function Ast.NormalizeCoords(x, y)
     if ny > 1 then ny = ny / 100 end
     return nx, ny
 end
-
 -- Minimal map metadata table for common maps. Coordinates are world-space bounds used to normalize world coords.
 -- These bounds are approximate and can be refined later using DBC data or a more complete table.
 -- mapId => { minX, maxX, minY, maxY, continent }
@@ -26,7 +23,6 @@ Ast.MapBounds = {
     [571] = { minX = -8000, maxX = 8000, minY = -8000, maxY = 8000, continent = 571 }, -- Northrend rough
     [37] = { minX = -500, maxX = 500, minY = 700, maxY = 1400, continent = 0 }, -- Azshara crater rough bounds used by server presets
 }
-
 -- Convert absolute world-space coordinates (mapId,x,y) into normalized 0..1 coords using MapBounds when available.
 -- Falls back to caller normalization (if x,y already normalized) when metadata missing.
 function Ast.WorldCoordsToNormalized(mapId, x, y)
@@ -44,7 +40,6 @@ function Ast.WorldCoordsToNormalized(mapId, x, y)
     -- fallback: treat inputs as already normalized
     return Ast.NormalizeCoords(x, y)
 end
-
 -- Convert normalized coords to pixel offsets relative to mapFrame top-left
 -- Convert normalized coords to pixel offsets relative to mapFrame top-left
 -- If mapId is provided along with raw world coords, it will convert them using bounds
@@ -63,7 +58,6 @@ function Ast.WorldToMapPixels(mapFrame, nx_or_mapId, ny_or_x, maybe_y)
         ny = ny_or_x
         nx, ny = Ast.NormalizeCoords(nx, ny)
     end
-
     local w = mapFrame:GetWidth() or 0
     local h = mapFrame:GetHeight() or 0
     -- mapFrame coordinate origin for our overlay is TOPLEFT; we use nx,ny in 0..1 where 0,0 = top-left
@@ -71,7 +65,6 @@ function Ast.WorldToMapPixels(mapFrame, nx_or_mapId, ny_or_x, maybe_y)
     local py = ny * h
     return px, py
 end
-
 -- Approximate minimap offset: produces x,y in pixels relative to minimap center.
 -- playerNx/playerNy and targetNx/targetNy are normalized coords (0..1)
 -- This is not perfect but provides stable results in WotLK where Minimap is a circle and maps are local.
@@ -93,10 +86,8 @@ function Ast.WorldToMinimapOffset(minimapFrame, playerNx_or_mapId, playerNy_or_x
         tnx = targetNx_or_y
         tny = maybe_y
     end
-
     pnx, pny = Ast.NormalizeCoords(pnx, pny)
     tnx, tny = Ast.NormalizeCoords(tnx, tny)
-
     local dx = (tnx - pnx)
     local dy = (tny - pny)
     -- compute angle and distance, scale to minimap radius
@@ -108,7 +99,7 @@ function Ast.WorldToMinimapOffset(minimapFrame, playerNx_or_mapId, playerNy_or_x
     local oy = r * math.sin(angle)
     return ox, oy
 end
-
 -- Expose globally for WoW addon loading (if file is included via TOC)
 _G.HotspotDisplay_Astrolabe = Ast
 return Ast
+

@@ -1,6 +1,5 @@
--- DC-RestoreXP.lua
+﻿-- DC-RestoreXP.lua
 -- Simple addon to show an XP bar when the client reports XP (useful for servers with higher max level)
-
 -- SavedSettings
 if not DCRestoreXPDB then DCRestoreXPDB = {} end
 if DCRestoreXPDB.x == nil then DCRestoreXPDB.x = 0 end
@@ -16,13 +15,11 @@ if DCRestoreXPDB.debugUiErrors == nil then DCRestoreXPDB.debugUiErrors = false e
 if DCRestoreXPDB.hideText == nil then DCRestoreXPDB.hideText = false end
 -- Persistent toggle to keep the fallback bar visible for diagnostics
 if DCRestoreXPDB.debugShowFallback == nil then DCRestoreXPDB.debugShowFallback = false end
-
 -- Early init guard: prevent the file from running twice (duplicate event frames/logs)
 if _G.__DCRestoreXP_Initialized then
     return
 end
 _G.__DCRestoreXP_Initialized = true
-
 local function FindBlizzardXPBar()
     local names = { "MainMenuExpBar", "MainMenuXPBar", "MainMenuBarExpBar" }
     for _, n in ipairs(names) do
@@ -33,7 +30,6 @@ local function FindBlizzardXPBar()
     end
     return nil
 end
-
 -- If Interface options can't be registered at load (rare), register on PLAYER_LOGIN
 if type(InterfaceOptions_AddCategory) ~= "function" then
     local reg = CreateFrame("Frame")
@@ -50,10 +46,8 @@ local blizBar = FindBlizzardXPBar()
 local bar = nil
 local fallbackBar = nil
 local bg, text
-
 -- Track if eager creation of __dcrxp_text failed so we don't spam logs repeatedly
 local __dcrxp_creation_failed = 0
-
 -- Safe logger used during very early init before Debug() is defined. Honors
 -- the debug flag so we don't spam messages in production.
 local function SafeEarlyLog(msg)
@@ -64,7 +58,6 @@ local function SafeEarlyLog(msg)
     end
     pcall(print, "[DC-RestoreXP] " .. tostring(msg))
 end
-
 -- Ensure a frame has a __dcrxp_text FontString and background texture attached.
 -- This is defensive: creating children on Blizzard-owned frames can fail on some clients
 -- or when other addons manipulate the UI during init. We pcall the creation and
@@ -105,7 +98,6 @@ local function EnsureDCRXPTextForBar(frame)
     end
     return true
 end
-
 -- Resync/snapping helpers: if we had to place the fallback at the saved DB position
 -- because Blizzard info was unavailable, try to re-snap to the Blizzard bar for a
 -- short window after login in case it gets created later by FrameXML or other addons.
@@ -117,7 +109,6 @@ local resync_used_saved_pos = false
 local resync_uierror_shown = false
 -- One-time message flag: when we fall back to defaults due to invalid saved coords
 local defaultFallbackMsgShown = false
-
 local function SnapFallbackToBliz()
     if not blizBar or not fallbackBar then return false end
     local left = (type(blizBar.GetLeft) == "function" and blizBar:GetLeft())
@@ -130,7 +121,6 @@ local function SnapFallbackToBliz()
         if math.abs(x) > 5000 or math.abs(y) > 5000 then return false end
         return true
     end
-
     if left and bottom and coords_reasonable(left, bottom) then
         pcall(function()
             fallbackBar:ClearAllPoints()
@@ -164,7 +154,6 @@ local function SnapFallbackToBliz()
     end
     return false
 end
-
 local function StartResyncLoop()
     if resync_active then return end
     resync_active = true
@@ -209,7 +198,6 @@ local function StartResyncLoop()
     end
     step()
 end
-
 -- Centralized bar positioning helper to avoid duplicate SetPoint logic.
 -- mode = "bliz" attempts to mirror the Blizzard bar (pixel-exact when possible).
 -- mode = "saved" anchors to saved DCRestoreXPDB coordinates and starts the resync loop.
@@ -295,10 +283,7 @@ local function SetBarPosition(target, mode)
         return true
     end
 end
-
 -- Prevent the addon from initializing twice if the file is (somehow) loaded multiple times
-
-
 -- Strong hide/show helpers: perform a stronger hide that also moves the frame off-screen
 -- and sets alpha to 0 so other addons that re-show textures are less likely to visually
 -- overlap. These are defensive and use pcall wrappers to be safe across clients.
@@ -322,7 +307,6 @@ local function StrongHide(obj)
         if type(obj.SetParent) == "function" then pcall(obj.SetParent, obj, UIParent) end
     end)
 end
-
 local function StrongShow(obj)
     if not obj then return end
     pcall(function()
@@ -341,7 +325,6 @@ local function StrongShow(obj)
         end
     end)
 end
-
 -- Debug helper
 local function DBG(msg)
     -- small debug helper that delegates to Debug and respects the debug flag
@@ -363,37 +346,31 @@ local function Debug(msg)
     end
 end
 -- end of file
-
 -- Compatibility helper: Set a solid color on a texture across client versions.
 local function SetSolidColorTexture(tex, r, g, b, a)
     if not tex then return end
     r = r or 0; g = g or 0; b = b or 0; a = (a == nil) and 1 or a
-
     -- Try several strategies, each wrapped in pcall so failures cannot throw.
     -- 1) Modern API: :SetColorTexture(r,g,b,a)
     local ok = pcall(function() if type(tex.SetColorTexture) == "function" then tex:SetColorTexture(r, g, b, a) end end)
     if ok then return end
-
     -- 2) Older numeric SetTexture(r,g,b,a)
     ok = pcall(function() if type(tex.SetTexture) == "function" then tex:SetTexture(r, g, b, a) end end)
     if ok then
         pcall(function() if type(tex.SetAlpha) == "function" then tex:SetAlpha(a) end end)
         return
     end
-
     -- 3) Fallback to a solid background texture + vertex color
     pcall(function() if type(tex.SetTexture) == "function" then tex:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background") end end)
     pcall(function() if type(tex.SetVertexColor) == "function" then tex:SetVertexColor(r, g, b, a) end end)
     return
 end
-
 -- Color constants for formatted text
 local COLOR_RED = "|cFFFF4500"
 local COLOR_ORANGE = "|cFFFFA500"
 local COLOR_YELLOW = "|cFFFFFF00"
 local COLOR_GREEN = "|cFF00FF00"
 local COLOR_RESET = "|r"
-
 -- Animation helpers: smooth value transitions for the status bar to mimic Blizzard visuals
 local anim = { active = false, bar = nil, start = 0, target = 0, duration = 0.3, elapsed = 0 }
 local animFrame = CreateFrame("Frame")
@@ -431,7 +408,6 @@ animFrame:SetScript("OnUpdate", function(self, dt)
         self:Hide()
     end
 end)
-
 local function AnimateBarTo(barObj, newValue, dur)
     if not barObj or type(barObj.GetValue) ~= "function" then return end
     anim.bar = barObj
@@ -445,7 +421,6 @@ local function AnimateBarTo(barObj, newValue, dur)
     anim.active = true
     animFrame:Show()
 end
-
 -- Re-assert hide/show state a short time after we've set it. Some other addons
 -- may modify visibility during initialization; this helper schedules one or
 -- two deferred checks to hide the non-target bar after a tiny delay.
@@ -487,7 +462,6 @@ local function ReassertVisibility(target)
         end)
     end
 end
-
 -- Stronger, short-lived enforcement: periodically re-hide the non-target bar
 -- for a small number of iterations to catch aggressive re-shows by other addons.
 local function EnforceSingleBar(target, iterations, interval)
@@ -534,7 +508,6 @@ local function EnforceSingleBar(target, iterations, interval)
         end)
     end
 end
-
 -- Temporary instrumentation: hook Show/Hide on both bars to log external callers.
 local showHideHooks = { active = false, originals = {} }
 local function UnhookShowHide()
@@ -552,7 +525,6 @@ local function UnhookShowHide()
     showHideHooks.active = false
     Debug("Show/Hide instrumentation disabled")
 end
-
 local function HookShowHideForObject(obj)
     if not obj or type(obj) ~= "table" then return end
     if showHideHooks.originals[obj] then return end
@@ -573,7 +545,6 @@ local function HookShowHideForObject(obj)
         end
     end
 end
-
 local function StartShowHideLogging(duration)
     duration = tonumber(duration) or 10
     if showHideHooks.active then
@@ -601,7 +572,6 @@ local function StartShowHideLogging(duration)
         end)
     end
 end
-
 local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
     if not barObj then return end
     if type(barObj.SetMinMaxValues) == "function" then barObj:SetMinMaxValues(minv or 0, maxv or 1) end
@@ -690,7 +660,6 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
     -- animate value change (use Blizzard-like timing)
     AnimateBarTo(barObj, value or 0, 0.3)
     if type(barObj.Show) == "function" then barObj:Show() end
-
     -- Exhaustion/rested visuals for our fallback bar (mimic MainMenuBar behavior)
     if barObj.exhaustionTick and maxv and maxv > 0 then
         local exhaustionThreshold = GetXPExhaustion()
@@ -746,7 +715,6 @@ local function SetBarMinMaxAndAnimate(barObj, minv, maxv, value)
         pcall(text.SetTextColor, text, fgColor[1], fgColor[2], fgColor[3])
     end
 end
-
 -- Send a small client->server handshake request so the server can reply with
 -- current XP values when the client is ready. This helper is used on login
 -- and also after level changes to avoid flicker from client-side updates.
@@ -763,7 +731,6 @@ local function SendDCRXPRequest()
         Debug("Failed to SendAddonMessage DCRXP_REQ: " .. tostring(err))
     end
 end
-
 -- Create our own bar styled to match Blizzard when no blizBar is available or user disabled reuse
 local function CreateFallbackBar()
     -- Create a fallback XP status bar that mirrors MainMenuBar's layout and textures
@@ -795,7 +762,6 @@ local function CreateFallbackBar()
     b:SetFrameStrata("HIGH")
     b:SetFrameLevel(200)
     b:SetClampedToScreen(true)
-
     -- Allow the fallback bar to be dragged by the user at any time and persist
     -- its bottom-left coordinates into the saved DB so it doesn't get stuck
     -- at the bottom-left of the screen unintentionally.
@@ -830,7 +796,6 @@ local function CreateFallbackBar()
             end)
         end)
     end
-
     -- Base statusbar texture (matches MainMenuBar's BarTexture)
     local barTex = "Interface\\TargetingFrame\\UI-StatusBar"
     b:SetStatusBarTexture(barTex)
@@ -845,13 +810,11 @@ local function CreateFallbackBar()
     b:SetMinMaxValues(0, 1)
     b:SetValue(0)
     b:Hide()
-
     -- Background
     bg = b:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(b)
     bg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
     bg:SetVertexColor(0,0,0,0.6)
-
     -- Center text
     text = b:CreateFontString(nil, "OVERLAY")
     -- Use a slightly smaller font to avoid clipping; keep a sensible minimum
@@ -859,7 +822,6 @@ local function CreateFallbackBar()
     local chosenSize = math.max((fontSize or 10) - 1, 8)
     text:SetFont(fontName, chosenSize, fontFlags)
     text:SetPoint("CENTER", b, "CENTER")
-
     -- Add the four decorative bar slices from UI-MainMenuBar-Dwarf to mimic Blizzard art
     local sliceFile = "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
     local sliceInfo = {
@@ -875,7 +837,6 @@ local function CreateFallbackBar()
         tex:SetPoint("BOTTOM", b, "BOTTOM", si.offset, 3)
         tex:SetTexCoord(0, 1.0, si.top, si.bottom)
     end
-
     -- Rested/exhaustion visuals (overlay uses the Blizzard rested-blue by default)
     local rested = b:CreateTexture(nil, "OVERLAY")
     rested:SetAllPoints(b)
@@ -884,7 +845,6 @@ local function CreateFallbackBar()
     SetSolidColorTexture(rested, 0.0, 0.5, 1.0, 0.25)
     if type(rested.SetDrawLayer) == "function" then pcall(rested.SetDrawLayer, rested, "OVERLAY", 2) end
     b.restedOverlay = rested
-
     -- Exhaustion tick (small button with textures) positioned relative to the bar
     local tick = CreateFrame("Button", "DCRestore_ExhaustionTick", b)
     tick:SetSize(24, 24)
@@ -897,12 +857,10 @@ local function CreateFallbackBar()
     ht:SetAllPoints(tick)
     tick:Hide()
     b.exhaustionTick = tick
-
     -- Expose Blizzard global names if they don't already exist so other FrameXML can reference them
     if not _G["ExhaustionTick"] then _G["ExhaustionTick"] = tick end
     if not _G["ExhaustionTickNormal"] then _G["ExhaustionTickNormal"] = nt end
     if not _G["ExhaustionTickHighlight"] then _G["ExhaustionTickHighlight"] = ht end
-
     -- Exhaustion fill (the area that shows rested XP)
     local exhaustionFill = b:CreateTexture(nil, "ARTWORK")
     exhaustionFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
@@ -911,19 +869,16 @@ local function CreateFallbackBar()
     b.exhaustionFill = exhaustionFill
     -- Expose the Blizzard global name used in FrameXML for the exhaustion/rested fill
     if not _G["ExhaustionLevelFillBar"] then _G["ExhaustionLevelFillBar"] = exhaustionFill end
-
     -- Attach our text/bg references to the bar so callers can access them uniformly
     b.__dcrxp_text = text
     b.__dcrxp_textBg = bg
     return b
 end
-
 -- Defer creating the fallback bar until it's actually needed. Creating it
 -- eagerly causes overlay artifacts when the Blizzard bar is present and
 -- other addons interact with the HUD. We'll create it lazily below.
 fallbackBar = nil
 bar = nil
-
 -- If possible and configured, we may still let Blizzard render the native XP bar for client-driven
 -- XP updates; however we will not create or attach text/widgets to Blizzard's frames so we don't
 -- modify Blizzard UI. The fallbackBar contains our text and will be used for server-sent values.
@@ -999,11 +954,9 @@ bar = nil
         -- will prefer Blizzard whenever possible
         bar = nil
     end
-
 -- If configured to reuse Blizzard's bar we still need a fallback for servers that push XP
 -- when the client reports no XP max (for example at or above the client's native max level).
 -- We'll create the fallback lazily when needed and prefer it for server-provided values.
-
 -- Helper: apply server-provided XP values to our fallback bar. Extracted so the test button
 -- and CHAT_MSG_ADDON handler can reuse the same logic.
 local function ApplyServerXP(sxp, sxpMax, slevel)
@@ -1067,7 +1020,6 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
                 -- (pixel-exact where possible). If snapping fails the helper will fall
                 -- back to the saved position and start the resync loop.
                 SetBarPosition(fallbackBar, "bliz")
-
                 -- Match size/strata/framelevel where possible
                 if blizBar and type(blizBar.GetWidth) == "function" and type(fallbackBar.SetSize) == "function" then
                     pcall(function()
@@ -1115,7 +1067,6 @@ local function ApplyServerXP(sxp, sxpMax, slevel)
         if target == fallbackBar then StrongHide(blizBar) end
     end
 end
-
 -- Small smoke-test utility to verify __dcrxp_text creation on both Blizzard and fallback bars.
 -- Call via the slash command /dcrxptest or from other code. Returns boolean success.
 local function RunEnsureCreationTest()
@@ -1159,13 +1110,11 @@ local function RunEnsureCreationTest()
     end
     return success
 end
-
 -- Add a simple slash command to run the smoke test in-game: /dcrxptest
 SLASH_DCRXPTEST1 = "/dcrxptest"
 SlashCmdList["DCRXPTEST"] = function(msg)
     RunEnsureCreationTest()
 end
-
 -- Small test button (hidden by default). Toggle with "/dcrxp test" - useful for client-only checks.
 local testBtn = CreateFrame("Button", "DCRXPTestButton", UIParent, "UIPanelButtonTemplate")
 testBtn:SetSize(90, 22)
@@ -1179,23 +1128,19 @@ testBtn:SetScript("OnClick", function()
     ApplyServerXP(xp, max, lvl)
 end)
 testBtn:Hide()
-
 -- Interface Options panel (lightweight, compatible with 3.3.5)
 local function CreateOptionsPanel()
     if _G.DCRestoreXPOptionsPanel then return _G.DCRestoreXPOptionsPanel end
     local panel = CreateFrame("Frame", "DCRestoreXPOptionsPanel", InterfaceOptionsFramePanelContainer)
     panel.name = "DC-RestoreXP"
-
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("DC-RestoreXP")
-
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetPoint("RIGHT", panel, -16, 0)
     desc:SetJustifyH("LEFT")
     desc:SetText("Options for DC-RestoreXP: choose how the addon shows XP bars and where the fallback bar is positioned.")
-
     -- Helper to create a checkbutton
     local function MakeCheck(name, label, tooltip, x, y, dbKey)
         local cb = CreateFrame("CheckButton", name, panel, "UICheckButtonTemplate")
@@ -1215,14 +1160,12 @@ local function CreateOptionsPanel()
         end)
         return cb
     end
-
     local cbUseBliz = MakeCheck("DCRXP_OptUseBliz", "Use Blizzard bar when available", "If enabled the addon prefers the Blizzard XP bar for normal clients.", 0, 0, "useBlizzard")
     local cbForceApply = MakeCheck("DCRXP_OptForceApply", "Force apply server values", "Always apply server-provided XP values even for lower levels.", 0, 24, "forceApply")
     local cbHideText = MakeCheck("DCRXP_OptHideText", "Hide text overlay", "Hide the numeric text overlay on the XP bar.", 0, 48, "hideText")
     local cbDebug = MakeCheck("DCRXP_OptDebug", "Enable Debug messages", "Show debug messages in chat/console.", 300, 0, "debug")
     local cbUiErr = MakeCheck("DCRXP_OptUiErr", "Show UI error on fallback", "Show a one-time UI error if the addon had to use a saved position because Blizzard bar was unavailable.", 300, 24, "debugUiErrors")
     local cbShowFallback = MakeCheck("DCRXP_OptShowFallback", "Show fallback for debugging", "Keep the fallback bar visible for diagnostics (useful to position/save it).", 0, 72, "debugShowFallback")
-
     -- Position save/reset
     local saveBtn = CreateFrame("Button", "DCRXP_SavePosBtn", panel, "UIPanelButtonTemplate")
     saveBtn:SetSize(140, 22)
@@ -1253,7 +1196,6 @@ local function CreateOptionsPanel()
             if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] No fallback bar to save position from") end
         end
     end)
-
     local resetBtn = CreateFrame("Button", "DCRXP_ResetPosBtn", panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(140, 22)
     resetBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
@@ -1268,7 +1210,6 @@ local function CreateOptionsPanel()
         end
         if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "[DC-RestoreXP] Reset bar position to defaults") end
     end)
-
     -- Initialize states
     panel.refresh = function()
         cbUseBliz:SetChecked( DCRestoreXPDB.useBlizzard )
@@ -1278,7 +1219,6 @@ local function CreateOptionsPanel()
         cbUiErr:SetChecked( DCRestoreXPDB.debugUiErrors )
         cbShowFallback:SetChecked( DCRestoreXPDB.debugShowFallback )
     end
-
     -- Refresh panel when shown so controls reflect the latest DB state
     if type(panel.SetScript) == "function" then
         -- Create a draggable preview handle when the panel is shown so users can
@@ -1331,18 +1271,15 @@ local function CreateOptionsPanel()
             end
         end)
     end
-
     -- Register the panel as a top-level options category under Interface
     InterfaceOptions_AddCategory(panel)
     _G.DCRestoreXPOptionsPanel = panel
     return panel
 end
-
 -- Try to register the options panel now if the Interface API is already present.
 if type(InterfaceOptions_AddCategory) == "function" then
     pcall(CreateOptionsPanel)
 end
-
 -- Slash to open options
 SLASH_DCRXPOPTS1 = "/dcrxpoptions"
 SlashCmdList["DCRXPOPTS"] = function()
@@ -1351,7 +1288,6 @@ SlashCmdList["DCRXPOPTS"] = function()
         InterfaceOptionsFrame_OpenToCategory(panel)
     end
 end
-
 local function UpdateXP()
     Debug("UpdateXP called")
     if not UnitExists("player") then
@@ -1458,7 +1394,6 @@ local function UpdateXP()
         end
     end
 end
-
 local ev = CreateFrame("Frame")
 -- Register our addon prefix if the API exists (safe on newer clients, no-op on 3.3.5a)
 if type(RegisterAddonMessagePrefix) == "function" then
@@ -1533,7 +1468,6 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
             end)
         end)
         -- Request server snapshot helper (defined at top-level so we can reuse it)
-
         -- Send the handshake immediately and a few times afterwards until we receive
         -- a DCRXP response. We'll stop retrying once we receive any DCRXP payload
         -- to avoid duplicate server replies. The retry frame is stored so it can
@@ -1595,7 +1529,6 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
                 ev.__lastPayload = message
                 ev.__lastPayloadTime = now
                 -- proceed
-            
             -- expected payload: "XP|<xp>|<xpMax>|<level>"
             local parts = {}
             for p in string.gmatch(message, "([^|]+)") do table.insert(parts, p) end
@@ -1627,7 +1560,6 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
         UpdateXP()
     end
 end)
-
 -- Ensure initial state if loaded after login
 if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
     C_Timer.After(1.0, UpdateXP)
@@ -1642,7 +1574,6 @@ else
         end
     end)
 end
-
 -- Minimal slash commands: allow toggling reuse of Blizzard bar and resetting position for fallback
 SLASH_DCRXP1 = "/dcrxp"
 SlashCmdList["DCRXP"] = function(msg)
@@ -1825,3 +1756,4 @@ SlashCmdList["DCRXP"] = function(msg)
         print("DC-RestoreXP commands: reset|usebliz on|usebliz off")
     end
 end
+

@@ -1,13 +1,13 @@
--- HotspotDisplay (Wrath 3.3.5a polished)
+﻿-- HotspotDisplay (Wrath 3.3.5a polished)
 -- Defensive, uses Astrolabe when available for accurate pin placement
 -- Minimal dependencies, robust parsing of server HOTSPOT messages
-
 local ADDON_NAME = "HotspotDisplayWrath"
 local ADDON_VERSION = "1.0"
-
 -- Saved variables
 HotspotDisplayDB = HotspotDisplayDB or { enabled = true, showMapList = true, textSize = 16, showMinimapPins = true, showWorldLabels = true, devMode = false }
-
+-- opt-in user-friendly announcements: keep off by default to avoid chat spam on busy servers
+if HotspotDisplayDB.announceHotspots == nil then HotspotDisplayDB.announceHotspots = false end
+if HotspotDisplayDB.showLoadMessage == nil then HotspotDisplayDB.showLoadMessage = false end
 local activeHotspots = {} -- [id] = {map, zone, x, y, nx, ny, expire, icon, bonus}
 local worldPins = {} -- [id] = frame
 local worldLabels = {} -- [id] = FontString for XP+ text
@@ -18,19 +18,16 @@ local linePool = {} -- reusable UI lines for hotspot list
 -- Persistent debug log stored in-memory and persisted to SavedVariables when possible
 local debugLog = HotspotDisplayDB.debugLog or {}
 local MAX_DEBUG_LINES = 200
-
 -- Try to use Astrolabe library if present (common on Wrath clients)
 local Astrolabe = nil
 if IsAddOnLoaded and IsAddOnLoaded("Astrolabe") then
     Astrolabe = Astrolabe or _G.Astrolabe
 end
-
 local function DefensiveToNumber(s)
     if not s then return nil end
     local n = tonumber(s)
     return n
 end
-
 local function ParsePayload(msg)
     local data = {}
     if not msg or type(msg) ~= "string" then return data end
@@ -44,7 +41,6 @@ local function ParsePayload(msg)
     end
     return data
 end
-
 -- Resolve an icon/texture for a hotspot. Prefer server-provided spell icon (info.icon) when available,
 -- otherwise fall back to user-chosen iconChoice or bundled defaults.
 local function ResolveHotspotTexture(info)
@@ -87,13 +83,11 @@ local function ResolveHotspotTexture(info)
             end
         end
     end
-
     -- Fallback to saved iconChoice
     local iconChoice = HotspotDisplayDB.iconChoice or 1
     if type(iconChoice) == "string" then return iconChoice end
     if iconChoice == 1 then return default1 else return default2 end
 end
-
 local function AddDebugLog(msg)
     if not msg then return end
     local t = date("%H:%M:%S")
@@ -107,7 +101,6 @@ local function AddDebugLog(msg)
         pcall(HotspotListFrame.updateLog)
     end
 end
-
 local function CreateWorldPin(id, info)
     if worldPins[id] then return worldPins[id] end
     if not WorldMapFrame then return end
@@ -131,7 +124,6 @@ local function CreateWorldPin(id, info)
     worldPins[id] = pin
     return pin
 end
-
 local function CreateWorldLabel(id, info)
     if worldLabels[id] then return worldLabels[id] end
     if not WorldMapFrame then return end
@@ -142,7 +134,6 @@ local function CreateWorldLabel(id, info)
     worldLabels[id] = lbl
     return lbl
 end
-
 local function CreateMinimapPin(id, info)
     if minimapPins[id] then return minimapPins[id] end
     if not Minimap then return end
@@ -155,7 +146,6 @@ local function CreateMinimapPin(id, info)
     minimapPins[id] = pin
     return pin
 end
-
 local function PositionWorldPin(pin, info)
     if not pin or not info then return end
     if Astrolabe and info.nx and info.ny then
@@ -192,7 +182,6 @@ local function PositionWorldPin(pin, info)
         end)
     end
 end
-
 local function PositionMinimapPin(pin, info)
     if not pin or not info then return end
     -- Prefer a simple, robust normalized placement instead of relying solely on Astrolabe signatures
@@ -222,7 +211,6 @@ local function PositionMinimapPin(pin, info)
     -- Last-resort: show pin but don't try to position it (prevents crash)
     pcall(function() if HotspotDisplayDB.showMinimapPins then pin:Show() else pin:Hide() end end)
 end
-
 local function RegisterHotspotFromData(data)
     local id = DefensiveToNumber(data.id) or nil
     if not id then return end
@@ -264,15 +252,18 @@ local function RegisterHotspotFromData(data)
                 if mpin then if HotspotDisplayDB.showMinimapPins then mpin:Show() else mpin:Hide() end end
             end)
         end
-
         -- Schedule with a short delay so UI globals are initialized and race conditions avoided
         C_Timer.After(0.05, function() SafeCreatePins(id) end)
     else
         -- For test hotspots, just log minimal info to chat for visibility (no UI)
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r (test) Hotspot #"..id.." registered (no UI created)")
+        if HotspotDisplayDB.devMode or HotspotDisplayDB.announceHotspots then
+            pcall(function() DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r (test) Hotspot #"..id.." registered (no UI created)") end)
+        end
     end
-    -- Announce to chat
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r Hotspot #"..id.." registered")
+    -- Announce to chat (opt-in to avoid spam on crowded servers)
+    if HotspotDisplayDB.devMode or HotspotDisplayDB.announceHotspots then
+        pcall(function() DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[Hotspot]|r Hotspot #"..id.." registered") end)
+    end
     -- Ensure global indicator shows up
     pcall(function() UpdateGlobalIndicator() end)
     -- Note: visibility and creation are handled by SafeCreatePins scheduled above
@@ -281,7 +272,6 @@ local function RegisterHotspotFromData(data)
         HotspotListFrame:refresh()
     end
 end
-
 -- Create or update a small persistent indicator on the World Map that at-a-glance shows hotspots are active
 local function EnsureGlobalIndicator()
     if globalIndicator then return globalIndicator end
@@ -315,7 +305,6 @@ local function EnsureGlobalIndicator()
     globalIndicator:SetScript("OnLeave", function() GameTooltip:Hide() end)
     return globalIndicator
 end
-
 local function UpdateGlobalIndicator()
     local count = 0
     for _ in pairs(activeHotspots) do count = count + 1 end
@@ -369,7 +358,6 @@ local function UpdateGlobalIndicator()
         if globalMinimapIndicator then globalMinimapIndicator:Hide() end
     end
 end
-
 -- Create a simple clickable hotspot list on the world map
 local HotspotListFrame = nil
 local function EnsureHotspotList()
@@ -379,19 +367,15 @@ local function EnsureHotspotList()
     HotspotListFrame:SetPoint("CENTER", UIParent, "CENTER")
     HotspotListFrame:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "", tile = true, tileSize = 16, edgeSize = 16 })
     HotspotListFrame:Hide()
-
     HotspotListFrame.title = HotspotListFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     HotspotListFrame.title:SetPoint("TOP", HotspotListFrame, "TOP", 0, -10)
     HotspotListFrame.title:SetText("Active Hotspots")
-
     HotspotListFrame.scroll = CreateFrame("ScrollFrame", "HotspotListScroll", HotspotListFrame, "UIPanelScrollFrameTemplate")
     HotspotListFrame.scroll:SetPoint("TOPLEFT", HotspotListFrame, "TOPLEFT", 10, -40)
     HotspotListFrame.scroll:SetPoint("BOTTOMRIGHT", HotspotListFrame, "BOTTOMRIGHT", -30, 10)
-
     HotspotListFrame.content = CreateFrame("Frame", nil, HotspotListFrame.scroll)
     HotspotListFrame.content:SetSize(260, 160)
     HotspotListFrame.scroll:SetScrollChild(HotspotListFrame.content)
-
     -- checkbox toggles
     HotspotListFrame.minimapToggle = CreateFrame("CheckButton", nil, HotspotListFrame, "UICheckButtonTemplate")
     HotspotListFrame.minimapToggle:SetPoint("TOPLEFT", HotspotListFrame, "TOPLEFT", 10, -16)
@@ -403,7 +387,6 @@ local function EnsureHotspotList()
         HotspotDisplayDB.showMinimapPins = self:GetChecked()
         for id,p in pairs(minimapPins) do if p then if HotspotDisplayDB.showMinimapPins then p:Show() else p:Hide() end end end
     end)
-
     HotspotListFrame.worldLabelToggle = CreateFrame("CheckButton", nil, HotspotListFrame, "UICheckButtonTemplate")
     HotspotListFrame.worldLabelToggle:SetPoint("TOPLEFT", HotspotListFrame, "TOPLEFT", 150, -16)
     HotspotListFrame.worldLabelToggleText = HotspotListFrame.worldLabelToggle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -414,7 +397,6 @@ local function EnsureHotspotList()
         HotspotDisplayDB.showWorldLabels = self:GetChecked()
         for id,l in pairs(worldLabels) do if l then if HotspotDisplayDB.showWorldLabels then l:Show() else l:Hide() end end end
     end)
-
     -- persistent dev-mode checkbox
     HotspotListFrame.devModeToggle = CreateFrame("CheckButton", nil, HotspotListFrame, "UICheckButtonTemplate")
     HotspotListFrame.devModeToggle:SetPoint("TOPLEFT", HotspotListFrame, "TOPLEFT", 10, -40)
@@ -426,11 +408,9 @@ local function EnsureHotspotList()
         HotspotDisplayDB.devMode = self:GetChecked()
         DEFAULT_CHAT_FRAME:AddMessage(HotspotDisplayDB.devMode and "|cFF00FF00[HotspotDebug]|r enabled (persist)" or "|cFFFF0000[HotspotDebug]|r disabled (persist)")
     end)
-
     -- Simple indicator customization: choose color (3 presets) and icon (2 presets)
     HotspotListFrame.iconChoice = HotspotDisplayDB.iconChoice or 1
     HotspotListFrame.colorChoice = HotspotDisplayDB.indicatorColor or 1
-
     local function createMiniButton(x, y, texture, parent, onClick)
         local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
         b:SetSize(20,20)
@@ -441,13 +421,11 @@ local function EnsureHotspotList()
         b:SetScript("OnClick", onClick)
         return b
     end
-
     -- icon options
     createMiniButton(200, -16, "Interface\\Icons\\INV_Misc_Map_01", HotspotListFrame, function()
         HotspotListFrame.iconChoice = 1; HotspotDisplayDB.iconChoice = 1; UpdateGlobalIndicator(); end)
     createMiniButton(230, -16, "Interface\\Icons\\INV_BannerPVP_01", HotspotListFrame, function()
         HotspotListFrame.iconChoice = 2; HotspotDisplayDB.iconChoice = 2; UpdateGlobalIndicator(); end)
-
     -- color swatches (simple)
     local colors = { {1,0.84,0}, {0,1,0.2}, {0.2,0.6,1} }
     for i,c in ipairs(colors) do
@@ -461,7 +439,6 @@ local function EnsureHotspotList()
             HotspotListFrame.colorChoice = i; HotspotDisplayDB.indicatorColor = i; UpdateGlobalIndicator();
         end)
     end
-
     -- Color picker button (opens the standard ColorPickerFrame and stores RGB into SavedVars)
     local picker = CreateFrame("Button", nil, HotspotListFrame, "UIPanelButtonTemplate")
     picker:SetSize(110, 22)
@@ -490,7 +467,6 @@ local function EnsureHotspotList()
         ColorPickerFrame:SetColorRGB(r,g,b)
         ColorPickerFrame:Show()
     end)
-
     -- Extra icon choices (store actual texture path in SavedVars)
     local icons = { "Interface\\Icons\\INV_Misc_Map_01", "Interface\\Icons\\INV_BannerPVP_01", "Interface\\Icons\\INV_Misc_Gem_Diamond_03", "Interface\\Icons\\INV_Misc_TreasureChest01" }
     for i,tex in ipairs(icons) do
@@ -505,7 +481,6 @@ local function EnsureHotspotList()
             UpdateGlobalIndicator()
         end)
     end
-
     -- Debug log area (scrolling editbox) to persist dev messages and make reproduction easier
     local logFrame = CreateFrame("Frame", nil, HotspotListFrame)
     logFrame:SetPoint("TOPLEFT", HotspotListFrame, "TOPLEFT", 10, -72)
@@ -531,7 +506,6 @@ local function EnsureHotspotList()
     end
     HotspotListFrame.updateLog = logFrame.update
     pcall(logFrame.update)
-
     HotspotListFrame.linePool = linePool
     HotspotListFrame.maxLines = 64
     HotspotListFrame.usedLines = {}
@@ -556,11 +530,9 @@ local function EnsureHotspotList()
         end
         return nil
     end
-
     HotspotListFrame.releaseAllLines = function()
         for i,l in pairs(HotspotListFrame.usedLines) do l:Hide(); HotspotListFrame.usedLines[i] = nil end
     end
-
     HotspotListFrame.refresh = function()
         HotspotListFrame:releaseAllLines()
         local y = -5
@@ -616,17 +588,14 @@ local function EnsureHotspotList()
             y = y - 28
         end
     end
-
     return HotspotListFrame
 end
-
 -- slash command to toggle list
 SLASH_HOTSPOTLIST1 = "/hotspotlist"
 SlashCmdList["HOTSPOTLIST"] = function()
     local f = EnsureHotspotList()
     if f:IsShown() then f:Hide() else f:Show(); f.refresh() end
 end
-
 -- Event frame
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
@@ -689,7 +658,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[HotspotDisplay]|r handler error: "..errMsg)
     end
 end)
-
 -- Cleanup expired hotspots periodically
 -- Wrath-compatible ticker using frame OnUpdate instead of C_Timer (which doesn't exist in Wrath)
 local tickerFrame = CreateFrame("Frame")
@@ -728,18 +696,19 @@ tickerFrame:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 end)
-
 -- Reposition labels on map show/resize for immediate feedback
 if WorldMapFrame then
     WorldMapFrame:HookScript("OnShow", function() for id, info in pairs(activeHotspots) do if worldLabels[id] then local nx = info.nx or info.x; local ny = info.ny or info.y; if nx and ny then if nx > 1 then nx = nx/100 end; if ny > 1 then ny = ny/100 end; local w = WorldMapFrame:GetWidth(); local h = WorldMapFrame:GetHeight(); worldLabels[id]:ClearAllPoints(); worldLabels[id]:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", nx * w, -ny * h - 14); worldLabels[id]:Show(); end end end end)
     WorldMapFrame:HookScript("OnSizeChanged", function() for id, info in pairs(activeHotspots) do if worldLabels[id] then local nx = info.nx or info.x; local ny = info.ny or info.y; if nx and ny then if nx > 1 then nx = nx/100 end; if ny > 1 then ny = ny/100 end; local w = WorldMapFrame:GetWidth(); local h = WorldMapFrame:GetHeight(); worldLabels[id]:ClearAllPoints(); worldLabels[id]:SetPoint("CENTER", WorldMapFrame, "TOPLEFT", nx * w, -ny * h - 14); worldLabels[id]:Show(); end end end end)
 end
-
-DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplayWrath]|r loaded v"..ADDON_VERSION)
-
+-- Informational load message (opt-in)
+if HotspotDisplayDB.devMode or HotspotDisplayDB.showLoadMessage then
+    pcall(function() DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700[HotspotDisplayWrath]|r loaded v"..ADDON_VERSION) end)
+end
 -- Slash command to toggle addon dev debug output
 SLASH_HOTSPOTDEBUG1 = "/hotspotdebug"
 SlashCmdList["HOTSPOTDEBUG"] = function(msg)
     HotspotDisplayDB.devMode = not HotspotDisplayDB.devMode
     DEFAULT_CHAT_FRAME:AddMessage((HotspotDisplayDB.devMode and "|cFF00FF00[HotspotDebug]|r enabled" or "|cFFFF0000[HotspotDebug]|r disabled"))
 end
+

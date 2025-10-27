@@ -1,25 +1,20 @@
---[[
+﻿--[[
 Copyright (c) 2009, Hendrik "Nevcairiel" Leppkes < h.leppkes@gmail.com >
 All rights reserved.
 ]]
-
 local Mapster = LibStub("AceAddon-3.0"):GetAddon("Mapster")
 local L = LibStub("AceLocale-3.0"):GetLocale("Mapster")
-
 local MODNAME = "BattleMap"
 local BattleMap = Mapster:NewModule(MODNAME, "AceEvent-3.0")
 local FogClear
-
 -- Make sure to get the global before FogClear loads and overwrites it
 local GetNumMapOverlays = GetNumMapOverlays
-
 local db
-local defaults = { 
+local defaults = {
 	profile = {
 		hideTextures = false,
 	}
 }
-
 local optGetter, optSetter
 do
 	local mod = BattleMap
@@ -27,14 +22,12 @@ do
 		local key = info[#info]
 		return db[key]
 	end
-
 	function optSetter(info, value)
 		local key = info[#info]
 		db[key] = value
 		mod:Refresh()
 	end
 end
-
 local options
 local function getOptions()
 	if not options then
@@ -70,20 +63,15 @@ local function getOptions()
 			},
 		}
 	end
-
 	return options
 end
-
 function BattleMap:OnInitialize()
 	self.db = Mapster.db:RegisterNamespace(MODNAME, defaults)
 	db = self.db.profile
-
 	self:SetEnabledState(Mapster:GetModuleEnabled(MODNAME))
 	Mapster:RegisterModuleOptions(MODNAME, getOptions, L["BattleMap"])
-
 	FogClear = Mapster:GetModule("FogClear", true)
 end
-
 function BattleMap:OnEnable()
 	if not IsAddOnLoaded("Blizzard_BattlefieldMinimap") then
 		self:RegisterEvent("ADDON_LOADED", function(event, addon)
@@ -96,7 +84,6 @@ function BattleMap:OnEnable()
 		self:SetupMap()
 	end
 end
-
 function BattleMap:OnDisable()
 	if BattlefieldMinimap then
 		BattlefieldMinimapCorner:Show()
@@ -104,27 +91,21 @@ function BattleMap:OnDisable()
 		BattlefieldMinimapCloseButton:Show()
 		BattlefieldMinimapTab:Show()
 	end
-
 	self:UpdateTextureVisibility()
 end
-
 function BattleMap:SetupMap()
 	BattlefieldMinimapCorner:Hide()
 	BattlefieldMinimapBackground:Hide()
 	BattlefieldMinimapCloseButton:Hide()
 	BattlefieldMinimapTab:Hide()
-
 	self:RegisterEvent("WORLD_MAP_UPDATE", "UpdateTextureVisibility")
 	self:UpdateTextureVisibility()
 end
-
 function BattleMap:Refresh()
 	db = self.db.profile
 	if not self:IsEnabled() then return end
-
 	self:UpdateTextureVisibility()
 end
-
 function BattleMap:UpdateTextureVisibility()
 	if not BattlefieldMinimap then return end
 	local hasOverlays
@@ -139,3 +120,4 @@ function BattleMap:UpdateTextureVisibility()
 		end
 	end
 end
+

@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "zhCN")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "将该地点加入Cartographer_Waypoints"
 L["Add this location to TomTom waypoints"] = "将该地点加入TomTom节点"
 L["Always show"] = "总是显示"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 我安装了GatherMate，但是却不能在地图上看见任何节点，这是怎么回事？
 |r
 GatherMate本身是不包含任何数据的，你如果想要数据，可以安装GatherMate_Data并导入数据库。GatherMate的工作原理是，当你采集任何资源，包括草药，矿脉，采集气体或者钓鱼的时候将该点记录下来，然后在地图上标出。另外，你也要查看你的显示选项是否设置正确。
-
 |cffffd200
 我在世界地图上看到了节点，但是在迷你地图上却没有，这是为什么？
 |r
 |cffffff78Minimap Button Bag|r (或者类似的插件) 很可能会把你所有的迷你地图按钮收起，禁用它们！
-
 |cffffd200
 我在哪里可以找到数据库下载啊？
 |r
 你可以通过以下途径获取GatherMate的数据库:
-
 1. |cffffff78GatherMate_Data|r - 这个插件是WoWHead网站的数据库的GatherMate版本，它每周都更新一次，你可以打开自动更新选项，在其更新后，自动更新你的数据库。
-
 2. |cffffff78GatherMate_CartImport|r - 这个插件将导入 |cffffff78Cartographer_<Profession>|r 已存在的数据库到GatherMate。你必须保证GatherMate_CartImport和 |cffffff78Cartographer_<Profession>|r 同时启用才可进行导入工作。
-
 注意：该导入动作不是自动进行的，你必须进入“导入数据”选项，然后点击“导入”按钮。
-
 如果 |cffffff78Cartographer_Data|r 中的数据和GatherMate数据不符，用户将被提示选择数据库修改的方式, |cffffff78Cartographer_Data|r载入时，可能会导致你新建立的节点在不被警告的自动覆盖！
-
 |cffffd200
 你可以增加邮箱或者飞行管理员的数据支持么？
 |r
 不，我不会。尽管可能会有其他的作者以插件的形式支持，但是GatherMate的核心组件将不会支持该功能。
-
 |cffffd200
 我发现一处Bug！我到哪里去报告啊？
 |r
 你可以到如下网址反应Bug和提供建议: |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r
-
 你也可以在这里找到我们： |cffffff78irc://irc.freenode.org/wowace|r
-
 当反应Bug的时候，请确认你在|cffffff78何种步骤|r下产生的该Bug，并尽可能提供所有的|cffffff78错误信息|r，并请提供出错的GatherMate|cffffff78版本号|r，以及你当是使用的|cffffff78魔兽世界的客户端语言|r。
-
 |cffffd200
 谁写出了这么Cool的插件？
 |r
@@ -161,11 +148,8 @@ L["Tracking Distance"] = "追踪距离"
 L["Treasure"] = "财宝"
 L["Treasure filter"] = "财宝过滤"
 L["Wrath of the Lich King"] = "巫妖王之怒"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "zhCN")
 if not NL then return end
-
 NL["Abundant Bloodsail Wreckage"] = "大型的血帆残骸" -- Needs review
 NL["Abundant Firefin Snapper School"] = "大型的火鳞鳝鱼群" -- Needs review
 NL["Abundant Oily Blackmouth School"] = "大型的黑口鱼群" -- Needs review

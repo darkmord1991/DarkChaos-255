@@ -1,10 +1,8 @@
-local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
+﻿local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
 local AtlasPOI = WDM:NewModule("AtlasPOI", "AceHook-3.0")
 local DData = WDM:GetModule("DungeonData")
-
 local Astrolabe = DongleStub("Astrolabe-0.4")
 local L = LibStub("AceLocale-3.0"):GetLocale("WDM")
-
 local defaults = {
     profile = {
         ["show_minimap"] = false,
@@ -18,13 +16,10 @@ local defaults = {
         ["debugmode"] = false
     }
 }
-
 NUM_WORLDMAP_ATLAS_POI = 0;
-
 function AtlasPOI:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("WDMdb", defaults, true)
 end
-
 function AtlasPOI:AddTrackingOptions()
     local menu = {
         {text = L["atlas_tracking_title_text"], isTitle = true}, {
@@ -100,28 +95,23 @@ function AtlasPOI:AddTrackingOptions()
             end
         }
     }
-
     local button = CreateFrame("Button", "WDM_WorldMapButton", WorldMapFrame)
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     button:SetPoint("TOPRIGHT", WorldMapButton, "TOPRIGHT", -4, -2);
     button:SetFrameLevel(99)
     button:SetSize(32, 32)
-
     local background = button:CreateTexture(nil, "BACKGROUND")
     background:SetSize(25, 25)
     background:SetPoint("TOPLEFT", 2, -4)
     background:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
-
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
     icon:SetPoint("TOPLEFT", 6, -5)
     icon:SetTexture("Interface\\Minimap\\Tracking\\None")
-
     local border = button:CreateTexture(nil, "OVERLAY")
     border:SetSize(54, 54)
     border:SetPoint("TOPLEFT")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-
     local menuFrame;
     button:SetScript("OnClick", function(self, button, down)
         if not menuFrame then
@@ -130,11 +120,8 @@ function AtlasPOI:AddTrackingOptions()
         end
         EasyMenu(menu, menuFrame, self, 0, 0, "MENU", 0)
     end)
-
 end
-
 function AtlasPOI:ShowPOIs()
-
     local generated_array = DData:GetListAtlasPOI(GetCurrentMapContinent());
     local numAtlasPOI = #generated_array;
     if (NUM_WORLDMAP_ATLAS_POI < numAtlasPOI) then
@@ -143,7 +130,6 @@ function AtlasPOI:ShowPOIs()
         end
         NUM_WORLDMAP_ATLAS_POI = numAtlasPOI;
     end
-
     for i = 1, NUM_WORLDMAP_ATLAS_POI do
         local worldMapAtlasPOIName = "WorldMapFrameAtlasPOI" .. i;
         local worldMapAtlasPOI = _G[worldMapAtlasPOIName];
@@ -154,7 +140,6 @@ function AtlasPOI:ShowPOIs()
             _G[worldMapAtlasPOIName .. "GlowTexture"]:SetSize(twidth, theight)
             _G[worldMapAtlasPOIName .. "HighlightTexture"]:SetSize(twidth,
                                                                    theight)
-
             _G[worldMapAtlasPOIName .. "Texture"]:SetTexCoord(tleft, tright,
                                                               ttop, tbottom);
             _G[worldMapAtlasPOIName .. "GlowTexture"]:SetTexCoord(tleft, tright,
@@ -176,7 +161,6 @@ function AtlasPOI:ShowPOIs()
         end
     end
 end
-
 function AtlasPOI:GetAtlasTOtext(category, opposite)
     local faction, _ = UnitFactionGroup("player"):lower()
     if opposite then
@@ -186,39 +170,31 @@ function AtlasPOI:GetAtlasTOtext(category, opposite)
             faction = "alliance"
         end
     end
-
     local twidth, theight, tleft, tright, ttop, tbottom =
         DData:GetAtlasTextureCoords(category, faction)
-
     local textureWidth = 1024
     local textureHeight = 1024
-
     local x1 = math.ceil(tleft * textureWidth)
     local x2 = math.ceil(tleft * textureWidth) + (math.ceil(tright * textureWidth) - math.ceil(tleft * textureWidth))
     local y1 = math.ceil(ttop * textureHeight)
     local y2 = math.ceil(ttop * textureHeight) + (math.ceil(tbottom * textureHeight) - math.ceil(ttop * textureHeight))
-
     return
         "|TInterface\\AddOns\\WDM\\textures\\objecticonsatlas:".. twidth ..":".. theight.. ":0:0:" ..
         textureWidth .. ":" .. textureHeight .. ":" ..
         x1 .. ":" .. x2 .. ":" .. y1 .. ":" .. y2 .. "|t " ..
         L["show_" .. category .. "_" .. faction .. "_text"]
 end
-
 local function AlignQuestieWithWDM()
     local questieButton = _G["Questie_WorldMapButton"]
     local wdmButton = _G["WDM_WorldMapButton"]
-
     if questieButton and wdmButton then
         questieButton:ClearAllPoints()
         questieButton:SetPoint("RIGHT", wdmButton, "LEFT", 0, 0)
         questieButton:Show()
         return true
     end
-
     return false
 end
-
 local function WaitForQuestieToAlign()
     local waitFrame = CreateFrame("Frame")
     local elapsed = 0
@@ -233,7 +209,6 @@ local function WaitForQuestieToAlign()
         end
     end)
 end
-
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:SetScript("OnEvent", function()
@@ -241,18 +216,14 @@ f:SetScript("OnEvent", function()
         WaitForQuestieToAlign()
     end
 end)
-
-
 function AtlasPOI:WorldMapFrame_Update()
     self:ShowPOIs()
     DData:DebugCoords()
 end
-
 function AtlasPOI:OnEnable()
     self:SecureHook("WorldMapFrame_Update")
     self:AddTrackingOptions()
 end
-
 function AtlasPOI:OnDisable()
     self:UnhookAll()
     WorldMapFrame_Update()

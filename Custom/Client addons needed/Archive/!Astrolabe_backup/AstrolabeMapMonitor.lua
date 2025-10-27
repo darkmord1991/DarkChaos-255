@@ -1,1 +1,2 @@
--- Backup copy of original AstrolabeMapMonitor.lua moved from !Astrolabe
+﻿-- Backup copy of original AstrolabeMapMonitor.lua moved from !Astrolabe
+

@@ -2,18 +2,14 @@
 local Config = GatherMate:NewModule("Config","AceConsole-3.0","AceEvent-3.0")
 local Display = GatherMate:GetModule("Display")
 local L = LibStub("AceLocale-3.0"):GetLocale("GatherMate", false)
-
 -- Databroker support
 local DataBroker = LibStub:GetLibrary("LibDataBroker-1.1",true)
-
 --[[
 	Code here for configuring the mod, and making the minimap button
 ]]
-
 -- Setup keybinds (these need to be global strings to show up properly in ESC -> Key Bindings)
 BINDING_HEADER_GatherMate = "GatherMate"
 BINDING_NAME_TOGGLE_GATHERMATE_MINIMAPICONS = L["Keybind to toggle Minimap Icons"]
-
 -- A helper function for keybindings
 local KeybindHelper = {}
 do
@@ -29,8 +25,6 @@ do
 		return t
 	end
 end
-
-
 local prof_options = {
 	["always"]          = L["Always show"],
 	["with_profession"] = L["Only with profession"],
@@ -47,7 +41,6 @@ local prof_options3 = {
 	["active"]          = L["Only while tracking"],
 	["never"]           = L["Never show"],
 }
-
 local options = {}
 local db
 local imported = {}
@@ -58,7 +51,6 @@ options.get = function( k ) return db[k.arg] end
 options.set = function( k, v ) db[k.arg] = v; Config:UpdateConfig(); end
 options.args = {}
 options.plugins = {}
-
 -- Display Settings config tree
 options.args.display = {
  	type = "group",
@@ -276,7 +268,7 @@ options.args.display.args.general = {
 							desc = L["Color of the tracking circle."],
 							type = "color",
 							hasAlpha = true,
-							arg = "Treasure",							
+							arg = "Treasure",
 						},
 						space = {
 							order = 7,
@@ -310,7 +302,6 @@ options.args.display.args.general = {
 		},
 	},
 }
-
 -- Setup some storage arrays by db to sort node names and zones alphabetically
 local sortedFilter = setmetatable({}, {__index = function(t, k)
 	local new = {}
@@ -332,7 +323,6 @@ local sortedFilter = setmetatable({}, {__index = function(t, k)
 	rawset(t, k, new)
 	return new
 end})
-
 -- Setup some helper functions
 local ConfigFilterHelper = {}
 function ConfigFilterHelper:SelectAll(info)
@@ -358,9 +348,7 @@ end
 function ConfigFilterHelper:GetState(info, k)
 	return db.filter[info.arg][GatherMate.nodeIDs[info.arg][k]]
 end
-
 local ImportHelper = {}
-
 function ImportHelper:GetImportStyle(info,k)
 	return db["importers"][info.arg].Style
 end
@@ -397,7 +385,6 @@ end
 function ImportHelper:SetExpac(info,state)
 	db["importers"][info.arg].expac = state
 end
-
 local commonFiltersDescTable = {
 	order = 0,
 	type = "description",
@@ -576,9 +563,7 @@ options.args.display.args.filters.args.treasure = {
 		},
 	},
 }
-
 local selectedDatabase, selectedNode, selectedZone = "Extract Gas", 0, nil
-
 -- Cleanup config tree
 options.args.cleanup = {
  	type = "group",
@@ -733,7 +718,7 @@ options.args.cleanup = {
 							name = L["Treasure"],
 							desc = L["Delete Entire Database"],
 							type = "execute",
-							arg = "Treasure",					
+							arg = "Treasure",
 							confirm = true,
 							confirmText = L["Are you sure you want to delete all nodes from this database?"],
 						},
@@ -801,7 +786,7 @@ options.args.cleanup = {
 					desc = L["Cleanup radius"],
 					type = "range",
 					min = 0, max = 30, step = 1,
-					arg = "Treasure",					
+					arg = "Treasure",
 				}
 			},
 		},
@@ -855,14 +840,12 @@ options.args.cleanup = {
 					name = L["Treasure"],
 					desc = L["Database locking"],
 					type = "toggle",
-					arg = "Treasure",					
-				}				
+					arg = "Treasure",
+				}
 			}
 		},
 	},
 }
-
-
 -- GatherMateData Import config tree
 options.args.importing = {
  	type = "group",
@@ -945,7 +928,7 @@ options.args.importing.args.GatherMateData = {
 					set  = "SetExpac",
 					values = ImportHelper.expac_data,
 					arg  = "GatherMate_Data",
-				},				
+				},
 				loadAuto = {
 					order = 5,
 					name = L["Auto Import"],
@@ -962,7 +945,7 @@ options.args.importing.args.GatherMateData = {
 			name = L["Import GatherMateData"],
 			desc = L["Load GatherMateData and import the data to your database."],
 			type = "execute",
-			func = function() 
+			func = function()
 				local loaded, reason = LoadAddOn("GatherMate_Data")
 				local GatherMateData = LibStub("AceAddon-3.0"):GetAddon("GatherMate_Data")
 				if loaded then
@@ -993,7 +976,6 @@ options.args.importing.args.GatherMateData = {
 		}
 	},
 }
-
 options.args.faq_group = {
 	type = "group",
 	name = L["FAQ"],
@@ -1012,12 +994,9 @@ options.args.faq_group = {
 		},
 	},
 }
-
-
 --[[
 	Initialize the Config System
 ]]
-
 function Config:OnInitialize()
 	db = GatherMate.db.profile
 	options.plugins["profiles"] = { profiles = LibStub("AceDBOptions-3.0"):GetOptionsTable(GatherMate.db) }
@@ -1035,23 +1014,19 @@ function Config:OnInitialize()
 		})
 	end
 end
-
 function Config:OnEnable()
-	self:CheckAutoImport()	
+	self:CheckAutoImport()
 end
-
 function Config:UpdateConfig()
 	self:SendMessage("GatherMateConfigChanged")
 end
-
 function Config:GatherMateConfigChanged()
 	db = GatherMate.db.profile
 end
-
 function Config:CheckAutoImport()
 	for k,v in pairs(db.importers) do
 		local verline = GetAddOnMetadata(k, "X-Generated-Version")
-		if verline and v["autoImport"] then 
+		if verline and v["autoImport"] then
 			local dataVersion = tonumber(verline:match("%d+"))
 			if dataVersion and dataVersion > v["lastImport"] then
 				local loaded, reason = LoadAddOn(k)
@@ -1072,7 +1047,6 @@ function Config:CheckAutoImport()
 		end
 	end
 end
-
 -- Allows an external import module to insert their aceopttable into the Importing tree
 -- returns a reference to the saved variables state for the addon
 function Config:RegisterImportModule(moduleName, optionsTable)
@@ -1083,3 +1057,4 @@ end
 function Config:RegisterModule(moduleName, optionsTable)
 	options.args[moduleName] = optionsTable
 end
+

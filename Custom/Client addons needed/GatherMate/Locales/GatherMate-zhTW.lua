@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "zhTW")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "將該地點加入 Cartographer_Waypoints"
 L["Add this location to TomTom waypoints"] = "將該地點加入 TomTom waypoints"
 L["Always show"] = "總是顯示"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 我剛剛安裝好GatherMate，為什麼在地圖上沒看到資源點?
 |r
 GatherMate 本身沒有內建的資料。當你在進行採集之後，GatherMate便會新增及更新你地圖上的資源點。還有，請撿查一下顯示設定。
-
 |cffffd200
 為什麼在地圖上有的資源點，但小地圖上卻沒有?
 |r
 |cffffff78Minimap Button Bag|r (可能是其它類似的插件)會覆蓋小地圖上的按鈕。請關掉它。
-
 |cffffd200
 怎樣可取得現成的資料?
 |r
 你可用三種方法把現成的資料匯GatherMate:
-
 1. |cffffff78GatherMate_Data|r - 這個 LoD(按需要時載入)的插件，包含了WowHead收集的資源點並每周會作資料更新。提供自動更新的選項。
-
 2. |cffffff78GatherMate_CartImport|r - 這插件讓你把現存|cffffff78Cartographer_<Profession>|r的資料庫匯入到 GatherMate。但一定要|cffffff78Cartographer_<Profession>|r模組和GatherMate_CartImport一起載入運作才能順利匯入資料。
-
 注意:匯入資料到GatherMate並非自動運作。你要自己按匯入資料的按鈕。
-
 這不同於|cffffff78Cartographer_Data|r能容許你作個別的修改資料，當載入|cffffff78Cartographer_Data|r時會覆寫你現存的資料庫和已發現的資源點。
-
 |cffffd200
 是否會加入其它的顯示，如郵箱和飛行管理員等等?
 |r
 答案是不會。不過，有些其它的插件作者可能會製作這樣的插件或模組，GatherMate核心程式不會考慮加入這些。
-
 |cffffd200
 我發現有臭蟲!在那裡可以舉報?
 |r
 你可以在|cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r裡貼文關於臭蟲或建議(不過要用英文)。
-
 另外，你可以在|cffffff78irc://irc.freenode.org/wowace|r找到我們(也是要用英文)。
-
 當舉報臭蟲時，請詳細說明|cffffff78引至錯誤的動作|r，提供 |cffffff78error messages|r，GatherMate的|cffffff78版本|r和你在在使用什麼語言系統|cffffff78英文或其它語言|r。
-
 |cffffd200
 誰製作這超酷的插件?
 |r
@@ -160,11 +147,8 @@ L["Tracking Distance"] = "追蹤距離"
 L["Treasure"] = "財寶"
 L["Treasure filter"] = "寶藏篩選"
 L["Wrath of the Lich King"] = "巫妖王之怒"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "zhTW")
 if not NL then return end
-
 NL["Abundant Bloodsail Wreckage"] = "豐碩漂浮殘骸"
 NL["Abundant Firefin Snapper School"] = "豐碩火鰭鯛魚群"
 NL["Abundant Oily Blackmouth School"] = "豐碩黑口魚群"

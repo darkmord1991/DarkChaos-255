@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "deDE")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "deDE")
 if not L then return end
-
 L["debugmode_text"] = "Debug-Modus"
 L["show_minimap_text"] = "Weltkartensymbol (vor Dragonflight)"
 L["show_minimap_warn_text"] = "|c00FD1A36Deaktivieren Sie diese Option, wenn Sie Add-ons verwenden, die die |r-Schnittstelle ändern (Neuladen der Schnittstelle erforderlich – /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "Flüge der Horde"
 L["show_taxinode_continent_alliance_text"] = "Allianzschiffe"
 L["show_taxinode_continent_horde_text"] = "Luftschiffe der Horde"
 L["show_zonelevel_text"] = "Standortebenen"
-
 L["taxinode_acherus"] = "Acherus: Die Schwarze Festung"
 L["taxinode_aeriepeak"] = "Nistgipfel, Hinterland"
 L["taxinode_agmarshammer"] = "Agmars Hammer, Drachenöde"
@@ -162,7 +160,6 @@ L["taxinode_zabrajin"] = "Zabra'jin, Zangarmarschen"
 L["taxinode_zimtorga"] = "Zim'Torga, Zul'Drak"
 L["taxinode_zoramgaroutpost"] = "Außenposten von Zoram'gar, Eschental"
 L["taxinode_zulaman"] = "Zul'Aman, Geisterlande"
-
 L["taxinode_continent_auberdine"] = "Schiff nach Auberdine"
 L["taxinode_continent_bootybay"] = "Schiff zur Beutebucht"
 L["taxinode_continent_brill"] = "Zeppelin nach Brill"
@@ -182,3 +179,4 @@ L["taxinode_continent_unupe"] = "Schiff nach Unu'pe"
 L["taxinode_continent_valiancekeep"] = "Schiff zur Valianzfeste"
 L["taxinode_continent_vengeancelanding"] = "Zeppelin zum Hafen der Vergeltung"
 L["taxinode_continent_warsonghold"] = "Zeppelin zur Kriegshymnenfeste"
+

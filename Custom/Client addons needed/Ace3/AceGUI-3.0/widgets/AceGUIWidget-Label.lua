@@ -1,25 +1,20 @@
---[[-----------------------------------------------------------------------------
+﻿--[[-----------------------------------------------------------------------------
 Label Widget
 Displays text and optionally an icon.
 -------------------------------------------------------------------------------]]
 local Type, Version = "Label", 21
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
-
 -- Lua APIs
 local max, select, pairs = math.max, select, pairs
-
 -- WoW APIs
 local CreateFrame, UIParent = CreateFrame, UIParent
-
 -- Global vars/functions that we don't upvalue since they might get hooked, or upgraded
 -- List them here for Mikk's FindGlobals script
 -- GLOBALS: GameFontHighlightSmall
-
 --[[-----------------------------------------------------------------------------
 Support functions
 -------------------------------------------------------------------------------]]
-
 local function UpdateImageAnchor(self)
 	if self.resizing then return end
 	local frame = self.frame
@@ -27,10 +22,8 @@ local function UpdateImageAnchor(self)
 	local image = self.image
 	local label = self.label
 	local height
-
 	label:ClearAllPoints()
 	image:ClearAllPoints()
-
 	if self.imageshown then
 		local imagewidth = image:GetWidth()
 		if (width - imagewidth) < 200 or (label:GetText() or "") == "" then
@@ -53,13 +46,11 @@ local function UpdateImageAnchor(self)
 		label:SetWidth(width)
 		height = label:GetHeight()
 	end
-	
 	self.resizing = true
 	frame:SetHeight(height)
 	frame.height = height
 	self.resizing = nil
 end
-
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -74,35 +65,28 @@ local methods = {
 		self:SetImageSize(16, 16)
 		self:SetColor()
 		self:SetFontObject()
-
 		-- reset the flag
 		self.resizing = nil
 		-- run the update explicitly
 		UpdateImageAnchor(self)
 	end,
-
 	-- ["OnRelease"] = nil,
-
 	["OnWidthSet"] = function(self, width)
 		UpdateImageAnchor(self)
 	end,
-
 	["SetText"] = function(self, text)
 		self.label:SetText(text)
 		UpdateImageAnchor(self)
 	end,
-
 	["SetColor"] = function(self, r, g, b)
 		if not (r and g and b) then
 			r, g, b = 1, 1, 1
 		end
 		self.label:SetVertexColor(r, g, b)
 	end,
-
 	["SetImage"] = function(self, path, ...)
 		local image = self.image
 		image:SetTexture(path)
-		
 		if image:GetTexture() then
 			self.imageshown = true
 			local n = select("#", ...)
@@ -116,35 +100,28 @@ local methods = {
 		end
 		UpdateImageAnchor(self)
 	end,
-
 	["SetFont"] = function(self, font, height, flags)
 		self.label:SetFont(font, height, flags)
 	end,
-
 	["SetFontObject"] = function(self, font)
 		self:SetFont((font or GameFontHighlightSmall):GetFont())
 	end,
-
 	["SetImageSize"] = function(self, width, height)
 		self.image:SetWidth(width)
 		self.image:SetHeight(height)
 		UpdateImageAnchor(self)
 	end,
 }
-
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
 local function Constructor()
 	local frame = CreateFrame("Frame", nil, UIParent)
 	frame:Hide()
-
 	local label = frame:CreateFontString(nil, "BACKGROUND", "GameFontHighlightSmall")
 	label:SetJustifyH("LEFT")
 	label:SetJustifyV("TOP")
-
 	local image = frame:CreateTexture(nil, "BACKGROUND")
-
 	-- create widget
 	local widget = {
 		label = label,
@@ -155,8 +132,7 @@ local function Constructor()
 	for method, func in pairs(methods) do
 		widget[method] = func
 	end
-
 	return AceGUI:RegisterAsWidget(widget)
 end
-
 AceGUI:RegisterWidgetType(Type, Constructor, Version)
+

@@ -1,9 +1,7 @@
-local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
+﻿local WDM = LibStub("AceAddon-3.0"):GetAddon("WDM")
 local ZoneLevel = WDM:NewModule("ZoneLevel", "AceHook-3.0")
-
 local LBZ = LibStub("LibBabble-Zone-3.0", true)
 local BZ = LBZ and LBZ:GetLookupTable() or setmetatable({}, {__index = function(t,k) return k end})
-
 local defaults = { profile = {
     ["show_minimap"] = false,
     ["show_zonelevel"] = false,
@@ -15,7 +13,6 @@ local defaults = { profile = {
     ["microdungeons"] = false,
     ["debugmode"] = false,
 },}
-
 local zones = {
     ["Moonglade"] = {0,0},
     ["Deeprun Tram"] = {0,80},
@@ -95,11 +92,9 @@ local zones = {
     ["The Storm Peaks"] = {77,80},
     ["Wintergrasp"] = {77,80},
 }
-
 function ZoneLevel:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("WDMdb", defaults, true)
 end
-
 function ZoneLevel:GetLevelByZone(mzone)
     local lvh;
     for lzone, levels in pairs(zones) do
@@ -115,30 +110,26 @@ function ZoneLevel:GetLevelByZone(mzone)
         end
     end
 end
-
 function ZoneLevel:SetZoneLevel(zone)
-    if self.db.profile["show_zonelevel"] then 
-        if self:GetLevelByZone(zone) then 
+    if self.db.profile["show_zonelevel"] then
+        if self:GetLevelByZone(zone) then
             return zone .. self:GetLevelByZone(zone)
-        else 
-            return zone 
+        else
+            return zone
         end
-    else 
-        return zone 
+    else
+        return zone
     end
 end
-
 function ZoneLevel:WorldMapButton_OnUpdate()
 	if WorldMapFrameAreaLabel:GetText() then
         WorldMapFrameAreaLabel:SetText(ZoneLevel:SetZoneLevel(WorldMapFrameAreaLabel:GetText()))
 	end
-
 end
- 
 function ZoneLevel:OnEnable()
     self:SecureHookScript(WorldMapButton, "OnUpdate", "WorldMapButton_OnUpdate")
 end
- 
 function ZoneLevel:OnDisable()
     self:UnhookAll()
 end
+

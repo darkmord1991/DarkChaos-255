@@ -1,1 +1,2 @@
--- Backup copy of DongleStub.lua
+﻿-- Backup copy of DongleStub.lua
+

@@ -1,7 +1,6 @@
--- Options table for Transmogrification AddOn.
+﻿-- Options table for Transmogrification AddOn.
 local addonName, addon = ...
 local L = LibStub("AceLocale-3.0"):GetLocale("Transmogrification")
-
 -- Function to get the options table.
 function GetTransmogrificationOptions()
 	local options = {
@@ -129,3 +128,4 @@ function GetTransmogrificationOptions()
 	}
 	return options
 end
+

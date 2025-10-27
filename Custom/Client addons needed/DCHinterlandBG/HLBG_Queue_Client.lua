@@ -1,15 +1,12 @@
--- HLBG_Queue_Client.lua
+﻿-- HLBG_Queue_Client.lua
 -- Client-side queue system integration for Hinterland BG
 -- Part of the DC HLBG Addon (merge into HLBG_Handlers.lua if you prefer a single file)
-
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 -- Queue state tracking
 HLBG.IsInQueue = false
 HLBG.QueuePosition = 0
 HLBG.QueueTotal = 0
 HLBG.BattleState = "UNKNOWN"
-
 -- Request current queue status from server
 function HLBG.RequestQueueStatus()
     if AIO and AIO.Handle then
@@ -30,7 +27,6 @@ function HLBG.RequestQueueStatus()
         end
     end
 end
-
 -- Join the battleground queue
 function HLBG.JoinQueue()
     if AIO and AIO.Handle then
@@ -51,7 +47,6 @@ function HLBG.JoinQueue()
         end
     end
 end
-
 -- Leave the battleground queue
 function HLBG.LeaveQueue()
     if AIO and AIO.Handle then
@@ -72,26 +67,21 @@ function HLBG.LeaveQueue()
         end
     end
 end
-
 -- Handle QUEUE_STATUS response from server
 function HLBG.HandleQueueStatus(statusString)
     if type(statusString) ~= 'string' then return end
-    
     -- Debug: Show what we received
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
     end
-    
     -- Parse status packet - support multiple formats:
     -- Format 1: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|TOTAL=12|STATE=WAITING"
     -- Format 2: "IN_QUEUE=1 POSITION=5 TOTAL=12 STATE=WAITING"
     -- Format 3: Simple text like "Not in queue" or "Position: 1/5"
-    
     local inQueue = false
     local position = 0
     local total = 0
     local state = "UNKNOWN"
-    
     -- Try structured format first
     if statusString:match("IN_QUEUE=") then
         inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
@@ -116,13 +106,11 @@ function HLBG.HandleQueueStatus(statusString)
         end
         return
     end
-    
     -- Update global state
     HLBG.IsInQueue = inQueue
     HLBG.QueuePosition = position
     HLBG.QueueTotal = total
     HLBG.BattleState = state
-    
     -- Map state to friendly string
     local stateDisplay = state
     if state == "WAITING" then
@@ -134,7 +122,6 @@ function HLBG.HandleQueueStatus(statusString)
     elseif state == "ENDING" then
         stateDisplay = "|cFFFFAA00Battle ending|r"
     end
-    
     -- Update UI if Queue tab exists
     if HLBG.UI and HLBG.UI.Queue then
         if HLBG.UI.Queue.StatusText then
@@ -163,7 +150,6 @@ function HLBG.HandleQueueStatus(statusString)
                 end
             end
         end
-        
         -- Update button text and color based on queue state
         if HLBG.UI.Queue.JoinButton then
             if inQueue then
@@ -181,7 +167,6 @@ function HLBG.HandleQueueStatus(statusString)
             end
         end
     end
-    
     -- Debug output
     if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -189,11 +174,9 @@ function HLBG.HandleQueueStatus(statusString)
             tostring(inQueue), position, total, state))
     end
 end
-
 -- Auto-refresh queue status every 10 seconds if Queue tab is visible
 local lastQueueRefresh = 0
 local QUEUE_REFRESH_INTERVAL = 10  -- seconds
-
 local function AutoRefreshQueue()
     local now = GetTime()
     if now - lastQueueRefresh >= QUEUE_REFRESH_INTERVAL then
@@ -204,14 +187,12 @@ local function AutoRefreshQueue()
         end
     end
 end
-
 -- Hook into OnUpdate for auto-refresh (or use a C_Timer)
 if C_Timer and C_Timer.NewTicker then
     C_Timer.NewTicker(QUEUE_REFRESH_INTERVAL, function()
         pcall(AutoRefreshQueue)
     end)
 end
-
 -- Slash command for quick queue access
 SLASH_HLBGQ1 = '/hlbgqueue'
 SLASH_HLBGQ2 = '/hlbgq'
@@ -232,7 +213,6 @@ SlashCmdList['HLBGQ'] = function(msg)
         end
     end
 end
-
 -- Integration with existing AIO message handler
 -- Add this to your CHAT_MSG_ADDON handler in HLBG_Handlers.lua:
 --
@@ -240,8 +220,8 @@ end
 --     HLBG.HandleQueueStatus(msg)
 --     return
 -- end
-
 -- Debug announce
 if DEFAULT_CHAT_FRAME then
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG Debug:|r Queue client functions loaded. Type /hlbgq for commands.")
 end
+

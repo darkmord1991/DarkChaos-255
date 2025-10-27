@@ -1,10 +1,8 @@
--- Mapster Locale
+﻿-- Mapster Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/mapster/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("Mapster", "koKR")
 if not L then return end
-
 L["Accuracy"] = "정확도"
 L["Adjust the size of the Player Arrow on the Map for better visibility."] = "더 나은 식별을 위해 지도상의 플레이어 화살표 크기를 조절합니다."
 L["Alpha"] = "투명도"

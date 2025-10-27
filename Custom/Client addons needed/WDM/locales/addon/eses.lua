@@ -1,6 +1,5 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "esES")
+﻿local L = LibStub("AceLocale-3.0"):NewLocale("WDM", "esES")
 if not L then return end
-
 L["debugmode_text"] = "Modo de depuración"
 L["show_minimap_text"] = "Icono del mapa mundial (antes de Dragonflight)"
 L["show_minimap_warn_text"] = "|c00FD1A36Desactivar si usa complementos que cambian la interfaz |r (se requiere recarga de la interfaz - /reload)"
@@ -13,7 +12,6 @@ L["show_taxinode_horde_text"] = "Vuelos de la Horda"
 L["show_taxinode_continent_alliance_text"] = "Barcos de la Alianza"
 L["show_taxinode_continent_horde_text"] = "Dirigibles de la Horda"
 L["show_zonelevel_text"] = "Niveles de ubicación"
-
 L["taxinode_acherus"] = "Acherus: El Bastión de Ébano"
 L["taxinode_aeriepeak"] = "Pico Nidal, Tierras del Interior"
 L["taxinode_agmarshammer"] = "Martillo de Agmar, Cementerio de Dragones"
@@ -162,3 +160,4 @@ L["taxinode_zabrajin"] = "Zabra'jin, Marisma de Zangar"
 L["taxinode_zimtorga"] = "Zim'Torga, Zul'Drak"
 L["taxinode_zoramgaroutpost"] = "Avanzada de Zoram'gar, Vallefresno"
 L["taxinode_zulaman"] = "Zul'Aman, Tierras Fantasma"
+

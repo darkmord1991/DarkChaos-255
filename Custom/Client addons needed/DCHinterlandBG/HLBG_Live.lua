@@ -1,5 +1,4 @@
 ﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-
 HLBG.Live = HLBG.Live or function(rows)
     if not (HLBG._ensureUI and HLBG._ensureUI('Live')) then return end
     rows = rows or {}

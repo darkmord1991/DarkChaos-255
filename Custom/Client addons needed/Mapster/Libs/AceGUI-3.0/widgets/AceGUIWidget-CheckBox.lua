@@ -1,21 +1,17 @@
---[[-----------------------------------------------------------------------------
+﻿--[[-----------------------------------------------------------------------------
 Checkbox Widget
 -------------------------------------------------------------------------------]]
 local Type, Version = "CheckBox", 21
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
-
 -- Lua APIs
 local select, pairs = select, pairs
-
 -- WoW APIs
 local PlaySound = PlaySound
 local CreateFrame, UIParent = CreateFrame, UIParent
-
 -- Global vars/functions that we don't upvalue since they might get hooked, or upgraded
 -- List them here for Mikk's FindGlobals script
 -- GLOBALS: SetDesaturation, GameFontHighlight
-
 --[[-----------------------------------------------------------------------------
 Support functions
 -------------------------------------------------------------------------------]]
@@ -30,18 +26,15 @@ local function AlignImage(self)
 		self.text:SetPoint("RIGHT")
 	end
 end
-
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
 local function Control_OnEnter(frame)
 	frame.obj:Fire("OnEnter")
 end
-
 local function Control_OnLeave(frame)
 	frame.obj:Fire("OnLeave")
 end
-
 local function CheckBox_OnMouseDown(frame)
 	local self = frame.obj
 	if not self.disabled then
@@ -53,23 +46,19 @@ local function CheckBox_OnMouseDown(frame)
 	end
 	AceGUI:ClearFocus()
 end
-
 local function CheckBox_OnMouseUp(frame)
 	local self = frame.obj
 	if not self.disabled then
 		self:ToggleChecked()
-
 		if self.checked then
 			PlaySound("igMainMenuOptionCheckBoxOn")
 		else -- for both nil and false (tristate)
 			PlaySound("igMainMenuOptionCheckBoxOff")
 		end
-
 		self:Fire("OnValueChanged", self.checked)
 		AlignImage(self)
 	end
 end
-
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -84,9 +73,7 @@ local methods = {
 		self:SetDisabled(nil)
 		self:SetDescription(nil)
 	end,
-
 	-- ["OnRelease"] = nil,
-
 	["OnWidthSet"] = function(self, width)
 		if self.desc then
 			self.desc:SetWidth(width - 30)
@@ -95,7 +82,6 @@ local methods = {
 			end
 		end
 	end,
-
 	["SetDisabled"] = function(self, disabled)
 		self.disabled = disabled
 		if disabled then
@@ -112,7 +98,6 @@ local methods = {
 			end
 		end
 	end,
-
 	["SetValue"] = function(self,value)
 		local check = self.check
 		self.checked = value
@@ -131,21 +116,17 @@ local methods = {
 		end
 		self:SetDisabled(self.disabled)
 	end,
-
 	["GetValue"] = function(self)
 		return self.checked
 	end,
-
 	["SetTriState"] = function(self, enabled)
 		self.tristate = enabled
 		self:SetValue(self:GetValue())
 	end,
-
 	["SetType"] = function(self, type)
 		local checkbg = self.checkbg
 		local check = self.check
 		local highlight = self.highlight
-
 		local size
 		if type == "radio" then
 			size = 16
@@ -169,7 +150,6 @@ local methods = {
 		checkbg:SetHeight(size)
 		checkbg:SetWidth(size)
 	end,
-
 	["ToggleChecked"] = function(self)
 		local value = self:GetValue()
 		if self.tristate then
@@ -185,11 +165,9 @@ local methods = {
 			self:SetValue(not self:GetValue())
 		end
 	end,
-
 	["SetLabel"] = function(self, label)
 		self.text:SetText(label)
 	end,
-
 	["SetDescription"] = function(self, desc)
 		if desc then
 			if not self.desc then
@@ -214,11 +192,9 @@ local methods = {
 			self:SetHeight(24)
 		end
 	end,
-	
 	["SetImage"] = function(self, path, ...)
 		local image = self.image
 		image:SetTexture(path)
-		
 		if image:GetTexture() then
 			local n = select("#", ...)
 			if n == 4 or n == 8 then
@@ -230,46 +206,38 @@ local methods = {
 		AlignImage(self)
 	end
 }
-
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
 local function Constructor()
 	local frame = CreateFrame("Button", nil, UIParent)
 	frame:Hide()
-
 	frame:EnableMouse(true)
 	frame:SetScript("OnEnter", Control_OnEnter)
 	frame:SetScript("OnLeave", Control_OnLeave)
 	frame:SetScript("OnMouseDown", CheckBox_OnMouseDown)
 	frame:SetScript("OnMouseUp", CheckBox_OnMouseUp)
-
 	local checkbg = frame:CreateTexture(nil, "ARTWORK")
 	checkbg:SetWidth(24)
 	checkbg:SetHeight(24)
 	checkbg:SetPoint("TOPLEFT")
 	checkbg:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
-
 	local check = frame:CreateTexture(nil, "OVERLAY")
 	check:SetAllPoints(checkbg)
 	check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-
 	local text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	text:SetJustifyH("LEFT")
 	text:SetHeight(18)
 	text:SetPoint("LEFT", checkbg, "RIGHT")
 	text:SetPoint("RIGHT")
-
 	local highlight = frame:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
 	highlight:SetBlendMode("ADD")
 	highlight:SetAllPoints(checkbg)
-
 	local image = frame:CreateTexture(nil, "OVERLAY")
 	image:SetHeight(16)
 	image:SetWidth(16)
 	image:SetPoint("LEFT", checkbg, "RIGHT", 1, 0)
-
 	local widget = {
 		checkbg   = checkbg,
 		check     = check,
@@ -282,8 +250,7 @@ local function Constructor()
 	for method, func in pairs(methods) do
 		widget[method] = func
 	end
-
 	return AceGUI:RegisterAsWidget(widget)
 end
-
 AceGUI:RegisterWidgetType(Type, Constructor, Version)
+

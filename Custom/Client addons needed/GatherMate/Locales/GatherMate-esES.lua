@@ -1,10 +1,8 @@
 ﻿-- GatherMate Locale
 -- Please use the Localization App on WoWAce to Update this
 -- http://www.wowace.com/projects/gathermate/localization/ ;¶
-
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate", "esES") or LibStub("AceLocale-3.0"):NewLocale("GatherMate", "esMX")
 if not L then return end
-
 L["Add this location to Cartographer_Waypoints"] = "Añadir esta posición a Cartographer_Waypoints"
 L["Add this location to TomTom waypoints"] = "Añadir esta posición a los puntos de ruta (waypoints) de TomTom"
 L["Always show"] = "Mostrar siempre"
@@ -43,39 +41,28 @@ L["FAQ_TEXT"] = [=[|cffffd200
 Acabo de instalar GatherMate, pero no veo ningún nodo en mis mapas. ¿Que hago mal?
 |r
 GatherMate no viene con datos por sí mismo. Cuando recoges plantas, picas menas, recoges gas o pescas, GatherMate actualizará el mapa y marcará el nuevo recurso. Por si acaso, revisa tus Opciones de Pantalla.
-
 |cffffd200
 Veo nodos en el mapa del Mundo, pero no en el minimapa! ¿que hago mal ahora?
 |r
 A |cffffff78Minimap Button Bag|r (y posiblemente a otros Addons) les gusta devorar todos los botones que se ponen el el Minimapa. Desactívalos.
-
 |cffffd200
 Como o donde puedo conseguir datos ya existentes?
 |r
 Puedes importar datos existentes en GatherMate de dos formas:
-
 1. |cffffff78GatherMate_Data|r - Este Addon continee toda la información recogida por Wowhead y se actualiza semanalmente. Hay opciones para auto-actualizar.
-
 2. |cffffff78GatherMate_CartImport|r - Este addon permite importar tus bases de datos existentes en los módulos de |cffffff78Cartographer_<Profesión>|r en GatherMate. Para que esto funcione, necesitas tener activos a la vez tanto los módulso de |cffffff78Cartographer_<Profesión>|r como GatherMate_CartImport.
-
 Ten en cuenta que importar datos en GatherMate no es un proceso automático. Debes ser tú quien entre en la sección de Importar Datos y pulse en el botón de "Importar".
-
 Esto se diferencia de |cffffff78Cartographer_Data|r en que el usuario tiene la opción de como y cuando quiere modificar los datos, |cffffff78Cartographer_Data|r cuando se carga simplemente sobreescribirá los datos existentes en la base de datos actual de Gathermate por los importados sin dar ningún aviso.
-
 |cffffd200
 Podeis añadir soporte para mostrar la posición de cosas como los buzones y los maestros de vuelo?
 |r
 La respuesta es no. Sin embargo, otro autor de addons puede crear un addon o modulo para ello. El núcleo de GatherMate no lo hará.
-
 |cffffd200
 He encontrado un fallo! Donde puedo informar de él?
 |r
 Puedes informar de bugs o enviar sugerencias a |cffffff78http://www.wowace.com/forums/index.php?topic=10990.0|r
-
 También puedes encontrar a los autores en |cffffff78irc://irc.freenode.org/wowace|r
-
 Cuando informes de un bug, asegúrate de incluir los |cffffff78pasos para poder reproducir el fallo|r, si es posible proporciona cualquier |cffffff78mensaje de error|r con datos adiciones (como los que proporciona buggrab). Informa también del |cffffff78número de revisión|r de GatherMate en el que se produce el problema e informa si estás utilizando el |cffffff78cliente Inglés u otro|r.
-
 |cffffd200
 Quien escribió este Addon tan molón?
 |r
@@ -160,11 +147,8 @@ L["Tracking Distance"] = "Distancia de rastreo"
 L["Treasure"] = "Tesoros"
 L["Treasure filter"] = "Filtrar Tesoros"
 L["Wrath of the Lich King"] = "Wrath of the Lich King"
-
-
 local NL = LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "esES") or LibStub("AceLocale-3.0"):NewLocale("GatherMateNodes", "esMX")
 if not NL then return end
-
 -- NL["Abundant Bloodsail Wreckage"] = "Abundant Bloodsail Wreckage"
 -- NL["Abundant Firefin Snapper School"] = "Abundant Firefin Snapper School"
 -- NL["Abundant Oily Blackmouth School"] = "Abundant Oily Blackmouth School"

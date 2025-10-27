@@ -1,18 +1,15 @@
---[[-----------------------------------------------------------------------------
+﻿--[[-----------------------------------------------------------------------------
 ScrollFrame Container
 Plain container that scrolls its content and doesn't grow in height.
 -------------------------------------------------------------------------------]]
 local Type, Version = "ScrollFrame", 21
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
-
 -- Lua APIs
 local pairs, assert, type = pairs, assert, type
 local min, max, floor, abs = math.min, math.max, math.floor, math.abs
-
 -- WoW APIs
 local CreateFrame, UIParent = CreateFrame, UIParent
-
 --[[-----------------------------------------------------------------------------
 Support functions
 -------------------------------------------------------------------------------]]
@@ -20,30 +17,25 @@ local function FixScrollOnUpdate(frame)
 	frame:SetScript("OnUpdate", nil)
 	frame.obj:FixScroll()
 end
-
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
 local function ScrollFrame_OnMouseWheel(frame, value)
 	frame.obj:MoveScroll(value)
 end
-
 local function ScrollFrame_OnSizeChanged(frame)
 	frame:SetScript("OnUpdate", FixScrollOnUpdate)
 end
-
 local function ScrollBar_OnScrollValueChanged(frame, value)
 	frame.obj:SetScroll(value)
 end
-
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
 local methods = {
-	["OnAcquire"] = function(self) 
+	["OnAcquire"] = function(self)
 		self:SetScroll(0)
 	end,
-
 	["OnRelease"] = function(self)
 		self.status = nil
 		for k in pairs(self.localstatus) do
@@ -54,13 +46,11 @@ local methods = {
 		self.scrollBarShown = nil
 		self.content.height, self.content.width = nil, nil
 	end,
-
 	["SetScroll"] = function(self, value)
 		local status = self.status or self.localstatus
 		local viewheight = self.scrollframe:GetHeight()
 		local height = self.content:GetHeight()
 		local offset
-
 		if viewheight > height then
 			offset = 0
 		else
@@ -72,11 +62,9 @@ local methods = {
 		status.offset = offset
 		status.scrollvalue = value
 	end,
-
 	["MoveScroll"] = function(self, value)
 		local status = self.status or self.localstatus
 		local height, viewheight = self.scrollframe:GetHeight(), self.content:GetHeight()
-		
 		if self.scrollBarShown then
 			local diff = height - viewheight
 			local delta = 1
@@ -86,7 +74,6 @@ local methods = {
 			self.scrollbar:SetValue(min(max(status.scrollvalue + delta*(1000/(diff/45)),0), 1000))
 		end
 	end,
-
 	["FixScroll"] = function(self)
 		if self.updateLock then return end
 		self.updateLock = true
@@ -124,12 +111,10 @@ local methods = {
 		end
 		self.updateLock = nil
 	end,
-
 	["LayoutFinished"] = function(self, width, height)
 		self.content:SetHeight(height or 0 + 20)
 		self.scrollframe:SetScript("OnUpdate", FixScrollOnUpdate)
 	end,
-
 	["SetStatusTable"] = function(self, status)
 		assert(type(status) == "table")
 		self.status = status
@@ -137,12 +122,10 @@ local methods = {
 			status.scrollvalue = 0
 		end
 	end,
-
 	["OnWidthSet"] = function(self, width)
 		local content = self.content
 		content.width = width
 	end,
-
 	["OnHeightSet"] = function(self, height)
 		local content = self.content
 		content.height = height
@@ -154,14 +137,12 @@ Constructor
 local function Constructor()
 	local frame = CreateFrame("Frame", nil, UIParent)
 	local num = AceGUI:GetNextWidgetNum(Type)
-
 	local scrollframe = CreateFrame("ScrollFrame", nil, frame)
 	scrollframe:SetPoint("TOPLEFT")
 	scrollframe:SetPoint("BOTTOMRIGHT")
 	scrollframe:EnableMouseWheel(true)
 	scrollframe:SetScript("OnMouseWheel", ScrollFrame_OnMouseWheel)
 	scrollframe:SetScript("OnSizeChanged", ScrollFrame_OnSizeChanged)
-
 	local scrollbar = CreateFrame("Slider", ("AceConfigDialogScrollFrame%dScrollBar"):format(num), scrollframe, "UIPanelScrollBarTemplate")
 	scrollbar:SetPoint("TOPLEFT", scrollframe, "TOPRIGHT", 4, -16)
 	scrollbar:SetPoint("BOTTOMLEFT", scrollframe, "BOTTOMRIGHT", 4, 16)
@@ -172,18 +153,15 @@ local function Constructor()
 	scrollbar:Hide()
 	-- set the script as the last step, so it doesn't fire yet
 	scrollbar:SetScript("OnValueChanged", ScrollBar_OnScrollValueChanged)
-
 	local scrollbg = scrollbar:CreateTexture(nil, "BACKGROUND")
 	scrollbg:SetAllPoints(scrollbar)
 	scrollbg:SetTexture(0, 0, 0, 0.4)
-
 	--Container Support
 	local content = CreateFrame("Frame", nil, scrollframe)
 	content:SetPoint("TOPLEFT")
 	content:SetPoint("TOPRIGHT")
 	content:SetHeight(400)
 	scrollframe:SetScrollChild(content)
-
 	local widget = {
 		localstatus = { scrollvalue = 0 },
 		scrollframe = scrollframe,
@@ -196,8 +174,7 @@ local function Constructor()
 		widget[method] = func
 	end
 	scrollframe.obj, scrollbar.obj = widget, widget
-
 	return AceGUI:RegisterAsContainer(widget)
 end
-
 AceGUI:RegisterWidgetType(Type, Constructor, Version)
+
