@@ -71,10 +71,12 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
                 uint32 kit = 0; // FOOD sparkles 406, DRINK bubbles 438
                 switch (_activeAffix)
                 {
-                    case AFFIX_HASTE_BUFF:      kit = 406; break;
-                    case AFFIX_SLOW:            kit = 438; break;
-                    case AFFIX_REDUCED_HEALING: kit = 438; break;
-                    case AFFIX_REDUCED_ARMOR:   kit = 406; break;
+                    case AFFIX_SUNLIGHT:       kit = 406; break; // Player buffs
+                    case AFFIX_CLEAR_SKIES:    kit = 406; break;
+                    case AFFIX_GENTLE_BREEZE:  kit = 406; break;
+                    case AFFIX_STORM:          kit = 438; break; // NPC buffs
+                    case AFFIX_HEAVY_RAIN:     kit = 438; break;
+                    case AFFIX_FOG:            kit = 438; break;
                     default: break;
                 }
                 if (kit)

@@ -295,11 +295,12 @@ const char* OutdoorPvPHL::GetAffixName(AffixType affix) const
 {
     switch (affix)
     {
-        case AFFIX_HASTE_BUFF: return "Haste";
-        case AFFIX_SLOW: return "Slow";
-        case AFFIX_REDUCED_HEALING: return "Reduced Healing";
-        case AFFIX_REDUCED_ARMOR: return "Reduced Armor";
-        case AFFIX_BOSS_ENRAGE: return "Boss Enrage";
+        case AFFIX_SUNLIGHT: return "Sunlight";
+        case AFFIX_CLEAR_SKIES: return "Clear Skies";
+        case AFFIX_GENTLE_BREEZE: return "Gentle Breeze";
+        case AFFIX_STORM: return "Storm";
+        case AFFIX_HEAVY_RAIN: return "Heavy Rain";
+        case AFFIX_FOG: return "Fog";
         default: return "None";
     }
 }

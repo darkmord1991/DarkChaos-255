@@ -87,7 +87,7 @@ void OutdoorPvPHL::HandleReset()
         if (_affixAnnounce)
         {
             const char* aff = "None";
-            switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
+            switch (_activeAffix) { case AFFIX_SUNLIGHT: aff = "Sunlight"; break; case AFFIX_CLEAR_SKIES: aff = "Clear Skies"; break; case AFFIX_GENTLE_BREEZE: aff = "Gentle Breeze"; break; case AFFIX_STORM: aff = "Storm"; break; case AFFIX_HEAVY_RAIN: aff = "Heavy Rain"; break; case AFFIX_FOG: aff = "Fog"; break; default: break; }
             if (Map* m = GetMap())
             {
                 char line[160];

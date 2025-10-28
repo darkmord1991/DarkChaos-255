@@ -115,31 +115,23 @@ void OutdoorPvPHL::SendStatusAddonToZone() const
 // Compute effective spells/weather, preferring per-affix overrides
 uint32 OutdoorPvPHL::GetPlayerSpellForAffix(AffixType a) const
 {
-    if (a >= AFFIX_NONE && a <= AFFIX_BOSS_ENRAGE)
+    if (a >= AFFIX_NONE && a <= AFFIX_FOG)
     {
         uint32 v = _affixPlayerSpell[a];
         if (v) return v;
     }
-    switch (a)
-    {
-        case AFFIX_HASTE_BUFF: return _affixSpellHaste;
-        case AFFIX_SLOW: return _affixSpellSlow;
-        case AFFIX_REDUCED_HEALING: return _affixSpellReducedHealing;
-        case AFFIX_REDUCED_ARMOR: return _affixSpellReducedArmor;
-        default: return 0;
-    }
+    // No old affix fallbacks - using new weather-based system
+    return 0;
 }
 
 uint32 OutdoorPvPHL::GetNpcSpellForAffix(AffixType a) const
 {
-    if (a >= AFFIX_NONE && a <= AFFIX_BOSS_ENRAGE)
+    if (a >= AFFIX_NONE && a <= AFFIX_FOG)
     {
         uint32 v = _affixNpcSpell[a];
         if (v) return v;
     }
-    if (a == AFFIX_BOSS_ENRAGE) return _affixSpellBossEnrage;
-    if (a == AFFIX_SLOW || a == AFFIX_REDUCED_ARMOR || a == AFFIX_REDUCED_HEALING || a == AFFIX_BOSS_ENRAGE)
-        return _affixSpellBadWeatherNpcBuff;
+    // No old affix fallbacks - using new weather-based system
     return 0;
 }
 
@@ -149,7 +141,7 @@ void OutdoorPvPHL::ApplyAffixWeather()
         return;
     uint32 weatherType = 0;
     float intensity = 0.5f;
-    if (_activeAffix >= AFFIX_NONE && _activeAffix <= AFFIX_BOSS_ENRAGE)
+    if (_activeAffix >= AFFIX_NONE && _activeAffix <= AFFIX_FOG)
     {
         if (_affixWeatherType[_activeAffix])
             weatherType = _affixWeatherType[_activeAffix];
@@ -183,7 +175,7 @@ void OutdoorPvPHL::_selectAffixForNewBattle()
     // Choose a candidate affix. If random-on-start is enabled choose randomly,
     // otherwise pick the next non-none affix in round-robin fashion.
     AffixType newAffix = AFFIX_NONE;
-    const uint8 affixCount = static_cast<uint8>(AFFIX_BOSS_ENRAGE);
+    const uint8 affixCount = static_cast<uint8>(AFFIX_FOG); // Last affix is FOG (6)
     if (_affixRandomOnStart)
     {
         // Prefer non-zero affixes; allow NONE only if randomness yields 0 rarely.

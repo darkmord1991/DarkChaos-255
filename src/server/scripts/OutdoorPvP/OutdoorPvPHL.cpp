@@ -1006,10 +1006,12 @@
             uint32 kit = 0;
             switch (_activeAffix)
             {
-                case AFFIX_HASTE_BUFF:      kit = 406; break;
-                case AFFIX_SLOW:            kit = 438; break;
-                case AFFIX_REDUCED_HEALING: kit = 438; break;
-                case AFFIX_REDUCED_ARMOR:   kit = 406; break;
+                case AFFIX_SUNLIGHT:       kit = 406; break; // Player buffs - food sparkles
+                case AFFIX_CLEAR_SKIES:    kit = 406; break;
+                case AFFIX_GENTLE_BREEZE:  kit = 406; break;
+                case AFFIX_STORM:          kit = 438; break; // NPC buffs - drink bubbles
+                case AFFIX_HEAVY_RAIN:     kit = 438; break;
+                case AFFIX_FOG:            kit = 438; break;
                 default: break;
             }
             applyVisualAll(kit);
@@ -1017,17 +1019,14 @@
         // NPC auras
         if (uint32 nspell = GetNpcSpellForAffix(_activeAffix))
         {
-            if (_activeAffix == AFFIX_BOSS_ENRAGE)
-                enrageBosses();
-            else
-                applyNpcAuraAll(nspell);
+            applyNpcAuraAll(nspell);
         }
         // For "bad" affixes, give NPCs a buff (or debuff players handled above). This keeps it in sync with weather.
         // Optional: zone announce affix
         if (_affixAnnounce)
         {
             const char* aff = "Unknown"; // label only for text
-            switch (_activeAffix) { case AFFIX_HASTE_BUFF: aff = "Haste"; break; case AFFIX_SLOW: aff = "Slow"; break; case AFFIX_REDUCED_HEALING: aff = "Reduced Healing"; break; case AFFIX_REDUCED_ARMOR: aff = "Reduced Armor"; break; case AFFIX_BOSS_ENRAGE: aff = "Boss Enrage"; break; default: break; }
+            switch (_activeAffix) { case AFFIX_SUNLIGHT: aff = "Sunlight"; break; case AFFIX_CLEAR_SKIES: aff = "Clear Skies"; break; case AFFIX_GENTLE_BREEZE: aff = "Gentle Breeze"; break; case AFFIX_STORM: aff = "Storm"; break; case AFFIX_HEAVY_RAIN: aff = "Heavy Rain"; break; case AFFIX_FOG: aff = "Fog"; break; default: break; }
             // Append weather line for consistency with addon fallback
             const char* wname = "Fine"; uint32 pct = 50;
             if (_affixWeatherEnabled)
@@ -1116,11 +1115,12 @@
         uint32 weather = 0;
         switch (_activeAffix)
         {
-            case AFFIX_HASTE_BUFF: weather = 0; break;
-            case AFFIX_SLOW: weather = 1; break;
-            case AFFIX_REDUCED_HEALING: weather = 3; break;
-            case AFFIX_REDUCED_ARMOR: weather = 2; break;
-            case AFFIX_BOSS_ENRAGE: weather = 3; break;
+            case AFFIX_SUNLIGHT:       weather = 0; break; // Clear
+            case AFFIX_CLEAR_SKIES:    weather = 0; break; // Clear
+            case AFFIX_GENTLE_BREEZE:  weather = 1; break; // Rain
+            case AFFIX_STORM:          weather = 1; break; // Rain
+            case AFFIX_HEAVY_RAIN:     weather = 3; break; // Storm
+            case AFFIX_FOG:            weather = 2; break; // Snow/Fog
             default: weather = 0; break;
         }
         uint32 const zoneId = OutdoorPvPHLBuffZones[0];
