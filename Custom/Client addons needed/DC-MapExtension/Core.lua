@@ -20,7 +20,7 @@ DCMapExtensionDB = DCMapExtensionDB or {}
 -- Default settings
 local function InitDefaults()
     if DCMapExtensionDB.enabled == nil then DCMapExtensionDB.enabled = true end
-    if DCMapExtensionDB.showPlayerDot == nil then DCMapExtensionDB.showPlayerDot = true end
+    if DCMapExtensionDB.showPlayerDot == nil then DCMapExtensionDB.showPlayerDot = false end  -- Disabled by default to avoid performance issues
     if DCMapExtensionDB.debug == nil then DCMapExtensionDB.debug = false end
 end
 
@@ -31,7 +31,10 @@ local addon = {
     stitchFrame = nil,
     playerDot = nil,
     currentMap = nil,
-    initialized = false
+    initialized = false,
+    lastDebugMap = nil,
+    lastDebugTime = 0,
+    lastPlayerPosDebug = 0
 }
 
 ----------------------------------------------
@@ -102,8 +105,8 @@ local function IsAzsharaCrater()
     -- Check the currently viewed map
     local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
     
-    -- Azshara Crater has Map ID 37 (or sometimes 614)
-    if mapID == AZSHARA_CRATER_MAP_ID or mapID == 614 then
+    -- Azshara Crater has Map ID 37 (original custom map ID was 9001 but Mapster remaps to 37)
+    if mapID == AZSHARA_CRATER_MAP_ID then
         if DCMapExtensionDB.debug then
             Debug("Azshara detected via map ID:", mapID)
         end
@@ -128,8 +131,9 @@ local function IsHyjal()
     -- Check the currently viewed map
     local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
     
-    -- Hyjal can have Map ID 14, 534, 616, or 9002
-    if mapID == 14 or mapID == 534 or mapID == 616 or mapID == 9002 then
+    -- Hyjal can have Map ID 14, 534, 614, 616, or 9002
+    -- Map ID 614 is "Hyjal 2" according to WorldMapArea.csv
+    if mapID == 14 or mapID == 534 or mapID == 614 or mapID == 616 or mapID == 9002 then
         if DCMapExtensionDB.debug then
             Debug("Hyjal detected via map ID:", mapID)
         end
@@ -159,9 +163,8 @@ local function GetCustomMapType()
         mapType = "hyjal"
     end
     
-    if mapType then
-        Debug("Custom map type detected:", mapType)
-    end
+    -- Don't log here - this function is called frequently
+    -- The detection functions (IsAzsharaCrater/IsHyjal) already log when debug is enabled
     
     return mapType
 end
@@ -179,6 +182,8 @@ local function CreateStitchFrame()
     local frame = CreateFrame("Frame", "DCMap_StitchFrame", parent)
     frame:SetAllPoints(parent)
     frame:SetFrameLevel((parent:GetFrameLevel() or 0) + 1)
+    frame:EnableMouse(false)  -- Allow mouse clicks to pass through to WorldMapDetailFrame
+    frame:EnableMouseWheel(false)
     frame:Hide()
     
     frame.tiles = {}
@@ -217,6 +222,12 @@ end
 -- Texture Loading
 ----------------------------------------------
 local function ClearTiles()
+    -- Restore WorldMapButton alpha (show continent background again)
+    if WorldMapButton then
+        WorldMapButton:SetAlpha(1)
+        Debug("Restored WorldMapButton alpha to 1")
+    end
+    
     -- Restore original Blizzard tiles
     for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
         local tile = _G["WorldMapDetailTile" .. i]
@@ -251,6 +262,22 @@ local function LoadTiles(mapType)
     
     Debug("=== Loading tiles for", mapType, "===")
     Debug("NUM_WORLDMAP_DETAIL_TILES:", NUM_WORLDMAP_DETAIL_TILES or "UNDEFINED")
+    
+    -- Hide the continent/background map by making WorldMapButton invisible
+    -- This is simpler than trying to find individual background textures
+    if WorldMapButton then
+        WorldMapButton:SetAlpha(0)
+        Debug("Set WorldMapButton alpha to 0 (hiding continent background)")
+    end
+    
+    -- Also try to hide any base textures on WorldMapDetailFrame
+    if WorldMapDetailFrame then
+        local baseTexture = WorldMapDetailFrame:GetRegions()
+        if baseTexture and baseTexture.SetTexture then
+            baseTexture:SetTexture(nil)
+            Debug("Cleared WorldMapDetailFrame base texture")
+        end
+    end
     
     -- Save original Blizzard textures before replacing
     if not addon.originalTextures then
@@ -339,19 +366,25 @@ local function UpdatePlayerPosition()
         if not addon.playerDot then return end
     end
     
-    -- Make sure we're in a custom zone
+    -- Make sure we're viewing a custom zone
     if not addon.currentMap then
         addon.playerDot:Hide()
         return
     end
     
-    -- Get player position (normalized 0-1)
+    -- Get player position WITHOUT changing the viewed map
+    -- This returns 0,0 if player is not in the zone currently being viewed
     local x, y = GetPlayerMapPosition("player")
+    
+    -- Throttle debug messages to once per 5 seconds
+    local now = GetTime()
+    local shouldDebug = DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5)
+    
     if not x or not y or (x == 0 and y == 0) then
-        -- Try alternative method for custom zones
-        x, y = GetPlayerMapPosition("player")
-        if DCMapExtensionDB.debug and (not x or not y or (x == 0 and y == 0)) then
-            Debug("Player position unavailable: x=", tostring(x), "y=", tostring(y))
+        -- Player not in this zone or position unavailable - hide dot
+        if shouldDebug then
+            addon.lastPlayerPosDebug = now
+            Debug("Player position unavailable or 0,0 - hiding dot")
         end
         addon.playerDot:Hide()
         return
@@ -374,7 +407,8 @@ local function UpdatePlayerPosition()
     addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
     addon.playerDot:Show()
     
-    if DCMapExtensionDB.debug then
+    if shouldDebug then
+        addon.lastPlayerPosDebug = now
         Debug("Player pos: x=" .. string.format("%.3f", x) .. " y=" .. string.format("%.3f", y) .. 
               " -> " .. string.format("%.0f", pixelX) .. "," .. string.format("%.0f", pixelY))
     end
@@ -416,27 +450,33 @@ local function UpdateMap()
         return
     end
     
-    -- Debug: Show what we're detecting
-    if DCMapExtensionDB.debug then
-        local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+    local mapType = GetCustomMapType()
+    local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+    
+    -- Throttle debug messages - only show when map actually changes
+    if DCMapExtensionDB.debug and (addon.lastDebugMap ~= mapID or GetTime() - addon.lastDebugTime > 5) then
         local zoneName = GetZoneText and GetZoneText() or "unknown"
         local continent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
         Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent)
+        addon.lastDebugMap = mapID
+        addon.lastDebugTime = GetTime()
     end
     
-    local mapType = GetCustomMapType()
-    
     if not mapType then
-        -- Not in a custom zone, hide our overlay
+        -- Not in a custom zone, restore original map
         if addon.stitchFrame then
             addon.stitchFrame:Hide()
         end
         if addon.playerDot then
             addon.playerDot:Hide()
         end
-        ShowNativeDetailTiles()
-        addon.currentMap = nil
-        Debug("Not in custom zone, hiding overlay")
+        
+        -- Only restore once when leaving custom zone
+        if addon.currentMap then
+            ClearTiles()  -- This restores background textures and original tiles
+            Debug("Not in custom zone, hiding overlay")
+            addon.currentMap = nil
+        end
         return
     end
     
@@ -518,23 +558,43 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         
         UpdateMap()
-    elseif event == "WORLD_MAP_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+    elseif event == "WORLD_MAP_UPDATE" then
         if addon.initialized then
-            -- Small delay to ensure Blizzard's map is fully loaded
-            C_Timer.After(0.1, UpdateMap)
+            -- Only update if we're actually viewing a custom zone
+            -- This prevents forcing back to custom map when user browses away
+            local mapType = GetCustomMapType()
+            if mapType then
+                -- We're viewing a custom zone, update it
+                C_Timer.After(0.1, UpdateMap)
+            elseif addon.currentMap then
+                -- We were showing a custom map but user navigated away
+                -- Clear it properly
+                ClearTiles()
+                if addon.stitchFrame then addon.stitchFrame:Hide() end
+                if addon.playerDot then addon.playerDot:Hide() end
+                addon.currentMap = nil
+                Debug("User navigated away from custom map")
+            end
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if addon.initialized then
+            UpdateMap()
         end
     end
 end)
 
--- Update player position periodically
+-- Update player position periodically (only when enabled and map is shown)
 local updateTimer = 0
 eventFrame:SetScript("OnUpdate", function(self, elapsed)
+    -- Skip entirely if player dot is disabled
+    if not DCMapExtensionDB.showPlayerDot then return end
+    if not addon.initialized then return end
+    if not addon.stitchFrame or not addon.stitchFrame:IsShown() then return end
+    
     updateTimer = updateTimer + elapsed
-    if updateTimer >= 0.1 then  -- Update 10 times per second
+    if updateTimer >= 0.5 then  -- Update 2 times per second
         updateTimer = 0
-        if addon.initialized and addon.stitchFrame and addon.stitchFrame:IsShown() then
-            UpdatePlayerPosition()
-        end
+        UpdatePlayerPosition()
     end
 end)
 
