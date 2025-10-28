@@ -4,4 +4,7 @@
 ## Author: DarkChaos team
 ## Version: 1.0
 ## SavedVariables: DCRestoreXPDB
+## OptionalDeps: DC_DebugUtils
+
+..\DC_DebugUtils.lua
 DC-RestoreXP.lua

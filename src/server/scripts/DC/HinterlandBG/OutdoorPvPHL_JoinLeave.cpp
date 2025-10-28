@@ -24,11 +24,11 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
         TeleportToTeamBase(player);
         return;
     }
-    // Max level gate
+    // Min level gate
     if (!IsMaxLevel(player))
     {
-        Whisper(player, "You must be max level to join the Hinterland battle. Teleporting to your capital city.");
-        // Teleport under-max-level players to their faction capital
+        Whisper(player, "You must be at least level " + std::to_string(_minLevel) + " to join the Hinterland battle. Teleporting to your capital city.");
+        // Teleport under-min-level players to their faction capital
         TeleportToCapital(player);
         return; // do not register enter to PvP logic
     }

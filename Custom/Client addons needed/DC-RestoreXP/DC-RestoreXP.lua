@@ -17,13 +17,26 @@ if _G.__DCRestoreXP_Initialized then return end
 _G.__DCRestoreXP_Initialized = true
 
 -------------------------------------------------------------------------------
--- Debug Helper (single output only)
+-- Debug Helper (uses DC_DebugUtils if available for deduplication)
 -------------------------------------------------------------------------------
-local function Debug(msg)
-    if not DCRestoreXPDB.debug then return end
-    -- Only output to chat frame ONCE
-    if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFFDCRestoreXP:|r " .. tostring(msg))
+local function Debug(...)
+    local isEnabled = (DCRestoreXPDB and DCRestoreXPDB.debug)
+    
+    -- Use DC_DebugUtils if available for deduplication
+    if _G.DC_DebugUtils and type(_G.DC_DebugUtils.PrintMulti) == 'function' then
+        _G.DC_DebugUtils:PrintMulti("DC-RestoreXP", isEnabled, ...)
+    else
+        -- Fallback to old method if DC_DebugUtils not loaded
+        if not isEnabled then return end
+        local parts = {}
+        for i = 1, select("#", ...) do
+            local v = select(i, ...)
+            parts[#parts + 1] = (v == nil) and "nil" or tostring(v)
+        end
+        local msg = table.concat(parts, " ")
+        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFFDCRestoreXP:|r " .. msg)
+        end
     end
 end
 
@@ -54,7 +67,8 @@ local currentLevel = UnitLevel("player") or 1
 -------------------------------------------------------------------------------
 local function IsAtMaxLevel()
     local level = UnitLevel("player") or 1
-    return level >= DCRestoreXPDB.maxLevel
+    local maxLevel = (DCRestoreXPDB and DCRestoreXPDB.maxLevel) or 255
+    return level >= maxLevel
 end
 
 -------------------------------------------------------------------------------
@@ -313,7 +327,7 @@ local function CreateOptionsPanel()
     maxLevelSlider:SetMinMaxValues(80, 255)
     maxLevelSlider:SetValue(DCRestoreXPDB.maxLevel)
     maxLevelSlider:SetValueStep(1)
-    maxLevelSlider:SetObeyStepOnDrag(true)
+    -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed (slider still steps via SetValueStep)
     maxLevelSlider:SetWidth(300)
     _G[maxLevelSlider:GetName() .. "Low"]:SetText("80")
     _G[maxLevelSlider:GetName() .. "High"]:SetText("255")
@@ -408,20 +422,35 @@ SlashCmdList["DCRXP"] = function(msg)
 end
 
 -------------------------------------------------------------------------------
--- Initial Update
+-- Initialize saved variables after addon loads
 -------------------------------------------------------------------------------
-if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
-    C_Timer.After(1.0, UpdateXPBar)
-else
-    local initFrame = CreateFrame("Frame")
-    local elapsed = 0
-    initFrame:SetScript("OnUpdate", function(self, dt)
-        elapsed = elapsed + dt
-        if elapsed >= 1.0 then
-            self:SetScript("OnUpdate", nil)
-            UpdateXPBar()
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function(self, event, addonName)
+    if event == "ADDON_LOADED" and addonName == "DC-RestoreXP" then
+        -- Initialize saved variables with defaults
+        if not DCRestoreXPDB then DCRestoreXPDB = {} end
+        if DCRestoreXPDB.maxLevel == nil then DCRestoreXPDB.maxLevel = 255 end
+        if DCRestoreXPDB.debug == nil then DCRestoreXPDB.debug = false end
+        if DCRestoreXPDB.enabled == nil then DCRestoreXPDB.enabled = true end
+        Debug("DC-RestoreXP initialized: maxLevel=" .. DCRestoreXPDB.maxLevel)
+    elseif event == "PLAYER_LOGIN" then
+        -- Delayed initial update after player fully loaded
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            C_Timer.After(1.0, UpdateXPBar)
+        else
+            local elapsed = 0
+            local updateFrame = CreateFrame("Frame")
+            updateFrame:SetScript("OnUpdate", function(selfUpdate, dt)
+                elapsed = elapsed + dt
+                if elapsed >= 1.0 then
+                    selfUpdate:SetScript("OnUpdate", nil)
+                    UpdateXPBar()
+                end
+            end)
         end
-    end)
-end
+    end
+end)
 
 Debug("DC-RestoreXP loaded successfully")

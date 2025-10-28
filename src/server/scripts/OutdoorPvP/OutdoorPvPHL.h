@@ -147,7 +147,18 @@
 
             // Public affix enum (used by DC helper sources and tests)
             // Declared early so it is visible to all subsequent member declarations
-            enum AffixType { AFFIX_NONE=0, AFFIX_HASTE_BUFF=1, AFFIX_SLOW=2, AFFIX_REDUCED_HEALING=3, AFFIX_REDUCED_ARMOR=4, AFFIX_BOSS_ENRAGE=5 };
+            // Weather-based affixes: 3 good weather (player buffs) + 3 bad weather (NPC buffs)
+            enum AffixType { 
+                AFFIX_NONE = 0, 
+                // Good Weather - Player Buffs
+                AFFIX_SUNLIGHT = 1,         // Clear weather: +10% haste to players
+                AFFIX_CLEAR_SKIES = 2,      // Clear weather: +15% damage to players
+                AFFIX_GENTLE_BREEZE = 3,    // Light rain: +20% healing received to players
+                // Bad Weather - NPC Buffs
+                AFFIX_STORM = 4,            // Heavy rain: +15% damage to NPCs
+                AFFIX_HEAVY_RAIN = 5,       // Storm: +20% armor to NPCs
+                AFFIX_FOG = 6               // Sandstorm: +10% evasion to NPCs
+            };
             
             // Battleground state machine
             enum BGState { BG_STATE_WARMUP=0, BG_STATE_IN_PROGRESS=1, BG_STATE_PAUSED=2, BG_STATE_FINISHED=3, BG_STATE_CLEANUP=4 };
@@ -361,7 +372,7 @@
             bool _tickLock(uint32 /*diff*/);
             // 10) Affix helpers for battle-start randomization and category queries
             void _selectAffixForNewBattle();
-            inline bool _isBadAffix() const { return _activeAffix == AFFIX_SLOW || _activeAffix == AFFIX_REDUCED_HEALING || _activeAffix == AFFIX_REDUCED_ARMOR || _activeAffix == AFFIX_BOSS_ENRAGE; }
+            inline bool _isBadAffix() const { return _activeAffix == AFFIX_STORM || _activeAffix == AFFIX_HEAVY_RAIN || _activeAffix == AFFIX_FOG; }
             void _persistState() const; // helper that checks toggle and calls SaveRequiredWorldStates
             // Track recent winners for scoreboard UX
             void _recordWinner(TeamId winner);
@@ -394,6 +405,8 @@
             uint32 GetQueuedPlayerCount();
             uint32 GetQueuedPlayerCountByTeam(TeamId teamId);
             void ShowQueueStatus(Player* player);
+            void SendQueueStatusAIO(Player* player);  // Send queue status via AIO to client addon
+            void SendConfigInfoAIO(Player* player);   // Send server config via AIO to Info panel
             void ProcessQueueSystem();
             void StartWarmupPhase();
             void TeleportQueuedPlayers();
@@ -448,6 +461,7 @@
         bool _zoneWasEmpty; // track empty-zone periods to help diagnose NPC despawn window
     // Configurable settings (loaded from hinterlandbg.conf)
     uint32 _matchDurationSeconds;
+    uint32 _minLevel;             // minimum level requirement to join (default 1, allows all levels >= minLevel)
     uint32 _afkWarnSeconds;
     uint32 _afkTeleportSeconds;
     bool   _statusBroadcastEnabled;
@@ -541,10 +555,10 @@
     bool   _affixAnnounce;               // announce affix changes in zone
     bool   _affixWorldstateEnabled;      // send affix code as worldstate
     // Per-affix granular config (override single-spell/weather defaults when non-zero)
-    uint32 _affixPlayerSpell[6] = {0};   // index by AffixType
-    uint32 _affixNpcSpell[6]    = {0};
-    uint32 _affixWeatherType[6] = {0};   // WeatherType per affix
-    float  _affixWeatherIntensity[6] = {0.0f};
+    uint32 _affixPlayerSpell[7] = {0};   // index by AffixType (0=NONE, 1-6=affixes)
+    uint32 _affixNpcSpell[7]    = {0};
+    uint32 _affixWeatherType[7] = {0};   // WeatherType per affix
+    float  _affixWeatherIntensity[7] = {0.0f};
         std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
         std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
             // Movement-based AFK tracking

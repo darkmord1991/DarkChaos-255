@@ -3,6 +3,29 @@
 -- Minimal dependencies, robust parsing of server HOTSPOT messages
 local ADDON_NAME = "HotspotDisplayWrath"
 local ADDON_VERSION = "1.0"
+
+-- Central debug helper using DC_DebugUtils if available
+local function HotspotDebug(...)
+    local isEnabled = (HotspotDisplayDB and HotspotDisplayDB.devMode)
+    
+    -- Use DC_DebugUtils if available for deduplication
+    if _G.DC_DebugUtils and type(_G.DC_DebugUtils.PrintMulti) == 'function' then
+        _G.DC_DebugUtils:PrintMulti("HotspotXP", isEnabled, ...)
+    else
+        -- Fallback to old method if DC_DebugUtils not loaded
+        if not isEnabled then return end
+        local parts = {}
+        for i = 1, select("#", ...) do
+            local v = select(i, ...)
+            parts[#parts + 1] = (v == nil) and "nil" or tostring(v)
+        end
+        local msg = table.concat(parts, " ")
+        if DEFAULT_CHAT_FRAME and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "|cFFFFD700[HotspotXP]|r " .. msg)
+        end
+    end
+end
+
 -- Saved variables
 HotspotDisplayDB = HotspotDisplayDB or { enabled = true, showMapList = true, textSize = 16, showMinimapPins = true, showWorldLabels = true, devMode = false }
 -- opt-in user-friendly announcements: keep off by default to avoid chat spam on busy servers

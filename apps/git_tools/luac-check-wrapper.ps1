@@ -77,21 +77,37 @@ Write-Host "Running: $cmdLine" -ForegroundColor Green
 
 # Execute the program and capture the exit code
 $rc = 0
+$hadError = $false
 try {
     & $exe @exeArgs
     $rc = $LASTEXITCODE
     if ($rc -eq $null) { $rc = 0 }
+    if ($rc -ne 0) { $hadError = $true }
 } catch {
     Write-Host "Error while executing command:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
     $rc = 1
+    $hadError = $true
 }
 
 Write-Host ""
-Write-Host "Command exit code: $rc" -ForegroundColor Cyan
+if ($hadError) {
+    Write-Host "Command failed with exit code: $rc" -ForegroundColor Red
+} else {
+    Write-Host "Command succeeded with exit code: $rc" -ForegroundColor Green
+}
 
-# Pause if interactive and not explicitly disabled
-if (-not $NoPause -and $Host.Name -eq 'ConsoleHost' -and -not $NoExit) {
+# Always pause on error unless explicitly disabled
+$shouldPause = $false
+if ($hadError -and -not $NoPause -and $Host.Name -eq 'ConsoleHost' -and -not $NoExit) {
+    $shouldPause = $true
+    Write-Host ""
+    Write-Host "ERROR DETECTED - Window will stay open for review" -ForegroundColor Yellow
+} elseif (-not $NoPause -and $Host.Name -eq 'ConsoleHost' -and -not $NoExit) {
+    $shouldPause = $true
+}
+
+if ($shouldPause) {
     Write-Host ""
     Read-Host -Prompt "Press Enter to close"
 }

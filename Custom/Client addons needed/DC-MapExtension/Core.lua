@@ -57,20 +57,28 @@ local function Timestamp()
     if type(GetTime) == "function" then return tostring(GetTime()) end
     return "time-n/a"
 end
--- Central debug printer: gates output via saved-vars debug flag and formats safely
+-- Central debug printer: gates output via saved-vars debug flag and uses DC_DebugUtils if available
 local function DCMap_Debug(...)
-    if not (DCMapExtensionDB and DCMapExtensionDB.debug) then return end
-    local parts = {}
-    for i = 1, select("#", ...) do
-        local v = select(i, ...)
-        parts[#parts + 1] = (v == nil) and "nil" or tostring(v)
-    end
-    local msg = table.concat(parts, " ")
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "|cff33ff99[DC-MapExtension]|r " .. msg)
+    local isEnabled = (DCMapExtensionDB and DCMapExtensionDB.debug)
+    
+    -- Use DC_DebugUtils if available for deduplication
+    if _G.DC_DebugUtils and type(_G.DC_DebugUtils.PrintMulti) == 'function' then
+        _G.DC_DebugUtils:PrintMulti("DC-MapExt", isEnabled, ...)
     else
-        -- fallback to print if chat frame not available
-        pcall(print, "[DC-MapExtension] " .. msg)
+        -- Fallback to old method if DC_DebugUtils not loaded
+        if not isEnabled then return end
+        local parts = {}
+        for i = 1, select("#", ...) do
+            local v = select(i, ...)
+            parts[#parts + 1] = (v == nil) and "nil" or tostring(v)
+        end
+        local msg = table.concat(parts, " ")
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "|cff33ff99[DC-MapExtension]|r " .. msg)
+        else
+            -- fallback to print if chat frame not available
+            pcall(print, "[DC-MapExtension] " .. msg)
+        end
     end
 end
 
@@ -614,7 +622,7 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     DCMap_Debug(string.format("DC-MapExtension: ShowMapBackgroundIfNeeded parent selection: preferredParent=%s pw=%s ph=%s", tostring(pname), tostring(pw), tostring(ph)))
                 end
                 if pw and ph then
-                    local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+                    local container = GetOrCreateStitchContainer(parent, cols, rows)
                     -- optionally make the stitched container interactive
                     if DCMapExtensionDB and DCMapExtensionDB.interactable then
                         if container.EnableMouse then pcall(container.EnableMouse, container, true) end
@@ -931,25 +939,37 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         end
     elseif event == "WORLD_MAP_UPDATE" then
         local currentMapID = GetCurrentMapAreaID() or 0
+        DCMap_Debug(string.format("DC-MapExtension WORLD_MAP_UPDATE: currentMapID=%s", tostring(currentMapID)))
         ShowMapBackgroundIfNeeded(currentMapID)
         RenderHotspotsForMap(currentMapID)
         -- if we have a stitched overlay, reflow it so it stays aligned with the map
         local st = _G["DCMap_StitchFrame"]
         if st and st.Reflow then pcall(st.Reflow, st) end
-        -- IMPORTANT: if stitched mode is enabled and we're on the configured Azshara map, ensure the stitch is visible
+        -- IMPORTANT: if stitched mode is enabled, show/hide stitch based on current map
         if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap and currentMapID then
             local configured = tonumber(DCMapExtensionDB.mapId) or MAP_ID_AZSHARA_CRATER
+            DCMap_Debug(string.format("DC-MapExtension: useStitchedMap=true configured=%s currentMapID=%s match=%s", tostring(configured), tostring(currentMapID), tostring(currentMapID == configured)))
             if currentMapID == configured then
-                -- make sure stitch is created and visible
+                -- On configured map: ensure stitch is created and visible
                 if st then
+                    DCMap_Debug("DC-MapExtension: Showing existing stitch")
                     pcall(st.Show, st)
                 else
                     -- stitch wasn't created yet; create it now
+                    DCMap_Debug("DC-MapExtension: Creating stitch now")
                     ShowMapBackgroundIfNeeded(currentMapID)
                     st = _G["DCMap_StitchFrame"]
                     if st then pcall(st.Show, st) end
                 end
+            else
+                -- NOT on configured map: hide the stitch so it doesn't overlap other maps
+                DCMap_Debug("DC-MapExtension: NOT on configured map, hiding stitch")
+                if st then pcall(st.Hide, st) end
             end
+        else
+            -- useStitchedMap disabled: hide stitch if it exists
+            DCMap_Debug("DC-MapExtension: useStitchedMap disabled or no currentMapID, hiding stitch")
+            if st then pcall(st.Hide, st) end
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix = arg1; local message = arg2
@@ -1054,7 +1074,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
             local pw = SafeGetWidth(parent)
             local ph = SafeGetHeight(parent)
             if pw and ph then
-                local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+                local container = GetOrCreateStitchContainer(parent, cols, rows)
                 container:SetAllPoints(parent)
                 container:SetFrameStrata("HIGH")
                 container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)
@@ -1095,7 +1115,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
             local pw = SafeGetWidth(parent)
             local ph = SafeGetHeight(parent)
             if pw and ph then
-                local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+                local container = GetOrCreateStitchContainer(parent, cols, rows)
                 container:SetAllPoints(parent)
                 container:SetFrameStrata("HIGH")
                 container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)

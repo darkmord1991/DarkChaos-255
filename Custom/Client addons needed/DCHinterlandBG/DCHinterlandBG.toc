@@ -7,8 +7,10 @@
 ## LoadAfter: AIO_Client
 ## DefaultState: enabled
 ## SavedVariables: DCHLBGDB
+## OptionalDeps: DC_DebugUtils
 
 # Core compatibility and utilities
+..\DC_DebugUtils.lua
 HLBG_TimerCompat.lua
 HLBG_JSON.lua
 HLBG_Utils.lua

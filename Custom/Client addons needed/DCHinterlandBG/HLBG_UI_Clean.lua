@@ -277,25 +277,30 @@ if not HLBG.UI.Stats.Content then
     statsText:SetWidth(540)
     statsText:SetJustifyH("LEFT")
     statsText:SetText([[|cFFFFD700Hinterland BG Statistics|r
-|cFFFFFFFFTotal records:|r Loading...
-|cFFFFFFFFAlliance wins:|r Loading...  |cFFAAAA(losses:|r Loading...)|r
-|cFFFFFFFFHorde wins:|r Loading...  |cFFAAAA(losses:|r Loading...)|r
-|cFFFFFFFFDraws:|r Loading...  |cFFAAAAManual resets:|r Loading...|r
-|cFFFFFFFFWin reasons:|r depletion Loading..., tiebreaker Loading...
-|cFFFFFFFFCurrent streak:|r Loading...
-|cFFFFFFFFLongest streak:|r Loading...
-|cFFFFFFFFLargest margin:|r Loading...
+|cFFFFFFFFTotal records:|r --
+|cFFFFFFFFAlliance wins:|r --  |cFFAAAA(losses:|r --)|r
+|cFFFFFFFFHorde wins:|r --  |cFFAAAA(losses:|r --)|r
+|cFFFFFFFFDraws:|r --  |cFFAAAAManual resets:|r --|r
+|cFFFFFFFFWin reasons:|r depletion --, tiebreaker --
+|cFFFFFFFFCurrent streak:|r --
+|cFFFFFFFFLongest streak:|r --
+|cFFFFFFFFLargest margin:|r --
 |cFFFFD700Top winners by affix:|r
-Loading...
+No data - waiting for server
+
 |cFFFFD700Draws by affix:|r
-Loading...
+No data - waiting for server
+
 |cFFFFD700Top outcomes by affix (incl. draws):|r
-Loading...
+No data - waiting for server
+
 |cFFFFD700Top affixes by matches:|r
-Loading...
+No data - waiting for server
+
 |cFFFFD700Average score per affix:|r
-Loading...
-|cFFAAAAAARequest updated stats with the Refresh button (↻)|r]])
+No data - waiting for server
+
+|cFFAAAAAAClick Refresh (↻) button to request stats from server|r]])
     HLBG.UI.Stats.Text = statsText
     -- Refresh button for stats
     local refreshStatsBtn = CreateFrame("Button", nil, HLBG.UI.Stats.Content, "UIPanelButtonTemplate")
@@ -410,114 +415,43 @@ end
 if not HLBG.UI.Settings.Content then
     HLBG.UI.Settings.Content = CreateFrame("Frame", nil, HLBG.UI.Settings)
     HLBG.UI.Settings.Content:SetAllPoints()
-    HLBG.UI.Settings.Content:Show()  -- Explicitly show
-    -- Settings title
-    local title = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", HLBG.UI.Settings.Content, "TOP", 0, -75)
-    title:SetText("|cFFFFD700HUD Settings|r")
-    local yOffset = -110
-    -- HUD Enable/Disable Checkbox
-    local hudEnabledCheck = CreateFrame("CheckButton", "HLBG_HUDEnabledCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
-    hudEnabledCheck:SetPoint("TOPLEFT", 40, yOffset)
-    hudEnabledCheck:SetChecked(DCHLBGDB.hudEnabled ~= false)
-    hudEnabledCheck:SetScript("OnClick", function(self)
-        DCHLBGDB.hudEnabled = self:GetChecked()
-        if DCHLBGDB.hudEnabled then
-            if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:Show() end
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r HUD enabled")
-        else
-            if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:Hide() end
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r HUD disabled")
+    HLBG.UI.Settings.Content:Show()
+    
+    -- Simple message directing users to Interface Options
+    local title = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    title:SetPoint("TOP", HLBG.UI.Settings.Content, "TOP", 0, -100)
+    title:SetText("|cFFFFD700Settings|r")
+    
+    local message = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    message:SetPoint("TOP", title, "BOTTOM", 0, -40)
+    message:SetWidth(550)
+    message:SetJustifyH("CENTER")
+    message:SetText("|cFFFFFFFFSettings have been moved to|r\n|cFF33FF99Interface Options → AddOns → DC HLBG Addon|r\n\n|cFFAAAAAAYou can access them from the game's main menu:|r\n|cFFFFFFFFEsc → Interface → AddOns|r")
+    
+    -- Button to open Interface Options
+    local openBtn = CreateFrame("Button", nil, HLBG.UI.Settings.Content, "UIPanelButtonTemplate")
+    openBtn:SetSize(200, 35)
+    openBtn:SetPoint("TOP", message, "BOTTOM", 0, -40)
+    openBtn:SetText("Open Interface Options")
+    openBtn:SetScript("OnClick", function()
+        -- Close HLBG UI
+        if HLBG.UI.Frame then HLBG.UI.Frame:Hide() end
+        -- Open Interface Options
+        if InterfaceOptionsFrame_OpenToCategory then
+            -- Call twice because of WoW bug where first call sometimes doesn't work
+            InterfaceOptionsFrame_OpenToCategory("DC HLBG Addon")
+            InterfaceOptionsFrame_OpenToCategory("DC HLBG Addon")
         end
     end)
-    local hudEnabledLabel = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hudEnabledLabel:SetPoint("LEFT", hudEnabledCheck, "RIGHT", 5, 0)
-    hudEnabledLabel:SetText("Enable HUD")
-    yOffset = yOffset - 35
-    -- Debug Mode Checkbox
-    local debugCheck = CreateFrame("CheckButton", "HLBG_DebugCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
-    debugCheck:SetPoint("TOPLEFT", 40, yOffset)
-    debugCheck:SetChecked(DCHLBGDB.debugMode or false)
-    debugCheck:SetScript("OnClick", function(self)
-        DCHLBGDB.debugMode = self:GetChecked()
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Debug mode %s", DCHLBGDB.debugMode and "enabled" or "disabled"))
+    openBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:AddLine("Open Blizzard Interface Options", 1,1,1)
+        GameTooltip:AddLine("Settings are available in the AddOns section", 0.7,0.7,0.7,1)
+        GameTooltip:Show()
     end)
-    local debugLabel = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    debugLabel:SetPoint("LEFT", debugCheck, "RIGHT", 5, 0)
-    debugLabel:SetText("Enable Debug Messages")
-    yOffset = yOffset - 35
-    -- Show HUD Everywhere Checkbox
-    local showEverywhereCheck = CreateFrame("CheckButton", "HLBG_ShowEverywhereCheck", HLBG.UI.Settings.Content, "UICheckButtonTemplate")
-    showEverywhereCheck:SetPoint("TOPLEFT", 40, yOffset)
-    showEverywhereCheck:SetChecked(DCHLBGDB.showHudEverywhere or false)
-    showEverywhereCheck:SetScript("OnClick", function(self)
-        DCHLBGDB.showHudEverywhere = self:GetChecked()
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r HUD visibility: %s", DCHLBGDB.showHudEverywhere and "show everywhere" or "battleground only"))
-        if HLBG.UpdateHUDVisibility then HLBG.UpdateHUDVisibility() end
-    end)
-    local showEverywhereLabel = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    showEverywhereLabel:SetPoint("LEFT", showEverywhereCheck, "RIGHT", 5, 0)
-    showEverywhereLabel:SetText("Show HUD Everywhere (not just in BG)")
-    yOffset = yOffset - 50
-    -- HUD Scale Slider
-    local scaleSlider = CreateFrame("Slider", "HLBG_ScaleSlider", HLBG.UI.Settings.Content, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOPLEFT", 40, yOffset)
-    scaleSlider:SetMinMaxValues(0.5, 2.0)
-    scaleSlider:SetValue(DCHLBGDB.hudScale or 1.0)
-    scaleSlider:SetValueStep(0.1)
-    -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
-    scaleSlider:SetWidth(200)
-    _G[scaleSlider:GetName().."Low"]:SetText("0.5")
-    _G[scaleSlider:GetName().."High"]:SetText("2.0")
-    _G[scaleSlider:GetName().."Text"]:SetText("HUD Scale")
-    scaleSlider:SetScript("OnValueChanged", function(self, value)
-        DCHLBGDB.hudScale = value
-        if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:SetScale(value) end
-        _G[self:GetName().."Text"]:SetText(string.format("HUD Scale: %.1f", value))
-    end)
-    yOffset = yOffset - 50
-    -- HUD Alpha Slider
-    local alphaSlider = CreateFrame("Slider", "HLBG_AlphaSlider", HLBG.UI.Settings.Content, "OptionsSliderTemplate")
-    alphaSlider:SetPoint("TOPLEFT", 40, yOffset)
-    alphaSlider:SetMinMaxValues(0.1, 1.0)
-    alphaSlider:SetValue(DCHLBGDB.hudAlpha or 0.9)
-    alphaSlider:SetValueStep(0.05)
-    -- Note: SetObeyStepOnDrag doesn't exist in 3.3.5a, removed
-    alphaSlider:SetWidth(200)
-    _G[alphaSlider:GetName().."Low"]:SetText("10%")
-    _G[alphaSlider:GetName().."High"]:SetText("100%")
-    _G[alphaSlider:GetName().."Text"]:SetText("HUD Transparency")
-    alphaSlider:SetScript("OnValueChanged", function(self, value)
-        DCHLBGDB.hudAlpha = value
-        if HLBG.UI.ModernHUD then HLBG.UI.ModernHUD:SetAlpha(value) end
-        _G[self:GetName().."Text"]:SetText(string.format("HUD Alpha: %d%%", value * 100))
-    end)
-    yOffset = yOffset - 60
-    -- Reset to Defaults Button
-    local resetBtn = CreateFrame("Button", nil, HLBG.UI.Settings.Content, "UIPanelButtonTemplate")
-    resetBtn:SetSize(150, 30)
-    resetBtn:SetPoint("TOPLEFT", 40, yOffset)
-    resetBtn:SetText("Reset to Defaults")
-    resetBtn:SetScript("OnClick", function()
-    DCHLBGDB.hudEnabled = true
-    DCHLBGDB.debugMode = false
-    DCHLBGDB.showHudEverywhere = false
-    DCHLBGDB.hudScale = 1.0
-    DCHLBGDB.hudAlpha = 0.9
-        -- Update UI
-        hudEnabledCheck:SetChecked(true)
-        debugCheck:SetChecked(false)
-        showEverywhereCheck:SetChecked(false)
-        scaleSlider:SetValue(1.0)
-        alphaSlider:SetValue(0.9)
-        if HLBG.UI.ModernHUD then
-            HLBG.UI.ModernHUD:Show()
-            HLBG.UI.ModernHUD:SetScale(1.0)
-            HLBG.UI.ModernHUD:SetAlpha(0.9)
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Settings reset to defaults")
-    end)
-    -- Info text
+    openBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    
+    -- Info text at bottom
     local infoText = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     infoText:SetPoint("BOTTOM", HLBG.UI.Settings.Content, "BOTTOM", 0, 30)
     infoText:SetWidth(500)

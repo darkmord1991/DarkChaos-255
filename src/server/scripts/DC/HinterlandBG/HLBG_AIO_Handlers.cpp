@@ -6,9 +6,9 @@
 
 /*
  * HLBG Server AIO Integration
- * Location: src/server/scripts/DC/HinterlandBG/HL_ScoreboardNPC.cpp
+ * Location: src/server/scripts/DC/HinterlandBG/HLBG_AIO_Handlers.cpp
  *
- * Add these handlers to your existing HL_ScoreboardNPC.cpp file
+ * Provides AIO handlers for client requests (queue status, server config, etc.)
  */
 
 #include "AIO.h"
@@ -17,6 +17,7 @@
 #include "WorldSession.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "OutdoorPvPHL.h"
 
 class HLBGAIOHandlers
 {
@@ -30,21 +31,88 @@ public:
 			{ "RequestSeasonInfo", &HandleRequestSeasonInfo },
 			{ "RequestStats", &HandleRequestStats },
 			{ "RequestHistory", &HandleRequestHistory },
-			{ "RequestStatus", &HandleRequestStatus }
+			{ "RequestStatus", &HandleRequestStatus },
+			{ "RequestQueueStatus", &HandleRequestQueueStatus }
 		});
 
-		LOG_INFO("server.loading", "HLBG AIO Handlers initialized");
+		LOG_INFO("server.loading", "HLBG AIO Handlers initialized (6 handlers registered)");
 	}
 
 private:
-	// Handler implementations (omitted here for brevity in the #ifdef block)
-	// Full implementations live in the Custom copy. For builds with AIO
-	// enabled, include and use that implementation instead.
-	static void HandleRequestServerConfig(Player*, Aio*, AioPacket) {}
-	static void HandleRequestSeasonInfo(Player*, Aio*, AioPacket) {}
-	static void HandleRequestStats(Player*, Aio*, AioPacket) {}
-	static void HandleRequestHistory(Player*, Aio*, AioPacket) {}
-	static void HandleRequestStatus(Player*, Aio*, AioPacket) {}
+	// Get OutdoorPvPHL instance
+	static OutdoorPvPHL* GetHL()
+	{
+		OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(ZONE_HINTERLANDS);
+		return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+	}
+
+	// Handler: RequestQueueStatus
+	// Client requests current queue status
+	static void HandleRequestQueueStatus(Player* player, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		if (!player)
+			return;
+
+		OutdoorPvPHL* hl = GetHL();
+		if (!hl)
+		{
+			LOG_WARN("hlbg.aio", "HandleRequestQueueStatus: OutdoorPvPHL instance not found");
+			return;
+		}
+
+		// Use the existing SendQueueStatusAIO method
+		hl->SendQueueStatusAIO(player);
+	}
+
+	// Handler: RequestServerConfig
+	// Client requests server configuration for Info panel
+	static void HandleRequestServerConfig(Player* player, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		if (!player)
+			return;
+
+		OutdoorPvPHL* hl = GetHL();
+		if (!hl)
+		{
+			LOG_WARN("hlbg.aio", "HandleRequestServerConfig: OutdoorPvPHL instance not found");
+			return;
+		}
+
+		// Use the existing SendConfigInfoAIO method
+		hl->SendConfigInfoAIO(player);
+	}
+
+	// Handler: RequestSeasonInfo
+	// Client requests current season information
+	static void HandleRequestSeasonInfo(Player* /*player*/, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		// TODO: Implement season info response
+		// For now, this is a placeholder
+	}
+
+	// Handler: RequestStats
+	// Client requests statistics data
+	static void HandleRequestStats(Player* /*player*/, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		// TODO: Implement stats response
+		// This should query the database and send stats via AIO
+	}
+
+	// Handler: RequestHistory
+	// Client requests battle history
+	static void HandleRequestHistory(Player* /*player*/, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		// TODO: Implement history response
+		// This should query the database and send history via AIO
+	}
+
+	// Handler: RequestStatus
+	// Client requests current battle status
+	static void HandleRequestStatus(Player* /*player*/, Aio* /*aio*/, AioPacket /*packet*/)
+	{
+		// TODO: Implement status response
+		// This should send current battle state (resources, time, etc.)
+	}
 
 public:
 	static void UpdateBattleResults(const std::string&, uint32, uint32, uint32, uint32, uint32, uint32) {}

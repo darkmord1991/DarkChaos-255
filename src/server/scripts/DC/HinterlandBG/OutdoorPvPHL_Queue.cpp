@@ -349,3 +349,106 @@ bool OutdoorPvPHL::RemoveGroupFromQueue(Player* leader)
 
     return true;
 }
+
+// ============================================================================
+// AIO Integration for Queue and Config Info
+// ============================================================================
+
+// Send queue status to client via AIO (for HLBG addon Queue tab)
+void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
+{
+    if (!player)
+        return;
+
+#ifdef HAS_AIO
+    // Build status packet
+    std::ostringstream oss;
+    oss << "QUEUE_STATUS|";
+    oss << "IN_QUEUE=" << (IsPlayerInQueue(player) ? "1" : "0") << "|";
+    
+    if (IsPlayerInQueue(player))
+    {
+        // Find player's position
+        auto it = std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
+            [player](const QueueEntry& entry) {
+                return entry.playerGuid == player->GetGUID();
+            });
+        
+        if (it != _queuedPlayers.end())
+        {
+            uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
+            oss << "POSITION=" << position << "|";
+        }
+    }
+    
+    oss << "TOTAL=" << GetQueuedPlayerCount() << "|";
+    
+    // Send battle state
+    switch (_bgState)
+    {
+        case BG_STATE_WARMUP:
+            oss << "STATE=WARMUP";
+            break;
+        case BG_STATE_IN_PROGRESS:
+            oss << "STATE=IN_PROGRESS";
+            break;
+        case BG_STATE_PAUSED:
+            oss << "STATE=PAUSED";
+            break;
+        case BG_STATE_FINISHED:
+            oss << "STATE=ENDING";
+            break;
+        case BG_STATE_CLEANUP:
+        default:
+            oss << "STATE=WAITING";
+            break;
+    }
+    
+    // Send via AIO to client
+    AIO().Msg(player, "HLBG", "QueueStatus", oss.str());
+    
+    LOG_DEBUG("hlbg.queue", "Sent queue status to {}: {}", player->GetName(), oss.str());
+#else
+    // Fallback to chat command if AIO not available
+    ShowQueueStatus(player);
+#endif
+}
+
+// Send server config info to client via AIO (for HLBG addon Info tab)
+void OutdoorPvPHL::SendConfigInfoAIO(Player* player)
+{
+    if (!player)
+        return;
+
+#ifdef HAS_AIO
+    std::ostringstream oss;
+    oss << "CONFIG_INFO|";
+    oss << "MATCH_DURATION=" << _matchDurationSeconds << "|";
+    oss << "WARMUP_DURATION=" << _warmupDurationSeconds << "|";
+    oss << "MIN_LEVEL=" << _minLevel << "|";
+    oss << "RESOURCES_ALLIANCE=" << _initialResourcesAlliance << "|";
+    oss << "RESOURCES_HORDE=" << _initialResourcesHorde << "|";
+    oss << "SEASON=" << _season << "|";
+    oss << "MIN_PLAYERS=" << _minPlayersToStart << "|";
+    oss << "MAX_GROUP_SIZE=" << _maxGroupSize << "|";
+    oss << "REWARD_HONOR=" << _rewardMatchHonor << "|";
+    oss << "REWARD_HONOR_DEPLETION=" << _rewardMatchHonorDepletion << "|";
+    oss << "REWARD_HONOR_TIEBREAKER=" << _rewardMatchHonorTiebreaker << "|";
+    oss << "AFFIX_ENABLED=" << (_affixEnabled ? "1" : "0") << "|";
+    oss << "AFFIX_CURRENT=" << static_cast<uint32>(_activeAffix);
+    
+    // Send via AIO
+    AIO().Msg(player, "HLBG", "ConfigInfo", oss.str());
+    
+    LOG_DEBUG("hlbg.aio", "Sent config info to {}", player->GetName());
+#else
+    // Fallback to chat message
+    ChatHandler ch(player->GetSession());
+    ch.PSendSysMessage("=== Hinterland BG Configuration ===");
+    ch.PSendSysMessage("Match Duration: {} seconds ({} min)", _matchDurationSeconds, _matchDurationSeconds / 60);
+    ch.PSendSysMessage("Minimum Level: {}", _minLevel);
+    ch.PSendSysMessage("Initial Resources: Alliance {} | Horde {}", _initialResourcesAlliance, _initialResourcesHorde);
+    ch.PSendSysMessage("Season: {}", _season);
+    ch.PSendSysMessage("Affixes: {}", _affixEnabled ? "Enabled" : "Disabled");
+#endif
+}

@@ -4,9 +4,11 @@
 ## Author: HotspotDisplay Team
 ## Version: 1.0
 ## SavedVariables: HotspotDisplayDB
+## OptionalDeps: DC_DebugUtils
 
-# Default core (original)
--- Use the 3.3.5a-compatible core implementation by default
+..\DC_DebugUtils.lua
+
+# Use the 3.3.5a-compatible core implementation by default
 Core_wrath.lua
 
 # Safe replacement libraries (Astrolabe) and helpers

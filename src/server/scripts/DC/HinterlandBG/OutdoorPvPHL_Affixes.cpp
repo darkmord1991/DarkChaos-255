@@ -17,11 +17,12 @@ static const char* HL_AffixName(OutdoorPvPHL::AffixType a)
 {
     switch (a)
     {
-        case OutdoorPvPHL::AFFIX_HASTE_BUFF: return "Haste";
-        case OutdoorPvPHL::AFFIX_SLOW: return "Slow";
-        case OutdoorPvPHL::AFFIX_REDUCED_HEALING: return "Reduced Healing";
-        case OutdoorPvPHL::AFFIX_REDUCED_ARMOR: return "Reduced Armor";
-        case OutdoorPvPHL::AFFIX_BOSS_ENRAGE: return "Boss Enrage";
+        case OutdoorPvPHL::AFFIX_SUNLIGHT: return "Sunlight";
+        case OutdoorPvPHL::AFFIX_CLEAR_SKIES: return "Clear Skies";
+        case OutdoorPvPHL::AFFIX_GENTLE_BREEZE: return "Gentle Breeze";
+        case OutdoorPvPHL::AFFIX_STORM: return "Storm";
+        case OutdoorPvPHL::AFFIX_HEAVY_RAIN: return "Heavy Rain";
+        case OutdoorPvPHL::AFFIX_FOG: return "Fog";
         default: return "None";
     }
 }

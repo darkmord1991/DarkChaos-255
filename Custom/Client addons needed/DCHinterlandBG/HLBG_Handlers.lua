@@ -731,6 +731,23 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         end)
         return
     end
+    
+    -- Config info response
+    if msg:match("^CONFIG_INFO") then
+        pcall(function()
+            if type(HLBG.ParseConfigInfo) == 'function' then
+                HLBG.ParseConfigInfo(msg)
+                if DEFAULT_CHAT_FRAME then
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Config info received and processed')
+                end
+            else
+                if DEFAULT_CHAT_FRAME then
+                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG Debug:|r ParseConfigInfo function not available (will be loaded from HLBG_Info.lua)')
+                end
+            end
+        end)
+        return
+    end
 end)
 -- Slash command to force reparse last sanitized TSV (dev aid)
 SLASH_HLBGREPARSE1 = '/hlbgreparse'

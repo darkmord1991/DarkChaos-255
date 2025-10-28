@@ -114,6 +114,7 @@
         _typeId = OUTDOOR_PVP_HL;
         // Set defaults for configurable values (can be overridden by LoadConfig)
         _matchDurationSeconds = HL_MATCH_DURATION_SECONDS;
+        _minLevel = 1;  // default minimum level (allows all levels 1-255 by default, config can restrict)
         _afkWarnSeconds = 120;
         _afkTeleportSeconds = 180;
     // Default HLBG season to 1 (legacy DB rows commonly use season=1). A value of 0 means "all/current".
@@ -298,7 +299,8 @@
     {
         if (!player)
             return false;
-        return player->GetLevel() >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+        // Check against configured minimum level (allows _minLevel through max level)
+        return player->GetLevel() >= _minLevel;
     }
 
     bool OutdoorPvPHL::IsEligibleForRewards(Player* player) const

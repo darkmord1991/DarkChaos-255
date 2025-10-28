@@ -8,8 +8,13 @@ Usage:
 #>
 
 param(
-    [string]$Root = "Custom\Client addons needed"
+    [string]$Root = "Custom\Client addons needed",
+    [switch]$NoPause
 )
+
+$ErrorActionPreference = "Continue"  # Don't stop on errors, continue processing
+$hadError = $false
+$errorFiles = @()
 
 Write-Host "Running luac -p for all .lua files under: $Root" -ForegroundColor Cyan
 
@@ -26,11 +31,28 @@ if (-not $files -or $files.Count -eq 0) {
 
 foreach ($f in $files) {
     Write-Host "Checking: $($f.FullName)" -ForegroundColor Gray
-    & luac -p $f.FullName
+    $result = & luac -p $f.FullName 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "luac returned non-zero for: $($f.FullName)" -ForegroundColor Red
-        exit $LASTEXITCODE
+        $hadError = $true
+        $errorFiles += $f.FullName
+        Write-Host "  SYNTAX ERROR: $($f.FullName)" -ForegroundColor Red
+        Write-Host "  $result" -ForegroundColor Red
     }
+}
+
+if ($hadError) {
+    Write-Host ""
+    Write-Host "=== SYNTAX ERRORS DETECTED ===" -ForegroundColor Red
+    Write-Host "Failed files ($($errorFiles.Count)):" -ForegroundColor Yellow
+    foreach ($errFile in $errorFiles) {
+        Write-Host "  - $errFile" -ForegroundColor Red
+    }
+    Write-Host ""
+    Write-Host "ERROR DETECTED - Window will stay open for review" -ForegroundColor Yellow
+    if (-not $NoPause) {
+        Read-Host "Press Enter to exit"
+    }
+    exit 1
 }
 
 Write-Host "All .lua files parsed successfully." -ForegroundColor Green
@@ -53,18 +75,21 @@ if ($luacheck) {
             Write-Host "Running luacheck on files $i..$end (count: $($batch.Count))" -ForegroundColor Gray
             # Call luacheck using the full path returned by Get-Command to avoid PATH/shim quoting issues on Windows
             if ($luacheck.Path) {
-                & $luacheck.Path @batch
+                & $luacheck.Path @batch 2>&1
             } else {
-                & luacheck @batch
+                & luacheck @batch 2>&1
             }
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "luacheck reported issues in batch starting at index $i (exit code $LASTEXITCODE)" -ForegroundColor Red
                 $hadIssues = $true
-                break
+                $hadError = $true
+                Write-Host "  luacheck reported issues in batch starting at index $i (exit code $LASTEXITCODE)" -ForegroundColor Red
+                # Don't break - continue checking all files
             }
         }
         if ($hadIssues) {
-            exit $LASTEXITCODE
+            Write-Host ""
+            Write-Host "=== LUACHECK ISSUES DETECTED ===" -ForegroundColor Red
+            Write-Host "Luacheck reported style/lint warnings or errors" -ForegroundColor Yellow
         } else {
             Write-Host "luacheck: no issues found." -ForegroundColor Green
         }
@@ -75,5 +100,21 @@ if ($luacheck) {
     Write-Host "luacheck not found on PATH; skipping lint step." -ForegroundColor Yellow
 }
 
+if ($hadError) {
+    Write-Host ""
+    Write-Host "=== VALIDATION FAILED ===" -ForegroundColor Red
+    Write-Host "Errors detected during validation - see above for details" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "ERROR DETECTED - Window will stay open for review" -ForegroundColor Yellow
+    if (-not $NoPause) {
+        Read-Host "Press Enter to exit"
+    }
+    exit 1
+}
+
+Write-Host ""
 Write-Host "All checks passed." -ForegroundColor Green
+if (-not $NoPause) {
+    Read-Host "Press Enter to exit"
+}
 exit 0

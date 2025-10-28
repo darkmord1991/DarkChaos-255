@@ -20,6 +20,7 @@ void OutdoorPvPHL::LoadConfig()
     if (sConfigMgr)
     {
         _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
+        _minLevel = sConfigMgr->GetOption<uint32>("HinterlandBG.MinLevel", _minLevel);  // minimum level to join (default 1)
         _warmupDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.WarmupDuration", _warmupDurationSeconds);
         _queueEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Queue.Enabled", _queueEnabled);
         _minPlayersToStart = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MinPlayers", _minPlayersToStart);
@@ -82,19 +83,19 @@ void OutdoorPvPHL::LoadConfig()
     _affixWorldstateEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WorldstateEnabled", _affixWorldstateEnabled);
     _statsIncludeManualResets = sConfigMgr->GetOption<bool>("HinterlandBG.Stats.IncludeManual", _statsIncludeManualResets);
     // Per-affix overrides: player/npc spells and weather
-    auto loadAffixArrayU32 = [&](char const* base, uint32 arr[6])
+    auto loadAffixArrayU32 = [&](char const* base, uint32 arr[7])
     {
-        // keys like base.0 .. base.5 (or by name)
-        for (uint32 i = 0; i <= 5; ++i)
+        // keys like base.0 .. base.6 (0=NONE, 1-6=affixes)
+        for (uint32 i = 0; i <= 6; ++i)
         {
             char key[128];
             snprintf(key, sizeof(key), "%s.%u", base, i);
             arr[i] = sConfigMgr->GetOption<uint32>(key, arr[i]);
         }
     };
-    auto loadAffixArrayFloat = [&](char const* base, float arr[6])
+    auto loadAffixArrayFloat = [&](char const* base, float arr[7])
     {
-        for (uint32 i = 0; i <= 5; ++i)
+        for (uint32 i = 0; i <= 6; ++i)
         {
             char key[128];
             snprintf(key, sizeof(key), "%s.%u", base, i);
