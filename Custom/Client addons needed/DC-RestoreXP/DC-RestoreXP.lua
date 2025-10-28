@@ -190,15 +190,16 @@ local function UpdateXPBar()
     Debug(string.format("Level %d: %d/%d XP, Rested: %d", level, currentXP, maxXP, exhaustion))
     
     -- Levels 1-79: Use Blizzard bar if it exists
-    if level < 80 and BlizzardXPBar then
-        Debug("Level < 80: using Blizzard XP bar")
+    if level <= 79 and BlizzardXPBar then
+        Debug("Level <= 79: using Blizzard XP bar")
         if addonXPBar then addonXPBar:Hide() end
         BlizzardXPBar:Show()
         -- Blizzard handles its own updates
         return
     end
     
-    -- Levels 80+: Use custom bar (Blizzard hides at 80)
+    -- Levels 80+: Use custom bar (Blizzard hides at 80+)
+    Debug("Level >= 80: using custom XP bar")
     if not addonXPBar then CreateXPBar() end
     if not addonXPBar then
         Debug("ERROR: Failed to create addon XP bar")

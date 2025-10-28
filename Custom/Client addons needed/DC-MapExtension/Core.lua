@@ -46,6 +46,8 @@ DCMapExtensionDB = DCMapExtensionDB or {}
 if DCMapExtensionDB.mapId == nil then DCMapExtensionDB.mapId = MAP_ID_AZSHARA_CRATER end
 -- Default to using the stitched map as the standard background unless explicitly disabled
 if DCMapExtensionDB.useStitchedMap == nil then DCMapExtensionDB.useStitchedMap = true end
+-- Enable mouse interaction by default for better usability
+if DCMapExtensionDB.interactable == nil then DCMapExtensionDB.interactable = true end
 local function IsDebugEnabled()
     return DCMapExtensionDB and DCMapExtensionDB.debug
 end
@@ -557,24 +559,26 @@ end
 local function ShowMapBackgroundIfNeeded(mapId)
     EnsureMapBackgroundFrame()
     if not addon.background then return end
-    -- Prefer an explicit saved override (admin can set DCMapExtensionDB.mapId)
-    local configured = tonumber(DCMapExtensionDB.mapId) or MAP_ID_AZSHARA_CRATER
+    
     local ok = false
     local detectedMap = nil
     
-    -- Get current zone ID for accurate detection
-    local currentZone = GetCurrentMapZone and GetCurrentMapZone() or 0
+    -- Use the mapId parameter to detect which map is being VIEWED (not where player is standing)
+    -- GetCurrentMapAreaID() returns the map being viewed, not player location
+    local viewedMapId = mapId or (GetCurrentMapAreaID and GetCurrentMapAreaID()) or 0
     
-    -- Detect Azshara Crater by zone ID 268 (map ID 37 is unreliable)
-    if currentZone == ZONE_ID_AZSHARA_CRATER or mapId == MAP_ID_AZSHARA_CRATER or mapId == configured then 
+    -- Detect Azshara Crater by map ID 37
+    if viewedMapId == MAP_ID_AZSHARA_CRATER then 
         ok = true
         detectedMap = "azshara"
+        DCMap_Debug("Detected Azshara Crater map (ID: " .. viewedMapId .. ")")
     end
     
-    -- Detect Hyjal by zone ID 616
-    if currentZone == ZONE_ID_HYJAL then
+    -- Detect Hyjal by map ID 1
+    if viewedMapId == MAP_ID_HYJAL then
         ok = true
         detectedMap = "hyjal"
+        DCMap_Debug("Detected Hyjal map (ID: " .. viewedMapId .. ")")
     end
     
     -- fallback: try to detect by map name (best-effort, may be localized)
@@ -583,18 +587,31 @@ local function ShowMapBackgroundIfNeeded(mapId)
         if mname:lower():find("azshara") and not mname:lower():find("hyjal") then 
             ok = true
             detectedMap = "azshara"
+            DCMap_Debug("Detected Azshara by map name: " .. mname)
         elseif mname:lower():find("hyjal") then
             ok = true
             detectedMap = "hyjal"
+            DCMap_Debug("Detected Hyjal by map name: " .. mname)
         end
     end
+    
     if ok then
+        DCMap_Debug("Showing custom map for: " .. tostring(detectedMap))
         addon.background:Show()
         ClearDetailTextures()
         -- If configured to use the stitched map as the main background, attempt to apply it
         if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap then
             -- create or show stitched overlay parented to WorldMapDetailFrame so it becomes the visible map
             local st = _G["DCMap_StitchFrame"]
+            
+            -- Check if we already have the right map loaded to avoid recreation spam
+            if st and st._currentMap == detectedMap and st:IsShown() then
+                -- Already showing the correct map, just reflow if needed
+                if st.Reflow then pcall(st.Reflow, st) end
+                DCMap_Debug("Custom map already loaded: " .. tostring(detectedMap))
+                return
+            end
+            
             if st and st.Reflow then
                 pcall(st.Reflow, st)
                 pcall(st.Show, st)
@@ -622,7 +639,7 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     DCMap_Debug(string.format("DC-MapExtension: ShowMapBackgroundIfNeeded parent selection: preferredParent=%s pw=%s ph=%s", tostring(pname), tostring(pw), tostring(ph)))
                 end
                 if pw and ph then
-                    local container = GetOrCreateStitchContainer(parent, cols, rows)
+                    local container = GetOrCreateStitchFrame(parent, cols, rows)
                     -- optionally make the stitched container interactive
                     if DCMapExtensionDB and DCMapExtensionDB.interactable then
                         if container.EnableMouse then pcall(container.EnableMouse, container, true) end
@@ -665,7 +682,9 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     container._cols = cols
                     container._rows = rows
                     container._paths = selectedBLPs
-                    container._tiles = {}
+                    -- Don't reset _tiles here - GetOrCreateStitchFrame already cleared them!
+                    -- container._tiles = {}  -- REMOVED: this orphans old textures
+                    if not container._tiles then container._tiles = {} end  -- Only create if missing
                     local containerW = SafeGetWidth(container)
                     local containerH = SafeGetHeight(container)
                     -- integer-safe tile sizing: round container size to nearest integer
@@ -689,6 +708,7 @@ local function ShowMapBackgroundIfNeeded(mapId)
                             local top = (r - 1) * tileHBase + math.min(r - 1, extraH)
                             tex:SetSize(w, h)
                             tex:SetPoint("TOPLEFT", container, "TOPLEFT", left, -top)
+                            tex:SetTexCoord(0, 1, 0, 1)  -- Ensure proper texture coordinates
                             if path then
                                 local ok_local = pcall(function() tex:SetTexture(path) end)
                                 _tileTotal = _tileTotal + 1
@@ -730,6 +750,7 @@ local function ShowMapBackgroundIfNeeded(mapId)
                                 tex:SetSize(w, h)
                                 tex:ClearAllPoints()
                                 tex:SetPoint("TOPLEFT", self, "TOPLEFT", left, -top)
+                                tex:SetTexCoord(0, 1, 0, 1)  -- Ensure proper texture coordinates on reflow
                             end
                         end
                         if self._playerMarker then
@@ -748,7 +769,13 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     end
                     container:SetScript("OnSizeChanged", function(self) if self.Reflow then pcall(self.Reflow, self) end end)
                     if container.Reflow then pcall(container.Reflow, container) end
+                    
+                    -- Mark which map is currently loaded to avoid recreation
+                    container._currentMap = detectedMap
+                    
                     pcall(container.Show, container)
+                    DCMap_Debug("Created/updated stitched map for: " .. tostring(detectedMap))
+                    
                     -- schedule delayed reflow retries to help survive race conditions (Mapster/WorldMap may modify parent after our code)
                     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
                         -- retry 1: 50ms delay
@@ -765,13 +792,35 @@ local function ShowMapBackgroundIfNeeded(mapId)
         end
     else
         -- Not in Azshara or Hyjal - hide our custom map
+        local st = _G["DCMap_StitchFrame"]
+        
+        -- Only process if frame exists and is currently shown (avoid spam)
+        if not st or not st:IsShown() then
+            return  -- Frame already hidden or doesn't exist, nothing to do
+        end
+        
+        local viewedMapId = mapId or (GetCurrentMapAreaID and GetCurrentMapAreaID()) or 0
+        DCMap_Debug("Not a custom map (ID: " .. tostring(viewedMapId) .. "), hiding stitched frame")
         addon.background:Hide()
         RestoreDetailTextures()
-        -- Also hide the stitched frame if it exists
-        local st = _G["DCMap_StitchFrame"]
-        if st and st.Hide then
+        
+        -- Clear all tile textures to prevent artifacts
+        if st._tiles then
+            for _, tex in ipairs(st._tiles) do
+                if tex then
+                    pcall(tex.SetTexture, tex, nil)
+                    pcall(tex.Hide, tex)
+                end
+            end
+            st._tiles = {}
+        end
+        -- Clear the current map marker so it can be recreated properly
+        st._currentMap = nil
+        -- Hide the container
+        if st.Hide then
             pcall(st.Hide, st)
         end
+        DCMap_Debug("Stitched frame and textures cleared")
     end
 end
 -- POI simple rendering (keeps minimal feature parity)
@@ -944,32 +993,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         RenderHotspotsForMap(currentMapID)
         -- if we have a stitched overlay, reflow it so it stays aligned with the map
         local st = _G["DCMap_StitchFrame"]
-        if st and st.Reflow then pcall(st.Reflow, st) end
-        -- IMPORTANT: if stitched mode is enabled, show/hide stitch based on current map
-        if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap and currentMapID then
-            local configured = tonumber(DCMapExtensionDB.mapId) or MAP_ID_AZSHARA_CRATER
-            DCMap_Debug(string.format("DC-MapExtension: useStitchedMap=true configured=%s currentMapID=%s match=%s", tostring(configured), tostring(currentMapID), tostring(currentMapID == configured)))
-            if currentMapID == configured then
-                -- On configured map: ensure stitch is created and visible
-                if st then
-                    DCMap_Debug("DC-MapExtension: Showing existing stitch")
-                    pcall(st.Show, st)
-                else
-                    -- stitch wasn't created yet; create it now
-                    DCMap_Debug("DC-MapExtension: Creating stitch now")
-                    ShowMapBackgroundIfNeeded(currentMapID)
-                    st = _G["DCMap_StitchFrame"]
-                    if st then pcall(st.Show, st) end
-                end
-            else
-                -- NOT on configured map: hide the stitch so it doesn't overlap other maps
-                DCMap_Debug("DC-MapExtension: NOT on configured map, hiding stitch")
-                if st then pcall(st.Hide, st) end
-            end
-        else
-            -- useStitchedMap disabled: hide stitch if it exists
-            DCMap_Debug("DC-MapExtension: useStitchedMap disabled or no currentMapID, hiding stitch")
-            if st then pcall(st.Hide, st) end
+        if st and st.Reflow and st:IsShown() then 
+            pcall(st.Reflow, st)
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix = arg1; local message = arg2
@@ -1074,7 +1099,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
             local pw = SafeGetWidth(parent)
             local ph = SafeGetHeight(parent)
             if pw and ph then
-                local container = GetOrCreateStitchContainer(parent, cols, rows)
+                local container = GetOrCreateStitchFrame(parent, cols, rows)
                 container:SetAllPoints(parent)
                 container:SetFrameStrata("HIGH")
                 container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)
@@ -1091,6 +1116,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
                         local idx = (row - 1) * cols + col
                         local tex = container:CreateTexture(nil, "ARTWORK")
                         tex:SetTexture(azsharaBLPs[idx])
+                        tex:SetTexCoord(0, 1, 0, 1)
                         local x = (col - 1) * tileW
                         local y = (row - 1) * tileH
                         tex:SetPoint("TOPLEFT", container, "TOPLEFT", x, -y)
@@ -1115,7 +1141,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
             local pw = SafeGetWidth(parent)
             local ph = SafeGetHeight(parent)
             if pw and ph then
-                local container = GetOrCreateStitchContainer(parent, cols, rows)
+                local container = GetOrCreateStitchFrame(parent, cols, rows)
                 container:SetAllPoints(parent)
                 container:SetFrameStrata("HIGH")
                 container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)
@@ -1132,6 +1158,7 @@ function DCMapExtension_ShowStitchedMap(mapType)
                         local idx = (row - 1) * cols + col
                         local tex = container:CreateTexture(nil, "ARTWORK")
                         tex:SetTexture(hyjalBLPs[idx])
+                        tex:SetTexCoord(0, 1, 0, 1)
                         local x = (col - 1) * tileW
                         local y = (row - 1) * tileH
                         tex:SetPoint("TOPLEFT", container, "TOPLEFT", x, -y)
@@ -1169,8 +1196,23 @@ SlashCmdList["DCMAP"] = function(msg)
         else
             if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: invalid map id") end
         end
+    elseif msg == "mapinfo" or msg == "info" then
+        -- Show current map information to help debug
+        local currentMapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+        local currentZone = GetCurrentMapZone and GetCurrentMapZone() or 0
+        local currentContinent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
+        local mapName = GetMapInfo and GetMapInfo() or "unknown"
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then 
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "|cFF00FFFFDCMap Current Map Info:|r")
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Map ID: %s", tostring(currentMapID)))
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Zone ID: %s", tostring(currentZone)))
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Continent: %s", tostring(currentContinent)))
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Map Name: %s", tostring(mapName)))
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Expected AC: %d (zone: %d)", MAP_ID_AZSHARA_CRATER, ZONE_ID_AZSHARA_CRATER)))
+            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("  Expected Hyjal: %d (zone: %d)", MAP_ID_HYJAL, ZONE_ID_HYJAL))
+        end
     else
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: /dcmap debug|show|hide|clear|setmap <id>") end
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, "DC-MapExtension: /dcmap debug|show|hide|clear|setmap <id>|mapinfo") end
     end
 end
 -- Extend slash commands to set/get map bounds for normalized->map conversion
