@@ -712,3 +712,67 @@ SlashCmdList["HOTSPOTDEBUG"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage((HotspotDisplayDB.devMode and "|cFF00FF00[HotspotDebug]|r enabled" or "|cFFFF0000[HotspotDebug]|r disabled"))
 end
 
+-- Interface Options panel for DC Hotspot XP addon
+if type(InterfaceOptions_AddCategory) == "function" then
+    local panel = CreateFrame("Frame", "DCHotspotXP_Options", UIParent)
+    panel.name = "DC Hotspot XP"
+    
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("DC Hotspot XP")
+    
+    local desc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetText("Configure hotspot display settings for your leveling zones.")
+    
+    local y = -80
+    local function makeCheck(name, label, dbKey)
+        local cb = CreateFrame("CheckButton", name, panel, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, y)
+        _G[name.."Text"]:SetText(label)
+        cb:SetChecked(HotspotDisplayDB[dbKey])
+        cb:SetScript("OnClick", function(self)
+            HotspotDisplayDB[dbKey] = self:GetChecked()
+        end)
+        y = y - 28
+        return cb
+    end
+    
+    makeCheck("DCHotspot_EnabledCB", "Enable hotspot display", "enabled")
+    makeCheck("DCHotspot_MapListCB", "Show map list", "showMapList")
+    makeCheck("DCHotspot_MinimapPinsCB", "Show minimap pins", "showMinimapPins")
+    makeCheck("DCHotspot_WorldLabelsCB", "Show world map labels", "showWorldLabels")
+    makeCheck("DCHotspot_AnnounceHotspotsCB", "Announce hotspots in chat", "announceHotspots")
+    makeCheck("DCHotspot_ShowLoadMsgCB", "Show load message", "showLoadMessage")
+    makeCheck("DCHotspot_DevModeCB", "Developer mode", "devMode")
+    
+    -- Text size slider
+    local textSizeSlider = CreateFrame("Slider", "DCHotspot_TextSizeSlider", panel, "OptionsSliderTemplate")
+    textSizeSlider:SetPoint("TOPLEFT", 24, y)
+    textSizeSlider:SetWidth(220)
+    textSizeSlider:SetMinMaxValues(8, 32)
+    textSizeSlider:SetValueStep(1)
+    textSizeSlider:SetValue(HotspotDisplayDB.textSize or 16)
+    _G[textSizeSlider:GetName().."Text"]:SetText("Label text size")
+    _G[textSizeSlider:GetName().."Low"]:SetText("8")
+    _G[textSizeSlider:GetName().."High"]:SetText("32")
+    textSizeSlider:SetScript("OnValueChanged", function(self, value)
+        HotspotDisplayDB.textSize = value
+        _G[self:GetName().."Text"]:SetText("Label text size: "..value)
+    end)
+    
+    panel.refresh = function()
+        -- Refresh all checkboxes when panel is shown
+        _G["DCHotspot_EnabledCB"]:SetChecked(HotspotDisplayDB.enabled)
+        _G["DCHotspot_MapListCB"]:SetChecked(HotspotDisplayDB.showMapList)
+        _G["DCHotspot_MinimapPinsCB"]:SetChecked(HotspotDisplayDB.showMinimapPins)
+        _G["DCHotspot_WorldLabelsCB"]:SetChecked(HotspotDisplayDB.showWorldLabels)
+        _G["DCHotspot_AnnounceHotspotsCB"]:SetChecked(HotspotDisplayDB.announceHotspots)
+        _G["DCHotspot_ShowLoadMsgCB"]:SetChecked(HotspotDisplayDB.showLoadMessage)
+        _G["DCHotspot_DevModeCB"]:SetChecked(HotspotDisplayDB.devMode)
+        textSizeSlider:SetValue(HotspotDisplayDB.textSize or 16)
+    end
+    
+    InterfaceOptions_AddCategory(panel)
+end
+

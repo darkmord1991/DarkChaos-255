@@ -636,36 +636,36 @@ HLBG.HUD = {
 -- Function to manually update HUD with provided data (for testing/debugging) - FIXED
 function HLBG.UI.ModernHUD.UpdateWithData(data)
     if not HLBG.UI.ModernHUD or not data then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF5555HLBG:|r UpdateWithData failed - no HUD or data")
+        DebugPrint("|cFFFF5555HLBG:|r UpdateWithData failed - no HUD or data")
         return
     end
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r UpdateWithData called with: Alliance=" .. (data.allianceResources or 'nil') .. ", Horde=" .. (data.hordeResources or 'nil') .. ", Time=" .. (data.timeLeft or 'nil'))
+    DebugPrint("|cFF33FF99HLBG Debug:|r UpdateWithData called with: Alliance=" .. (data.allianceResources or 'nil') .. ", Horde=" .. (data.hordeResources or 'nil') .. ", Time=" .. (data.timeLeft or 'nil'))
     -- Update Alliance resources using correct text element
     if HUD.allianceText and data.allianceResources then
         HUD.allianceText:SetText("Alliance: " .. tostring(data.allianceResources))
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r Set Alliance text to: " .. tostring(data.allianceResources))
+        DebugPrint("|cFF33FF99HLBG Debug:|r Set Alliance text to: " .. tostring(data.allianceResources))
     end
     -- Update Horde resources using correct text element
     if HUD.hordeText and data.hordeResources then
         HUD.hordeText:SetText("Horde: " .. tostring(data.hordeResources))
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r Set Horde text to: " .. tostring(data.hordeResources))
+        DebugPrint("|cFF33FF99HLBG Debug:|r Set Horde text to: " .. tostring(data.hordeResources))
     end
     -- Update timer using correct text element
     if HUD.timerText and data.timeLeft then
         local minutes = math.floor(data.timeLeft / 60)
         local seconds = data.timeLeft % 60
         HUD.timerText:SetText(string.format("Time: %d:%02d", minutes, seconds))
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r Set timer to: " .. string.format("%d:%02d", minutes, seconds))
+        DebugPrint("|cFF33FF99HLBG Debug:|r Set timer to: " .. string.format("%d:%02d", minutes, seconds))
     end
     -- Update phase using correct text element
     if HUD.phaseText and data.phase then
         HUD.phaseText:SetText(data.phase)
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r Set phase to: " .. data.phase)
+        DebugPrint("|cFF33FF99HLBG Debug:|r Set phase to: " .. data.phase)
     end
     -- Update affix using correct text element
     if HUD.affixText and data.affixName then
         HUD.affixText:SetText("Affix: " .. data.affixName)
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Debug:|r Set affix to: " .. data.affixName)
+        DebugPrint("|cFF33FF99HLBG Debug:|r Set affix to: " .. data.affixName)
     end
     -- Force HUD visibility and proper settings
     HLBG.UI.ModernHUD:Show()
@@ -673,6 +673,6 @@ function HLBG.UI.ModernHUD.UpdateWithData(data)
     HLBG.UI.ModernHUD:SetFrameStrata("HIGH")
     -- Also call the main update function to ensure consistency
     HLBG.UpdateModernHUD(data)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG:|r HUD updated with manual data - should be visible now!")
+    DebugPrint("|cFF00FF00HLBG:|r HUD updated with manual data - should be visible now!")
 end
 

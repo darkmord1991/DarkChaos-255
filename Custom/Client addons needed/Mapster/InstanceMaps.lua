@@ -145,16 +145,17 @@ end
 local zoomOverride
 -- If WDM (DungeonMaps/MicroDungeons) is present, expose a combined "Dark Chaos" zone list
 local function TryInjectDarkChaos(self)
-	-- Force the "darkchaos" continent to contain only Azshara Crater (map id 37).
-	-- This intentionally ignores any other zones provided by WDM so the user
-	-- sees only the Azshara Crater entry under Dark Chaos.
-	local AZ_NAME = L["Azshara Crater"] or "Azshara Crater"
-	local AZ_ID = 37
+	-- Force the "darkchaos" continent to contain Azshara Crater and Hyjal.
+	-- We use simple string names and custom IDs that will be intercepted by our zone click handler.
+	local AZ_NAME = "Azshara Crater"
+	local AZ_CUSTOM_ID = 9001  -- Custom identifier to distinguish from Blizzard IDs
+	local HYJAL_NAME = "Hyjal"
+	local HYJAL_CUSTOM_ID = 9002  -- Custom identifier
 	self.zone_names = self.zone_names or {}
 	self.zone_data = self.zone_data or {}
-	-- single-entry array and data table
-	self.zone_names["darkchaos"] = { AZ_NAME }
-	self.zone_data["darkchaos"] = { [1] = AZ_ID }
+	-- Store custom zone data with our identifiers
+	self.zone_names["darkchaos"] = { AZ_NAME, HYJAL_NAME }
+	self.zone_data["darkchaos"] = { [1] = AZ_CUSTOM_ID, [2] = HYJAL_CUSTOM_ID }
 end
 function Maps:OnInitialize()
 	--[[
@@ -274,6 +275,29 @@ local function MapsterZoneButton_OnClick(frame)
 	-- debug log: print selected zone name and resolved mapId
 	local selectedName = select(frame:GetID(), unpack(Maps.zone_names[Maps.mapCont] or {}))
 	DEFAULT_CHAT_FRAME:AddMessage(('[Mapster] Selected zone: %s -> resolved mapId: %s'):format(tostring(selectedName), tostring(mapId)))
+	
+	-- Handle our custom Dark Chaos zones (intercept custom IDs 9001 and 9002)
+	if mapId == 9001 then
+		-- Azshara Crater selected
+		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Forcing Azshara Crater mapId to 37')
+		SetMapByID(37)
+		-- Trigger DC-MapExtension to show the stitched map
+		if type(_G.DCMapExtension_ShowStitchedMap) == "function" then
+			_G.DCMapExtension_ShowStitchedMap("azshara")
+		end
+		return
+	elseif mapId == 9002 then
+		-- Hyjal selected - use zone ID 616 which DC-MapExtension will detect
+		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Selected Hyjal - triggering DC-MapExtension')
+		-- Set to Kalimdor continent first, then trigger DC-MapExtension
+		SetMapZoom(1)  -- Kalimdor continent
+		-- Trigger DC-MapExtension to show Hyjal stitched map
+		if type(_G.DCMapExtension_ShowStitchedMap) == "function" then
+			_G.DCMapExtension_ShowStitchedMap("hyjal")
+		end
+		return
+	end
+	
 	-- more diagnostics: print internal state and Blizzard's zone name at same index for current continent
 	local currentMapContinent = GetCurrentMapContinent()
 	local blizZoneName = nil
@@ -281,17 +305,10 @@ local function MapsterZoneButton_OnClick(frame)
 		blizZoneName = select(frame:GetID(), GetMapZones(currentMapContinent))
 	end
 	DEFAULT_CHAT_FRAME:AddMessage(('[Mapster] mapCont=%s mapZoneIndex=%s map_data_at_index=%s | Blizzard continent=%s blizZoneAtIndex=%s'):format(tostring(Maps.mapCont), tostring(frame:GetID()), tostring((Maps.zone_data[Maps.mapCont] and Maps.zone_data[Maps.mapCont][frame:GetID()]) or "nil"), tostring(currentMapContinent), tostring(blizZoneName)))
-	-- if the selected zone matches our Azshara localized name, force the AZ_ID
-	local AZ_NAME = L["Azshara Crater"]
-	if selectedName == AZ_NAME then
-		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Forcing Azshara mapId to '..tostring(AZ_ID))
-		mapId = AZ_ID
-	end
+	
 	SetMapByID(mapId)
-	-- If DC-MapExtension is present and the selected map is Azshara Crater, ensure its background is shown
-	if mapId == AZ_ID and DCMap_BackgroundFrame then
-		if DCMap_BackgroundFrame.Show then pcall(DCMap_BackgroundFrame.Show, DCMap_BackgroundFrame) end
-	elseif DCMap_BackgroundFrame then
+	-- If DC-MapExtension is present, hide it for non-custom zones
+	if DCMap_BackgroundFrame then
 		if DCMap_BackgroundFrame.Hide then pcall(DCMap_BackgroundFrame.Hide, DCMap_BackgroundFrame) end
 	end
 end

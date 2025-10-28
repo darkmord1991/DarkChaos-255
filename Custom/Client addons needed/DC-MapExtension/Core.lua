@@ -1,4 +1,7 @@
 ﻿local MAP_ID_AZSHARA_CRATER = 37
+local ZONE_ID_AZSHARA_CRATER = 268
+local MAP_ID_HYJAL = 1
+local ZONE_ID_HYJAL = 616
 -- Known textures packaged with the addon (used for one-time diagnostics)
 -- lightweight addon table must be defined before any addon.* fields are used
 local addon = {}
@@ -19,6 +22,22 @@ local azsharaBLPs = {
     "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater10.blp",
     "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater11.blp",
     "Interface\\AddOns\\DC-MapExtension\\Textures\\AzsharaCrater\\AzsharaCrater12.blp",
+}
+
+-- Hyjal BLP tiles (4x3 grid, same layout as Azshara)
+local hyjalBLPs = {
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal1.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal2.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal3.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal4.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal5.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal6.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal7.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal8.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal9.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal10.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal11.blp",
+    "Interface\\AddOns\\DC-MapExtension\\Textures\\Hyjal\\Hyjal12.blp",
 }
 DCMap_HotspotsSaved = DCMap_HotspotsSaved or {}
 addon.forcedTexture = addon.forcedTexture or "auto" -- "auto", "png", "blp"
@@ -145,7 +164,12 @@ end
 -- Prefer anchoring stitched container to the worldmap "canvas" when available
 -- (this helps align with Mapster/modern worldmap scroll containers).
 local function GetPreferredStitchParent(preferred)
-    -- try new-style ScrollContainer canvas first
+    -- For WoW 3.3.5a, prefer WorldMapDetailFrame which is the actual visible map area
+    -- This prevents tiles from extending beyond the map borders
+    if type(WorldMapDetailFrame) == "table" then
+        return WorldMapDetailFrame
+    end
+    -- try new-style ScrollContainer canvas for modern WoW (unlikely for 3.3.5a)
     if type(WorldMapFrame) == "table" and WorldMapFrame.ScrollContainer and type(WorldMapFrame.ScrollContainer.GetCanvas) == "function" then
         local ok, canvas = pcall(WorldMapFrame.ScrollContainer.GetCanvas, WorldMapFrame.ScrollContainer)
         if ok and canvas then return canvas end
@@ -528,11 +552,33 @@ local function ShowMapBackgroundIfNeeded(mapId)
     -- Prefer an explicit saved override (admin can set DCMapExtensionDB.mapId)
     local configured = tonumber(DCMapExtensionDB.mapId) or MAP_ID_AZSHARA_CRATER
     local ok = false
-    if mapId == configured then ok = true end
+    local detectedMap = nil
+    
+    -- Get current zone ID for accurate detection
+    local currentZone = GetCurrentMapZone and GetCurrentMapZone() or 0
+    
+    -- Detect Azshara Crater by zone ID 268 (map ID 37 is unreliable)
+    if currentZone == ZONE_ID_AZSHARA_CRATER or mapId == MAP_ID_AZSHARA_CRATER or mapId == configured then 
+        ok = true
+        detectedMap = "azshara"
+    end
+    
+    -- Detect Hyjal by zone ID 616
+    if currentZone == ZONE_ID_HYJAL then
+        ok = true
+        detectedMap = "hyjal"
+    end
+    
     -- fallback: try to detect by map name (best-effort, may be localized)
     if not ok and type(GetMapInfo) == "function" then
         local mname = (GetMapInfo() or "")
-        if mname:lower():find("azshara") or mname:lower():find("azshara crater") then ok = true end
+        if mname:lower():find("azshara") and not mname:lower():find("hyjal") then 
+            ok = true
+            detectedMap = "azshara"
+        elseif mname:lower():find("hyjal") then
+            ok = true
+            detectedMap = "hyjal"
+        end
     end
     if ok then
         addon.background:Show()
@@ -548,10 +594,25 @@ local function ShowMapBackgroundIfNeeded(mapId)
                 -- create a simple stitch automatically using saved cols/rows (or fallback 4x3)
                 local cols = (DCMapExtensionDB.stitchCols and tonumber(DCMapExtensionDB.stitchCols)) or 4
                 local rows = (DCMapExtensionDB.stitchRows and tonumber(DCMapExtensionDB.stitchRows)) or 3
-                -- build container similar to Stitch Azshara but minimal
-                local parent = GetPreferredStitchParent(WorldMapDetailFrame or addon.background or UIParent)
+                -- TRY to parent to the WorldMapFrame itself for full fill, fallback to detail frame
+                local preferredParent = nil
+                if type(WorldMapFrame) == "table" then
+                    -- Try ScrollContainer canvas first (modern WoW)
+                    if WorldMapFrame.ScrollContainer and type(WorldMapFrame.ScrollContainer.GetCanvas) == "function" then
+                        local ok_canvas, canvas = pcall(WorldMapFrame.ScrollContainer.GetCanvas, WorldMapFrame.ScrollContainer)
+                        if ok_canvas and canvas then preferredParent = canvas end
+                    end
+                    -- If no canvas, try the frame itself
+                    if not preferredParent then preferredParent = WorldMapFrame end
+                end
+                preferredParent = preferredParent or (WorldMapDetailFrame or addon.background or UIParent)
+                local parent = GetPreferredStitchParent(preferredParent)
                     local pw = SafeGetWidth(parent)
                 local ph = SafeGetHeight(parent)
+                if IsDebugEnabled() then
+                    local pname = preferredParent and (preferredParent.GetName and preferredParent:GetName()) or "unknown"
+                    DCMap_Debug(string.format("DC-MapExtension: ShowMapBackgroundIfNeeded parent selection: preferredParent=%s pw=%s ph=%s", tostring(pname), tostring(pw), tostring(ph)))
+                end
                 if pw and ph then
                     local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
                     -- optionally make the stitched container interactive
@@ -587,7 +648,15 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     end
                         local parentW = SafeGetWidth(parent)
                         local parentH = SafeGetHeight(parent)
-                    container._paths = azsharaBLPs
+                    -- Select correct texture set based on detected map
+                    local selectedBLPs = azsharaBLPs  -- default to Azshara
+                    if detectedMap == "hyjal" then
+                        selectedBLPs = hyjalBLPs
+                    end
+                    
+                    container._cols = cols
+                    container._rows = rows
+                    container._paths = selectedBLPs
                     container._tiles = {}
                     local containerW = SafeGetWidth(container)
                     local containerH = SafeGetHeight(container)
@@ -603,7 +672,7 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     for r = 1, rows do
                         for c = 1, cols do
                             local idx = (r - 1) * cols + c
-                            local path = azsharaBLPs[idx]
+                            local path = selectedBLPs[idx]
                             local tex = container:CreateTexture(nil, "ARTWORK")
                             -- distribute extra pixels to the first columns/rows to keep integer sizes
                             local w = tileWBase + ((c <= extraW) and 1 or 0)
@@ -635,20 +704,35 @@ local function ShowMapBackgroundIfNeeded(mapId)
                         local ncols = tonumber(self._cols) or 1
                         local nrows = tonumber(self._rows) or 1
                         if ncols <= 0 or nrows <= 0 then return end
-                        local tileWBase_local = self_cw / ncols
-                        local tileHBase_local = self_ch / nrows
+                        -- integer-safe reflow: round container size and distribute remainder pixels (unified algorithm)
+                        local cw_i_r = math.floor((self_cw or 0) + 0.5)
+                        local ch_i_r = math.floor((self_ch or 0) + 0.5)
+                        local tileWBase_local = (ncols > 0) and math.floor(cw_i_r / ncols) or 0
+                        local extraW_r = cw_i_r - tileWBase_local * ncols
+                        local tileHBase_local = (nrows > 0) and math.floor(ch_i_r / nrows) or 0
+                        local extraH_r = ch_i_r - tileHBase_local * nrows
                         for idx, tex in ipairs(self._tiles or {}) do
                             if tex then
                                 local c = ((idx - 1) % ncols) + 1
                                 local r = math.floor((idx - 1) / ncols) + 1
-                                -- Let the last column/row absorb any rounding remainder to avoid gaps
-                                local w = (c == ncols) and (self_cw - tileWBase_local * (ncols - 1)) or tileWBase_local
-                                local h = (r == nrows) and (self_ch - tileHBase_local * (nrows - 1)) or tileHBase_local
-                                local left = (c - 1) * tileWBase_local
-                                local top = (r - 1) * tileHBase_local
+                                local w = tileWBase_local + ((c <= extraW_r) and 1 or 0)
+                                local h = tileHBase_local + ((r <= extraH_r) and 1 or 0)
+                                local left = (c - 1) * tileWBase_local + math.min(c - 1, extraW_r)
+                                local top = (r - 1) * tileHBase_local + math.min(r - 1, extraH_r)
                                 tex:SetSize(w, h)
                                 tex:ClearAllPoints()
                                 tex:SetPoint("TOPLEFT", self, "TOPLEFT", left, -top)
+                            end
+                        end
+                        if self._playerMarker then
+                            if type(GetPlayerMapPosition) == "function" then
+                                local nx, ny = GetPlayerMapPosition("player")
+                                if nx and ny then
+                                    local px = nx * self_cw
+                                    local py = ny * self_ch
+                                    self._playerMarker:ClearAllPoints()
+                                    self._playerMarker:SetPoint("CENTER", self, "TOPLEFT", px, -py)
+                                end
                             end
                         end
                         -- one-shot diagnostic snapshot for alignment troubleshooting
@@ -657,12 +741,29 @@ local function ShowMapBackgroundIfNeeded(mapId)
                     container:SetScript("OnSizeChanged", function(self) if self.Reflow then pcall(self.Reflow, self) end end)
                     if container.Reflow then pcall(container.Reflow, container) end
                     pcall(container.Show, container)
+                    -- schedule delayed reflow retries to help survive race conditions (Mapster/WorldMap may modify parent after our code)
+                    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+                        -- retry 1: 50ms delay
+                        pcall(C_Timer.After, 0.05, function()
+                            if container and container.Reflow then pcall(container.Reflow, container) end
+                        end)
+                        -- retry 2: 250ms delay
+                        pcall(C_Timer.After, 0.25, function()
+                            if container and container.Reflow then pcall(container.Reflow, container) end
+                        end)
+                    end
                 end
             end
         end
     else
+        -- Not in Azshara or Hyjal - hide our custom map
         addon.background:Hide()
         RestoreDetailTextures()
+        -- Also hide the stitched frame if it exists
+        local st = _G["DCMap_StitchFrame"]
+        if st and st.Hide then
+            pcall(st.Hide, st)
+        end
     end
 end
 -- POI simple rendering (keeps minimal feature parity)
@@ -835,6 +936,21 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         -- if we have a stitched overlay, reflow it so it stays aligned with the map
         local st = _G["DCMap_StitchFrame"]
         if st and st.Reflow then pcall(st.Reflow, st) end
+        -- IMPORTANT: if stitched mode is enabled and we're on the configured Azshara map, ensure the stitch is visible
+        if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap and currentMapID then
+            local configured = tonumber(DCMapExtensionDB.mapId) or MAP_ID_AZSHARA_CRATER
+            if currentMapID == configured then
+                -- make sure stitch is created and visible
+                if st then
+                    pcall(st.Show, st)
+                else
+                    -- stitch wasn't created yet; create it now
+                    ShowMapBackgroundIfNeeded(currentMapID)
+                    st = _G["DCMap_StitchFrame"]
+                    if st then pcall(st.Show, st) end
+                end
+            end
+        end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix = arg1; local message = arg2
         if message == nil and prefix ~= nil then message = prefix; prefix = nil end
@@ -853,19 +969,25 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         end
     end
 end)
--- Auto-select configured map when the world map is opened (so the stitched Azshara map becomes the default)
+-- Auto-select configured map when the world map is opened (so the stitched Azshara/Hyjal map becomes the default)
 local function AutoSelectStitchedMapOnOpen()
     if not (DCMapExtensionDB and DCMapExtensionDB.useStitchedMap) then return end
-    -- only auto-select when the player is in or near Azshara (best-effort by map name or current map id)
+    -- only auto-select when the player is in or near Azshara/Hyjal (best-effort by map name or current map id)
     local cur = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+    local currentZone = GetCurrentMapZone and GetCurrentMapZone() or 0
+    
     if cur == MAP_ID_AZSHARA_CRATER then
+        -- Player is viewing Azshara Crater map
         if type(SetMapByID) == "function" then pcall(SetMapByID, MAP_ID_AZSHARA_CRATER)
         elseif type(SetMapToMapID) == "function" then pcall(SetMapToMapID, MAP_ID_AZSHARA_CRATER) end
+    elseif currentZone == ZONE_ID_HYJAL then
+        -- Player is in Hyjal zone - don't force map change, just ensure overlay shows
+        -- The map might already be set correctly by Mapster or player
     else
         -- best-effort by map name
         if type(GetMapInfo) == "function" then
             local mname = (GetMapInfo() or "")
-            if mname:lower():find("azshara") then
+            if mname:lower():find("azshara") and not mname:lower():find("hyjal") then
                 if type(SetMapByID) == "function" then pcall(SetMapByID, MAP_ID_AZSHARA_CRATER)
                 elseif type(SetMapToMapID) == "function" then pcall(SetMapToMapID, MAP_ID_AZSHARA_CRATER) end
             end
@@ -909,6 +1031,97 @@ function EnsureMapsterIntegration()
         end
         addon._mapsterHooked = true
     DCMap_Debug("DC-MapExtension: Mapster integration hooked")
+    end
+end
+-- Global helper function for Mapster to trigger showing a specific stitched map
+-- mapType should be "azshara" or "hyjal"
+function DCMapExtension_ShowStitchedMap(mapType)
+    EnsureMapBackgroundFrame()
+    if not addon.background then return end
+    
+    -- Force the appropriate map to be shown
+    if mapType == "azshara" then
+        -- Show Azshara Crater stitched map
+        addon.background:Show()
+        ClearDetailTextures()
+        if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap then
+            local st = _G["DCMap_StitchFrame"]
+            if st and st.Hide then pcall(st.Hide, st) end
+            -- Force re-create with Azshara textures
+            local cols = 4
+            local rows = 3
+            local parent = GetPreferredStitchParent(WorldMapDetailFrame or addon.background or UIParent)
+            local pw = SafeGetWidth(parent)
+            local ph = SafeGetHeight(parent)
+            if pw and ph then
+                local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+                container:SetAllPoints(parent)
+                container:SetFrameStrata("HIGH")
+                container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)
+                container._cols = cols
+                container._rows = rows
+                container._paths = azsharaBLPs
+                container._tiles = {}
+                local containerW = SafeGetWidth(container)
+                local containerH = SafeGetHeight(container)
+                local tileW = containerW / cols
+                local tileH = containerH / rows
+                for row = 1, rows do
+                    for col = 1, cols do
+                        local idx = (row - 1) * cols + col
+                        local tex = container:CreateTexture(nil, "ARTWORK")
+                        tex:SetTexture(azsharaBLPs[idx])
+                        local x = (col - 1) * tileW
+                        local y = (row - 1) * tileH
+                        tex:SetPoint("TOPLEFT", container, "TOPLEFT", x, -y)
+                        tex:SetSize(tileW, tileH)
+                        container._tiles[idx] = tex
+                    end
+                end
+                pcall(container.Show, container)
+            end
+        end
+    elseif mapType == "hyjal" then
+        -- Show Hyjal stitched map
+        addon.background:Show()
+        ClearDetailTextures()
+        if DCMapExtensionDB and DCMapExtensionDB.useStitchedMap then
+            local st = _G["DCMap_StitchFrame"]
+            if st and st.Hide then pcall(st.Hide, st) end
+            -- Force re-create with Hyjal textures
+            local cols = 4
+            local rows = 3
+            local parent = GetPreferredStitchParent(WorldMapDetailFrame or addon.background or UIParent)
+            local pw = SafeGetWidth(parent)
+            local ph = SafeGetHeight(parent)
+            if pw and ph then
+                local container = CreateFrame("Frame", "DCMap_StitchFrame", parent)
+                container:SetAllPoints(parent)
+                container:SetFrameStrata("HIGH")
+                container:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 50)
+                container._cols = cols
+                container._rows = rows
+                container._paths = hyjalBLPs
+                container._tiles = {}
+                local containerW = SafeGetWidth(container)
+                local containerH = SafeGetHeight(container)
+                local tileW = containerW / cols
+                local tileH = containerH / rows
+                for row = 1, rows do
+                    for col = 1, cols do
+                        local idx = (row - 1) * cols + col
+                        local tex = container:CreateTexture(nil, "ARTWORK")
+                        tex:SetTexture(hyjalBLPs[idx])
+                        local x = (col - 1) * tileW
+                        local y = (row - 1) * tileH
+                        tex:SetPoint("TOPLEFT", container, "TOPLEFT", x, -y)
+                        tex:SetSize(tileW, tileH)
+                        container._tiles[idx] = tex
+                    end
+                end
+                pcall(container.Show, container)
+            end
+        end
     end
 end
 SLASH_DCMAP1 = "/dcmap"
@@ -1193,7 +1406,9 @@ local function PrintReflowSnapshot(container, parent)
     do
         local pname = parent and (parent.GetName and parent:GetName() or tostring(parent)) or "nil"
         local cname = container and (container.GetName and container:GetName() or "DCMap_StitchFrame") or "nil"
-        DCMap_Debug("DC-MapExtension REFLOW SNAPSHOT:", pname, tostring(pw), tostring(ph), "container:", cname, tostring(cw), tostring(ch), "cols", cols, "rows", rows)
+        local pscale = parent and (parent.GetScale and parent:GetScale() or 1.0) or 1.0
+        local cscale = container and (container.GetScale and container:GetScale() or 1.0) or 1.0
+        DCMap_Debug("DC-MapExtension REFLOW SNAPSHOT:", pname, tostring(pw), tostring(ph), "scale", pscale, "container:", cname, tostring(cw), tostring(ch), "scale", cscale, "cols", cols, "rows", rows)
         DCMap_Debug("tileBases:", "tileWBase", tileWBase, "extraW", extraW, "tileHBase", tileHBase, "extraH", extraH)
         for idx, _ in ipairs(container._tiles or {}) do
             local c = ((idx - 1) % cols) + 1
@@ -1546,9 +1761,7 @@ do
                 table.insert(container._tiles, tex)
             end
         end
-        if IsDebugEnabled() and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, string.format("DC-MapExtension: stitch applied %d/%d tiles", _tileSuccess, _tileTotal))
-        end
+        DCMap_Debug(string.format("DC-MapExtension: stitch applied %d/%d tiles", _tileSuccess, _tileTotal))
         -- create or update player marker on the stitched container
         if not container._playerMarker then
             local pm = container:CreateTexture(nil, "OVERLAY")
@@ -1564,6 +1777,17 @@ do
         else
             -- keep visible as overlay for quick testing
             pcall(container.Show, container)
+        end
+        -- schedule delayed reflow retries to help survive race conditions (Mapster/WorldMap may modify parent after our code)
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            -- retry 1: 50ms delay
+            pcall(C_Timer.After, 0.05, function()
+                if container and container.Reflow then pcall(container.Reflow, container) end
+            end)
+            -- retry 2: 250ms delay
+            pcall(C_Timer.After, 0.25, function()
+                if container and container.Reflow then pcall(container.Reflow, container) end
+            end)
         end
         -- persist chosen grid and enable stitched-map mode as the default
         DCMapExtensionDB = DCMapExtensionDB or {}
@@ -1929,6 +2153,17 @@ do
         end
         if container.Reflow then pcall(container.Reflow, container) end
         if type(WorldMapFrame) == "table" and WorldMapFrame:IsShown() and WorldMapDetailFrame then pcall(container.Show, container) else pcall(container.Show, container) end
+        -- schedule delayed reflow retries to help survive race conditions (Mapster/WorldMap may modify parent after our code)
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            -- retry 1: 50ms delay
+            pcall(C_Timer.After, 0.05, function()
+                if container and container.Reflow then pcall(container.Reflow, container) end
+            end)
+            -- retry 2: 250ms delay
+            pcall(C_Timer.After, 0.25, function()
+                if container and container.Reflow then pcall(container.Reflow, container) end
+            end)
+        end
         -- persist custom grid and enable stitched-map mode as default
         DCMapExtensionDB = DCMapExtensionDB or {}
         DCMapExtensionDB.stitchCols = cols
