@@ -311,6 +311,9 @@ local function MapsterZoneButton_OnClick(frame)
 	if DCMap_BackgroundFrame then
 		if DCMap_BackgroundFrame.Hide then pcall(DCMap_BackgroundFrame.Hide, DCMap_BackgroundFrame) end
 	end
+	if type(_G.DCMapExtension_ClearForcedMap) == "function" then
+		pcall(_G.DCMapExtension_ClearForcedMap)
+	end
 end
 local function Mapster_LoadZones(...)
 	local info = UIDropDownMenu_CreateInfo()

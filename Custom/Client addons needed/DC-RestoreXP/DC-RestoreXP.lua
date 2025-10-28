@@ -93,12 +93,35 @@ end
 local function CreateXPBar()
     if addonXPBar then return addonXPBar end
     
+    -- Reuse Blizzard's anchor metrics whenever possible so the custom bar sits exactly where the
+    -- original lived (helps it render above the action bar art on custom UIs)
+    local parent = UIParent
+    local width = 1024
+    local height = 13
+    local point, relativeTo, relativePoint, xOfs, yOfs
+    if BlizzardXPBar then
+        parent = BlizzardXPBar:GetParent() or parent
+        width = BlizzardXPBar:GetWidth() or width
+        height = BlizzardXPBar:GetHeight() or height
+        point, relativeTo, relativePoint, xOfs, yOfs = BlizzardXPBar:GetPoint(1)
+    end
+
     -- Create status bar
-    local bar = CreateFrame("StatusBar", "DCRestoreXPBar", UIParent)
-    bar:SetSize(1024, 13)  -- Match Blizzard MainMenuExpBar size
-    bar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)  -- Same position as Blizzard bar
-    bar:SetFrameStrata("LOW")
-    bar:SetFrameLevel(1)
+    local bar = CreateFrame("StatusBar", "DCRestoreXPBar", parent)
+    bar:SetSize(width, height)
+    if point then
+        bar:SetPoint(point, relativeTo, relativePoint, xOfs, yOfs)
+    else
+        bar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)
+    end
+    -- Ensure the bar renders above the action bar artwork
+    if BlizzardXPBar then
+        bar:SetFrameStrata(BlizzardXPBar:GetFrameStrata() or "MEDIUM")
+        bar:SetFrameLevel((BlizzardXPBar:GetFrameLevel() or 0) + 2)
+    else
+        bar:SetFrameStrata("MEDIUM")
+        bar:SetFrameLevel(10)
+    end
     
     -- Status bar texture
     bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
