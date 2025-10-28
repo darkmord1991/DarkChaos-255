@@ -55,7 +55,7 @@ void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
     if (_affixWeatherEnabled)
     {
         // Try to derive a friendly weather name and percent
-        if (_activeAffix >= AFFIX_NONE && _activeAffix <= AFFIX_BOSS_ENRAGE)
+        if (_activeAffix >= AFFIX_NONE && _activeAffix <= AFFIX_FOG)
         {
             uint32 wtype = _affixWeatherType[_activeAffix];
             float  wint  = _affixWeatherIntensity[_activeAffix];
