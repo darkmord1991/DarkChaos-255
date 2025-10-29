@@ -20,7 +20,7 @@ DCMapExtensionDB = DCMapExtensionDB or {}
 -- Default settings
 local function InitDefaults()
     if DCMapExtensionDB.enabled == nil then DCMapExtensionDB.enabled = true end
-    if DCMapExtensionDB.showPlayerDot == nil then DCMapExtensionDB.showPlayerDot = false end  -- Disabled by default to avoid performance issues
+    if DCMapExtensionDB.showPlayerDot == nil then DCMapExtensionDB.showPlayerDot = true end  -- Enabled by default for custom zones
     if DCMapExtensionDB.debug == nil then DCMapExtensionDB.debug = false end
     -- Force disable debug on first load to prevent spam
     if not DCMapExtensionDB.initialized then
@@ -35,6 +35,8 @@ end
 local addon = {
     stitchFrame = nil,
     playerDot = nil,
+    poiMarkers = {},
+    hotspotMarkers = {},
     currentMap = nil,
     initialized = false,
     lastDebugMap = nil,
@@ -77,6 +79,28 @@ local texturePaths = {
 }
 
 ----------------------------------------------
+-- POI (Points of Interest) Data
+----------------------------------------------
+-- Coordinates from ac_guard_npc.cpp converted to map coordinates (0-1 range)
+-- Map 37 dimensions: roughly -1000 to 500 in X, -500 to 1500 in Y
+local poi_data = {
+    azshara = {
+        {name = "Startcamp", x = 0.754, y = 0.493},
+        {name = "Flight Master", x = 0.718, y = 0.533},
+        {name = "Innkeeper", x = 0.734, y = 0.481},
+        {name = "Auctionhouse", x = 0.745, y = 0.474},
+        {name = "Stable Master", x = 0.730, y = 0.486},
+        {name = "Transmog", x = 0.766, y = 0.500},
+        {name = "Riding Trainer", x = 0.747, y = 0.523},
+        {name = "Profession Trainers", x = 0.696, y = 0.414},
+        {name = "Weapon Trainer", x = 0.734, y = 0.498},
+        {name = "Violet Temple", x = 0.284, y = 0.604},
+        {name = "Dragon Statues", x = 0.616, y = 0.520}
+    },
+    hyjal = {}  -- Add Hyjal POIs here if needed
+}
+
+----------------------------------------------
 -- Debug Helper
 ----------------------------------------------
 local function Debug(...)
@@ -99,32 +123,22 @@ end
 
 local function GetPlayerZoneInfo()
     -- Get player's actual zone (not what's shown on map)
-    SetMapToCurrentZone()
-    local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-    local zoneName = GetRealZoneText and GetRealZoneText() or GetZoneText and GetZoneText() or ""
+    local playerZoneName = GetRealZoneText and GetRealZoneText() or GetZoneText and GetZoneText() or ""
+    local playerSubZone = GetSubZoneText and GetSubZoneText() or ""
     
-    return mapID, zoneName
+    return playerZoneName, playerSubZone
 end
 
-local function IsAzsharaCrater()
-    -- Check the currently viewed map
-    local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-    
-    -- Azshara Crater has Map ID 37 (original custom map ID was 9001 but Mapster remaps to 37)
-    if mapID == AZSHARA_CRATER_MAP_ID then
-        if DCMapExtensionDB.debug then
-            Debug("Azshara detected via map ID:", mapID)
-        end
-        return true
-    end
-    
-    -- Also check by zone name (case insensitive)
-    local zoneName = GetZoneText and GetZoneText() or ""
+local function IsPlayerInAzsharaCrater()
+    -- Check if player is PHYSICALLY in Azshara Crater zone
+    local zoneName, subZone = GetPlayerZoneInfo()
     local zoneCheck = zoneName:lower()
+    local subCheck = subZone:lower()
     
-    if zoneCheck:find("azshara crater") or zoneCheck:find("azshara%-krater") then
+    if zoneCheck:find("azshara crater") or zoneCheck:find("azshara%-krater") or
+       subCheck:find("azshara crater") or subCheck:find("azshara%-krater") then
         if DCMapExtensionDB.debug then
-            Debug("Azshara detected via zone name:", zoneName)
+            Debug("Player is IN Azshara Crater - Zone:", zoneName, "SubZone:", subZone)
         end
         return true
     end
@@ -132,26 +146,15 @@ local function IsAzsharaCrater()
     return false
 end
 
-local function IsHyjal()
-    -- Check the currently viewed map
-    local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-    
-    -- Hyjal can have Map ID 14, 534, 614, 616, or 9002
-    -- Map ID 614 is "Hyjal 2" according to WorldMapArea.csv
-    if mapID == 14 or mapID == 534 or mapID == 614 or mapID == 616 or mapID == 9002 then
-        if DCMapExtensionDB.debug then
-            Debug("Hyjal detected via map ID:", mapID)
-        end
-        return true
-    end
-    
-    -- Also check zone names (case insensitive)
-    local zoneName = GetZoneText and GetZoneText() or ""
+local function IsPlayerInHyjal()
+    -- Check if player is PHYSICALLY in Hyjal zone
+    local zoneName, subZone = GetPlayerZoneInfo()
     local zoneCheck = zoneName:lower()
+    local subCheck = subZone:lower()
     
-    if zoneCheck:find("hyjal") then
+    if zoneCheck:find("hyjal") or subCheck:find("hyjal") then
         if DCMapExtensionDB.debug then
-            Debug("Hyjal detected via zone name:", zoneName)
+            Debug("Player is IN Hyjal - Zone:", zoneName, "SubZone:", subZone)
         end
         return true
     end
@@ -160,16 +163,15 @@ local function IsHyjal()
 end
 
 local function GetCustomMapType()
+    -- IMPORTANT: Only show custom maps if player is PHYSICALLY in the zone
+    -- Don't show custom maps just because they selected it from dropdown
     local mapType = nil
     
-    if IsAzsharaCrater() then
+    if IsPlayerInAzsharaCrater() then
         mapType = "azshara"
-    elseif IsHyjal() then
+    elseif IsPlayerInHyjal() then
         mapType = "hyjal"
     end
-    
-    -- Don't log here - this function is called frequently
-    -- The detection functions (IsAzsharaCrater/IsHyjal) already log when debug is enabled
     
     return mapType
 end
@@ -224,16 +226,266 @@ local function CreatePlayerDot()
 end
 
 ----------------------------------------------
+-- POI (Points of Interest) Management
+----------------------------------------------
+local function GetHotspotData()
+    -- Access DCHotspotXP addon's activeHotspots table if available
+    if _G.activeHotspots then
+        return _G.activeHotspots
+    end
+    return {}
+end
+
+local function ConvertWorldToMapCoords(worldX, worldY, mapType)
+    -- Convert world coordinates to map coordinates (0-1 range)
+    -- Azshara Crater (map 37) coordinate conversion
+    -- Based on known bounds: X roughly -1000 to 500, Y roughly -500 to 1500
+    if mapType == "azshara" then
+        -- Normalize coordinates
+        local minX, maxX = -1000, 500
+        local minY, maxY = -500, 1500
+        local mapX = (worldX - minX) / (maxX - minX)
+        local mapY = (worldY - minY) / (maxY - minY)
+        return mapX, mapY
+    elseif mapType == "hyjal" then
+        -- Hyjal coordinate conversion (adjust as needed)
+        local minX, maxX = -5000, -3000
+        local minY, maxY = -2000, 0
+        local mapX = (worldX - minX) / (maxX - minX)
+        local mapY = (worldY - minY) / (maxY - minY)
+        return mapX, mapY
+    end
+    return 0.5, 0.5  -- Center fallback
+end
+
+local function CreateHotspotMarkers(mapType)
+    if not addon.stitchFrame then return end
+    
+    -- Clear existing hotspot markers
+    if addon.hotspotMarkers then
+        for _, marker in ipairs(addon.hotspotMarkers) do
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+    end
+    addon.hotspotMarkers = {}
+    
+    local hotspots = GetHotspotData()
+    local hotspotCount = 0
+    
+    -- Check if we have any hotspots
+    for _ in pairs(hotspots) do
+        hotspotCount = hotspotCount + 1
+    end
+    
+    if hotspotCount == 0 then
+        Debug("No active hotspots")
+        return
+    end
+    
+    local parent = WorldMapDetailFrame or addon.stitchFrame
+    local frameWidth = parent:GetWidth()
+    local frameHeight = parent:GetHeight()
+    
+    if not frameWidth or not frameHeight or frameWidth == 0 or frameHeight == 0 then
+        Debug("Invalid frame dimensions for hotspots")
+        return
+    end
+    
+    local markerCount = 0
+    for id, hotspot in pairs(hotspots) do
+        -- Check if hotspot is in the current zone
+        -- Map 37 is Azshara Crater
+        local hotspotMap = hotspot.map or 0
+        
+        -- Only show hotspots that match the current custom map
+        local showHotspot = false
+        if mapType == "azshara" and hotspotMap == 37 then
+            showHotspot = true
+        elseif mapType == "hyjal" and (hotspotMap == 534 or hotspotMap == 616) then
+            showHotspot = true
+        end
+        
+        if showHotspot and hotspot.x and hotspot.y then
+            -- Convert world coordinates to map coordinates
+            local mapX, mapY = ConvertWorldToMapCoords(hotspot.x, hotspot.y, mapType)
+            
+            -- Create hotspot marker frame
+            local marker = CreateFrame("Frame", "DCMap_Hotspot_" .. id, parent)
+            marker:SetWidth(24)
+            marker:SetHeight(24)
+            marker:SetFrameLevel(parent:GetFrameLevel() + 6)
+            
+            -- Hotspot icon texture - use a glowing effect
+            local tex = marker:CreateTexture(nil, "OVERLAY")
+            tex:SetAllPoints()
+            tex:SetTexture("Interface\\AddOns\\DCHotspotXP\\textures\\hotspot_icon")  -- Try custom icon
+            if not tex:GetTexture() or tex:GetTexture() == "" then
+                -- Fallback to standard icons
+                tex:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+                tex:SetVertexColor(1, 0.84, 0)  -- Gold color
+            end
+            marker.texture = tex
+            
+            -- Add pulsing animation
+            local animGroup = marker:CreateAnimationGroup()
+            local scale1 = animGroup:CreateAnimation("Scale")
+            scale1:SetScale(1.2, 1.2)
+            scale1:SetDuration(0.8)
+            scale1:SetOrder(1)
+            
+            local scale2 = animGroup:CreateAnimation("Scale")
+            scale2:SetScale(0.833, 0.833)  -- Back to 1.0 (1/1.2)
+            scale2:SetDuration(0.8)
+            scale2:SetOrder(2)
+            
+            animGroup:SetLooping("REPEAT")
+            animGroup:Play()
+            marker.animation = animGroup
+            
+            -- Position the hotspot
+            local pixelX = mapX * frameWidth
+            local pixelY = -mapY * frameHeight
+            marker:ClearAllPoints()
+            marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+            
+            -- Calculate time remaining
+            local timeLeft = 0
+            if hotspot.expire and type(hotspot.expire) == "number" then
+                timeLeft = hotspot.expire - GetTime()
+                if timeLeft < 0 then timeLeft = 0 end
+            end
+            
+            -- Tooltip on mouseover
+            marker:EnableMouse(true)
+            marker:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("XP Hotspot", 1, 0.84, 0)
+                if hotspot.zone then
+                    GameTooltip:AddLine("Zone: " .. hotspot.zone, 1, 1, 1)
+                end
+                GameTooltip:AddLine(string.format("Position: %.1f, %.1f", hotspot.x, hotspot.y), 0.7, 0.7, 0.7)
+                if timeLeft > 0 then
+                    local minutes = math.floor(timeLeft / 60)
+                    local seconds = math.floor(timeLeft % 60)
+                    GameTooltip:AddLine(string.format("Time left: %d:%02d", minutes, seconds), 0.5, 1, 0.5)
+                end
+                GameTooltip:Show()
+            end)
+            marker:SetScript("OnLeave", function(self)
+                GameTooltip:Hide()
+            end)
+            
+            marker:Show()
+            table.insert(addon.hotspotMarkers, marker)
+            markerCount = markerCount + 1
+            Debug("Created hotspot marker:", id, "at", mapX, mapY, "time left:", math.floor(timeLeft))
+        end
+    end
+    
+    Debug("Created", markerCount, "hotspot markers for", mapType)
+end
+
+local function CreatePOIMarkers(mapType)
+    if not addon.stitchFrame then return end
+    
+    -- Clear existing POI markers
+    if addon.poiMarkers then
+        for _, marker in ipairs(addon.poiMarkers) do
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+    end
+    addon.poiMarkers = {}
+    
+    local pois = poi_data[mapType]
+    if not pois or #pois == 0 then
+        Debug("No POIs defined for", mapType)
+        return
+    end
+    
+    local parent = WorldMapDetailFrame or addon.stitchFrame
+    local frameWidth = parent:GetWidth()
+    local frameHeight = parent:GetHeight()
+    
+    if not frameWidth or not frameHeight or frameWidth == 0 or frameHeight == 0 then
+        Debug("Invalid frame dimensions for POIs")
+        return
+    end
+    
+    for i, poi in ipairs(pois) do
+        -- Create POI marker frame
+        local marker = CreateFrame("Frame", "DCMap_POI_" .. i, parent)
+        marker:SetWidth(16)
+        marker:SetHeight(16)
+        marker:SetFrameLevel(parent:GetFrameLevel() + 5)
+        
+        -- POI icon texture
+        local tex = marker:CreateTexture(nil, "OVERLAY")
+        tex:SetAllPoints()
+        tex:SetTexture("Interface\\Minimap\\POIIcons")  -- Use Blizzard POI icons
+        tex:SetTexCoord(0.5, 0.625, 0, 0.125)  -- Gold star icon
+        marker.texture = tex
+        
+        -- Position the POI
+        local pixelX = poi.x * frameWidth
+        local pixelY = -poi.y * frameHeight
+        marker:ClearAllPoints()
+        marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+        
+        -- Tooltip on mouseover
+        marker:EnableMouse(true)
+        marker:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(poi.name, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        marker:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+        
+        marker:Show()
+        table.insert(addon.poiMarkers, marker)
+        Debug("Created POI marker:", poi.name, "at", poi.x, poi.y)
+    end
+    
+    Debug("Created", #addon.poiMarkers, "POI markers for", mapType)
+end
+
+----------------------------------------------
 -- Texture Loading
 ----------------------------------------------
 local function ClearTiles()
-    -- Restore WorldMapButton alpha (show continent background again)
-    if WorldMapButton then
-        WorldMapButton:SetAlpha(1)
-        Debug("Restored WorldMapButton alpha to 1")
+    -- Restore WorldMapDetailFrame alpha
+    if WorldMapDetailFrame then
+        WorldMapDetailFrame:SetAlpha(1)
+        Debug("Restored WorldMapDetailFrame alpha to 1")
     end
     
-    -- Restore original Blizzard tiles
+    -- Clear POI markers
+    if addon.poiMarkers then
+        for _, marker in ipairs(addon.poiMarkers) do
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+        addon.poiMarkers = {}
+        Debug("Cleared POI markers")
+    end
+    
+    -- Clear hotspot markers
+    if addon.hotspotMarkers then
+        for _, marker in ipairs(addon.hotspotMarkers) do
+            if marker.animation then
+                marker.animation:Stop()
+            end
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+        addon.hotspotMarkers = {}
+        Debug("Cleared hotspot markers")
+    end
+    
+    -- Restore Blizzard's native detail tiles
     for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
         local tile = _G["WorldMapDetailTile" .. i]
         if tile then
@@ -255,7 +507,7 @@ local function ClearTiles()
         end
         frame.tiles = {}
     end
-    Debug("Tiles cleared")
+    Debug("Tiles cleared and native map restored")
 end
 
 local function LoadTiles(mapType)
@@ -268,33 +520,30 @@ local function LoadTiles(mapType)
     Debug("=== Loading tiles for", mapType, "===")
     Debug("NUM_WORLDMAP_DETAIL_TILES:", NUM_WORLDMAP_DETAIL_TILES or "UNDEFINED")
     
-    -- Hide the continent/background map by making WorldMapButton invisible
-    -- This is simpler than trying to find individual background textures
-    if WorldMapButton then
-        WorldMapButton:SetAlpha(0)
-        Debug("Set WorldMapButton alpha to 0 (hiding continent background)")
-    end
-    
-    -- Also try to hide any base textures on WorldMapDetailFrame
+    -- AGGRESSIVELY hide continent background
+    -- WorldMapDetailFrame contains the base continent texture - hide it completely
     if WorldMapDetailFrame then
-        local baseTexture = WorldMapDetailFrame:GetRegions()
-        if baseTexture and baseTexture.SetTexture then
-            baseTexture:SetTexture(nil)
-            Debug("Cleared WorldMapDetailFrame base texture")
-        end
+        WorldMapDetailFrame:SetAlpha(0)  -- Hide the entire detail frame background
+        Debug("Set WorldMapDetailFrame alpha to 0")
     end
     
-    -- Save original Blizzard textures before replacing
-    if not addon.originalTextures then
-        addon.originalTextures = {}
-        for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
-            local tile = _G["WorldMapDetailTile" .. i]
-            if tile and tile.GetTexture then
+    -- Hide Blizzard's native detail tiles (the ones we'll be replacing)
+    -- Don't hide other WorldMapDetailFrame elements
+    for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
+        local tile = _G["WorldMapDetailTile" .. i]
+        if tile then
+            -- Store original texture if not already stored
+            if not addon.originalTextures then
+                addon.originalTextures = {}
+            end
+            if tile.GetTexture and not addon.originalTextures[i] then
                 addon.originalTextures[i] = tile:GetTexture()
             end
+            -- Hide the tile - we'll replace it with our custom texture
+            tile:Hide()
         end
-        Debug("Saved", #addon.originalTextures, "original textures")
     end
+    Debug("Saved/hid", (addon.originalTextures and #addon.originalTextures or 0), "original tiles")
     
     -- Use Blizzard's built-in detail tiles
     local successCount = 0
@@ -442,15 +691,48 @@ local function ShowNativeDetailTiles()
     end
 end
 
+-- Store in addon table so global functions can access them
+function addon:ShowCustomMap(mapType)
+    Debug("ShowCustomMap called for:", mapType)
+    
+    if not mapType or (mapType ~= "azshara" and mapType ~= "hyjal") then
+        Debug("Invalid map type:", tostring(mapType))
+        return false
+    end
+    
+    CreateStitchFrame()
+    CreatePlayerDot()
+    
+    if LoadTiles(mapType) then
+        Debug("Tiles loaded successfully for", mapType)
+        self.stitchFrame:Show()
+        CreatePOIMarkers(mapType)
+        CreateHotspotMarkers(mapType)
+        HideNativeDetailTiles()
+        return true
+    else
+        Debug("Failed to load tiles for", mapType)
+        return false
+    end
+end
+
+function addon:HideCustomMap()
+    Debug("HideCustomMap called")
+    
+    if self.stitchFrame then
+        self.stitchFrame:Hide()
+    end
+    if self.playerDot then
+        self.playerDot:Hide()
+    end
+    
+    ClearTiles()
+    ShowNativeDetailTiles()
+end
+
 local function UpdateMap()
     if not DCMapExtensionDB.enabled then
-        if addon.stitchFrame then
-            addon.stitchFrame:Hide()
-        end
-        if addon.playerDot then
-            addon.playerDot:Hide()
-        end
-        ShowNativeDetailTiles()
+        addon:HideCustomMap()
         addon.currentMap = nil
         return
     end
@@ -462,23 +744,15 @@ local function UpdateMap()
     if DCMapExtensionDB.debug and (addon.lastDebugMap ~= mapID or GetTime() - addon.lastDebugTime > 5) then
         local zoneName = GetZoneText and GetZoneText() or "unknown"
         local continent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
-        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent)
+        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent, "Detected type:", tostring(mapType))
         addon.lastDebugMap = mapID
         addon.lastDebugTime = GetTime()
     end
     
     if not mapType then
         -- Not in a custom zone, restore original map
-        if addon.stitchFrame then
-            addon.stitchFrame:Hide()
-        end
-        if addon.playerDot then
-            addon.playerDot:Hide()
-        end
-        
-        -- Only restore once when leaving custom zone
         if addon.currentMap then
-            ClearTiles()  -- This restores background textures and original tiles
+            addon:HideCustomMap()
             Debug("Not in custom zone, hiding overlay")
             addon.currentMap = nil
         end
@@ -491,20 +765,16 @@ local function UpdateMap()
         Debug("Map changed from", tostring(addon.currentMap), "to", mapType)
         addon.currentMap = mapType
         
-        CreateStitchFrame()
-        CreatePlayerDot()
-        
-        if LoadTiles(mapType) then
-            -- Don't hide native tiles - we're using them!
-            addon.stitchFrame:Show()
+        if addon:ShowCustomMap(mapType) then
             Debug("Custom map shown:", mapType)
         else
-            Debug("Failed to load tiles for:", mapType)
+            Debug("Failed to show custom map:", mapType)
         end
     else
-        -- Same map but ensure tiles are still loaded (in case map was closed/reopened)
-        if LoadTiles(mapType) then
-            addon.stitchFrame:Show()
+        -- Same map but ensure it's still visible
+        if addon.stitchFrame and not addon.stitchFrame:IsShown() then
+            Debug("Refreshing custom map:", mapType)
+            addon:ShowCustomMap(mapType)
         end
     end
     
@@ -565,20 +835,22 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         UpdateMap()
     elseif event == "WORLD_MAP_UPDATE" then
         if addon.initialized then
-            -- Only update if we're actually viewing a custom zone
-            -- This prevents forcing back to custom map when user browses away
+            -- Check if player is PHYSICALLY in a custom zone
             local mapType = GetCustomMapType()
+            
             if mapType then
-                -- We're viewing a custom zone, update it
+                -- Player IS in a custom zone - show custom map
                 C_Timer.After(0.1, UpdateMap)
-            elseif addon.currentMap then
-                -- We were showing a custom map but user navigated away
-                -- Clear it properly
-                ClearTiles()
-                if addon.stitchFrame then addon.stitchFrame:Hide() end
-                if addon.playerDot then addon.playerDot:Hide() end
-                addon.currentMap = nil
-                Debug("User navigated away from custom map")
+            else
+                -- Player is NOT in a custom zone
+                -- Clear any custom map overlay to show normal map
+                if addon.currentMap then
+                    ClearTiles()
+                    if addon.stitchFrame then addon.stitchFrame:Hide() end
+                    if addon.playerDot then addon.playerDot:Hide() end
+                    addon.currentMap = nil
+                    Debug("Player not in custom zone - showing normal map")
+                end
             end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -590,16 +862,29 @@ end)
 
 -- Update player position periodically (only when enabled and map is shown)
 local updateTimer = 0
+local hotspotUpdateTimer = 0
 eventFrame:SetScript("OnUpdate", function(self, elapsed)
-    -- Skip entirely if player dot is disabled
-    if not DCMapExtensionDB.showPlayerDot then return end
+    -- Skip entirely if not initialized
     if not addon.initialized then return end
     if not addon.stitchFrame or not addon.stitchFrame:IsShown() then return end
     
-    updateTimer = updateTimer + elapsed
-    if updateTimer >= 0.5 then  -- Update 2 times per second
-        updateTimer = 0
-        UpdatePlayerPosition()
+    -- Update player position
+    if DCMapExtensionDB.showPlayerDot then
+        updateTimer = updateTimer + elapsed
+        if updateTimer >= 0.5 then  -- Update 2 times per second
+            updateTimer = 0
+            UpdatePlayerPosition()
+        end
+    end
+    
+    -- Update hotspot markers (check for new/expired hotspots every 2 seconds)
+    hotspotUpdateTimer = hotspotUpdateTimer + elapsed
+    if hotspotUpdateTimer >= 2.0 then
+        hotspotUpdateTimer = 0
+        if addon.currentMap then
+            -- Refresh hotspot markers
+            CreateHotspotMarkers(addon.currentMap)
+        end
     end
 end)
 
@@ -769,6 +1054,30 @@ SlashCmdList["DCMAP"] = function(msg)
         print("  /dcmap zone - Show detailed zone info")
         print("  /dcmap reload - Reload current map")
         print("  Or use Interface -> Addons -> DC-MapExtension")
+    end
+end
+
+----------------------------------------------
+-- Global API for Mapster Integration
+----------------------------------------------
+-- These functions allow Mapster to trigger custom maps manually
+function DCMapExtension_ShowStitchedMap(mapType)
+    if not DCMapExtensionDB.enabled then return end
+    
+    if mapType == "azshara" or mapType == "hyjal" then
+        Debug("Mapster requested custom map:", mapType)
+        addon.currentMap = mapType
+        addon:ShowCustomMap(mapType)
+    else
+        Debug("Unknown map type requested:", tostring(mapType))
+    end
+end
+
+function DCMapExtension_ClearForcedMap()
+    if addon.currentMap then
+        Debug("Clearing forced map")
+        addon:HideCustomMap()
+        addon.currentMap = nil
     end
 end
 

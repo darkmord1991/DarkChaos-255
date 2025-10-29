@@ -369,25 +369,26 @@ function HLBG.UpdateHUDVisibility()
         -- Only show in specific zones/instances
         local inHinterlands = false
         local inBattleground = false
-        -- Only show in specific zone: prefer map area ID 47 (The Hinterlands)
-        if type(GetCurrentMapAreaID) == "function" then
-            local id = GetCurrentMapAreaID()
-            inHinterlands = (id == 47)
-        else
-            -- Fallback to zone name and subzone checks if map id not available
-            if type(GetRealZoneText) == "function" then
-                local zone = GetRealZoneText()
-                inHinterlands = (zone == "The Hinterlands")
-            end
-            if type(GetSubZoneText) == "function" then
-                local subzone = GetSubZoneText()
-                if subzone and (subzone:match("Hinterland") or subzone:match("Battleground")) then
-                    inHinterlands = true
-                end
+        
+        -- Check player's ACTUAL zone (not the map they're viewing)
+        -- Use GetRealZoneText() which returns player position, not map view
+        if type(GetRealZoneText) == "function" then
+            local zone = GetRealZoneText()
+            inHinterlands = (zone == "The Hinterlands")
+        end
+        
+        -- Also check subzone as fallback
+        if not inHinterlands and type(GetSubZoneText) == "function" then
+            local subzone = GetSubZoneText()
+            if subzone and (subzone:match("Hinterland") or subzone:match("Azshara Crater")) then
+                inHinterlands = true
             end
         end
+        
         -- Also check battlefield/activity/status as a fallback indicator
-        if type(GetBattlefieldStatus) == "function" then
+        -- IMPORTANT: Only use battlefield status if we're already in Hinterlands zone
+        -- This prevents HUD staying visible after leaving the BG zone
+        if inHinterlands and type(GetBattlefieldStatus) == "function" then
             for i = 1, 4 do
                 local status, _, instanceID = GetBattlefieldStatus(i)
                 if status == "active" then
@@ -396,11 +397,7 @@ function HLBG.UpdateHUDVisibility()
                 end
             end
         end
-        if HLBG._lastStatus and HLBG._lastStatus.A and HLBG._lastStatus.H then
-            local lastUpdate = HLBG._lastStatusTime or 0
-            local now = GetTime and GetTime() or 0
-            if (now - lastUpdate) < 30 then inBattleground = true end
-        end
+        -- Don't use _lastStatus as a fallback - it keeps HUD visible after leaving zone
         shouldShow = inHinterlands or inBattleground
         -- DEBUG: Log visibility decision
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then

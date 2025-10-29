@@ -85,10 +85,10 @@ end
 --   Streaks: currentStreak{team,count}, longestStreak{team,count}
 --   Margins: largestMargin{date,team,margin,scoreA,scoreH}
 --   Per-affix: topWinnersByAffix[], drawsByAffix[], topAffixes[], avgScoresPerAffix[], winRatesPerAffix[], avgMarginPerAffix[], reasonBreakdownPerAffix[], medianMarginPerAffix[], avgDurationPerAffix[]
-HLBG.OnServerStats = HLBG.OnServerStats or function(payload)
+HLBG.OnServerStats = HLBG.OnServerStats or function(payload, ...)
     if type(payload) ~= 'table' then
         -- Legacy positional params support (deprecated)
-        local a,b,c,d,e,f,g = payload, select(2, ...)
+        local a,b,c,d,e,f,g = payload, ...
         if type(a) ~= 'table' then
             payload = {
                 totalBattles = tonumber(a) or 0,
