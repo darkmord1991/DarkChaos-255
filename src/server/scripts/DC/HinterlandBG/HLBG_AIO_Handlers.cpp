@@ -17,7 +17,7 @@
 #include "WorldSession.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
-#include "OutdoorPvPHL.h"
+#include "OutdoorPvP/OutdoorPvPHL.h"
 
 class HLBGAIOHandlers
 {

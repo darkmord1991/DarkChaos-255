@@ -7,7 +7,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Chat.h"
-#include "OutdoorPvPHL.h"
+#include "OutdoorPvP/OutdoorPvPHL.h"
 #include "DatabaseEnv.h"
 #include <sstream>
 #include <iomanip>
