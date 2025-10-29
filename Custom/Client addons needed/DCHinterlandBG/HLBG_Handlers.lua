@@ -841,8 +841,14 @@ SLASH_HLBGTABS1 = '/hlbgtabs'
 SlashCmdList['HLBGTABS'] = function()
     local ok, err = pcall(function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Creating emergency window...')
+        -- Singleton check: reuse existing frame if present
+        local frame = _G["HLBG_Emergency"]
+        if frame then
+            frame:Show()
+            return
+        end
         -- Simple basic frame
-        local frame = CreateFrame("Frame", "HLBG_Emergency", UIParent)
+        frame = CreateFrame("Frame", "HLBG_Emergency", UIParent)
         frame:SetSize(500, 300)
         frame:SetPoint("CENTER")
         frame:SetBackdrop({
@@ -972,6 +978,12 @@ SlashCmdList['HLBGFULLFIX'] = function()
     if _G["HLBG_Rebuilt"] then _G["HLBG_Rebuilt"]:Hide() end
     if _G["HLBG_ModernHUD"] then _G["HLBG_ModernHUD"]:Hide() end
     -- Step 3: Ensure main frame exists and is properly configured
+    -- Singleton check: reuse existing frame if present
+    local existingFrame = _G["HLBG_Fixed"]
+    if existingFrame and HLBG.UI and HLBG.UI.Frame then
+        HLBG.UI.Frame:Show()
+        return
+    end
     if not (HLBG and HLBG.UI and HLBG.UI.Frame) then
         DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Creating main frame - original was missing')
         HLBG.UI = HLBG.UI or {}
@@ -1082,6 +1094,12 @@ end
 SLASH_HLBGNUCLEAR1 = '/hlbgnuclear'
 SlashCmdList['HLBGNUCLEAR'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r NUCLEAR OPTION: Creating completely isolated UI...')
+    -- Singleton check: reuse existing frame if present
+    local existingFrame = _G["HLBG_Nuclear"]
+    if existingFrame then
+        existingFrame:Show()
+        return
+    end
     -- Disable everything that might interfere
     HLBG.ApplyModernStyling = function() end
     HLBG.ModernizeContentAreas = function() end

@@ -683,13 +683,24 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     OnUpdate(self, elapsed)
     local now = GetTime()
     local removed = false
+    local warned = {}
     for id,h in pairs(activeHotspots) do
         if h.expire and h.expire <= now then
+            -- Announce expiration
+            if _G.HotspotAnnouncements and _G.HotspotAnnouncements.AnnounceExpire then
+                pcall(_G.HotspotAnnouncements.AnnounceExpire, id, h)
+            end
             -- remove associated pins
             RemoveWorldMapPin(id)
             RemoveHotspotMinimapPin(id)
             activeHotspots[id] = nil
             removed = true
+        elseif h.expire and (h.expire - now) <= 30 and not warned[id] then
+            -- Warn when 30 seconds left
+            if _G.HotspotAnnouncements and _G.HotspotAnnouncements.AnnounceWarning then
+                pcall(_G.HotspotAnnouncements.AnnounceWarning, id, h, math.floor(h.expire - now))
+            end
+            warned[id] = true
         end
     end
     if removed then
@@ -699,4 +710,19 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
         UpdateMinimapPins()
     end
 end)
+
+-- Integration hook: Call announcements when new hotspot is added
+local original_activeHotspots_add = activeHotspots
+setmetatable(activeHotspots, {
+    __newindex = function(t, id, hotspot)
+        local isNew = (rawget(t, id) == nil)
+        rawset(t, id, hotspot)
+        
+        if isNew and hotspot and _G.HotspotAnnouncements and _G.HotspotAnnouncements.AnnounceSpawn then
+            -- New hotspot detected, announce it
+            pcall(_G.HotspotAnnouncements.AnnounceSpawn, id, hotspot)
+        end
+    end
+})
+
 

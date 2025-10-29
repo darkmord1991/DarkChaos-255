@@ -1,7 +1,24 @@
 ﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
--- Stats module (placeholder refactor) - future: integrate real DB-driven stats payload
+
+-- Comprehensive Stats Module - Matches scoreboard NPC functionality
+-- Supports all statistics tracked in hlbg_winner_history database
+
+-- Helper: Get affix name by ID
+HLBG.GetAffixName = HLBG.GetAffixName or function(affixId)
+    local affixes = {
+        [0] = "None",
+        [1] = "Haste",
+        [2] = "Slow",
+        [3] = "Reduced Healing",
+        [4] = "Reduced Armor",
+        [5] = "Boss Enrage"
+    }
+    return affixes[affixId] or "Unknown"
+end
+
+-- Main stats rendering function
 HLBG.Stats = HLBG.Stats or function(player, stats)
-    -- Debug: announce stats invocation in dev mode and add to debug buffer
+    -- Debug logging
     pcall(function()
         local msg = string.format('HLBG.Stats invoked payloadType=%s', type(stats))
         if not DCHLBG_DebugLog then DCHLBG_DebugLog = {} end
@@ -11,59 +28,68 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
             DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r '..msg)
         end
     end)
-    stats = stats or HLBG.cachedStats or {
-        counts = { Alliance = 0, Horde = 0 },
-        draws = 0,
-        totalBattles = 0,
-        bestScore = 0,
-        totalScore = 0,
-        avgDuration = 0,
-    }
-    -- Minimal rendering hook (UI code still lives in main UI until further split)
-    if HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text then
-        pcall(function() if HLBG and HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.Show then HLBG.UI.Frame:Show() end end)
-        local statsText
-        if stats and stats.counts and (stats.counts.Alliance > 0 or stats.counts.Horde > 0 or stats.draws > 0) then
-            statsText = string.format('Alliance: %d | Horde: %d | Draws: %d | Total: %d',
-                (stats.counts and stats.counts.Alliance) or 0,
-                (stats.counts and stats.counts.Horde) or 0,
-                stats.draws or 0,
-                stats.totalBattles or ((stats.counts and stats.counts.Alliance or 0) + (stats.counts and stats.counts.Horde or 0) + (stats.draws or 0)))
-        else
-            statsText = 'No stats available. Waiting for data...'
-        end
-        HLBG.UI.Stats.Text:SetText(statsText)
+    
+    -- Cache stats for later use
+    HLBG.cachedStats = stats or HLBG.cachedStats
+    
+    -- Ensure UI is available
+    if not (HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text) then
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Directly updated Stats UI text: ' .. statsText)
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF3333HLBG Debug:|r Stats UI elements missing! Deferring...')
         end
-    else
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF3333HLBG Debug:|r Stats UI elements missing! UI=' .. tostring(HLBG.UI ~= nil) .. ' Stats=' .. tostring(HLBG.UI and HLBG.UI.Stats ~= nil) .. ' Text=' .. tostring(HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text ~= nil))
-        end
-        -- Schedule a one-shot retry like History does so transient load-order issues are handled
+        -- Schedule retry
         if not HLBG._statsDeferredRetryScheduled then
             HLBG._statsDeferredRetryScheduled = true
             C_Timer.After(1.0, function()
                 HLBG._statsDeferredRetryScheduled = false
-                if HLBG and HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text and HLBG.cachedStats then
+                if HLBG.cachedStats then
                     pcall(HLBG.Stats, nil, HLBG.cachedStats)
-                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r Deferred stats update invoked')
-                    end
                 end
             end)
         end
+        return
+    end
+    
+    -- Show UI frame
+    pcall(function() 
+        if HLBG.UI.Frame and HLBG.UI.Frame.Show then 
+            HLBG.UI.Frame:Show() 
+        end 
+    end)
+    
+    -- Render stats using UpdateStats function (defined in HLBG_UI_Clean.lua)
+    if HLBG.UpdateStats and type(HLBG.UpdateStats) == 'function' then
+        pcall(HLBG.UpdateStats, stats)
+    else
+        -- Fallback: basic display
+        local text = "No stats available. Click Refresh to load data."
+        if stats and type(stats) == "table" then
+            text = string.format('Alliance: %d | Horde: %d | Draws: %d',
+                (stats.allianceWins or 0),
+                (stats.hordeWins or 0),
+                (stats.draws or 0))
+        end
+        HLBG.UI.Stats.Text:SetText(text)
+    end
+    
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Stats UI updated')
     end
 end
--- Lightweight server stats ingestion hook. Accepts either a table payload or positional params.
--- Supported table fields: totalBattles, allianceWins, hordeWins, draws, bestScore, totalScore, avgDuration
--- Positional form: (totalBattles, allianceWins, hordeWins, draws, bestScore, totalScore, avgDuration)
-if not HLBG.OnServerStats then
-    function HLBG.OnServerStats(a,b,c,d,e,f,g)
-        local payload
-        if type(a) == 'table' then
-            payload = a
-        else
+
+-- Server stats ingestion hook
+-- Accepts comprehensive stats payload matching scoreboard NPC data structure
+-- Expected fields:
+--   Basic: totalBattles, allianceWins, hordeWins, draws
+--   Reasons: depletionWins, tiebreakerWins, manualResets
+--   Streaks: currentStreak{team,count}, longestStreak{team,count}
+--   Margins: largestMargin{date,team,margin,scoreA,scoreH}
+--   Per-affix: topWinnersByAffix[], drawsByAffix[], topAffixes[], avgScoresPerAffix[], winRatesPerAffix[], avgMarginPerAffix[], reasonBreakdownPerAffix[], medianMarginPerAffix[], avgDurationPerAffix[]
+HLBG.OnServerStats = HLBG.OnServerStats or function(payload)
+    if type(payload) ~= 'table' then
+        -- Legacy positional params support (deprecated)
+        local a,b,c,d,e,f,g = payload, select(2, ...)
+        if type(a) ~= 'table' then
             payload = {
                 totalBattles = tonumber(a) or 0,
                 allianceWins = tonumber(b) or 0,
@@ -74,19 +100,64 @@ if not HLBG.OnServerStats then
                 avgDuration  = tonumber(g) or 0,
             }
         end
-        if type(payload) ~= 'table' then return end
-        local stats = {
-            counts = {
-                Alliance = tonumber(payload.allianceWins or payload.Alliance or payload.A or 0) or 0,
-                Horde    = tonumber(payload.hordeWins or payload.Horde or payload.H or 0) or 0,
-            },
-            draws        = tonumber(payload.draws or payload.Draws or 0) or 0,
-            totalBattles = tonumber(payload.totalBattles or payload.Total or payload.Battles or 0) or 0,
-            bestScore    = tonumber(payload.bestScore or payload.Best or 0) or 0,
-            totalScore   = tonumber(payload.totalScore or payload.ScoreSum or 0) or 0,
-            avgDuration  = tonumber(payload.avgDuration or payload.AvgDuration or 0) or 0,
-        }
-        HLBG.Stats(stats)
+    end
+    
+    if type(payload) ~= 'table' then return end
+    
+    -- Normalize payload to internal stats structure
+    local stats = {
+        -- Basic counts
+        totalBattles = tonumber(payload.totalBattles or payload.total or 0) or 0,
+        allianceWins = tonumber(payload.allianceWins or payload.Alliance or 0) or 0,
+        hordeWins    = tonumber(payload.hordeWins or payload.Horde or 0) or 0,
+        draws        = tonumber(payload.draws or 0) or 0,
+        
+        -- Win reasons
+        depletionWins  = tonumber(payload.depletionWins or 0) or 0,
+        tiebreakerWins = tonumber(payload.tiebreakerWins or 0) or 0,
+        manualResets   = tonumber(payload.manualResets or 0) or 0,
+        
+        -- Streaks
+        currentStreak  = payload.currentStreak or { team = "None", count = 0 },
+        longestStreak  = payload.longestStreak or { team = "None", count = 0 },
+        
+        -- Largest margin
+        largestMargin = payload.largestMargin or nil,
+        
+        -- Per-affix statistics (arrays)
+        topWinnersByAffix       = payload.topWinnersByAffix or {},
+        drawsByAffix            = payload.drawsByAffix or {},
+        topAffixes              = payload.topAffixes or {},
+        avgScoresPerAffix       = payload.avgScoresPerAffix or {},
+        winRatesPerAffix        = payload.winRatesPerAffix or {},
+        avgMarginPerAffix       = payload.avgMarginPerAffix or {},
+        reasonBreakdownPerAffix = payload.reasonBreakdownPerAffix or {},
+        medianMarginPerAffix    = payload.medianMarginPerAffix or {},
+        avgDurationPerAffix     = payload.avgDurationPerAffix or {},
+        
+        -- Legacy support
+        bestScore   = tonumber(payload.bestScore or 0) or 0,
+        totalScore  = tonumber(payload.totalScore or 0) or 0,
+        avgDuration = tonumber(payload.avgDuration or 0) or 0,
+    }
+    
+    -- Call main Stats function to render
+    HLBG.Stats(nil, stats)
+end
+
+-- Request stats from server
+HLBG.RequestStats = HLBG.RequestStats or function(season)
+    if _G.AIO and _G.AIO.Handle then
+        -- Use AIO if available
+        if season then
+            _G.AIO.Handle("HLBG", "Request", "STATS", season)
+        else
+            _G.AIO.Handle("HLBG", "Request", "STATS")
+        end
+    else
+        -- Fallback to chat command
+        local cmd = season and string.format('.hlbg statsui %d', season) or '.hlbg statsui'
+        SendChatMessage(cmd, "SAY")
     end
 end
 

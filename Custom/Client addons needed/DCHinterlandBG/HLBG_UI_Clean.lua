@@ -325,57 +325,175 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
         HLBG.UI.Stats.Text:SetText("|cFFFFAA00No statistics data available.|r\n\nUse |cFFFFFFFF.hlbg statsui|r command or click Refresh.")
         return
     end
-    -- Format stats matching actual server data structure
+    
     local lines = {}
-    table.insert(lines, "|cFFFFD700Hinterland BG Statistics|r\n")
-    -- Basic counts from actual data
-    table.insert(lines, string.format("|cFFFFFFFFTotal battles:|r %d", statsData.total or 0))
-    -- Extract wins from byAffix structure
-    local allianceWins = 0
-    local hordeWins = 0
-    if statsData.byAffix then
-        for _, affixData in pairs(statsData.byAffix) do
-            if type(affixData) == "table" then
-                allianceWins = allianceWins + (affixData.Alliance or 0)
-                hordeWins = hordeWins + (affixData.Horde or 0)
+    local function addLine(text) table.insert(lines, text) end
+    local function addSection(title) addLine("\n|cFFFFD700" .. title .. "|r") end
+    
+    -- Header
+    addLine("|cFFFFD700═══════════════════════════════════════|r")
+    addLine("|cFFFFD700    Hinterland Battleground Statistics    |r")
+    addLine("|cFFFFD700═══════════════════════════════════════|r\n")
+    
+    -- Basic Counts
+    addSection("Overall Statistics")
+    addLine(string.format("  Total Battles: |cFFFFFFFF%d|r", statsData.totalBattles or 0))
+    addLine(string.format("  Alliance Wins: |cFF0080FF%d|r", statsData.allianceWins or 0))
+    addLine(string.format("  Horde Wins: |cFFFF4040%d|r", statsData.hordeWins or 0))
+    addLine(string.format("  Draws: |cFFAAAA88%d|r", statsData.draws or 0))
+    
+    -- Win Reasons
+    if statsData.depletionWins or statsData.tiebreakerWins or statsData.manualResets then
+        addSection("Win Reasons")
+        addLine(string.format("  Depletion: |cFFFFFFFF%d|r", statsData.depletionWins or 0))
+        addLine(string.format("  Tiebreaker: |cFFFFFFFF%d|r", statsData.tiebreakerWins or 0))
+        addLine(string.format("  Manual Resets: |cFFFFFFFF%d|r", statsData.manualResets or 0))
+    end
+    
+    -- Streaks
+    if statsData.currentStreak or statsData.longestStreak then
+        addSection("Streaks")
+        local currStreak = statsData.currentStreak or {}
+        local longStreak = statsData.longestStreak or {}
+        
+        local currTeam = currStreak.team or "None"
+        local currCount = currStreak.count or 0
+        local currColor = currTeam == "Alliance" and "0080FF" or (currTeam == "Horde" and "FF4040" or "AAAAAA")
+        addLine(string.format("  Current: |cFF%s%s x%d|r", currColor, currTeam, currCount))
+        
+        local longTeam = longStreak.team or "None"
+        local longCount = longStreak.count or 0
+        local longColor = longTeam == "Alliance" and "0080FF" or (longTeam == "Horde" and "FF4040" or "AAAAAA")
+        addLine(string.format("  Longest: |cFF%s%s x%d|r", longColor, longTeam, longCount))
+    end
+    
+    -- Largest Margin
+    if statsData.largestMargin then
+        addSection("Largest Margin Victory")
+        local lm = statsData.largestMargin
+        local team = lm.team or "Unknown"
+        local margin = lm.margin or 0
+        local scoreA = lm.scoreA or 0
+        local scoreH = lm.scoreH or 0
+        local date = lm.date or "Unknown"
+        local color = team == "Alliance" and "0080FF" or "FF4040"
+        addLine(string.format("  |cFF%s%s|r by |cFFFFFFFF%d|r points", color, team, margin))
+        addLine(string.format("  Score: A:%d H:%d  |cFFAAAA88(%s)|r", scoreA, scoreH, date))
+    end
+    
+    -- Top Winners by Affix
+    if statsData.topWinnersByAffix and #statsData.topWinnersByAffix > 0 then
+        addSection("Top Winners by Affix")
+        for i, entry in ipairs(statsData.topWinnersByAffix) do
+            if i <= 5 then  -- Show top 5
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                local team = entry.team or "Unknown"
+                local wins = entry.wins or 0
+                local color = team == "Alliance" and "0080FF" or "FF4040"
+                addLine(string.format("  %s: |cFF%s%s|r (%d wins)", affixName, color, team, wins))
             end
         end
     end
-    table.insert(lines, string.format("|cFFFFFFFFAlliance wins:|r %d  |cFFAAAA(losses: %d)|r", allianceWins, hordeWins))
-    table.insert(lines, string.format("|cFFFFFFFFHorde wins:|r %d  |cFFAAAA(losses: %d)|r", hordeWins, allianceWins))
-    table.insert(lines, string.format("|cFFFFFFFFDraws:|r %d", statsData.draws or 0))
-    -- Win reasons from actual data structure
-    if statsData.reasons then
-        local reasons = statsData.reasons
-        table.insert(lines, string.format("|cFFFFFFFFWin reasons:|r depletion %d, tiebreaker %d, manual %d\n",
-            reasons.depletion or 0, reasons.tiebreaker or 0, reasons.manual or 0))
-    end
-    -- Streaks using actual field names
-    table.insert(lines, string.format("|cFFFFFFFFCurrent streak:|r %s x%d",
-        statsData.currentStreakTeam or "None", statsData.currentStreakLen or 0))
-    table.insert(lines, string.format("|cFFFFFFFFLongest streak:|r %s x%d\n",
-        statsData.longestStreakTeam or "None", statsData.longestStreakLen or 0))
-    -- Top affixes by matches
-    if statsData.topAffixesByMatches and #statsData.topAffixesByMatches > 0 then
-        table.insert(lines, "|cFFFFD700Top affixes by matches:|r")
-        for _, entry in ipairs(statsData.topAffixesByMatches) do
-            local affixName = HLBG.GetAffixName(entry.affix or 0)
-            table.insert(lines, string.format("- %s: %d matches", affixName, entry.count or 0))
-        end
-        table.insert(lines, "")
-    end
-    -- Average scores per affix
-    if statsData.avgScorePerAffix then
-        table.insert(lines, "|cFFFFD700Average score per affix:|r")
-        for affixId, scores in pairs(statsData.avgScorePerAffix) do
-            if type(scores) == "table" then
-                local affixName = HLBG.GetAffixName(tonumber(affixId) or 0)
-                table.insert(lines, string.format("- %s: A:%.1f H:%.1f (n=%d)",
-                    affixName, scores.A or 0, scores.H or 0, scores.n or 0))
+    
+    -- Draws by Affix
+    if statsData.drawsByAffix and #statsData.drawsByAffix > 0 then
+        addSection("Draws by Affix")
+        for i, entry in ipairs(statsData.drawsByAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: |cFFFFFFFF%d|r draws", affixName, entry.draws or 0))
             end
         end
     end
-    table.insert(lines, "\n|cFFAAAAAALast updated: " .. date("%Y-%m-%d %H:%M:%S") .. "|r")
+    
+    -- Top Affixes by Match Count
+    if statsData.topAffixes and #statsData.topAffixes > 0 then
+        addSection("Most Played Affixes")
+        for i, entry in ipairs(statsData.topAffixes) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: |cFFFFFFFF%d|r matches", affixName, entry.matches or 0))
+            end
+        end
+    end
+    
+    -- Average Scores per Affix
+    if statsData.avgScoresPerAffix and #statsData.avgScoresPerAffix > 0 then
+        addSection("Average Scores by Affix")
+        for i, entry in ipairs(statsData.avgScoresPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: A:|cFF0080FF%.1f|r H:|cFFFF4040%.1f|r (n=%d)",
+                    affixName, entry.avgAlliance or 0, entry.avgHorde or 0, entry.matches or 0))
+            end
+        end
+    end
+    
+    -- Win Rates per Affix
+    if statsData.winRatesPerAffix and #statsData.winRatesPerAffix > 0 then
+        addSection("Win Rates by Affix")
+        for i, entry in ipairs(statsData.winRatesPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: A:|cFF0080FF%.1f%%|r H:|cFFFF4040%.1f%%|r Draw:|cFFAAAA88%.1f%%|r",
+                    affixName, entry.alliancePct or 0, entry.hordePct or 0, entry.drawPct or 0))
+            end
+        end
+    end
+    
+    -- Average Margin per Affix
+    if statsData.avgMarginPerAffix and #statsData.avgMarginPerAffix > 0 then
+        addSection("Average Victory Margin by Affix")
+        for i, entry in ipairs(statsData.avgMarginPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: |cFFFFFFFF%.1f|r points (n=%d)",
+                    affixName, entry.avgMargin or 0, entry.matches or 0))
+            end
+        end
+    end
+    
+    -- Median Margin per Affix (if available)
+    if statsData.medianMarginPerAffix and #statsData.medianMarginPerAffix > 0 then
+        addSection("Median Victory Margin by Affix")
+        for i, entry in ipairs(statsData.medianMarginPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: |cFFFFFFFF%.1f|r points", affixName, entry.medianMargin or 0))
+            end
+        end
+    end
+    
+    -- Reason Breakdown per Affix
+    if statsData.reasonBreakdownPerAffix and #statsData.reasonBreakdownPerAffix > 0 then
+        addSection("Win Reasons by Affix")
+        for i, entry in ipairs(statsData.reasonBreakdownPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                addLine(string.format("  %s: Depletion:%d Tiebreaker:%d (n=%d)",
+                    affixName, entry.depletion or 0, entry.tiebreaker or 0, entry.total or 0))
+            end
+        end
+    end
+    
+    -- Average Duration per Affix
+    if statsData.avgDurationPerAffix and #statsData.avgDurationPerAffix > 0 then
+        addSection("Average Duration by Affix")
+        for i, entry in ipairs(statsData.avgDurationPerAffix) do
+            if i <= 5 then
+                local affixName = HLBG.GetAffixName and HLBG.GetAffixName(entry.affix) or ("Affix " .. (entry.affix or 0))
+                local duration = entry.avgDuration or 0
+                local minutes = math.floor(duration / 60)
+                local seconds = math.floor(duration % 60)
+                addLine(string.format("  %s: |cFFFFFFFF%dm %ds|r (n=%d)",
+                    affixName, minutes, seconds, entry.matches or 0))
+            end
+        end
+    end
+    
+    -- Footer
+    addLine("\n|cFFAAAA88Last updated: " .. date("%Y-%m-%d %H:%M:%S") .. "|r")
+    
     HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
 end
 if not HLBG.UI.Info.Content then

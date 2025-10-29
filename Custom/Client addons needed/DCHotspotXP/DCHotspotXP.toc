@@ -1,8 +1,8 @@
 ## Interface: 30300
 ## Title: Hotspot Display
-## Notes: Shows XP hotspot locations on map with XP+ text overlay
+## Notes: Shows XP hotspot locations on map with XP+ text overlay, proximity detection, and announcements
 ## Author: HotspotDisplay Team
-## Version: 1.0
+## Version: 2.0
 ## SavedVariables: HotspotDisplayDB
 ## OptionalDeps: DC_DebugUtils
 
@@ -16,3 +16,8 @@ Libs/LibStub/LibStub.lua
 Libs/Astrolabe/DongleStub.lua
 Libs/Astrolabe/Astrolabe.lua
 Libs/Astrolabe/AstrolabeMapMonitor.lua
+
+# Enhanced modules
+ProximityTimer.lua
+Announcements.lua
+
