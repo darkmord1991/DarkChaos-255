@@ -672,22 +672,45 @@ end
 local function LoadTiles(mapType)
     local paths = texturePaths[mapType]
     if not paths then
-        Debug("ERROR: No texture paths for map type:", mapType)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: No texture paths for map type: " .. tostring(mapType) .. "|r")
         return false
     end
     
     Debug("=== Loading tiles for", mapType, "===")
     Debug("NUM_WORLDMAP_DETAIL_TILES:", NUM_WORLDMAP_DETAIL_TILES or "UNDEFINED")
     
-    -- AGGRESSIVELY hide continent background
-    -- WorldMapDetailFrame contains the base continent texture - hide it completely
+    -- Don't hide WorldMapDetailFrame - the tiles are its children!
+    -- Instead, we'll just replace the tile textures
     if WorldMapDetailFrame then
-        WorldMapDetailFrame:SetAlpha(0)  -- Hide the entire detail frame background
-        Debug("Set WorldMapDetailFrame alpha to 0")
+        WorldMapDetailFrame:SetAlpha(1)  -- Keep it visible so our custom tiles show
+        Debug("Set WorldMapDetailFrame alpha to 1 (visible)")
     end
     
-    -- Hide Blizzard's native detail tiles (the ones we'll be replacing)
-    -- Don't hide other WorldMapDetailFrame elements
+    -- Hook the WorldMap texture update function to prevent Blizzard from overriding our textures
+    if not addon.hookedTileUpdate then
+        if WorldMapFrame_UpdateDetailTiles then
+            local originalUpdateWorldMapDetailTiles = WorldMapFrame_UpdateDetailTiles
+            WorldMapFrame_UpdateDetailTiles = function()
+                -- If we're showing a custom map, don't let Blizzard reset the tiles
+                if addon.currentMap then
+                    Debug("Blocked Blizzard tile update while showing custom map:", addon.currentMap)
+                    return
+                end
+                -- Otherwise, call original function
+                if originalUpdateWorldMapDetailTiles then
+                    originalUpdateWorldMapDetailTiles()
+                end
+            end
+            addon.hookedTileUpdate = true
+            Debug("Hooked WorldMapFrame_UpdateDetailTiles to prevent override")
+        else
+            Debug("WorldMapFrame_UpdateDetailTiles not found - trying alternative approach")
+            -- Alternative: Hook WORLD_MAP_UPDATE event more aggressively
+            addon.hookedTileUpdate = true
+        end
+    end
+    
+    -- Save and prepare to replace Blizzard's native detail tiles
     for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
         local tile = _G["WorldMapDetailTile" .. i]
         if tile then
@@ -698,11 +721,10 @@ local function LoadTiles(mapType)
             if tile.GetTexture and not addon.originalTextures[i] then
                 addon.originalTextures[i] = tile:GetTexture()
             end
-            -- Hide the tile - we'll replace it with our custom texture
-            tile:Hide()
+            -- Don't hide the tile - we're going to replace its texture
         end
     end
-    Debug("Saved/hid", (addon.originalTextures and #addon.originalTextures or 0), "original tiles")
+    Debug("Saved", (addon.originalTextures and #addon.originalTextures or 0), "original tile textures")
     
     -- Use Blizzard's built-in detail tiles
     local successCount = 0
@@ -726,6 +748,11 @@ local function LoadTiles(mapType)
                 tile:SetTexCoord(0, 1, 0, 1)
                 tile:SetAlpha(1)
                 tile:SetVertexColor(1, 1, 1, 1)
+                tile:SetDrawLayer("ARTWORK", 0)
+                -- Ensure tile is on top
+                if tile.SetFrameLevel then
+                    tile:SetFrameLevel((WorldMapDetailFrame:GetFrameLevel() or 0) + 5)
+                end
                 tile:Show()
             end)
             
@@ -734,13 +761,13 @@ local function LoadTiles(mapType)
                 local actualTexture = tile:GetTexture()
                 if actualTexture and actualTexture ~= "" then
                     successCount = successCount + 1
-                    Debug("SUCCESS Tile", i, "->", texturePath:match("[^\\]+$"))
+                    Debug("SUCCESS Tile", i, "->", texturePath:match("[^\\]+$") or texturePath, "| Loaded as:", tostring(actualTexture))
                 else
-                    Debug("WARNING: Tile", i, "set but GetTexture() returned empty")
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture empty|r")
                     errorCount = errorCount + 1
                 end
             else
-                Debug("ERROR: Tile", i, "failed:", tostring(err))
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " failed: " .. tostring(err) .. "|r")
                 errorCount = errorCount + 1
                 
                 -- Try fallback to a known-good texture
@@ -885,7 +912,7 @@ function addon:ShowCustomMap(mapType)
     Debug("ShowCustomMap called for:", mapType)
     
     if not mapType or (mapType ~= "azshara" and mapType ~= "hyjal") then
-        Debug("Invalid map type:", tostring(mapType))
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Invalid map type: " .. tostring(mapType) .. "|r")
         return false
     end
     
@@ -907,7 +934,7 @@ function addon:ShowCustomMap(mapType)
         HideNativeDetailTiles()
         return true
     else
-        Debug("Failed to load tiles for", mapType)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load tiles for " .. tostring(mapType) .. "|r")
         self.currentMap = nil
         return false
     end
@@ -945,24 +972,64 @@ local function UpdateMap()
         return
     end
     
+    -- Don't do anything if WorldMapFrame isn't shown
+    if not WorldMapFrame or not WorldMapFrame:IsShown() then
+        return
+    end
+    
     local mapType = GetCustomMapType()
     local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+    local continent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
+    local zoneName = GetZoneText and GetZoneText() or "unknown"
     
-    -- Throttle debug messages - only show when map actually changes
-    if DCMapExtensionDB.debug and (addon.lastDebugMap ~= mapID or GetTime() - addon.lastDebugTime > 5) then
-        local zoneName = GetZoneText and GetZoneText() or "unknown"
-        local continent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
-        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent, "Detected type:", tostring(mapType))
+    -- CRITICAL: Only show custom maps when viewing the ZONE map, not continent
+    -- For Azshara Crater: should be mapID 37 or similar zone-level map
+    -- For Hyjal: should be mapID 616 or zone 616, NOT continent 1
+    local isZoneLevel = false
+    if mapType == "azshara" then
+        -- Azshara Crater - accept various map IDs that represent the zone
+        isZoneLevel = (mapID == 37 or mapID == 38 or mapID == 268 or mapID >= 400)
+    elseif mapType == "hyjal" then
+        -- Hyjal - only at zone level, NOT continent level (map 1 is Kalimdor continent)
+        -- Zone 616 has its own map ID which should be >= 10
+        isZoneLevel = (mapID ~= 1 and mapID >= 10)
+    end
+    
+    -- Always show debug for zone level check when we have a mapType
+    if DCMapExtensionDB.debug and mapType then
+        Debug("UpdateMap: MapID=" .. mapID .. " Zone=" .. zoneName .. " Continent=" .. continent .. " Type=" .. tostring(mapType) .. " IsZoneLevel=" .. tostring(isZoneLevel))
+    end
+    
+    -- Throttle other debug messages - only show when map actually changes
+    if DCMapExtensionDB.debug and not mapType and (addon.lastDebugMap ~= mapID or GetTime() - addon.lastDebugTime > 5) then
+        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent, "No custom map type detected")
         addon.lastDebugMap = mapID
         addon.lastDebugTime = GetTime()
     end
     
     if not mapType then
-        -- Not in a custom zone, restore original map
+        -- Player not in a custom zone at all
         if addon.currentMap then
             addon:HideCustomMap()
-            Debug("Not in custom zone, hiding overlay")
+            if DCMapExtensionDB.debug then
+                Debug("Player not in custom zone - hiding custom map")
+            end
             addon.currentMap = nil
+        end
+        return
+    end
+    
+    -- Player IS in a custom zone (Azshara Crater or Hyjal)
+    if not isZoneLevel then
+        -- Map is showing continent/wrong level, but player IS in custom zone
+        -- Force load the custom map anyway (this handles the case where map opens to wrong view)
+        if DCMapExtensionDB.debug then
+            Debug("Player in", mapType, "but map at wrong level (MapID=" .. mapID .. ") - forcing custom map")
+        end
+        if not addon.currentMap or addon.currentMap ~= mapType then
+            if addon:ShowCustomMap(mapType) then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Loaded custom map: " .. tostring(mapType) .. "|r")
+            end
         end
         return
     end
@@ -970,13 +1037,13 @@ local function UpdateMap()
     -- In a custom zone
     if addon.currentMap ~= mapType then
         -- Map changed, reload tiles
-        Debug("Map changed from", tostring(addon.currentMap), "to", mapType)
-        addon.currentMap = mapType
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Loading custom map: " .. tostring(mapType) .. "|r")
         
+        -- ShowCustomMap will set addon.currentMap if successful
         if addon:ShowCustomMap(mapType) then
-            Debug("Custom map shown:", mapType)
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Custom map loaded successfully|r")
         else
-            Debug("Failed to show custom map:", mapType)
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load custom map|r")
         end
     else
         -- Same map but ensure it's still visible
@@ -1019,7 +1086,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local addonName = ...
         if addonName == "DC-MapExtension" then
             InitDefaults()
-            Debug("DC-MapExtension loaded")
+            
+            -- IMPORTANT: Completely reset addon state to force fresh initialization
+            addon.currentMap = nil
+            addon.stitchFrame = nil
+            addon.playerDot = nil
+            addon.coordFrame = nil
+            addon.poiMarkers = {}
+            addon.hotspotMarkers = {}
+            addon.initialized = false
+            
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] DC-MapExtension loaded - addon state completely reset|r")
             
             -- Hook WorldMapFrame show/hide events
             if WorldMapFrame then
@@ -1046,7 +1123,24 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             -- Check if player is PHYSICALLY in a custom zone
             local mapType = GetCustomMapType()
             
-            if mapType then
+            if mapType and addon.currentMap == mapType then
+                -- We're already showing the custom map - only reapply if tiles were lost
+                -- Check if first tile still has our custom texture
+                local tile1 = _G["WorldMapDetailTile1"]
+                if tile1 then
+                    local currentTexture = tile1:GetTexture()
+                    local expectedPath = texturePaths[mapType] and texturePaths[mapType][1]
+                    -- Only reapply if texture was lost (check if it's not our custom texture)
+                    if currentTexture and expectedPath and not currentTexture:find(mapType == "azshara" and "AzsharaCrater" or "Hyjal") then
+                        Debug("Detected tile override - reapplying custom tiles for", mapType)
+                        C_Timer.After(0.05, function()
+                            if addon.currentMap == mapType then
+                                LoadTiles(mapType)
+                            end
+                        end)
+                    end
+                end
+            elseif mapType then
                 -- Player IS in a custom zone - show custom map
                 C_Timer.After(0.1, UpdateMap)
             else
