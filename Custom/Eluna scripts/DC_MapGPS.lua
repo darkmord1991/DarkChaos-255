@@ -24,10 +24,10 @@ local CUSTOM_ZONES = {
     [1] = { -- Hyjal (requires zone check)
         name = "Hyjal",
         zoneId = 616,
-        minX = -5000.0,
-        maxX = -3000.0,
-        minY = -2000.0,
-        maxY = 0.0
+        minX = 3600.0,  -- UPDATED: Positive X coordinates (was -5000)
+        maxX = 5600.0,  -- UPDATED: Positive X coordinates (was -3000)
+        minY = -4800.0, -- UPDATED: More negative Y (was -2000)
+        maxY = -2800.0  -- UPDATED: More negative Y (was 0)
     }
 }
 

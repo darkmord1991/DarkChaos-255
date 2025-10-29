@@ -250,23 +250,27 @@ local function CreatePlayerDot()
         return addon.playerDot
     end
     
-    local frame = addon.stitchFrame
-    if not frame then return nil end
+    -- Wait for stitchFrame to exist
+    if not addon.stitchFrame then 
+        Debug("Cannot create player dot - stitchFrame doesn't exist yet")
+        return nil 
+    end
     
-    local dot = CreateFrame("Frame", "DCMap_PlayerDot", frame)
-    dot:SetWidth(12)
-    dot:SetHeight(12)
-    dot:SetFrameLevel(frame:GetFrameLevel() + 10)
+    local dot = CreateFrame("Frame", "DCMap_PlayerDot", addon.stitchFrame)
+    dot:SetWidth(16)  -- Increased from 12 for better visibility
+    dot:SetHeight(16)
+    dot:SetFrameLevel(addon.stitchFrame:GetFrameLevel() + 10)
     
     local tex = dot:CreateTexture(nil, "OVERLAY")
     tex:SetAllPoints()
     tex:SetTexture("Interface\\Minimap\\MinimapArrow")
+    tex:SetVertexColor(0.2, 0.5, 1.0)  -- Blue tint for visibility
     dot.texture = tex
     
     dot:Hide()
     
     addon.playerDot = dot
-    Debug("Player dot created")
+    Debug("Player dot created on stitchFrame")
     return dot
 end
 
@@ -805,8 +809,13 @@ local function UpdatePlayerPosition()
         return
     end
     
-    -- Use WorldMapDetailFrame as parent for positioning
-    local parent = WorldMapDetailFrame or addon.stitchFrame
+    -- Use stitchFrame as parent for custom maps (not WorldMapDetailFrame which we hide)
+    local parent = addon.stitchFrame
+    if not parent then
+        addon.playerDot:Hide()
+        return
+    end
+    
     local frameWidth = parent:GetWidth()
     local frameHeight = parent:GetHeight()
     
@@ -816,10 +825,10 @@ local function UpdatePlayerPosition()
     end
     
     local pixelX = x * frameWidth
-    local pixelY = -y * frameHeight  -- Negative because WoW coordinates are inverted
+    local pixelY = y * frameHeight  -- Direct conversion (normalized coords are already correct)
     
     addon.playerDot:ClearAllPoints()
-    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)  -- Negate here for TOPLEFT anchor
     addon.playerDot:Show()
     
     if shouldDebug then
