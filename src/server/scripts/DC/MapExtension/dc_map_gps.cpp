@@ -122,73 +122,7 @@ private:
     }
 };
 
-// AIO handler for manual GPS requests
-class dc_map_gps_aio : public PlayerScript
-{
-public:
-    dc_map_gps_aio() : PlayerScript("dc_map_gps_aio") { }
-    
-    void OnLogin(Player* player) override
-    {
-#ifdef HAS_AIO
-        // Register AIO handler for GPS requests
-        AIO().RegisterEvent("DCMapGPS", [](Player* player, std::string const& message) {
-            if (message == "RequestUpdate")
-            {
-                // Manually trigger GPS update for this player
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[GPS]|r Sending position update...");
-                
-                uint32 mapId = player->GetMapId();
-                uint32 zoneId = player->GetZoneId();
-                
-                float x = player->GetPositionX();
-                float y = player->GetPositionY();
-                float z = player->GetPositionZ();
-                
-                float nx = 0.0f, ny = 0.0f;
-                
-                if (mapId == 37) // Azshara Crater
-                {
-                    const float minX = -1000.0f, maxX = 500.0f;
-                    const float minY = -500.0f, maxY = 1500.0f;
-                    nx = (x - minX) / (maxX - minX);
-                    ny = (y - minY) / (maxY - minY);
-                }
-                else if (mapId == 1 && zoneId == 616) // Hyjal
-                {
-                    const float minX = -5000.0f, maxX = -3000.0f;
-                    const float minY = -2000.0f, maxY = 0.0f;
-                    nx = (x - minX) / (maxX - minX);
-                    ny = (y - minY) / (maxY - minY);
-                }
-                
-                nx = std::max(0.0f, std::min(1.0f, nx));
-                ny = std::max(0.0f, std::min(1.0f, ny));
-                
-                std::ostringstream oss;
-                oss << std::fixed << std::setprecision(3);
-                oss << "{"
-                    << "\"mapId\":" << mapId << ","
-                    << "\"zoneId\":" << zoneId << ","
-                    << "\"x\":" << x << ","
-                    << "\"y\":" << y << ","
-                    << "\"z\":" << z << ","
-                    << "\"nx\":" << nx << ","
-                    << "\"ny\":" << ny
-                    << "}";
-                
-                AIO().Msg(player, "DCMapGPS", "Update", oss.str());
-                
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[GPS]|r Map=%u Zone=%u Pos=(%.1f,%.1f,%.1f) Norm=(%.3f,%.3f)", 
-                    mapId, zoneId, x, y, z, nx, ny);
-            }
-        });
-#endif
-    }
-};
-
 void AddSC_dc_map_gps()
 {
     new dc_map_gps_worldscript();
-    new dc_map_gps_aio();
 }
