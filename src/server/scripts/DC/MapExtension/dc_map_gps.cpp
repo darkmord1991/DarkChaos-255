@@ -16,7 +16,7 @@
 #endif
 
 // Custom zone map IDs
-constexpr uint32 AZSHARA_CRATER_MAP_ID = 37;
+constexpr uint32 AZSHARA_CRATER_MAP_ID = 38;  // Corrected from 37 based on client detection
 constexpr uint32 HYJAL_MAP_ID = 1;  // Kalimdor, but check zone ID
 
 // Custom zone IDs (if using zone detection)

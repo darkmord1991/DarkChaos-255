@@ -4,7 +4,7 @@
 ----------------------------------------------
 -- Constants
 ----------------------------------------------
-local AZSHARA_CRATER_MAP_ID = 37
+local AZSHARA_CRATER_MAP_ID = 38  -- Corrected from 37 based on actual game detection
 local AZSHARA_CRATER_ZONE_ID = 268
 local HYJAL_MAP_ID = 1  -- Kalimdor continent
 local HYJAL_ZONE_ID = 616
@@ -93,7 +93,7 @@ local texturePaths = {
 -- POI (Points of Interest) Data
 ----------------------------------------------
 -- Coordinates from ac_guard_npc.cpp converted to map coordinates (0-1 range)
--- Map 37 dimensions: roughly -1000 to 500 in X, -500 to 1500 in Y
+-- Map 38 (Azshara Crater) dimensions: roughly -1000 to 500 in X, -500 to 1500 in Y
 local poi_data = {
     azshara = {
         {name = "Startcamp", x = 0.754, y = 0.493},
@@ -148,9 +148,6 @@ local function IsPlayerInAzsharaCrater()
     
     if zoneCheck:find("azshara crater") or zoneCheck:find("azshara%-krater") or
        subCheck:find("azshara crater") or subCheck:find("azshara%-krater") then
-        if DCMapExtensionDB.debug then
-            Debug("Player is IN Azshara Crater - Zone:", zoneName, "SubZone:", subZone)
-        end
         return true
     end
     
@@ -164,9 +161,6 @@ local function IsPlayerInHyjal()
     local subCheck = subZone:lower()
     
     if zoneCheck:find("hyjal") or subCheck:find("hyjal") then
-        if DCMapExtensionDB.debug then
-            Debug("Player is IN Hyjal - Zone:", zoneName, "SubZone:", subZone)
-        end
         return true
     end
     
@@ -346,7 +340,7 @@ end
 
 local function ConvertWorldToMapCoords(worldX, worldY, mapType)
     -- Convert world coordinates to map coordinates (0-1 range)
-    -- Azshara Crater (map 37) coordinate conversion
+    -- Azshara Crater (map 38) coordinate conversion
     -- Based on known bounds: X roughly -1000 to 500, Y roughly -500 to 1500
     if mapType == "azshara" then
         -- Normalize coordinates
@@ -387,7 +381,7 @@ local function CreateHotspotMarkers(mapType)
     end
     
     if hotspotCount == 0 then
-        Debug("No active hotspots")
+        -- Don't spam debug messages
         return
     end
     
@@ -403,12 +397,12 @@ local function CreateHotspotMarkers(mapType)
     local markerCount = 0
     for id, hotspot in pairs(hotspots) do
         -- Check if hotspot is in the current zone
-        -- Map 37 is Azshara Crater
+        -- Map 38 is Azshara Crater (corrected from 37)
         local hotspotMap = hotspot.map or 0
         
         -- Only show hotspots that match the current custom map
         local showHotspot = false
-        if mapType == "azshara" and hotspotMap == 37 then
+        if mapType == "azshara" and hotspotMap == 38 then
             showHotspot = true
         elseif mapType == "hyjal" and (hotspotMap == 534 or hotspotMap == 616) then
             showHotspot = true
