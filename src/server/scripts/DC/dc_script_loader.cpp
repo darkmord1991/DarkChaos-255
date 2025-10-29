@@ -33,6 +33,7 @@ void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 void AddSC_dc_map_gps(); // location: scripts\DC\MapExtension\dc_map_gps.cpp
+void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -55,4 +56,5 @@ void AddDCScripts()
     AddSC_ac_aoeloot();
     AddBattleForGilneasScripts();
     AddSC_dc_map_gps();
+    AddSC_cs_gps_test();
 }
