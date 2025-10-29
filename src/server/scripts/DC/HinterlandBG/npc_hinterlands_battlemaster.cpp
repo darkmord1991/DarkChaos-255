@@ -78,13 +78,13 @@ public:
         switch (action)
         {
             case ACTION_JOIN_QUEUE:
-                hlbg->HandleQueueJoinCommand(player);
+                hlbg->QueueCommandFromAddon(player, "queue", "join");
                 break;
             case ACTION_LEAVE_QUEUE:
-                hlbg->HandleQueueLeaveCommand(player);
+                hlbg->QueueCommandFromAddon(player, "queue", "leave");
                 break;
             case ACTION_QUEUE_STATUS:
-                hlbg->HandleQueueStatusCommand(player);
+                hlbg->QueueCommandFromAddon(player, "queue", "status");
                 break;
             default:
                 break;
