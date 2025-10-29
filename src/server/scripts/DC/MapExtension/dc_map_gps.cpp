@@ -1,19 +1,15 @@
 /*
  * DC-MapExtension GPS System
- * Sends player coordinates for custom zones via AIO
- * Allows client addons to display accurate player position on custom maps
+ * Sends player coordinates for custom zones to client
+ * Uses Lua script execution (not AIO) for compatibility
  */
 
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Map.h"
-#include "ScriptedCreature.h"
+#include "WorldSession.h"
 #include <sstream>
 #include <iomanip>
-
-#ifdef HAS_AIO
-#include "AIO.h"
-#endif
 
 // Custom zone map IDs
 constexpr uint32 AZSHARA_CRATER_MAP_ID = 37;  // Confirmed via .gps command
@@ -45,7 +41,6 @@ private:
 
     void BroadcastGPSUpdates()
     {
-#ifdef HAS_AIO
         // Iterate all players online
         SessionMap const& sessions = sWorld->GetAllSessions();
         for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
@@ -58,12 +53,10 @@ private:
                 SendGPSToPlayer(player);
             }
         }
-#endif
     }
     
     void SendGPSToPlayer(Player* player)
     {
-#ifdef HAS_AIO
         uint32 mapId = player->GetMapId();
         uint32 zoneId = player->GetZoneId();
         
@@ -103,22 +96,28 @@ private:
         nx = std::max(0.0f, std::min(1.0f, nx));
         ny = std::max(0.0f, std::min(1.0f, ny));
         
-        // Build GPS payload
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(3);
-        oss << "{"
-            << "\"mapId\":" << mapId << ","
-            << "\"zoneId\":" << zoneId << ","
-            << "\"x\":" << x << ","
-            << "\"y\":" << y << ","
-            << "\"z\":" << z << ","
-            << "\"nx\":" << nx << ","
-            << "\"ny\":" << ny
-            << "}";
+        // Build Lua script to update GPS data on client
+        std::ostringstream lua;
+        lua << std::fixed << std::setprecision(3);
+        lua << "if DCMapExtension_UpdateGPS then "
+            << "DCMapExtension_UpdateGPS(" 
+            << mapId << "," 
+            << zoneId << "," 
+            << x << "," 
+            << y << "," 
+            << z << "," 
+            << nx << "," 
+            << ny 
+            << ") end";
         
-        // Send via AIO
-        AIO().Msg(player, "DCMapGPS", "Update", oss.str());
-#endif
+        // Send Lua script to client
+        WorldSession* session = player->GetSession();
+        if (session)
+        {
+            WorldPacket data(SMSG_NOTIFICATION, lua.str().length() + 1);
+            data << lua.str();
+            session->SendPacket(&data);
+        }
     }
 };
 

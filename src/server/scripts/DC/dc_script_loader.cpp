@@ -32,7 +32,7 @@ void AddSC_npc_hinterlands_battlemaster(); // location: scripts\DC\HinterlandBG\
 void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
-void AddSC_dc_map_gps(); // location: scripts\DC\MapExtension\dc_map_gps.cpp
+// void AddSC_dc_map_gps(); // DISABLED - Using Eluna GPS instead (Custom/Eluna scripts/DC_MapGPS.lua)
 void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
 
 // The name of this function should match:
@@ -55,6 +55,6 @@ void AddDCScripts()
     AddSC_ac_hotspots();
     AddSC_ac_aoeloot();
     AddBattleForGilneasScripts();
-    AddSC_dc_map_gps();
+    // AddSC_dc_map_gps(); // DISABLED - Using Eluna GPS instead (Custom/Eluna scripts/DC_MapGPS.lua)
     AddSC_cs_gps_test();
 }

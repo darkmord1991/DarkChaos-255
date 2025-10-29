@@ -1302,9 +1302,34 @@ function DCMapExtension_ClearForcedMap()
 end
 
 ----------------------------------------------
--- AIO GPS Handler
+-- GPS Data Update Function (called by server via Lua)
 ----------------------------------------------
--- Receive GPS coordinates from server for custom zones
+function DCMapExtension_UpdateGPS(mapId, zoneId, x, y, z, nx, ny)
+    -- Update GPS data
+    addon.gpsData.mapId = mapId
+    addon.gpsData.zoneId = zoneId
+    addon.gpsData.x = x
+    addon.gpsData.y = y
+    addon.gpsData.z = z
+    addon.gpsData.nx = nx
+    addon.gpsData.ny = ny
+    addon.gpsData.lastUpdate = GetTime()
+    
+    -- Debug output (throttled)
+    if DCMapExtensionDB.debug then
+        local now = GetTime()
+        if not addon.lastGPSDebug or (now - addon.lastGPSDebug) > 5 then
+            addon.lastGPSDebug = now
+            Debug("GPS Update: Map=" .. mapId .. " Zone=" .. zoneId .. 
+                  " Pos=(" .. string.format("%.1f", x) .. "," .. string.format("%.1f", y) .. "," .. string.format("%.1f", z) .. ")" ..
+                  " Normalized=(" .. string.format("%.3f", nx) .. "," .. string.format("%.3f", ny) .. ")")
+        end
+    end
+end
+
+----------------------------------------------
+-- AIO GPS Handler (Legacy - keeping for compatibility)
+----------------------------------------------
 if AIO then
     AIO.AddHandlers("DCMapGPS", {
         Update = function(player, data)
@@ -1323,25 +1348,7 @@ if AIO then
                 local ny = tonumber(data:match('"ny"%s*:%s*([%-%.%d]+)'))
                 
                 if mapId and zoneId and x and y and z and nx and ny then
-                    addon.gpsData.mapId = mapId
-                    addon.gpsData.zoneId = zoneId
-                    addon.gpsData.x = x
-                    addon.gpsData.y = y
-                    addon.gpsData.z = z
-                    addon.gpsData.nx = nx
-                    addon.gpsData.ny = ny
-                    addon.gpsData.lastUpdate = GetTime()
-                    
-                    -- Debug output (throttled)
-                    if DCMapExtensionDB.debug then
-                        local now = GetTime()
-                        if not addon.lastGPSDebug or (now - addon.lastGPSDebug) > 5 then
-                            addon.lastGPSDebug = now
-                            Debug("GPS Update: Map=" .. mapId .. " Zone=" .. zoneId .. 
-                                  " Pos=(" .. string.format("%.1f", x) .. "," .. string.format("%.1f", y) .. "," .. string.format("%.1f", z) .. ")" ..
-                                  " Normalized=(" .. string.format("%.3f", nx) .. "," .. string.format("%.3f", ny) .. ")")
-                        end
-                    end
+                    DCMapExtension_UpdateGPS(mapId, zoneId, x, y, z, nx, ny)
                 else
                     Debug("GPS parse failed - mapId:", tostring(mapId), "zoneId:", tostring(zoneId), 
                           "x:", tostring(x), "y:", tostring(y), "z:", tostring(z),
@@ -1353,7 +1360,7 @@ if AIO then
     
     Debug("AIO GPS handler registered successfully")
 else
-    Debug("WARNING: AIO not available - GPS data will not work!")
+    Debug("WARNING: AIO not available - using Lua script GPS updates")
 end
 
 print("|cff33ff99[DC-MapExtension]|r Loaded. Type /dcmap for help or use Interface -> Addons")
