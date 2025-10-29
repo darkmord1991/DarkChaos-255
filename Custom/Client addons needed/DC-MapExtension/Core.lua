@@ -41,7 +41,18 @@ local addon = {
     initialized = false,
     lastDebugMap = nil,
     lastDebugTime = 0,
-    lastPlayerPosDebug = 0
+    lastPlayerPosDebug = 0,
+    -- GPS data from server
+    gpsData = {
+        mapId = 0,
+        zoneId = 0,
+        x = 0,
+        y = 0,
+        z = 0,
+        nx = 0,  -- normalized x (0-1)
+        ny = 0,  -- normalized y (0-1)
+        lastUpdate = 0
+    }
 }
 
 ----------------------------------------------
@@ -239,20 +250,20 @@ local function CreateCoordinateDisplay()
     frame:SetFrameLevel(100)
     frame:SetAllPoints(WorldMapFrame)
     
-    -- Player coordinates text
+    -- Player coordinates text (top-left for better visibility)
     local playerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    playerText:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMLEFT", 10, 40)
+    playerText:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT", 15, -75)
     playerText:SetTextColor(1, 0.82, 0)  -- Gold color
     playerText:SetJustifyH("LEFT")
-    playerText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    playerText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     frame.playerText = playerText
     
     -- Cursor coordinates text  
     local cursorText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    cursorText:SetPoint("BOTTOMLEFT", playerText, "TOPLEFT", 0, 2)
+    cursorText:SetPoint("TOPLEFT", playerText, "BOTTOMLEFT", 0, -2)
     cursorText:SetTextColor(0.5, 1, 0.5)  -- Light green
     cursorText:SetJustifyH("LEFT")
-    cursorText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    cursorText:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
     frame.cursorText = cursorText
     
     -- Update function
@@ -271,9 +282,20 @@ local function CreateCoordinateDisplay()
         
         -- Update player coordinates
         local px, py = GetPlayerMapPosition("player")
-        if px and py and (px > 0 or py > 0) then
+        
+        -- Try to use server GPS data if available and recent (within last 3 seconds)
+        local now = GetTime()
+        local gpsAge = now - addon.gpsData.lastUpdate
+        local hasValidGPS = (gpsAge < 3) and (addon.gpsData.nx > 0 or addon.gpsData.ny > 0)
+        
+        if hasValidGPS then
+            -- Use server-provided GPS coordinates (accurate for custom zones)
+            playerText:SetText(string.format("Player: %.1f, %.1f", addon.gpsData.nx * 100, addon.gpsData.ny * 100))
+        elseif px and py and (px > 0 or py > 0) then
+            -- Use client-side coordinates (works for standard zones)
             playerText:SetText(string.format("Player: %.1f, %.1f", px * 100, py * 100))
         else
+            -- No valid position data
             playerText:SetText("Player: Not in zone")
         end
         
@@ -712,19 +734,28 @@ local function UpdatePlayerPosition()
         return
     end
     
-    -- Get player position WITHOUT changing the viewed map
-    -- This returns 0,0 if player is not in the zone currently being viewed
-    local x, y = GetPlayerMapPosition("player")
+    -- Try to use server GPS data first (accurate for custom zones)
+    local now = GetTime()
+    local gpsAge = now - addon.gpsData.lastUpdate
+    local hasValidGPS = (gpsAge < 3) and (addon.gpsData.nx > 0 or addon.gpsData.ny > 0)
+    
+    local x, y
+    if hasValidGPS then
+        -- Use server-provided normalized coordinates
+        x, y = addon.gpsData.nx, addon.gpsData.ny
+    else
+        -- Fall back to client-side GetPlayerMapPosition (works for standard zones)
+        x, y = GetPlayerMapPosition("player")
+    end
     
     -- Throttle debug messages to once per 5 seconds
-    local now = GetTime()
     local shouldDebug = DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5)
     
     if not x or not y or (x == 0 and y == 0) then
         -- Player not in this zone or position unavailable - hide dot
         if shouldDebug then
             addon.lastPlayerPosDebug = now
-            Debug("Player position unavailable or 0,0 - hiding dot")
+            Debug("Player position unavailable or 0,0 - hiding dot (GPS age: " .. string.format("%.1f", gpsAge) .. "s)")
         end
         addon.playerDot:Hide()
         return
@@ -1194,6 +1225,53 @@ function DCMapExtension_ClearForcedMap()
         addon:HideCustomMap()
         addon.currentMap = nil
     end
+end
+
+----------------------------------------------
+-- AIO GPS Handler
+----------------------------------------------
+-- Receive GPS coordinates from server for custom zones
+if AIO then
+    AIO.AddHandlers("DCMapGPS", {
+        Update = function(player, data)
+            -- Parse GPS data from server
+            -- Expected format: {"mapId":37,"zoneId":268,"x":123.4,"y":456.7,"z":89.0,"nx":0.524,"ny":0.673}
+            if type(data) == "string" then
+                -- Simple JSON parsing for our specific format
+                local mapId = tonumber(data:match('"mapId"%s*:%s*(%d+)'))
+                local zoneId = tonumber(data:match('"zoneId"%s*:%s*(%d+)'))
+                local x = tonumber(data:match('"x"%s*:%s*([%-%.%d]+)'))
+                local y = tonumber(data:match('"y"%s*:%s*([%-%.%d]+)'))
+                local z = tonumber(data:match('"z"%s*:%s*([%-%.%d]+)'))
+                local nx = tonumber(data:match('"nx"%s*:%s*([%-%.%d]+)'))
+                local ny = tonumber(data:match('"ny"%s*:%s*([%-%.%d]+)'))
+                
+                if mapId and zoneId and x and y and z and nx and ny then
+                    addon.gpsData.mapId = mapId
+                    addon.gpsData.zoneId = zoneId
+                    addon.gpsData.x = x
+                    addon.gpsData.y = y
+                    addon.gpsData.z = z
+                    addon.gpsData.nx = nx
+                    addon.gpsData.ny = ny
+                    addon.gpsData.lastUpdate = GetTime()
+                    
+                    -- Debug output (throttled)
+                    if DCMapExtensionDB.debug then
+                        local now = GetTime()
+                        if not addon.lastGPSDebug or (now - addon.lastGPSDebug) > 5 then
+                            addon.lastGPSDebug = now
+                            Debug("GPS Update: Map=" .. mapId .. " Zone=" .. zoneId .. 
+                                  " Pos=(" .. string.format("%.1f", x) .. "," .. string.format("%.1f", y) .. "," .. string.format("%.1f", z) .. ")" ..
+                                  " Normalized=(" .. string.format("%.3f", nx) .. "," .. string.format("%.3f", ny) .. ")")
+                        end
+                    end
+                end
+            end
+        end
+    })
+    
+    Debug("AIO GPS handler registered")
 end
 
 print("|cff33ff99[DC-MapExtension]|r Loaded. Type /dcmap for help or use Interface -> Addons")
