@@ -257,14 +257,17 @@ local function CreatePlayerDot()
     end
     
     local dot = CreateFrame("Frame", "DCMap_PlayerDot", addon.stitchFrame)
-    dot:SetWidth(16)  -- Increased from 12 for better visibility
-    dot:SetHeight(16)
-    dot:SetFrameLevel(addon.stitchFrame:GetFrameLevel() + 10)
+    dot:SetWidth(24)  -- Slightly smaller (was 32 for testing)
+    dot:SetHeight(24)
+    dot:SetFrameStrata("TOOLTIP")  -- Highest strata
+    dot:SetFrameLevel(200)  -- Very high level
     
+    -- Create the player arrow texture (no background needed anymore)
     local tex = dot:CreateTexture(nil, "OVERLAY")
     tex:SetAllPoints()
-    tex:SetTexture("Interface\\Minimap\\MinimapArrow")
-    tex:SetVertexColor(0.2, 0.5, 1.0)  -- Blue tint for visibility
+    tex:SetTexture("Interface\\Minimap\\POIIcons")  -- Player icon from POI
+    tex:SetTexCoord(0.5, 0.625, 0.5, 0.625)  -- Player icon coordinates
+    tex:SetVertexColor(1.0, 1.0, 1.0, 1.0)  -- White (original colors)
     dot.texture = tex
     
     dot:Hide()
@@ -828,13 +831,19 @@ local function UpdatePlayerPosition()
     local pixelY = y * frameHeight  -- Direct conversion (normalized coords are already correct)
     
     addon.playerDot:ClearAllPoints()
-    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)  -- Negate here for TOPLEFT anchor
+    -- Position relative to BOTTOMLEFT (not TOPLEFT) because map coords go bottom-to-top
+    addon.playerDot:SetPoint("CENTER", parent, "BOTTOMLEFT", pixelX, pixelY)
     addon.playerDot:Show()
     
+    -- Throttled debug logging (once per 5 seconds)
+    local shouldDebug = DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5)
     if shouldDebug then
         addon.lastPlayerPosDebug = now
-        Debug("Player pos: x=" .. string.format("%.3f", x) .. " y=" .. string.format("%.3f", y) .. 
-              " -> " .. string.format("%.0f", pixelX) .. "," .. string.format("%.0f", pixelY))
+        local dotShown = addon.playerDot:IsShown() and "SHOWN" or "HIDDEN"
+        local dotParent = addon.playerDot:GetParent() and addon.playerDot:GetParent():GetName() or "NO PARENT"
+        Debug("Player dot: x=" .. string.format("%.3f", x) .. " y=" .. string.format("%.3f", y) .. 
+              " -> px=" .. string.format("%.0f", pixelX) .. " py=" .. string.format("%.0f", pixelY) ..
+              " | " .. dotShown .. " on " .. dotParent)
     end
 end
 
@@ -1214,10 +1223,7 @@ SlashCmdList["DCMAP"] = function(msg)
         print("  Custom Map Detected:", mapType or "None")
         print("  Stitch Frame:", addon.stitchFrame and (addon.stitchFrame:IsShown() and "Visible" or "Hidden") or "Not created")
         print("  Current Map Type:", addon.currentMap or "None")
-        
-        -- Additional checks
-        print("  IsAzsharaCrater():", IsAzsharaCrater() and "YES" or "NO")
-        print("  IsHyjal():", IsHyjal() and "YES" or "NO")
+        print("  Player Dot:", addon.playerDot and (addon.playerDot:IsShown() and "Visible" or "Hidden") or "Not created")
     elseif msg == "zone" then
         -- Detailed zone information for debugging
         local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
@@ -1244,6 +1250,15 @@ SlashCmdList["DCMAP"] = function(msg)
         addon.currentMap = nil
         UpdateMap()
         print("|cff33ff99[DC-MapExt]|r Map reloaded")
+    elseif msg == "resetdot" then
+        -- Force recreate the player dot
+        if addon.playerDot then
+            addon.playerDot:Hide()
+            addon.playerDot:SetParent(nil)
+            addon.playerDot = nil
+        end
+        CreatePlayerDot()
+        print("|cff33ff99[DC-MapExt]|r Player dot recreated - should see red background + blue icon")
     elseif msg == "gps" then
         -- Show GPS data and send a test request to the server
         print("|cff33ff99[DC-MapExt]|r GPS Status:")
