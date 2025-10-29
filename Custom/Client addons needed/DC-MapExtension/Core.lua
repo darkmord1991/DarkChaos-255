@@ -108,7 +108,13 @@ local poi_data = {
         {name = "Violet Temple", x = 0.284, y = 0.604},
         {name = "Dragon Statues", x = 0.616, y = 0.520}
     },
-    hyjal = {}  -- Add Hyjal POIs here if needed
+    hyjal = {
+        {name = "Nordrassil (World Tree)", x = 0.50, y = 0.50},
+        {name = "Shrine of Aviana", x = 0.35, y = 0.30},
+        {name = "Sanctuary of Malorne", x = 0.65, y = 0.40},
+        {name = "Gates of Sothann", x = 0.50, y = 0.70},
+        {name = "Tortolla's Retreat", x = 0.25, y = 0.55}
+    }
 }
 
 ----------------------------------------------
@@ -118,6 +124,40 @@ local function Debug(...)
     if not DCMapExtensionDB.debug then return end
     local msg = strjoin(" ", "[DC-MapExt]", tostringall(...))
     DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 1, 0.2)
+end
+
+----------------------------------------------
+-- World Coordinate Conversion
+----------------------------------------------
+-- Map bounds based on actual zone data
+-- These convert world X,Y coordinates to normalized 0-1 map coordinates
+local mapBounds = {
+    [37] = {  -- Azshara Crater (Map ID 37, Zone ID 268)
+        minX = -1000,
+        maxX = 500,
+        minY = -500,
+        maxY = 1500
+    },
+    [1] = {  -- Hyjal (Map ID 1, Zone ID 616) - these are placeholder values
+        minX = -5000,
+        maxX = 5000,
+        minY = -5000,
+        maxY = 5000
+    }
+}
+
+local function WorldToNormalized(mapId, worldX, worldY)
+    local bounds = mapBounds[mapId]
+    if not bounds then return nil, nil end
+    
+    local nx = (worldX - bounds.minX) / (bounds.maxX - bounds.minX)
+    local ny = (worldY - bounds.minY) / (bounds.maxY - bounds.minY)
+    
+    -- Clamp to 0-1 range
+    nx = math.max(0, math.min(1, nx))
+    ny = math.max(0, math.min(1, ny))
+    
+    return nx, ny
 end
 
 ----------------------------------------------
