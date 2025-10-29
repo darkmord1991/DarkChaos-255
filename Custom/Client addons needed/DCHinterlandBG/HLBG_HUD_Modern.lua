@@ -544,12 +544,21 @@ HLBG.UpdateHUD = function()
     -- Update the HUD with stable, non-blinking data
     if type(HLBG.UpdateModernHUD) == 'function' then
         DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData")
-        -- CRITICAL FIX: Force HUD visible before update
-            if HUD then
-            HUD:Show()
-            HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
-            DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD visible=%s alpha=%.2f", tostring(HUD:IsShown()), HUD:GetAlpha()))
+        
+        -- ONLY show HUD if we should show it (zone check)
+        if HUD then
+            local shouldShowHUD = HLBG.ShouldShowHUD and HLBG.ShouldShowHUD() or false
+            if shouldShowHUD then
+                HUD:Show()
+                HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
+                DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD shown (in Hinterlands) alpha=%.2f", HUD:GetAlpha()))
+            else
+                HUD:Hide()
+                DebugPrint("|cFFFFAA00[UpdateHUD]|r HUD hidden (not in Hinterlands)")
+                return -- Don't update HUD content if it's hidden
+            end
         end
+        
         -- Call UpdateModernHUD
         local success, err = pcall(function()
             HLBG.UpdateModernHUD(finalData)

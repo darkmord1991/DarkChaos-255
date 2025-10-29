@@ -322,6 +322,16 @@ local function CreateCoordinateDisplay()
         local gpsAge = now - addon.gpsData.lastUpdate
         local hasValidGPS = (gpsAge < 3) and (addon.gpsData.nx > 0 or addon.gpsData.ny > 0)
         
+        -- Debug: Log what we're getting
+        if DCMapExtensionDB.debug then
+            local debugMsg = string.format("GPS: age=%.1fs nx=%.3f ny=%.3f | ClientPos: px=%s py=%s", 
+                gpsAge, addon.gpsData.nx or 0, addon.gpsData.ny or 0, tostring(px), tostring(py))
+            if not addon.lastCoordDebug or (now - addon.lastCoordDebug) > 5 then
+                addon.lastCoordDebug = now
+                Debug(debugMsg)
+            end
+        end
+        
         if hasValidGPS then
             -- Use server-provided GPS coordinates (accurate for custom zones)
             playerText:SetText(string.format("Player: %.1f, %.1f", addon.gpsData.nx * 100, addon.gpsData.ny * 100))
@@ -1225,6 +1235,35 @@ SlashCmdList["DCMAP"] = function(msg)
         addon.currentMap = nil
         UpdateMap()
         print("|cff33ff99[DC-MapExt]|r Map reloaded")
+    elseif msg == "gps" then
+        -- Show GPS data and send a test request to the server
+        print("|cff33ff99[DC-MapExt]|r GPS Status:")
+        print("  Map ID:", addon.gpsData.mapId or 0)
+        print("  Zone ID:", addon.gpsData.zoneId or 0)
+        print("  World Coords:", string.format("%.2f, %.2f, %.2f", 
+            addon.gpsData.x or 0, addon.gpsData.y or 0, addon.gpsData.z or 0))
+        print("  Normalized Coords:", string.format("%.3f, %.3f (%.1f%%, %.1f%%)", 
+            addon.gpsData.nx or 0, addon.gpsData.ny or 0, 
+            (addon.gpsData.nx or 0) * 100, (addon.gpsData.ny or 0) * 100))
+        
+        local now = GetTime()
+        local gpsAge = now - addon.gpsData.lastUpdate
+        if addon.gpsData.lastUpdate > 0 then
+            print("  Last Update:", string.format("%.1f seconds ago", gpsAge))
+            if gpsAge > 5 then
+                print("  |cFFFF0000WARNING:|r GPS data is stale! Server may not be sending updates.")
+            end
+        else
+            print("  |cFFFF0000WARNING:|r No GPS data received yet!")
+        end
+        
+        -- Send a test message to server (if AIO is available)
+        if AIO then
+            print("  Sending GPS request to server...")
+            AIO.Handle("DCMapGPS", "RequestUpdate")
+        else
+            print("  |cFFFF0000ERROR:|r AIO not available - cannot request GPS data")
+        end
     else
         print("|cff33ff99[DC-MapExt]|r Commands:")
         print("  /dcmap show - Enable custom maps")
@@ -1233,6 +1272,7 @@ SlashCmdList["DCMAP"] = function(msg)
         print("  /dcmap status - Show current status")
         print("  /dcmap zone - Show detailed zone info")
         print("  /dcmap reload - Reload current map")
+        print("  /dcmap gps - Show GPS status and request update")
         print("  Or use Interface -> Addons -> DC-MapExtension")
     end
 end
@@ -1271,6 +1311,8 @@ if AIO then
             -- Parse GPS data from server
             -- Expected format: {"mapId":37,"zoneId":268,"x":123.4,"y":456.7,"z":89.0,"nx":0.524,"ny":0.673}
             if type(data) == "string" then
+                Debug("Received GPS data:", data)
+                
                 -- Simple JSON parsing for our specific format
                 local mapId = tonumber(data:match('"mapId"%s*:%s*(%d+)'))
                 local zoneId = tonumber(data:match('"zoneId"%s*:%s*(%d+)'))
@@ -1300,12 +1342,18 @@ if AIO then
                                   " Normalized=(" .. string.format("%.3f", nx) .. "," .. string.format("%.3f", ny) .. ")")
                         end
                     end
+                else
+                    Debug("GPS parse failed - mapId:", tostring(mapId), "zoneId:", tostring(zoneId), 
+                          "x:", tostring(x), "y:", tostring(y), "z:", tostring(z),
+                          "nx:", tostring(nx), "ny:", tostring(ny))
                 end
             end
         end
     })
     
-    Debug("AIO GPS handler registered")
+    Debug("AIO GPS handler registered successfully")
+else
+    Debug("WARNING: AIO not available - GPS data will not work!")
 end
 
 print("|cff33ff99[DC-MapExtension]|r Loaded. Type /dcmap for help or use Interface -> Addons")

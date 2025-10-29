@@ -55,46 +55,116 @@ private:
                 if (!player->IsInWorld())
                     continue;
 
+                SendGPSToPlayer(player);
+            }
+        }
+#endif
+    }
+    
+    void SendGPSToPlayer(Player* player)
+    {
+#ifdef HAS_AIO
+        uint32 mapId = player->GetMapId();
+        uint32 zoneId = player->GetZoneId();
+        
+        // Only send GPS for custom zones
+        bool isCustomZone = (mapId == AZSHARA_CRATER_MAP_ID) || 
+                           (mapId == HYJAL_MAP_ID && zoneId == HYJAL_ZONE_ID);
+        
+        if (!isCustomZone)
+            return;
+
+        // Get player position
+        float x = player->GetPositionX();
+        float y = player->GetPositionY();
+        float z = player->GetPositionZ();
+        
+        // Normalize coordinates to 0-1 range for map display
+        float nx = 0.0f, ny = 0.0f;
+        
+        if (mapId == AZSHARA_CRATER_MAP_ID)
+        {
+            // Azshara Crater bounds: X roughly -1000 to 500, Y roughly -500 to 1500
+            const float minX = -1000.0f, maxX = 500.0f;
+            const float minY = -500.0f, maxY = 1500.0f;
+            nx = (x - minX) / (maxX - minX);
+            ny = (y - minY) / (maxY - minY);
+        }
+        else if (mapId == HYJAL_MAP_ID && zoneId == HYJAL_ZONE_ID)
+        {
+            // Hyjal bounds (adjust as needed based on actual zone coordinates)
+            const float minX = -5000.0f, maxX = -3000.0f;
+            const float minY = -2000.0f, maxY = 0.0f;
+            nx = (x - minX) / (maxX - minX);
+            ny = (y - minY) / (maxY - minY);
+        }
+        
+        // Clamp to 0-1 range
+        nx = std::max(0.0f, std::min(1.0f, nx));
+        ny = std::max(0.0f, std::min(1.0f, ny));
+        
+        // Build GPS payload
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(3);
+        oss << "{"
+            << "\"mapId\":" << mapId << ","
+            << "\"zoneId\":" << zoneId << ","
+            << "\"x\":" << x << ","
+            << "\"y\":" << y << ","
+            << "\"z\":" << z << ","
+            << "\"nx\":" << nx << ","
+            << "\"ny\":" << ny
+            << "}";
+        
+        // Send via AIO
+        AIO().Msg(player, "DCMapGPS", "Update", oss.str());
+#endif
+    }
+};
+
+// AIO handler for manual GPS requests
+class dc_map_gps_aio : public PlayerScript
+{
+public:
+    dc_map_gps_aio() : PlayerScript("dc_map_gps_aio") { }
+    
+    void OnLogin(Player* player) override
+    {
+#ifdef HAS_AIO
+        // Register AIO handler for GPS requests
+        AIO().RegisterEvent("DCMapGPS", [](Player* player, std::string const& message) {
+            if (message == "RequestUpdate")
+            {
+                // Manually trigger GPS update for this player
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[GPS]|r Sending position update...");
+                
                 uint32 mapId = player->GetMapId();
                 uint32 zoneId = player->GetZoneId();
                 
-                // Only send GPS for custom zones
-                bool isCustomZone = (mapId == AZSHARA_CRATER_MAP_ID) || 
-                                   (mapId == HYJAL_MAP_ID && zoneId == HYJAL_ZONE_ID);
-                
-                if (!isCustomZone)
-                    continue;
-
-                // Get player position
                 float x = player->GetPositionX();
                 float y = player->GetPositionY();
                 float z = player->GetPositionZ();
                 
-                // Normalize coordinates to 0-1 range for map display
                 float nx = 0.0f, ny = 0.0f;
                 
-                if (mapId == AZSHARA_CRATER_MAP_ID)
+                if (mapId == 37) // Azshara Crater
                 {
-                    // Azshara Crater bounds: X roughly -1000 to 500, Y roughly -500 to 1500
                     const float minX = -1000.0f, maxX = 500.0f;
                     const float minY = -500.0f, maxY = 1500.0f;
                     nx = (x - minX) / (maxX - minX);
                     ny = (y - minY) / (maxY - minY);
                 }
-                else if (mapId == HYJAL_MAP_ID && zoneId == HYJAL_ZONE_ID)
+                else if (mapId == 1 && zoneId == 616) // Hyjal
                 {
-                    // Hyjal bounds (adjust as needed based on actual zone coordinates)
                     const float minX = -5000.0f, maxX = -3000.0f;
                     const float minY = -2000.0f, maxY = 0.0f;
                     nx = (x - minX) / (maxX - minX);
                     ny = (y - minY) / (maxY - minY);
                 }
                 
-                // Clamp to 0-1 range
                 nx = std::max(0.0f, std::min(1.0f, nx));
                 ny = std::max(0.0f, std::min(1.0f, ny));
                 
-                // Build GPS payload
                 std::ostringstream oss;
                 oss << std::fixed << std::setprecision(3);
                 oss << "{"
@@ -107,10 +177,12 @@ private:
                     << "\"ny\":" << ny
                     << "}";
                 
-                // Send via AIO
                 AIO().Msg(player, "DCMapGPS", "Update", oss.str());
+                
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[GPS]|r Map=%u Zone=%u Pos=(%.1f,%.1f,%.1f) Norm=(%.3f,%.3f)", 
+                    mapId, zoneId, x, y, z, nx, ny);
             }
-        }
+        });
 #endif
     }
 };
@@ -118,4 +190,5 @@ private:
 void AddSC_dc_map_gps()
 {
     new dc_map_gps_worldscript();
+    new dc_map_gps_aio();
 }
