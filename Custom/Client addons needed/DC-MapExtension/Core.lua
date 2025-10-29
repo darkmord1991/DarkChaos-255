@@ -226,6 +226,92 @@ local function CreatePlayerDot()
 end
 
 ----------------------------------------------
+-- Coordinate Display System (Adapted from Mapster Coords)
+----------------------------------------------
+local function CreateCoordinateDisplay()
+    if addon.coordFrame then
+        return addon.coordFrame
+    end
+    
+    -- Create main coordinate frame parented to WorldMapFrame (not DetailFrame which we hide)
+    local frame = CreateFrame("Frame", "DCMap_CoordsFrame", WorldMapFrame)
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetFrameLevel(100)
+    frame:SetAllPoints(WorldMapFrame)
+    
+    -- Player coordinates text
+    local playerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    playerText:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMLEFT", 10, 40)
+    playerText:SetTextColor(1, 0.82, 0)  -- Gold color
+    playerText:SetJustifyH("LEFT")
+    playerText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    frame.playerText = playerText
+    
+    -- Cursor coordinates text  
+    local cursorText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    cursorText:SetPoint("BOTTOMLEFT", playerText, "TOPLEFT", 0, 2)
+    cursorText:SetTextColor(0.5, 1, 0.5)  -- Light green
+    cursorText:SetJustifyH("LEFT")
+    cursorText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    frame.cursorText = cursorText
+    
+    -- Update function
+    frame.lastUpdate = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.lastUpdate = self.lastUpdate + elapsed
+        if self.lastUpdate < 0.1 then return end  -- Update 10 times per second
+        self.lastUpdate = 0
+        
+        -- Only show if custom map is active
+        if not addon.currentMap then
+            playerText:SetText("")
+            cursorText:SetText("")
+            return
+        end
+        
+        -- Update player coordinates
+        local px, py = GetPlayerMapPosition("player")
+        if px and py and (px > 0 or py > 0) then
+            playerText:SetText(string.format("Player: %.1f, %.1f", px * 100, py * 100))
+        else
+            playerText:SetText("Player: Not in zone")
+        end
+        
+        -- Update cursor coordinates relative to the stitched map frame
+        local parent = addon.stitchFrame or WorldMapDetailFrame
+        if not parent or not parent:IsShown() then
+            cursorText:SetText("Cursor: --.--, --.--")
+            return
+        end
+        
+        local cx, cy = GetCursorPosition()
+        local scale = parent:GetEffectiveScale()
+        local left = parent:GetLeft()
+        local top = parent:GetTop()
+        local width = parent:GetWidth()
+        local height = parent:GetHeight()
+        
+        if left and top and width and height and scale and scale > 0 then
+            cx = (cx / scale - left) / width
+            cy = (top - cy / scale) / height
+            
+            if cx >= 0 and cx <= 1 and cy >= 0 and cy <= 1 then
+                cursorText:SetText(string.format("Cursor: %.1f, %.1f", cx * 100, cy * 100))
+            else
+                cursorText:SetText("Cursor: Out of bounds")
+            end
+        else
+            cursorText:SetText("Cursor: --.--, --.--")
+        end
+    end)
+    
+    frame:Show()
+    addon.coordFrame = frame
+    Debug("Coordinate display created")
+    return frame
+end
+
+----------------------------------------------
 -- POI (Points of Interest) Management
 ----------------------------------------------
 local function GetHotspotData()
@@ -679,6 +765,11 @@ local function HideNativeDetailTiles()
             tile:Hide()
         end
     end
+    
+    -- Also hide the WorldMapDetailFrame itself to prevent background showing through
+    if WorldMapDetailFrame then
+        WorldMapDetailFrame:SetAlpha(0)
+    end
 end
 
 local function ShowNativeDetailTiles()
@@ -688,6 +779,11 @@ local function ShowNativeDetailTiles()
         if tile then
             tile:Show()
         end
+    end
+    
+    -- Restore WorldMapDetailFrame visibility
+    if WorldMapDetailFrame then
+        WorldMapDetailFrame:SetAlpha(1)
     end
 end
 
@@ -700,18 +796,26 @@ function addon:ShowCustomMap(mapType)
         return false
     end
     
+    -- Set current map BEFORE creating frames so OnUpdate can reference it
+    self.currentMap = mapType
+    
     CreateStitchFrame()
     CreatePlayerDot()
+    CreateCoordinateDisplay()
     
     if LoadTiles(mapType) then
         Debug("Tiles loaded successfully for", mapType)
         self.stitchFrame:Show()
         CreatePOIMarkers(mapType)
         CreateHotspotMarkers(mapType)
+        
+        -- Coordinate display is always shown, OnUpdate handles visibility
+        
         HideNativeDetailTiles()
         return true
     else
         Debug("Failed to load tiles for", mapType)
+        self.currentMap = nil
         return false
     end
 end
@@ -725,9 +829,20 @@ function addon:HideCustomMap()
     if self.playerDot then
         self.playerDot:Hide()
     end
+    if self.coordFrame then
+        -- Clear text instead of hiding frame so it doesn't interfere with other maps
+        if self.coordFrame.playerText then
+            self.coordFrame.playerText:SetText("")
+        end
+        if self.coordFrame.cursorText then
+            self.coordFrame.cursorText:SetText("")
+        end
+    end
     
     ClearTiles()
     ShowNativeDetailTiles()
+    
+    self.currentMap = nil
 end
 
 local function UpdateMap()

@@ -35,6 +35,11 @@ local minimapPin = nil
 local activeHotspots = {} -- { [id] = {map,zone,x,y,z,expire,icon} }
 local hotspotWorldPins = {} -- [id] = frame
 local hotspotMinimapPins = {} -- [id] = frame
+
+-- Pin caching system to reduce frame creation overhead
+local worldPinCache = {} -- recycled world map pins
+local minimapPinCache = {} -- recycled minimap pins
+
 -- try to load mapping helper
 local Astrolabe = nil
 local success, ast = pcall(require, "Libs.HotspotDisplay_Astrolabe")
@@ -108,21 +113,88 @@ local function CreateMinimapPin()
     minimapPin = mp
     return minimapPin
 end
--- Create a clickable worldmap pin for a hotspot
-local function CreateWorldMapPin(id, h)
-    if hotspotWorldPins[id] then return end
-    if not WorldMapFrame then return end
-    local pin = CreateFrame("Button", "HotspotDisplay_WorldPin_"..id, WorldMapFrame)
-    pin:SetSize(24,24)
-    pin.texture = pin:CreateTexture(nil, "OVERLAY")
-    pin.texture:SetAllPoints()
+
+-- Pin recycling functions to optimize frame creation/destruction
+local function RecycleWorldPin(pin)
+    if not pin then return end
+    pin:Hide()
+    pin:ClearAllPoints()
+    pin:SetScript("OnEnter", nil)
+    pin:SetScript("OnLeave", nil)
+    pin:SetScript("OnClick", nil)
+    table.insert(worldPinCache, pin)
+end
+
+local function RecycleMinimapPin(pin)
+    if not pin then return end
+    pin:Hide()
+    pin:ClearAllPoints()
+    pin:SetScript("OnEnter", nil)
+    pin:SetScript("OnLeave", nil)
+    pin:SetScript("OnClick", nil)
+    table.insert(minimapPinCache, pin)
+end
+
+local function GetOrCreateWorldPin(id, h)
+    local pin
+    if #worldPinCache > 0 then
+        -- Reuse cached pin
+        pin = table.remove(worldPinCache)
+        pin:SetParent(WorldMapFrame)
+        pin:Show()
+    else
+        -- Create new pin
+        pin = CreateFrame("Button", "HotspotDisplay_WorldPin_"..id, WorldMapFrame)
+        pin:SetSize(24,24)
+        pin.texture = pin:CreateTexture(nil, "OVERLAY")
+        pin.texture:SetAllPoints()
+        pin:SetFrameStrata("HIGH")
+    end
+    
+    -- Update texture
     pin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
     if h.icon and GetSpellTexture then
         local tex = GetSpellTexture(h.icon)
         if tex then pin.texture:SetTexture(tex) end
     end
-    pin:SetFrameStrata("HIGH")
-    pin:Show()
+    
+    return pin
+end
+
+local function GetOrCreateMinimapPin(id, h)
+    local pin
+    if #minimapPinCache > 0 then
+        -- Reuse cached pin
+        pin = table.remove(minimapPinCache)
+        pin:SetParent(Minimap)
+        pin:Show()
+    else
+        -- Create new pin
+        pin = CreateFrame("Button", "HotspotDisplay_MinimapPin_"..id, Minimap)
+        pin:SetSize(18,18)
+        pin.texture = pin:CreateTexture(nil, "OVERLAY")
+        pin.texture:SetAllPoints()
+        pin:SetFrameStrata("MEDIUM")
+    end
+    
+    -- Update texture
+    pin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+    if h.icon and GetSpellTexture then
+        local tex = GetSpellTexture(h.icon)
+        if tex then pin.texture:SetTexture(tex) end
+    end
+    
+    return pin
+end
+
+-- Create a clickable worldmap pin for a hotspot
+local function CreateWorldMapPin(id, h)
+    if hotspotWorldPins[id] then return end
+    if not WorldMapFrame then return end
+    
+    -- Use pin caching system
+    local pin = GetOrCreateWorldPin(id, h)
+    
     pin:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         local remaining = math.max(0, math.floor(h.expire - GetTime()))
@@ -150,22 +222,18 @@ local function CreateWorldMapPin(id, h)
 end
 local function RemoveWorldMapPin(id)
     local p = hotspotWorldPins[id]
-    if p then p:Hide(); p:SetParent(nil); p = nil; hotspotWorldPins[id] = nil end
+    if p then 
+        RecycleWorldPin(p)
+        hotspotWorldPins[id] = nil
+    end
 end
 -- Create per-hotspot minimap pin when player is in same zone
 local function CreateHotspotMinimapPin(id, h)
     if hotspotMinimapPins[id] or not Minimap then return end
-    local pin = CreateFrame("Button", "HotspotDisplay_MinimapPin_"..id, Minimap)
-    pin:SetSize(18,18)
-    pin.texture = pin:CreateTexture(nil, "OVERLAY")
-    pin.texture:SetAllPoints()
-    pin.texture:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
-    if h.icon and GetSpellTexture then
-        local tex = GetSpellTexture(h.icon)
-        if tex then pin.texture:SetTexture(tex) end
-    end
-    pin:SetFrameStrata("MEDIUM")
-    pin:Show()
+    
+    -- Use pin caching system
+    local pin = GetOrCreateMinimapPin(id, h)
+    
     pin:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         local remaining = math.max(0, math.floor(h.expire - GetTime()))
@@ -186,7 +254,10 @@ local function CreateHotspotMinimapPin(id, h)
 end
 local function RemoveHotspotMinimapPin(id)
     local p = hotspotMinimapPins[id]
-    if p then p:Hide(); p:SetParent(nil); p = nil; hotspotMinimapPins[id] = nil end
+    if p then 
+        RecycleMinimapPin(p)
+        hotspotMinimapPins[id] = nil
+    end
 end
 -- Position world map pins according to current map canvas size
 local function UpdateWorldMapPins()
@@ -261,7 +332,6 @@ local function UpdateMinimapPins()
                 local hx, hy
                 if Astrolabe then
                         -- Prefer server-provided normalized coords when available, but guard Astrolabe calls
-                        local hx, hy
                         if h.nx and h.ny then
                             hx, hy = tonumber(h.nx) or 0, tonumber(h.ny) or 0
                         else
