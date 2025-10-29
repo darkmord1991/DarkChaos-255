@@ -9,134 +9,130 @@
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 
+enum BattlemasterActions
+{
+    ACTION_JOIN_QUEUE   = GOSSIP_ACTION_INFO_DEF + 1,
+    ACTION_LEAVE_QUEUE  = GOSSIP_ACTION_INFO_DEF + 2,
+    ACTION_QUEUE_STATUS = GOSSIP_ACTION_INFO_DEF + 3
+};
+
 class npc_hinterlands_battlemaster : public CreatureScript
 {
 public:
     npc_hinterlands_battlemaster() : CreatureScript("npc_hinterlands_battlemaster") { }
 
-    struct npc_hinterlands_battlemasterAI : public ScriptedAI
+    bool OnGossipHello(Player* player, Creature* creature) override
     {
-        npc_hinterlands_battlemasterAI(Creature* creature) : ScriptedAI(creature) { }
-
-        bool OnGossipHello(Player* player) override
+        // Check if player can join
+        if (player->GetLevel() < 255)
         {
-            // Check if player can join
-            if (player->GetLevel() < 255)
-            {
-                player->PlayerTalkClass->SendCloseGossip();
-                ChatHandler(player->GetSession()).PSendSysMessage("You must be level 255 to enter the Hinterlands Battleground.");
-                return true;
-            }
-
-            // Get OutdoorPvP instance
-            OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-            if (!outdoorPvP)
-            {
-                player->PlayerTalkClass->SendCloseGossip();
-                ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
-                return true;
-            }
-
-            OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
-            if (!hlbg)
-            {
-                player->PlayerTalkClass->SendCloseGossip();
-                ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
-                return true;
-            }
-
-            // Check if player is already in queue
-            if (hlbg->IsPlayerInQueue(player->GetGUID()))
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-            }
-            else
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-            }
-
-            SendGossipMenuFor(player, player->GetGossipTextId(me), me->GetGUID());
+            player->PlayerTalkClass->SendCloseGossip();
+            ChatHandler(player->GetSession()).PSendSysMessage("You must be level 255 to enter the Hinterlands Battleground.");
             return true;
         }
 
-        bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override
+        // Get OutdoorPvP instance
+        OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+        if (!outdoorPvP)
         {
-            uint32 action = player->PlayerTalkClass->GetGossipOptionAction(gossipListId);
-            ClearGossipMenuFor(player);
-
-            OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-            if (!outdoorPvP)
-            {
-                CloseGossipMenuFor(player);
-                return true;
-            }
-
-            OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
-            if (!hlbg)
-            {
-                CloseGossipMenuFor(player);
-                return true;
-            }
-
-            switch (action)
-            {
-                case GOSSIP_ACTION_INFO_DEF + 1: // Join queue
-                {
-                    if (!hlbg->IsPlayerInQueue(player->GetGUID()))
-                    {
-                        hlbg->AddPlayerToQueue(player->GetGUID());
-                        ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterlands Battleground queue.");
-                    }
-                    else
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage("You are already in the queue.");
-                    }
-                    CloseGossipMenuFor(player);
-                    break;
-                }
-                case GOSSIP_ACTION_INFO_DEF + 2: // Leave queue
-                {
-                    if (hlbg->IsPlayerInQueue(player->GetGUID()))
-                    {
-                        hlbg->RemovePlayerFromQueue(player->GetGUID());
-                        ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterlands Battleground queue.");
-                    }
-                    else
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage("You are not in the queue.");
-                    }
-                    CloseGossipMenuFor(player);
-                    break;
-                }
-                case GOSSIP_ACTION_INFO_DEF + 3: // Queue status
-                {
-                    uint32 hordeCount = hlbg->GetQueueCountForTeam(HORDE);
-                    uint32 allianceCount = hlbg->GetQueueCountForTeam(ALLIANCE);
-                    
-                    ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands BG Queue Status:");
-                    ChatHandler(player->GetSession()).PSendSysMessage("Alliance: %u | Horde: %u", allianceCount, hordeCount);
-                    
-                    if (hlbg->IsPlayerInQueue(player->GetGUID()))
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage("You are currently in the queue.");
-                    }
-                    CloseGossipMenuFor(player);
-                    break;
-                }
-                default:
-                    CloseGossipMenuFor(player);
-                    break;
-            }
-
+            player->PlayerTalkClass->SendCloseGossip();
+            ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
             return true;
         }
-    };
 
-    CreatureAI* GetAI(Creature* creature) const override
+        OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
+        if (!hlbg)
+        {
+            player->PlayerTalkClass->SendCloseGossip();
+            ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
+            return true;
+        }
+
+        // Check if player is already in queue
+        if (hlbg->IsPlayerInQueue(player->GetGUID()))
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
+        }
+        else
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground", GOSSIP_SENDER_MAIN, ACTION_JOIN_QUEUE);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
+        }
+
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
     {
-        return new npc_hinterlands_battlemasterAI(creature);
+        ClearGossipMenuFor(player);
+
+        OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+        if (!outdoorPvP)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
+        if (!hlbg)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        switch (action)
+        {
+            case ACTION_JOIN_QUEUE: // Join queue
+            {
+                if (!hlbg->IsPlayerInQueue(player->GetGUID()))
+                {
+                    hlbg->AddPlayerToQueue(player->GetGUID());
+                    ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterlands Battleground queue.");
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("You are already in the queue.");
+                }
+                CloseGossipMenuFor(player);
+                break;
+            }
+            case ACTION_LEAVE_QUEUE: // Leave queue
+            {
+                if (hlbg->IsPlayerInQueue(player->GetGUID()))
+                {
+                    hlbg->RemovePlayerFromQueue(player->GetGUID());
+                    ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterlands Battleground queue.");
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("You are not in the queue.");
+                }
+                CloseGossipMenuFor(player);
+                break;
+            }
+            case ACTION_QUEUE_STATUS: // Queue status
+            {
+                uint32 hordeCount = hlbg->GetQueueCountForTeam(HORDE);
+                uint32 allianceCount = hlbg->GetQueueCountForTeam(ALLIANCE);
+                
+                ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands BG Queue Status:");
+                ChatHandler(player->GetSession()).PSendSysMessage("Alliance: %u | Horde: %u", allianceCount, hordeCount);
+                
+                if (hlbg->IsPlayerInQueue(player->GetGUID()))
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("You are currently in the queue.");
+                }
+                CloseGossipMenuFor(player);
+                break;
+            }
+            default:
+                CloseGossipMenuFor(player);
+                break;
+        }
+
+        return true;
     }
 };
 
