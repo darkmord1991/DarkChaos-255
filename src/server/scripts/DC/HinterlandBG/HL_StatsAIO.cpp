@@ -425,7 +425,6 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         
         return true;
     }
-}
 
 // This file provides the HandleHLBGStatsUI implementation
 // which is called by the command registered in cs_hl_bg.cpp
