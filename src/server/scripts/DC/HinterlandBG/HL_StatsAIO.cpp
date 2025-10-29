@@ -80,44 +80,25 @@ public:
     }
 };
 
-class HL_StatsCommand : public CommandScript
+// Forward declarations for AffixName helper
+static const char* AffixName(uint8 affix)
 {
-public:
-    HL_StatsCommand() : CommandScript("HL_StatsCommand") {}
-    
-    ChatCommandTable GetCommands() const override
+    switch (affix)
     {
-        static ChatCommandTable hlbgStatsCommandTable =
-        {
-            { "statsui", HandleHLBGStatsUICommand, SEC_PLAYER, Console::No },
-        };
-        
-        static ChatCommandTable hlbgCommandTable =
-        {
-            { "hlbg", hlbgStatsCommandTable },
-        };
-        
-        return hlbgCommandTable;
+        case 0: return "None";
+        case 1: return "Haste";
+        case 2: return "Slow";
+        case 3: return "Reduced Healing";
+        case 4: return "Reduced Armor";
+        case 5: return "Boss Enrage";
+        default: return "Unknown";
     }
-    
-private:
-    static const char* AffixName(uint8 affix)
-    {
-        switch (affix)
-        {
-            case 0: return "None";
-            case 1: return "Haste";
-            case 2: return "Slow";
-            case 3: return "Reduced Healing";
-            case 4: return "Reduced Armor";
-            case 5: return "Boss Enrage";
-            default: return "Unknown";
-        }
-    }
-    
-    static bool HandleHLBGStatsUICommand(ChatHandler* handler, char const* args)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
+}
+
+// Main stats handler - called by .hlbg statsui command in cs_hl_bg.cpp
+bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
+{
+    Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
         
@@ -444,9 +425,8 @@ private:
         
         return true;
     }
-};
-
-void AddSC_hl_stats_aio()
-{
-    new HL_StatsCommand();
 }
+
+// This file provides the HandleHLBGStatsUI implementation
+// which is called by the command registered in cs_hl_bg.cpp
+// No separate AddSC needed - the command is already registered there
