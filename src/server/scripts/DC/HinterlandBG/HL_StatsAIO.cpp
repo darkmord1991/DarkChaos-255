@@ -12,6 +12,8 @@
 #include <sstream>
 #include <iomanip>
 
+using namespace Acore::ChatCommands;
+
 // JSON-like string builder helper
 class StatsPayload
 {
