@@ -26,7 +26,7 @@ public:
         // Check if player can join
         if (player->GetLevel() < 255)
         {
-            player->PlayerTalkClass->SendCloseGossip();
+            CloseGossipMenuFor(player);
             ChatHandler(player->GetSession()).PSendSysMessage("You must be level 255 to enter the Hinterlands Battleground.");
             return true;
         }
@@ -35,7 +35,7 @@ public:
         OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
         if (!outdoorPvP)
         {
-            player->PlayerTalkClass->SendCloseGossip();
+            CloseGossipMenuFor(player);
             ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
             return true;
         }
@@ -43,22 +43,15 @@ public:
         OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
         if (!hlbg)
         {
-            player->PlayerTalkClass->SendCloseGossip();
+            CloseGossipMenuFor(player);
             ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
             return true;
         }
 
-        // Check if player is already in queue
-        if (hlbg->IsPlayerInQueue(player->GetGUID()))
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
-        }
-        else
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground", GOSSIP_SENDER_MAIN, ACTION_JOIN_QUEUE);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
-        }
+        // Show menu options
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_JOIN_QUEUE);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
 
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
@@ -84,54 +77,20 @@ public:
 
         switch (action)
         {
-            case ACTION_JOIN_QUEUE: // Join queue
-            {
-                if (!hlbg->IsPlayerInQueue(player->GetGUID()))
-                {
-                    hlbg->AddPlayerToQueue(player->GetGUID());
-                    ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterlands Battleground queue.");
-                }
-                else
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("You are already in the queue.");
-                }
-                CloseGossipMenuFor(player);
+            case ACTION_JOIN_QUEUE:
+                hlbg->HandleQueueJoinCommand(player);
                 break;
-            }
-            case ACTION_LEAVE_QUEUE: // Leave queue
-            {
-                if (hlbg->IsPlayerInQueue(player->GetGUID()))
-                {
-                    hlbg->RemovePlayerFromQueue(player->GetGUID());
-                    ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterlands Battleground queue.");
-                }
-                else
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("You are not in the queue.");
-                }
-                CloseGossipMenuFor(player);
+            case ACTION_LEAVE_QUEUE:
+                hlbg->HandleQueueLeaveCommand(player);
                 break;
-            }
-            case ACTION_QUEUE_STATUS: // Queue status
-            {
-                uint32 hordeCount = hlbg->GetQueueCountForTeam(HORDE);
-                uint32 allianceCount = hlbg->GetQueueCountForTeam(ALLIANCE);
-                
-                ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands BG Queue Status:");
-                ChatHandler(player->GetSession()).PSendSysMessage("Alliance: %u | Horde: %u", allianceCount, hordeCount);
-                
-                if (hlbg->IsPlayerInQueue(player->GetGUID()))
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("You are currently in the queue.");
-                }
-                CloseGossipMenuFor(player);
+            case ACTION_QUEUE_STATUS:
+                hlbg->HandleQueueStatusCommand(player);
                 break;
-            }
             default:
-                CloseGossipMenuFor(player);
                 break;
         }
 
+        CloseGossipMenuFor(player);
         return true;
     }
 };
