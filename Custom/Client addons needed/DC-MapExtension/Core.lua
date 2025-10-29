@@ -22,6 +22,11 @@ local function InitDefaults()
     if DCMapExtensionDB.enabled == nil then DCMapExtensionDB.enabled = true end
     if DCMapExtensionDB.showPlayerDot == nil then DCMapExtensionDB.showPlayerDot = false end  -- Disabled by default to avoid performance issues
     if DCMapExtensionDB.debug == nil then DCMapExtensionDB.debug = false end
+    -- Force disable debug on first load to prevent spam
+    if not DCMapExtensionDB.initialized then
+        DCMapExtensionDB.debug = false
+        DCMapExtensionDB.initialized = true
+    end
 end
 
 ----------------------------------------------

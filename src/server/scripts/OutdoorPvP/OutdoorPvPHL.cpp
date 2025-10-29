@@ -764,7 +764,7 @@
         if (_hudRefreshTimerMs <= diff)
         {
             UpdateWorldStatesAllPlayers();
-            _hudRefreshTimerMs = 10 * IN_MILLISECONDS;
+            _hudRefreshTimerMs = 1 * IN_MILLISECONDS; // Changed from 10s to 1s for responsive HUD updates
             // Also feed the addon HUD (pure addon mode)
             SendStatusAddonToZone();
         }
