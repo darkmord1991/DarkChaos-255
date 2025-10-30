@@ -800,15 +800,36 @@ local function LoadTiles(mapType)
     local successCount = 0
     local errorCount = 0
     
+    -- CRITICAL: Clear WorldMapDetailFrame's own background texture
+    if WorldMapDetailFrame and WorldMapDetailFrame.SetTexture then
+        WorldMapDetailFrame:SetTexture(nil)
+        Debug("Cleared WorldMapDetailFrame background texture")
+    end
+    
+    -- Also clear any textures ON WorldMapDetailFrame itself
+    if WorldMapDetailFrame then
+        for i = 1, WorldMapDetailFrame:GetNumRegions() do
+            local region = select(i, WorldMapDetailFrame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                if region.SetTexture then
+                    region:SetTexture(nil)
+                    Debug("Cleared WorldMapDetailFrame region texture", i)
+                end
+            end
+        end
+    end
+    
     -- First, hide ALL tiles to prevent mixing
     for i = 1, NUM_WORLDMAP_DETAIL_TILES or 16 do
         local tile = _G["WorldMapDetailTile" .. i]
         if tile then
             tile:Hide()
+            tile:SetTexture(nil)  -- Clear any existing texture
         end
     end
     Debug("Hid all", NUM_WORLDMAP_DETAIL_TILES or 16, "tiles to prevent mixing")
     
+    -- Now load ONLY our tiles
     for i = 1, math.min(#paths, NUM_WORLDMAP_DETAIL_TILES or 16) do
         local tile = _G["WorldMapDetailTile" .. i]
         local texturePath = paths[i]
@@ -817,51 +838,58 @@ local function LoadTiles(mapType)
             Debug("ERROR: WorldMapDetailTile" .. i, "doesn't exist!")
             errorCount = errorCount + 1
         else
-            -- Try to set the texture
+            -- WorldMapDetailTile objects are TEXTURES, not frames
+            -- So we can call SetTexture directly on them
             local success, err = pcall(function()
-                -- Set our BLP texture directly (don't clear it first)
+                -- Set our BLP texture directly
                 tile:SetTexture(texturePath)
                 tile:SetTexCoord(0, 1, 0, 1)
                 tile:SetAlpha(1)
                 tile:SetVertexColor(1, 1, 1, 1)
-                tile:SetDrawLayer("ARTWORK", 0)
-                -- Ensure tile is on top
-                if tile.SetFrameLevel then
-                    tile:SetFrameLevel((WorldMapDetailFrame:GetFrameLevel() or 0) + 5)
-                end
+                
+                -- For textures, we use SetDrawLayer, not SetFrameLevel
+                -- OVERLAY with high sublevel to be on top
+                tile:SetDrawLayer("OVERLAY", 7)
+                
+                -- Show the texture
                 tile:Show()
+                
+                -- Store that this tile is ours (custom property)
+                tile._DCMapCustom = true
+                tile._DCMapType = mapType
             end)
             
             if success then
-                -- Verify the texture actually loaded (check immediately after SetTexture)
+                -- Verify the texture actually loaded
                 local actualTexture = tile:GetTexture()
                 
-                -- Also check if texture path contains our expected file
-                local isCorrectTexture = false
                 if actualTexture and actualTexture ~= "" then
-                    local expectedName = texturePath:match("[^\\]+$")  -- Get "AzsharaCrater1" from path
+                    -- Check if it matches what we expect
+                    local expectedName = texturePath:match("[^\\]+$")
                     if actualTexture:lower():find(expectedName:lower()) then
-                        isCorrectTexture = true
+                        successCount = successCount + 1
+                        Debug("SUCCESS Tile", i, "->", expectedName, "| Verified")
+                    else
+                        -- Wrong texture loaded
+                        tile:Hide()
+                        if DCMapExtensionDB.debug then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture mismatch|r")
+                            DEFAULT_CHAT_FRAME:AddMessage("  Expected: " .. texturePath)
+                            DEFAULT_CHAT_FRAME:AddMessage("  Got: " .. tostring(actualTexture))
+                        end
+                        errorCount = errorCount + 1
                     end
-                end
-                
-                if isCorrectTexture then
-                    successCount = successCount + 1
-                    Debug("SUCCESS Tile", i, "->", texturePath:match("[^\\]+$") or texturePath, "| Loaded as:", tostring(actualTexture))
                 else
-                    -- Texture failed to load - HIDE the tile to prevent showing Blizzard's default
+                    -- Texture is NONE/empty - this is the bug!
                     tile:Hide()
-                    if DCMapExtensionDB.debug then
-                        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture verification failed|r")
-                        DEFAULT_CHAT_FRAME:AddMessage("  Expected: " .. texturePath)
-                        DEFAULT_CHAT_FRAME:AddMessage("  Got: " .. tostring(actualTexture or "nil"))
-                    end
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " has NO TEXTURE after SetTexture!|r")
+                    DEFAULT_CHAT_FRAME:AddMessage("  Path: " .. texturePath)
                     errorCount = errorCount + 1
                 end
             else
-                -- Error setting texture - HIDE the tile
+                -- Error setting texture
                 tile:Hide()
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " failed: " .. tostring(err) .. "|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " SetTexture failed: " .. tostring(err) .. "|r")
                 errorCount = errorCount + 1
             end
         end
@@ -1045,6 +1073,87 @@ local function ShowNativeDetailTiles()
     end
 end
 
+-- Hide Blizzard's POI system when showing custom maps
+local function HideBlizzardPOIs()
+    -- Hide world map POIs that Blizzard adds
+    if WorldMapFrame then
+        -- Hide POI buttons (quest givers, etc)
+        for i = 1, NUM_WORLDMAP_POIS or 0 do
+            local poi = _G["WorldMapFramePOI" .. i]
+            if poi then
+                poi:Hide()
+            end
+        end
+        
+        -- Hide boss POIs
+        for i = 1, NUM_WORLDMAP_OVERLAYS or 0 do
+            local overlay = _G["WorldMapOverlay" .. i]
+            if overlay then
+                overlay:Hide()
+            end
+        end
+        
+        -- Hide party member icons
+        if WorldMapPartyUnit1 then WorldMapPartyUnit1:Hide() end
+        if WorldMapPartyUnit2 then WorldMapPartyUnit2:Hide() end
+        if WorldMapPartyUnit3 then WorldMapPartyUnit3:Hide() end
+        if WorldMapPartyUnit4 then WorldMapPartyUnit4:Hide() end
+        
+        -- Hide raid member icons  
+        if WorldMapRaidUnit1 then WorldMapRaidUnit1:Hide() end
+        
+        -- Hide Mapster POIs if present
+        if Mapster and Mapster.pins then
+            for _, pin in pairs(Mapster.pins) do
+                if pin and pin.Hide then
+                    pin:Hide()
+                end
+            end
+        end
+        
+        -- Hide Cartographer POIs if present
+        if Cartographer_POI then
+            local frame = _G["Cartographer_POI"]
+            if frame and frame.Hide then
+                frame:Hide()
+            end
+        end
+        
+        -- Hide generic POI frames that might exist
+        local commonPOIFrames = {
+            "WorldMapPOIFrame",
+            "WorldMapTooltip",
+            "WorldMapBlobFrame",
+            "WorldMapArchaeologyDigSites",
+        }
+        
+        for _, frameName in ipairs(commonPOIFrames) do
+            local frame = _G[frameName]
+            if frame and frame.Hide then
+                frame:Hide()
+            end
+        end
+        
+        Debug("Hid Blizzard and addon POI frames")
+    end
+end
+
+local function ShowBlizzardPOIs()
+    -- Restore Blizzard's POI system
+    if WorldMapFrame then
+        -- The POIs will automatically re-show on next map update
+        -- Just make sure the frames are re-enabled
+        for i = 1, NUM_WORLDMAP_POIS or 0 do
+            local poi = _G["WorldMapFramePOI" .. i]
+            if poi then
+                poi:Show()
+            end
+        end
+        
+        Debug("Restored Blizzard POI frames")
+    end
+end
+
 -- Store in addon table so global functions can access them
 function addon:ShowCustomMap(mapType)
     Debug("ShowCustomMap called for:", mapType)
@@ -1068,6 +1177,7 @@ function addon:ShowCustomMap(mapType)
         self.stitchFrame:Show()
         if self.playerDot then self.playerDot:Show() end
         HideNativeDetailTiles()
+        HideBlizzardPOIs()  -- Hide Blizzard's POI system
         -- Refresh POIs and hotspots
         CreatePOIMarkers(mapType)
         CreateHotspotMarkers(mapType)
@@ -1084,6 +1194,7 @@ function addon:ShowCustomMap(mapType)
         -- Coordinate display is always shown, OnUpdate handles visibility
         
         HideNativeDetailTiles()
+        HideBlizzardPOIs()  -- Hide Blizzard's POI system
         return true
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load tiles for " .. tostring(mapType) .. "|r")
@@ -1134,6 +1245,9 @@ function addon:HideCustomMap()
     
     -- Restore Blizzard's native detail tiles
     ClearTiles()
+    
+    -- Restore Blizzard's POI system
+    ShowBlizzardPOIs()
     
     -- Trigger Blizzard to reload the current map
     if WorldMapFrame and WorldMapFrame:IsShown() then
@@ -1341,10 +1455,66 @@ end)
 -- Update player position periodically (only when enabled and map is shown)
 local updateTimer = 0
 local hotspotUpdateTimer = 0
+local tileWatchdogTimer = 0
 eventFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Skip entirely if not initialized
     if not addon.initialized then return end
     if not addon.stitchFrame or not addon.stitchFrame:IsShown() then return end
+    
+    -- TILE WATCHDOG: Continuously hide non-custom tiles that Blizzard adds
+    tileWatchdogTimer = tileWatchdogTimer + elapsed
+    if tileWatchdogTimer >= 0.1 then  -- Check 10 times per second
+        tileWatchdogTimer = 0
+        if addon.currentMap and addon.loadedTextures then
+            local expectedType = addon.currentMap
+            
+            -- Hide tiles that shouldn't be shown
+            for i = 1, NUM_WORLDMAP_DETAIL_TILES or 16 do
+                local tile = _G["WorldMapDetailTile" .. i]
+                if tile then
+                    if i <= #addon.loadedTextures then
+                        -- This tile SHOULD be showing our custom texture
+                        if not tile._DCMapCustom or tile._DCMapType ~= expectedType then
+                            -- Blizzard overwrote our tile - reclaim it
+                            tile:Hide()  -- Hide it first
+                            if DCMapExtensionDB.debug and math.random() < 0.01 then  -- 1% chance to log
+                                Debug("Watchdog: Hiding non-custom tile", i)
+                            end
+                        elseif not tile:IsShown() then
+                            -- Our tile got hidden - show it again
+                            tile:Show()
+                        end
+                    else
+                        -- This tile should NOT be shown at all
+                        if tile:IsShown() then
+                            tile:Hide()
+                        end
+                    end
+                end
+            end
+            
+            -- AGGRESSIVE: Hide any unknown children of WorldMapDetailFrame
+            -- that aren't our tiles or DC-MapExtension frames
+            if WorldMapDetailFrame then
+                for i = 1, WorldMapDetailFrame:GetNumChildren() do
+                    local child = select(i, WorldMapDetailFrame:GetChildren())
+                    if child and child:IsShown() then
+                        local name = child:GetName() or ""
+                        -- Don't hide our own frames or essential Blizzard tiles
+                        if not name:find("DCMap_") and 
+                           not name:find("WorldMapDetailTile") and
+                           not name:find("WorldMapButton") then
+                            -- This might be a POI or other addon frame - hide it
+                            child:Hide()
+                            if DCMapExtensionDB.debug and math.random() < 0.05 then
+                                Debug("Watchdog: Hiding unknown child:", name or "Unnamed")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
     
     -- Update player position
     if DCMapExtensionDB.showPlayerDot then
