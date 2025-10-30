@@ -915,11 +915,30 @@ local function UpdatePlayerPosition()
         return
     end
     
-    -- Try to use server GPS data first (accurate for custom zones)
+    -- Check if player is actually IN the zone being displayed
     local now = GetTime()
     local gpsAge = now - addon.gpsData.lastUpdate
     local hasValidGPS = (gpsAge < 3) and (addon.gpsData.nx > 0 or addon.gpsData.ny > 0)
     
+    -- Determine if we should show the player dot
+    local playerInDisplayedZone = false
+    if addon.currentMap == "azshara" and IsPlayerInAzsharaCrater() then
+        playerInDisplayedZone = true
+    elseif addon.currentMap == "hyjal" and IsPlayerInHyjal() then
+        playerInDisplayedZone = true
+    end
+    
+    -- If player is not in the displayed zone, don't show the dot
+    if not playerInDisplayedZone then
+        addon.playerDot:Hide()
+        if DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5) then
+            addon.lastPlayerPosDebug = now
+            Debug("Player not in displayed zone - hiding dot")
+        end
+        return
+    end
+    
+    -- Player IS in the zone - get position
     local x, y
     if hasValidGPS then
         -- Use server-provided normalized coordinates
@@ -971,7 +990,6 @@ local function UpdatePlayerPosition()
     addon.playerDot:Show()
     
     -- Throttled debug logging (once per 5 seconds)
-    local shouldDebug = DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5)
     if shouldDebug then
         addon.lastPlayerPosDebug = now
         local dotShown = addon.playerDot:IsShown() and "SHOWN" or "HIDDEN"
@@ -1060,7 +1078,7 @@ end
 function addon:HideCustomMap()
     Debug("HideCustomMap called")
     
-    -- Just hide frames, don't destroy them so they can be reused
+    -- Hide custom frames
     if self.stitchFrame then
         self.stitchFrame:Hide()
     end
@@ -1068,7 +1086,7 @@ function addon:HideCustomMap()
         self.playerDot:Hide()
     end
     if self.coordFrame then
-        -- Clear text instead of hiding frame so it doesn't interfere with other maps
+        self.coordFrame:Hide()
         if self.coordFrame.playerText then
             self.coordFrame.playerText:SetText("")
         end
@@ -1077,13 +1095,41 @@ function addon:HideCustomMap()
         end
     end
     
-    -- Don't clear tiles or restore native tiles - keep our custom map ready
-    -- This allows instant reshow when map reopens
+    -- Clear POI and hotspot markers
+    if self.poiMarkers then
+        for _, marker in ipairs(self.poiMarkers) do
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+        self.poiMarkers = {}
+    end
     
-    -- DON'T set currentMap to nil here - keep track of what map we have loaded
-    -- self.currentMap = nil
+    if self.hotspotMarkers then
+        for _, marker in ipairs(self.hotspotMarkers) do
+            if marker.animation then
+                marker.animation:Stop()
+            end
+            marker:Hide()
+            marker:SetParent(nil)
+        end
+        self.hotspotMarkers = {}
+    end
     
-    Debug("Custom map hidden (frames kept for reuse)")
+    -- Restore Blizzard's native detail tiles
+    ClearTiles()
+    
+    -- Trigger Blizzard to reload the current map
+    if WorldMapFrame and WorldMapFrame:IsShown() then
+        -- Call Blizzard's update function to restore normal map tiles
+        if WorldMapFrame_UpdateMap then
+            WorldMapFrame_UpdateMap()
+        end
+    end
+    
+    -- Clear current map state
+    self.currentMap = nil
+    
+    Debug("Custom map hidden and Blizzard map restored")
 end
 
 local function UpdateMap()
@@ -1119,14 +1165,14 @@ local function UpdateMap()
     end
     
     if not mapType then
-        -- Player not in a custom zone at all
+        -- Player not in a custom zone AND no forced map
         if addon.currentMap then
             addon:HideCustomMap()
-            addon.forcedMap = nil  -- Clear forced map when leaving custom zones
+            -- DON'T clear forcedMap here - let user manually switch maps
+            -- addon.forcedMap = nil
             if DCMapExtensionDB.debug then
-                Debug("Player not in custom zone - hiding custom map and clearing forced map")
+                Debug("Player not in custom zone - hiding custom map")
             end
-            addon.currentMap = nil
         end
         return
     end
@@ -1522,12 +1568,24 @@ function DCMapExtension_ShowStitchedMap(mapType)
     
     if mapType == "azshara" or mapType == "hyjal" then
         Debug("Mapster/Manual requested custom map:", mapType)
+        
+        -- Clear any existing custom map first to avoid mixing
+        if addon.currentMap and addon.currentMap ~= mapType then
+            Debug("Clearing previous map:", addon.currentMap)
+            ClearTiles()
+        end
+        
         addon.forcedMap = mapType  -- Set forced map override
-        addon.currentMap = mapType
         
         if WorldMapFrame and WorldMapFrame:IsShown() then
-            addon:ShowCustomMap(mapType)
-            Debug("Custom map shown immediately (WorldMapFrame open)")
+            -- Immediately show the custom map
+            if addon:ShowCustomMap(mapType) then
+                Debug("Custom map shown successfully")
+                -- Ensure player dot is visible
+                UpdatePlayerPosition()
+            else
+                Debug("Failed to show custom map")
+            end
         else
             Debug("WorldMapFrame not open - map will show when opened")
         end
@@ -1538,13 +1596,28 @@ end
 
 function DCMapExtension_ClearForcedMap()
     if addon.forcedMap then
-        Debug("Clearing forced map")
+        Debug("Clearing forced map:", addon.forcedMap)
         addon.forcedMap = nil  -- Clear forced map override
     end
     if addon.currentMap then
         addon:HideCustomMap()
-        addon.currentMap = nil
     end
+    
+    -- Force Blizzard to reload the normal map for current location
+    if WorldMapFrame and WorldMapFrame:IsShown() then
+        if WorldMapFrame_UpdateMap then
+            WorldMapFrame_UpdateMap()
+        end
+    end
+    
+    Debug("Forced map cleared and normal map restored")
+end
+
+----------------------------------------------
+-- GPS Data Getter Function (for debugging)
+----------------------------------------------
+function DCMapExtension_GetGPSData()
+    return addon.gpsData
 end
 
 ----------------------------------------------
