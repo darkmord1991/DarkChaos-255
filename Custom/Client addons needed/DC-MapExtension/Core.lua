@@ -963,6 +963,11 @@ local function UpdatePlayerPosition()
     addon.playerDot:ClearAllPoints()
     -- Position relative to BOTTOMLEFT (not TOPLEFT) because map coords go bottom-to-top
     addon.playerDot:SetPoint("CENTER", parent, "BOTTOMLEFT", pixelX, pixelY)
+    
+    -- Make absolutely sure the dot is visible
+    addon.playerDot:SetAlpha(1)
+    addon.playerDot:SetFrameStrata("TOOLTIP")
+    addon.playerDot:SetFrameLevel(999)
     addon.playerDot:Show()
     
     -- Throttled debug logging (once per 5 seconds)
@@ -1017,10 +1022,24 @@ function addon:ShowCustomMap(mapType)
     -- Set current map BEFORE creating frames so OnUpdate can reference it
     self.currentMap = mapType
     
+    -- Create or reuse frames
     CreateStitchFrame()
     CreatePlayerDot()
     CreateCoordinateDisplay()
     
+    -- If we already have tiles loaded for this map type, just show them
+    if self.loadedMapType == mapType and self.stitchFrame then
+        Debug("Reusing already-loaded tiles for", mapType)
+        self.stitchFrame:Show()
+        if self.playerDot then self.playerDot:Show() end
+        HideNativeDetailTiles()
+        -- Refresh POIs and hotspots
+        CreatePOIMarkers(mapType)
+        CreateHotspotMarkers(mapType)
+        return true
+    end
+    
+    -- Load tiles fresh
     if LoadTiles(mapType) then
         Debug("Tiles loaded successfully for", mapType)
         self.stitchFrame:Show()
@@ -1041,6 +1060,7 @@ end
 function addon:HideCustomMap()
     Debug("HideCustomMap called")
     
+    -- Just hide frames, don't destroy them so they can be reused
     if self.stitchFrame then
         self.stitchFrame:Hide()
     end
@@ -1057,10 +1077,13 @@ function addon:HideCustomMap()
         end
     end
     
-    ClearTiles()
-    ShowNativeDetailTiles()
+    -- Don't clear tiles or restore native tiles - keep our custom map ready
+    -- This allows instant reshow when map reopens
     
-    self.currentMap = nil
+    -- DON'T set currentMap to nil here - keep track of what map we have loaded
+    -- self.currentMap = nil
+    
+    Debug("Custom map hidden (frames kept for reuse)")
 end
 
 local function UpdateMap()
@@ -1197,12 +1220,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         UpdateMap()
     elseif event == "WORLD_MAP_UPDATE" then
         if addon.initialized then
+            Debug("WORLD_MAP_UPDATE event fired")
+            
+            -- Don't process map updates if WorldMapFrame isn't shown
+            if not WorldMapFrame or not WorldMapFrame:IsShown() then
+                Debug("WorldMapFrame not shown, ignoring WORLD_MAP_UPDATE")
+                return
+            end
+            
             -- Check if player is PHYSICALLY in a custom zone
             local mapType = GetCustomMapType()
+            Debug("GetCustomMapType returned:", tostring(mapType), "Current map:", tostring(addon.currentMap))
             
             if mapType and addon.currentMap == mapType then
-                -- We're already showing the custom map - only reapply if tiles were lost
-                -- Check if first tile still has our custom texture
+                -- We're already showing the custom map - check if tiles are still valid
                 local tile1 = _G["WorldMapDetailTile1"]
                 if tile1 then
                     local currentTexture = tile1:GetTexture()
@@ -1215,10 +1246,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                 LoadTiles(mapType)
                             end
                         end)
+                    else
+                        Debug("Tiles still valid, no reload needed")
                     end
+                else
+                    Debug("WorldMapDetailTile1 doesn't exist")
                 end
             elseif mapType then
-                -- Player IS in a custom zone - show custom map
+                -- Player IS in a custom zone but map not showing yet - trigger update
+                Debug("Player in custom zone but map not showing - triggering UpdateMap")
                 DelayedCall(0.1, UpdateMap)
             else
                 -- Player is NOT in a custom zone
@@ -1604,6 +1640,16 @@ SlashCmdList["DCMAP"] = function(msg)
     elseif msg == "clear" then
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Clearing forced map...|r")
         DCMapExtension_ClearForcedMap()
+    elseif msg == "dot" or msg == "player" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing player dot update...|r")
+        UpdatePlayerPosition()
+        if addon.playerDot then
+            DEFAULT_CHAT_FRAME:AddMessage("  Player Dot: " .. (addon.playerDot:IsShown() and "SHOWN" or "HIDDEN"))
+            DEFAULT_CHAT_FRAME:AddMessage("  GPS: nx=" .. tostring(addon.gpsData.nx) .. " ny=" .. tostring(addon.gpsData.ny))
+            DEFAULT_CHAT_FRAME:AddMessage("  Parent: " .. (addon.playerDot:GetParent() and addon.playerDot:GetParent():GetName() or "NONE"))
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("  Player dot doesn't exist!")
+        end
     elseif msg == "status" then
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Status:|r")
         DEFAULT_CHAT_FRAME:AddMessage("  Current Map: " .. tostring(addon.currentMap or "none"))
@@ -1617,6 +1663,7 @@ SlashCmdList["DCMAP"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dcmap azshara - Force show Azshara Crater map")
         DEFAULT_CHAT_FRAME:AddMessage("  /dcmap hyjal - Force show Hyjal map")
         DEFAULT_CHAT_FRAME:AddMessage("  /dcmap clear - Clear forced map")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap dot - Force update player dot")
         DEFAULT_CHAT_FRAME:AddMessage("  /dcmap status - Show current status")
     end
 end
