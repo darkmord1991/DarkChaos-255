@@ -218,8 +218,17 @@ local function IsPlayerInAzsharaCrater()
     local zoneCheck = zoneName:lower()
     local subCheck = subZone:lower()
     
-    if zoneCheck:find("azshara crater") or zoneCheck:find("azshara%-krater") or
-       subCheck:find("azshara crater") or subCheck:find("azshara%-krater") then
+    -- Debug zone names
+    if DCMapExtensionDB.debug then
+        local now = GetTime()
+        if not addon.lastZoneDebug or (now - addon.lastZoneDebug) > 10 then
+            addon.lastZoneDebug = now
+            Debug("Zone detection: zoneName='" .. tostring(zoneName) .. "' subZone='" .. tostring(subZone) .. "'")
+        end
+    end
+    
+    if zoneCheck:find("azshara") or zoneCheck:find("crater") or
+       subCheck:find("azshara") or subCheck:find("crater") then
         return true
     end
     
@@ -388,6 +397,31 @@ local function CreateCoordinateDisplay()
         elseif px and py and (px > 0 or py > 0) then
             -- Use client-side coordinates (works for standard zones)
             playerText:SetText(string.format("Player: %.1f, %.1f", px * 100, py * 100))
+        elseif addon.playerDot and addon.playerDot:IsShown() then
+            -- Fallback: Calculate from player dot position on stitched map
+            local parent = addon.stitchFrame or WorldMapDetailFrame
+            if parent then
+                local dotX = addon.playerDot:GetLeft()
+                local dotY = addon.playerDot:GetTop()
+                local parentLeft = parent:GetLeft()
+                local parentTop = parent:GetTop()
+                local parentWidth = parent:GetWidth()
+                local parentHeight = parent:GetHeight()
+                
+                if dotX and dotY and parentLeft and parentTop and parentWidth and parentHeight and parentWidth > 0 and parentHeight > 0 then
+                    local relX = (dotX - parentLeft) / parentWidth
+                    local relY = (parentTop - dotY) / parentHeight
+                    if relX >= 0 and relX <= 1 and relY >= 0 and relY <= 1 then
+                        playerText:SetText(string.format("Player: %.1f, %.1f", relX * 100, relY * 100))
+                    else
+                        playerText:SetText("Player: Not in zone")
+                    end
+                else
+                    playerText:SetText("Player: Not in zone")
+                end
+            else
+                playerText:SetText("Player: Not in zone")
+            end
         else
             -- No valid position data
             playerText:SetText("Player: Not in zone")
@@ -872,18 +906,17 @@ local function LoadTiles(mapType)
                     else
                         -- Wrong texture loaded
                         tile:Hide()
-                        if DCMapExtensionDB.debug then
-                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture mismatch|r")
-                            DEFAULT_CHAT_FRAME:AddMessage("  Expected: " .. texturePath)
-                            DEFAULT_CHAT_FRAME:AddMessage("  Got: " .. tostring(actualTexture))
-                        end
+                        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture mismatch|r")
+                        DEFAULT_CHAT_FRAME:AddMessage("  Expected: " .. texturePath)
+                        DEFAULT_CHAT_FRAME:AddMessage("  Got: " .. tostring(actualTexture))
                         errorCount = errorCount + 1
                     end
                 else
-                    -- Texture is NONE/empty - this is the bug!
+                    -- Texture is NONE/empty - file doesn't exist or can't be loaded
                     tile:Hide()
                     DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " has NO TEXTURE after SetTexture!|r")
-                    DEFAULT_CHAT_FRAME:AddMessage("  Path: " .. texturePath)
+                    DEFAULT_CHAT_FRAME:AddMessage("  Attempted path: " .. texturePath)
+                    DEFAULT_CHAT_FRAME:AddMessage("  Make sure .blp files exist in WoW client folder")
                     errorCount = errorCount + 1
                 end
             else
