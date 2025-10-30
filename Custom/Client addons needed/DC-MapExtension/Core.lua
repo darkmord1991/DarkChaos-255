@@ -38,6 +38,7 @@ local addon = {
     poiMarkers = {},
     hotspotMarkers = {},
     currentMap = nil,
+    forcedMap = nil,  -- Override for Mapster/manual selection
     initialized = false,
     lastDebugMap = nil,
     lastDebugTime = 0,
@@ -93,7 +94,8 @@ local texturePaths = {
 -- POI (Points of Interest) Data
 ----------------------------------------------
 -- Coordinates from ac_guard_npc.cpp converted to map coordinates (0-1 range)
--- Map 38 (Azshara Crater) dimensions: roughly -1000 to 500 in X, -500 to 1500 in Y
+-- Map 37 (Azshara Crater), Zone 268 dimensions: roughly -1000 to 500 in X, -500 to 1500 in Y
+-- Map 1 (Kalimdor continent), Zone 616 (Hyjal) - custom zone coordinates
 local poi_data = {
     azshara = {
         {name = "Startcamp", x = 0.754, y = 0.493},
@@ -116,6 +118,29 @@ local poi_data = {
         {name = "Tortolla's Retreat", x = 0.25, y = 0.55}
     }
 }
+
+----------------------------------------------
+-- Helper: Delayed function call (3.3.5 compatible replacement for C_Timer.After)
+----------------------------------------------
+local delayedCalls = {}
+local delayFrame = CreateFrame("Frame")
+delayFrame:SetScript("OnUpdate", function(self, elapsed)
+    local now = GetTime()
+    for i = #delayedCalls, 1, -1 do
+        local call = delayedCalls[i]
+        if now >= call.time then
+            call.func()
+            table.remove(delayedCalls, i)
+        end
+    end
+end)
+
+local function DelayedCall(delay, func)
+    table.insert(delayedCalls, {
+        time = GetTime() + delay,
+        func = func
+    })
+end
 
 ----------------------------------------------
 -- Debug Helper
@@ -181,7 +206,14 @@ local function GetPlayerZoneInfo()
 end
 
 local function IsPlayerInAzsharaCrater()
-    -- Check if player is PHYSICALLY in Azshara Crater zone
+    -- First check GPS data (most reliable - from server)
+    if addon.gpsData and addon.gpsData.mapId and addon.gpsData.zoneId then
+        if addon.gpsData.mapId == 37 or addon.gpsData.zoneId == 268 then
+            return true
+        end
+    end
+    
+    -- Fallback: Check zone name if GPS not available
     local zoneName, subZone = GetPlayerZoneInfo()
     local zoneCheck = zoneName:lower()
     local subCheck = subZone:lower()
@@ -195,7 +227,14 @@ local function IsPlayerInAzsharaCrater()
 end
 
 local function IsPlayerInHyjal()
-    -- Check if player is PHYSICALLY in Hyjal zone
+    -- First check GPS data (most reliable - from server)
+    if addon.gpsData and addon.gpsData.mapId and addon.gpsData.zoneId then
+        if addon.gpsData.zoneId == 616 then
+            return true
+        end
+    end
+    
+    -- Fallback: Check zone name if GPS not available
     local zoneName, subZone = GetPlayerZoneInfo()
     local zoneCheck = zoneName:lower()
     local subCheck = subZone:lower()
@@ -208,8 +247,12 @@ local function IsPlayerInHyjal()
 end
 
 local function GetCustomMapType()
-    -- IMPORTANT: Only show custom maps if player is PHYSICALLY in the zone
-    -- Don't show custom maps just because they selected it from dropdown
+    -- Check for forced map first (from Mapster or manual selection)
+    if addon.forcedMap then
+        return addon.forcedMap
+    end
+    
+    -- Otherwise, only show custom maps if player is PHYSICALLY in the zone
     local mapType = nil
     
     if IsPlayerInAzsharaCrater() then
@@ -503,10 +546,11 @@ local function CreateHotspotMarkers(mapType)
             marker.animation = animGroup
             
             -- Position the hotspot
+            -- Use BOTTOMLEFT anchor like player dot and POIs (map coords go bottom-to-top)
             local pixelX = mapX * frameWidth
-            local pixelY = -mapY * frameHeight
+            local pixelY = mapY * frameHeight
             marker:ClearAllPoints()
-            marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+            marker:SetPoint("CENTER", parent, "BOTTOMLEFT", pixelX, pixelY)
             
             -- Calculate time remaining
             local timeLeft = 0
@@ -587,10 +631,11 @@ local function CreatePOIMarkers(mapType)
         marker.texture = tex
         
         -- Position the POI
+        -- Use BOTTOMLEFT anchor like player dot (map coords go bottom-to-top)
         local pixelX = poi.x * frameWidth
-        local pixelY = -poi.y * frameHeight
+        local pixelY = poi.y * frameHeight
         marker:ClearAllPoints()
-        marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+        marker:SetPoint("CENTER", parent, "BOTTOMLEFT", pixelX, pixelY)
         
         -- Tooltip on mouseover
         marker:EnableMouse(true)
@@ -704,9 +749,34 @@ local function LoadTiles(mapType)
             addon.hookedTileUpdate = true
             Debug("Hooked WorldMapFrame_UpdateDetailTiles to prevent override")
         else
-            Debug("WorldMapFrame_UpdateDetailTiles not found - trying alternative approach")
-            -- Alternative: Hook WORLD_MAP_UPDATE event more aggressively
+            Debug("WorldMapFrame_UpdateDetailTiles not found")
             addon.hookedTileUpdate = true
+        end
+        
+        -- Also hook SetMapByID to prevent zone changes from resetting our tiles
+        if SetMapByID then
+            local originalSetMapByID = SetMapByID
+            SetMapByID = function(mapID)
+                if addon.currentMap then
+                    Debug("Blocked SetMapByID(" .. tostring(mapID) .. ") while showing custom map:", addon.currentMap)
+                    return
+                end
+                return originalSetMapByID(mapID)
+            end
+            Debug("Hooked SetMapByID to prevent override")
+        end
+        
+        -- Hook SetMapZoom too
+        if SetMapZoom then
+            local originalSetMapZoom = SetMapZoom
+            SetMapZoom = function(continent, zone)
+                if addon.currentMap then
+                    Debug("Blocked SetMapZoom while showing custom map:", addon.currentMap)
+                    return
+                end
+                return originalSetMapZoom(continent, zone)
+            end
+            Debug("Hooked SetMapZoom to prevent override")
         end
     end
     
@@ -782,6 +852,10 @@ local function LoadTiles(mapType)
     
     Debug("=== Load complete: Success=" .. successCount .. " Errors=" .. errorCount .. " ===")
     
+    -- Store which map type we loaded for watchdog
+    addon.loadedMapType = mapType
+    addon.loadedTextures = paths
+    
     if successCount == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DC-MapExt] ERROR: No tiles loaded! Check if files exist in Interface\\WorldMap\\" .. (mapType == "azshara" and "AzsharaCrater" or "Hyjal") .. "\\|r")
         return false
@@ -793,6 +867,35 @@ local function LoadTiles(mapType)
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC-MapExt] Successfully loaded " .. successCount .. " tiles for " .. mapType .. "|r")
         end
         return true
+    end
+end
+
+----------------------------------------------
+-- Tile Watchdog - Prevents Blizzard from overriding our tiles
+----------------------------------------------
+local function CheckAndFixTiles()
+    if not addon.currentMap or not addon.loadedTextures then return end
+    
+    -- Check if any of our custom tiles have been overridden
+    local needsReload = false
+    for i = 1, math.min(#addon.loadedTextures, NUM_WORLDMAP_DETAIL_TILES or 12) do
+        local tile = _G["WorldMapDetailTile" .. i]
+        if tile then
+            local currentTexture = tile:GetTexture()
+            local expectedTexture = addon.loadedTextures[i]
+            
+            -- Check if texture was changed
+            if currentTexture and expectedTexture and not currentTexture:find(expectedTexture:match("[^\\]+$")) then
+                needsReload = true
+                Debug("Detected tile override - tile " .. i .. " changed from", expectedTexture, "to", currentTexture)
+                break
+            end
+        end
+    end
+    
+    if needsReload then
+        Debug("Detected tile override - reapplying custom tiles for", addon.currentMap)
+        LoadTiles(addon.currentMap)
     end
 end
 
@@ -878,32 +981,27 @@ end
 -- Map Update
 ----------------------------------------------
 local function HideNativeDetailTiles()
-    -- Hide Blizzard's default map tiles
-    for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
-        local tile = _G["WorldMapDetailTile" .. i]
-        if tile then
-            tile:Hide()
-        end
+    -- DON'T hide the tiles themselves - we reuse them for custom maps!
+    -- Just ensure WorldMapDetailFrame is visible
+    if WorldMapDetailFrame then
+        WorldMapDetailFrame:SetAlpha(1)
+        Debug("WorldMapDetailFrame set to visible (alpha=1)")
     end
     
-    -- Also hide the WorldMapDetailFrame itself to prevent background showing through
-    if WorldMapDetailFrame then
-        WorldMapDetailFrame:SetAlpha(0)
-    end
+    Debug("Native detail tiles ready for reuse")
 end
 
 local function ShowNativeDetailTiles()
-    -- Restore Blizzard's default map tiles
-    for i = 1, NUM_WORLDMAP_DETAIL_TILES or 0 do
-        local tile = _G["WorldMapDetailTile" .. i]
-        if tile then
-            tile:Show()
-        end
+    -- Restore Blizzard's default map tiles by reloading them
+    if WorldMapFrame_UpdateDetailTiles then
+        WorldMapFrame_UpdateDetailTiles()
+        Debug("Restored native tiles via WorldMapFrame_UpdateDetailTiles")
     end
     
-    -- Restore WorldMapDetailFrame visibility
+    -- Ensure WorldMapDetailFrame is visible
     if WorldMapDetailFrame then
         WorldMapDetailFrame:SetAlpha(1)
+        Debug("WorldMapDetailFrame set to visible (alpha=1)")
     end
 end
 
@@ -977,32 +1075,22 @@ local function UpdateMap()
         return
     end
     
-    local mapType = GetCustomMapType()
+    local mapType = GetCustomMapType()  -- Uses GPS data or forced map
     local mapID = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
     local continent = GetCurrentMapContinent and GetCurrentMapContinent() or 0
     local zoneName = GetZoneText and GetZoneText() or "unknown"
     
-    -- CRITICAL: Only show custom maps when viewing the ZONE map, not continent
-    -- For Azshara Crater: should be mapID 37 or similar zone-level map
-    -- For Hyjal: should be mapID 616 or zone 616, NOT continent 1
-    local isZoneLevel = false
-    if mapType == "azshara" then
-        -- Azshara Crater - accept various map IDs that represent the zone
-        isZoneLevel = (mapID == 37 or mapID == 38 or mapID == 268 or mapID >= 400)
-    elseif mapType == "hyjal" then
-        -- Hyjal - only at zone level, NOT continent level (map 1 is Kalimdor continent)
-        -- Zone 616 has its own map ID which should be >= 10
-        isZoneLevel = (mapID ~= 1 and mapID >= 10)
-    end
-    
-    -- Always show debug for zone level check when we have a mapType
+    -- Debug current state
     if DCMapExtensionDB.debug and mapType then
-        Debug("UpdateMap: MapID=" .. mapID .. " Zone=" .. zoneName .. " Continent=" .. continent .. " Type=" .. tostring(mapType) .. " IsZoneLevel=" .. tostring(isZoneLevel))
+        local gpsMap = addon.gpsData.mapId or 0
+        local gpsZone = addon.gpsData.zoneId or 0
+        Debug("UpdateMap: DisplayedMapID=" .. mapID .. " GPSMap=" .. gpsMap .. " GPSZone=" .. gpsZone .. 
+              " Zone=" .. zoneName .. " Type=" .. tostring(mapType) .. " Forced=" .. tostring(addon.forcedMap ~= nil))
     end
     
-    -- Throttle other debug messages - only show when map actually changes
+    -- Throttle debug messages for non-custom zones
     if DCMapExtensionDB.debug and not mapType and (addon.lastDebugMap ~= mapID or GetTime() - addon.lastDebugTime > 5) then
-        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "Continent:", continent, "No custom map type detected")
+        Debug("UpdateMap check - MapID:", mapID, "Zone:", zoneName, "No custom map type detected")
         addon.lastDebugMap = mapID
         addon.lastDebugTime = GetTime()
     end
@@ -1011,35 +1099,21 @@ local function UpdateMap()
         -- Player not in a custom zone at all
         if addon.currentMap then
             addon:HideCustomMap()
+            addon.forcedMap = nil  -- Clear forced map when leaving custom zones
             if DCMapExtensionDB.debug then
-                Debug("Player not in custom zone - hiding custom map")
+                Debug("Player not in custom zone - hiding custom map and clearing forced map")
             end
             addon.currentMap = nil
         end
         return
     end
     
-    -- Player IS in a custom zone (Azshara Crater or Hyjal)
-    if not isZoneLevel then
-        -- Map is showing continent/wrong level, but player IS in custom zone
-        -- Force load the custom map anyway (this handles the case where map opens to wrong view)
-        if DCMapExtensionDB.debug then
-            Debug("Player in", mapType, "but map at wrong level (MapID=" .. mapID .. ") - forcing custom map")
-        end
-        if not addon.currentMap or addon.currentMap ~= mapType then
-            if addon:ShowCustomMap(mapType) then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Loaded custom map: " .. tostring(mapType) .. "|r")
-            end
-        end
-        return
-    end
-    
-    -- In a custom zone
+    -- Player IS in a custom zone (or forced map is set)
+    -- Show the custom map regardless of what map is currently displayed
     if addon.currentMap ~= mapType then
         -- Map changed, reload tiles
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Loading custom map: " .. tostring(mapType) .. "|r")
         
-        -- ShowCustomMap will set addon.currentMap if successful
         if addon:ShowCustomMap(mapType) then
             DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Custom map loaded successfully|r")
         else
@@ -1051,6 +1125,9 @@ local function UpdateMap()
             Debug("Refreshing custom map:", mapType)
             addon:ShowCustomMap(mapType)
         end
+        
+        -- Check if Blizzard overrode our tiles
+        CheckAndFixTiles()
     end
     
     -- Update player position
@@ -1133,7 +1210,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     -- Only reapply if texture was lost (check if it's not our custom texture)
                     if currentTexture and expectedPath and not currentTexture:find(mapType == "azshara" and "AzsharaCrater" or "Hyjal") then
                         Debug("Detected tile override - reapplying custom tiles for", mapType)
-                        C_Timer.After(0.05, function()
+                        DelayedCall(0.05, function()
                             if addon.currentMap == mapType then
                                 LoadTiles(mapType)
                             end
@@ -1142,7 +1219,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 end
             elseif mapType then
                 -- Player IS in a custom zone - show custom map
-                C_Timer.After(0.1, UpdateMap)
+                DelayedCall(0.1, UpdateMap)
             else
                 -- Player is NOT in a custom zone
                 -- Clear any custom map overlay to show normal map
@@ -1400,20 +1477,35 @@ end
 ----------------------------------------------
 -- These functions allow Mapster to trigger custom maps manually
 function DCMapExtension_ShowStitchedMap(mapType)
-    if not DCMapExtensionDB.enabled then return end
+    if not DCMapExtensionDB.enabled then 
+        Debug("DCMapExtension_ShowStitchedMap called but addon disabled")
+        return 
+    end
+    
+    Debug("=== DCMapExtension_ShowStitchedMap called with mapType:", tostring(mapType), "===")
     
     if mapType == "azshara" or mapType == "hyjal" then
-        Debug("Mapster requested custom map:", mapType)
+        Debug("Mapster/Manual requested custom map:", mapType)
+        addon.forcedMap = mapType  -- Set forced map override
         addon.currentMap = mapType
-        addon:ShowCustomMap(mapType)
+        
+        if WorldMapFrame and WorldMapFrame:IsShown() then
+            addon:ShowCustomMap(mapType)
+            Debug("Custom map shown immediately (WorldMapFrame open)")
+        else
+            Debug("WorldMapFrame not open - map will show when opened")
+        end
     else
         Debug("Unknown map type requested:", tostring(mapType))
     end
 end
 
 function DCMapExtension_ClearForcedMap()
-    if addon.currentMap then
+    if addon.forcedMap then
         Debug("Clearing forced map")
+        addon.forcedMap = nil  -- Clear forced map override
+    end
+    if addon.currentMap then
         addon:HideCustomMap()
         addon.currentMap = nil
     end
@@ -1441,6 +1533,18 @@ function DCMapExtension_UpdateGPS(mapId, zoneId, x, y, z, nx, ny)
             Debug("GPS Update: Map=" .. mapId .. " Zone=" .. zoneId .. 
                   " Pos=(" .. string.format("%.1f", x) .. "," .. string.format("%.1f", y) .. "," .. string.format("%.1f", z) .. ")" ..
                   " Normalized=(" .. string.format("%.3f", nx) .. "," .. string.format("%.3f", ny) .. ")")
+        end
+    end
+    
+    -- Trigger map update if GPS zone changed (player entered/left custom zone)
+    local prevGPSMap = addon.lastGPSMap or 0
+    local prevGPSZone = addon.lastGPSZone or 0
+    if mapId ~= prevGPSMap or zoneId ~= prevGPSZone then
+        addon.lastGPSMap = mapId
+        addon.lastGPSZone = zoneId
+        if WorldMapFrame and WorldMapFrame:IsShown() then
+            Debug("GPS zone changed - triggering map update")
+            UpdateMap()
         end
     end
 end
@@ -1479,6 +1583,42 @@ if AIO then
     Debug("AIO GPS handler registered successfully")
 else
     Debug("WARNING: AIO not available - using Lua script GPS updates")
+end
+
+----------------------------------------------
+-- Slash Commands
+----------------------------------------------
+SLASH_DCMAP1 = "/dcmap"
+SlashCmdList["DCMAP"] = function(msg)
+    msg = msg:lower():trim()
+    
+    if msg == "debug" then
+        DCMapExtensionDB.debug = not DCMapExtensionDB.debug
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Debug mode: " .. (DCMapExtensionDB.debug and "ON" or "OFF") .. "|r")
+    elseif msg == "azshara" or msg == "az" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing Azshara Crater map...|r")
+        DCMapExtension_ShowStitchedMap("azshara")
+    elseif msg == "hyjal" or msg == "hy" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing Hyjal map...|r")
+        DCMapExtension_ShowStitchedMap("hyjal")
+    elseif msg == "clear" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Clearing forced map...|r")
+        DCMapExtension_ClearForcedMap()
+    elseif msg == "status" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Status:|r")
+        DEFAULT_CHAT_FRAME:AddMessage("  Current Map: " .. tostring(addon.currentMap or "none"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Forced Map: " .. tostring(addon.forcedMap or "none"))
+        DEFAULT_CHAT_FRAME:AddMessage("  GPS Map: " .. tostring(addon.gpsData.mapId or "none"))
+        DEFAULT_CHAT_FRAME:AddMessage("  GPS Zone: " .. tostring(addon.gpsData.zoneId or "none"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Debug: " .. (DCMapExtensionDB.debug and "ON" or "OFF"))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Commands:|r")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap debug - Toggle debug mode")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap azshara - Force show Azshara Crater map")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap hyjal - Force show Hyjal map")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap clear - Clear forced map")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap status - Show current status")
+    end
 end
 
 print("|cff33ff99[DC-MapExtension]|r Loaded. Type /dcmap for help or use Interface -> Addons")
