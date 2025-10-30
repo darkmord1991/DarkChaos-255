@@ -958,11 +958,11 @@ local function UpdatePlayerPosition()
     end
     
     local pixelX = x * frameWidth
-    local pixelY = y * frameHeight  -- Direct conversion (normalized coords are already correct)
+    local pixelY = (1 - y) * frameHeight  -- Invert Y: normalized coords are 0=south, 1=north, but TOPLEFT anchor needs 0 at top
     
     addon.playerDot:ClearAllPoints()
-    -- Position relative to BOTTOMLEFT (not TOPLEFT) because map coords go bottom-to-top
-    addon.playerDot:SetPoint("CENTER", parent, "BOTTOMLEFT", pixelX, pixelY)
+    -- Position relative to TOPLEFT since that's the natural anchor for UI frames
+    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)
     
     -- Make absolutely sure the dot is visible
     addon.playerDot:SetAlpha(1)
