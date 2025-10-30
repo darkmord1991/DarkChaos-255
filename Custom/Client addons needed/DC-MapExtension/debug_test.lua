@@ -64,6 +64,20 @@ local function TestMapState()
         end
     end
     
+    -- Check addon internal state (access via globals if available)
+    if _G.DCMapExtension then
+        local addon = _G.DCMapExtension
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00Internal State:|r")
+        DEFAULT_CHAT_FRAME:AddMessage("  Current Map: " .. tostring(addon.currentMap or "nil"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Forced Map: " .. tostring(addon.forcedMap or "nil"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Stitch Frame: " .. tostring(addon.stitchFrame and "EXISTS" or "nil"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Player Dot: " .. tostring(addon.playerDot and "EXISTS" or "nil"))
+        if addon.playerDot then
+            DEFAULT_CHAT_FRAME:AddMessage("  Player Dot Shown: " .. tostring(addon.playerDot:IsShown()))
+            DEFAULT_CHAT_FRAME:AddMessage("  Player Dot Alpha: " .. string.format("%.2f", addon.playerDot:GetAlpha()))
+        end
+    end
+    
     PrintSeparator()
 end
 

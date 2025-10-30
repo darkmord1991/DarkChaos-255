@@ -800,6 +800,15 @@ local function LoadTiles(mapType)
     local successCount = 0
     local errorCount = 0
     
+    -- First, hide ALL tiles to prevent mixing
+    for i = 1, NUM_WORLDMAP_DETAIL_TILES or 16 do
+        local tile = _G["WorldMapDetailTile" .. i]
+        if tile then
+            tile:Hide()
+        end
+    end
+    Debug("Hid all", NUM_WORLDMAP_DETAIL_TILES or 16, "tiles to prevent mixing")
+    
     for i = 1, math.min(#paths, NUM_WORLDMAP_DETAIL_TILES or 16) do
         local tile = _G["WorldMapDetailTile" .. i]
         local texturePath = paths[i]
@@ -810,10 +819,7 @@ local function LoadTiles(mapType)
         else
             -- Try to set the texture
             local success, err = pcall(function()
-                -- Clear existing texture first
-                tile:SetTexture(nil)
-                
-                -- Now set our BLP
+                -- Set our BLP texture directly (don't clear it first)
                 tile:SetTexture(texturePath)
                 tile:SetTexCoord(0, 1, 0, 1)
                 tile:SetAlpha(1)
@@ -827,25 +833,36 @@ local function LoadTiles(mapType)
             end)
             
             if success then
-                -- Verify the texture actually loaded
+                -- Verify the texture actually loaded (check immediately after SetTexture)
                 local actualTexture = tile:GetTexture()
+                
+                -- Also check if texture path contains our expected file
+                local isCorrectTexture = false
                 if actualTexture and actualTexture ~= "" then
+                    local expectedName = texturePath:match("[^\\]+$")  -- Get "AzsharaCrater1" from path
+                    if actualTexture:lower():find(expectedName:lower()) then
+                        isCorrectTexture = true
+                    end
+                end
+                
+                if isCorrectTexture then
                     successCount = successCount + 1
                     Debug("SUCCESS Tile", i, "->", texturePath:match("[^\\]+$") or texturePath, "| Loaded as:", tostring(actualTexture))
                 else
-                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture empty|r")
+                    -- Texture failed to load - HIDE the tile to prevent showing Blizzard's default
+                    tile:Hide()
+                    if DCMapExtensionDB.debug then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[DC-MapExt] WARNING: Tile " .. i .. " texture verification failed|r")
+                        DEFAULT_CHAT_FRAME:AddMessage("  Expected: " .. texturePath)
+                        DEFAULT_CHAT_FRAME:AddMessage("  Got: " .. tostring(actualTexture or "nil"))
+                    end
                     errorCount = errorCount + 1
                 end
             else
+                -- Error setting texture - HIDE the tile
+                tile:Hide()
                 DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] ERROR: Tile " .. i .. " failed: " .. tostring(err) .. "|r")
                 errorCount = errorCount + 1
-                
-                -- Try fallback to a known-good texture
-                pcall(function()
-                    tile:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                    tile:SetTexCoord(0, 1, 0, 1)
-                    tile:SetVertexColor(1, 0, 0, 0.5)  -- Red tint to show error
-                end)
             end
         end
     end
@@ -1740,5 +1757,8 @@ SlashCmdList["DCMAP"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dcmap status - Show current status")
     end
 end
+
+-- Expose addon table globally for debugging
+_G.DCMapExtension = addon
 
 print("|cff33ff99[DC-MapExtension]|r Loaded. Type /dcmap for help or use Interface -> Addons")
