@@ -75,20 +75,19 @@ public:
             return;
 
         // Calculate scaling factor: how much more powerful should the item be at this level
-        // Accelerated scaling: 2x the normal rate for levels above 80
-        // Formula: 1.0 + 2 * (current_level - max_dbc_level) / max_dbc_level
+        // Linear scaling: normal rate for levels above 80
+        // Formula: 1.0 + (current_level - max_dbc_level) / max_dbc_level
         // Examples:
         //   Level 80:  1.0x (baseline)
-        //   Level 120: 2.0x (was 1.5x with old formula)
-        //   Level 160: 3.0x (was 2.0x with old formula)
-        //   Level 200: 4.0x (was 2.5x with old formula)
-        //   Level 240: 5.0x (was 3.0x with old formula)
+        //   Level 120: 1.5x
+        //   Level 160: 2.0x
+        //   Level 200: 2.5x
+        //   Level 240: 3.0x
         float levelDifference = float(playerLevel - ssd->MaxLevel);
-        float scalingBoost = 1.0f + (2.0f * levelDifference / float(ssd->MaxLevel));
+        float scalingBoost = 1.0f + (levelDifference / float(ssd->MaxLevel));
         
         // For extreme high levels, cap the boost to prevent absurd values
-        // Increased cap to 8x for level 255 with accelerated scaling
-        const float MAX_SCALING_BOOST = 8.0f; // Max 8x the level 80 stats at level 255
+        const float MAX_SCALING_BOOST = 4.0f; // Max 4x the level 80 stats at level 255
         if (scalingBoost > MAX_SCALING_BOOST)
             scalingBoost = MAX_SCALING_BOOST;
 
