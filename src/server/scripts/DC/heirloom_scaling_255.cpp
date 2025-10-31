@@ -203,6 +203,25 @@ public:
             bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, scaledSlots);
         }
     }
+
+    // Hook to bypass level requirements for heirloom items
+    // Allows heirlooms to be equipped at any level up to 255
+    void OnPlayerCanUseItem(Player* player, ItemTemplate const* proto, InventoryResult& result) override
+    {
+        if (!player || !proto)
+            return;
+
+        // Only modify behavior for heirloom items
+        if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
+            return;
+
+        // Override EQUIP_ERR_CANT_EQUIP_LEVEL_I errors (RequiredLevel check)
+        // The MaxLevel check in PlayerStorage.cpp:1859 has been patched to skip heirlooms
+        if (result == EQUIP_ERR_CANT_EQUIP_LEVEL_I)
+        {
+            result = EQUIP_ERR_OK;
+        }
+    }
 };
 
 void AddSC_heirloom_scaling_255()
