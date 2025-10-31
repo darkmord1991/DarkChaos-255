@@ -6,6 +6,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Item.h"
+#include "Bag.h"
 #include "SharedDefines.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
@@ -16,11 +17,16 @@
  * This script extends heirloom item scaling beyond the default DBC cap (level 80)
  * up to level 255 for custom high-level servers.
  * 
+ * Features:
+ * - Scales heirloom armor/weapons stats (Strength, Stamina, etc.)
+ * - Scales heirloom bag slots (containers get more slots at higher levels)
+ * 
  * How it works:
  * - Intercepts the ScalingStatValue lookup before DBC capping occurs
  * - For heirloom items (Quality 7, Flags 134221824), uses level 80 scaling data
- *   and extrapolates it linearly for levels 81-255
+ *   and extrapolates it with 2x accelerated scaling for levels 81-255
  * - Maintains proper stat scaling ratios while extending the level range
+ * - For bags: increases ContainerSlots based on player level
  */
 
 class heirloom_scaling_255 : public PlayerScript
@@ -141,6 +147,60 @@ public:
             
             // Apply the scaling boost
             val = int32(float(baseVal) * scalingBoost);
+        }
+    }
+
+    // Hook when player equips an item to scale bag slots for heirloom bags
+    void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
+    {
+        if (!player || !item)
+            return;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto)
+            return;
+
+        // Only process heirloom bags
+        if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
+            return;
+
+        if (proto->Class != ITEM_CLASS_CONTAINER)
+            return;
+
+        // Cast to Bag to access bag-specific functions
+        Bag* bag = item->ToBag();
+        if (!bag)
+            return;
+
+        uint32 playerLevel = player->GetLevel();
+        
+        // Heirloom bag scaling: 12 slots at level 1, scaling to 36 slots at level 130
+        // Linear progression: slots = 12 + (level - 1) * (36 - 12) / (130 - 1)
+        // Simplified: slots = 12 + (level - 1) * 24 / 129
+        
+        const uint32 MIN_SLOTS = 12;      // Starting slots at level 1
+        const uint32 MAX_SLOTS = 36;      // Maximum slots at level 130 (also WoW client hard cap)
+        const uint32 MAX_SCALE_LEVEL = 130; // Level at which bag reaches max size
+        
+        uint32 scaledSlots = MIN_SLOTS;
+        
+        if (playerLevel >= MAX_SCALE_LEVEL)
+        {
+            // At or above level 130, use max slots
+            scaledSlots = MAX_SLOTS;
+        }
+        else if (playerLevel > 1)
+        {
+            // Linear scaling from level 1 to 130
+            // Formula: MIN_SLOTS + (current_level - 1) * (MAX_SLOTS - MIN_SLOTS) / (MAX_SCALE_LEVEL - 1)
+            float progression = float(playerLevel - 1) / float(MAX_SCALE_LEVEL - 1);
+            scaledSlots = MIN_SLOTS + uint32(progression * float(MAX_SLOTS - MIN_SLOTS));
+        }
+
+        // Update bag size
+        if (scaledSlots >= MIN_SLOTS && scaledSlots <= MAX_SLOTS)
+        {
+            bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, scaledSlots);
         }
     }
 };
