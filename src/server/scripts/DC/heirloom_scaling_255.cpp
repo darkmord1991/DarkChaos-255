@@ -29,7 +29,7 @@ public:
     heirloom_scaling_255() : PlayerScript("heirloom_scaling_255") { }
 
     // Hook before ScalingStatValue is processed
-    void OnPlayerCustomScalingStatValueBefore(Player* player, ItemTemplate const* proto, uint8 slot, bool apply, uint32& CustomScalingStatValue) override
+    void OnPlayerCustomScalingStatValueBefore(Player* player, ItemTemplate const* proto, uint8 /*slot*/, bool /*apply*/, uint32& CustomScalingStatValue) override
     {
         if (!player || !proto)
             return;

@@ -127,7 +127,7 @@ void BattlegroundBFG::PostUpdateImpl(uint32 diff)
                 {
                     TeamId teamId = eventId == BG_BFG_EVENT_ALLIANCE_TICK ? TEAM_ALLIANCE : TEAM_HORDE;
                     uint8 honorRewards = _controlledPoints[teamId];
-                    uint8 reputationRewards = _controlledPoints[teamId];
+                    // uint8 reputationRewards = _controlledPoints[teamId]; // Currently unused
                     uint8 information = _controlledPoints[teamId];
                     if (honorRewards != 0)
                     {
@@ -204,7 +204,7 @@ void BattlegroundBFG::AddPlayer(Player* player)
     player->SendDirectMessage(WorldPackets::Misc::StartMirrorTimer(FATIGUE_TIMER, BG_EVENT_START_BATTLE, 0, 0, false, 0).Write());
 }
 
-void BattlegroundBFG::RemovePlayer(Player* player) {
+void BattlegroundBFG::RemovePlayer(Player* /*player*/) {
     // Implement any cleanup needed when a player leaves
 }
 
@@ -273,15 +273,15 @@ void BattlegroundBFG::FillInitialWorldStates(WorldPackets::WorldState::InitWorld
         for (uint8 i = 1; i < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++i)
             packet.Worldstates.emplace_back(_capturePointInfo[node]._iconCapture + plusArray[i], (_capturePointInfo[node]._state == i) ? 1 : 0);
 
-    // How many bases each team owns
-    uint8 ally = 0, horde = 0;
-    for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
-    {
-        if (_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE)
-            ++ally;
-        else if (_capturePointInfo[node]._ownerTeamId == TEAM_HORDE)
-            ++horde;
-    }
+    // How many bases each team owns (currently tracked but not used in worldstates)
+    // uint8 ally = 0, horde = 0;
+    // for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
+    // {
+    //     if (_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE)
+    //         ++ally;
+    //     else if (_capturePointInfo[node]._ownerTeamId == TEAM_HORDE)
+    //         ++horde;
+    // }
 
     packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_MAX, GILNEAS_BG_MAX_TEAM_SCORE);
     packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_WARNING, GILNEAS_BG_WARNING_NEAR_VICTORY_SCORE);

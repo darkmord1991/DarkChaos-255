@@ -80,21 +80,6 @@ public:
     }
 };
 
-// Forward declarations for AffixName helper
-static const char* AffixName(uint8 affix)
-{
-    switch (affix)
-    {
-        case 0: return "None";
-        case 1: return "Haste";
-        case 2: return "Slow";
-        case 3: return "Reduced Healing";
-        case 4: return "Reduced Armor";
-        case 5: return "Boss Enrage";
-        default: return "Unknown";
-    }
-}
-
 // Main stats handler - called by .hlbg statsui command in cs_hl_bg.cpp
 bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
 {
