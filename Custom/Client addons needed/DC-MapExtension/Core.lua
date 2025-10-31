@@ -2004,7 +2004,7 @@ end
 -- GPS Data Update Function (called by server via Lua)
 ----------------------------------------------
 function DCMapExtension_UpdateGPS(mapId, zoneId, x, y, z, nx, ny)
-    -- Update GPS data
+    -- Update GPS data directly - server now handles axis corrections
     addon.gpsData.mapId = mapId
     addon.gpsData.zoneId = zoneId
     addon.gpsData.x = x

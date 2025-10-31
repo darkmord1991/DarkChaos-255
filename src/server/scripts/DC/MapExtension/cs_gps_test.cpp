@@ -55,10 +55,10 @@ public:
         {
             const float minX = -1000.0f, maxX = 500.0f;
             const float minY = -500.0f, maxY = 1500.0f;
-            // X-axis is flipped: west (low X values) appears on left side of map (low nx values)
+            // Both X and Y axes are flipped: map texture doesn't match world coords
             nx = (maxX - x) / (maxX - minX);  // Flip X: (500 - x) / 1500
-            ny = (y - minY) / (maxY - minY);
-            handler->PSendSysMessage("Using Azshara Crater bounds (X-axis flipped)");
+            ny = (maxY - y) / (maxY - minY);  // Flip Y: (1500 - y) / 2000
+            handler->PSendSysMessage("Using Azshara Crater bounds (both axes flipped)");
         }
         else if (mapId == 1 && zoneId == 616) // Hyjal
         {

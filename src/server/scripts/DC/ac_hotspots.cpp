@@ -355,18 +355,19 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
         if (maxX <= minX || maxY <= minY)
             return false;
 
-        // Special case for Azshara Crater (map 37): X-axis is flipped
-        // West side (low X values like Valormok) should appear on left (low nx values)
+        // Special case for Azshara Crater (map 37): Both axes are flipped
+        // The map texture orientation doesn't match world coordinate orientation
         if (mapId == 37)
         {
             outNx = (maxX - x) / (maxX - minX);  // Flip X: (500 - x) / 1500
+            outNy = (maxY - y) / (maxY - minY);  // Flip Y: (1500 - y) / 2000
         }
         else
         {
             outNx = (x - minX) / (maxX - minX);
+            outNy = (y - minY) / (maxY - minY);
         }
         
-        outNy = (y - minY) / (maxY - minY);
         // clamp
         outNx = std::max(0.0f, std::min(1.0f, outNx));
         outNy = std::max(0.0f, std::min(1.0f, outNy));
