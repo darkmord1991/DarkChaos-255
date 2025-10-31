@@ -355,7 +355,17 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
         if (maxX <= minX || maxY <= minY)
             return false;
 
-        outNx = (x - minX) / (maxX - minX);
+        // Special case for Azshara Crater (map 37): X-axis is flipped
+        // West side (low X values like Valormok) should appear on left (low nx values)
+        if (mapId == 37)
+        {
+            outNx = (maxX - x) / (maxX - minX);  // Flip X: (500 - x) / 1500
+        }
+        else
+        {
+            outNx = (x - minX) / (maxX - minX);
+        }
+        
         outNy = (y - minY) / (maxY - minY);
         // clamp
         outNx = std::max(0.0f, std::min(1.0f, outNx));
