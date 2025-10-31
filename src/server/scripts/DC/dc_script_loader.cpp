@@ -31,6 +31,7 @@ void AddSC_npc_hinterlands_battlemaster(); // location: scripts\DC\HinterlandBG\
 // HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
 void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
+void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 // GPS broadcaster removed - Using Eluna instead (Custom/Eluna scripts/DC_MapGPS.lua)
 void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
@@ -54,6 +55,7 @@ void AddDCScripts()
     // AddSC_hl_stats_aio(); // Not needed - provides HandleHLBGStatsUI implementation only
     AddSC_ac_hotspots();
     AddSC_ac_aoeloot();
+    AddSC_heirloom_scaling_255();
     AddBattleForGilneasScripts();
     // GPS broadcaster removed - Using Eluna instead
     AddSC_cs_gps_test();

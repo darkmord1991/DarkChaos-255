@@ -1035,40 +1035,44 @@ HinterlandBG.Affix.WorldstateEnabled = 0
 # =====================================================================
 
 # Player spell IDs (index 0-6)
+# 0 = None, 1 = Sunlight (10% haste), 2 = Clear Skies (15% damage)
+# 3 = Gentle Breeze (20% healing), 4-6 = Storm/Rain/Fog (no player spell)
 HinterlandBG.Affix.PlayerSpell.0 = 0
-HinterlandBG.Affix.PlayerSpell.1 = 61042   # Sunlight: 10% haste
-HinterlandBG.Affix.PlayerSpell.2 = 57733   # Clear Skies: 15% damage
-HinterlandBG.Affix.PlayerSpell.3 = 52369   # Gentle Breeze: 20% healing received
-HinterlandBG.Affix.PlayerSpell.4 = 0       # Storm: no player spell (NPC buff)
-HinterlandBG.Affix.PlayerSpell.5 = 0       # Heavy Rain: no player spell (NPC buff)
-HinterlandBG.Affix.PlayerSpell.6 = 0       # Fog: no player spell (NPC buff)
+HinterlandBG.Affix.PlayerSpell.1 = 0
+HinterlandBG.Affix.PlayerSpell.2 = 0
+HinterlandBG.Affix.PlayerSpell.3 = 0
+HinterlandBG.Affix.PlayerSpell.4 = 0
+HinterlandBG.Affix.PlayerSpell.5 = 0
+HinterlandBG.Affix.PlayerSpell.6 = 0
 
 # NPC spell IDs (index 0-6)
+# 0-3 = None (player buffs), 4 = Storm (15% damage), 5 = Heavy Rain (20% armor), 6 = Fog (10% evasion)
 HinterlandBG.Affix.NpcSpell.0 = 0
-HinterlandBG.Affix.NpcSpell.1 = 0          # Sunlight: no NPC spell (player buff)
-HinterlandBG.Affix.NpcSpell.2 = 0          # Clear Skies: no NPC spell (player buff)
-HinterlandBG.Affix.NpcSpell.3 = 0          # Gentle Breeze: no NPC spell (player buff)
-HinterlandBG.Affix.NpcSpell.4 = 57733      # Storm: 15% damage to NPCs
-HinterlandBG.Affix.NpcSpell.5 = 43688      # Heavy Rain: 20% armor to NPCs
-HinterlandBG.Affix.NpcSpell.6 = 61336      # Fog: 10% evasion to NPCs
+HinterlandBG.Affix.NpcSpell.1 = 0
+HinterlandBG.Affix.NpcSpell.2 = 0
+HinterlandBG.Affix.NpcSpell.3 = 0
+HinterlandBG.Affix.NpcSpell.4 = 0
+HinterlandBG.Affix.NpcSpell.5 = 0
+HinterlandBG.Affix.NpcSpell.6 = 0
 
 # Weather type per affix (index 0-6)
+# 0 = FINE, 1 = RAIN, 2 = SNOW, 3 = STORM
 HinterlandBG.Affix.WeatherType.0 = 0
-HinterlandBG.Affix.WeatherType.1 = 0       # Sunlight: Clear (WEATHER_TYPE_FINE)
-HinterlandBG.Affix.WeatherType.2 = 0       # Clear Skies: Clear (WEATHER_TYPE_FINE)
-HinterlandBG.Affix.WeatherType.3 = 1       # Gentle Breeze: Rain (WEATHER_TYPE_RAIN)
-HinterlandBG.Affix.WeatherType.4 = 3       # Storm: Storm (WEATHER_TYPE_STORM)
-HinterlandBG.Affix.WeatherType.5 = 3       # Heavy Rain: Storm (WEATHER_TYPE_STORM)
-HinterlandBG.Affix.WeatherType.6 = 2       # Fog: Snow (WEATHER_TYPE_SNOW for fog effect)
+HinterlandBG.Affix.WeatherType.1 = 0
+HinterlandBG.Affix.WeatherType.2 = 0
+HinterlandBG.Affix.WeatherType.3 = 0
+HinterlandBG.Affix.WeatherType.4 = 0
+HinterlandBG.Affix.WeatherType.5 = 0
+HinterlandBG.Affix.WeatherType.6 = 0
 
 # Weather intensity per affix (0.0-1.0, index 0-6)
 HinterlandBG.Affix.WeatherIntensity.0 = 0.0
-HinterlandBG.Affix.WeatherIntensity.1 = 0.3   # Sunlight: Light clear
-HinterlandBG.Affix.WeatherIntensity.2 = 0.5   # Clear Skies: Moderate clear
-HinterlandBG.Affix.WeatherIntensity.3 = 0.4   # Gentle Breeze: Light rain
-HinterlandBG.Affix.WeatherIntensity.4 = 0.7   # Storm: Heavy storm
-HinterlandBG.Affix.WeatherIntensity.5 = 0.9   # Heavy Rain: Very heavy storm
-HinterlandBG.Affix.WeatherIntensity.6 = 0.6   # Fog: Moderate snow/fog
+HinterlandBG.Affix.WeatherIntensity.1 = 0.0
+HinterlandBG.Affix.WeatherIntensity.2 = 0.0
+HinterlandBG.Affix.WeatherIntensity.3 = 0.0
+HinterlandBG.Affix.WeatherIntensity.4 = 0.0
+HinterlandBG.Affix.WeatherIntensity.5 = 0.0
+HinterlandBG.Affix.WeatherIntensity.6 = 0.0
 
 
 ###########################################################################
