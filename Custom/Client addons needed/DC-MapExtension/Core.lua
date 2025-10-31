@@ -157,14 +157,17 @@ end
 ----------------------------------------------
 -- World Coordinate Conversion
 ----------------------------------------------
--- Map bounds based on actual zone data
+-- Map bounds based on actual zone data (.gps corner measurements)
 -- These convert world X,Y coordinates to normalized 0-1 map coordinates
+-- NOTE: Server GPS provides normalized coords, these are fallback only
 local mapBounds = {
     [37] = {  -- Azshara Crater (Map ID 37, Zone ID 268)
-        minX = -1000,
-        maxX = 500,
-        minY = -500,
-        maxY = 1500
+        -- Full corner measurements - map covers entire measured area
+        -- Corners: X range [-1059, 1599], Y range [-1599, 1599]
+        minX = -1059.0,
+        maxX = 1599.0,
+        minY = -1599.0,
+        maxY = 1599.0
     },
     [1] = {  -- Hyjal (Map ID 1, Zone ID 616) - these are placeholder values
         minX = -5000,
@@ -178,8 +181,18 @@ local function WorldToNormalized(mapId, worldX, worldY)
     local bounds = mapBounds[mapId]
     if not bounds then return nil, nil end
     
-    local nx = (worldX - bounds.minX) / (bounds.maxX - bounds.minX)
-    local ny = (worldY - bounds.minY) / (bounds.maxY - bounds.minY)
+    local nx, ny
+    
+    -- Map 37 (Azshara Crater): X axis is flipped, Y axis is normal
+    -- X=0,Y=0 appears at 60.2%, 50.0% (verified in-game)
+    if mapId == 37 then
+        nx = (bounds.maxX - worldX) / (bounds.maxX - bounds.minX)  -- Flip X
+        ny = (worldY - bounds.minY) / (bounds.maxY - bounds.minY)  -- Normal Y
+    else
+        -- Normal calculation for other maps
+        nx = (worldX - bounds.minX) / (bounds.maxX - bounds.minX)
+        ny = (worldY - bounds.minY) / (bounds.maxY - bounds.minY)
+    end
     
     -- Clamp to 0-1 range
     nx = math.max(0, math.min(1, nx))
@@ -305,30 +318,30 @@ local function CreatePlayerDot()
         return addon.playerDot
     end
     
-    -- Wait for stitchFrame to exist
-    if not addon.stitchFrame then 
-        Debug("Cannot create player dot - stitchFrame doesn't exist yet")
+    -- Parent to WorldMapButton (standard for all map icons in WoW)
+    if not WorldMapButton then 
+        Debug("Cannot create player dot - WorldMapButton doesn't exist")
         return nil 
     end
     
-    local dot = CreateFrame("Frame", "DCMap_PlayerDot", addon.stitchFrame)
-    dot:SetWidth(24)  -- Slightly smaller (was 32 for testing)
+    local dot = CreateFrame("Frame", "DCMap_PlayerDot", WorldMapButton)
+    dot:SetWidth(24)
     dot:SetHeight(24)
-    dot:SetFrameStrata("TOOLTIP")  -- Highest strata
-    dot:SetFrameLevel(200)  -- Very high level
+    dot:SetFrameStrata("TOOLTIP")
+    dot:SetFrameLevel(WorldMapButton:GetFrameLevel() + 10)
     
-    -- Create the player arrow texture (no background needed anymore)
+    -- Create the player arrow texture
     local tex = dot:CreateTexture(nil, "OVERLAY")
     tex:SetAllPoints()
-    tex:SetTexture("Interface\\Minimap\\POIIcons")  -- Player icon from POI
+    tex:SetTexture("Interface\\Minimap\\POIIcons")
     tex:SetTexCoord(0.5, 0.625, 0.5, 0.625)  -- Player icon coordinates
-    tex:SetVertexColor(1.0, 1.0, 1.0, 1.0)  -- White (original colors)
+    tex:SetVertexColor(1.0, 1.0, 1.0, 1.0)
     dot.texture = tex
     
     dot:Hide()
     
     addon.playerDot = dot
-    Debug("Player dot created on stitchFrame")
+    Debug("Player dot created on WorldMapButton")
     return dot
 end
 
@@ -629,7 +642,7 @@ local function CreateHotspotMarkers(mapType)
 end
 
 local function CreatePOIMarkers(mapType)
-    if not addon.stitchFrame then return end
+    if not WorldMapButton then return end
     
     -- Clear existing POI markers
     if addon.poiMarkers then
@@ -646,7 +659,8 @@ local function CreatePOIMarkers(mapType)
         return
     end
     
-    local parent = WorldMapDetailFrame or addon.stitchFrame
+    -- Use WorldMapButton as parent (standard for all map markers)
+    local parent = WorldMapButton
     local frameWidth = parent:GetWidth()
     local frameHeight = parent:GetHeight()
     
@@ -660,20 +674,20 @@ local function CreatePOIMarkers(mapType)
         local marker = CreateFrame("Frame", "DCMap_POI_" .. i, parent)
         marker:SetWidth(16)
         marker:SetHeight(16)
+        marker:SetFrameStrata("TOOLTIP")
         marker:SetFrameLevel(parent:GetFrameLevel() + 5)
         
         -- POI icon texture
         local tex = marker:CreateTexture(nil, "OVERLAY")
         tex:SetAllPoints()
-        tex:SetTexture("Interface\\Minimap\\POIIcons")  -- Use Blizzard POI icons
+        tex:SetTexture("Interface\\Minimap\\POIIcons")
         tex:SetTexCoord(0.5, 0.625, 0, 0.125)  -- Gold star icon
         marker.texture = tex
         
-        -- Position the POI
-        -- Use TOPLEFT anchor and invert Y (same as player dot positioning)
-        -- Normalized coords: 0=south/bottom, 1=north/top
-        -- TOPLEFT anchor: Y=0 at top, increases downward
+        -- Position using standard WoW map coordinate system
+        -- TOPLEFT anchor with negative Y
         local pixelX = poi.x * frameWidth
+        local pixelY = -poi.y * frameHeight
         local pixelY = (1 - poi.y) * frameHeight  -- Invert Y for TOPLEFT anchor
         marker:ClearAllPoints()
         marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)
@@ -1047,8 +1061,9 @@ local function UpdatePlayerPosition()
         return
     end
     
-    -- Use stitchFrame as parent for custom maps (not WorldMapDetailFrame which we hide)
-    local parent = addon.stitchFrame
+    -- Use WorldMapButton as parent - this is the standard for all WoW map addons
+    -- WorldMapButton is the interactive map area that all coordinates are relative to
+    local parent = WorldMapButton
     if not parent then
         addon.playerDot:Hide()
         return
@@ -1062,12 +1077,12 @@ local function UpdatePlayerPosition()
         return
     end
     
+    -- Standard WoW map coordinate system: TOPLEFT anchor with negative Y
     local pixelX = x * frameWidth
-    local pixelY = (1 - y) * frameHeight  -- Invert Y: normalized coords are 0=south, 1=north, but TOPLEFT anchor needs 0 at top
+    local pixelY = -y * frameHeight  -- Negative Y for TOPLEFT anchor
     
     addon.playerDot:ClearAllPoints()
-    -- Position relative to TOPLEFT since that's the natural anchor for UI frames
-    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)
+    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
     
     -- Make absolutely sure the dot is visible
     addon.playerDot:SetAlpha(1)

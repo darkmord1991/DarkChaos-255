@@ -12,14 +12,24 @@ if not AIO.IsServer() then
 end
 
 -- Custom zone definitions
+-- IMPORTANT: These bounds must match the actual zone coordinates
+-- Calibrated from all 4 corner positions (.gps measurements):
+-- Azshara Crater corners:
+--   Top-Left:     X=-1037.96,  Y=-1599.53
+--   Top-Right:    X=1599.42,   Y=-1598.06
+--   Bottom-Right: X=1567.81,   Y=1599.48
+--   Bottom-Left:  X=-1059.23,  Y=1599.38
+-- Map dimensions: 2658 x 3198 units (X × Y)
 local CUSTOM_ZONES = {
     [37] = { -- Azshara Crater
         name = "Azshara Crater",
         zoneId = 268,
-        minX = -1000.0,
-        maxX = 500.0,
-        minY = -500.0,
-        maxY = 1500.0
+        -- Full corner measurements - map covers entire measured area
+        -- Corners: X range [-1059, 1599], Y range [-1599, 1599]
+        minX = -1059.0,
+        maxX = 1599.0,
+        minY = -1599.0,
+        maxY = 1599.0
     },
     [1] = { -- Hyjal (requires zone check)
         name = "Hyjal",
@@ -43,14 +53,28 @@ local function NormalizeCoords(mapId, zoneId, x, y)
         return nil, nil
     end
     
-    local nx = (x - zone.minX) / (zone.maxX - zone.minX)
-    local ny = (y - zone.minY) / (zone.maxY - zone.minY)
-    
-    -- Clamp to 0-1
-    nx = math.max(0, math.min(1, nx))
-    ny = math.max(0, math.min(1, ny))
-    
-    return nx, ny
+    -- Map 37 (Azshara Crater): X axis is flipped, Y axis is normal
+    -- X=0,Y=0 should appear at 60.2%, 50.0% (verified in-game)
+    if mapId == 37 then
+        local nx = (zone.maxX - x) / (zone.maxX - zone.minX)  -- Flip X
+        local ny = (y - zone.minY) / (zone.maxY - zone.minY)  -- Normal Y
+        
+        -- Clamp to 0-1
+        nx = math.max(0, math.min(1, nx))
+        ny = math.max(0, math.min(1, ny))
+        
+        return nx, ny
+    else
+        -- Normal calculation for other maps
+        local nx = (x - zone.minX) / (zone.maxX - zone.minX)
+        local ny = (y - zone.minY) / (zone.maxY - zone.minY)
+        
+        -- Clamp to 0-1
+        nx = math.max(0, math.min(1, nx))
+        ny = math.max(0, math.min(1, ny))
+        
+        return nx, ny
+    end
 end
 
 -- Send GPS data to a player
