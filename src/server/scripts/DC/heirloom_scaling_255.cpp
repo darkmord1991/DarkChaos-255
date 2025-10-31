@@ -206,14 +206,14 @@ public:
 
     // Hook to bypass level requirements for heirloom items
     // Allows heirlooms to be equipped at any level up to 255
-    void OnPlayerCanUseItem(Player* player, ItemTemplate const* proto, InventoryResult& result) override
+    bool OnPlayerCanUseItem(Player* player, ItemTemplate const* proto, InventoryResult& result) override
     {
         if (!player || !proto)
-            return;
+            return true;
 
         // Only modify behavior for heirloom items
         if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
-            return;
+            return true;
 
         // Override EQUIP_ERR_CANT_EQUIP_LEVEL_I errors (RequiredLevel check)
         // The MaxLevel check in PlayerStorage.cpp:1859 has been patched to skip heirlooms
@@ -221,6 +221,8 @@ public:
         {
             result = EQUIP_ERR_OK;
         }
+
+        return true;
     }
 };
 
