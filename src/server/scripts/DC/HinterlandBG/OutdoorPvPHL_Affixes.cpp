@@ -79,7 +79,7 @@ void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
     {
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        s->SendPacket(&data);
+        player->SendDirectMessage(&data);
     }
 }
 
@@ -103,7 +103,7 @@ void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
     {
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        s->SendPacket(&data);
+        player->SendDirectMessage(&data);
     }
 }
 

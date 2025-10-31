@@ -1020,7 +1020,7 @@ void AddonChannelCommandHandler::Send(std::string const& msg)
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, GetSession()->GetPlayer(), GetSession()->GetPlayer(), msg);
-    GetSession()->SendPacket(&data);
+    GetSession()->GetPlayer()->SendDirectMessage(&data);
 }
 
 void AddonChannelCommandHandler::SendAck() // a Command acknowledged, no body

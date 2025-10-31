@@ -41,7 +41,7 @@ static void SendXPAddonToPlayerInternal(Player* player, const char* context, uin
         LOG_INFO("addons.dcrxp", "SendXPAddonToPlayer: sending DCRXP to {} (guid={}, xp={}, xpMax={}, level={})", player->GetName(), player->GetGUID().ToString(), xp, xpMax, level);
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        s->SendPacket(&data);
+        player->SendDirectMessage(&data);
         // Record the dedupe key/timestamp so subsequent identical sends can be deduped
         player->UpdateLastDCRXPPayload(dedupeKey);
     }

@@ -14541,7 +14541,7 @@ void Unit::SetSpeed(UnitMoveType mtype, float rate, bool forced)
             data << uint8(0);                           // new 2.1.0
 
         data << GetSpeed(mtype);
-        player->GetSession()->SendPacket(&data);
+        player->SendDirectMessage(&data);
         player->GetSession()->IncrementOrderCounter();
     }
     else if (forced)
@@ -18287,7 +18287,7 @@ void Unit::SendMoveRoot(bool apply)
         WorldPacket data(apply ? SMSG_FORCE_MOVE_ROOT : SMSG_FORCE_MOVE_UNROOT, guid.size() + 4);
         data << guid;
         data << counter;
-        client->GetSession()->SendPacket(&data);
+        client->SendDirectMessage(&data);
         client->GetSession()->IncrementOrderCounter();
     }
 }
@@ -20347,7 +20347,7 @@ void Unit::SetDisableGravity(bool enable)
             WorldPacket data(enable ? SMSG_MOVE_GRAVITY_DISABLE : SMSG_MOVE_GRAVITY_ENABLE, GetPackGUID().size() + 4);
             data << GetPackGUID();
             data << counter;
-            player->GetSession()->SendPacket(&data);
+            player->SendDirectMessage(&data);
             player->GetSession()->IncrementOrderCounter();
             return;
         }

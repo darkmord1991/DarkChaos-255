@@ -1158,7 +1158,7 @@ static bool SpawnHotspot()
                       std::string addonMsgTrimmed = std::string("HOTSPOT\t") + trimmedPayload;
                       WorldPacket pkt;
                       ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsgTrimmed);
-                      sess->SendPacket(&pkt);
+                      plr->SendDirectMessage(&pkt);
                   }
                   else
                   {
@@ -2491,7 +2491,7 @@ public:
                         std::string addonMsg = std::string("HOTSPOT\t") + trimmedPayload;
                         WorldPacket pkt;
                         ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, p, p, addonMsg);
-                        sess->SendPacket(&pkt);
+                        p->SendDirectMessage(&pkt);
                     }
                     else
                     {
