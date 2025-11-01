@@ -285,7 +285,7 @@ public:
         // Get starting location from playercreation table based on race AND class
         QueryResult result = WorldDatabase.Query(
             "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} AND class = {} LIMIT 1", 
-            player->GetRace(), player->GetClass()
+            player->getRace(), player->getClass()
         );
         
         if (result)
@@ -298,14 +298,14 @@ public:
             o = fields[4].Get<float>();
             
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found starting location for race {} class {} in playercreation table", 
-                player->GetRace(), player->GetClass());
+                player->getRace(), player->getClass());
         }
         else
         {
             // Try to find any entry for this race as fallback
             result = WorldDatabase.Query(
                 "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} LIMIT 1", 
-                player->GetRace()
+                player->getRace()
             );
             
             if (result)
@@ -318,13 +318,13 @@ public:
                 o = fields[4].Get<float>();
                 
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using fallback location for race {} from playercreation table", 
-                    player->GetRace());
+                    player->getRace());
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreation table for race {}|r", player->GetRace());
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreation table for race {}|r", player->getRace());
                 // Fallback to hardcoded defaults
-                switch (player->GetRace())
+                switch (player->getRace())
                 {
                     case RACE_HUMAN:
                         mapId = 0; x = -8949.95f; y = -132.493f; z = 83.6112f;
