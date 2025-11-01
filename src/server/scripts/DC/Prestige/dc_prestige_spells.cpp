@@ -17,16 +17,16 @@
 // Prestige spell IDs
 enum PrestigeSpells
 {
-    SPELL_PRESTIGE_BONUS_1  = 800002,
-    SPELL_PRESTIGE_BONUS_2  = 800003,
-    SPELL_PRESTIGE_BONUS_3  = 800004,
-    SPELL_PRESTIGE_BONUS_4  = 800005,
-    SPELL_PRESTIGE_BONUS_5  = 800006,
-    SPELL_PRESTIGE_BONUS_6  = 800007,
-    SPELL_PRESTIGE_BONUS_7  = 800008,
-    SPELL_PRESTIGE_BONUS_8  = 800009,
-    SPELL_PRESTIGE_BONUS_9  = 800010,
-    SPELL_PRESTIGE_BONUS_10 = 800011
+    SPELL_PRESTIGE_BONUS_1  = 800010,
+    SPELL_PRESTIGE_BONUS_2  = 800011,
+    SPELL_PRESTIGE_BONUS_3  = 800012,
+    SPELL_PRESTIGE_BONUS_4  = 800013,
+    SPELL_PRESTIGE_BONUS_5  = 800014,
+    SPELL_PRESTIGE_BONUS_6  = 800015,
+    SPELL_PRESTIGE_BONUS_7  = 800016,
+    SPELL_PRESTIGE_BONUS_8  = 800017,
+    SPELL_PRESTIGE_BONUS_9  = 800018,
+    SPELL_PRESTIGE_BONUS_10 = 800019
 };
 
 // Base class for all prestige bonus spells
@@ -128,8 +128,8 @@ class spell_prestige_bonus_1 : public AuraScript
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -171,8 +171,8 @@ class spell_prestige_bonus_##NUM : public AuraScript \
     \
     void Register() override \
     { \
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
     } \
 };
 

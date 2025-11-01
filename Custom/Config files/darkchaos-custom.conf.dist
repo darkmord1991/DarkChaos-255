@@ -1333,6 +1333,371 @@ Prestige.ResetAchievements = 0
 
 
 ###########################################################################
+#
+#    SECTION 5: CHALLENGE MODES SYSTEM
+#
+#    Hardcore and specialized challenge modes inspired by Project Ascension
+#    and WoW Classic Season of Mastery. Players activate challenge modes at
+#    shrines to gain XP bonuses and special rewards with significant risks.
+#
+#    Features:
+#    - 8 different challenge modes with unique mechanics
+#    - Hardcore mode with permanent character death
+#    - Level-based XP bonuses and rewards
+#    - Challenge mode shrine GameObject for activation
+#    - .challenge command to view active modes
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Master Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.Enable
+#        Description: Master toggle for all challenge modes
+#        Default:     1 (Enabled)
+#                     0 (Disabled - challenge shrine does nothing)
+#
+ChallengeMode.Enable = 1
+
+#
+#    ChallengeMode.ShrineEntry
+#        Description: GameObject entry ID for the challenge mode shrine
+#                     Players interact with this to activate challenge modes.
+#                     Place shrines in starting zones or cities.
+#        Default:     190010 (Custom shrine object)
+#        Note:        Must exist in gameobject_template
+#
+ChallengeMode.ShrineEntry = 190010
+
+# -------------------------------------------------------------------------
+# Hardcore Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.Hardcore.Enable
+#        Description: Enable Hardcore mode (permanent death)
+#        Default:     1 (Enabled)
+#                     0 (Disabled - mode not available)
+#
+ChallengeMode.Hardcore.Enable = 1
+
+#
+#    ChallengeMode.Hardcore.XpBonus
+#        Description: Experience bonus percentage for Hardcore mode
+#                     100 = double XP, 200 = triple XP
+#        Default:     100 (double XP)
+#        Range:       0 - 500
+#
+ChallengeMode.Hardcore.XpBonus = 100
+
+#
+#    ChallengeMode.Hardcore.DisableLevel
+#        Description: Level at which Hardcore mode stops granting XP bonus
+#                     Set to 0 to never disable.
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.Hardcore.DisableLevel = 60
+
+#
+#    ChallengeMode.Hardcore.TitleReward
+#        Description: Title ID granted when reaching max level in Hardcore
+#                     CSV format: "level1:title1,level2:title2"
+#                     Example: "60:310,80:311" (level 60 = title 310, etc.)
+#        Default:     "60:310,80:311,255:312"
+#
+ChallengeMode.Hardcore.TitleReward = "60:310,80:311,255:312"
+
+#
+#    ChallengeMode.Hardcore.GlobalDeathAnnounce
+#        Description: Announce hardcore character deaths to entire server
+#        Default:     1 (Enabled - world announcement)
+#                     0 (Disabled - private notification)
+#
+ChallengeMode.Hardcore.GlobalDeathAnnounce = 1
+
+#
+#    ChallengeMode.Hardcore.LockCharacter
+#        Description: Permanently lock character on death (cannot login)
+#        Default:     1 (Enabled - character locked)
+#                     0 (Disabled - character playable as ghost)
+#
+ChallengeMode.Hardcore.LockCharacter = 1
+
+# -------------------------------------------------------------------------
+# Semi-Hardcore Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.SemiHardcore.Enable
+#        Description: Enable Semi-Hardcore mode (lose gear/gold on death)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.SemiHardcore.Enable = 1
+
+#
+#    ChallengeMode.SemiHardcore.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     75
+#        Range:       0 - 500
+#
+ChallengeMode.SemiHardcore.XpBonus = 75
+
+#
+#    ChallengeMode.SemiHardcore.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.SemiHardcore.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Self-Crafted Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.SelfCrafted.Enable
+#        Description: Enable Self-Crafted mode (only wear crafted gear)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.SelfCrafted.Enable = 1
+
+#
+#    ChallengeMode.SelfCrafted.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     50
+#        Range:       0 - 500
+#
+ChallengeMode.SelfCrafted.XpBonus = 50
+
+#
+#    ChallengeMode.SelfCrafted.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.SelfCrafted.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Iron Man Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.IronMan.Enable
+#        Description: Enable Iron Man mode (no white/gray items, no talents, no XP from quests)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.IronMan.Enable = 1
+
+#
+#    ChallengeMode.IronMan.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     150
+#        Range:       0 - 500
+#
+ChallengeMode.IronMan.XpBonus = 150
+
+#
+#    ChallengeMode.IronMan.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.IronMan.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Solo Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.Solo.Enable
+#        Description: Enable Solo mode (no groups, no trading)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.Solo.Enable = 1
+
+#
+#    ChallengeMode.Solo.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     50
+#        Range:       0 - 500
+#
+ChallengeMode.Solo.XpBonus = 50
+
+#
+#    ChallengeMode.Solo.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.Solo.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Dungeon Only Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.DungeonOnly.Enable
+#        Description: Enable Dungeon Only mode (all XP from dungeons)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.DungeonOnly.Enable = 1
+
+#
+#    ChallengeMode.DungeonOnly.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     100
+#        Range:       0 - 500
+#
+ChallengeMode.DungeonOnly.XpBonus = 100
+
+#
+#    ChallengeMode.DungeonOnly.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.DungeonOnly.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# PvP Only Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.PvpOnly.Enable
+#        Description: Enable PvP Only mode (all XP from PvP kills)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.PvpOnly.Enable = 1
+
+#
+#    ChallengeMode.PvpOnly.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     200
+#        Range:       0 - 500
+#
+ChallengeMode.PvpOnly.XpBonus = 200
+
+#
+#    ChallengeMode.PvpOnly.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.PvpOnly.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Quest Only Mode Settings
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.QuestOnly.Enable
+#        Description: Enable Quest Only mode (all XP from quests)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ChallengeMode.QuestOnly.Enable = 1
+
+#
+#    ChallengeMode.QuestOnly.XpBonus
+#        Description: Experience bonus percentage
+#        Default:     75
+#        Range:       0 - 500
+#
+ChallengeMode.QuestOnly.XpBonus = 75
+
+#
+#    ChallengeMode.QuestOnly.DisableLevel
+#        Description: Level to stop XP bonus
+#        Default:     60
+#        Range:       0 - 255
+#
+ChallengeMode.QuestOnly.DisableLevel = 60
+
+# -------------------------------------------------------------------------
+# Reward Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.TalentRewards
+#        Description: Extra talent points granted at milestone levels
+#                     CSV format per mode: "level1:talents,level2:talents"
+#                     Example: "20:1,40:2,60:3" (1 point at 20, 2 at 40, 3 at 60)
+#        Note:        Set per mode using mode name prefix
+#
+ChallengeMode.Hardcore.TalentReward = "20:1,40:2,60:3,80:4,255:5"
+ChallengeMode.SemiHardcore.TalentReward = "40:1,80:2"
+ChallengeMode.IronMan.TalentReward = "30:1,60:2,255:3"
+
+#
+#    ChallengeMode.ItemRewards
+#        Description: Item rewards granted at milestone levels
+#                     CSV format: "level1:itemId:count,level2:itemId:count"
+#                     Example: "60:49623:10,80:49623:20"
+#
+ChallengeMode.Hardcore.ItemReward = "60:49623:10,80:49623:25,255:49623:50"
+ChallengeMode.SemiHardcore.ItemReward = "60:49623:5,80:49623:10"
+ChallengeMode.IronMan.ItemReward = "60:49623:15,255:49623:30"
+
+#
+#    ChallengeMode.AchievementRewards
+#        Description: Achievement IDs granted at milestone levels
+#                     CSV format: "level1:achievementId,level2:achievementId"
+#                     Example: "60:10001,80:10002"
+#
+ChallengeMode.Hardcore.AchievementReward = "60:10020,80:10021,255:10022"
+ChallengeMode.IronMan.AchievementReward = "60:10030,255:10031"
+
+# -------------------------------------------------------------------------
+# Confirmation and Safety
+# -------------------------------------------------------------------------
+
+#
+#    ChallengeMode.RequireConfirmation
+#        Description: Show confirmation dialog before activating challenge mode
+#                     Uses two-stage gossip system (select → explain → confirm/cancel)
+#        Default:     1 (Enabled - confirmation required)
+#                     0 (Disabled - instant activation)
+#
+ChallengeMode.RequireConfirmation = 1
+
+#
+#    ChallengeMode.AllowDeactivation
+#        Description: Allow players to deactivate challenge modes
+#                     WARNING: Enabling this removes the challenge!
+#        Default:     0 (Disabled - modes are permanent)
+#                     1 (Enabled - players can deactivate)
+#
+ChallengeMode.AllowDeactivation = 0
+
+#
+#    ChallengeMode.MinLevel
+#        Description: Minimum level required to activate challenge modes
+#                     Prevents new players from accidentally activating.
+#        Default:     1 (no restriction)
+#        Range:       1 - 255
+#
+ChallengeMode.MinLevel = 1
+
+#
+#    ChallengeMode.MaxLevel
+#        Description: Maximum level allowed to activate challenge modes
+#                     Set to 255 to allow activation at any level.
+#        Default:     10 (can only activate during early leveling)
+#        Range:       1 - 255
+#
+ChallengeMode.MaxLevel = 10
+
+
+###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################
 #
