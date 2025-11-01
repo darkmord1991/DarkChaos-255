@@ -625,17 +625,36 @@ public:
     void OnPlayerLogin(Player* player) override
     {
         if (!PrestigeSystem::instance()->IsEnabled())
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG PRESTIGE LOGIN: System disabled");
             return;
+        }
+
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== PRESTIGE SYSTEM LOGIN DEBUG ===|r");
 
         // Apply prestige buffs on login
-        PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player prestige level from DB: {}", prestigeLevel);
+        
+        if (prestigeLevel > 0)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling ApplyPrestigeBuffs for level {}", prestigeLevel);
+            PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+        }
+        else
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: No prestige level, skipping buff application");
+        }
 
         // Notify player of their prestige level
-        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
         if (prestigeLevel > 0)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("Welcome back! You are Prestige Level {} with {}% bonus stats.",
                 prestigeLevel, prestigeLevel * PrestigeSystem::instance()->GetStatBonusPercent());
+        }
+        else
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: You are not yet prestige");
         }
 
         // Check if player can prestige
@@ -648,6 +667,8 @@ public:
                     currentPrestige + 1);
             }
         }
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== END PRESTIGE LOGIN DEBUG ===|r");
     }
 
     void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
