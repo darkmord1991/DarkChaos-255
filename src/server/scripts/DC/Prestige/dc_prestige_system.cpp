@@ -232,7 +232,7 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Updating player stats...");
         player->UpdateAllStats();
         player->SetFullHealth();
-        if (player->GetPowerType() == POWER_MANA)
+        if (player->getPowerType() == POWER_MANA)
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
         
         // Save again after applying buffs
