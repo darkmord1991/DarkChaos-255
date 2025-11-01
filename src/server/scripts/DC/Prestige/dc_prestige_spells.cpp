@@ -41,7 +41,7 @@ protected:
     int32 CalculateStatBonus() const
     {
         // Get bonus percent from config (default 1% per prestige level)
-        uint32 bonusPercentPerLevel = sConfigMgr->GetOption<uint32>("DarkChaos.Prestige.StatBonusPercent", 1);
+        uint32 bonusPercentPerLevel = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
         
         // Calculate total bonus: prestige level * bonus percent
         return static_cast<int32>(prestigeLevel * bonusPercentPerLevel);
@@ -101,7 +101,7 @@ class spell_prestige_bonus_1 : public AuraScript
         Unit* target = GetTarget();
         if (!target) return;
         
-        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("DarkChaos.Prestige.StatBonusPercent", 1);
+        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
         float bonus = static_cast<float>(1 * bonusPercent);
         
         target->HandleStatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_PCT, bonus, true);
@@ -116,7 +116,7 @@ class spell_prestige_bonus_1 : public AuraScript
         Unit* target = GetTarget();
         if (!target) return;
         
-        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("DarkChaos.Prestige.StatBonusPercent", 1);
+        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
         float bonus = static_cast<float>(1 * bonusPercent);
         
         target->HandleStatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_PCT, bonus, false);
@@ -144,7 +144,7 @@ class spell_prestige_bonus_##NUM : public AuraScript \
         Unit* target = GetTarget(); \
         if (!target) return; \
         \
-        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("DarkChaos.Prestige.StatBonusPercent", 1); \
+        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1); \
         float bonus = static_cast<float>(NUM * bonusPercent); \
         \
         target->HandleStatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_PCT, bonus, true); \
@@ -159,7 +159,7 @@ class spell_prestige_bonus_##NUM : public AuraScript \
         Unit* target = GetTarget(); \
         if (!target) return; \
         \
-        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("DarkChaos.Prestige.StatBonusPercent", 1); \
+        uint32 bonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1); \
         float bonus = static_cast<float>(NUM * bonusPercent); \
         \
         target->HandleStatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_PCT, bonus, false); \
