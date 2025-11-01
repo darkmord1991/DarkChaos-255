@@ -474,7 +474,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
 
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
+        SendGossipMenuFor(player, 70001, player->GetGUID());
         return true;
     }
 

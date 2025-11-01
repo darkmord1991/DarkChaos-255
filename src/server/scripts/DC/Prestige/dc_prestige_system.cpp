@@ -197,7 +197,9 @@ public:
         ApplyPrestigeBuffs(player);
 
         // Teleport player to their race's starting location
-        player->TeleportTo(player->GetStartPosition());
+        WorldLocation loc;
+        player->GetHomebind(loc);
+        player->TeleportTo(loc);
 
         // Announce
         if (announcePrestige)
