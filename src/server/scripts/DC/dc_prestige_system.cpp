@@ -181,9 +181,6 @@ public:
         // Update prestige level
         SetPrestigeLevel(player, newPrestige);
 
-        // Apply new prestige buffs
-        ApplyPrestigeBuffs(player);
-
         // Grant title
         GrantPrestigeTitle(player, newPrestige);
 
@@ -192,6 +189,15 @@ public:
 
         // Update achievements/statistics
         UpdatePrestigeAchievements(player, newPrestige);
+
+        // Save player first before applying buffs
+        player->SaveToDB(false, false);
+
+        // Apply new prestige buffs (after save to ensure level is updated)
+        ApplyPrestigeBuffs(player);
+
+        // Teleport player to their race's starting location
+        player->TeleportTo(player->GetStartPosition());
 
         // Announce
         if (announcePrestige)
@@ -209,9 +215,6 @@ public:
             "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
             player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
         );
-
-        // Save player
-        player->SaveToDB(false, false);
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -225,9 +228,16 @@ public:
 
         // Apply appropriate prestige spell based on level
         uint32 spellId = GetPrestigeSpell(prestigeLevel);
-        if (spellId && !player->HasAura(spellId))
+        if (spellId)
         {
+            // Remove any existing prestige buffs first
+            RemovePrestigeBuffs(player);
+            
+            // Cast the prestige spell
             player->CastSpell(player, spellId, true);
+            
+            // Notify player
+            ChatHandler(player->GetSession()).PSendSysMessage("Prestige buff applied! (Spell ID: {})", spellId);
         }
     }
 
@@ -468,6 +478,7 @@ public:
             ChatCommandBuilder("info",    HandlePrestigeInfoCommand,    SEC_PLAYER,      Console::No),
             ChatCommandBuilder("reset",   HandlePrestigeResetCommand,   SEC_PLAYER,      Console::No),
             ChatCommandBuilder("confirm", HandlePrestigeConfirmCommand, SEC_PLAYER,      Console::No),
+            ChatCommandBuilder("disable", HandlePrestigeDisableCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("admin",   HandlePrestigeAdminCommand,   SEC_ADMINISTRATOR, Console::No),
         };
 
@@ -560,6 +571,32 @@ public:
         }
 
         PrestigeSystem::instance()->PerformPrestige(player);
+        return true;
+    }
+
+    static bool HandlePrestigeDisableCommand(ChatHandler* handler, char const* args)
+    {
+        if (!*args)
+        {
+            handler->SendSysMessage("Usage: .prestige disable <playername>");
+            return true;
+        }
+
+        std::string playerName = args;
+        Player* target = ObjectAccessor::FindPlayerByName(playerName);
+        
+        if (!target)
+        {
+            handler->PSendSysMessage("Player {} not found.", playerName);
+            return true;
+        }
+
+        // Remove all prestige buffs
+        PrestigeSystem::instance()->RemovePrestigeBuffs(target);
+        
+        handler->PSendSysMessage("Removed prestige buffs from {}.", playerName);
+        ChatHandler(target->GetSession()).PSendSysMessage("Your prestige buffs have been removed by a GM.");
+        
         return true;
     }
 
