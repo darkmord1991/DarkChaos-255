@@ -437,9 +437,9 @@ class DCDebugAchievementCommand : public CommandScript
 public:
     DCDebugAchievementCommand() : CommandScript("dc_debug_achievement") { }
 
-    ChatCommandTable GetCommands() const override
+    Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable commandTable =
+        static Acore::ChatCommands::ChatCommandTable commandTable =
         {
             { "checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, "Check if achievements are in store" },
         };
