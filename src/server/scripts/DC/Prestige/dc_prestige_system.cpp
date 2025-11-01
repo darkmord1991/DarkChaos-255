@@ -145,18 +145,27 @@ public:
     void PerformPrestige(Player* player)
     {
         if (!CanPrestige(player))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: CanPrestige failed in PerformPrestige");
             return;
+        }
+
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Starting prestige process...");
 
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
+
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Current prestige: {}, New prestige: {}", currentPrestige, newPrestige);
 
         // Save current state for logging
         std::string playerName = player->GetName();
         uint32 oldLevel = player->GetLevel();
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing old buffs...");
         // Remove old prestige buffs
         RemovePrestigeBuffs(player);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Setting level to {}...", resetLevel);
         // Reset level
         player->SetLevel(resetLevel);
         player->InitStatsForLevel(true);
@@ -165,37 +174,54 @@ public:
         // Handle gear
         if (!keepGear)
         {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing gear...");
             RemoveAllGear(player);
             if (grantStarterGear)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting starter gear...");
                 GrantStarterGear(player);
+            }
         }
 
         // Handle gold
         if (!keepGold)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing gold...");
             player->SetMoney(0);
+        }
 
         // Handle professions
         if (!keepProfessions)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Resetting professions...");
             ResetProfessions(player);
+        }
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Setting prestige level...");
         // Update prestige level
         SetPrestigeLevel(player, newPrestige);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting title...");
         // Grant title
         GrantPrestigeTitle(player, newPrestige);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting rewards...");
         // Grant prestige rewards
         GrantPrestigeRewards(player, newPrestige);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Updating achievements...");
         // Update achievements/statistics
         UpdatePrestigeAchievements(player, newPrestige);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving to database...");
         // Save player first before applying buffs
         player->SaveToDB(false, false);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Applying prestige buffs...");
         // Apply new prestige buffs (after save to ensure level is updated)
         ApplyPrestigeBuffs(player);
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Teleporting player...");
         // Teleport player to their hearthstone location (or racial starting area)
         if (player->m_homebindMapId != 0xFFFFFFFF)
         {
@@ -210,6 +236,7 @@ public:
                 player->TeleportTo(1, 1569.59f, -4397.63f, 16.06f, 0.54f); // Orgrimmar
         }
 
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Announcing prestige...");
         // Announce
         if (announcePrestige)
         {
@@ -571,9 +598,16 @@ public:
 
     static bool HandlePrestigeConfirmCommand(ChatHandler* handler, char const* /*args*/)
     {
+        handler->PSendSysMessage("DEBUG: HandlePrestigeConfirmCommand called");
+        
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
+        {
+            handler->PSendSysMessage("DEBUG: Player is NULL!");
             return false;
+        }
+
+        handler->PSendSysMessage("DEBUG: Player found: {}", player->GetName());
 
         if (!PrestigeSystem::instance()->CanPrestige(player))
         {
@@ -581,7 +615,19 @@ public:
             return true;
         }
 
-        PrestigeSystem::instance()->PerformPrestige(player);
+        handler->PSendSysMessage("DEBUG: CanPrestige passed, calling PerformPrestige...");
+        
+        try
+        {
+            PrestigeSystem::instance()->PerformPrestige(player);
+            handler->PSendSysMessage("DEBUG: PerformPrestige completed successfully");
+        }
+        catch (...)
+        {
+            handler->PSendSysMessage("DEBUG: EXCEPTION in PerformPrestige!");
+            return false;
+        }
+        
         return true;
     }
 
