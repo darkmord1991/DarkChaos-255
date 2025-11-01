@@ -196,10 +196,19 @@ public:
         // Apply new prestige buffs (after save to ensure level is updated)
         ApplyPrestigeBuffs(player);
 
-        // Teleport player to their race's starting location
-        WorldLocation loc;
-        player->GetHomebind(loc);
-        player->TeleportTo(loc);
+        // Teleport player to their hearthstone location (or racial starting area)
+        if (player->m_homebindMapId != 0xFFFFFFFF)
+        {
+            player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
+        }
+        else
+        {
+            // Fallback: teleport to Stormwind or Orgrimmar based on faction
+            if (player->GetTeamId() == TEAM_ALLIANCE)
+                player->TeleportTo(0, -8833.37f, 628.62f, 94.00f, 1.06f); // Stormwind
+            else
+                player->TeleportTo(1, 1569.59f, -4397.63f, 16.06f, 0.54f); // Orgrimmar
+        }
 
         // Announce
         if (announcePrestige)
