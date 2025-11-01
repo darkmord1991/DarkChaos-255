@@ -234,11 +234,9 @@ public:
 
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Teleporting player...");
         // Teleport player to their hearthstone location (or racial starting area)
-        uint32 homebindMap = player->GetHomebind().GetMapId();
-        if (homebindMap != 0 && homebindMap != MAPID_INVALID)
+        if (player->m_homebindMapId != 0 && player->m_homebindMapId != MAPID_INVALID)
         {
-            WorldLocation const& homebind = player->GetHomebind();
-            player->TeleportTo(homebind.GetMapId(), homebind.GetPositionX(), homebind.GetPositionY(), homebind.GetPositionZ(), homebind.GetOrientation());
+            player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
         }
         else
         {
