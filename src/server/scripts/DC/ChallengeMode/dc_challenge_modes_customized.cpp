@@ -441,30 +441,38 @@ public:
 
         ClearGossipMenuFor(player);
 
+        // Title and instructions
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== Challenge Mode Manager ===|r", GOSSIP_SENDER_MAIN, 9999);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFFFFFSelect a mode to view details:|r", GOSSIP_SENDER_MAIN, 9999);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+
         // Show challenge mode selection menu
         if (sChallengeModes->challengeEnabled(SETTING_HARDCORE))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF0000Hardcore Mode|r", GOSSIP_SENDER_MAIN, SETTING_HARDCORE);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF0000[Hardcore Mode]|r - Death is permanent", GOSSIP_SENDER_MAIN, SETTING_HARDCORE);
 
         if (sChallengeModes->challengeEnabled(SETTING_SEMI_HARDCORE))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF8800Semi-Hardcore Mode|r", GOSSIP_SENDER_MAIN, SETTING_SEMI_HARDCORE);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF8800[Semi-Hardcore Mode]|r - Severe death penalty", GOSSIP_SENDER_MAIN, SETTING_SEMI_HARDCORE);
 
         if (sChallengeModes->challengeEnabled(SETTING_SELF_CRAFTED))
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ffffSelf-Crafted Mode|r", GOSSIP_SENDER_MAIN, SETTING_SELF_CRAFTED);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ffff[Self-Crafted Mode]|r - Only use crafted gear", GOSSIP_SENDER_MAIN, SETTING_SELF_CRAFTED);
 
         if (sChallengeModes->challengeEnabled(SETTING_ITEM_QUALITY_LEVEL))
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffaaaaaaItem Quality Restriction|r", GOSSIP_SENDER_MAIN, SETTING_ITEM_QUALITY_LEVEL);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffaaaaaa[Item Quality Restriction]|r - White/gray items only", GOSSIP_SENDER_MAIN, SETTING_ITEM_QUALITY_LEVEL);
 
         if (sChallengeModes->challengeEnabled(SETTING_SLOW_XP_GAIN))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff8888ffSlow XP Gain|r", GOSSIP_SENDER_MAIN, SETTING_SLOW_XP_GAIN);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff8888ff[Slow XP Gain]|r - 50% XP rate", GOSSIP_SENDER_MAIN, SETTING_SLOW_XP_GAIN);
 
         if (sChallengeModes->challengeEnabled(SETTING_VERY_SLOW_XP_GAIN))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff4444ffVery Slow XP Gain|r", GOSSIP_SENDER_MAIN, SETTING_VERY_SLOW_XP_GAIN);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff4444ff[Very Slow XP Gain]|r - 25% XP rate", GOSSIP_SENDER_MAIN, SETTING_VERY_SLOW_XP_GAIN);
 
         if (sChallengeModes->challengeEnabled(SETTING_QUEST_XP_ONLY))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff88Quest XP Only|r", GOSSIP_SENDER_MAIN, SETTING_QUEST_XP_ONLY);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff88[Quest XP Only]|r - No XP from kills", GOSSIP_SENDER_MAIN, SETTING_QUEST_XP_ONLY);
 
         if (sChallengeModes->challengeEnabled(SETTING_IRON_MAN))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700Iron Man Mode|r", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man Mode]|r - Ultimate challenge", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
         return true;
@@ -474,73 +482,153 @@ public:
     {
         ClearGossipMenuFor(player);
 
-        // DarkChaos-255: CONFIRMATION DIALOG SYSTEM
+        // DarkChaos-255: THREE-STEP FLOW
         // Action codes:
-        // 0-7: Initial selection (show confirmation)
-        // 100-107: Confirmed selection (activate)
-        // 999: Cancel
+        // 0-7: Show information page
+        // 100-107: Show confirmation page
+        // 200-207: Confirmed - activate mode
+        // 999: Close
+        // 9999: Do nothing (non-clickable items)
 
-        if (action == 999) // Cancel
+        if (action == 999) // Close
         {
             CloseGossipMenuFor(player);
             return true;
         }
 
-        if (action < 100) // First selection - show confirmation dialog
+        if (action == 9999) // Non-clickable items
+        {
+            return OnGossipHello(player, go);
+        }
+
+        if (action < 100) // Step 1: Show detailed information
         {
             ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(action);
-            
-            // Show explanation text
             std::string explanation = GetChallengeExplanation(setting);
             std::string title = GetChallengeTitle(setting);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("%s", explanation.c_str());
+            // Display information in gossip
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, title, GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             
-            // Add confirmation buttons
-            std::string confirmText = "|cff00ff00[CONFIRM] Yes, activate " + title + "!|r";
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, confirmText, GOSSIP_SENDER_MAIN, action + 100);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffff0000[CANCEL] No, take me back|r", GOSSIP_SENDER_MAIN, 999);
+            // Split explanation into lines for better display
+            size_t pos = 0;
+            size_t lastPos = 0;
+            while ((pos = explanation.find("\n", lastPos)) != std::string::npos)
+            {
+                std::string line = explanation.substr(lastPos, pos - lastPos);
+                if (!line.empty())
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 9999);
+                lastPos = pos + 1;
+            }
+            // Add last line
+            if (lastPos < explanation.length())
+            {
+                std::string line = explanation.substr(lastPos);
+                if (!line.empty())
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 9999);
+            }
+            
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[Continue] I want to activate this mode|r", GOSSIP_SENDER_MAIN, action + 100);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
             
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
+
+        if (action == 998) // Back to main menu
+        {
+            return OnGossipHello(player, go);
+        }
         
-        if (action >= 100 && action < 200) // Confirmed - activate challenge mode
+        if (action >= 100 && action < 200) // Step 2: Show confirmation
         {
             uint32 challengeId = action - 100;
             ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(challengeId);
+            std::string title = GetChallengeTitle(setting);
             
             // Check if already enabled
             if (sChallengeModes->challengeEnabledForPlayer(setting, player))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You already have this challenge mode active!");
-                CloseGossipMenuFor(player);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF8800WARNING: Mode Already Active!|r", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "You already have this challenge mode active!", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
 
-            // Special checks
+            // Conflict checks
             if (setting == SETTING_HARDCORE && sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You cannot enable Hardcore mode while Semi-Hardcore is active!");
-                CloseGossipMenuFor(player);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Cannot enable Hardcore while", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Semi-Hardcore is active!", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
 
             if (setting == SETTING_SEMI_HARDCORE && sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You cannot enable Semi-Hardcore mode while Hardcore is active!");
-                CloseGossipMenuFor(player);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Cannot enable Semi-Hardcore while", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Hardcore is active!", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
 
+            // Show confirmation dialog
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== FINAL CONFIRMATION ===|r", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "You are about to activate:", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, title, GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000This decision is PERMANENT!|r", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Once activated, this mode cannot be disabled.", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[CONFIRM] Yes, I accept the challenge!|r", GOSSIP_SENDER_MAIN, action + 100);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Let me reconsider...|r", GOSSIP_SENDER_MAIN, 998);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+            
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+            return true;
+        }
+        
+        if (action >= 200 && action < 300) // Step 3: Activate challenge mode
+        {
+            uint32 challengeId = action - 200;
+            ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(challengeId);
+            
             // Activate challenge mode
             player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
             
             std::string title = GetChallengeTitle(setting);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00%s mode activated!|r", title.c_str());
-            ChatHandler(player->GetSession()).PSendSysMessage("Good luck on your journey!");
             
-            CloseGossipMenuFor(player);
+            // Success message
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff00=== CHALLENGE ACTIVATED ===|r", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, title + " is now ACTIVE!", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700Good luck on your journey!|r", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700May the odds be ever in your favor!|r", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+            
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Challenge Mode Activated:|r %s", title.c_str());
+            
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
 

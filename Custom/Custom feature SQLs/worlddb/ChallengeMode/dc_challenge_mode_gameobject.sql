@@ -8,6 +8,7 @@
 -- Delete existing entries if they exist
 DELETE FROM `gameobject_template` WHERE `entry` = 700010;
 DELETE FROM `gameobject` WHERE `id` = 700010;
+DELETE FROM `gameobject` WHERE `guid` IN (2500010, 2500011, 2500012, 2500013);
 
 -- =====================================================================
 -- GameObject Template
@@ -15,8 +16,9 @@ DELETE FROM `gameobject` WHERE `id` = 700010;
 -- Creates a Crystal Ball of Knowledge template for challenge mode access
 -- =====================================================================
 
+DELETE FROM `gameobject_template` WHERE (`entry` = 700010);
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
-(700010, 10, 6786, 'Challenge Mode Manager', 'Speak', 'Opening', '', 1.5, 2000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_challenge_mode', 12340);
+(700010, 10, 1027, 'Challenge Mode Manager', 'Speak', 'Opening', '', 0.66, 2000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'gobject_challenge_modes', 12340);
 
 -- =====================================================================
 -- GameObject Spawns
@@ -25,6 +27,7 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 -- You can add more locations as needed
 -- =====================================================================
 
+-- Stormwind (Alliance) - Trade District near Auction House
 INSERT INTO `gameobject` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`, `orientation`, `rotation0`, `rotation1`, `rotation2`, `rotation3`, `spawntimesecs`, `animprogress`, `state`, `ScriptName`, `VerifiedBuild`) VALUES
 (2500010, 700010, 0, 1519, 5390, 1, 1, -8834.95, 622.84, 94.056, 3.9095, 0, 0, 0.927184, -0.374607, 300, 100, 1, '', 0);
 
