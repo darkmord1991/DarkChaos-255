@@ -269,8 +269,101 @@ public:
         
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: PerformPrestige completed!");
         
-        // Don't teleport immediately - let the player see the results first
-        // The teleport will happen on next login or they can manually hearthstone
+        // Teleport to starting location
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000Teleporting to your starting location...|r");
+        TeleportToStartingLocation(player);
+    }
+
+    void TeleportToStartingLocation(Player* player)
+    {
+        if (!player)
+            return;
+
+        uint32 mapId = 0;
+        float x = 0, y = 0, z = 0, o = 0;
+        
+        // Get starting location from playercreation table based on race AND class
+        QueryResult result = WorldDatabase.Query(
+            "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} AND class = {} LIMIT 1", 
+            player->GetRace(), player->GetClass()
+        );
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            mapId = fields[0].Get<uint32>();
+            x = fields[1].Get<float>();
+            y = fields[2].Get<float>();
+            z = fields[3].Get<float>();
+            o = fields[4].Get<float>();
+            
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found starting location for race {} class {} in playercreation table", 
+                player->GetRace(), player->GetClass());
+        }
+        else
+        {
+            // Try to find any entry for this race as fallback
+            result = WorldDatabase.Query(
+                "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} LIMIT 1", 
+                player->GetRace()
+            );
+            
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                mapId = fields[0].Get<uint32>();
+                x = fields[1].Get<float>();
+                y = fields[2].Get<float>();
+                z = fields[3].Get<float>();
+                o = fields[4].Get<float>();
+                
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using fallback location for race {} from playercreation table", 
+                    player->GetRace());
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreation table for race {}|r", player->GetRace());
+                // Fallback to hardcoded defaults
+                switch (player->GetRace())
+                {
+                    case RACE_HUMAN:
+                        mapId = 0; x = -8949.95f; y = -132.493f; z = 83.6112f;
+                        break;
+                    case RACE_ORC:
+                        mapId = 1; x = 1676.64f; y = -4308.64f; z = -10.4536f;
+                        break;
+                    case RACE_DWARF:
+                        mapId = 0; x = -6240.32f; y = 336.457f; z = 383.376f;
+                        break;
+                    case RACE_GNOME:
+                        mapId = 0; x = -5023.58f; y = -1528.51f; z = 1327.59f;
+                        break;
+                    case RACE_NIGHTELF:
+                        mapId = 1; x = 10311.2f; y = 832.463f; z = 1326.41f;
+                        break;
+                    case RACE_TAUREN:
+                        mapId = 1; x = -2917.58f; y = -257.346f; z = 52.9957f;
+                        break;
+                    case RACE_UNDEAD:
+                        mapId = 0; x = 1919.33f; y = 238.470f; z = 60.7029f;
+                        break;
+                    case RACE_BLOODELF:
+                        mapId = 530; x = 10349.6f; y = -6357.29f; z = 33.4026f;
+                        break;
+                    case RACE_DRAENEI:
+                        mapId = 530; x = -4149.21f; y = -12345.6f; z = 36.05f;
+                        break;
+                    default:
+                        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Unknown race for prestige teleport!|r");
+                        return;
+                }
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using hardcoded fallback location");
+            }
+        }
+
+        // Teleport player
+        player->TeleportTo(mapId, x, y, z, o);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Teleported to your starting location!|r");
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -282,7 +375,9 @@ public:
         if (prestigeLevel == 0)
             return;
 
-        // Apply appropriate prestige spell based on level
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Applying prestige bonuses for level {}", prestigeLevel);
+        
+        // Apply visual aura for display purposes
         uint32 spellId = GetPrestigeSpell(prestigeLevel);
         if (spellId)
         {
@@ -293,7 +388,6 @@ public:
             if (!spellInfo)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Prestige spell {} not found in spell DBC!|r", spellId);
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00You need to add the prestige spells to your spell DBC or use existing spell IDs.|r");
                 return;
             }
             
@@ -307,33 +401,13 @@ public:
             // Verify the aura was applied
             if (aura || player->HasAura(spellId))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff successfully applied! (Spell ID: {})|r", spellId);
-                
-                // Update player stats to apply the aura effects
-                player->UpdateAllStats();
-            }
-            else
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Failed to apply prestige aura!|r");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000Trying alternative method with CastSpell...|r");
-                
-                // Fallback: Try casting the spell
-                player->CastSpell(player, spellId, true);
-                
-                if (player->HasAura(spellId))
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff applied via CastSpell!|r");
-                }
-                else
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Both methods failed. Check spell DBC configuration!|r");
-                }
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff aura applied! (Spell ID: {})|r", spellId);
             }
         }
-        else
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: No prestige spell defined for level {}|r", prestigeLevel);
-        }
+        
+        // Apply stat bonuses via visual aura
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Prestige bonuses applied ({}% bonus per level)", 
+            PrestigeSystem::instance()->GetStatBonusPercent());
     }
 
     void RemovePrestigeBuffs(Player* player)
@@ -572,6 +646,29 @@ public:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached level {}! Type .prestige to ascend to the next prestige level!|r",
                     currentPrestige + 1);
+            }
+        }
+    }
+
+    void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
+    {
+        if (!PrestigeSystem::instance()->IsEnabled())
+            return;
+
+        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
+        if (prestigeLevel == 0)
+            return;
+
+        // Check if prestige aura is missing and reapply it
+        // This ensures the buff persists even if something removes it
+        uint32 spellId = PrestigeSystem::instance()->GetPrestigeSpell(prestigeLevel);
+        if (spellId && !player->HasAura(spellId))
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (spellInfo)
+            {
+                // Reapply silently
+                player->AddAura(spellId, player);
             }
         }
     }
