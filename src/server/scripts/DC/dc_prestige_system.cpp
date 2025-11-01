@@ -27,6 +27,9 @@
 #include "AchievementMgr.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+#include <sstream>
+
+using namespace Acore::ChatCommands;
 
 enum PrestigeConfig
 {
@@ -37,16 +40,16 @@ enum PrestigeConfig
 
 enum PrestigeSpells
 {
-    SPELL_PRESTIGE_BONUS_1  = 800010,  // Custom auras for prestige bonuses
-    SPELL_PRESTIGE_BONUS_2  = 800011,
-    SPELL_PRESTIGE_BONUS_3  = 800012,
-    SPELL_PRESTIGE_BONUS_4  = 800013,
-    SPELL_PRESTIGE_BONUS_5  = 800014,
-    SPELL_PRESTIGE_BONUS_6  = 800015,
-    SPELL_PRESTIGE_BONUS_7  = 800016,
-    SPELL_PRESTIGE_BONUS_8  = 800017,
-    SPELL_PRESTIGE_BONUS_9  = 800018,
-    SPELL_PRESTIGE_BONUS_10 = 800019,
+    SPELL_PRESTIGE_BONUS_1  = 800002,  // Custom auras for prestige bonuses
+    SPELL_PRESTIGE_BONUS_2  = 800003,
+    SPELL_PRESTIGE_BONUS_3  = 800004,
+    SPELL_PRESTIGE_BONUS_4  = 800005,
+    SPELL_PRESTIGE_BONUS_5  = 800006,
+    SPELL_PRESTIGE_BONUS_6  = 800007,
+    SPELL_PRESTIGE_BONUS_7  = 800008,
+    SPELL_PRESTIGE_BONUS_8  = 800009,
+    SPELL_PRESTIGE_BONUS_9  = 800010,
+    SPELL_PRESTIGE_BONUS_10 = 800011,
 };
 
 enum PrestigeTitles
@@ -106,7 +109,7 @@ public:
             return 0;
 
         // Query from database
-        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM character_prestige WHERE guid = {}", player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", player->GetGUID().GetCounter());
         if (result)
         {
             Field* fields = result->Fetch();
@@ -120,8 +123,8 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute("REPLACE INTO character_prestige (guid, prestige_level, prestige_date) VALUES ({}, {}, NOW())", 
-            player->GetGUID().GetCounter(), level);
+        CharacterDatabase.Execute("REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())", 
+            player->GetGUID().GetCounter(), level, level);
     }
 
     bool CanPrestige(Player* player)
@@ -203,12 +206,12 @@ public:
 
         // Log to database
         CharacterDatabase.Execute(
-            "INSERT INTO character_prestige_log (guid, prestige_level, old_level, new_level, timestamp) VALUES ({}, {}, {}, {}, NOW())",
-            player->GetGUID().GetCounter(), newPrestige, oldLevel, resetLevel
+            "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
+            player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
         );
 
         // Save player
-        player->SaveToDB();
+        player->SaveToDB(false, false);
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -287,19 +290,23 @@ private:
         if (rewardsStr.empty())
             return;
 
-        std::vector<std::string> rewardTokens = Acore::Tokenize(rewardsStr, ';', false);
-        for (const std::string& token : rewardTokens)
+        std::stringstream ss(rewardsStr);
+        std::string token;
+        while (std::getline(ss, token, ';'))
         {
-            std::vector<std::string> parts = Acore::Tokenize(token, ':', false);
+            std::stringstream tokenSS(token);
+            std::string part;
+            std::vector<std::string> parts;
+            while (std::getline(tokenSS, part, ':'))
+                parts.push_back(part);
+                
             if (parts.size() == 3)
             {
-                uint32 prestigeLevel = Acore::StringTo<uint32>(parts[0]).value_or(0);
-                uint32 itemEntry = Acore::StringTo<uint32>(parts[1]).value_or(0);
-                uint32 count = Acore::StringTo<uint32>(parts[2]).value_or(1);
-
-                if (prestigeLevel > 0 && itemEntry > 0)
+                if (Optional<uint32> prestigeLevel = Acore::StringTo<uint32>(parts[0]))
+                if (Optional<uint32> itemEntry = Acore::StringTo<uint32>(parts[1]))
+                if (Optional<uint32> count = Acore::StringTo<uint32>(parts[2]))
                 {
-                    prestigeRewards[prestigeLevel].push_back({itemEntry, count});
+                    prestigeRewards[*prestigeLevel].push_back({*itemEntry, *count});
                 }
             }
         }
@@ -386,12 +393,14 @@ private:
         if (starterGearList.empty())
             return;
 
-        std::vector<std::string> items = Acore::Tokenize(starterGearList, ',', false);
-        for (const std::string& itemStr : items)
+        std::stringstream ss(starterGearList);
+        std::string itemStr;
+        while (std::getline(ss, itemStr, ','))
         {
-            uint32 itemEntry = Acore::StringTo<uint32>(itemStr).value_or(0);
-            if (itemEntry)
-                player->AddItem(itemEntry, 1);
+            if (Optional<uint32> itemEntry = Acore::StringTo<uint32>(itemStr))
+            {
+                player->AddItem(*itemEntry, 1);
+            }
         }
     }
 
@@ -417,7 +426,7 @@ class PrestigePlayerScript : public PlayerScript
 public:
     PrestigePlayerScript() : PlayerScript("PrestigePlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!PrestigeSystem::instance()->IsEnabled())
             return;
@@ -436,23 +445,10 @@ public:
         // Check if player can prestige
         if (PrestigeSystem::instance()->CanPrestige(player))
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached level {}! Type .prestige to ascend to the next prestige level!|r",
-                PrestigeSystem::instance()->GetRequiredLevel());
-        }
-    }
-
-    void OnLevelChanged(Player* player, uint8 /*oldLevel*/) override
-    {
-        if (!PrestigeSystem::instance()->IsEnabled())
-            return;
-
-        // Notify when player can prestige
-        if (player->GetLevel() == PrestigeSystem::instance()->GetRequiredLevel())
-        {
             uint32 currentPrestige = PrestigeSystem::instance()->GetPrestigeLevel(player);
             if (currentPrestige < PrestigeSystem::instance()->GetMaxPrestigeLevel())
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700Congratulations! You can now prestige to level {}! Type .prestige to begin.|r",
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached level {}! Type .prestige to ascend to the next prestige level!|r",
                     currentPrestige + 1);
             }
         }
@@ -469,21 +465,21 @@ public:
     {
         static ChatCommandTable prestigeCommandTable =
         {
-            { "info",    HandlePrestigeInfoCommand,    SEC_PLAYER,      Console::No },
-            { "reset",   HandlePrestigeResetCommand,   SEC_PLAYER,      Console::No },
-            { "confirm", HandlePrestigeConfirmCommand, SEC_PLAYER,      Console::No },
-            { "admin",   HandlePrestigeAdminCommand,   SEC_ADMINISTRATOR, Console::No },
+            ChatCommandBuilder("info",    HandlePrestigeInfoCommand,    SEC_PLAYER,      Console::No),
+            ChatCommandBuilder("reset",   HandlePrestigeResetCommand,   SEC_PLAYER,      Console::No),
+            ChatCommandBuilder("confirm", HandlePrestigeConfirmCommand, SEC_PLAYER,      Console::No),
+            ChatCommandBuilder("admin",   HandlePrestigeAdminCommand,   SEC_ADMINISTRATOR, Console::No),
         };
 
         static ChatCommandTable commandTable =
         {
-            { "prestige", prestigeCommandTable },
+            ChatCommandBuilder("prestige", prestigeCommandTable),
         };
 
         return commandTable;
     }
 
-    static bool HandlePrestigeInfoCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePrestigeInfoCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -521,7 +517,7 @@ public:
         return true;
     }
 
-    static bool HandlePrestigeResetCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePrestigeResetCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -551,7 +547,7 @@ public:
         return true;
     }
 
-    static bool HandlePrestigeConfirmCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePrestigeConfirmCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -567,12 +563,17 @@ public:
         return true;
     }
 
-    static bool HandlePrestigeAdminCommand(ChatHandler* handler, const char* args)
+    static bool HandlePrestigeAdminCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
 
-        std::vector<std::string> tokens = Acore::Tokenize(std::string(args), ' ', false);
+        std::stringstream ss(args);
+        std::string token;
+        std::vector<std::string> tokens;
+        while (ss >> token)
+            tokens.push_back(token);
+            
         if (tokens.empty())
             return false;
 
@@ -581,22 +582,23 @@ public:
         if (subCommand == "set" && tokens.size() == 3)
         {
             std::string playerName = tokens[1];
-            uint32 level = Acore::StringTo<uint32>(tokens[2]).value_or(0);
-
-            Player* target = ObjectAccessor::FindPlayerByName(playerName);
-            if (!target)
+            if (Optional<uint32> level = Acore::StringTo<uint32>(tokens[2]))
             {
-                handler->PSendSysMessage("Player {} not found.", playerName);
+                Player* target = ObjectAccessor::FindPlayerByName(playerName);
+                if (!target)
+                {
+                    handler->PSendSysMessage("Player {} not found.", playerName);
+                    return true;
+                }
+
+                PrestigeSystem::instance()->SetPrestigeLevel(target, *level);
+                PrestigeSystem::instance()->RemovePrestigeBuffs(target);
+                PrestigeSystem::instance()->ApplyPrestigeBuffs(target);
+
+                handler->PSendSysMessage("Set {}'s prestige level to {}.", playerName, *level);
+                ChatHandler(target->GetSession()).PSendSysMessage("Your prestige level has been set to {} by a GM.", *level);
                 return true;
             }
-
-            PrestigeSystem::instance()->SetPrestigeLevel(target, level);
-            PrestigeSystem::instance()->RemovePrestigeBuffs(target);
-            PrestigeSystem::instance()->ApplyPrestigeBuffs(target);
-
-            handler->PSendSysMessage("Set {}'s prestige level to {}.", playerName, level);
-            ChatHandler(target->GetSession()).PSendSysMessage("Your prestige level has been set to {} by a GM.", level);
-            return true;
         }
 
         handler->SendSysMessage("Usage: .prestige admin set <player> <level>");
