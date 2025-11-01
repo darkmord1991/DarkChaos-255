@@ -168,8 +168,15 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Setting level to {}...", resetLevel);
         // Reset level
         player->SetLevel(resetLevel);
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling InitStatsForLevel...");
         player->InitStatsForLevel(true);
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling UpdateSkillsForLevel...");
         player->UpdateSkillsForLevel();
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling UpdateAllStats...");
+        player->UpdateAllStats();
 
         // Handle gear
         if (!keepGear)
@@ -220,12 +227,18 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Applying prestige buffs...");
         // Apply new prestige buffs (after save to ensure level is updated)
         ApplyPrestigeBuffs(player);
+        
+        // Save again after applying buffs
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving after buffs...");
+        player->SaveToDB(false, false);
 
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Teleporting player...");
         // Teleport player to their hearthstone location (or racial starting area)
-        if (player->m_homebindMapId != 0xFFFFFFFF)
+        uint32 homebindMap = player->GetHomebind().GetMapId();
+        if (homebindMap != 0 && homebindMap != MAPID_INVALID)
         {
-            player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
+            WorldLocation const& homebind = player->GetHomebind();
+            player->TeleportTo(homebind.GetMapId(), homebind.GetPositionX(), homebind.GetPositionY(), homebind.GetPositionZ(), homebind.GetOrientation());
         }
         else
         {
@@ -248,11 +261,22 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("Congratulations! You have reached Prestige Level {}!", newPrestige);
         ChatHandler(player->GetSession()).PSendSysMessage("You now have {}% bonus to all stats!", newPrestige * statBonusPercent);
 
-        // Log to database
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
-            player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
-        );
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Logging to database...");
+        // Log to database with error checking
+        try
+        {
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
+                player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
+            );
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Database log successful");
+        }
+        catch (...)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Database log failed (non-fatal)");
+        }
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: PerformPrestige completed!");
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -617,14 +641,28 @@ public:
 
         handler->PSendSysMessage("DEBUG: CanPrestige passed, calling PerformPrestige...");
         
+        // Store player GUID to prevent issues if session gets invalidated
+        ObjectGuid playerGuid = player->GetGUID();
+        
         try
         {
             PrestigeSystem::instance()->PerformPrestige(player);
-            handler->PSendSysMessage("DEBUG: PerformPrestige completed successfully");
+            
+            // Re-get player after prestige in case of any issues
+            player = handler->GetSession()->GetPlayer();
+            if (player)
+            {
+                handler->PSendSysMessage("DEBUG: PerformPrestige completed successfully");
+            }
+        }
+        catch (std::exception const& e)
+        {
+            handler->PSendSysMessage("DEBUG: EXCEPTION in PerformPrestige: {}", e.what());
+            return false;
         }
         catch (...)
         {
-            handler->PSendSysMessage("DEBUG: EXCEPTION in PerformPrestige!");
+            handler->PSendSysMessage("DEBUG: UNKNOWN EXCEPTION in PerformPrestige!");
             return false;
         }
         

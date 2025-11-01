@@ -807,48 +807,234 @@ public:
 
     bool OnGossipHello(Player* player, GameObject* go) override
     {
+        ClearGossipMenuFor(player);
+        
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "What are Challenge Modes?", 0, 999); // Info option
+        
         if (sChallengeModes->challengeEnabled(SETTING_HARDCORE) && !playerSettingEnabled(player, SETTING_HARDCORE) && !playerSettingEnabled(player, SETTING_SEMI_HARDCORE))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Hardcore Mode", 0, SETTING_HARDCORE);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Hardcore Mode", 0, SETTING_HARDCORE);
         }
         if (sChallengeModes->challengeEnabled(SETTING_SEMI_HARDCORE) && !playerSettingEnabled(player, SETTING_HARDCORE) && !playerSettingEnabled(player, SETTING_SEMI_HARDCORE))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Semi-Hardcore Mode", 0, SETTING_SEMI_HARDCORE);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Semi-Hardcore Mode", 0, SETTING_SEMI_HARDCORE);
         }
         if (sChallengeModes->challengeEnabled(SETTING_SELF_CRAFTED) && !playerSettingEnabled(player, SETTING_SELF_CRAFTED) && !playerSettingEnabled(player, SETTING_IRON_MAN))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Self-Crafted Mode", 0, SETTING_SELF_CRAFTED);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Self-Crafted Mode", 0, SETTING_SELF_CRAFTED);
         }
         if (sChallengeModes->challengeEnabled(SETTING_ITEM_QUALITY_LEVEL) && !playerSettingEnabled(player, SETTING_ITEM_QUALITY_LEVEL))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Low Quality Item Mode", 0, SETTING_ITEM_QUALITY_LEVEL);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Low Quality Item Mode", 0, SETTING_ITEM_QUALITY_LEVEL);
         }
         if (sChallengeModes->challengeEnabled(SETTING_SLOW_XP_GAIN) && !playerSettingEnabled(player, SETTING_SLOW_XP_GAIN) && !playerSettingEnabled(player, SETTING_VERY_SLOW_XP_GAIN))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Slow XP Mode", 0, SETTING_SLOW_XP_GAIN);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Slow XP Mode", 0, SETTING_SLOW_XP_GAIN);
         }
         if (sChallengeModes->challengeEnabled(SETTING_VERY_SLOW_XP_GAIN) && !playerSettingEnabled(player, SETTING_SLOW_XP_GAIN) && !playerSettingEnabled(player, SETTING_VERY_SLOW_XP_GAIN))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Very Slow XP Mode", 0, SETTING_VERY_SLOW_XP_GAIN);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Very Slow XP Mode", 0, SETTING_VERY_SLOW_XP_GAIN);
         }
         if (sChallengeModes->challengeEnabled(SETTING_QUEST_XP_ONLY) && !playerSettingEnabled(player, SETTING_QUEST_XP_ONLY))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Quest XP Only Mode", 0, SETTING_QUEST_XP_ONLY);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Quest XP Only Mode", 0, SETTING_QUEST_XP_ONLY);
         }
         if (sChallengeModes->challengeEnabled(SETTING_IRON_MAN) && !playerSettingEnabled(player, SETTING_IRON_MAN) && !playerSettingEnabled(player, SETTING_SELF_CRAFTED))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enable Iron Man Mode", 0, SETTING_IRON_MAN);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Iron Man Mode", 0, SETTING_IRON_MAN);
         }
         SendGossipMenuFor(player, 12669, go->GetGUID());
         return true;
     }
 
-    bool OnGossipSelect(Player* player, GameObject* /*go*/, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, GameObject* go, uint32 /*sender*/, uint32 action) override
     {
-        player->UpdatePlayerSetting("mod-challenge-modes", action, 1);
-        ChatHandler(player->GetSession()).PSendSysMessage("Challenge enabled.");
-        CloseGossipMenuFor(player);
+        ClearGossipMenuFor(player);
+        
+        // General info
+        if (action == 999)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<- Back to Challenge Modes", 0, 1000);
+            player->PlayerTalkClass->SendGossipMenu(100001, go->GetGUID());
+            return true;
+        }
+        
+        // Back to main menu
+        if (action == 1000)
+        {
+            return OnGossipHello(player, go);
+        }
+        
+        // Show mode information (action 100-199 range)
+        if (action >= 100 && action < 200)
+        {
+            uint32 modeId = action - 100;
+            ShowModeInfo(player, go, modeId);
+            return true;
+        }
+        
+        // Confirm mode (action 200-299 range)
+        if (action >= 200 && action < 300)
+        {
+            uint32 modeId = action - 200;
+            player->UpdatePlayerSetting("mod-challenge-modes", modeId, 1);
+            
+            std::string modeName = GetModeName(modeId);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700Challenge Mode Enabled:|r %s", modeName.c_str());
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000This mode is now PERMANENT for this character!|r");
+            
+            CloseGossipMenuFor(player);
+            return true;
+        }
+        
+        // Show info for selected mode
+        ShowModeInfo(player, go, action);
         return true;
+    }
+
+private:
+    void ShowModeInfo(Player* player, GameObject* go, uint32 modeId)
+    {
+        ClearGossipMenuFor(player);
+        
+        std::string description;
+        std::string rewards;
+        float xpBonus = sChallengeModes->getXpBonusForChallenge((ChallengeModeSettings)modeId);
+        
+        switch (modeId)
+        {
+            case SETTING_HARDCORE:
+                description = "|cFFFF0000HARDCORE MODE|r\n"
+                             "Death is PERMANENT! If you die, your character will be deleted.\n"
+                             "No second chances, no resurrections.\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Exclusive titles at certain levels\n"
+                             "- Special rewards for reaching milestones";
+                break;
+                
+            case SETTING_SEMI_HARDCORE:
+                description = "|cFFFF6600SEMI-HARDCORE MODE|r\n"
+                             "Death has consequences! When you die to a creature:\n"
+                             "- You lose ALL equipped items\n"
+                             "- Your gear is destroyed permanently\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Exclusive titles\n"
+                             "- Item rewards at milestones";
+                break;
+                
+            case SETTING_SELF_CRAFTED:
+                description = "|cFF00FF00SELF-CRAFTED MODE|r\n"
+                             "True craftsmanship! You can only use:\n"
+                             "- Items YOU have crafted\n"
+                             "- Quest rewards\n"
+                             "- Starting gear\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Exclusive titles\n"
+                             "- Profession bonuses";
+                break;
+                
+            case SETTING_ITEM_QUALITY_LEVEL:
+                description = "|cFF9D9D9DLOW QUALITY ITEM MODE|r\n"
+                             "Scavenger challenge! You can only equip:\n"
+                             "- Common (white) quality items\n"
+                             "- Starting gear\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Exclusive titles\n"
+                             "- Special item rewards";
+                break;
+                
+            case SETTING_SLOW_XP_GAIN:
+                description = "|cFF00FFFFSSLOW XP MODE|r\n"
+                             "The long road to glory!\n"
+                             "- XP gain reduced by 50%\n"
+                             "- Experience the content longer\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% EXTRA bonus XP (net effect)\n"
+                             "- Exclusive titles\n"
+                             "- Bonus rewards";
+                break;
+                
+            case SETTING_VERY_SLOW_XP_GAIN:
+                description = "|cFF00FFFFVERY SLOW XP MODE|r\n"
+                             "The ultimate endurance test!\n"
+                             "- XP gain reduced by 75%\n"
+                             "- Master every zone\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% EXTRA bonus XP (net effect)\n"
+                             "- Exclusive titles\n"
+                             "- Premium rewards";
+                break;
+                
+            case SETTING_QUEST_XP_ONLY:
+                description = "|cFFFFFF00QUEST XP ONLY MODE|r\n"
+                             "Story-driven progression!\n"
+                             "- You can ONLY gain XP from quests\n"
+                             "- No grinding, pure questing\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Exclusive titles\n"
+                             "- Loremaster rewards";
+                break;
+                
+            case SETTING_IRON_MAN:
+                description = "|cFFFF0000IRON MAN MODE|r\n"
+                             "The ultimate challenge! Combines:\n"
+                             "- Death is permanent (Hardcore)\n"
+                             "- Can only use white quality items\n"
+                             "- Can only use quest rewards and self-crafted items\n"
+                             "- No trading, no auction house\n"
+                             "\n"
+                             "|cFFFFD700Rewards:|r\n"
+                             "- " + std::to_string((int)((xpBonus - 1) * 100)) + "% bonus XP\n"
+                             "- Legendary exclusive titles\n"
+                             "- Ultimate prestige rewards";
+                break;
+                
+            default:
+                description = "Mode information not available.";
+                break;
+        }
+        
+        // Send the description as a gossip text (you'll need to add this to gossip_menu_option or use system message)
+        player->PlayerTalkClass->SendGossipMenu(100000 + modeId, go->GetGUID());
+        
+        // Add confirmation option
+        std::string modeName = GetModeName(modeId);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFFFF0000[CONFIRM] Enable " + modeName + "|r", 0, 200 + modeId, 
+                        "Are you ABSOLUTELY SURE you want to enable this mode? This decision is PERMANENT and cannot be reversed!", 0, false);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<- Back to Challenge Modes", 0, 1000);
+        
+        // Send description as system message since we can't easily modify gossip text
+        ChatHandler(player->GetSession()).PSendSysMessage(description.c_str());
+        
+        SendGossipMenuFor(player, go->GetGUID());
+    }
+    
+    std::string GetModeName(uint32 modeId)
+    {
+        switch (modeId)
+        {
+            case SETTING_HARDCORE: return "Hardcore Mode";
+            case SETTING_SEMI_HARDCORE: return "Semi-Hardcore Mode";
+            case SETTING_SELF_CRAFTED: return "Self-Crafted Mode";
+            case SETTING_ITEM_QUALITY_LEVEL: return "Low Quality Item Mode";
+            case SETTING_SLOW_XP_GAIN: return "Slow XP Mode";
+            case SETTING_VERY_SLOW_XP_GAIN: return "Very Slow XP Mode";
+            case SETTING_QUEST_XP_ONLY: return "Quest XP Only Mode";
+            case SETTING_IRON_MAN: return "Iron Man Mode";
+            default: return "Unknown Mode";
+        }
     }
 
     GameObjectAI* GetAI(GameObject* object) const override
