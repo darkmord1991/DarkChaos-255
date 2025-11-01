@@ -9,6 +9,7 @@ set(SCRIPTS_DC_Prestige
 # Challenge Mode scripts
 set(SCRIPTS_DC_ChallengeMode
     ChallengeMode/dc_challenge_modes_customized.cpp
+    ChallengeMode/dc_challenge_mode_database.cpp
 )
 
 # Hotspot System scripts
