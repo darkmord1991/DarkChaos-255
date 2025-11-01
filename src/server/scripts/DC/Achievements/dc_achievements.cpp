@@ -23,6 +23,7 @@
 #include "Map.h"
 #include "Battleground.h"
 #include "DatabaseEnv.h"
+#include "WorldSessionMgr.h"
 
 // Achievement IDs
 enum DCAchievements
