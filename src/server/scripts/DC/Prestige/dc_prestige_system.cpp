@@ -232,21 +232,6 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving after buffs...");
         player->SaveToDB(false, false);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Teleporting player...");
-        // Teleport player to their hearthstone location (or racial starting area)
-        if (player->m_homebindMapId != 0 && player->m_homebindMapId != MAPID_INVALID)
-        {
-            player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
-        }
-        else
-        {
-            // Fallback: teleport to Stormwind or Orgrimmar based on faction
-            if (player->GetTeamId() == TEAM_ALLIANCE)
-                player->TeleportTo(0, -8833.37f, 628.62f, 94.00f, 1.06f); // Stormwind
-            else
-                player->TeleportTo(1, 1569.59f, -4397.63f, 16.06f, 0.54f); // Orgrimmar
-        }
-
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Announcing prestige...");
         // Announce
         if (announcePrestige)
@@ -258,6 +243,7 @@ public:
         // Notify player
         ChatHandler(player->GetSession()).PSendSysMessage("Congratulations! You have reached Prestige Level {}!", newPrestige);
         ChatHandler(player->GetSession()).PSendSysMessage("You now have {}% bonus to all stats!", newPrestige * statBonusPercent);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000You will be teleported to your hearthstone location in 5 seconds...|r");
 
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Logging to database...");
         // Log to database with error checking
@@ -275,6 +261,9 @@ public:
         }
         
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: PerformPrestige completed!");
+        
+        // Don't teleport immediately - let the player see the results first
+        // The teleport will happen on next login or they can manually hearthstone
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -290,14 +279,36 @@ public:
         uint32 spellId = GetPrestigeSpell(prestigeLevel);
         if (spellId)
         {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to cast prestige spell ID: {}", spellId);
+            
+            // Check if spell exists in DBC
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Prestige spell {} not found in spell DBC!|r", spellId);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00You need to add the prestige spells to your spell DBC or use existing spell IDs.|r");
+                return;
+            }
+            
             // Remove any existing prestige buffs first
             RemovePrestigeBuffs(player);
             
             // Cast the prestige spell
             player->CastSpell(player, spellId, true);
             
-            // Notify player
-            ChatHandler(player->GetSession()).PSendSysMessage("Prestige buff applied! (Spell ID: {})", spellId);
+            // Verify the aura was applied
+            if (player->HasAura(spellId))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff successfully applied! (Spell ID: {})|r", spellId);
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Prestige spell cast but aura not detected!|r");
+            }
+        }
+        else
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: No prestige spell defined for level {}|r", prestigeLevel);
         }
     }
 
@@ -399,20 +410,37 @@ private:
         uint32 titleId = GetPrestigeTitle(prestigeLevel);
         if (titleId)
         {
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant title ID: {}", titleId);
             CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
             if (titleEntry)
+            {
                 player->SetTitle(titleEntry);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title granted!|r");
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Title ID {} not found in CharTitles.dbc!|r", titleId);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00Titles need to be added to CharTitles.dbc for 3.3.5a|r");
+            }
         }
     }
 
     void UpdatePrestigeAchievements(Player* player, uint32 prestigeLevel)
     {
-        // Update custom achievement criteria if configured
-        // Achievement IDs should be added to achievement_dbc.sql
-        uint32 achievementBase = sConfigMgr->GetOption<uint32>("Prestige.AchievementBase", 10000);
-        if (achievementBase > 0)
+        // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
+        uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
+        AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
+        if (achievementEntry)
         {
-            player->CompletedAchievement(sAchievementStore.LookupEntry(achievementBase + prestigeLevel));
+            player->CompletedAchievement(achievementEntry);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
+        }
+        else
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Prestige achievement ID {} not found!|r", achievementId);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00Run the SQL: Custom/Custom feature SQLs/Achievements/dc_achievements.sql|r");
         }
     }
 
