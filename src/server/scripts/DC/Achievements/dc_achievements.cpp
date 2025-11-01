@@ -26,6 +26,7 @@
 #include "WorldSessionMgr.h"
 #include "SpellMgr.h"
 #include "SpellInfo.h"
+#include "ChatCommand.h"
 
 // Achievement IDs
 enum DCAchievements
@@ -437,41 +438,41 @@ class DCDebugAchievementCommand : public CommandScript
 public:
     DCDebugAchievementCommand() : CommandScript("dc_debug_achievement") { }
 
-    ChatCommandTable GetCommands() const override
+    Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable commandTable =
+        static Acore::ChatCommands::ChatCommandTable commandTable =
         {
-            ChatCommandBuilder("checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, Console::No),
+            Acore::ChatCommands::ChatCommandBuilder("checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
         };
         return commandTable;
     }
 
     static bool HandleCheckAchievements(ChatHandler* handler, char const* args)
     {
-        handler->PSendSysMessage("|cFFFFD700=== ACHIEVEMENT STORE DEBUG ===|r");
+        handler->PSendSysMessage("=== ACHIEVEMENT STORE DEBUG ===");
         
         uint32 prestige1 = 10300;
         AchievementEntry const* ach = sAchievementStore.LookupEntry(prestige1);
         
         if (!ach)
         {
-            handler->PSendSysMessage("|cFFFF0000ERROR: Achievement {} not found in store!|r", prestige1);
+            handler->PSendSysMessage("ERROR: Achievement %u not found in store!", prestige1);
         }
         else
         {
-            handler->PSendSysMessage("|cFF00FF00Found Achievement {}: {}", prestige1, ach->name);
-            handler->PSendSysMessage("Category: {} | Points: {} | Flags: {}", ach->category, ach->points, ach->flags);
+            handler->PSendSysMessage("Found Achievement %u: %s", prestige1, ach->name);
+            handler->PSendSysMessage("Category: %u | Points: %u | Flags: %u", ach->categoryId, ach->points, ach->flags);
         }
         
         // Check category
         AchievementCategoryEntry const* cat = sAchievementCategoryStore.LookupEntry(10004);
         if (!cat)
         {
-            handler->PSendSysMessage("|cFFFF0000ERROR: Category 10004 not found in store!|r");
+            handler->PSendSysMessage("ERROR: Category 10004 not found in store!");
         }
         else
         {
-            handler->PSendSysMessage("|cFF00FF00Found Category 10004: {}", cat->name);
+            handler->PSendSysMessage("Found Category 10004 in store");
         }
         
         // Check a few prestige achievements
@@ -480,15 +481,15 @@ public:
             AchievementEntry const* achievement = sAchievementStore.LookupEntry(i);
             if (achievement)
             {
-                handler->PSendSysMessage("  {} - {}", i, achievement->name);
+                handler->PSendSysMessage("  %u - %s", i, achievement->name);
             }
             else
             {
-                handler->PSendSysMessage("|cFFFF0000  {} - NOT FOUND|r", i);
+                handler->PSendSysMessage("  %u - NOT FOUND", i);
             }
         }
         
-        handler->PSendSysMessage("|cFFFFD700=== END ACHIEVEMENT STORE DEBUG ===|r");
+        handler->PSendSysMessage("=== END ACHIEVEMENT STORE DEBUG ===");
         return true;
     }
 };
