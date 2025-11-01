@@ -126,17 +126,10 @@ class spell_prestige_bonus_1 : public AuraScript
         target->HandleStatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_PCT, bonus, false);
     }
 
-    bool CheckProc(ProcEventInfo& /*eventInfo*/)
-    {
-        // Prevent the aura from being removed by normal means
-        return false;
-    }
-
     void Register() override
     {
         OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
         OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        DoCheckProc += AuraCheckProcFn(spell_prestige_bonus_1::CheckProc);
     }
 };
 
@@ -176,16 +169,10 @@ class spell_prestige_bonus_##NUM : public AuraScript \
         target->HandleStatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_PCT, bonus, false); \
     } \
     \
-    bool CheckProc(ProcEventInfo& /*eventInfo*/) \
-    { \
-        return false; \
-    } \
-    \
     void Register() override \
     { \
         OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
         OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
-        DoCheckProc += AuraCheckProcFn(spell_prestige_bonus_##NUM::CheckProc); \
     } \
 };
 
