@@ -146,14 +146,14 @@ public:
     }
 
     // Quest achievements
-    void OnPlayerCompleteQuest(Player* player, Quest const* /*quest*/) override
+    void OnPlayerCompleteQuest(Player* /*player*/, Quest const* /*quest*/) override
     {
         // TODO: Track custom quest completions
         // You would need to query how many custom quests the player has completed
     }
 
     // Area exploration
-    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
+    void OnPlayerUpdateZone(Player* /*player*/, uint32 newZone, uint32 /*newArea*/) override
     {
         // Azshara Crater
         if (newZone == 268)
@@ -207,7 +207,7 @@ private:
             "|cFFFFD700[Server First!]|r Player {} has achieved: {}!",
             player->GetName(), achievement
         );
-        sWorld->SendServerMessage(SERVER_MSG_STRING, announcement);
+        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, announcement);
     }
 };
 
@@ -265,7 +265,7 @@ public:
                         "|cFFFFD700[Server First!]|r Player {} is the first to achieve Prestige!",
                         player->GetName()
                     );
-                    sWorld->SendServerMessage(SERVER_MSG_STRING, announcement);
+                    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, announcement);
                 }
             }
         }
