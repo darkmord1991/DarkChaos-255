@@ -35,6 +35,7 @@ void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 // GPS broadcaster removed - Using Eluna instead (Custom/Eluna scripts/DC_MapGPS.lua)
 void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
+void AddSC_dc_prestige_system(); // location: scripts\DC\dc_prestige_system.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -59,4 +60,5 @@ void AddDCScripts()
     AddBattleForGilneasScripts();
     // GPS broadcaster removed - Using Eluna instead
     AddSC_cs_gps_test();
+    AddSC_dc_prestige_system();
 }
