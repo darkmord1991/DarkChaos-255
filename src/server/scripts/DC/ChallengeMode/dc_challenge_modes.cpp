@@ -1006,14 +1006,22 @@ private:
                 break;
         }
         
+        // Send description to chat since gossip text would require database entries
+        std::istringstream stream(description);
+        std::string line;
+        while (std::getline(stream, line))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(line.c_str());
+        }
+        
         // Add confirmation option
         std::string modeName = GetModeName(modeId);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFFFF0000[CONFIRM] Enable " + modeName + "|r", 0, 200 + modeId, 
                         "Are you ABSOLUTELY SURE you want to enable this mode? This decision is PERMANENT and cannot be reversed!", 0, false);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<- Back to Challenge Modes", 0, 1000);
         
-        // Send description as NPC text
-        player->PlayerTalkClass->SendGossipMenu(DEFAULT_GOSSIP_MESSAGE, go->GetGUID(), description);
+        // Send gossip menu
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
     }
     
     std::string GetModeName(uint32 modeId)

@@ -13,6 +13,7 @@
 #include "GameObjectAI.h"
 #include "Pet.h"
 #include <map>
+#include <sstream>
 
 
 enum ChallengeModeSettings
