@@ -431,9 +431,70 @@ private:
     }
 };
 
+// Debug command to check achievements
+class DCDebugAchievementCommand : public CommandScript
+{
+public:
+    DCDebugAchievementCommand() : CommandScript("dc_debug_achievement") { }
+
+    std::vector<ChatCommand> GetCommands() const override
+    {
+        return {
+            { "checkachievements", HandleCheckAchievements, SECURITY_ADMINISTRATOR, "Check if achievements are in store" },
+        };
+    }
+
+    static bool HandleCheckAchievements(ChatHandler* handler, char const* args)
+    {
+        handler->PSendSysMessage("|cFFFFD700=== ACHIEVEMENT STORE DEBUG ===|r");
+        
+        uint32 prestige1 = 10300;
+        AchievementEntry const* ach = sAchievementStore.LookupEntry(prestige1);
+        
+        if (!ach)
+        {
+            handler->PSendSysMessage("|cFFFF0000ERROR: Achievement {} not found in store!|r", prestige1);
+        }
+        else
+        {
+            handler->PSendSysMessage("|cFF00FF00Found Achievement {}: {}", prestige1, ach->name);
+            handler->PSendSysMessage("Category: {} | Points: {} | Flags: {}", ach->category, ach->points, ach->flags);
+        }
+        
+        // Check category
+        AchievementCategoryEntry const* cat = sAchievementCategoryStore.LookupEntry(10004);
+        if (!cat)
+        {
+            handler->PSendSysMessage("|cFFFF0000ERROR: Category 10004 not found in store!|r");
+        }
+        else
+        {
+            handler->PSendSysMessage("|cFF00FF00Found Category 10004: {}", cat->name);
+        }
+        
+        // Check a few prestige achievements
+        for (uint32 i = 10300; i <= 10306; ++i)
+        {
+            AchievementEntry const* achievement = sAchievementStore.LookupEntry(i);
+            if (achievement)
+            {
+                handler->PSendSysMessage("  {} - {}", i, achievement->name);
+            }
+            else
+            {
+                handler->PSendSysMessage("|cFFFF0000  {} - NOT FOUND|r", i);
+            }
+        }
+        
+        handler->PSendSysMessage("|cFFFFD700=== END ACHIEVEMENT STORE DEBUG ===|r");
+        return true;
+    }
+};
+
 void AddSC_dc_achievements()
 {
     new DCAchievementSystem();
     new DCAchievementPrestige();
     new DCAchievementCollections();
+    new DCDebugAchievementCommand();
 }
