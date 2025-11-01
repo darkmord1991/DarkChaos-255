@@ -51,7 +51,7 @@ uint32 ChallengeModeDatabase::GetActiveModesForPlayer(ObjectGuid guid)
     if (result)
     {
         Field* fields = result->Fetch();
-        return fields[0].GetUInt32();
+        return fields[0].Get<uint32>();
     }
     
     return 0;
@@ -193,7 +193,7 @@ bool ChallengeModeDatabase::IsCharacterLocked(ObjectGuid guid)
     if (result)
     {
         Field* fields = result->Fetch();
-        return fields[0].GetUInt8() == 1;
+        return fields[0].Get<uint8>() == 1;
     }
     
     return false;
