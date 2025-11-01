@@ -1006,10 +1006,6 @@ private:
                 break;
         }
         
-        // Send the description as gossip text using PlayerTalkClass
-        player->PlayerTalkClass->ClearMenus();
-        player->PlayerTalkClass->GetGossipTextId(go);
-        
         // Add confirmation option
         std::string modeName = GetModeName(modeId);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFFFF0000[CONFIRM] Enable " + modeName + "|r", 0, 200 + modeId, 
