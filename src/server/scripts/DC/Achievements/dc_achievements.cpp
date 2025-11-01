@@ -95,7 +95,7 @@ public:
     DCAchievementSystem() : PlayerScript("DCAchievementSystem") { }
 
     // Level achievements
-    void OnLevelChanged(Player* player, uint8 oldLevel) override
+    void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         uint8 newLevel = player->GetLevel();
         

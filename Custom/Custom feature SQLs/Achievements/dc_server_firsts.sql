@@ -1,6 +1,14 @@
 -- =====================================================
 -- DarkChaos-255 Server First Tracking
 -- =====================================================
+-- 
+-- IMPORTANT: This table belongs in the CHARACTERS database (acore_characters)
+-- NOT the world database! It tracks player-specific achievements.
+--
+-- To import:
+--   use acore_characters;
+--   source Custom/Custom feature SQLs/Achievements/dc_server_firsts.sql
+-- =====================================================
 
 CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
