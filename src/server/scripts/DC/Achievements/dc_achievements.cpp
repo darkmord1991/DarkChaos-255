@@ -313,7 +313,7 @@ private:
         PlayerSpellMap const& spells = player->GetSpellMap();
         for (auto const& spell : spells)
         {
-            if (spell.second.state == PLAYERSPELL_REMOVED)
+            if (spell.second->State == PLAYERSPELL_REMOVED)
                 continue;
                 
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell.first);
