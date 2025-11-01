@@ -437,11 +437,13 @@ class DCDebugAchievementCommand : public CommandScript
 public:
     DCDebugAchievementCommand() : CommandScript("dc_debug_achievement") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        return {
-            { "checkachievements", HandleCheckAchievements, SECURITY_ADMINISTRATOR, "Check if achievements are in store" },
+        static ChatCommandTable commandTable =
+        {
+            { "checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, "Check if achievements are in store" },
         };
+        return commandTable;
     }
 
     static bool HandleCheckAchievements(ChatHandler* handler, char const* args)
