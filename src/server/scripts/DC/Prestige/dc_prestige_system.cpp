@@ -282,9 +282,9 @@ public:
         uint32 mapId = 0;
         float x = 0, y = 0, z = 0, o = 0;
         
-        // Get starting location from playercreation table based on race AND class
+        // Get starting location from playercreateinfo table based on race AND class
         QueryResult result = WorldDatabase.Query(
-            "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} AND class = {} LIMIT 1", 
+            "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} AND class = {} LIMIT 1", 
             player->getRace(), player->getClass()
         );
         
@@ -297,14 +297,14 @@ public:
             z = fields[3].Get<float>();
             o = fields[4].Get<float>();
             
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found starting location for race {} class {} in playercreation table", 
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found starting location for race {} class {} in playercreateinfo table", 
                 player->getRace(), player->getClass());
         }
         else
         {
             // Try to find any entry for this race as fallback
             result = WorldDatabase.Query(
-                "SELECT map, position_x, position_y, position_z, orientation FROM playercreation WHERE race = {} LIMIT 1", 
+                "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} LIMIT 1", 
                 player->getRace()
             );
             
@@ -317,12 +317,12 @@ public:
                 z = fields[3].Get<float>();
                 o = fields[4].Get<float>();
                 
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using fallback location for race {} from playercreation table", 
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using fallback location for race {} from playercreateinfo table", 
                     player->getRace());
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreation table for race {}|r", player->getRace());
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreateinfo table for race {}|r", player->getRace());
                 // Fallback to hardcoded defaults
                 switch (player->getRace())
                 {
