@@ -447,7 +447,7 @@ public:
         return commandTable;
     }
 
-    static bool HandleCheckAchievements(ChatHandler* handler, char const* args)
+    static bool HandleCheckAchievements(ChatHandler* handler, char const* /*args*/)
     {
         handler->PSendSysMessage("=== ACHIEVEMENT STORE DEBUG ===");
         
@@ -460,7 +460,8 @@ public:
         }
         else
         {
-            handler->PSendSysMessage("Found Achievement %u: %s", prestige1, ach->name);
+            std::string achName = ach->name ? std::string(ach->name) : "Unknown";
+            handler->PSendSysMessage("Found Achievement %u: %s", prestige1, achName.c_str());
             handler->PSendSysMessage("Category: %u | Points: %u | Flags: %u", ach->categoryId, ach->points, ach->flags);
         }
         
@@ -481,7 +482,8 @@ public:
             AchievementEntry const* achievement = sAchievementStore.LookupEntry(i);
             if (achievement)
             {
-                handler->PSendSysMessage("  %u - %s", i, achievement->name);
+                std::string name = achievement->name ? std::string(achievement->name) : "Unknown";
+                handler->PSendSysMessage("  %u - %s", i, name.c_str());
             }
             else
             {
