@@ -146,14 +146,14 @@ public:
     }
 
     // Quest achievements
-    void OnQuestRewardItem(Player* player, Item const* /*item*/, uint32 /*count*/) override
+    void OnPlayerCompleteQuest(Player* player, Quest const* /*quest*/) override
     {
         // TODO: Track custom quest completions
         // You would need to query how many custom quests the player has completed
     }
 
     // Area exploration
-    void OnUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {
         // Azshara Crater
         if (newZone == 268)
@@ -217,7 +217,7 @@ class DCAchievementPrestige : public PlayerScript
 public:
     DCAchievementPrestige() : PlayerScript("DCAchievementPrestige") { }
 
-    void OnLogin(Player* player, bool /*firstLogin*/) override
+    void OnPlayerLogin(Player* player) override
     {
         // Check prestige level and grant achievements
         QueryResult result = CharacterDatabase.Query(
@@ -278,7 +278,7 @@ class DCAchievementCollections : public PlayerScript
 public:
     DCAchievementCollections() : PlayerScript("DCAchievementCollections") { }
 
-    void OnLogin(Player* player, bool /*firstLogin*/) override
+    void OnPlayerLogin(Player* player) override
     {
         // Check mount count
         uint32 mountCount = GetMountCount(player);
