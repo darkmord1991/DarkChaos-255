@@ -394,14 +394,18 @@ public:
             // Remove any existing prestige buffs first
             RemovePrestigeBuffs(player);
             
-            // Cast the prestige spell with AddAura for permanent effect
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Adding aura for spell {}", spellId);
-            Aura* aura = player->AddAura(spellId, player);
+            // Use CastSpell instead of AddAura for better client visibility
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Casting prestige spell {}", spellId);
+            player->CastSpell(player, spellId, true);
             
             // Verify the aura was applied
-            if (aura || player->HasAura(spellId))
+            if (player->HasAura(spellId))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff aura applied! (Spell ID: {})|r", spellId);
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Aura may not have been applied!|r");
             }
         }
         
