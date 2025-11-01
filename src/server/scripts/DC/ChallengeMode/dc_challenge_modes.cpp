@@ -1006,8 +1006,9 @@ private:
                 break;
         }
         
-        // Send the description as a gossip text (you'll need to add this to gossip_menu_option or use system message)
-        player->PlayerTalkClass->SendGossipMenu(100000 + modeId, go->GetGUID());
+        // Send the description as gossip text using PlayerTalkClass
+        player->PlayerTalkClass->ClearMenus();
+        player->PlayerTalkClass->GetGossipTextId(go);
         
         // Add confirmation option
         std::string modeName = GetModeName(modeId);
@@ -1015,10 +1016,8 @@ private:
                         "Are you ABSOLUTELY SURE you want to enable this mode? This decision is PERMANENT and cannot be reversed!", 0, false);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<- Back to Challenge Modes", 0, 1000);
         
-        // Send description as system message since we can't easily modify gossip text
-        ChatHandler(player->GetSession()).PSendSysMessage(description.c_str());
-        
-        SendGossipMenuFor(player, 100000 + modeId, go->GetGUID());
+        // Send description as NPC text
+        player->PlayerTalkClass->SendGossipMenu(DEFAULT_GOSSIP_MESSAGE, go->GetGUID(), description);
     }
     
     std::string GetModeName(uint32 modeId)

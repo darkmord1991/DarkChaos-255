@@ -228,6 +228,13 @@ public:
         // Apply new prestige buffs (after save to ensure level is updated)
         ApplyPrestigeBuffs(player);
         
+        // Force update player to ensure buffs stick
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Updating player stats...");
+        player->UpdateAllStats();
+        player->SetFullHealth();
+        if (player->GetPowerType() == POWER_MANA)
+            player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
+        
         // Save again after applying buffs
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving after buffs...");
         player->SaveToDB(false, false);
@@ -293,17 +300,34 @@ public:
             // Remove any existing prestige buffs first
             RemovePrestigeBuffs(player);
             
-            // Cast the prestige spell
-            player->CastSpell(player, spellId, true);
+            // Cast the prestige spell with AddAura for permanent effect
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Adding aura for spell {}", spellId);
+            Aura* aura = player->AddAura(spellId, player);
             
             // Verify the aura was applied
-            if (player->HasAura(spellId))
+            if (aura || player->HasAura(spellId))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff successfully applied! (Spell ID: {})|r", spellId);
+                
+                // Update player stats to apply the aura effects
+                player->UpdateAllStats();
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Prestige spell cast but aura not detected!|r");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Failed to apply prestige aura!|r");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000Trying alternative method with CastSpell...|r");
+                
+                // Fallback: Try casting the spell
+                player->CastSpell(player, spellId, true);
+                
+                if (player->HasAura(spellId))
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff applied via CastSpell!|r");
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Both methods failed. Check spell DBC configuration!|r");
+                }
             }
         }
         else
