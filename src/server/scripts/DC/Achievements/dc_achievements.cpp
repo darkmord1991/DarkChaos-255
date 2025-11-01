@@ -460,7 +460,7 @@ public:
         }
         else
         {
-            std::string achName = ach->name ? std::string(ach->name) : "Unknown";
+            std::string achName = ach->name[0] ? std::string(ach->name[0]) : "Unknown";
             handler->PSendSysMessage("Found Achievement %u: %s", prestige1, achName.c_str());
             handler->PSendSysMessage("Category: %u | Points: %u | Flags: %u", ach->categoryId, ach->points, ach->flags);
         }
@@ -482,7 +482,7 @@ public:
             AchievementEntry const* achievement = sAchievementStore.LookupEntry(i);
             if (achievement)
             {
-                std::string name = achievement->name ? std::string(achievement->name) : "Unknown";
+                std::string name = achievement->name[0] ? std::string(achievement->name[0]) : "Unknown";
                 handler->PSendSysMessage("  %u - %s", i, name.c_str());
             }
             else
