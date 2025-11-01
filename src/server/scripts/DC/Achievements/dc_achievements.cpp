@@ -24,6 +24,8 @@
 #include "Battleground.h"
 #include "DatabaseEnv.h"
 #include "WorldSessionMgr.h"
+#include "SpellMgr.h"
+#include "SpellInfo.h"
 
 // Achievement IDs
 enum DCAchievements
@@ -191,7 +193,7 @@ private:
             return true;
             
         Field* fields = result->Fetch();
-        return fields[0].Get<uint32>() == 0;
+        return fields[0].Get<uint64>() == 0;
     }
     
     void RecordServerFirst(Player* player, std::string const& category)
@@ -306,15 +308,31 @@ public:
 private:
     uint32 GetMountCount(Player* player)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM character_spell WHERE guid = {} AND spell IN (SELECT id FROM spell_dbc WHERE Effect_1 IN (6, 36))",
-            player->GetGUID().GetCounter()
-        );
-        
-        if (!result)
-            return 0;
-            
-        return result->Fetch()[0].Get<uint32>();
+        // Count learned mount spells (Effect 6 = SPELL_EFFECT_APPLY_AURA with mount aura)
+        uint32 count = 0;
+        PlayerSpellMap const& spells = player->GetSpellMap();
+        for (auto const& spell : spells)
+        {
+            if (spell.second.state == PLAYERSPELL_REMOVED)
+                continue;
+                
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell.first);
+            if (!spellInfo)
+                continue;
+                
+            // Check if it's a mount spell (has mount aura effect)
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA &&
+                    (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED ||
+                     spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
     }
     
     uint32 GetPetCount(Player* player)
@@ -327,7 +345,7 @@ private:
         if (!result)
             return 0;
             
-        return result->Fetch()[0].Get<uint32>();
+        return result->Fetch()[0].Get<uint64>();
     }
     
     uint32 GetTitleCount(Player* player)
