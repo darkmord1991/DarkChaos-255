@@ -344,7 +344,7 @@ public:
                     case RACE_TAUREN:
                         mapId = 1; x = -2917.58f; y = -257.346f; z = 52.9957f;
                         break;
-                    case RACE_UNDEAD:
+                    case RACE_UNDEAD_PLAYER:
                         mapId = 0; x = 1919.33f; y = 238.470f; z = 60.7029f;
                         break;
                     case RACE_BLOODELF:
