@@ -26,6 +26,7 @@
 #include "SpellMgr.h"
 #include "AchievementMgr.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 
 enum PrestigeConfig
 {
@@ -50,16 +51,16 @@ enum PrestigeSpells
 
 enum PrestigeTitles
 {
-    TITLE_PRESTIGE_1  = 300,  // Custom title IDs (must add to CharTitles.dbc)
-    TITLE_PRESTIGE_2  = 301,
-    TITLE_PRESTIGE_3  = 302,
-    TITLE_PRESTIGE_4  = 303,
-    TITLE_PRESTIGE_5  = 304,
-    TITLE_PRESTIGE_6  = 305,
-    TITLE_PRESTIGE_7  = 306,
-    TITLE_PRESTIGE_8  = 307,
-    TITLE_PRESTIGE_9  = 308,
-    TITLE_PRESTIGE_10 = 309,
+    TITLE_PRESTIGE_1  = 178,  // Custom title IDs from CharTitles.dbc
+    TITLE_PRESTIGE_2  = 179,
+    TITLE_PRESTIGE_3  = 180,
+    TITLE_PRESTIGE_4  = 181,
+    TITLE_PRESTIGE_5  = 182,
+    TITLE_PRESTIGE_6  = 183,
+    TITLE_PRESTIGE_7  = 184,
+    TITLE_PRESTIGE_8  = 185,
+    TITLE_PRESTIGE_9  = 186,
+    TITLE_PRESTIGE_10 = 187,
 };
 
 struct PrestigeReward
@@ -192,8 +193,8 @@ public:
         // Announce
         if (announcePrestige)
         {
-            std::string announcement = Acore::StringFormat("Player {} has achieved Prestige Level {}!", playerName, newPrestige);
-            sWorld->SendWorldText(LANG_SYSTEMMESSAGE, announcement.c_str());
+            std::string announcement = Acore::StringFormat("|cFFFFD700[Prestige]|r Player {} has achieved Prestige Level {}!", playerName, newPrestige);
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, announcement);
         }
 
         // Notify player

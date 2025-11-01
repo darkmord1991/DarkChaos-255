@@ -44,27 +44,26 @@ INSERT INTO `spell_template` (`Id`, `Difficulty`, `Category`, `Dispel`, `Mechani
 (800019, 0, 0, 0, 0, 0x10000000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 101, 0, 0, 1, 1, 21, 1, 0, -1, 0, 0, 6, 6, 6, 0, 0, 0, 0, 0, 0, 9, 9, 9, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 137, 137, 137, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 'Prestige X Bonus - 10% All Stats');
 
 -- =====================================================================
--- PART 2: Prestige Title Rewards (Optional - requires DBC editing)
+-- PART 2: Prestige Title Rewards (Configured in CharTitles.dbc)
 -- =====================================================================
 -- NOTE: Titles in WoW 3.3.5a are stored in CharTitles.dbc
--- This section provides reference data for custom title creation
--- You must use a DBC editor to add these titles to CharTitles.dbc
+-- The following title IDs have been added to the DBC:
 -- =====================================================================
 
--- Reference Title IDs (add to CharTitles.dbc):
--- ID 300: "Prestige I %s"
--- ID 301: "Prestige II %s"
--- ID 302: "Prestige III %s"
--- ID 303: "Prestige IV %s"
--- ID 304: "Prestige V %s"
--- ID 305: "Prestige VI %s"
--- ID 306: "Prestige VII %s"
--- ID 307: "Prestige VIII %s"
--- ID 308: "Prestige IX %s"
--- ID 309: "Prestige X %s"
+-- Prestige Title IDs (added to CharTitles.dbc):
+-- ID 178: "Prestige I %s"
+-- ID 179: "Prestige II %s"
+-- ID 180: "Prestige III %s"
+-- ID 181: "Prestige IV %s"
+-- ID 182: "Prestige V %s"
+-- ID 183: "Prestige VI %s"
+-- ID 184: "Prestige VII %s"
+-- ID 185: "Prestige VIII %s"
+-- ID 186: "Prestige IX %s"
+-- ID 187: "Prestige X %s"
 
--- Alternative: Use existing title IDs if you prefer not to edit DBC
--- Example: Use titles from achievement system or PvP ranks
+-- These titles are automatically granted by the prestige system
+-- when a player reaches each prestige level.
 
 -- =====================================================================
 -- PART 3: Optional Prestige Achievements (requires achievement_dbc.sql)
