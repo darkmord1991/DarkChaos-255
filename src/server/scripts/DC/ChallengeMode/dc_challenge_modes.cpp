@@ -1018,7 +1018,7 @@ private:
         // Send description as system message since we can't easily modify gossip text
         ChatHandler(player->GetSession()).PSendSysMessage(description.c_str());
         
-        SendGossipMenuFor(player, go->GetGUID());
+        SendGossipMenuFor(player, 100000 + modeId, go->GetGUID());
     }
     
     std::string GetModeName(uint32 modeId)
