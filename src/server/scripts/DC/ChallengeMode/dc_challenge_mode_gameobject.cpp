@@ -13,7 +13,7 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "dc_challenge_modes.h"
-#include "dc_prestige_api.h"
+#include "Prestige/dc_prestige_api.h"
 #include <sstream>
 
 namespace
