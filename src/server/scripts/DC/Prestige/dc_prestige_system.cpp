@@ -419,7 +419,9 @@ public:
             // Cast with TRIGGERED_CAST_DIRECTLY and TRIGGERED_IGNORE_GCD to ensure the aura sticks
             // Use CastSpell with proper triggered flags for permanent passive auras
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Casting prestige spell {}", spellId);
-            player->CastSpell(player, spellId, CastSpellExtraArgs(TRIGGERED_CAST_DIRECTLY | TRIGGERED_IGNORE_GCD));
+            // CastSpell overload accepts TriggerCastFlags; use that instead of CastSpellExtraArgs which
+            // may not be available in this AzerothCore version.
+            player->CastSpell(player, spellId, TriggerCastFlags(TRIGGERED_CAST_DIRECTLY | TRIGGERED_IGNORE_GCD));
             
             // Verify the aura was applied
             if (player->HasAura(spellId))
