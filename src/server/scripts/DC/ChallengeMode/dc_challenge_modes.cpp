@@ -4,6 +4,8 @@
 
 #include "dc_challenge_modes.h"
 
+#include <array>
+
 ChallengeModes* ChallengeModes::instance()
 {
     static ChallengeModes instance;
@@ -199,6 +201,63 @@ uint32 ChallengeModes::getItemRewardAmount(ChallengeModeSettings setting) const
             break;
     }
     return 0;
+
+    namespace
+    {
+        struct ChallengeAuraDefinition
+        {
+            ChallengeModeSettings setting;
+            uint32 spellId;
+        };
+
+        constexpr std::array<ChallengeAuraDefinition, 8> ChallengeAuraTable =
+        {
+            ChallengeAuraDefinition{SETTING_HARDCORE, 800020},
+            ChallengeAuraDefinition{SETTING_SEMI_HARDCORE, 800021},
+            ChallengeAuraDefinition{SETTING_SELF_CRAFTED, 800022},
+            ChallengeAuraDefinition{SETTING_ITEM_QUALITY_LEVEL, 800023},
+            ChallengeAuraDefinition{SETTING_SLOW_XP_GAIN, 800024},
+            ChallengeAuraDefinition{SETTING_VERY_SLOW_XP_GAIN, 800025},
+            ChallengeAuraDefinition{SETTING_QUEST_XP_ONLY, 800026},
+            ChallengeAuraDefinition{SETTING_IRON_MAN, 800027}
+        };
+
+        constexpr uint32 ChallengeCombinationSpellId = 800028;
+    }
+
+    void ChallengeModes::RefreshChallengeAuras(Player* player)
+    {
+        if (!player)
+            return;
+
+        size_t activeModeCount = 0;
+
+        for (auto const& entry : ChallengeAuraTable)
+        {
+            bool shouldHaveAura = challengeEnabledForPlayer(entry.setting, player);
+
+            if (shouldHaveAura)
+            {
+                ++activeModeCount;
+                if (!player->HasAura(entry.spellId))
+                    player->CastSpell(player, entry.spellId, true);
+            }
+            else if (player->HasAura(entry.spellId))
+            {
+                player->RemoveAura(entry.spellId);
+            }
+        }
+
+        if (activeModeCount > 1)
+        {
+            if (!player->HasAura(ChallengeCombinationSpellId))
+                player->CastSpell(player, ChallengeCombinationSpellId, true);
+        }
+        else if (player->HasAura(ChallengeCombinationSpellId))
+        {
+            player->RemoveAura(ChallengeCombinationSpellId);
+        }
+    }
 }
 
 const std::unordered_map<uint8, uint32> *ChallengeModes::getAchievementMapForChallenge(ChallengeModeSettings setting) const
@@ -395,6 +454,7 @@ void OnPlayerLevelChanged(Player* player, uint8 /*oldlevel*/) override
     if (sChallengeModes->getDisableLevel(settingName) && sChallengeModes->getDisableLevel(settingName) <= level)
     {
         player->UpdatePlayerSetting("mod-challenge-modes", settingName, 0);
+        sChallengeModes->RefreshChallengeAuras(player);
     }
 }
 
@@ -424,6 +484,7 @@ public:
             return;
         }
         player->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+        sChallengeModes->RefreshChallengeAuras(player);
         player->GetSession()->KickPlayer("Hardcore character died");
     }
 
@@ -434,6 +495,7 @@ public:
             return;
         }
         killed->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+        sChallengeModes->RefreshChallengeAuras(killed);
     }
 
     void OnPlayerKilledByCreature(Creature* /*killer*/, Player* killed) override
@@ -443,6 +505,7 @@ public:
             return;
         }
         killed->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+        sChallengeModes->RefreshChallengeAuras(killed);
     }
 
     void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool /*applySickness*/) override
@@ -453,6 +516,7 @@ public:
         }
         // A better implementation is to not allow the resurrect but this will need a new hook added first
         player->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+        sChallengeModes->RefreshChallengeAuras(player);
         player->KillPlayer();
         player->GetSession()->KickPlayer("Hardcore character died");
     }
@@ -878,6 +942,7 @@ public:
         {
             uint32 modeId = action - 200;
             player->UpdatePlayerSetting("mod-challenge-modes", modeId, 1);
+            sChallengeModes->RefreshChallengeAuras(player);
             
             std::string modeName = GetModeName(modeId);
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700Challenge Mode Enabled: {}|r", modeName);
@@ -1046,6 +1111,17 @@ private:
     }
 };
 
+class ChallengeModeAuraManager : public PlayerScript
+{
+public:
+    ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager") { }
+
+    void OnLogin(Player* player) override
+    {
+        sChallengeModes->RefreshChallengeAuras(player);
+    }
+};
+
 // Add all scripts in one
 void AddSC_dc_challenge_modes()
 {
@@ -1059,4 +1135,5 @@ void AddSC_dc_challenge_modes()
     new ChallengeMode_VerySlowXpGain();
     new ChallengeMode_QuestXpOnly();
     new ChallengeMode_IronMan();
+    new ChallengeModeAuraManager();
 }

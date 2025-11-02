@@ -16,6 +16,8 @@
 #include "GameTime.h"
 #include "SpellAuras.h"
 
+#include <array>
+
 using namespace Acore::ChatCommands;
 
 ChallengeModes* ChallengeModes::instance()
@@ -196,6 +198,63 @@ uint32 ChallengeModes::getItemRewardAmount(ChallengeModeSettings setting) const
             return ironManItemRewardAmount;
         default:
             return 1;
+    }
+}
+
+namespace
+{
+    struct ChallengeAuraDefinition
+    {
+        ChallengeModeSettings setting;
+        uint32 spellId;
+    };
+
+    constexpr std::array<ChallengeAuraDefinition, 8> ChallengeAuraTable =
+    {
+        ChallengeAuraDefinition{SETTING_HARDCORE, 800020},
+        ChallengeAuraDefinition{SETTING_SEMI_HARDCORE, 800021},
+        ChallengeAuraDefinition{SETTING_SELF_CRAFTED, 800022},
+        ChallengeAuraDefinition{SETTING_ITEM_QUALITY_LEVEL, 800023},
+        ChallengeAuraDefinition{SETTING_SLOW_XP_GAIN, 800024},
+        ChallengeAuraDefinition{SETTING_VERY_SLOW_XP_GAIN, 800025},
+        ChallengeAuraDefinition{SETTING_QUEST_XP_ONLY, 800026},
+        ChallengeAuraDefinition{SETTING_IRON_MAN, 800027}
+    };
+
+    constexpr uint32 ChallengeCombinationSpellId = 800028;
+}
+
+void ChallengeModes::RefreshChallengeAuras(Player* player)
+{
+    if (!player)
+        return;
+
+    size_t activeModeCount = 0;
+
+    for (auto const& entry : ChallengeAuraTable)
+    {
+        bool shouldHaveAura = challengeEnabledForPlayer(entry.setting, player);
+
+        if (shouldHaveAura)
+        {
+            ++activeModeCount;
+            if (!player->HasAura(entry.spellId))
+                player->CastSpell(player, entry.spellId, true);
+        }
+        else if (player->HasAura(entry.spellId))
+        {
+            player->RemoveAura(entry.spellId);
+        }
+    }
+
+    if (activeModeCount > 1)
+    {
+        if (!player->HasAura(ChallengeCombinationSpellId))
+            player->CastSpell(player, ChallengeCombinationSpellId, true);
+    }
+    else if (player->HasAura(ChallengeCombinationSpellId))
+    {
+        player->RemoveAura(ChallengeCombinationSpellId);
     }
 }
 
@@ -613,6 +672,7 @@ public:
             
             // Activate challenge mode
             player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
+            sChallengeModes->RefreshChallengeAuras(player);
             
             std::string title = GetChallengeTitle(setting);
             
@@ -643,6 +703,7 @@ void HandleHardcoreDeath(Player* victim, std::string killerName)
 {
     // Mark character as permanently dead
     victim->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+    sChallengeModes->RefreshChallengeAuras(victim);
     
     // Global announcement
     std::ostringstream ss;
@@ -809,6 +870,17 @@ public:
     }
 };
 
+class ChallengeModeAuraManager : public PlayerScript
+{
+public:
+    ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager") { }
+
+    void OnLogin(Player* player) override
+    {
+        sChallengeModes->RefreshChallengeAuras(player);
+    }
+};
+
 // ==============================================
 // DarkChaos-255: SCRIPT REGISTRATION
 // ==============================================
@@ -819,4 +891,5 @@ void AddSC_dc_challenge_modes()
     new ChallengeMode_Hardcore();
     new ChallengeModes_LoginPrevention();
     new ChallengeModes_CommandScript();
+    new ChallengeModeAuraManager();
 }

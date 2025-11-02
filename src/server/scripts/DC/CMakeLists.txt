@@ -11,6 +11,7 @@ set(SCRIPTS_DC_ChallengeMode
     ChallengeMode/dc_challenge_modes_customized.cpp
     ChallengeMode/dc_challenge_mode_database.cpp
     ChallengeMode/dc_challenge_mode_gameobject.cpp
+    ChallengeMode/spell_challenge_mode_auras.cpp
 )
 
 # Hotspot System scripts

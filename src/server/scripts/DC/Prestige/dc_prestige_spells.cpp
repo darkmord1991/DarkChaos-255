@@ -27,9 +27,31 @@ namespace
             amount = static_cast<int32>(PrestigeLevel * bonusPerLevel);
         }
 
+        void AdjustArmor(AuraEffect const* aurEff, bool apply)
+        {
+            Unit* target = GetTarget();
+            if (!target || !aurEff)
+                return;
+
+            float bonusPct = static_cast<float>(aurEff->GetAmount());
+            target->HandleStatModifier(UNIT_MOD_ARMOR, TOTAL_PCT, bonusPct, apply);
+        }
+
+        void HandleArmorApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+        {
+            AdjustArmor(aurEff, true);
+        }
+
+        void HandleArmorRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+        {
+            AdjustArmor(aurEff, false);
+        }
+
         void Register() override
         {
             DoEffectCalcAmount += AuraEffectCalcAmountFn(PrestigeBonusAuraScript::CalculateAmount, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE);
+            OnEffectApply += AuraEffectApplyFn(PrestigeBonusAuraScript::HandleArmorApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
+            OnEffectRemove += AuraEffectRemoveFn(PrestigeBonusAuraScript::HandleArmorRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
         }
     };
 
