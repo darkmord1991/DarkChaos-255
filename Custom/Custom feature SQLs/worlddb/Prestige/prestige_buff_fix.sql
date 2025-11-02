@@ -18,13 +18,24 @@
 DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;
 
 -- =====================================================================
+-- Step 1.5: Clear Equipment Requirements for Custom Spells
+-- =====================================================================
+-- DarkChaos custom spells (800000-899999) should not require specific equipment
+-- to apply. Clear any lingering EquippedItemClass requirements that might block
+-- aura application to players without the required item equipped.
+-- This applies to prestige, challenge modes, and hotspot buffs.
+-- =====================================================================
+
+
+-- =====================================================================
 -- Step 2: Create Hotspot XP Buff Spell
 -- =====================================================================
 -- Spell ID: 800001 (Hotspot XP Buff)
 -- Purpose: Marker aura for XP bonus when player is in hotspot zone
 -- Aura Type: 4 (SPELL_AURA_DUMMY - marker only)
 -- Effect: 6 (SPELL_EFFECT_APPLY_AURA)
--- Duration: 0 (Permanent while in hotspot)
+-- Duration: 21 (Permanent while in hotspot)
+-- Attributes: 0x104 (0x100 = passive + 0x4 = show in aura bar)
 -- =====================================================================
 
 INSERT INTO `spell_dbc` 
@@ -32,7 +43,7 @@ INSERT INTO `spell_dbc`
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
  `SchoolMask`, `Name_Lang_enUS`)
 VALUES
-(800001, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Hotspot - XP Buff 100%');
+(800001, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Hotspot - XP Buff 100%');
 
 -- =====================================================================
 -- Step 3: Create Prestige Bonus Aura Spells
@@ -46,30 +57,30 @@ VALUES
 -- =====================================================================
 
 INSERT INTO `spell_dbc` 
-(`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
+(`ID`, `Attributes`, `AttributesEx`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
  `SchoolMask`, `Name_Lang_enUS`)
 VALUES
 -- Prestige Level 1: 1% All Stats
-(800010, 0x100, 1, 0, 1, 6, 0, 0, 1, 137, 1, 'DC Prestige 1 - Enhanced Stats'),
+(800010, 0x144, 0x100, 1, 21, 1, 6, 0, 0, 21, 137, 1, 'DC Prestige 1 - Enhanced Stats'),
 -- Prestige Level 2: 2% All Stats  
-(800011, 0x100, 1, 0, 1, 6, 1, 0, 1, 137, 1, 'DC Prestige 2 - Enhanced Stats'),
+(800011, 0x144, 0x100, 1, 21, 1, 6, 1, 0, 21, 137, 1, 'DC Prestige 2 - Enhanced Stats'),
 -- Prestige Level 3: 3% All Stats
-(800012, 0x100, 1, 0, 1, 6, 2, 0, 1, 137, 1, 'DC Prestige 3 - Enhanced Stats'),
+(800012, 0x144, 0x100, 1, 21, 1, 6, 2, 0, 21, 137, 1, 'DC Prestige 3 - Enhanced Stats'),
 -- Prestige Level 4: 4% All Stats
-(800013, 0x100, 1, 0, 1, 6, 3, 0, 1, 137, 1, 'DC Prestige 4 - Enhanced Stats'),
+(800013, 0x144, 0x100, 1, 21, 1, 6, 3, 0, 21, 137, 1, 'DC Prestige 4 - Enhanced Stats'),
 -- Prestige Level 5: 5% All Stats
-(800014, 0x100, 1, 0, 1, 6, 4, 0, 1, 137, 1, 'DC Prestige 5 - Enhanced Stats'),
+(800014, 0x144, 0x100, 1, 21, 1, 6, 4, 0, 21, 137, 1, 'DC Prestige 5 - Enhanced Stats'),
 -- Prestige Level 6: 6% All Stats
-(800015, 0x100, 1, 0, 1, 6, 5, 0, 1, 137, 1, 'DC Prestige 6 - Enhanced Stats'),
+(800015, 0x144, 0x100, 1, 21, 1, 6, 5, 0, 21, 137, 1, 'DC Prestige 6 - Enhanced Stats'),
 -- Prestige Level 7: 7% All Stats
-(800016, 0x100, 1, 0, 1, 6, 6, 0, 1, 137, 1, 'DC Prestige 7 - Enhanced Stats'),
+(800016, 0x144, 0x100, 1, 21, 1, 6, 6, 0, 21, 137, 1, 'DC Prestige 7 - Enhanced Stats'),
 -- Prestige Level 8: 8% All Stats
-(800017, 0x100, 1, 0, 1, 6, 7, 0, 1, 137, 1, 'DC Prestige 8 - Enhanced Stats'),
+(800017, 0x144, 0x100, 1, 21, 1, 6, 7, 0, 21, 137, 1, 'DC Prestige 8 - Enhanced Stats'),
 -- Prestige Level 9: 9% All Stats
-(800018, 0x100, 1, 0, 1, 6, 8, 0, 1, 137, 1, 'DC Prestige 9 - Enhanced Stats'),
+(800018, 0x144, 0x100, 1, 21, 1, 6, 8, 0, 21, 137, 1, 'DC Prestige 9 - Enhanced Stats'),
 -- Prestige Level 10: 10% All Stats
-(800019, 0x100, 1, 0, 1, 6, 9, 0, 1, 137, 1, 'DC Prestige 10 - Enhanced Stats');
+(800019, 0x144, 0x100, 1, 21, 1, 6, 9, 0, 21, 137, 1, 'DC Prestige 10 - Enhanced Stats');
 
 -- =====================================================================
 -- Step 4: Create Challenge Mode Aura Spells
@@ -88,23 +99,23 @@ INSERT INTO `spell_dbc`
  `SchoolMask`, `Name_Lang_enUS`)
 VALUES
 -- Hardcore Mode (800020)
-(800020, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Hardcore Mode - One Death and You Die'),
+(800020, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Hardcore Mode - One Death and You Die'),
 -- Semi-Hardcore Mode (800021)  
-(800021, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Semi-Hardcore - Multiple Lives Allowed'),
+(800021, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Semi-Hardcore - Multiple Lives Allowed'),
 -- Self-Crafted Only Mode (800022)
-(800022, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Self-Crafted - You Must Craft Your Own Gear'),
+(800022, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Self-Crafted - You Must Craft Your Own Gear'),
 -- Item Quality Level Restriction (800023)
-(800023, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Item Quality Restriction - Limited to Green or Better'),
+(800023, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Item Quality Restriction - Limited to Green or Better'),
 -- Slow XP Gain (800024)
-(800024, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Slow XP Mode - Reduced Experience Gain'),
+(800024, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Slow XP Mode - Reduced Experience Gain'),
 -- Very Slow XP Gain (800025)
-(800025, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Very Slow XP - Minimal Experience Gain'),
+(800025, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Very Slow XP - Minimal Experience Gain'),
 -- Quest XP Only (800026)
-(800026, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Quest XP Only - No Mob Experience'),
+(800026, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Quest XP Only - No Mob Experience'),
 -- Iron Man Mode (800027)
-(800027, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Iron Man Mode - Hardcore + Self-Crafted + Item Restrictions'),
+(800027, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Iron Man Mode - Hardcore + Self-Crafted + Item Restrictions'),
 -- Challenge Combinations (800028)
-(800028, 0x100, 1, 0, 1, 6, 0, 0, 1, 4, 1, 'DC Challenge Mode Active - Multiple Challenges Enabled');
+(800028, 0x104, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Challenge Mode Active - Multiple Challenges Enabled');
 
 -- =====================================================================
 -- Integration Instructions
@@ -227,6 +238,19 @@ VALUES
 -- =====================================================================
 -- Verification Queries
 -- =====================================================================
+
+UPDATE `spell_dbc`
+SET EquippedItemClass = -1,
+    EquippedItemSubclass = 0,
+    EquippedItemInvTypes = 0
+WHERE ID >= 800000 AND ID < 900000;
+
+-- Also clear for Sayge's buff (hotspot detection spell)
+UPDATE `spell_dbc`
+SET EquippedItemClass = -1,
+    EquippedItemSubclass = 0,
+    EquippedItemInvTypes = 0
+WHERE ID = 23768;
 
 -- Verify all spells were created:
 SELECT COUNT(*) as total_spells FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;

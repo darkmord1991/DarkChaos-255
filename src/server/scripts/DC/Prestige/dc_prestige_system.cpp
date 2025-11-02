@@ -169,6 +169,28 @@ public:
         // Reset level
         player->SetLevel(resetLevel);
         
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Clearing player flags for XP bar display...");
+        // Ensure player is alive and not in ghost state (prevents XP bar from showing)
+        if (player->isDead())
+        {
+            player->ResurrectPlayer(1.0f);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player was dead, resurrecting...");
+        }
+        
+        // Clear ghost flag if set
+        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed GHOST flag");
+        }
+        
+        // Ensure player is not flagged as out of bounds
+        if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
+        }
+        
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling InitStatsForLevel...");
         player->InitStatsForLevel(true);
         
@@ -452,6 +474,28 @@ public:
         return TITLE_PRESTIGE_1 + (prestigeLevel - 1);
     }
 
+    void UpdatePrestigeAchievements(Player* player, uint32 prestigeLevel)
+    {
+        if (!player)
+            return;
+
+        // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
+        uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
+        AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
+        if (achievementEntry)
+        {
+            player->CompletedAchievement(achievementEntry);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
+        }
+        else
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Prestige achievement ID {} not found!|r", achievementId);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00Run the SQL: Custom/Custom feature SQLs/Achievements/dc_achievements.sql|r");
+        }
+    }
+
 private:
     bool enabled;
     uint32 requireLevel;
@@ -525,25 +569,6 @@ private:
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Title ID {} not found in CharTitles.dbc!|r", titleId);
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00Titles need to be added to CharTitles.dbc for 3.3.5a|r");
             }
-        }
-    }
-
-    void UpdatePrestigeAchievements(Player* player, uint32 prestigeLevel)
-    {
-        // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
-        uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
-        AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
-        if (achievementEntry)
-        {
-            player->CompletedAchievement(achievementEntry);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
-        }
-        else
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Prestige achievement ID {} not found!|r", achievementId);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00Run the SQL: Custom/Custom feature SQLs/Achievements/dc_achievements.sql|r");
         }
     }
 
@@ -637,6 +662,27 @@ public:
 
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== PRESTIGE SYSTEM LOGIN DEBUG ===|r");
 
+        // Clear player flags that might prevent XP bar display
+        if (player->isDead())
+        {
+            player->ResurrectPlayer(1.0f);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player was dead on login, resurrecting...");
+        }
+        
+        // Clear ghost flag if set (prevents XP bar from showing)
+        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed GHOST flag");
+        }
+        
+        // Ensure player is not flagged as out of bounds
+        if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
+        }
+
         // Apply prestige buffs on login
         uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player prestige level from DB: {}", prestigeLevel);
@@ -645,6 +691,10 @@ public:
         {
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling ApplyPrestigeBuffs for level {}", prestigeLevel);
             PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+            
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Reapplying prestige achievements on login...");
+            // Reapply achievements on login in case they were lost (especially in GM mode)
+            PrestigeSystem::instance()->UpdatePrestigeAchievements(player, prestigeLevel);
         }
         else
         {
