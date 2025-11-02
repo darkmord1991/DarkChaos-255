@@ -57,8 +57,8 @@ local addon = {
 }
 
 local MAP_TYPES = {
-    azshara = { mapId = 37, zoneId = 268, altMapIds = { 613 }, worldMapAreaId = 613 },
-    hyjal = { mapId = 1, zoneId = 616, altMapIds = { 616, 614 }, worldMapAreaId = 614 }
+    azshara = { mapId = 37, zoneId = 268, worldMapAreaId = 613 },
+    hyjal = { mapId = 1, zoneId = 616, altMapIds = { 616 }, worldMapAreaId = 614 }
 }
 
 local function ContainsValue(tbl, value)
@@ -156,17 +156,20 @@ local texturePaths = {
 -- These will be converted to pixel positions on the map display
 local poi_data = {
     azshara = {
-        {name = "Startcamp", x = 0.467409, y = 0.259053},
-        {name = "Flight Master", x = 0.453847, y = 0.286819},
-        {name = "Innkeeper", x = 0.460444, y = 0.250035},
-        {name = "Auction House", x = 0.464188, y = 0.245202},
-        {name = "Stable Master", x = 0.459148, y = 0.253538},
-        {name = "Transmogrifier", x = 0.471547, y = 0.263113},
-        {name = "Riding Trainer", x = 0.465035, y = 0.278703},
-        {name = "Profession Trainers", x = 0.447206, y = 0.203196},
-        {name = "Weapon Trainer", x = 0.460299, y = 0.261504},
-        {name = "Violet Temple", x = 0.303832, y = 0.683899},
-        {name = "Dragon Statues", x = 0.424629, y = 0.625502}
+        -- INSTRUCTIONS: Visit each location, type /dcmap poi, and paste the output here
+        -- The coordinates below are PLACEHOLDERS and WRONG - they need GPS calibration!
+        -- 
+        -- {name = "Startcamp", x = 0.754, y = 0.493},  -- PLACEHOLDER - needs GPS coords
+        -- {name = "Flight Master", x = 0.718, y = 0.533},  -- PLACEHOLDER
+        -- {name = "Innkeeper", x = 0.734, y = 0.481},  -- PLACEHOLDER
+        -- {name = "Auctionhouse", x = 0.745, y = 0.474},  -- PLACEHOLDER
+        -- {name = "Stable Master", x = 0.730, y = 0.486},  -- PLACEHOLDER
+        -- {name = "Transmog", x = 0.766, y = 0.500},  -- PLACEHOLDER
+        -- {name = "Riding Trainer", x = 0.747, y = 0.523},  -- PLACEHOLDER
+        -- {name = "Profession Trainers", x = 0.696, y = 0.414},  -- PLACEHOLDER
+        -- {name = "Weapon Trainer", x = 0.734, y = 0.498},  -- PLACEHOLDER
+        -- {name = "Violet Temple", x = 0.284, y = 0.604},  -- PLACEHOLDER
+        -- {name = "Dragon Statues", x = 0.616, y = 0.520}  -- PLACEHOLDER
     },
     hyjal = {
         -- INSTRUCTIONS: Visit each location, type /dcmap poi, and paste the output here
@@ -224,19 +227,8 @@ local mapBounds = {
         minY = -1116.0,
         maxY = 1756.0
     },
-    [613] = {  -- Azshara Crater native UiMapID
-        minX = -1884.0,
-        maxX = 2427.0,
-        minY = -1116.0,
-        maxY = 1756.0
-    },
-    [616] = {  -- Mount Hyjal legacy fallback
-        minX = -5175.0,
-        maxX = -929.1666,
-        minY = 3364.583,
-        maxY = 6195.833
-    },
-    [614] = {  -- Mount Hyjal native UiMapID
+    [616] = {  -- Mount Hyjal custom zone (Zone ID 616)
+        -- Bounds sourced from WorldMapArea.csv (entry 614)
         minX = -5175.0,
         maxX = -929.1666,
         minY = 3364.583,
@@ -872,10 +864,11 @@ local function CreatePOIMarkers(mapType)
         marker:SetScript("OnLeave", function(self)
             GameTooltip:Hide()
         end)
-
-        marker:Show()
-        table.insert(addon.poiMarkers, marker)
-        Debug("Created POI marker:", poi.name, string.format("(%.3f, %.3f)", nx, ny))
+        
+            marker:Show()
+            table.insert(addon.poiMarkers, marker)
+            Debug("Created POI marker:", poi.name, "at", poiX, poiY)
+        end
     end
     
     Debug("Created", #addon.poiMarkers, "POI markers for", mapType)

@@ -15,19 +15,16 @@ local function RegisterCustomZones()
     
     -- Access internal mapData table
     local mapData = lib.mapData or {}
-    if not lib.mapData then
-        lib.mapData = mapData
-    end
     
-    -- AZSHARA CRATER (UiMapID 613, Zone ID 268)
+    -- AZSHARA CRATER (Map ID 37, Zone ID 268)
     -- Bounds sourced from WorldMapArea.csv (entry 613) for native map tiles
-    mapData[613] = {
+    mapData[37] = {
         ['floors'] = 0,
         ['name'] = "AzsharaCrater",
         ['area_id'] = 268,
-        ['rzti'] = 1,  -- Kalimdor
+        ['rzti'] = 0,  -- Not an instance
         ['map_type'] = 0,  -- Normal zone
-        ['continent'] = 2,  -- Kalimdor
+    ['continent'] = 2,  -- Kalimdor
         ['link'] = 0,
         ['transform'] = 0,
         [1] = {
@@ -40,15 +37,15 @@ local function RegisterCustomZones()
         }
     }
     
-    -- HYJAL SUMMIT - custom world map entry (UiMapID 614)
+    -- HYJAL - Use zone 616 for Hyjal, NOT map 1
     -- Bounds sourced from WorldMapArea.csv (entry 614)
-    mapData[614] = {
+    mapData[616] = {
         ['floors'] = 0,
         ['name'] = "Hyjal",
         ['area_id'] = 616,
         ['rzti'] = 1,  -- Kalimdor
         ['map_type'] = 0,  -- Normal zone
-        ['continent'] = 2,  -- Kalimdor
+    ['continent'] = 2,  -- Kalimdor
         ['link'] = 0,
         ['transform'] = 0,
         [1] = {
@@ -63,21 +60,14 @@ local function RegisterCustomZones()
     
     -- Register area ID to map name mapping
     if lib.idToMap then
-        lib.idToMap["AzsharaCrater"] = 613
         lib.idToMap[268] = "AzsharaCrater"  -- Azshara Crater
-        lib.idToMap["Hyjal"] = 614
         lib.idToMap[616] = "Hyjal"          -- Hyjal
     end
     
     -- Register map name to localized name mapping (if needed)
     if lib.mapToLocal then
         lib.mapToLocal["AzsharaCrater"] = "Azshara Crater"
-        lib.mapToLocal["Hyjal"] = "Hyjal Summit"
-    end
-
-    if lib.localToMap then
-        lib.localToMap["Azshara Crater"] = "AzsharaCrater"
-        lib.localToMap["Hyjal Summit"] = "Hyjal"
+        lib.mapToLocal["Hyjal"] = "Hyjal"
     end
     
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExtension] Registered custom zones in LibMapData-1.0|r")
