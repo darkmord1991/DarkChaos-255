@@ -311,13 +311,13 @@ class spell_challenge_combination_800028 : public AuraScript
 // Register all challenge mode aura scripts
 void AddSC_spell_challenge_mode_auras()
 {
-    RegisterAuraScript(spell_challenge_hardcore_800020);
-    RegisterAuraScript(spell_challenge_semi_hardcore_800021);
-    RegisterAuraScript(spell_challenge_self_crafted_800022);
-    RegisterAuraScript(spell_challenge_item_quality_800023);
-    RegisterAuraScript(spell_challenge_slow_xp_800024);
-    RegisterAuraScript(spell_challenge_very_slow_xp_800025);
-    RegisterAuraScript(spell_challenge_quest_xp_only_800026);
-    RegisterAuraScript(spell_challenge_iron_man_800027);
-    RegisterAuraScript(spell_challenge_combination_800028);
+    new spell_challenge_hardcore_800020();
+    new spell_challenge_semi_hardcore_800021();
+    new spell_challenge_self_crafted_800022();
+    new spell_challenge_item_quality_800023();
+    new spell_challenge_slow_xp_800024();
+    new spell_challenge_very_slow_xp_800025();
+    new spell_challenge_quest_xp_only_800026();
+    new spell_challenge_iron_man_800027();
+    new spell_challenge_combination_800028();
 }
