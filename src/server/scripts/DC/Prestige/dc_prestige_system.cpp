@@ -27,6 +27,7 @@
 #include "AchievementMgr.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+#include "dc_prestige_api.h"
 #include <sstream>
 
 using namespace Acore::ChatCommands;
@@ -1005,4 +1006,47 @@ void AddSC_dc_prestige_system()
     new PrestigePlayerScript();
     new PrestigeCommandScript();
     new PrestigeWorldScript();
+}
+
+namespace PrestigeAPI
+{
+    bool IsEnabled()
+    {
+        return PrestigeSystem::instance()->IsEnabled();
+    }
+
+    uint32 GetPrestigeLevel(Player* player)
+    {
+        return PrestigeSystem::instance()->GetPrestigeLevel(player);
+    }
+
+    uint32 GetMaxPrestigeLevel()
+    {
+        return PrestigeSystem::instance()->GetMaxPrestigeLevel();
+    }
+
+    uint32 GetRequiredLevel()
+    {
+        return PrestigeSystem::instance()->GetRequiredLevel();
+    }
+
+    uint32 GetStatBonusPercent()
+    {
+        return PrestigeSystem::instance()->GetStatBonusPercent();
+    }
+
+    bool CanPrestige(Player* player)
+    {
+        return PrestigeSystem::instance()->CanPrestige(player);
+    }
+
+    void ApplyPrestigeBuffs(Player* player)
+    {
+        PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+    }
+
+    void PerformPrestige(Player* player)
+    {
+        PrestigeSystem::instance()->PerformPrestige(player);
+    }
 }
