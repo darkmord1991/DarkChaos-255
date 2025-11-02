@@ -190,14 +190,14 @@ DEFINE_PRESTIGE_SPELL(10)
 // Register all prestige spell scripts
 void AddSC_dc_prestige_spells()
 {
-    RegisterAuraScript(spell_prestige_bonus_1);
-    RegisterAuraScript(spell_prestige_bonus_2);
-    RegisterAuraScript(spell_prestige_bonus_3);
-    RegisterAuraScript(spell_prestige_bonus_4);
-    RegisterAuraScript(spell_prestige_bonus_5);
-    RegisterAuraScript(spell_prestige_bonus_6);
-    RegisterAuraScript(spell_prestige_bonus_7);
-    RegisterAuraScript(spell_prestige_bonus_8);
-    RegisterAuraScript(spell_prestige_bonus_9);
-    RegisterAuraScript(spell_prestige_bonus_10);
+    new spell_prestige_bonus_1();
+    new spell_prestige_bonus_2();
+    new spell_prestige_bonus_3();
+    new spell_prestige_bonus_4();
+    new spell_prestige_bonus_5();
+    new spell_prestige_bonus_6();
+    new spell_prestige_bonus_7();
+    new spell_prestige_bonus_8();
+    new spell_prestige_bonus_9();
+    new spell_prestige_bonus_10();
 }
