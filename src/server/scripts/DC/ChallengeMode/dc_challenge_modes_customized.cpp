@@ -875,7 +875,7 @@ class ChallengeModeAuraManager : public PlayerScript
 public:
     ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         sChallengeModes->RefreshChallengeAuras(player);
     }

@@ -201,63 +201,6 @@ uint32 ChallengeModes::getItemRewardAmount(ChallengeModeSettings setting) const
             break;
     }
     return 0;
-
-    namespace
-    {
-        struct ChallengeAuraDefinition
-        {
-            ChallengeModeSettings setting;
-            uint32 spellId;
-        };
-
-        constexpr std::array<ChallengeAuraDefinition, 8> ChallengeAuraTable =
-        {
-            ChallengeAuraDefinition{SETTING_HARDCORE, 800020},
-            ChallengeAuraDefinition{SETTING_SEMI_HARDCORE, 800021},
-            ChallengeAuraDefinition{SETTING_SELF_CRAFTED, 800022},
-            ChallengeAuraDefinition{SETTING_ITEM_QUALITY_LEVEL, 800023},
-            ChallengeAuraDefinition{SETTING_SLOW_XP_GAIN, 800024},
-            ChallengeAuraDefinition{SETTING_VERY_SLOW_XP_GAIN, 800025},
-            ChallengeAuraDefinition{SETTING_QUEST_XP_ONLY, 800026},
-            ChallengeAuraDefinition{SETTING_IRON_MAN, 800027}
-        };
-
-        constexpr uint32 ChallengeCombinationSpellId = 800028;
-    }
-
-    void ChallengeModes::RefreshChallengeAuras(Player* player)
-    {
-        if (!player)
-            return;
-
-        size_t activeModeCount = 0;
-
-        for (auto const& entry : ChallengeAuraTable)
-        {
-            bool shouldHaveAura = challengeEnabledForPlayer(entry.setting, player);
-
-            if (shouldHaveAura)
-            {
-                ++activeModeCount;
-                if (!player->HasAura(entry.spellId))
-                    player->CastSpell(player, entry.spellId, true);
-            }
-            else if (player->HasAura(entry.spellId))
-            {
-                player->RemoveAura(entry.spellId);
-            }
-        }
-
-        if (activeModeCount > 1)
-        {
-            if (!player->HasAura(ChallengeCombinationSpellId))
-                player->CastSpell(player, ChallengeCombinationSpellId, true);
-        }
-        else if (player->HasAura(ChallengeCombinationSpellId))
-        {
-            player->RemoveAura(ChallengeCombinationSpellId);
-        }
-    }
 }
 
 const std::unordered_map<uint8, uint32> *ChallengeModes::getAchievementMapForChallenge(ChallengeModeSettings setting) const
@@ -1116,7 +1059,7 @@ class ChallengeModeAuraManager : public PlayerScript
 public:
     ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         sChallengeModes->RefreshChallengeAuras(player);
     }
