@@ -83,7 +83,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Gilneas}
 )
 
-# Expose module config to the modules installer
-set(MODULE_CONFIG_PATH ${CMAKE_CURRENT_SOURCE_DIR}/HinterlandBG)
-set(configFileName hinterlandbg.conf.dist)
-CopyModuleConfig("${MODULE_CONFIG_PATH}/${configFileName}")
+# The DC HinterlandBG config was merged into the consolidated
+# custom config (Custom/Config files/darkchaos-custom.conf.dist).
+# Do not copy the legacy hinterlandbg.conf.dist here because it may
+# not exist in this repository layout.

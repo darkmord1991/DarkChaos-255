@@ -120,8 +120,9 @@ endforeach()
 
 message("")
 
-# Copy DC HinterlandBG config into configs/modules as well
-CopyModuleConfig("${CMAKE_SOURCE_DIR}/src/server/scripts/DC/HinterlandBG/hinterlandbg.conf.dist")
+# DC HinterlandBG config was consolidated into a single custom config
+# (see Custom/Config files/darkchaos-custom.conf.dist). Do not try to
+# copy the legacy hinterlandbg.conf.dist file which may be missing.
 
 # Base sources which are used by every script project
 if (USE_SCRIPTPCH)
@@ -351,8 +352,8 @@ foreach(ModuleName ${MODULE_LIST__})
   endforeach()
 endforeach()
 
-# Include DC HinterlandBG config in module configs list so it loads via ConfigMgr
-set(CONFIG_LIST ${CONFIG_LIST}hinterlandbg.conf.dist,)
+# Note: legacy hinterlandbg.conf.dist is intentionally omitted; use
+# the consolidated custom config in Custom/Config files instead.
 
 # Define modules list
 target_compile_options(modules
