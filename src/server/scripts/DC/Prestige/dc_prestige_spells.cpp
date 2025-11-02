@@ -113,7 +113,7 @@ class spell_prestige_bonus_1 : public AuraScript
         // DEBUG: Log when aura is applied
         if (Player* player = target->ToPlayer())
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige Level 1 aura applied! Bonus: %d%%|r", (1 * bonusPercent));
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige Level 1 aura applied! Bonus: {}%|r", (1 * bonusPercent));
         }
     }
 
@@ -134,8 +134,8 @@ class spell_prestige_bonus_1 : public AuraScript
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -177,8 +177,8 @@ class spell_prestige_bonus_##NUM : public AuraScript \
     \
     void Register() override \
     { \
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
     } \
 };
 

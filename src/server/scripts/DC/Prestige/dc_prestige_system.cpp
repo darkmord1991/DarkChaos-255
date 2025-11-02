@@ -191,6 +191,13 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
         }
         
+        // CRITICAL: Clear NO_XP_GAIN flag - allows player to gain experience after prestige
+        if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed NO_XP_GAIN flag - player can now gain XP");
+        }
+        
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling InitStatsForLevel...");
         player->InitStatsForLevel(true);
         
@@ -257,9 +264,15 @@ public:
         if (player->getPowerType() == POWER_MANA)
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
         
-        // CRITICAL: Send updated player data to client to refresh XP bar and other UI elements
-        // This ensures the client knows the player's new level and can display the XP bar properly
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Sending player data to client for UI refresh...");
+        // CRITICAL FIX for XP bar: Force the client to update experience display
+        // The XP bar won't show if the client doesn't know about the level/XP reset
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Forcing XP bar refresh...");
+        // Reset experience to 0 and update value to ensure client syncs
+        uint32 newXpForLevel = player->GetXPForLevel(resetLevel);
+        player->SetUInt32Value(PLAYER_XP, 0);
+        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
+        
+        // Send player data update to client so it rebuilds the XP bar UI with new level
         player->SendInitialPacketsBeforeAddToMap();
         
         // Save again after applying buffs
@@ -688,6 +701,13 @@ public:
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
+        }
+        
+        // CRITICAL: Clear NO_XP_GAIN flag on login - allows prestige player to gain experience
+        if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed NO_XP_GAIN flag - player can now gain XP");
         }
 
         // Apply prestige buffs on login
