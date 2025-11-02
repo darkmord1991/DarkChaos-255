@@ -34,7 +34,7 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
     
     -- Ensure UI is available
     if not (HLBG.UI and HLBG.UI.Stats and HLBG.UI.Stats.Text) then
-        if DEFAULT_CHAT_FRAME then
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.debugMode)) then
             DEFAULT_CHAT_FRAME:AddMessage('|cFFFF3333HLBG Debug:|r Stats UI elements missing! Deferring...')
         end
         -- Schedule retry
@@ -72,7 +72,7 @@ HLBG.Stats = HLBG.Stats or function(player, stats)
         HLBG.UI.Stats.Text:SetText(text)
     end
     
-    if DEFAULT_CHAT_FRAME then
+    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.debugMode)) then
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Stats UI updated')
     end
 end

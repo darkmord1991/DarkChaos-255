@@ -271,6 +271,8 @@ if not HLBG.UI.Stats.Content then
     local statsScrollChild = CreateFrame("Frame", nil, statsScroll)
     statsScrollChild:SetSize(560, 1200)  -- Large height for all stats
     statsScroll:SetScrollChild(statsScrollChild)
+    HLBG.UI.Stats.Scroll = statsScroll
+    HLBG.UI.Stats.ScrollChild = statsScrollChild
     -- Stats text (matching scoreboard NPC format)
     local statsText = statsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statsText:SetPoint("TOPLEFT", 8, -8)
@@ -495,6 +497,13 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
     addLine("\n|cFFAAAA88Last updated: " .. date("%Y-%m-%d %H:%M:%S") .. "|r")
     
     HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
+
+    -- Resize scroll child so text height remains consistent after refresh
+    if HLBG.UI.Stats.ScrollChild and HLBG.UI.Stats.Text then
+        local textHeight = HLBG.UI.Stats.Text:GetStringHeight()
+        local targetHeight = math.max(400, (textHeight or 0) + 32)
+        HLBG.UI.Stats.ScrollChild:SetHeight(targetHeight)
+    end
 end
 if not HLBG.UI.Info.Content then
     HLBG.UI.Info.Content = CreateFrame("Frame", nil, HLBG.UI.Info)
@@ -658,8 +667,10 @@ Check with server administrators for the current queue method.|r]])
 end
 -- Tab switching function (single instance)
 function ShowTab(i)
-    -- Debug tab switching
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFF8800HLBG Debug:|r Switching to tab %d", i))
+    local debugEnabled = DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.debugMode))
+    if debugEnabled then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFF8800HLBG Debug:|r Switching to tab %d", i))
+    end
     -- Visual feedback: highlight the active tab button
     for tabIdx = 1, 5 do
         local tab = HLBG.UI.Tabs[tabIdx]
@@ -691,10 +702,14 @@ function ShowTab(i)
         if HLBG.UI.History.Content then HLBG.UI.History.Content:Show() end
         -- Re-render History tab with existing data when shown
         if HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 and type(HLBG.History) == 'function' then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800HLBG Debug:|r Re-rendering History with existing data")
+            if debugEnabled then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800HLBG Debug:|r Re-rendering History with existing data")
+            end
             HLBG.History(HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG Debug:|r No History data to display")
+            if debugEnabled then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG Debug:|r No History data to display")
+            end
             -- Schedule a one-shot retry to re-request history in case of race/timing
             if not HLBG._showTabRetryScheduled then
                 HLBG._showTabRetryScheduled = true
@@ -717,9 +732,13 @@ function ShowTab(i)
                             -- If data has arrived in the interim, render it
                             if HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 and type(HLBG.History) == 'function' then
                                 pcall(HLBG.History, HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
-                                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History retried and rendered after delay') end
+                                if debugEnabled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History retried and rendered after delay')
+                                end
                             else
-                                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG:|r Retry completed but no history rows arrived') end
+                                if debugEnabled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG:|r Retry completed but no history rows arrived')
+                                end
                             end
                         end)
                     else

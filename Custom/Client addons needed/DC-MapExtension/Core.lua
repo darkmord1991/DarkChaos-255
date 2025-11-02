@@ -56,6 +56,65 @@ local addon = {
     }
 }
 
+local MAP_TYPES = {
+    azshara = { mapId = 37, zoneId = 268, altMapIds = { 613 }, worldMapAreaId = 613 },
+    hyjal = { mapId = 1, zoneId = 616, altMapIds = { 616, 614 }, worldMapAreaId = 614 }
+}
+
+local function ContainsValue(tbl, value)
+    if not tbl or value == nil then
+        return false
+    end
+    for _, v in ipairs(tbl) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+local NATIVE_MAP_AREA_IDS = {
+    azshara = 613,
+    hyjal = 614
+}
+
+local function Clamp01(value)
+    if value == nil then return nil end
+    if value < 0 then return 0 end
+    if value > 1 then return 1 end
+    return value
+end
+
+local function NormalizeMapCoords(mapType, nx, ny)
+    if nx == nil or ny == nil then
+        return nil, nil
+    end
+
+    -- Custom map specific adjustments
+    if mapType == "azshara" then
+        nx = 1 - nx
+    end
+
+    -- Convert to WoW's top-left origin (0 = top)
+    ny = 1 - ny
+
+    return Clamp01(nx), Clamp01(ny)
+end
+
+local function ResolveMapType(mapId, zoneId)
+    if addon.currentMap then
+        return addon.currentMap
+    end
+
+    for mapType, info in pairs(MAP_TYPES) do
+        if info.mapId == mapId or info.zoneId == zoneId or ContainsValue(info.altMapIds, mapId) then
+            return mapType
+        end
+    end
+
+    return nil
+end
+
 ----------------------------------------------
 -- Texture Paths
 ----------------------------------------------
@@ -97,20 +156,17 @@ local texturePaths = {
 -- These will be converted to pixel positions on the map display
 local poi_data = {
     azshara = {
-        -- INSTRUCTIONS: Visit each location, type /dcmap poi, and paste the output here
-        -- The coordinates below are PLACEHOLDERS and WRONG - they need GPS calibration!
-        -- 
-        -- {name = "Startcamp", x = 0.754, y = 0.493},  -- PLACEHOLDER - needs GPS coords
-        -- {name = "Flight Master", x = 0.718, y = 0.533},  -- PLACEHOLDER
-        -- {name = "Innkeeper", x = 0.734, y = 0.481},  -- PLACEHOLDER
-        -- {name = "Auctionhouse", x = 0.745, y = 0.474},  -- PLACEHOLDER
-        -- {name = "Stable Master", x = 0.730, y = 0.486},  -- PLACEHOLDER
-        -- {name = "Transmog", x = 0.766, y = 0.500},  -- PLACEHOLDER
-        -- {name = "Riding Trainer", x = 0.747, y = 0.523},  -- PLACEHOLDER
-        -- {name = "Profession Trainers", x = 0.696, y = 0.414},  -- PLACEHOLDER
-        -- {name = "Weapon Trainer", x = 0.734, y = 0.498},  -- PLACEHOLDER
-        -- {name = "Violet Temple", x = 0.284, y = 0.604},  -- PLACEHOLDER
-        -- {name = "Dragon Statues", x = 0.616, y = 0.520}  -- PLACEHOLDER
+        {name = "Startcamp", x = 0.467409, y = 0.259053},
+        {name = "Flight Master", x = 0.453847, y = 0.286819},
+        {name = "Innkeeper", x = 0.460444, y = 0.250035},
+        {name = "Auction House", x = 0.464188, y = 0.245202},
+        {name = "Stable Master", x = 0.459148, y = 0.253538},
+        {name = "Transmogrifier", x = 0.471547, y = 0.263113},
+        {name = "Riding Trainer", x = 0.465035, y = 0.278703},
+        {name = "Profession Trainers", x = 0.447206, y = 0.203196},
+        {name = "Weapon Trainer", x = 0.460299, y = 0.261504},
+        {name = "Violet Temple", x = 0.303832, y = 0.683899},
+        {name = "Dragon Statues", x = 0.424629, y = 0.625502}
     },
     hyjal = {
         -- INSTRUCTIONS: Visit each location, type /dcmap poi, and paste the output here
@@ -162,20 +218,44 @@ end
 -- NOTE: Server GPS provides normalized coords, these are fallback only
 local mapBounds = {
     [37] = {  -- Azshara Crater (Map ID 37, Zone ID 268)
-        -- Full corner measurements - map covers entire measured area
-        -- Corners: X range [-1059, 1599], Y range [-1599, 1599]
-        minX = -1059.0,
-        maxX = 1599.0,
-        minY = -1599.0,
-        maxY = 1599.0
+        -- Bounds sourced from WorldMapArea.csv (entry 613)
+        minX = -1884.0,
+        maxX = 2427.0,
+        minY = -1116.0,
+        maxY = 1756.0
     },
-    [1] = {  -- Hyjal (Map ID 1, Zone ID 616) - these are placeholder values
+    [613] = {  -- Azshara Crater native UiMapID
+        minX = -1884.0,
+        maxX = 2427.0,
+        minY = -1116.0,
+        maxY = 1756.0
+    },
+    [616] = {  -- Mount Hyjal legacy fallback
+        minX = -5175.0,
+        maxX = -929.1666,
+        minY = 3364.583,
+        maxY = 6195.833
+    },
+    [614] = {  -- Mount Hyjal native UiMapID
+        minX = -5175.0,
+        maxX = -929.1666,
+        minY = 3364.583,
+        maxY = 6195.833
+    },
+    [1] = {  -- Kalimdor fallback (used when Hyjal data missing)
         minX = -5000,
         maxX = 5000,
         minY = -5000,
         maxY = 5000
     }
 }
+
+local function GetActiveMapCanvas()
+    if addon.nativeMapActive then
+        return WorldMapButton
+    end
+    return addon.stitchFrame
+end
 
 local function WorldToNormalized(mapId, worldX, worldY)
     local bounds = mapBounds[mapId]
@@ -289,6 +369,40 @@ local function GetCustomMapType()
     return mapType
 end
 
+local function TryUseNativeMap(mapType)
+    local areaId = NATIVE_MAP_AREA_IDS[mapType]
+    if not areaId or not SetMapByID then
+        return false
+    end
+
+    local ok = pcall(SetMapByID, areaId)
+    if not ok then
+        Debug("SetMapByID failed for native map", mapType, areaId)
+        return false
+    end
+
+    if WorldMapFrame_Update then
+        WorldMapFrame_Update()
+    end
+
+    local tile = _G["WorldMapDetailTile1"]
+    if tile then
+        local tex = tile:GetTexture()
+        if tex and tex ~= "" then
+            local expected = (mapType == "azshara") and "azsharacrater" or "hyjal"
+            if tex:lower():find(expected) then
+                addon.nativeMapActive = true
+                addon.nativeMapAreaId = areaId
+                Debug("Using native map tiles for", mapType)
+                return true
+            end
+        end
+    end
+
+    addon.nativeMapActive = false
+    return false
+end
+
 ----------------------------------------------
 -- Frame Management
 ----------------------------------------------
@@ -311,6 +425,33 @@ local function CreateStitchFrame()
     addon.stitchFrame = frame
     Debug("Stitch frame created")
     return frame
+end
+
+-- Ensure a solid backdrop sits between Blizzard's world textures and our custom tiles
+local function EnsureBackgroundMask()
+    if not WorldMapDetailFrame then
+        return
+    end
+
+    if not addon.backgroundMask then
+        local mask = CreateFrame("Frame", "DCMap_BackgroundMask", WorldMapDetailFrame)
+        mask:SetFrameLevel(WorldMapDetailFrame:GetFrameLevel() + 1) -- Ensure it's above the parent's base level
+        mask:SetAllPoints(WorldMapDetailFrame)
+        
+        -- Create a texture for the mask
+        local tex = mask:CreateTexture(nil, "BACKGROUND")
+        tex:SetAllPoints(mask)
+        tex:SetColorTexture(0.05, 0.04, 0.03, 1) -- Dark charcoal color
+        mask.texture = tex
+
+        addon.backgroundMask = mask
+        Debug("Created background mask")
+    end
+
+    if addon.backgroundMask then
+        addon.backgroundMask:SetDrawLayer("BACKGROUND", 7)
+        addon.backgroundMask:Show()
+    end
 end
 
 local function CreatePlayerDot()
@@ -409,13 +550,24 @@ local function CreateCoordinateDisplay()
         
         if hasValidGPS then
             -- Use server-provided GPS coordinates (accurate for custom zones)
-            playerText:SetText(string.format("Player: %.1f, %.1f", addon.gpsData.nx * 100, addon.gpsData.ny * 100))
+            local mapType = addon.currentMap or ResolveMapType(addon.gpsData.mapId, addon.gpsData.zoneId)
+            local dispX, dispY = NormalizeMapCoords(mapType, addon.gpsData.nx, addon.gpsData.ny)
+
+            if (not dispX or not dispY) and addon.gpsData.x and addon.gpsData.y then
+                dispX, dispY = ConvertWorldToMapCoords(addon.gpsData.x, addon.gpsData.y, mapType)
+            end
+
+            if dispX and dispY then
+                playerText:SetText(string.format("Player: %.1f, %.1f", dispX * 100, dispY * 100))
+            else
+                playerText:SetText("Player: --.--, --.--")
+            end
         elseif px and py and (px > 0 or py > 0) then
             -- Use client-side coordinates (works for standard zones)
             playerText:SetText(string.format("Player: %.1f, %.1f", px * 100, py * 100))
         elseif addon.playerDot and addon.playerDot:IsShown() then
             -- Fallback: Calculate from player dot position on stitched map
-            local parent = addon.stitchFrame or WorldMapDetailFrame
+            local parent = GetActiveMapCanvas() or WorldMapDetailFrame
             if parent then
                 local dotX = addon.playerDot:GetLeft()
                 local dotY = addon.playerDot:GetTop()
@@ -444,7 +596,7 @@ local function CreateCoordinateDisplay()
         end
         
         -- Update cursor coordinates relative to the stitched map frame
-        local parent = addon.stitchFrame or WorldMapDetailFrame
+    local parent = GetActiveMapCanvas() or WorldMapDetailFrame
         if not parent or not parent:IsShown() then
             cursorText:SetText("Cursor: --.--, --.--")
             return
@@ -485,34 +637,41 @@ local function GetHotspotData()
     if _G.activeHotspots then
         return _G.activeHotspots
     end
+    
+    -- Fallback: check minimap pins if DCHotspotXP is loaded
+    if _G.hotspotMinimapPins then
+        local discoveredHotspots = {}
+        for id, pin in pairs(_G.hotspotMinimapPins) do
+            if pin and pin.hotspotData then
+                discoveredHotspots[id] = pin.hotspotData
+            end
+        end
+        return discoveredHotspots
+    end
+    
     return {}
 end
 
 local function ConvertWorldToMapCoords(worldX, worldY, mapType)
-    -- Convert world coordinates to map coordinates (0-1 range)
-    -- Azshara Crater (map 38) coordinate conversion
-    -- Based on known bounds: X roughly -1000 to 500, Y roughly -500 to 1500
-    if mapType == "azshara" then
-        -- Normalize coordinates
-        local minX, maxX = -1000, 500
-        local minY, maxY = -500, 1500
-        local mapX = (worldX - minX) / (maxX - minX)
-        local mapY = (worldY - minY) / (maxY - minY)
-        return mapX, mapY
-    elseif mapType == "hyjal" then
-        -- Hyjal coordinate conversion (adjust as needed)
-        local minX, maxX = -5000, -3000
-        local minY, maxY = -2000, 0
-        local mapX = (worldX - minX) / (maxX - minX)
-        local mapY = (worldY - minY) / (maxY - minY)
-        return mapX, mapY
+    local mapInfo = MAP_TYPES[mapType]
+    local mapId = mapInfo and mapInfo.mapId or addon.gpsData.mapId
+
+    if not mapId then
+        return 0.5, 0.5
     end
-    return 0.5, 0.5  -- Center fallback
+
+    local nx, ny = WorldToNormalized(mapId, worldX, worldY)
+    if not nx or not ny then
+        return 0.5, 0.5
+    end
+
+    return NormalizeMapCoords(mapType, nx, ny)
 end
 
 local function CreateHotspotMarkers(mapType)
-    if not addon.stitchFrame then return end
-    
+    local parent = GetActiveMapCanvas()
+    if not parent then return end
+
     -- Clear existing hotspot markers
     if addon.hotspotMarkers then
         for _, marker in ipairs(addon.hotspotMarkers) do
@@ -535,7 +694,6 @@ local function CreateHotspotMarkers(mapType)
         return
     end
     
-    local parent = WorldMapDetailFrame or addon.stitchFrame
     local frameWidth = parent:GetWidth()
     local frameHeight = parent:GetHeight()
     
@@ -558,83 +716,90 @@ local function CreateHotspotMarkers(mapType)
             showHotspot = true
         end
         
-        if showHotspot and hotspot.x and hotspot.y then
-            -- Convert world coordinates to map coordinates
-            local mapX, mapY = ConvertWorldToMapCoords(hotspot.x, hotspot.y, mapType)
-            
-            -- Create hotspot marker frame
-            local marker = CreateFrame("Frame", "DCMap_Hotspot_" .. id, parent)
-            marker:SetWidth(24)
-            marker:SetHeight(24)
-            marker:SetFrameLevel(parent:GetFrameLevel() + 6)
-            
-            -- Hotspot icon texture - use a glowing effect
-            local tex = marker:CreateTexture(nil, "OVERLAY")
-            tex:SetAllPoints()
-            tex:SetTexture("Interface\\AddOns\\DCHotspotXP\\textures\\hotspot_icon")  -- Try custom icon
-            if not tex:GetTexture() or tex:GetTexture() == "" then
-                -- Fallback to standard icons
-                tex:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-                tex:SetVertexColor(1, 0.84, 0)  -- Gold color
+        if showHotspot and (hotspot.x or hotspot.nx) and (hotspot.y or hotspot.ny) then
+            local mapX, mapY
+            if hotspot.nx and hotspot.ny then
+                mapX, mapY = NormalizeMapCoords(mapType, hotspot.nx, hotspot.ny)
+            else
+                mapX, mapY = ConvertWorldToMapCoords(hotspot.x, hotspot.y, mapType)
             end
-            marker.texture = tex
-            
-            -- Add pulsing animation
-            local animGroup = marker:CreateAnimationGroup()
-            local scale1 = animGroup:CreateAnimation("Scale")
-            scale1:SetScale(1.2, 1.2)
-            scale1:SetDuration(0.8)
-            scale1:SetOrder(1)
-            
-            local scale2 = animGroup:CreateAnimation("Scale")
-            scale2:SetScale(0.833, 0.833)  -- Back to 1.0 (1/1.2)
-            scale2:SetDuration(0.8)
-            scale2:SetOrder(2)
-            
-            animGroup:SetLooping("REPEAT")
-            animGroup:Play()
-            marker.animation = animGroup
-            
-            -- Position the hotspot
-            -- Use TOPLEFT anchor and invert Y (same as player dot and POI positioning)
-            -- Normalized coords: 0=south/bottom, 1=north/top
-            -- TOPLEFT anchor: Y=0 at top, increases downward
-            local pixelX = mapX * frameWidth
-            local pixelY = (1 - mapY) * frameHeight  -- Invert Y for TOPLEFT anchor
-            marker:ClearAllPoints()
-            marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)
-            
-            -- Calculate time remaining
-            local timeLeft = 0
-            if hotspot.expire and type(hotspot.expire) == "number" then
-                timeLeft = hotspot.expire - GetTime()
-                if timeLeft < 0 then timeLeft = 0 end
+
+            mapX = Clamp01(mapX)
+            mapY = Clamp01(mapY)
+
+            if mapX and mapY then
+                -- Create hotspot marker frame
+                local marker = CreateFrame("Frame", "DCMap_Hotspot_" .. id, parent)
+                marker:SetWidth(24)
+                marker:SetHeight(24)
+                local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
+                marker:SetFrameLevel(baseLevel + 6)
+                
+                -- Hotspot icon texture - use a glowing effect
+                local tex = marker:CreateTexture(nil, "OVERLAY")
+                tex:SetAllPoints()
+                tex:SetTexture("Interface\\AddOns\\DCHotspotXP\\textures\\hotspot_icon")  -- Try custom icon
+                if not tex:GetTexture() or tex:GetTexture() == "" then
+                    -- Fallback to standard icons
+                    tex:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+                    tex:SetVertexColor(1, 0.84, 0)  -- Gold color
+                end
+                marker.texture = tex
+                
+                -- Add pulsing animation
+                local animGroup = marker:CreateAnimationGroup()
+                local scale1 = animGroup:CreateAnimation("Scale")
+                scale1:SetScale(1.2, 1.2)
+                scale1:SetDuration(0.8)
+                scale1:SetOrder(1)
+                
+                local scale2 = animGroup:CreateAnimation("Scale")
+                scale2:SetScale(0.833, 0.833)  -- Back to 1.0 (1/1.2)
+                scale2:SetDuration(0.8)
+                scale2:SetOrder(2)
+                
+                animGroup:SetLooping("REPEAT")
+                animGroup:Play()
+                marker.animation = animGroup
+                
+                -- Position the hotspot
+                local pixelX = mapX * frameWidth
+                local pixelY = -mapY * frameHeight
+                marker:ClearAllPoints()
+                marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
+                
+                -- Calculate time remaining
+                local timeLeft = 0
+                if hotspot.expire and type(hotspot.expire) == "number" then
+                    timeLeft = hotspot.expire - GetTime()
+                    if timeLeft < 0 then timeLeft = 0 end
+                end
+                
+                -- Tooltip on mouseover
+                marker:EnableMouse(true)
+                marker:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("XP Hotspot", 1, 0.84, 0)
+                    if hotspot.zone then
+                        GameTooltip:AddLine("Zone: " .. hotspot.zone, 1, 1, 1)
+                    end
+                    GameTooltip:AddLine(string.format("Position: %.1f, %.1f", hotspot.x or 0, hotspot.y or 0), 0.7, 0.7, 0.7)
+                    if timeLeft > 0 then
+                        local minutes = math.floor(timeLeft / 60)
+                        local seconds = math.floor(timeLeft % 60)
+                        GameTooltip:AddLine(string.format("Time left: %d:%02d", minutes, seconds), 0.5, 1, 0.5)
+                    end
+                    GameTooltip:Show()
+                end)
+                marker:SetScript("OnLeave", function(self)
+                    GameTooltip:Hide()
+                end)
+                
+                marker:Show()
+                table.insert(addon.hotspotMarkers, marker)
+                markerCount = markerCount + 1
+                Debug("Created hotspot marker:", id, "at", mapX, mapY, "time left:", math.floor(timeLeft))
             end
-            
-            -- Tooltip on mouseover
-            marker:EnableMouse(true)
-            marker:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("XP Hotspot", 1, 0.84, 0)
-                if hotspot.zone then
-                    GameTooltip:AddLine("Zone: " .. hotspot.zone, 1, 1, 1)
-                end
-                GameTooltip:AddLine(string.format("Position: %.1f, %.1f", hotspot.x, hotspot.y), 0.7, 0.7, 0.7)
-                if timeLeft > 0 then
-                    local minutes = math.floor(timeLeft / 60)
-                    local seconds = math.floor(timeLeft % 60)
-                    GameTooltip:AddLine(string.format("Time left: %d:%02d", minutes, seconds), 0.5, 1, 0.5)
-                end
-                GameTooltip:Show()
-            end)
-            marker:SetScript("OnLeave", function(self)
-                GameTooltip:Hide()
-            end)
-            
-            marker:Show()
-            table.insert(addon.hotspotMarkers, marker)
-            markerCount = markerCount + 1
-            Debug("Created hotspot marker:", id, "at", mapX, mapY, "time left:", math.floor(timeLeft))
         end
     end
     
@@ -642,8 +807,9 @@ local function CreateHotspotMarkers(mapType)
 end
 
 local function CreatePOIMarkers(mapType)
-    if not WorldMapButton then return end
-    
+    local parent = GetActiveMapCanvas()
+    if not parent then return end
+
     -- Clear existing POI markers
     if addon.poiMarkers then
         for _, marker in ipairs(addon.poiMarkers) do
@@ -659,8 +825,6 @@ local function CreatePOIMarkers(mapType)
         return
     end
     
-    -- Use WorldMapButton as parent (standard for all map markers)
-    local parent = WorldMapButton
     local frameWidth = parent:GetWidth()
     local frameHeight = parent:GetHeight()
     
@@ -670,12 +834,20 @@ local function CreatePOIMarkers(mapType)
     end
     
     for i, poi in ipairs(pois) do
+        local nx = Clamp01(poi.x)
+        local ny = Clamp01(poi.y)
+        if not nx or not ny then
+            Debug("Skipping POI with invalid coordinates", tostring(poi.name))
+            nx, ny = 0.5, 0.5
+        end
+
         -- Create POI marker frame
         local marker = CreateFrame("Frame", "DCMap_POI_" .. i, parent)
         marker:SetWidth(16)
         marker:SetHeight(16)
         marker:SetFrameStrata("TOOLTIP")
-        marker:SetFrameLevel(parent:GetFrameLevel() + 5)
+        local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
+        marker:SetFrameLevel(baseLevel + 5)
         
         -- POI icon texture
         local tex = marker:CreateTexture(nil, "OVERLAY")
@@ -684,13 +856,11 @@ local function CreatePOIMarkers(mapType)
         tex:SetTexCoord(0.5, 0.625, 0, 0.125)  -- Gold star icon
         marker.texture = tex
         
-        -- Position using standard WoW map coordinate system
-        -- TOPLEFT anchor with negative Y
-        local pixelX = poi.x * frameWidth
-        local pixelY = -poi.y * frameHeight
-        local pixelY = (1 - poi.y) * frameHeight  -- Invert Y for TOPLEFT anchor
+        -- Position the POI
+        local pixelX = nx * frameWidth
+        local pixelY = -ny * frameHeight
         marker:ClearAllPoints()
-        marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, -pixelY)
+        marker:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
         
         -- Tooltip on mouseover
         marker:EnableMouse(true)
@@ -702,10 +872,10 @@ local function CreatePOIMarkers(mapType)
         marker:SetScript("OnLeave", function(self)
             GameTooltip:Hide()
         end)
-        
+
         marker:Show()
         table.insert(addon.poiMarkers, marker)
-        Debug("Created POI marker:", poi.name, "at", poi.x, poi.y)
+        Debug("Created POI marker:", poi.name, string.format("(%.3f, %.3f)", nx, ny))
     end
     
     Debug("Created", #addon.poiMarkers, "POI markers for", mapType)
@@ -719,6 +889,10 @@ local function ClearTiles()
     if WorldMapDetailFrame then
         WorldMapDetailFrame:SetAlpha(1)
         Debug("Restored WorldMapDetailFrame alpha to 1")
+    end
+
+    if addon.backgroundMask then
+        addon.backgroundMask:Hide()
     end
     
     -- Clear POI markers
@@ -971,6 +1145,28 @@ local function LoadTiles(mapType)
 end
 
 ----------------------------------------------
+-- Core Hooks
+----------------------------------------------
+-- Hook the main map update function to ensure we are on the right continent
+-- before it tries to render the world overview.
+local original_WorldMapFrame_Update = WorldMapFrame_Update
+function WorldMapFrame_Update(...)
+    local customMapType = GetCustomMapType()
+    if customMapType then
+        local currentMapId = GetCurrentMapAreaID()
+        -- If we are in a custom zone but the map is trying to show the world overview (ID 0),
+        -- force it to Kalimdor (ID 1) first.
+        if currentMapId == 0 then
+            SetMapByID(1)
+        end
+    end
+    
+    -- Call the original function
+    return original_WorldMapFrame_Update(...)
+end
+
+
+----------------------------------------------
 -- Tile Watchdog - Prevents Blizzard from overriding our tiles
 ----------------------------------------------
 local function CheckAndFixTiles()
@@ -1004,103 +1200,76 @@ end
 ----------------------------------------------
 local function UpdatePlayerPosition()
     if not DCMapExtensionDB.showPlayerDot then return end
-    if not addon.playerDot then 
-        CreatePlayerDot()
-        if not addon.playerDot then return end
+    if not addon.playerDot then
+        return
     end
-    
-    -- Make sure we're viewing a custom zone
-    if not addon.currentMap then
+
+    local canvas = GetActiveMapCanvas()
+    if not canvas or not canvas:IsShown() then
         addon.playerDot:Hide()
         return
     end
-    
-    -- Check if player is actually IN the zone being displayed
-    local now = GetTime()
-    local gpsAge = now - addon.gpsData.lastUpdate
-    local hasValidGPS = (gpsAge < 3) and (addon.gpsData.nx > 0 or addon.gpsData.ny > 0)
-    
-    -- Determine if we should show the player dot
-    local playerInDisplayedZone = false
-    if addon.currentMap == "azshara" and IsPlayerInAzsharaCrater() then
-        playerInDisplayedZone = true
-    elseif addon.currentMap == "hyjal" and IsPlayerInHyjal() then
-        playerInDisplayedZone = true
-    end
-    
-    -- If player is not in the displayed zone, don't show the dot
-    if not playerInDisplayedZone then
-        addon.playerDot:Hide()
-        if DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5) then
-            addon.lastPlayerPosDebug = now
-            Debug("Player not in displayed zone - hiding dot")
+
+    local nx, ny = GetPlayerMapPosition("player")
+
+    if addon.nativeMapActive then
+        if not nx or not ny then
+            addon.playerDot:Hide()
+            return
         end
-        return
-    end
-    
-    -- Player IS in the zone - get position
-    local x, y
-    if hasValidGPS then
-        -- Use server-provided normalized coordinates
-        x, y = addon.gpsData.nx, addon.gpsData.ny
     else
-        -- Fall back to client-side GetPlayerMapPosition (works for standard zones)
-        x, y = GetPlayerMapPosition("player")
-    end
-    
-    -- Throttle debug messages to once per 5 seconds
-    local shouldDebug = DCMapExtensionDB.debug and (now - addon.lastPlayerPosDebug > 5)
-    
-    if not x or not y or (x == 0 and y == 0) then
-        -- Player not in this zone or position unavailable - hide dot
-        if shouldDebug then
-            addon.lastPlayerPosDebug = now
-            Debug("Player position unavailable or 0,0 - hiding dot (GPS age: " .. string.format("%.1f", gpsAge) .. "s)")
+        -- Fallback normalization when we render stitched tiles on Kalimdor
+        local mapInfo = MAP_TYPES[addon.currentMap or "azshara"]
+        local mapId = mapInfo and mapInfo.mapId or AZSHARA_CRATER_MAP_ID
+
+        if mapId == HYJAL_MAP_ID then
+            local kalimdorX, kalimdorY = GetPlayerMapPosition("player")
+            local hyjalLeft = 0.35
+            local hyjalRight = 0.6
+            local hyjalTop = 0.05
+            local hyjalBottom = 0.25
+            nx = (kalimdorX - hyjalLeft) / (hyjalRight - hyjalLeft)
+            ny = (kalimdorY - hyjalTop) / (hyjalBottom - hyjalTop)
+        elseif mapId == AZSHARA_CRATER_MAP_ID then
+            local kalimdorX, kalimdorY = GetPlayerMapPosition("player")
+            local acLeft = 0.55
+            local acRight = 0.85
+            local acTop = 0.25
+            local acBottom = 0.45
+            nx = (kalimdorX - acLeft) / (acRight - acLeft)
+            ny = (kalimdorY - acTop) / (acBottom - acTop)
         end
-        addon.playerDot:Hide()
-        return
     end
-    
-    -- Use WorldMapButton as parent - this is the standard for all WoW map addons
-    -- WorldMapButton is the interactive map area that all coordinates are relative to
-    local parent = WorldMapButton
-    if not parent then
+
+    if nx and ny and nx >= 0 and nx <= 1 and ny >= 0 and ny <= 1 then
+        addon.playerDot:ClearAllPoints()
+        addon.playerDot:SetPoint("CENTER", canvas, "TOPLEFT", nx * canvas:GetWidth(), -ny * canvas:GetHeight())
+        addon.playerDot:Show()
+    else
         addon.playerDot:Hide()
-        return
-    end
-    
-    local frameWidth = parent:GetWidth()
-    local frameHeight = parent:GetHeight()
-    
-    if not frameWidth or not frameHeight or frameWidth == 0 or frameHeight == 0 then
-        addon.playerDot:Hide()
-        return
-    end
-    
-    -- Standard WoW map coordinate system: TOPLEFT anchor with negative Y
-    local pixelX = x * frameWidth
-    local pixelY = -y * frameHeight  -- Negative Y for TOPLEFT anchor
-    
-    addon.playerDot:ClearAllPoints()
-    addon.playerDot:SetPoint("CENTER", parent, "TOPLEFT", pixelX, pixelY)
-    
-    -- Make absolutely sure the dot is visible
-    addon.playerDot:SetAlpha(1)
-    addon.playerDot:SetFrameStrata("TOOLTIP")
-    addon.playerDot:SetFrameLevel(999)
-    addon.playerDot:Show()
-    
-    -- Throttled debug logging (once per 5 seconds)
-    if shouldDebug then
-        addon.lastPlayerPosDebug = now
-        local dotShown = addon.playerDot:IsShown() and "SHOWN" or "HIDDEN"
-        local dotParent = addon.playerDot:GetParent() and addon.playerDot:GetParent():GetName() or "NO PARENT"
-        Debug("Player dot: x=" .. string.format("%.3f", x) .. " y=" .. string.format("%.3f", y) .. 
-              " -> px=" .. string.format("%.0f", pixelX) .. " py=" .. string.format("%.0f", pixelY) ..
-              " | " .. dotShown .. " on " .. dotParent)
     end
 end
 
+----------------------------------------------
+-- Coordinate Display
+----------------------------------------------
+-- No changes in this section
+----------------------------------------------
+-- POI (Points of Interest) Management
+----------------------------------------------
+-- No changes in this section
+----------------------------------------------
+-- Texture Loading
+----------------------------------------------
+-- No changes in this section
+----------------------------------------------
+-- Tile Watchdog - Prevents Blizzard from overriding our tiles
+----------------------------------------------
+-- No changes in this section
+----------------------------------------------
+-- Player Position
+----------------------------------------------
+-- No changes in this section
 ----------------------------------------------
 -- Map Update
 ----------------------------------------------
@@ -1109,7 +1278,7 @@ local function HideNativeDetailTiles()
     -- Just ensure the detail frame is ready
     if WorldMapDetailFrame then
         WorldMapDetailFrame:SetAlpha(1)
-        Debug("WorldMapDetailFrame ready for custom tiles")
+        Debug("WorldMapDetailFrame ready to be replaced by custom tiles")
     end
     
     Debug("Native detail tiles ready to be replaced by custom tiles")
@@ -1164,6 +1333,21 @@ local function HideBlizzardPOIs()
             end
         end
         
+        -- Hide the parchment/continent background textures so only our tiles remain
+        if not addon.originalFrameTextures then
+            addon.originalFrameTextures = {}
+        end
+        for i = 1, 12 do
+            local tex = _G["WorldMapFrameTexture" .. i]
+            if tex then
+                if not addon.originalFrameTextures[i] then
+                    addon.originalFrameTextures[i] = tex:GetTexture()
+                end
+                tex:SetTexture(nil)
+                tex:Hide()
+            end
+        end
+
         -- Hide POI buttons (quest givers, etc)
         for i = 1, NUM_WORLDMAP_POIS or 0 do
             local poi = _G["WorldMapFramePOI" .. i]
@@ -1252,6 +1436,19 @@ local function ShowBlizzardPOIs()
         if WorldMapButton then
             WorldMapButton:EnableMouse(true)
         end
+
+        -- Restore the parchment/continent textures
+        if addon.originalFrameTextures then
+            for i = 1, 12 do
+                local tex = _G["WorldMapFrameTexture" .. i]
+                if tex then
+                    local original = addon.originalFrameTextures[i]
+                    tex:SetTexture(original)
+                    tex:SetAlpha(1)
+                    tex:Show()
+                end
+            end
+        end
         
         -- The POIs will automatically re-show on next map update
         -- Just make sure the frames are re-enabled
@@ -1274,53 +1471,82 @@ function addon:ShowCustomMap(mapType)
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Invalid map type: " .. tostring(mapType) .. "|r")
         return false
     end
-    
+
     -- Set current map BEFORE creating frames so OnUpdate can reference it
     self.currentMap = mapType
-    
-    -- Create or reuse frames
+
+    -- First try to leverage native client support (requires patched DBCs)
+    if TryUseNativeMap(mapType) then
+        self.loadedMapType = mapType
+        self.loadedTextures = nil
+        if self.stitchFrame then
+            self.stitchFrame:Hide()
+        end
+        if addon.backgroundMask then
+            addon.backgroundMask:Hide()
+        end
+        CreatePlayerDot()
+        CreateCoordinateDisplay()
+        CreatePOIMarkers(mapType)
+        CreateHotspotMarkers(mapType)
+        UpdatePlayerPosition()
+        ShowBlizzardPOIs()
+        return true
+    end
+
+    -- Native tiles not available yet – fall back to stitched textures
+    addon.nativeMapActive = false
+
+    if GetCurrentMapContinent() ~= 1 then
+        SetMapToCurrentZone()
+    end
+    if GetCurrentMapAreaID() ~= 1 then
+        Debug("Forcing map to Kalimdor (UiMapID 1) to display custom tiles.")
+        SetMapByID(1)
+    end
+
     CreateStitchFrame()
     CreatePlayerDot()
     CreateCoordinateDisplay()
-    
-    -- If we already have tiles loaded for this map type, just show them
+    EnsureBackgroundMask()
+
     if self.loadedMapType == mapType and self.stitchFrame then
         Debug("Reusing already-loaded tiles for", mapType)
         self.stitchFrame:Show()
         if self.playerDot then self.playerDot:Show() end
         HideNativeDetailTiles()
-        HideBlizzardPOIs()  -- Hide Blizzard's POI system
-        -- Refresh POIs and hotspots
+        HideBlizzardPOIs()
         CreatePOIMarkers(mapType)
         CreateHotspotMarkers(mapType)
         return true
     end
-    
-    -- Load tiles fresh
+
     if LoadTiles(mapType) then
         Debug("Tiles loaded successfully for", mapType)
         self.stitchFrame:Show()
         CreatePOIMarkers(mapType)
         CreateHotspotMarkers(mapType)
-        
-        -- Coordinate display is always shown, OnUpdate handles visibility
-        
         HideNativeDetailTiles()
-        HideBlizzardPOIs()  -- Hide Blizzard's POI system
+        HideBlizzardPOIs()
         return true
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load tiles for " .. tostring(mapType) .. "|r")
-        self.currentMap = nil
-        return false
     end
+
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load tiles for " .. tostring(mapType) .. "|r")
+    self.currentMap = nil
+    return false
 end
 
 function addon:HideCustomMap()
     Debug("HideCustomMap called")
-    
-    -- Hide custom frames
-    if self.stitchFrame then
+    local wasNative = self.nativeMapActive
+    self.nativeMapActive = false
+
+    -- Hide custom frames if we were using stitched tiles
+    if not wasNative and self.stitchFrame then
         self.stitchFrame:Hide()
+    end
+    if not wasNative and addon.backgroundMask then
+        addon.backgroundMask:Hide()
     end
     if self.playerDot then
         self.playerDot:Hide()
@@ -1355,10 +1581,13 @@ function addon:HideCustomMap()
         self.hotspotMarkers = {}
     end
     
-    -- Restore Blizzard's native detail tiles
-    ClearTiles()
-    
-    -- Restore Blizzard's POI system
+    if not wasNative then
+        -- Restore Blizzard's native detail tiles
+        ClearTiles()
+        ShowNativeDetailTiles()
+    end
+
+    -- Restore Blizzard's POI system (safe to call for both modes)
     ShowBlizzardPOIs()
     
     -- Trigger Blizzard to reload the current map
@@ -1371,6 +1600,7 @@ function addon:HideCustomMap()
     
     -- Clear current map state
     self.currentMap = nil
+    self.loadedMapType = nil
     
     Debug("Custom map hidden and Blizzard map restored")
 end
@@ -1432,18 +1662,17 @@ local function UpdateMap()
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] Failed to load custom map|r")
         end
     else
-        -- Same map but ensure it's still visible
-        if addon.stitchFrame and not addon.stitchFrame:IsShown() then
-            Debug("Refreshing custom map:", mapType)
-            addon:ShowCustomMap(mapType)
+        if addon.nativeMapActive then
+            UpdatePlayerPosition()
+        else
+            if addon.stitchFrame and not addon.stitchFrame:IsShown() then
+                Debug("Refreshing custom map:", mapType)
+                addon:ShowCustomMap(mapType)
+            end
+            CheckAndFixTiles()
+            UpdatePlayerPosition()
         end
-        
-        -- Check if Blizzard overrode our tiles
-        CheckAndFixTiles()
     end
-    
-    -- Update player position
-    UpdatePlayerPosition()
 end
 
 ----------------------------------------------
@@ -1609,13 +1838,15 @@ local tileWatchdogTimer = 0
 eventFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Skip entirely if not initialized
     if not addon.initialized then return end
-    if not addon.stitchFrame or not addon.stitchFrame:IsShown() then return end
+    local canvas = GetActiveMapCanvas()
+    if not canvas or not canvas:IsShown() then return end
     
     -- TILE WATCHDOG: Continuously hide non-custom tiles that Blizzard adds
-    tileWatchdogTimer = tileWatchdogTimer + elapsed
-    if tileWatchdogTimer >= 0.1 then  -- Check 10 times per second
-        tileWatchdogTimer = 0
-        if addon.currentMap and addon.loadedTextures then
+    if not addon.nativeMapActive then
+        tileWatchdogTimer = tileWatchdogTimer + elapsed
+        if tileWatchdogTimer >= 0.1 then  -- Check 10 times per second
+            tileWatchdogTimer = 0
+            if addon.currentMap and addon.loadedTextures then
             local expectedType = addon.currentMap
             
             -- Hide tiles that shouldn't be shown
@@ -1662,6 +1893,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
                         end
                     end
                 end
+            end
             end
         end
     end
@@ -1976,32 +2208,24 @@ GetPlayerMapPosition = function(unit)
         if gpsAge < 3 then
             local gpsMapId = addon.gpsData.mapId or 0
             local gpsZoneId = addon.gpsData.zoneId or 0
-            
-            -- Check if we're DISPLAYING a custom zone map (via addon.currentMap)
-            -- This is more reliable than GetCurrentMapAreaID() which shows the underlying continent
-            local viewingCustomZone = false
-            
-            -- Azshara Crater: Map 37, Zone 268
-            if addon.currentMap == "azshara" and gpsMapId == 37 and gpsZoneId == 268 then
-                viewingCustomZone = true
-            -- Hyjal: Map 1 (Kalimdor), Zone 616
-            elseif addon.currentMap == "hyjal" and gpsMapId == 1 and gpsZoneId == 616 then
-                viewingCustomZone = true
-            end
-            
-            if viewingCustomZone and addon.gpsData.nx and addon.gpsData.ny then
-                -- Return GPS-provided normalized coordinates
-                -- These are already in 0-1 range from the server
-                -- Removed debug spam - only log once per 5 seconds
-                if DCMapExtensionDB.debug then
-                    local now = GetTime()
-                    if not addon.lastGPSHookLog or (now - addon.lastGPSHookLog) > 5 then
-                        addon.lastGPSHookLog = now
-                        Debug("GetPlayerMapPosition hook returning GPS coords: " .. 
-                              string.format("%.3f, %.3f", addon.gpsData.nx, addon.gpsData.ny))
-                    end
+            local mapType = ResolveMapType(gpsMapId, gpsZoneId)
+
+            if mapType and addon.gpsData.nx and addon.gpsData.ny then
+                local nx, ny = NormalizeMapCoords(mapType, addon.gpsData.nx, addon.gpsData.ny)
+
+                if (not nx or not ny) and addon.gpsData.x and addon.gpsData.y then
+                    nx, ny = ConvertWorldToMapCoords(addon.gpsData.x, addon.gpsData.y, mapType)
                 end
-                return addon.gpsData.nx, addon.gpsData.ny
+
+                if nx and ny then
+                    if DCMapExtensionDB.debug then
+                        if not addon.lastGPSHookLog or (now - addon.lastGPSHookLog) > 5 then
+                            addon.lastGPSHookLog = now
+                            Debug("GetPlayerMapPosition returning corrected GPS coords:", string.format("%.3f, %.3f", nx, ny))
+                        end
+                    end
+                    return nx, ny
+                end
             end
         end
     end
@@ -2087,126 +2311,6 @@ if AIO then
     Debug("AIO GPS handler registered successfully")
 else
     Debug("WARNING: AIO not available - using Lua script GPS updates")
-end
-
-----------------------------------------------
--- Slash Commands
-----------------------------------------------
-SLASH_DCMAP1 = "/dcmap"
-SlashCmdList["DCMAP"] = function(msg)
-    msg = msg:lower():trim()
-    
-    if msg == "debug" then
-        DCMapExtensionDB.debug = not DCMapExtensionDB.debug
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Debug mode: " .. (DCMapExtensionDB.debug and "ON" or "OFF") .. "|r")
-    elseif msg == "azshara" or msg == "az" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing Azshara Crater map...|r")
-        DCMapExtension_ShowStitchedMap("azshara")
-    elseif msg == "hyjal" or msg == "hy" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing Hyjal map...|r")
-        DCMapExtension_ShowStitchedMap("hyjal")
-    elseif msg == "clear" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Clearing forced map...|r")
-        DCMapExtension_ClearForcedMap()
-    elseif msg == "dot" or msg == "player" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Forcing player dot update...|r")
-        UpdatePlayerPosition()
-        if addon.playerDot then
-            DEFAULT_CHAT_FRAME:AddMessage("  Player Dot: " .. (addon.playerDot:IsShown() and "SHOWN" or "HIDDEN"))
-            DEFAULT_CHAT_FRAME:AddMessage("  GPS: nx=" .. tostring(addon.gpsData.nx) .. " ny=" .. tostring(addon.gpsData.ny))
-            DEFAULT_CHAT_FRAME:AddMessage("  Parent: " .. (addon.playerDot:GetParent() and addon.playerDot:GetParent():GetName() or "NONE"))
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("  Player dot doesn't exist!")
-        end
-    elseif msg == "status" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Status:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  Current Map: " .. tostring(addon.currentMap or "none"))
-        DEFAULT_CHAT_FRAME:AddMessage("  Forced Map: " .. tostring(addon.forcedMap or "none"))
-        DEFAULT_CHAT_FRAME:AddMessage("  GPS Map: " .. tostring(addon.gpsData.mapId or "none"))
-        DEFAULT_CHAT_FRAME:AddMessage("  GPS Zone: " .. tostring(addon.gpsData.zoneId or "none"))
-        DEFAULT_CHAT_FRAME:AddMessage("  Debug: " .. (DCMapExtensionDB.debug and "ON" or "OFF"))
-    elseif msg == "poi" or msg == "coords" then
-        -- Show current position as POI coordinate for easy copying
-        if not addon.gpsData or not addon.gpsData.nx or not addon.gpsData.ny then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[DC-MapExt] No GPS data available!|r")
-            return
-        end
-        
-        local mapId = addon.gpsData.mapId or 0
-        local zoneId = addon.gpsData.zoneId or 0
-        local x = addon.gpsData.x or 0
-        local y = addon.gpsData.y or 0
-        local z = addon.gpsData.z or 0
-        local nx = addon.gpsData.nx or 0
-        local ny = addon.gpsData.ny or 0
-        
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Current Position:|r")
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("  World: X=%.1f, Y=%.1f, Z=%.1f", x, y, z))
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("  Normalized: X=%.3f, Y=%.3f", nx, ny))
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("  Map=%d, Zone=%d", mapId, zoneId))
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00POI Template (copy this):|r")
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('  {name = "POI Name", x = %.3f, y = %.3f},', nx, ny))
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800IMPORTANT: If position looks wrong, the map bounds need adjustment!|r")
-    elseif msg == "bounds" or msg == "calibrate" then
-        -- Show calibration information
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Map Bounds Calibration Help:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  Current issue: Player at Valormok (LEFT side visually)")
-        DEFAULT_CHAT_FRAME:AddMessage("  GPS shows: X=135.8 -> nx=0.757 (75.7% = RIGHT side)")
-        DEFAULT_CHAT_FRAME:AddMessage(" ")
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000DIAGNOSIS: Map bounds don't match visual map!|r")
-        DEFAULT_CHAT_FRAME:AddMessage(" ")
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00To fix this, we need to find the ACTUAL bounds:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  1. Walk to the LEFT-MOST edge (far west)")
-        DEFAULT_CHAT_FRAME:AddMessage("     Type .gps and note the X coordinate")
-        DEFAULT_CHAT_FRAME:AddMessage("  2. Walk to the RIGHT-MOST edge (far east)")
-        DEFAULT_CHAT_FRAME:AddMessage("     Type .gps and note the X coordinate")
-        DEFAULT_CHAT_FRAME:AddMessage("  3. Walk to the TOP edge (far north)")
-        DEFAULT_CHAT_FRAME:AddMessage("     Type .gps and note the Y coordinate")
-        DEFAULT_CHAT_FRAME:AddMessage("  4. Walk to the BOTTOM edge (far south)")
-        DEFAULT_CHAT_FRAME:AddMessage("     Type .gps and note the Y coordinate")
-        DEFAULT_CHAT_FRAME:AddMessage(" ")
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00Current bounds in server GPS:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  minX=-1000, maxX=500, minY=-500, maxY=1500")
-        DEFAULT_CHAT_FRAME:AddMessage(" ")
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800Expected: Valormok at ~25% should give X around -500|r")
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800  But GPS shows X=135.8 which gives 75.7%!|r")
-    elseif msg == "test" or msg == "flip" then
-        -- Test coordinate flip
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Testing coordinate transformations:|r")
-        if addon.gpsData and addon.gpsData.x and addon.gpsData.y then
-            local wx = addon.gpsData.x
-            local wy = addon.gpsData.y
-            
-            -- Current normalization
-            local nx_current = addon.gpsData.nx
-            local ny_current = addon.gpsData.ny
-            
-            -- Test: Flip X axis (swap min/max)
-            local nx_flipped = (500 - wx) / (500 - (-1000))  -- Reversed
-            local ny_flipped = ny_current  -- Keep Y same
-            
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("  World: X=%.1f, Y=%.1f", wx, wy))
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("  Current: nx=%.3f (%.1f%%), ny=%.3f (%.1f%%)", 
-                nx_current, nx_current*100, ny_current, ny_current*100))
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("  X-Flipped: nx=%.3f (%.1f%%), ny=%.3f (%.1f%%)", 
-                nx_flipped, nx_flipped*100, ny_flipped, ny_flipped*100))
-            DEFAULT_CHAT_FRAME:AddMessage(" ")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00If Valormok should be at 25%, the flipped value should be close!|r")
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000No GPS data available!|r")
-        end
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExt] Commands:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap debug - Toggle debug mode")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap azshara - Force show Azshara Crater map")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap hyjal - Force show Hyjal map")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap clear - Clear forced map")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap dot - Force update player dot")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap poi - Show current position as POI template")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap bounds - Show map bounds calibration help")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap test - Test coordinate flip (for debugging)")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dcmap status - Show current status")
-    end
 end
 
 -- Expose addon table globally for debugging

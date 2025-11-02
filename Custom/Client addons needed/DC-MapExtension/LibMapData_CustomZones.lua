@@ -15,62 +15,69 @@ local function RegisterCustomZones()
     
     -- Access internal mapData table
     local mapData = lib.mapData or {}
+    if not lib.mapData then
+        lib.mapData = mapData
+    end
     
-    -- AZSHARA CRATER (Map ID 37, Zone ID 268)
-    -- World coordinates: X from -1000 to 500, Y from -500 to 1500
-    -- Map dimensions: 1500 x 2000 yards
-    mapData[37] = {
+    -- AZSHARA CRATER (UiMapID 613, Zone ID 268)
+    -- Bounds sourced from WorldMapArea.csv (entry 613) for native map tiles
+    mapData[613] = {
         ['floors'] = 0,
         ['name'] = "AzsharaCrater",
         ['area_id'] = 268,
-        ['rzti'] = 0,  -- Not an instance
+        ['rzti'] = 1,  -- Kalimdor
         ['map_type'] = 0,  -- Normal zone
-        ['continent'] = 0,  -- Custom continent
+        ['continent'] = 2,  -- Kalimdor
         ['link'] = 0,
         ['transform'] = 0,
         [1] = {
-            1500.0,  -- width (maxX - minX = 500 - (-1000) = 1500)
-            2000.0,  -- height (maxY - minY = 1500 - (-500) = 2000)
-            500.0,   -- ulX (upper-left X - this is MAX X in WoW coords)
-            1500.0,  -- ulY (upper-left Y - this is MAX Y in WoW coords)
-            -1000.0, -- lrX (lower-right X - this is MIN X in WoW coords)
-            -500.0   -- lrY (lower-right Y - this is MIN Y in WoW coords)
+            4311.0,    -- width (locLeft - locRight)
+            2872.0,    -- height (locTop - locBottom)
+            2427.0,    -- locLeft (upper-left X)
+            1756.0,    -- locTop (upper-left Y)
+            -1884.0,   -- locRight (lower-right X)
+            -1116.0    -- locBottom (lower-right Y)
         }
     }
     
-    -- HYJAL - Use zone 616 for Hyjal, NOT map 1
-    -- For proper integration, we register it as a separate map
-    -- World coordinates: X from 3600 to 5600, Y from -4800 to -2800
-    -- Map dimensions: 2000 x 2000 yards
-    mapData[616] = {
+    -- HYJAL SUMMIT - custom world map entry (UiMapID 614)
+    -- Bounds sourced from WorldMapArea.csv (entry 614)
+    mapData[614] = {
         ['floors'] = 0,
         ['name'] = "Hyjal",
         ['area_id'] = 616,
         ['rzti'] = 1,  -- Kalimdor
         ['map_type'] = 0,  -- Normal zone
-        ['continent'] = 1,  -- Kalimdor
+        ['continent'] = 2,  -- Kalimdor
         ['link'] = 0,
         ['transform'] = 0,
         [1] = {
-            2000.0,  -- width (maxX - minX = 5600 - 3600 = 2000)
-            2000.0,  -- height (maxY - minY = -2800 - (-4800) = 2000)
-            5600.0,  -- ulX (upper-left X - this is MAX X)
-            -2800.0, -- ulY (upper-left Y - this is MAX Y, LESS negative)
-            3600.0,  -- lrX (lower-right X - this is MIN X)
-            -4800.0  -- lrY (lower-right Y - this is MIN Y, MORE negative)
+            4245.833, -- width (locLeft - locRight)
+            2831.25,  -- height (locTop - locBottom)
+            -929.1666, -- locLeft (upper-left X)
+            6195.833, -- locTop (upper-left Y)
+            -5175.0,  -- locRight (lower-right X)
+            3364.583  -- locBottom (lower-right Y)
         }
     }
     
     -- Register area ID to map name mapping
     if lib.idToMap then
+        lib.idToMap["AzsharaCrater"] = 613
         lib.idToMap[268] = "AzsharaCrater"  -- Azshara Crater
+        lib.idToMap["Hyjal"] = 614
         lib.idToMap[616] = "Hyjal"          -- Hyjal
     end
     
     -- Register map name to localized name mapping (if needed)
     if lib.mapToLocal then
         lib.mapToLocal["AzsharaCrater"] = "Azshara Crater"
-        lib.mapToLocal["Hyjal"] = "Hyjal"
+        lib.mapToLocal["Hyjal"] = "Hyjal Summit"
+    end
+
+    if lib.localToMap then
+        lib.localToMap["Azshara Crater"] = "AzsharaCrater"
+        lib.localToMap["Hyjal Summit"] = "Hyjal"
     end
     
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[DC-MapExtension] Registered custom zones in LibMapData-1.0|r")

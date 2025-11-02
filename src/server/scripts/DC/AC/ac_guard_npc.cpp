@@ -74,17 +74,17 @@ struct ACGuardPOI {
 // Static list of POIs. Keep this small and human-readable. Each entry is a
 // candidate for being moved to a configuration file in a future change.
 static const ACGuardPOI ac_guard_pois[] = {
-    {"Startcamp", 37, 131.000f, 1012.000f, 295.000f, 5.000f},           // Main camp
-    {"Flight Master", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f},  // Flight master
-    {"Inkeeper", 37, 100.973f, 1037.9f, 297.107f, 2.56106f},            // Inkeeper location
-    {"Auctionhouse", 37, 117.113f, 1051.78f, 297.107f, 0.92979f},       // Auctionhouse location
-    {"Stable Master", 37, 95.3867f, 1027.84f, 297.107f, 2.5163f},       // Stable Master location
-    {"Transmog", 37, 148.838f, 1000.34f, 295.753f, 5.98384f},           // Transmog NPC
-    {"Ridetrainer", 37, 120.768f, 955.565f, 295.072f, 5.15048f},        // Riding trainer
-    {"Profession trainers", 37, 43.905f, 1172.420f, 367.342f, 2.560f}, // Profession trainers
-    {"Weapontrainer", 37, 100.351f, 1004.96f, 296.329f, 0.258275f},     // Weapon trainer
-    {"Violet Temple (empty)", 37, -574.179f, -208.159f, 355.034f, 3.8202f}, // Violet Temple
-    {"Dragon Statues (empty)", 37, -53.4259f, -40.4419f, 271.541f, 3.42052f} // Dragon Statues
+    {"Startcamp", 37, 131.000f, 1012.000f, 295.000f, 5.000f},                // Main camp
+    {"Flight Master", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f},       // Flight master
+    {"Innkeeper", 37, 100.973f, 1037.9f, 297.107f, 2.56106f},                // Innkeeper location
+    {"Auction House", 37, 117.113f, 1051.78f, 297.107f, 0.92979f},           // Auction house location
+    {"Stable Master", 37, 95.3867f, 1027.84f, 297.107f, 2.5163f},            // Stable Master location
+    {"Transmogrifier", 37, 148.838f, 1000.34f, 295.753f, 5.98384f},          // Transmog NPC
+    {"Riding Trainer", 37, 120.768f, 955.565f, 295.072f, 5.15048f},          // Riding trainer
+    {"Profession Trainers", 37, 43.905f, 1172.420f, 367.342f, 2.560f},       // Profession trainers
+    {"Weapon Trainer", 37, 100.351f, 1004.96f, 296.329f, 0.258275f},         // Weapon trainer
+    {"Violet Temple", 37, -574.179f, -208.159f, 355.034f, 3.8202f},          // Violet Temple
+    {"Dragon Statues", 37, -53.4259f, -40.4419f, 271.541f, 3.42052f}         // Dragon Statues
 };
 
 // Main script class for the Guard NPC

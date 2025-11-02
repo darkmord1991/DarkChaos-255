@@ -149,7 +149,7 @@ local function TryInjectDarkChaos(self)
 	-- We use simple string names and custom IDs that will be intercepted by our zone click handler.
 	local AZ_NAME = "Azshara Crater"
 	local AZ_CUSTOM_ID = 9001  -- Custom identifier to distinguish from Blizzard IDs
-	local HYJAL_NAME = "Hyjal"
+	local HYJAL_NAME = "Hyjal Summit"
 	local HYJAL_CUSTOM_ID = 9002  -- Custom identifier
 	self.zone_names = self.zone_names or {}
 	self.zone_data = self.zone_data or {}
@@ -279,18 +279,17 @@ local function MapsterZoneButton_OnClick(frame)
 	-- Handle our custom Dark Chaos zones (intercept custom IDs 9001 and 9002)
 	if mapId == 9001 then
 		-- Azshara Crater selected
-		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Forcing Azshara Crater mapId to 37')
-		SetMapByID(37)
+		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Switching to Azshara Crater (UiMapID 613)')
+		SetMapByID(613)
 		-- Trigger DC-MapExtension to show the stitched map
 		if type(_G.DCMapExtension_ShowStitchedMap) == "function" then
 			_G.DCMapExtension_ShowStitchedMap("azshara")
 		end
 		return
 	elseif mapId == 9002 then
-		-- Hyjal selected - use zone ID 616 which DC-MapExtension will detect
-		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Selected Hyjal - triggering DC-MapExtension')
-		-- Set to Kalimdor continent first, then trigger DC-MapExtension
-		SetMapZoom(1)  -- Kalimdor continent
+		-- Hyjal Summit selected - leverage UiMapID 614
+		DEFAULT_CHAT_FRAME:AddMessage('[Mapster] Switching to Hyjal Summit (UiMapID 614)')
+		SetMapByID(614)
 		-- Trigger DC-MapExtension to show Hyjal stitched map
 		if type(_G.DCMapExtension_ShowStitchedMap) == "function" then
 			_G.DCMapExtension_ShowStitchedMap("hyjal")
