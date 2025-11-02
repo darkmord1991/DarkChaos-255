@@ -267,10 +267,11 @@ public:
         // CRITICAL FIX for XP bar: Force the client to update experience display
         // The XP bar won't show if the client doesn't know about the level/XP reset
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Forcing XP bar refresh...");
-        // Reset experience to 0 and update value to ensure client syncs
-        uint32 newXpForLevel = player->GetXPForLevel(resetLevel);
-        player->SetUInt32Value(PLAYER_XP, 0);
-        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
+    // Reset experience to 0 and update value to ensure client syncs
+    // Use ObjectMgr to get XP for level (Player doesn't expose GetXPForLevel)
+    uint32 newXpForLevel = sObjectMgr->GetXPForLevel(resetLevel);
+    player->SetUInt32Value(PLAYER_XP, 0);
+    player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
         
         // Send player data update to client so it rebuilds the XP bar UI with new level
         player->SendInitialPacketsBeforeAddToMap();
