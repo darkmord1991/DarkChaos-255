@@ -257,6 +257,11 @@ public:
         if (player->getPowerType() == POWER_MANA)
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
         
+        // CRITICAL: Send updated player data to client to refresh XP bar and other UI elements
+        // This ensures the client knows the player's new level and can display the XP bar properly
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Sending player data to client for UI refresh...");
+        player->SendInitialPacketsBeforeAddToMap();
+        
         // Save again after applying buffs
         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving after buffs...");
         player->SaveToDB(false, false);

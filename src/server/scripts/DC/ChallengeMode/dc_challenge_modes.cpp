@@ -880,7 +880,7 @@ public:
             player->UpdatePlayerSetting("mod-challenge-modes", modeId, 1);
             
             std::string modeName = GetModeName(modeId);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700Challenge Mode Enabled:|r %s", modeName.c_str());
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700Challenge Mode Enabled: {}|r", modeName);
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000This mode is now PERMANENT for this character!|r");
             
             CloseGossipMenuFor(player);

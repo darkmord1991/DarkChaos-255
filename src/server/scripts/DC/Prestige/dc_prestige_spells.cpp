@@ -109,6 +109,12 @@ class spell_prestige_bonus_1 : public AuraScript
         target->HandleStatModifier(UNIT_MOD_STAT_STAMINA, TOTAL_PCT, bonus, true);
         target->HandleStatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_PCT, bonus, true);
         target->HandleStatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_PCT, bonus, true);
+        
+        // DEBUG: Log when aura is applied
+        if (Player* player = target->ToPlayer())
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige Level 1 aura applied! Bonus: %d%%|r", (1 * bonusPercent));
+        }
     }
 
     void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
@@ -128,8 +134,8 @@ class spell_prestige_bonus_1 : public AuraScript
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_1::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_1::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -171,8 +177,8 @@ class spell_prestige_bonus_##NUM : public AuraScript \
     \
     void Register() override \
     { \
-        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
-        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectApply += AuraEffectApplyFn(spell_prestige_bonus_##NUM::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
+        OnEffectRemove += AuraEffectRemoveFn(spell_prestige_bonus_##NUM::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL); \
     } \
 };
 
@@ -187,17 +193,88 @@ DEFINE_PRESTIGE_SPELL(8)
 DEFINE_PRESTIGE_SPELL(9)
 DEFINE_PRESTIGE_SPELL(10)
 
-// Register all prestige spell scripts
+// SpellScriptLoader wrappers so the scripts can be referenced from the DB by name
+class spell_prestige_bonus_1_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_1_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_1") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_1(); }
+};
+
+class spell_prestige_bonus_2_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_2_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_2") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_2(); }
+};
+
+class spell_prestige_bonus_3_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_3_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_3") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_3(); }
+};
+
+class spell_prestige_bonus_4_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_4_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_4") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_4(); }
+};
+
+class spell_prestige_bonus_5_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_5_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_5") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_5(); }
+};
+
+class spell_prestige_bonus_6_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_6_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_6") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_6(); }
+};
+
+class spell_prestige_bonus_7_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_7_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_7") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_7(); }
+};
+
+class spell_prestige_bonus_8_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_8_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_8") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_8(); }
+};
+
+class spell_prestige_bonus_9_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_9_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_9") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_9(); }
+};
+
+class spell_prestige_bonus_10_SpellScriptLoader : public SpellScriptLoader
+{
+public:
+    spell_prestige_bonus_10_SpellScriptLoader() : SpellScriptLoader("spell_prestige_bonus_10") {}
+    AuraScript* GetAuraScript() const override { return new spell_prestige_bonus_10(); }
+};
+
+// Register all prestige spell scripts (as SpellScriptLoader instances so DB names match)
 void AddSC_dc_prestige_spells()
 {
-    new spell_prestige_bonus_1();
-    new spell_prestige_bonus_2();
-    new spell_prestige_bonus_3();
-    new spell_prestige_bonus_4();
-    new spell_prestige_bonus_5();
-    new spell_prestige_bonus_6();
-    new spell_prestige_bonus_7();
-    new spell_prestige_bonus_8();
-    new spell_prestige_bonus_9();
-    new spell_prestige_bonus_10();
+    new spell_prestige_bonus_1_SpellScriptLoader();
+    new spell_prestige_bonus_2_SpellScriptLoader();
+    new spell_prestige_bonus_3_SpellScriptLoader();
+    new spell_prestige_bonus_4_SpellScriptLoader();
+    new spell_prestige_bonus_5_SpellScriptLoader();
+    new spell_prestige_bonus_6_SpellScriptLoader();
+    new spell_prestige_bonus_7_SpellScriptLoader();
+    new spell_prestige_bonus_8_SpellScriptLoader();
+    new spell_prestige_bonus_9_SpellScriptLoader();
+    new spell_prestige_bonus_10_SpellScriptLoader();
 }
