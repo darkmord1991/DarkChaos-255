@@ -394,9 +394,10 @@ public:
             // Remove any existing prestige buffs first
             RemovePrestigeBuffs(player);
             
-            // Use CastSpell instead of AddAura for better client visibility
+            // Cast with TRIGGERED_CAST_DIRECTLY and TRIGGERED_IGNORE_GCD to ensure the aura sticks
+            // Use CastSpell with proper triggered flags for permanent passive auras
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Casting prestige spell {}", spellId);
-            player->CastSpell(player, spellId, true);
+            player->CastSpell(player, spellId, CastSpellExtraArgs(TRIGGERED_CAST_DIRECTLY | TRIGGERED_IGNORE_GCD));
             
             // Verify the aura was applied
             if (player->HasAura(spellId))
@@ -813,8 +814,7 @@ public:
 
         handler->PSendSysMessage("DEBUG: CanPrestige passed, calling PerformPrestige...");
         
-        // Store player GUID to prevent issues if session gets invalidated
-        ObjectGuid playerGuid = player->GetGUID();
+    // No need to store player GUID here; session's player pointer will be re-queried after PerformPrestige
         
         try
         {

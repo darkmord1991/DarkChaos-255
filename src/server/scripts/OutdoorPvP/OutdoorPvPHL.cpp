@@ -1021,6 +1021,8 @@
         {
             applyNpcAuraAll(nspell);
         }
+        // Apply enrage to boss NPCs if configured for this affix
+        enrageBosses();
         // For "bad" affixes, give NPCs a buff (or debuff players handled above). This keeps it in sync with weather.
         // Optional: zone announce affix
         if (_affixAnnounce)
