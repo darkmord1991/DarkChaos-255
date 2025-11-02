@@ -15,10 +15,25 @@
 #include "ObjectMgr.h"
 #include "GameTime.h"
 #include "SpellAuras.h"
+#include "Chat.h"
+#include "StringFormat.h"
+#include "../Prestige/dc_prestige_api.h"
 
 #include <array>
 
 using namespace Acore::ChatCommands;
+
+namespace
+{
+    enum ChallengeGossipActions : uint32
+    {
+        ACTION_GOSSIP_CLOSE      = 999,
+        ACTION_GOSSIP_NOOP       = 9999,
+        ACTION_PRESTIGE_OVERVIEW = 1100,
+        ACTION_PRESTIGE_WARNINGS = 1101,
+        ACTION_PRESTIGE_CONFIRM  = 1102,
+    };
+}
 
 ChallengeModes* ChallengeModes::instance()
 {
@@ -501,9 +516,51 @@ public:
         ClearGossipMenuFor(player);
 
         // Title and instructions
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== Challenge Mode Manager ===|r", GOSSIP_SENDER_MAIN, 9999);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFFFFFSelect a mode to view details:|r", GOSSIP_SENDER_MAIN, 9999);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== Challenge Mode Manager ===|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFFFFFSelect a mode to view details:|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+
+        if (PrestigeAPI::IsEnabled())
+        {
+            uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
+            uint32 maxPrestige = PrestigeAPI::GetMaxPrestigeLevel();
+            uint32 statBonusPercent = PrestigeAPI::GetStatBonusPercent();
+            uint32 requiredLevel = PrestigeAPI::GetRequiredLevel();
+            uint32 totalBonus = prestigeLevel * statBonusPercent;
+            bool canPrestige = PrestigeAPI::CanPrestige(player);
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                Acore::StringFormat("|cffffd700Prestige Level:|r {}/{} ({}% bonus)", prestigeLevel, maxPrestige, totalBonus),
+                GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+
+            if (canPrestige)
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff00You meet all requirements to prestige.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
+            else if (prestigeLevel >= maxPrestige)
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700You have reached the maximum prestige level.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
+            else if (player->GetLevel() < requiredLevel)
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    Acore::StringFormat("|cff888888Reach level {} to prestige (current: {}).|r", requiredLevel, player->GetLevel()),
+                    GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
+            else
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Prestige requirements not yet met.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
+        }
+        else
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Prestige system currently disabled.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+        }
+
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "|cffFFD700[Prestige Overview]|r", GOSSIP_SENDER_MAIN, ACTION_PRESTIGE_OVERVIEW);
+        if (PrestigeAPI::IsEnabled() && PrestigeAPI::CanPrestige(player))
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF4500[Prestige Reset]|r Begin your next prestige", GOSSIP_SENDER_MAIN, ACTION_PRESTIGE_WARNINGS);
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
 
         // Show challenge mode selection menu
         if (sChallengeModes->challengeEnabled(SETTING_HARDCORE))
@@ -530,8 +587,8 @@ public:
         if (sChallengeModes->challengeEnabled(SETTING_IRON_MAN))
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man Mode]|r - Ultimate challenge", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
 
         SendGossipMenuFor(player, 70001, player->GetGUID());
         return true;
@@ -549,15 +606,102 @@ public:
         // 999: Close
         // 9999: Do nothing (non-clickable items)
 
-        if (action == 999) // Close
+        if (action == ACTION_GOSSIP_CLOSE) // Close
         {
             CloseGossipMenuFor(player);
             return true;
         }
 
-        if (action == 9999) // Non-clickable items
+        if (action == ACTION_GOSSIP_NOOP) // Non-clickable items
         {
             return OnGossipHello(player, go);
+        }
+
+        if (action == ACTION_PRESTIGE_OVERVIEW)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffd700Prestige Overview|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+
+            if (!PrestigeAPI::IsEnabled())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888The prestige system is currently disabled.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
+            else
+            {
+                uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
+                uint32 maxPrestige = PrestigeAPI::GetMaxPrestigeLevel();
+                uint32 statBonusPercent = PrestigeAPI::GetStatBonusPercent();
+                uint32 requiredLevel = PrestigeAPI::GetRequiredLevel();
+                uint32 nextPrestige = prestigeLevel + 1;
+                uint32 nextBonus = nextPrestige * statBonusPercent;
+
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Current Prestige Level: {}/{}", prestigeLevel, maxPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Current Bonus: {}% all stats", prestigeLevel * statBonusPercent), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Required Level to Prestige: {}", requiredLevel), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+
+                if (PrestigeAPI::CanPrestige(player))
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("|cff00ff00Prestige {} available: {}% bonus after reset|r", nextPrestige, nextBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                }
+                else if (prestigeLevel >= maxPrestige)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700You have reached the maximum prestige level.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                }
+                else
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Requirements not yet met for the next prestige.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                }
+            }
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back]|r", GOSSIP_SENDER_MAIN, 998);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+            return true;
+        }
+
+        if (action == ACTION_PRESTIGE_WARNINGS)
+        {
+            if (!PrestigeAPI::IsEnabled())
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Prestige system is currently disabled.");
+                return OnGossipHello(player, go);
+            }
+
+            if (!PrestigeAPI::CanPrestige(player))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("You cannot prestige at this time.");
+                return OnGossipHello(player, go);
+            }
+
+            uint32 nextPrestige = PrestigeAPI::GetPrestigeLevel(player) + 1;
+            uint32 nextBonus = nextPrestige * PrestigeAPI::GetStatBonusPercent();
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff4500Prestige Warning|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("You are about to begin Prestige {}.", nextPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000This will reset you to level 1.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("|cffffd700You will gain a total of {}% bonus to all stats.|r", nextBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8800You will retain configured prestige rewards.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[Confirm Prestige]|r", GOSSIP_SENDER_MAIN, ACTION_PRESTIGE_CONFIRM);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back]|r", GOSSIP_SENDER_MAIN, 998);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+            return true;
+        }
+
+        if (action == ACTION_PRESTIGE_CONFIRM)
+        {
+            if (!PrestigeAPI::IsEnabled() || !PrestigeAPI::CanPrestige(player))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("You cannot prestige at this time.");
+                return OnGossipHello(player, go);
+            }
+
+            PrestigeAPI::PerformPrestige(player);
+            CloseGossipMenuFor(player);
+            return true;
         }
 
         if (action < 100) // Step 1: Show detailed information
@@ -591,7 +735,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[Continue] I want to activate this mode|r", GOSSIP_SENDER_MAIN, action + 100);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
             
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
@@ -616,7 +760,7 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "You already have this challenge mode active!", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
                 SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
@@ -630,7 +774,7 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Semi-Hardcore is active!", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
                 SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
@@ -643,7 +787,7 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Hardcore is active!", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
                 SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
@@ -659,7 +803,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[CONFIRM] Yes, I accept the challenge!|r", GOSSIP_SENDER_MAIN, action + 100);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Let me reconsider...|r", GOSSIP_SENDER_MAIN, 998);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
             
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
@@ -684,7 +828,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700Good luck on your journey!|r", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700May the odds be ever in your favor!|r", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, 999);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
             
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Challenge Mode Activated:|r %s", title.c_str());
             
