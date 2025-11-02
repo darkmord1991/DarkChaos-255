@@ -20,13 +20,10 @@
 #include "SpellAuraEffects.h"
 #include "Config.h"
 
-// Base class for all challenge mode auras
-class ChallengeModeDummyAura : public AuraScript
+// Spell 800020: Hardcore Mode
+class spell_challenge_hardcore_800020 : public AuraScript
 {
-    PrepareAuraScript(ChallengeModeDummyAura);
-
-protected:
-    virtual const char* GetModeName() const = 0;
+    PrepareAuraScript(spell_challenge_hardcore_800020);
 
     void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
@@ -34,8 +31,8 @@ protected:
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: {} - Player: {}", 
-            GetModeName(), player->GetName());
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Hardcore Mode (One Death and You Die) - Player: {}", 
+            player->GetName());
     }
 
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
@@ -44,96 +41,271 @@ protected:
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: {} - Player: {}", 
-            GetModeName(), player->GetName());
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Hardcore Mode (One Death and You Die) - Player: {}", 
+            player->GetName());
     }
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(ChallengeModeDummyAura::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(ChallengeModeDummyAura::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_hardcore_800020::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_hardcore_800020::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
-// Spell 800020: Hardcore Mode
-class spell_challenge_hardcore_800020 : public ChallengeModeDummyAura
-{
-    PrepareAuraScript(spell_challenge_hardcore_800020);
-
-protected:
-    const char* GetModeName() const override { return "Hardcore Mode (One Death and You Die)"; }
-};
-
 // Spell 800021: Semi-Hardcore Mode
-class spell_challenge_semi_hardcore_800021 : public ChallengeModeDummyAura
+class spell_challenge_semi_hardcore_800021 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_semi_hardcore_800021);
 
-protected:
-    const char* GetModeName() const override { return "Semi-Hardcore Mode (Multiple Lives Allowed)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_semi_hardcore_800021::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_semi_hardcore_800021::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800022: Self-Crafted Only
-class spell_challenge_self_crafted_800022 : public ChallengeModeDummyAura
+class spell_challenge_self_crafted_800022 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_self_crafted_800022);
 
-protected:
-    const char* GetModeName() const override { return "Self-Crafted Mode (You Must Craft Your Own Gear)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_self_crafted_800022::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_self_crafted_800022::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800023: Item Quality Level Restriction
-class spell_challenge_item_quality_800023 : public ChallengeModeDummyAura
+class spell_challenge_item_quality_800023 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_item_quality_800023);
 
-protected:
-    const char* GetModeName() const override { return "Item Quality Restriction (Limited to Green or Better)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_item_quality_800023::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_item_quality_800023::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800024: Slow XP Gain
-class spell_challenge_slow_xp_800024 : public ChallengeModeDummyAura
+class spell_challenge_slow_xp_800024 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_slow_xp_800024);
 
-protected:
-    const char* GetModeName() const override { return "Slow XP Mode (Reduced Experience Gain)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_slow_xp_800024::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_slow_xp_800024::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800025: Very Slow XP Gain
-class spell_challenge_very_slow_xp_800025 : public ChallengeModeDummyAura
+class spell_challenge_very_slow_xp_800025 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_very_slow_xp_800025);
 
-protected:
-    const char* GetModeName() const override { return "Very Slow XP Mode (Minimal Experience Gain)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_very_slow_xp_800025::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_very_slow_xp_800025::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800026: Quest XP Only
-class spell_challenge_quest_xp_only_800026 : public ChallengeModeDummyAura
+class spell_challenge_quest_xp_only_800026 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_quest_xp_only_800026);
 
-protected:
-    const char* GetModeName() const override { return "Quest XP Only Mode (No Mob Experience)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Quest XP Only Mode (No Mob Experience) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Quest XP Only Mode (No Mob Experience) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_quest_xp_only_800026::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_quest_xp_only_800026::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800027: Iron Man Mode
-class spell_challenge_iron_man_800027 : public ChallengeModeDummyAura
+class spell_challenge_iron_man_800027 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_iron_man_800027);
 
-protected:
-    const char* GetModeName() const override { return "Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions)"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_iron_man_800027::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_iron_man_800027::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Spell 800028: Multiple Challenges Combination
-class spell_challenge_combination_800028 : public ChallengeModeDummyAura
+class spell_challenge_combination_800028 : public AuraScript
 {
     PrepareAuraScript(spell_challenge_combination_800028);
 
-protected:
-    const char* GetModeName() const override { return "Multiple Challenge Modes Active"; }
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Multiple Challenge Modes Active - Player: {}", 
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Multiple Challenge Modes Active - Player: {}", 
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_combination_800028::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_combination_800028::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 // Register all challenge mode aura scripts
