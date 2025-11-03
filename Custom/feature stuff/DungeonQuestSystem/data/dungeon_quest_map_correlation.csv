@@ -1,0 +1,436 @@
+quest_id,map_id,dungeon_name,level_type,quest_level
+12238,600,Drak'Tharon Keep,Dungeon,75
+12037,600,Drak'Tharon Keep,Dungeon,74
+24510,632,The Forge of Souls,Dungeon,80
+6981,43,Wailing Caverns,Unknown,26
+24506,632,The Forge of Souls,Dungeon,80
+24559,658,Pit of Saron,Dungeon,80
+11905,576,The Nexus,Dungeon,71
+13129,600,Drak'Tharon Keep,Dungeon,74
+13096,604,Gundrak,Dungeon,78
+24682,658,Pit of Saron,Dungeon,80
+1053,189,Scarlet Monastery,Dungeon,40
+13207,599,Halls of Stone,Dungeon,78
+709,70,Uldaman,Unknown,40
+14355,189,Scarlet Monastery,Dungeon,42
+11973,576,The Nexus,Dungeon,71
+24461,658,Pit of Saron,Dungeon,80
+13098,604,Gundrak,Dungeon,78
+11252,574,Utgarde Keep,Dungeon,71
+11262,574,Utgarde Keep,Dungeon,71
+13158,608,The Violet Hold,Dungeon,77
+4742,229,Blackrock Spire,Dungeon,60
+8992,289,Scholomance,Dungeon,60
+24507,658,Pit of Saron,Dungeon,80
+1160,189,Scarlet Monastery,Dungeon,36
+14356,389,Ragefire Chasm,Dungeon,16
+24480,668,Halls of Reflection,Dungeon,80
+971,48,Blackfathom Deeps,Dungeon,23
+2930,90,Gnomeregan,Dungeon,30
+1051,189,Scarlet Monastery,Group,33
+7483,429,Dire Maul,Dungeon,60
+13124,578,The Oculus,Dungeon,80
+1139,70,Uldaman,Dungeon,45
+24499,632,The Forge of Souls,Dungeon,80
+24511,632,The Forge of Souls,Dungeon,80
+24711,668,Halls of Reflection,Dungeon,80
+13159,608,The Violet Hold,Dungeon,77
+13111,604,Gundrak,Dungeon,78
+24561,668,Halls of Reflection,Dungeon,80
+24683,658,Pit of Saron,Dungeon,80
+5081,229,Blackrock Spire,Dungeon,60
+3802,230,Blackrock Depths,Dungeon,52
+7066,349,Maraudon,Dungeon,51
+11272,574,Utgarde Keep,Dungeon,71
+6921,48,Blackfathom Deeps,Dungeon,27
+1200,48,Blackfathom Deeps,Dungeon,27
+914,43,Wailing Caverns,Dungeon,22
+6521,129,Razorfen Downs,Dungeon,36
+3527,209,Zul'Farrak,Dungeon,47
+1049,189,Scarlet Monastery,Dungeon,38
+13094,576,The Nexus,Dungeon,71
+704,70,Uldaman,Unknown,38
+2201,70,Uldaman,Dungeon,43
+7067,349,Maraudon,Dungeon,48
+2846,209,Zul'Farrak,Dungeon,46
+24500,668,Halls of Reflection,Dungeon,80
+13205,574,Utgarde Keep,Dungeon,71
+2770,209,Zul'Farrak,Dungeon,50
+2198,70,Uldaman,Dungeon,41
+3528,109,The Temple of Atal'Hakkar,Dungeon,53
+5722,389,Ragefire Chasm,Dungeon,16
+24712,658,Pit of Saron,Dungeon,80
+24713,668,Halls of Reflection,Dungeon,80
+722,70,Uldaman,Dungeon,40
+1360,70,Uldaman,Unknown,43
+5723,389,Ragefire Chasm,Dungeon,15
+3446,109,The Temple of Atal'Hakkar,Dungeon,51
+5089,229,Blackrock Spire,Dungeon,60
+7044,349,Maraudon,Dungeon,49
+1013,33,Shadowfang Keep,Dungeon,26
+2945,90,Gnomeregan,Dungeon,34
+1113,189,Scarlet Monastery,Unknown,33
+2991,209,Zul'Farrak,Dungeon,47
+166,36,The Deadmines,Dungeon,22
+4974,229,Blackrock Spire,Raid,60
+13108,602,Halls of Lightning,Dungeon,80
+13167,601,Azjol-Nerub,Dungeon,74
+1102,47,Razorfen Kraul,Dungeon,27
+2861,209,Zul'Farrak,Dungeon,46
+2200,70,Uldaman,Dungeon,42
+4764,229,Blackrock Spire,Raid,60
+9572,543,Hellfire Citadel,Dungeon,62
+2936,209,Zul'Farrak,Dungeon,45
+1475,109,The Temple of Atal'Hakkar,Dungeon,50
+10282,269,Caverns of Time,Dungeon,68
+13151,595,The Culling of Stratholme,Dungeon,80
+13109,602,Halls of Lightning,Dungeon,80
+5728,389,Ragefire Chasm,Dungeon,16
+13204,619,Ahn'kahet: The Old Kingdom,Dungeon,76
+10277,269,Caverns of Time,Unknown,68
+1198,48,Blackfathom Deeps,Dungeon,24
+3341,129,Razorfen Downs,Dungeon,37
+3523,129,Razorfen Downs,Dungeon,37
+5761,389,Ragefire Chasm,Dungeon,16
+11911,576,The Nexus,Dungeon,71
+11492,585,Magisters' Terrace,Dungeon,70
+13127,578,The Oculus,Dungeon,80
+1486,43,Wailing Caverns,Dungeon,17
+3636,129,Razorfen Downs,Dungeon,37
+2398,70,Uldaman,Dungeon,40
+3447,109,The Temple of Atal'Hakkar,Dungeon,51
+4121,230,Blackrock Depths,Dungeon,58
+1221,47,Razorfen Kraul,Dungeon,26
+10296,269,Caverns of Time,Dungeon,70
+9717,546,The Underbog,Dungeon,65
+9831,555,Shadow Labyrinth,Dungeon,70
+377,34,The Stockade,Dungeon,26
+6626,129,Razorfen Downs,Dungeon,35
+2278,70,Uldaman,Dungeon,47
+10284,269,Caverns of Time,Dungeon,68
+5724,389,Ragefire Chasm,Dungeon,16
+1014,33,Shadowfang Keep,Dungeon,27
+2768,209,Zul'Farrak,Dungeon,47
+13128,578,The Oculus,Dungeon,80
+13187,619,Ahn'kahet: The Old Kingdom,Dungeon,76
+1050,189,Scarlet Monastery,Dungeon,38
+2864,209,Zul'Farrak,Dungeon,45
+2204,70,Uldaman,Dungeon,44
+4903,229,Blackrock Spire,Dungeon,60
+4201,230,Blackrock Depths,Dungeon,54
+10285,269,Caverns of Time,Unknown,68
+7484,429,Dire Maul,Dungeon,60
+2342,70,Uldaman,Unknown,43
+7029,349,Maraudon,Dungeon,47
+386,34,The Stockade,Dungeon,25
+1275,48,Blackfathom Deeps,Dungeon,24
+6562,48,Blackfathom Deeps,Dungeon,22
+3525,129,Razorfen Downs,Dungeon,37
+2865,209,Zul'Farrak,Dungeon,45
+2283,70,Uldaman,Dungeon,41
+4128,230,Blackrock Depths,Dungeon,55
+13149,595,The Culling of Stratholme,Dungeon,80
+24498,658,Pit of Saron,Dungeon,80
+1144,47,Razorfen Kraul,Dungeon,30
+378,34,The Stockade,Dungeon,27
+6561,48,Blackfathom Deeps,Dungeon,27
+3380,109,The Temple of Atal'Hakkar,Dungeon,51
+168,36,The Deadmines,Unknown,18
+7761,229,Blackrock Spire,Dungeon,60
+4242,230,Blackrock Depths,Dungeon,54
+13126,578,The Oculus,Dungeon,80
+13206,574,Utgarde Keep,Dungeon,71
+959,43,Wailing Caverns,Unknown,18
+1489,43,Wailing Caverns,Unknown,16
+2841,90,Gnomeregan,Dungeon,35
+4743,229,Blackrock Spire,Dungeon,60
+4322,230,Blackrock Depths,Dungeon,58
+7028,349,Maraudon,Dungeon,47
+1098,33,Shadowfang Keep,Dungeon,25
+3042,209,Zul'Farrak,Dungeon,45
+13132,575,Utgarde Pinnacle,Dungeon,80
+10283,269,Caverns of Time,Dungeon,68
+10445,269,Caverns of Time,Raid,70
+1142,47,Razorfen Kraul,Dungeon,30
+391,34,The Stockade,Dungeon,29
+1446,109,The Temple of Atal'Hakkar,Dungeon,53
+5213,329,Stratholme,Dungeon,60
+9493,543,Hellfire Citadel,Dungeon,70
+13182,601,Azjol-Nerub,Dungeon,74
+24802,668,Halls of Reflection,Dungeon,80
+3981,230,Blackrock Depths,Dungeon,52
+13190,619,Ahn'kahet: The Old Kingdom,Heroic,80
+1109,47,Razorfen Kraul,Dungeon,26
+1487,43,Wailing Caverns,Dungeon,21
+6563,48,Blackfathom Deeps,Dungeon,22
+2240,70,Uldaman,Dungeon,40
+2418,70,Uldaman,Unknown,36
+3373,109,The Temple of Atal'Hakkar,Dungeon,55
+8733,109,The Temple of Atal'Hakkar,Unknown,60
+2040,36,The Deadmines,Dungeon,20
+5102,229,Blackrock Spire,Raid,60
+7064,349,Maraudon,Dungeon,51
+7482,429,Dire Maul,Dungeon,60
+4083,230,Blackrock Depths,Dungeon,55
+4241,230,Blackrock Depths,Dungeon,54
+4264,230,Blackrock Depths,Dungeon,58
+7041,349,Maraudon,Dungeon,47
+7065,349,Maraudon,Dungeon,51
+11488,585,Magisters' Terrace,Dungeon,70
+1101,47,Razorfen Kraul,Dungeon,27
+13131,575,Utgarde Pinnacle,Dungeon,80
+4126,230,Blackrock Depths,Dungeon,55
+5122,329,Stratholme,Dungeon,60
+7046,349,Maraudon,Dungeon,49
+7481,429,Dire Maul,Dungeon,60
+9608,543,Hellfire Citadel,Dungeon,63
+1199,48,Blackfathom Deeps,Dungeon,25
+9763,545,The Steamvault,Dungeon,70
+2904,90,Gnomeregan,Dungeon,30
+2949,90,Gnomeregan,Dungeon,34
+4729,229,Blackrock Spire,Dungeon,59
+10475,269,Caverns of Time,Unknown,70
+5582,289,Scholomance,Dungeon,58
+9589,543,Hellfire Citadel,Dungeon,63
+13095,576,The Nexus,Dungeon,71
+388,34,The Stockade,Dungeon,26
+17,70,Uldaman,Unknown,42
+721,70,Uldaman,Dungeon,35
+4146,109,The Temple of Atal'Hakkar,Dungeon,52
+5160,229,Blackrock Spire,Dungeon,60
+3801,230,Blackrock Depths,Dungeon,52
+7604,230,Blackrock Depths,Dungeon,60
+9575,543,Hellfire Citadel,Dungeon,62
+10164,558,Auchenai Crypts,Dungeon,67
+5001,229,Blackrock Spire,Dungeon,59
+5382,289,Scholomance,Dungeon,60
+7494,429,Dire Maul,Dungeon,57
+10901,547,The Slave Pens,Raid,70
+11499,585,Magisters' Terrace,Heroic,70
+24710,658,Pit of Saron,Dungeon,80
+1490,43,Wailing Caverns,Unknown,16
+6522,129,Razorfen Downs,Dungeon,36
+9590,543,Hellfire Citadel,Dungeon,63
+1500,43,Wailing Caverns,Group,25
+2928,90,Gnomeregan,Dungeon,30
+2341,70,Uldaman,Dungeon,44
+167,36,The Deadmines,Unknown,20
+4867,229,Blackrock Spire,Dungeon,60
+13432,269,Caverns of Time,Raid,70
+4771,289,Scholomance,Dungeon,60
+7068,349,Maraudon,Dungeon,42
+2280,70,Uldaman,Dungeon,47
+4866,229,Blackrock Spire,Dungeon,60
+4082,230,Blackrock Depths,Dungeon,54
+4363,230,Blackrock Depths,Dungeon,59
+9494,543,Hellfire Citadel,Dungeon,70
+6564,48,Blackfathom Deeps,Dungeon,22
+2947,90,Gnomeregan,Dungeon,34
+2962,90,Gnomeregan,Dungeon,30
+3907,230,Blackrock Depths,Dungeon,56
+4001,230,Blackrock Depths,Dungeon,54
+4063,230,Blackrock Depths,Dungeon,58
+9015,230,Blackrock Depths,Dungeon,60
+10737,269,Caverns of Time,Unknown,70
+5212,329,Stratholme,Dungeon,60
+8945,329,Stratholme,Dungeon,60
+7506,429,Dire Maul,Dungeon,60
+9714,546,The Underbog,Dungeon,65
+1491,43,Wailing Caverns,Dungeon,18
+6565,48,Blackfathom Deeps,Dungeon,26
+2922,90,Gnomeregan,Dungeon,26
+2284,70,Uldaman,Dungeon,41
+4769,229,Blackrock Spire,Raid,60
+4123,230,Blackrock Depths,Dungeon,55
+4134,230,Blackrock Depths,Dungeon,55
+4295,230,Blackrock Depths,Dungeon,1
+4324,230,Blackrock Depths,Dungeon,53
+11378,269,Caverns of Time,Heroic,70
+5515,289,Scholomance,Dungeon,60
+7441,429,Dire Maul,Dungeon,58
+7485,429,Dire Maul,Dungeon,60
+10167,558,Auchenai Crypts,Dungeon,68
+387,34,The Stockade,Dungeon,26
+3982,230,Blackrock Depths,Dungeon,54
+5262,329,Stratholme,Dungeon,60
+5848,329,Stratholme,Dungeon,60
+7070,349,Maraudon,Dungeon,42
+5528,429,Dire Maul,Dungeon,60
+7429,429,Dire Maul,Dungeon,60
+9495,543,Hellfire Citadel,Dungeon,70
+11490,585,Magisters' Terrace,Dungeon,70
+2925,90,Gnomeregan,Dungeon,30
+2339,70,Uldaman,Dungeon,44
+214,36,The Deadmines,Dungeon,17
+4982,229,Blackrock Spire,Dungeon,59
+4341,230,Blackrock Depths,Dungeon,59
+9836,269,Caverns of Time,Dungeon,70
+10297,269,Caverns of Time,Dungeon,70
+5243,329,Stratholme,Dungeon,60
+5263,329,Stratholme,Dungeon,60
+5341,289,Scholomance,Dungeon,60
+5384,289,Scholomance,Dungeon,60
+7500,429,Dire Maul,Dungeon,60
+7501,429,Dire Maul,Dungeon,60
+8948,429,Dire Maul,Dungeon,60
+8950,429,Dire Maul,Dungeon,60
+9496,543,Hellfire Citadel,Dungeon,70
+10218,557,Mana-Tombs,Dungeon,66
+999,43,Wailing Caverns,Group,25
+2361,70,Uldaman,Dungeon,44
+4002,230,Blackrock Depths,Dungeon,54
+4004,230,Blackrock Depths,Dungeon,60
+4132,230,Blackrock Depths,Dungeon,58
+10463,269,Caverns of Time,Unknown,70
+6201,329,Stratholme,Life,65
+5343,289,Scholomance,Dungeon,60
+11354,543,Hellfire Citadel,Heroic,70
+2842,90,Gnomeregan,Dungeon,35
+2926,90,Gnomeregan,Dungeon,27
+2971,90,Gnomeregan,Group,32
+2199,70,Uldaman,Dungeon,41
+2868,109,The Temple of Atal'Hakkar,Dungeon,50
+4361,230,Blackrock Depths,Dungeon,59
+10462,269,Caverns of Time,Unknown,70
+5125,329,Stratholme,Dungeon,60
+5519,429,Dire Maul,Dungeon,60
+7498,429,Dire Maul,Dungeon,60
+8949,429,Dire Maul,Dungeon,60
+2923,90,Gnomeregan,Dungeon,26
+2202,70,Uldaman,Unknown,42
+2318,70,Uldaman,Dungeon,42
+2340,70,Uldaman,Dungeon,44
+1445,109,The Temple of Atal'Hakkar,Dungeon,50
+4724,229,Blackrock Spire,Dungeon,59
+4735,229,Blackrock Spire,Raid,60
+4081,230,Blackrock Depths,Dungeon,52
+4133,230,Blackrock Depths,Dungeon,55
+10474,269,Caverns of Time,Unknown,70
+9765,545,The Steamvault,Dungeon,70
+9719,546,The Underbog,Dungeon,65
+10216,557,Mana-Tombs,Dungeon,66
+4601,90,Gnomeregan,Dungeon,30
+4862,229,Blackrock Spire,Dungeon,59
+4122,230,Blackrock Depths,Dungeon,58
+12513,269,Caverns of Time,Dungeon,68
+7504,429,Dire Maul,Dungeon,60
+962,43,Wailing Caverns,Unknown,18
+2924,90,Gnomeregan,Dungeon,30
+2953,90,Gnomeregan,Dungeon,30
+4788,229,Blackrock Spire,Dungeon,58
+5002,229,Blackrock Spire,Dungeon,59
+10279,269,Caverns of Time,Unknown,66
+11106,269,Caverns of Time,Unknown,70
+5214,329,Stratholme,Dungeon,60
+5463,329,Stratholme,Dungeon,60
+8991,329,Stratholme,Dungeon,60
+1193,429,Dire Maul,Dungeon,60
+5518,429,Dire Maul,Dungeon,60
+5525,429,Dire Maul,Dungeon,60
+7463,429,Dire Maul,Dungeon,-1
+10165,557,Mana-Tombs,Dungeon,66
+2931,90,Gnomeregan,Dungeon,28
+4604,90,Gnomeregan,Dungeon,30
+4605,90,Gnomeregan,Dungeon,30
+4701,229,Blackrock Spire,Dungeon,59
+4734,229,Blackrock Spire,Raid,60
+4983,229,Blackrock Spire,Dungeon,59
+4003,230,Blackrock Depths,Dungeon,59
+4136,230,Blackrock Depths,Dungeon,53
+6163,329,Stratholme,Dungeon,60
+5529,289,Scholomance,Dungeon,58
+7503,429,Dire Maul,Dungeon,60
+9492,543,Hellfire Citadel,Dungeon,70
+9715,546,The Underbog,Dungeon,65
+10977,557,Mana-Tombs,Heroic,70
+3366,43,Wailing Caverns,Unknown,25
+2843,90,Gnomeregan,Dungeon,35
+4766,229,Blackrock Spire,Raid,60
+4768,229,Blackrock Spire,Raid,60
+6602,229,Blackrock Spire,Raid,60
+4024,230,Blackrock Depths,Dungeon,58
+7201,230,Blackrock Depths,Dungeon,54
+10473,269,Caverns of Time,Unknown,70
+12515,269,Caverns of Time,Dungeon,68
+5251,329,Stratholme,Dungeon,60
+5531,289,Scholomance,Dungeon,60
+7461,429,Dire Maul,Dungeon,60
+7489,429,Dire Maul,Dungeon,57
+9030,429,Dire Maul,Dungeon,60
+9497,543,Hellfire Citadel,Dungeon,70
+9607,543,Hellfire Citadel,Dungeon,63
+11364,543,Hellfire Citadel,Dungeon,70
+4602,90,Gnomeregan,Dungeon,30
+4606,90,Gnomeregan,Dungeon,30
+2338,70,Uldaman,Dungeon,42
+4981,229,Blackrock Spire,Dungeon,59
+8966,229,Blackrock Spire,Dungeon,60
+8995,229,Blackrock Spire,Raid,60
+3911,230,Blackrock Depths,Group,54
+4342,230,Blackrock Depths,Dungeon,59
+10465,269,Caverns of Time,Unknown,70
+5466,289,Scholomance,Dungeon,60
+7462,429,Dire Maul,Dungeon,60
+7492,429,Dire Maul,Dungeon,57
+7505,429,Dire Maul,Dungeon,60
+8967,429,Dire Maul,Dungeon,60
+9524,543,Hellfire Citadel,Heroic,70
+11363,543,Hellfire Citadel,Heroic,70
+10981,557,Mana-Tombs,Heroic,70
+4603,90,Gnomeregan,Dungeon,30
+4907,229,Blackrock Spire,Raid,60
+6502,229,Blackrock Spire,Raid,60
+4286,230,Blackrock Depths,Dungeon,56
+10298,269,Caverns of Time,Unknown,70
+10466,269,Caverns of Time,Unknown,70
+10467,269,Caverns of Time,Unknown,70
+8969,289,Scholomance,Dungeon,60
+1318,429,Dire Maul,Dungeon,60
+11362,543,Hellfire Citadel,Heroic,70
+2927,90,Gnomeregan,Dungeon,27
+2279,70,Uldaman,Unknown,47
+4765,229,Blackrock Spire,Unknown,60
+6569,229,Blackrock Spire,Raid,60
+4362,230,Blackrock Depths,Dungeon,59
+10469,269,Caverns of Time,Unknown,70
+10472,269,Caverns of Time,Unknown,70
+11383,269,Caverns of Time,Dungeon,70
+5282,329,Stratholme,Dungeon,60
+7502,429,Dire Maul,Dungeon,60
+9525,543,Hellfire Citadel,Heroic,70
+14352,129,Razorfen Downs,Dungeon,36
+14353,129,Razorfen Downs,Dungeon,36
+3375,70,Uldaman,Unknown,42
+5047,229,Blackrock Spire,Dungeon,60
+10468,269,Caverns of Time,Unknown,70
+10471,269,Caverns of Time,Unknown,70
+8968,329,Stratholme,Dungeon,60
+5383,289,Scholomance,Dungeon,60
+7488,429,Dire Maul,Dungeon,57
+7499,429,Dire Maul,Dungeon,60
+7877,429,Dire Maul,Dungeon,60
+11500,585,Magisters' Terrace,Dungeon,70
+2929,90,Gnomeregan,Dungeon,35
+2952,90,Gnomeregan,Dungeon,30
+10460,269,Caverns of Time,Unknown,70
+10461,269,Caverns of Time,Unknown,70
+10561,269,Caverns of Time,Unknown,70
+11382,269,Caverns of Time,Heroic,70
+10558,543,Hellfire Citadel,Dungeon,70
+10559,543,Hellfire Citadel,Dungeon,70
+2951,90,Gnomeregan,Dungeon,30
+5127,229,Blackrock Spire,Dungeon,60
+8989,229,Blackrock Spire,Dungeon,60
+4263,230,Blackrock Depths,Dungeon,56
+4299,230,Blackrock Depths,Dungeon,50
+10470,269,Caverns of Time,Unknown,70
+10746,269,Caverns of Time,Unknown,70
+11103,269,Caverns of Time,Unknown,70
+7703,429,Dire Maul,Dungeon,60
+9764,545,The Steamvault,Unknown,70
+10900,547,The Slave Pens,Raid,70
+4282,230,Blackrock Depths,Dungeon,58
+10464,269,Caverns of Time,Unknown,70
+11104,269,Caverns of Time,Unknown,70
+11105,269,Caverns of Time,Unknown,70
+8990,429,Dire Maul,Dungeon,60
