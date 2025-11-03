@@ -37,8 +37,8 @@ public:
 private:
     void CheckDailyQuestReset(Player* player)
     {
-        // Query player's daily quest progress
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_DAILY_QUEST_PROGRESS);
+    // Query player's daily quest progress
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_DAILY_QUEST_PROGRESS);
         stmt->SetData(0, player->GetGUID().GetCounter());
         
         PreparedQueryResult result = CharacterDatabase.Query(stmt);
@@ -76,8 +76,8 @@ private:
 
     void CheckWeeklyQuestReset(Player* player)
     {
-        // Query player's weekly quest progress
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_WEEKLY_QUEST_PROGRESS);
+    // Query player's weekly quest progress
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_WEEKLY_QUEST_PROGRESS);
         stmt->SetData(0, player->GetGUID().GetCounter());
         
         PreparedQueryResult result = CharacterDatabase.Query(stmt);
@@ -105,8 +105,8 @@ private:
 
     void ResetDailyQuest(Player* player, uint32 questId)
     {
-        // Update database: mark not completed
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_DAILY_QUEST_RESET);
+    // Update database: mark not completed
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_DAILY_QUEST_RESET);
         stmt->SetData(0, player->GetGUID().GetCounter());
         stmt->SetData(1, questId);
         CharacterDatabase.Execute(stmt);
@@ -117,8 +117,8 @@ private:
 
     void ResetWeeklyQuest(Player* player, uint32 questId)
     {
-        // Update database: mark not completed
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_WEEKLY_QUEST_RESET);
+    // Update database: mark not completed
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_WEEKLY_QUEST_RESET);
         stmt->SetData(0, player->GetGUID().GetCounter());
         stmt->SetData(1, questId);
         CharacterDatabase.Execute(stmt);
@@ -129,8 +129,8 @@ private:
 
     void SaveQuestProgress(Player* player)
     {
-        // Update last activity timestamp in player_dungeon_completion_stats
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_DUNGEON_STATS);
+    // Update last activity timestamp in player_dungeon_completion_stats
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_PLAYER_DUNGEON_STATS);
         stmt->SetData(0, uint32(time(nullptr)));
         stmt->SetData(1, player->GetGUID().GetCounter());
         CharacterDatabase.Execute(stmt);
@@ -167,8 +167,8 @@ public:
 private:
     void DistributeTokenRewards(Player* player, uint32 questId)
     {
-        // Query reward mapping from database
-        PreparedStatement* stmt = nullptr;
+    // Query reward mapping from database
+    WorldDatabasePreparedStatement* stmt = nullptr;
         
         if (questId >= DC_DAILY_QUEST_START && questId <= DC_DAILY_QUEST_END)
         {
@@ -213,7 +213,7 @@ private:
         if (questId >= DC_DAILY_QUEST_START && questId <= DC_DAILY_QUEST_END)
         {
             // Mark daily quest as completed
-            PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_DAILY_QUEST_COMPLETION);
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_DAILY_QUEST_COMPLETION);
             stmt->SetData(0, uint32(time(nullptr)));
             stmt->SetData(1, player->GetGUID().GetCounter());
             stmt->SetData(2, questId);
@@ -222,7 +222,7 @@ private:
         else if (questId >= DC_WEEKLY_QUEST_START && questId <= DC_WEEKLY_QUEST_END)
         {
             // Mark weekly quest as completed
-            PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_WEEKLY_QUEST_COMPLETION);
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_WEEKLY_QUEST_COMPLETION);
             stmt->SetData(0, uint32(time(nullptr)));
             stmt->SetData(1, uint32(time(nullptr))); // week reset date
             stmt->SetData(2, player->GetGUID().GetCounter());

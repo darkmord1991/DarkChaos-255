@@ -389,7 +389,7 @@ public:
             tokenCount = 1;
 
             // Query daily token multiplier from database
-            PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_DAILY_QUEST_TOKEN_REWARD);
+            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_DAILY_QUEST_TOKEN_REWARD);
             stmt->SetData(0, questId);
             PreparedQueryResult result = WorldDatabase.Query(stmt);
 
@@ -408,7 +408,7 @@ public:
             tokenCount = 1;
 
             // Query weekly token multiplier from database
-            PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WEEKLY_QUEST_TOKEN_REWARD);
+            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WEEKLY_QUEST_TOKEN_REWARD);
             stmt->SetData(0, questId);
             PreparedQueryResult result = WorldDatabase.Query(stmt);
 

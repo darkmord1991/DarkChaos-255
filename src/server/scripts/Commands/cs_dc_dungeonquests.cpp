@@ -120,8 +120,8 @@ namespace DC_DungeonQuests
 
         std::string type = args && *args ? args : "all";
 
-        PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE);
-        PreparedQueryResult result = WorldDatabase.Query(stmt);
+    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE);
+    PreparedQueryResult result = WorldDatabase.Query(stmt);
 
         if (!result)
         {
@@ -164,9 +164,9 @@ namespace DC_DungeonQuests
 
         uint32 questId = std::stoul(args);
 
-        PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE_BY_ID);
-        stmt->SetData(0, questId);
-        PreparedQueryResult result = WorldDatabase.Query(stmt);
+    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE_BY_ID);
+    stmt->SetData(0, questId);
+    PreparedQueryResult result = WorldDatabase.Query(stmt);
 
         if (!result)
         {
@@ -280,8 +280,8 @@ namespace DC_DungeonQuests
             return false;
         }
 
-        // Query reward from database
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHARACTER_SEL_QUEST_REWARD);
+    // Query reward from database
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHARACTER_SEL_QUEST_REWARD);
         stmt->SetData(0, questId);
         PreparedQueryResult result = CharacterDatabase.Query(stmt);
 
