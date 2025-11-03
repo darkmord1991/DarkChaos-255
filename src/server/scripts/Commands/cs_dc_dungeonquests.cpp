@@ -120,8 +120,10 @@ namespace DC_DungeonQuests
 
         std::string type = args && *args ? args : "all";
 
-    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE);
-    PreparedQueryResult result = WorldDatabase.Query(stmt);
+        // Query DC quest templates directly (IDs in our DC ranges)
+        PreparedQueryResult result = WorldDatabase.Query(
+            "SELECT `Id`, `Title` FROM `quest_template` WHERE `Id` BETWEEN {} AND {}",
+            700101, 700999);
 
         if (!result)
         {
@@ -164,9 +166,10 @@ namespace DC_DungeonQuests
 
         uint32 questId = std::stoul(args);
 
-    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_QUEST_TEMPLATE_BY_ID);
-    stmt->SetData(0, questId);
-    PreparedQueryResult result = WorldDatabase.Query(stmt);
+        // Fetch quest by id directly
+        PreparedQueryResult result = WorldDatabase.Query(
+            "SELECT `Id`, `Title`, `Description`, `Flags` FROM `quest_template` WHERE `Id` = {}",
+            questId);
 
         if (!result)
         {
