@@ -37,7 +37,7 @@ public:
         // Check if player meets requirements
         if (player->GetLevel() < 255)
         {
-            player->GetSession()->SendNotification("You must be level 255 to enter Hinterlands Battleground!");
+            ChatHandler(player->GetSession()).SendNotification("You must be level 255 to enter Hinterlands Battleground!");
             return true;
         }
 
@@ -45,7 +45,7 @@ public:
         ClearGossipMenuFor(player);
         
         // Check if player is already in queue
-        BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_HINTERLANDS, 0);
+    BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BattlegroundTypeId(BATTLEGROUND_HINTERLANDS), 0);
         if (player->InBattlegroundQueueForBattlegroundQueueType(bgQueueTypeId))
         {
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
@@ -81,7 +81,7 @@ public:
                 PvPDifficultyEntry const* pvpDiff = GetBattlegroundBracketByLevel(571, player->GetLevel()); // Use Northrend map for 255 bracket
                 if (!pvpDiff)
                 {
-                    player->GetSession()->SendNotification("Could not find appropriate bracket!");
+                    ChatHandler(player->GetSession()).SendNotification("Could not find appropriate bracket!");
                     CloseGossipMenuFor(player);
                     return true;
                 }
@@ -91,24 +91,26 @@ public:
                 uint8 arenaRating = 0;
                 uint8 matchmakerRating = 0;
 
-                GroupQueueInfo* ginfo = sBattlegroundMgr->AddGroup(player, nullptr, bgTypeId, pvpDiff, arenaType, 
-                    isPremade, arenaRating, matchmakerRating, 0);
+                BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
+
+                GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bgTypeId, pvpDiff, arenaType,
+                    false, isPremade, arenaRating, matchmakerRating, 0);
 
                 if (ginfo)
                 {
-                    uint32 avgWaitTime = sBattlegroundMgr->GetAverageQueueWaitTime(ginfo, pvpDiff->bracket_id);
+                    uint32 avgWaitTime = bgQueue.GetAverageQueueWaitTime(ginfo);
                     uint32 queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
 
                     WorldPacket data;
-                    sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, bg, queueSlot, STATUS_WAIT_QUEUE, 
+                    sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, nullptr, queueSlot, STATUS_WAIT_QUEUE,
                         avgWaitTime, 0, arenaType, TEAM_NEUTRAL);
                     player->SendDirectMessage(&data);
 
-                    player->GetSession()->SendNotification("You have joined the Hinterlands Battleground queue!");
+                    ChatHandler(player->GetSession()).SendNotification("You have joined the Hinterlands Battleground queue!");
                 }
                 else
                 {
-                    player->GetSession()->SendNotification("Could not join queue. Please try again.");
+                    ChatHandler(player->GetSession()).SendNotification("Could not join queue. Please try again.");
                 }
                 
                 CloseGossipMenuFor(player);
@@ -116,21 +118,21 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 2: // Leave Queue
             {
-                BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_HINTERLANDS, 0);
+                BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BattlegroundTypeId(BATTLEGROUND_HINTERLANDS), 0);
                 player->RemoveBattlegroundQueueId(bgQueueTypeId);
                 
                 WorldPacket data;
                 sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, nullptr, 0, STATUS_NONE, 0, 0, 0, TEAM_NEUTRAL);
                 player->SendDirectMessage(&data);
 
-                player->GetSession()->SendNotification("You have left the Hinterlands Battleground queue.");
+                ChatHandler(player->GetSession()).SendNotification("You have left the Hinterlands Battleground queue.");
                 CloseGossipMenuFor(player);
                 break;
             }
             case GOSSIP_ACTION_INFO_DEF + 3: // Info
             {
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
-                player->GetSession()->SendGossipMenu(50000, creature->GetGUID()); // Custom text ID - add to gossip_menu_option
+                SendGossipMenuFor(player, 50000, creature->GetGUID()); // Custom text ID - add to gossip_menu_option
                 break;
             }
             default:

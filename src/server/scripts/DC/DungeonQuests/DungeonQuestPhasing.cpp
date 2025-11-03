@@ -76,40 +76,11 @@ public:
     // Check if a map ID is a dungeon
     bool IsDungeonMap(uint32 mapId)
     {
-        // Classic dungeons
-        if (mapId == MAP_RAGEFIRE_CHASM || mapId == MAP_WAILING_CAVERNS ||
-            mapId == MAP_DEADMINES || mapId == MAP_SHADOWFANG_KEEP ||
-            mapId == MAP_BLACKFATHOM_DEEPS || mapId == MAP_STOCKADE ||
-            mapId == MAP_GNOMEREGAN || mapId == MAP_RAZORFEN_KRAUL ||
-            mapId == MAP_SCARLET_MONASTERY || mapId == MAP_RAZORFEN_DOWNS ||
-            mapId == MAP_ULDAMAN || mapId == MAP_ZULFARRAK ||
-            mapId == MAP_MARAUDON || mapId == MAP_SUNKEN_TEMPLE ||
-            mapId == MAP_BLACKROCK_DEPTHS || mapId == MAP_DIRE_MAUL ||
-            mapId == MAP_SCHOLOMANCE || mapId == MAP_STRATHOLME ||
-            mapId == MAP_BLACKROCK_SPIRE)
-            return true;
-
-        // TBC dungeons
-        if (mapId == MAP_HELLFIRE_RAMPARTS || mapId == MAP_BLOOD_FURNACE ||
-            mapId == MAP_SHATTERED_HALLS || mapId == MAP_SLAVE_PENS ||
-            mapId == MAP_UNDERBOG || mapId == MAP_STEAMVAULT ||
-            mapId == MAP_MANA_TOMBS || mapId == MAP_AUCHENAI_CRYPTS ||
-            mapId == MAP_SETHEKK_HALLS || mapId == MAP_SHADOW_LABYRINTH ||
-            mapId == MAP_OLD_HILLSBRAD || mapId == MAP_BLACK_MORASS ||
-            mapId == MAP_MECHANAR || mapId == MAP_BOTANICA ||
-            mapId == MAP_ARCATRAZ || mapId == MAP_MAGISTERS_TERRACE)
-            return true;
-
-        // WotLK dungeons
-        if (mapId == MAP_UTGARDE_KEEP || mapId == MAP_NEXUS ||
-            mapId == MAP_AZJOL_NERUB || mapId == MAP_AHNKAHET ||
-            mapId == MAP_DRAK_THARON || mapId == MAP_VIOLET_HOLD ||
-            mapId == MAP_GUNDRAK || mapId == MAP_HALLS_OF_STONE ||
-            mapId == MAP_HALLS_OF_LIGHTNING || mapId == MAP_OCULUS ||
-            mapId == MAP_CULLING_OF_STRATHOLME || mapId == MAP_UTGARDE_PINNACLE ||
-            mapId == MAP_TRIAL_OF_CHAMPION || mapId == MAP_FORGE_OF_SOULS ||
-            mapId == MAP_PIT_OF_SARON || mapId == MAP_HALLS_OF_REFLECTION)
-            return true;
+        // Use DBC map entry to determine whether a map is a dungeon.
+        // This is more robust than hard-coded MAP_* constants and avoids
+        // missing symbol errors if certain MAP_* defines are not present.
+        if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId))
+            return mapEntry->IsDungeon();
 
         return false;
     }
@@ -173,11 +144,10 @@ public:
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true)) return;
 
         uint32 mapId = player->GetMapId();
-        // Check simple dungeon membership using existing MAP_* constants
+        // Use DBC entry to determine whether the player is in a dungeon
         bool inDungeon = false;
-        // Duplicate minimal IsDungeonMap checks for common dungeon maps (covers main cases)
-        if (mapId == MAP_RAGEFIRE_CHASM || mapId == MAP_DEADMINES || mapId == MAP_ULDAMAN || mapId == MAP_ZULFARRAK)
-            inDungeon = true;
+        if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId))
+            inDungeon = mapEntry->IsDungeon();
 
         if (inDungeon)
         {
@@ -206,8 +176,8 @@ public:
         uint32 mapId = player->GetMapId();
         // If player still in dungeon, switch to solo phase
         bool inDungeon = false;
-        if (mapId == MAP_RAGEFIRE_CHASM || mapId == MAP_DEADMINES || mapId == MAP_ULDAMAN || mapId == MAP_ZULFARRAK)
-            inDungeon = true;
+        if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId))
+            inDungeon = mapEntry->IsDungeon();
 
         if (inDungeon)
         {
@@ -229,15 +199,15 @@ public:
     {
         DungeonQuestMasterPhasingAI(Creature* creature) : ScriptedAI(creature) { }
 
-        void JustAppeared() override
+        // Use Reset() which is a known virtual in ScriptedAI. This runs when the creature is initialized
+        // or its state is reset by the core. We set a very broad phase mask here so dungeon quest masters
+        // are visible across the dungeon-related phases.
+        void Reset() override
         {
             // Quest masters should be visible in all dungeon phases
-            // Set a broad phase mask that covers all possible dungeon quest phases
-            if (me->GetEntry() >= NPC_DUNGEON_QUEST_MASTER_START && 
+            if (me->GetEntry() >= NPC_DUNGEON_QUEST_MASTER_START &&
                 me->GetEntry() <= NPC_DUNGEON_QUEST_MASTER_END)
             {
-                // Use a very high phase mask to be visible across multiple phases
-                // This is intentional - NPCs need to be accessible to all players/groups
                 me->SetPhaseMask(0xFFFFFFFF, true); // All phases
             }
         }

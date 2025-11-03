@@ -109,7 +109,40 @@ namespace DungeonQuestHelper
         return 0;
     }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+    // Get daily quest completions for player (by quest id range)
+    uint32 GetDailyQuestCompletions(Player* player)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {} AND quest_id BETWEEN {} AND {}",
+            player->GetGUID().GetCounter(), QUEST_DAILY_START, QUEST_DAILY_END
+        );
+
+        if (result)
+            return (*result)[0].Get<uint32>();
+
+        return 0;
+    }
+
+    // Get weekly quest completions for player (by quest id range)
+    uint32 GetWeeklyQuestCompletions(Player* player)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {} AND quest_id BETWEEN {} AND {}",
+            player->GetGUID().GetCounter(), QUEST_WEEKLY_START, QUEST_WEEKLY_END
+        );
+
+        if (result)
+            return (*result)[0].Get<uint32>();
+
+        return 0;
+    }
+
+    // Forward declarations for helper functions used by OnGossipSelect/OnGossipHello
+    void ShowFilteredQuests(Player* player, Creature* creature, uint32 rangeStart, uint32 rangeEnd, const std::string& category);
+    void ShowRewardsInfo(Player* player, Creature* creature);
+    void ShowPlayerStats(Player* player, Creature* creature);
+
+    bool OnGossipHello(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);
 
@@ -125,7 +158,7 @@ namespace DungeonQuestHelper
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action)
     {
         ClearGossipMenuFor(player);
 
@@ -168,8 +201,7 @@ namespace DungeonQuestHelper
 
         return true;
     }
-
-private:
+    
     void ShowFilteredQuests(Player* player, Creature* creature, uint32 rangeStart, uint32 rangeEnd, const std::string& category)
     {
         // Prepare AC's quest menu, but we'll filter it
@@ -336,7 +368,7 @@ public:
         if (quest->GetQuestId() >= QUEST_DAILY_START && quest->GetQuestId() <= QUEST_WEEKLY_END)
         {
             // Optional: Custom messaging for dungeon quests
-            player->GetSession()->SendNotification("Quest accepted! Complete all objectives to receive rewards.");
+            ChatHandler(player->GetSession()).SendNotification("Quest accepted! Complete all objectives to receive rewards.");
         }
 
         return true;
@@ -379,60 +411,40 @@ public:
         // AWARD TOKENS BASED ON QUEST TYPE
         // =====================================================================
 
-        Item* tokenItem = nullptr;
-        uint32 tokenCount = 1;
+    uint32 tokenItemId = 0;
+    uint32 tokenCount = 1;
 
         // Daily quests
         if (questId >= QUEST_DAILY_START && questId <= QUEST_DAILY_END)
         {
-            tokenItem = Item::CreateItem(ITEM_DUNGEON_EXPLORER_TOKEN, 1);
+            tokenItemId = ITEM_DUNGEON_EXPLORER_TOKEN;
             tokenCount = 1;
 
-            // Query daily token multiplier from database
-            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_DAILY_QUEST_TOKEN_REWARD);
-            stmt->SetData(0, questId);
-            PreparedQueryResult result = WorldDatabase.Query(stmt);
-
-            if (result)
-            {
-                Field* fields = result->Fetch();
-                tokenCount = fields[0].Get<uint8>();
-                float multiplier = fields[1].Get<float>();
-                tokenCount = (uint32)(tokenCount * multiplier);
-            }
+            // Optional: query daily token multiplier from DB if implemented
+            // (Placeholder kept for future prepared statement integration)
         }
         // Weekly quests
         else if (questId >= QUEST_WEEKLY_START && questId <= QUEST_WEEKLY_END)
         {
-            tokenItem = Item::CreateItem(ITEM_EXPANSION_SPECIALIST_TOKEN, 1);
+            tokenItemId = ITEM_EXPANSION_SPECIALIST_TOKEN;
             tokenCount = 1;
 
-            // Query weekly token multiplier from database
-            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WEEKLY_QUEST_TOKEN_REWARD);
-            stmt->SetData(0, questId);
-            PreparedQueryResult result = WorldDatabase.Query(stmt);
-
-            if (result)
-            {
-                Field* fields = result->Fetch();
-                tokenCount = fields[0].Get<uint8>();
-                float multiplier = fields[1].Get<float>();
-                tokenCount = (uint32)(tokenCount * multiplier);
-            }
+            // Optional: query weekly token multiplier from DB if implemented
+            // (Placeholder kept for future prepared statement integration)
         }
         // Dungeon quests (normal)
         else
         {
-            tokenItem = Item::CreateItem(ITEM_DUNGEON_EXPLORER_TOKEN, 1);
+            tokenItemId = ITEM_DUNGEON_EXPLORER_TOKEN;
             tokenCount = 1;
         }
 
         // Award tokens to player
-        if (tokenItem && tokenCount > 0)
+        if (tokenItemId != 0 && tokenCount > 0)
         {
-            if (player->AddItem(tokenItem, tokenCount))
+            if (player->AddItem(tokenItemId, tokenCount))
             {
-                player->GetSession()->SendNotification("You have received %u token(s)!", tokenCount);
+                ChatHandler(player->GetSession()).SendNotification("You have received %u token(s)!", tokenCount);
             }
         }
 
@@ -443,35 +455,34 @@ public:
         // Track total dungeon quests completed
         uint32 totalQuestsCompleted = 0;
 
-        // Query completed dungeon quest count for player
-        CharacterDatabasePreparedStatement* charStmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_DUNGEON_QUEST_COUNT);
-        charStmt->SetData(0, player->GetGUID().GetCounter());
-        PreparedQueryResult charResult = CharacterDatabase.Query(charStmt);
+        // Query completed dungeon quest count for player (adhoc query)
+        QueryResult charResult = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {}",
+            player->GetGUID().GetCounter()
+        );
 
         if (charResult)
-        {
-            totalQuestsCompleted = charResult->Fetch()[0].Get<uint32>();
-        }
+            totalQuestsCompleted = (*charResult)[0].Get<uint32>();
 
         // Award achievement for first dungeon quest
         if (totalQuestsCompleted == 1 && !player->HasAchieved(ACHIEVEMENT_DUNGEON_NOVICE))
         {
-            player->CompletedAchievement(ACHIEVEMENT_DUNGEON_NOVICE);
-            player->GetSession()->SendNotification("Achievement Unlocked: Dungeon Novice!");
+            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_DUNGEON_NOVICE));
+            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Dungeon Novice!");
         }
 
         // Award achievement for 10 dungeon quests
         if (totalQuestsCompleted >= 10 && !player->HasAchieved(ACHIEVEMENT_DUNGEON_EXPLORER))
         {
-            player->CompletedAchievement(ACHIEVEMENT_DUNGEON_EXPLORER);
-            player->GetSession()->SendNotification("Achievement Unlocked: Dungeon Explorer!");
+            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_DUNGEON_EXPLORER));
+            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Dungeon Explorer!");
         }
 
         // Award achievement for 50 dungeon quests
         if (totalQuestsCompleted >= 50 && !player->HasAchieved(ACHIEVEMENT_LEGENDARY_DUNGEON))
         {
-            player->CompletedAchievement(ACHIEVEMENT_LEGENDARY_DUNGEON);
-            player->GetSession()->SendNotification("Achievement Unlocked: Legendary Dungeon Master!");
+            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_LEGENDARY_DUNGEON));
+            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Legendary Dungeon Master!");
         }
 
         // =====================================================================
@@ -490,20 +501,10 @@ public:
     }
 };
 
-// =====================================================================
-// PREPARED STATEMENTS
-// =====================================================================
-
-enum WorldDatabaseStatements
-{
-    WORLD_SEL_DAILY_QUEST_TOKEN_REWARD = 1000,
-    WORLD_SEL_WEEKLY_QUEST_TOKEN_REWARD = 1001,
-};
-
-enum CharacterDatabaseStatements
-{
-    CHAR_SEL_PLAYER_DUNGEON_QUEST_COUNT = 2000,
-};
+// No prepared statements are declared here — this script uses ad-hoc queries
+// and the project's central Database statement enums. Declaring local
+// WorldDatabaseStatements/CharacterDatabaseStatements caused a redefinition
+// with the global enums in WorldDatabase.h/CharacterDatabase.h. Removed.
 
 // =====================================================================
 // INITIALIZATION

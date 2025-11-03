@@ -233,8 +233,8 @@ private:
 
         if (tokenAmount > 0)
         {
-            // Add tokens to player inventory
-            if (Item* item = player->AddItem(tokenItemId, tokenAmount))
+            // Add tokens to player inventory. AddItem returns bool for item IDs
+            if (player->AddItem(tokenItemId, tokenAmount))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("You have been awarded %u Dungeon Tokens!", tokenAmount);
                 LOG_INFO("scripts", "DungeonQuest: Awarded {} tokens (item {}) to player {}", 
