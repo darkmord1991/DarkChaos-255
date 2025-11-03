@@ -190,7 +190,7 @@ class DungeonQuestMasterFollowerGroupScript : public GroupScript
 public:
     DungeonQuestMasterFollowerGroupScript() : GroupScript("DungeonQuestMasterFollowerGroupScript") { }
 
-    void OnLeaderChange(Group* group, ObjectGuid newLeaderGuid, ObjectGuid oldLeaderGuid) override
+    void OnChangeLeader(Group* group, ObjectGuid newLeaderGuid, ObjectGuid oldLeaderGuid) override
     {
         if (!group)
             return;
