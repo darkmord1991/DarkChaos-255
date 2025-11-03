@@ -452,7 +452,6 @@ namespace DC_DungeonQuests
         {
             // Reset specific quest
             player->SetQuestStatus(questId, QUEST_STATUS_NONE);
-            player->RemoveQuestlangs(questId);
             handler->PSendSysMessage("Quest %u reset for player %s", questId, playerName);
             DebugLog("Quest reset - Player: " + std::string(playerName) + ", Quest: " + std::to_string(questId));
         }
