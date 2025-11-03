@@ -129,18 +129,13 @@ class DungeonQuestMasterFollowerScript : public PlayerScript
 public:
     DungeonQuestMasterFollowerScript() : PlayerScript("DungeonQuestMasterFollowerScript") { }
 
-    // Spawn follower when group leader enters dungeon
+    // Spawn follower when player enters dungeon (solo or group)
     void OnPlayerMapChanged(Player* player) override
     {
         if (!player)
             return;
             
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.FollowerEnable", true))
-            return;
-        
-        // Only spawn for group leaders in dungeons
-        Group* group = player->GetGroup();
-        if (!group || group->GetLeaderGUID() != player->GetGUID())
             return;
         
         uint32 mapId = player->GetMapId();
@@ -152,10 +147,10 @@ public:
         if (GetQuestMasterFollower(player))
             return;
         
-        // Spawn follower
+        // Spawn follower for solo players or any dungeon participant
         if (Creature* follower = SpawnQuestMasterFollower(player))
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("A Quest Master has joined your group!");
+            ChatHandler(player->GetSession()).PSendSysMessage("A Quest Master has joined you!");
         }
     }
 
@@ -198,25 +193,10 @@ public:
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.FollowerEnable", true))
             return;
         
-        // Despawn follower from old leader
-        if (Player* oldLeader = ObjectAccessor::FindPlayer(oldLeaderGuid))
-        {
-            DespawnQuestMasterFollower(oldLeader, true);
-        }
-        
-        // Spawn follower for new leader if in dungeon
-        if (Player* newLeader = ObjectAccessor::FindPlayer(newLeaderGuid))
-        {
-            uint32 mapId = newLeader->GetMapId();
-            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-            if (mapEntry && mapEntry->IsDungeon() && !newLeader->IsInCombat())
-            {
-                if (SpawnQuestMasterFollower(newLeader))
-                {
-                    ChatHandler(newLeader->GetSession()).PSendSysMessage("A Quest Master has joined your group!");
-                }
-            }
-        }
+        // When leader changes in a group, followers are already per-player so no special handling needed
+        // Each player keeps their own follower, regardless of who the leader is
+        (void)newLeaderGuid;
+        (void)oldLeaderGuid;
     }
 
     void OnDisband(Group* group) override
@@ -279,22 +259,14 @@ public:
             return true;
         }
         
-        // Check if player is group leader
-        Group* group = player->GetGroup();
-        if (!group || group->GetLeaderGUID() != player->GetGUID())
-        {
-            handler->PSendSysMessage("Only the group leader can summon the Quest Master!");
-            return true;
-        }
-        
-        // Check if already summoned
+        // Check if already summoned for this player
         if (GetQuestMasterFollower(player))
         {
-            handler->PSendSysMessage("Quest Master is already with your group!");
+            handler->PSendSysMessage("Quest Master is already with you!");
             return true;
         }
         
-        // Summon
+        // Summon (any dungeon participant can summon, not just group leader)
         if (SpawnQuestMasterFollower(player))
         {
             handler->PSendSysMessage("Quest Master has been summoned!");
