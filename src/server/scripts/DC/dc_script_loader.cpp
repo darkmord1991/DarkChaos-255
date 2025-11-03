@@ -42,6 +42,7 @@ void AddSC_spell_challenge_mode_auras(); // location: scripts\DC\ChallengeMode\s
 void AddSC_dc_achievements(); // location: scripts\DC\Achievements\dc_achievements.cpp
 void AddSC_DungeonQuestSystem(); // location: scripts\DC\DungeonQuests\DungeonQuestSystem.cpp
 void AddSC_DungeonQuestPhasing(); // location: scripts\DC\DungeonQuests\DungeonQuestPhasing.cpp
+void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\DungeonQuestMasterFollower.cpp
 void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 
@@ -75,6 +76,7 @@ void AddDCScripts()
     AddSC_dc_achievements();
     AddSC_DungeonQuestSystem();
     AddSC_DungeonQuestPhasing();
+    AddSC_DungeonQuestMasterFollower();
     AddSC_npc_dungeon_quest_master();
     AddSC_npc_dungeon_quest_daily_weekly();
 }
