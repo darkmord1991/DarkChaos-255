@@ -31,8 +31,8 @@ using namespace Acore::ChatCommands;
 
 // Default quest master entry (can be configured)
 constexpr uint32 DEFAULT_QUEST_MASTER_ENTRY = 700000;
-constexpr uint32 NPC_DUNGEON_QUEST_MASTER_START = 700000;
-constexpr uint32 NPC_DUNGEON_QUEST_MASTER_END = 700052;
+[[maybe_unused]] constexpr uint32 NPC_DUNGEON_QUEST_MASTER_START = 700000;
+[[maybe_unused]] constexpr uint32 NPC_DUNGEON_QUEST_MASTER_END = 700052;
 
 // Storage for active quest master followers
 // Key: Player GUID (leader), Value: Creature GUID (follower)
@@ -64,12 +64,18 @@ static Creature* SpawnQuestMasterFollower(Player* player)
     x += 2.0f * cos(angle);
     y += 2.0f * sin(angle);
     
-    // Summon as temporary follower
+    // Spawn quest master follower for player
     if (TempSummon* summon = player->SummonCreature(entry, x, y, z, o, TEMPSUMMON_MANUAL_DESPAWN))
     {
         // Configure follower behavior
         summon->SetReactState(REACT_PASSIVE); // Don't attack
         summon->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+        
+        // Debug logging
+        LOG_DEBUG("scripts", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})", 
+                  entry, player->GetName(), x, y, z);
+        LOG_DEBUG("scripts", "DungeonQuestMaster: NPC Flags set to {} (GOSSIP=1 | QUESTGIVER=2)", 
+                  summon->GetUInt32Value(UNIT_NPC_FLAGS));
         
         // Make it follow the player
         summon->GetMotionMaster()->MoveFollow(player, 2.0f, M_PI); // 2 yards behind
@@ -77,7 +83,7 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         // Store mapping
         sQuestMasterFollowers[player->GetGUID()] = summon->GetGUID();
         
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Spawned follower {} for player {}", 
+        LOG_DEBUG("scripts", "DungeonQuestMaster: Follower {} stored for player {}", 
                   summon->GetGUID().ToString(), player->GetName());
         
         return summon;
@@ -150,6 +156,9 @@ public:
         // Spawn follower for solo players or any dungeon participant
         if (Creature* follower = SpawnQuestMasterFollower(player))
         {
+            uint32 entry = GetQuestMasterEntryForMap(mapId);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[DungeonQuest DEBUG]|r Master spawned - Entry: {} Flags: {} Follow: YES", 
+                                                               entry, follower->GetUInt32Value(UNIT_NPC_FLAGS));
             ChatHandler(player->GetSession()).PSendSysMessage("A Quest Master has joined you!");
         }
     }
