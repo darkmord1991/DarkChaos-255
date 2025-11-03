@@ -283,21 +283,65 @@ namespace DC_DungeonQuests
             return false;
         }
 
-    // Query reward from database
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHARACTER_SEL_QUEST_REWARD);
-        stmt->SetData(0, questId);
-        PreparedQueryResult result = CharacterDatabase.Query(stmt);
+    // Query reward from DC reward tables with preference order:
+    // 1) daily-specific table
+    // 2) weekly-specific table
+    // 3) fallback default table `dc_quest_reward_tokens`
 
-        if (!result)
+    QueryResult resultDaily = WorldDatabase.Query(
+        "SELECT token_item_id, token_amount, multiplier FROM dc_daily_quest_token_rewards WHERE quest_id = {}",
+        questId);
+
+    QueryResult resultWeekly;
+    QueryResult resultDefault;
+
+    Field* fields = nullptr;
+    uint32 rewardTokenId = 0;
+    uint32 rewardCount = 0;
+    float rewardMultiplier = 1.0f;
+
+    if (resultDaily)
+    {
+        fields = resultDaily->Fetch();
+        rewardTokenId = fields[0].Get<uint32>();
+        rewardCount = fields[1].Get<uint32>();
+        rewardMultiplier = fields[2].Get<float>();
+    }
+    else
+    {
+        // Try weekly
+        resultWeekly = WorldDatabase.Query(
+            "SELECT token_item_id, token_amount, multiplier FROM dc_weekly_quest_token_rewards WHERE quest_id = {}",
+            questId);
+
+        if (resultWeekly)
         {
-            handler->PSendSysMessage("No reward configuration found for quest %u", questId);
-            return false;
+            fields = resultWeekly->Fetch();
+            rewardTokenId = fields[0].Get<uint32>();
+            rewardCount = fields[1].Get<uint32>();
+            rewardMultiplier = fields[2].Get<float>();
         }
+        else
+        {
+            // Fallback to default token configuration table
+            resultDefault = WorldDatabase.Query(
+                "SELECT token_item_id, token_amount, multiplier FROM dc_quest_reward_tokens LIMIT 1");
 
-        Field* fields = result->Fetch();
-        uint32 rewardTokenId = fields[0].Get<uint32>();
-        uint32 rewardCount = fields[1].Get<uint32>();
-        float rewardMultiplier = fields[2].Get<float>();
+            if (resultDefault)
+            {
+                fields = resultDefault->Fetch();
+                rewardTokenId = fields[0].Get<uint32>();
+                rewardCount = fields[1].Get<uint32>();
+                rewardMultiplier = fields[2].Get<float>();
+            }
+        }
+    }
+
+    if (!fields)
+    {
+        handler->PSendSysMessage("No reward configuration found for quest %u", questId);
+        return false;
+    }
 
         // Calculate final reward
         uint32 finalCount = static_cast<uint32>(rewardCount * rewardMultiplier);
