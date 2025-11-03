@@ -96,9 +96,9 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
     if (it == sQuestMasterFollowers.end())
         return;
     
-    if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
+        if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
     {
-        follower->DespawnOrUnsummon(0);
+        follower->DespawnOrUnsummon(0ms);
         LOG_DEBUG("scripts", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
     }
     
