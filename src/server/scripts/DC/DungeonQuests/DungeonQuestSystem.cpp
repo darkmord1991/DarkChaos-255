@@ -26,13 +26,24 @@
 
 // Quest ID ranges
 constexpr uint32 QUEST_DAILY_MIN = 700101;
-constexpr uint32 QUEST_DAILY_MAX = 700104;
+constexpr uint32 QUEST_DAILY_MAX = 700150;  // UPDATED v4.0
 constexpr uint32 QUEST_WEEKLY_MIN = 700201;
-constexpr uint32 QUEST_WEEKLY_MAX = 700204;
+constexpr uint32 QUEST_WEEKLY_MAX = 700224; // UPDATED v4.0
 constexpr uint32 QUEST_DUNGEON_MIN = 700701;
 constexpr uint32 QUEST_DUNGEON_MAX = 700999;
 
-// Achievement ID range (13500-13551) -- constants removed because not currently used
+// Achievement ID range v4.0
+constexpr uint32 ACHIEVEMENT_DUNGEON_MIN = 10800;
+constexpr uint32 ACHIEVEMENT_DUNGEON_MAX = 10999;
+
+// Difficulty enumeration v4.0
+enum QuestDifficulty
+{
+    DIFFICULTY_NORMAL = 0,
+    DIFFICULTY_HEROIC = 1,
+    DIFFICULTY_MYTHIC = 2,
+    DIFFICULTY_MYTHIC_PLUS = 3
+};
 
 // Database helper functions
 class DungeonQuestDB
@@ -72,6 +83,132 @@ public:
             return fields[0].Get<uint32>();
         }
         return 0; // No token configured
+    }
+
+    // v4.0: Get difficulty from quest ID
+    static QuestDifficulty GetQuestDifficulty(uint32 questId)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
+        );
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            std::string diff = fields[0].Get<std::string>();
+            
+            if (diff == "Heroic") return DIFFICULTY_HEROIC;
+            if (diff == "Mythic") return DIFFICULTY_MYTHIC;
+            if (diff == "Mythic+") return DIFFICULTY_MYTHIC_PLUS;
+        }
+        
+        return DIFFICULTY_NORMAL;
+    }
+    
+    // v4.0: Get difficulty configuration
+    static float GetDifficultyTokenMultiplier(QuestDifficulty difficulty)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
+            static_cast<uint32>(difficulty) + 1
+        );
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            return fields[0].Get<float>();
+        }
+        
+        return 1.0f;
+    }
+    
+    static float GetDifficultyGoldMultiplier(QuestDifficulty difficulty)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
+            static_cast<uint32>(difficulty) + 1
+        );
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            return fields[0].Get<float>();
+        }
+        
+        return 1.0f;
+    }
+    
+    // v4.0: Update difficulty-specific statistics
+    static void UpdateDifficultyStatistics(Player* player, QuestDifficulty difficulty)
+    {
+        if (!player)
+            return;
+            
+        std::string statName;
+        switch (difficulty)
+        {
+            case DIFFICULTY_HEROIC:
+                statName = "heroic_quests_completed";
+                break;
+            case DIFFICULTY_MYTHIC:
+                statName = "mythic_quests_completed";
+                break;
+            case DIFFICULTY_MYTHIC_PLUS:
+                statName = "mythic_plus_quests_completed";
+                break;
+            default:
+                return; // Don't track Normal separately
+        }
+        
+        UpdateStatistics(player, statName, 1);
+        
+        LOG_DEBUG("scripts", "DungeonQuest: Updated {} for player {}", 
+                  statName, player->GetName());
+    }
+    
+    // v4.0: Get dungeon ID from quest ID
+    static uint32 GetDungeonIdFromQuest(uint32 questId)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT dungeon_id FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
+        );
+        
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            return fields[0].Get<uint32>();
+        }
+        
+        return 0;
+    }
+    
+    // v4.0: Track difficulty completion
+    static void TrackDifficultyCompletion(Player* player, uint32 dungeonId, QuestDifficulty difficulty)
+    {
+        if (!player || dungeonId == 0)
+            return;
+        
+        std::string difficultyStr = "Normal";
+        switch (difficulty)
+        {
+            case DIFFICULTY_HEROIC: difficultyStr = "Heroic"; break;
+            case DIFFICULTY_MYTHIC: difficultyStr = "Mythic"; break;
+            case DIFFICULTY_MYTHIC_PLUS: difficultyStr = "Mythic+"; break;
+            default: break;
+        }
+        
+        // Update completion tracking
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_character_difficulty_completions "
+            "(guid, dungeon_id, difficulty, total_completions, last_completion_date) "
+            "VALUES ({}, {}, '{}', 1, NOW()) "
+            "ON DUPLICATE KEY UPDATE "
+            "total_completions = total_completions + 1, "
+            "last_completion_date = NOW()",
+            player->GetGUID().GetCounter(),
+            dungeonId,
+            difficultyStr
+        );
     }
 
     // Update dungeon progress
@@ -220,6 +357,7 @@ private:
             return;
         }
 
+        // Get base token amount from database
         if (isDailyQuest)
         {
             tokenAmount = DungeonQuestDB::GetDailyQuestTokenReward(questId);
@@ -229,14 +367,44 @@ private:
             tokenAmount = DungeonQuestDB::GetWeeklyQuestTokenReward(questId);
         }
 
-        if (tokenAmount > 0)
+        if (tokenAmount == 0)
         {
-            // Add tokens to player inventory. AddItem returns bool for item IDs
-            if (player->AddItem(tokenItemId, tokenAmount))
+            LOG_DEBUG("scripts", "DungeonQuest: No token reward configured for quest {}", questId);
+            return;
+        }
+
+        // v4.0: Get difficulty and apply multiplier
+        QuestDifficulty difficulty = DungeonQuestDB::GetQuestDifficulty(questId);
+        float multiplier = DungeonQuestDB::GetDifficultyTokenMultiplier(difficulty);
+        
+        // Calculate final token amount
+        uint32 finalTokenAmount = static_cast<uint32>(tokenAmount * multiplier);
+        
+        LOG_INFO("scripts", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens", 
+                 questId, tokenAmount, multiplier, finalTokenAmount);
+
+        // Award tokens to player
+        if (finalTokenAmount > 0)
+        {
+            if (player->AddItem(tokenItemId, finalTokenAmount))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You have been awarded %u Dungeon Tokens!", tokenAmount);
+                // Build difficulty message
+                std::string difficultyText = "";
+                if (difficulty == DIFFICULTY_HEROIC)
+                    difficultyText = " |cFFFFD700(Heroic +50% bonus)|r";
+                else if (difficulty == DIFFICULTY_MYTHIC)
+                    difficultyText = " |cFFFF4500(Mythic +100% bonus)|r";
+                else if (difficulty == DIFFICULTY_MYTHIC_PLUS)
+                    difficultyText = " |cFFDC143C(Mythic+ +200% bonus)|r";
+                
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00FF00You have been awarded %u Dungeon Tokens!|r%s", 
+                    finalTokenAmount, 
+                    difficultyText.c_str()
+                );
+                
                 LOG_INFO("scripts", "DungeonQuest: Awarded {} tokens (item {}) to player {}", 
-                         tokenAmount, tokenItemId, player->GetName());
+                         finalTokenAmount, tokenItemId, player->GetName());
             }
             else
             {
@@ -244,11 +412,25 @@ private:
                          tokenItemId, player->GetName());
             }
         }
+        
+        // v4.0: Track difficulty completion
+        uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId);
+        if (dungeonId > 0)
+        {
+            DungeonQuestDB::TrackDifficultyCompletion(player, dungeonId, difficulty);
+        }
+        
+        // v4.0: Update difficulty statistics
+        DungeonQuestDB::UpdateDifficultyStatistics(player, difficulty);
     }
 
     // Update quest completion statistics
     void UpdateQuestStatistics(Player* player, bool isDailyQuest, bool isWeeklyQuest, bool isDungeonQuest, uint32 questId)
     {
+        // v4.0: Update difficulty statistics for all quest types
+        QuestDifficulty difficulty = DungeonQuestDB::GetQuestDifficulty(questId);
+        DungeonQuestDB::UpdateDifficultyStatistics(player, difficulty);
+        
         if (isDailyQuest)
         {
             DungeonQuestDB::UpdateStatistics(player, "daily_quests_completed", 1);
@@ -264,7 +446,7 @@ private:
             DungeonQuestDB::UpdateStatistics(player, "dungeon_quests_completed", 1);
             
             // Update dungeon-specific progress
-            uint32 dungeonId = GetDungeonIdFromQuest(questId);
+            uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId); // v4.0: Use static database function
             if (dungeonId > 0)
             {
                 DungeonQuestDB::UpdateDungeonProgress(player, dungeonId, questId);
@@ -272,29 +454,6 @@ private:
                          dungeonId, player->GetName());
             }
         }
-    }
-
-    // Map quest IDs to dungeon IDs
-    uint32 GetDungeonIdFromQuest(uint32 questId) const
-    {
-        // Quest ranges by dungeon (based on SQL data)
-        // Ragefire Chasm: 700701-700702
-        if (questId >= 700701 && questId <= 700702)
-            return 389; // Ragefire Chasm zone ID
-
-        // Blackfathom Deeps: 700703-700704
-        if (questId >= 700703 && questId <= 700704)
-            return 48; // Blackfathom Deeps zone ID
-
-        // Gnomeregan: 700705-700706
-        if (questId >= 700705 && questId <= 700706)
-            return 90; // Gnomeregan zone ID
-
-        // Shadowfang Keep: 700707-700708
-        if (questId >= 700707 && questId <= 700708)
-            return 33; // Shadowfang Keep zone ID
-
-        return 0;
     }
 
     // Check and award achievements

@@ -57,13 +57,13 @@
 #define NPC_DUNGEON_QUEST_MASTER_START 700000
 #define NPC_DUNGEON_QUEST_MASTER_END   700052
 
-// Quest Ranges
+// Quest Ranges (Updated v4.0)
 #define QUEST_DAILY_START              700101
-#define QUEST_DAILY_END                700104
+#define QUEST_DAILY_END                700150  // v4.0: Updated from 700104
 #define QUEST_WEEKLY_START             700201
-#define QUEST_WEEKLY_END               700204
+#define QUEST_WEEKLY_END               700224  // v4.0: Updated from 700204
 #define QUEST_DUNGEON_START            700701
-#define QUEST_DUNGEON_END              700999
+#define QUEST_DUNGEON_END              708999  // v4.0: Updated from 700999
 
 // Token Item IDs
 #define ITEM_DUNGEON_EXPLORER_TOKEN    700001
