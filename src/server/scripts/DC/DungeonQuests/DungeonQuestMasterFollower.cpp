@@ -95,8 +95,8 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
     auto it = sQuestMasterFollowers.find(player->GetGUID());
     if (it == sQuestMasterFollowers.end())
         return;
-    
-        if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
+
+    if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
     {
         follower->DespawnOrUnsummon(0ms);
         LOG_DEBUG("scripts", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
@@ -160,16 +160,16 @@ public:
     }
 
     // Despawn follower when leader enters combat
-    void OnPlayerCombatStart(Player* player, Unit* /*enemy*/) override
+    void OnPlayerEnterCombat(Player* player, Unit* /*enemy*/) override
     {
         if (!player)
             return;
-        
+
         // Check if this player has an active follower
         Creature* follower = GetQuestMasterFollower(player);
         if (!follower)
             return;
-        
+
         DespawnQuestMasterFollower(player);
         ChatHandler(player->GetSession()).PSendSysMessage("Quest Master retreated to safety!");
     }
