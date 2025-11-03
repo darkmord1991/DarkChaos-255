@@ -1984,26 +1984,6 @@ DungeonQuest.Leaderboard.Enable = 1
 DungeonQuest.Statistics.ResetSeason = 1
 
 # -------------------------------------------------------------------------
-# CSV Configuration Loading
-# -------------------------------------------------------------------------
-
-#
-#    DungeonQuest.CSV.Path
-#        Description: Path to CSV configuration files relative to server root
-#                     Should contain: dc_items_tokens.csv, dc_achievements.csv, etc.
-#        Default:     "Custom/CSV DBC/DC_Dungeon_Quests"
-#
-DungeonQuest.CSV.Path = "Custom/CSV DBC/DC_Dungeon_Quests"
-
-#
-#    DungeonQuest.CSV.Reload
-#        Description: Allow runtime reload of CSV configs with .dungeonquest reload command
-#        Default:     1 (Enabled - admins can reload)
-#                     0 (Disabled - configs fixed at startup)
-#
-DungeonQuest.CSV.Reload = 1
-
-# -------------------------------------------------------------------------
 # Advanced Options
 # -------------------------------------------------------------------------
 

@@ -10,7 +10,6 @@ set(SCRIPTS_DC_Prestige
 set(SCRIPTS_DC_ChallengeMode
     ChallengeMode/dc_challenge_modes_customized.cpp
     ChallengeMode/dc_challenge_mode_database.cpp
-    ChallengeMode/dc_challenge_mode_gameobject.cpp
     ChallengeMode/spell_challenge_mode_auras.cpp
 )
 
@@ -75,6 +74,7 @@ set(SCRIPTS_DC_Gilneas
 # DC Dungeon Quest System implementation
 set(SCRIPTS_DC_DungeonQuests
     DungeonQuests/DungeonQuestSystem.cpp
+    DungeonQuests/DungeonQuestPhasing.cpp
     DungeonQuests/npc_dungeon_quest_master.cpp
     DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 )

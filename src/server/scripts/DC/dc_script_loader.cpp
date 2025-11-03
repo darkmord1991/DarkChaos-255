@@ -38,10 +38,12 @@ void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
 void AddSC_dc_prestige_system(); // location: scripts\DC\dc_prestige_system.cpp
 void AddSC_dc_prestige_spells(); // location: scripts\DC\dc_prestige_spells.cpp
 void AddSC_dc_challenge_modes(); // location: scripts\DC\dc_challenge_modes_customized.cpp
-void AddSC_dc_challenge_mode_gameobject(); // location: scripts\DC\ChallengeMode\dc_challenge_mode_gameobject.cpp
 void AddSC_spell_challenge_mode_auras(); // location: scripts\DC\ChallengeMode\spell_challenge_mode_auras.cpp
 void AddSC_dc_achievements(); // location: scripts\DC\Achievements\dc_achievements.cpp
 void AddSC_DungeonQuestSystem(); // location: scripts\DC\DungeonQuests\DungeonQuestSystem.cpp
+void AddSC_DungeonQuestPhasing(); // location: scripts\DC\DungeonQuests\DungeonQuestPhasing.cpp
+void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
+void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -69,8 +71,10 @@ void AddDCScripts()
     AddSC_dc_prestige_system();
     AddSC_dc_prestige_spells();
     AddSC_spell_challenge_mode_auras();
-    AddSC_dc_challenge_mode_gameobject();
     AddSC_dc_challenge_modes();
     AddSC_dc_achievements();
     AddSC_DungeonQuestSystem();
+    AddSC_DungeonQuestPhasing();
+    AddSC_npc_dungeon_quest_master();
+    AddSC_npc_dungeon_quest_daily_weekly();
 }
