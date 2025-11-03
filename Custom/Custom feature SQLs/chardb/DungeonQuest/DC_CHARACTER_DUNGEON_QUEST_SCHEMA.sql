@@ -42,6 +42,57 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_progress` (
 COMMENT='Track dungeon quest progress per character';
 
 -- ============================================================================
+-- PER-PLAYER DAILY / WEEKLY PROGRESS TABLES
+-- These mirror the old unprefixed tables (player_daily_quest_progress, player_weekly_quest_progress)
+-- but use the `dc_` prefix to avoid conflicts and follow DarkChaos conventions.
+-- ============================================================================
+
+-- Table: dc_player_daily_quest_progress
+-- Purpose: Track per-player progress for individual daily dungeon quests
+CREATE TABLE IF NOT EXISTS `dc_player_daily_quest_progress` (
+  `guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
+  `daily_quest_entry` INT UNSIGNED NOT NULL COMMENT 'Daily quest entry id',
+  `completed_today` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=no, 1=yes',
+  `last_completed` TIMESTAMP NULL DEFAULT NULL COMMENT 'Last completion time',
+  `created_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`, `daily_quest_entry`),
+  KEY `idx_guid` (`guid`),
+  KEY `idx_daily_entry` (`daily_quest_entry`),
+  CONSTRAINT `fk_dc_player_daily_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Per-player tracking for daily dungeon quest progress';
+
+-- Table: dc_player_weekly_quest_progress
+-- Purpose: Track per-player progress for individual weekly dungeon quests
+CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
+  `guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
+  `weekly_quest_entry` INT UNSIGNED NOT NULL COMMENT 'Weekly quest entry id',
+  `completed_this_week` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=no, 1=yes',
+  `week_reset_date` TIMESTAMP NULL DEFAULT NULL COMMENT 'Last week reset timestamp',
+  `last_completed` TIMESTAMP NULL DEFAULT NULL COMMENT 'Last completion time',
+  `created_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`, `weekly_quest_entry`),
+  KEY `idx_guid` (`guid`),
+  KEY `idx_weekly_entry` (`weekly_quest_entry`),
+  CONSTRAINT `fk_dc_player_weekly_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Per-player tracking for weekly dungeon quest progress';
+
+-- Table: dc_player_dungeon_completion_stats
+-- Purpose: Track per-player dungeon completion and activity timestamps
+CREATE TABLE IF NOT EXISTS `dc_player_dungeon_completion_stats` (
+  `guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
+  `last_activity` TIMESTAMP NULL DEFAULT NULL COMMENT 'Last dungeon-related activity',
+  `total_dungeons_completed` INT UNSIGNED NOT NULL DEFAULT 0,
+  `total_quests_completed` INT UNSIGNED NOT NULL DEFAULT 0,
+  `created_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`),
+  KEY `idx_last_activity` (`last_activity`),
+  CONSTRAINT `fk_dc_player_dungeon_stats_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Per-player dungeon completion stats and timestamps';
+
+-- ============================================================================
 -- QUEST COMPLETION HISTORY
 -- ============================================================================
 
