@@ -521,7 +521,7 @@ namespace DC_DungeonQuests
             return false;
         }
 
-        player->CompletedAchievement(sAchievementMgr->GetAchievementEntry(achievementId));
+    player->CompletedAchievement(sAchievementMgr->GetAchievement(achievementId));
         handler->PSendSysMessage("Achievement %u awarded to %s", achievementId, playerName);
         DebugLog("Achievement awarded - Player: " + std::string(playerName) + ", Achievement: " + std::to_string(achievementId));
         return true;
