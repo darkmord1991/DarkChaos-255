@@ -30,63 +30,7 @@ constexpr uint32 NPC_DUNGEON_QUEST_MASTER_END = 700052;
 // Base phase mask (avoid conflicts with other systems)
 constexpr uint32 PHASE_BASE_DUNGEON_QUEST = 10000;
 
-// Dungeon map IDs (Classic, TBC, WotLK)
-// Classic Dungeons
-constexpr uint32 MAP_RAGEFIRE_CHASM = 389;
-constexpr uint32 MAP_WAILING_CAVERNS = 43;
-constexpr uint32 MAP_DEADMINES = 36;
-constexpr uint32 MAP_SHADOWFANG_KEEP = 33;
-constexpr uint32 MAP_BLACKFATHOM_DEEPS = 48;
-constexpr uint32 MAP_STOCKADE = 34;
-constexpr uint32 MAP_GNOMEREGAN = 90;
-constexpr uint32 MAP_RAZORFEN_KRAUL = 47;
-constexpr uint32 MAP_SCARLET_MONASTERY = 189;
-constexpr uint32 MAP_RAZORFEN_DOWNS = 129;
-constexpr uint32 MAP_ULDAMAN = 70;
-constexpr uint32 MAP_ZULFARRAK = 209;
-constexpr uint32 MAP_MARAUDON = 349;
-constexpr uint32 MAP_SUNKEN_TEMPLE = 109;
-constexpr uint32 MAP_BLACKROCK_DEPTHS = 230;
-constexpr uint32 MAP_DIRE_MAUL = 429;
-constexpr uint32 MAP_SCHOLOMANCE = 289;
-constexpr uint32 MAP_STRATHOLME = 329;
-constexpr uint32 MAP_BLACKROCK_SPIRE = 229;
-
-// TBC Dungeons
-constexpr uint32 MAP_HELLFIRE_RAMPARTS = 543;
-constexpr uint32 MAP_BLOOD_FURNACE = 542;
-constexpr uint32 MAP_SHATTERED_HALLS = 540;
-constexpr uint32 MAP_SLAVE_PENS = 547;
-constexpr uint32 MAP_UNDERBOG = 546;
-constexpr uint32 MAP_STEAMVAULT = 545;
-constexpr uint32 MAP_MANA_TOMBS = 557;
-constexpr uint32 MAP_AUCHENAI_CRYPTS = 558;
-constexpr uint32 MAP_SETHEKK_HALLS = 556;
-constexpr uint32 MAP_SHADOW_LABYRINTH = 555;
-constexpr uint32 MAP_OLD_HILLSBRAD = 560;
-constexpr uint32 MAP_BLACK_MORASS = 269;
-constexpr uint32 MAP_MECHANAR = 554;
-constexpr uint32 MAP_BOTANICA = 553;
-constexpr uint32 MAP_ARCATRAZ = 552;
-constexpr uint32 MAP_MAGISTERS_TERRACE = 585;
-
-// WotLK Dungeons
-constexpr uint32 MAP_UTGARDE_KEEP = 574;
-constexpr uint32 MAP_NEXUS = 576;
-constexpr uint32 MAP_AZJOL_NERUB = 601;
-constexpr uint32 MAP_AHNKAHET = 619;
-constexpr uint32 MAP_DRAK_THARON = 600;
-constexpr uint32 MAP_VIOLET_HOLD = 608;
-constexpr uint32 MAP_GUNDRAK = 604;
-constexpr uint32 MAP_HALLS_OF_STONE = 599;
-constexpr uint32 MAP_HALLS_OF_LIGHTNING = 602;
-constexpr uint32 MAP_OCULUS = 578;
-constexpr uint32 MAP_CULLING_OF_STRATHOLME = 595;
-constexpr uint32 MAP_UTGARDE_PINNACLE = 575;
-constexpr uint32 MAP_TRIAL_OF_CHAMPION = 650;
-constexpr uint32 MAP_FORGE_OF_SOULS = 632;
-constexpr uint32 MAP_PIT_OF_SARON = 658;
-constexpr uint32 MAP_HALLS_OF_REFLECTION = 668;
+// Dungeon map IDs are provided by AreaDefines.h (MAP_* constants)
 
 class DungeonQuestPhasing : public PlayerScript
 {
