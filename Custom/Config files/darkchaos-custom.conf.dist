@@ -390,7 +390,7 @@ Hotspots.MarkerGameObjectEntry = 179976
 #                     Used for advanced terrain analysis and better hotspot placement.
 #                     
 #                     If empty or missing, ADT/WDT parsing is skipped and the script
-#                     will rely on database/CSV map bounds (dc_map_bounds or var/map_bounds.csv).
+#                     will rely on CSV map bounds (var/map_bounds.csv) or client data parsing.
 #                     
 #                     Examples:
 #                       Windows: "C:/Program Files/World of Warcraft/Data"
@@ -2075,7 +2075,7 @@ DungeonQuest.Debug.LogFile = "logs/dungeon_quest_system.log"
 #    - HLBG: DCHinterlandBG addon for queue/stats/info panels
 #
 # 5. Database requirements:
-#    - Hotspots: dc_map_bounds table (optional, for spawn locations)
+#    - Hotspots: No dedicated table required; use var/map_bounds.csv or client data for spawn locations
 #    - HLBG: hlbg_history table (for persistent statistics)
 #
 ###########################################################################

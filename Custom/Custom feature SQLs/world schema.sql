@@ -1601,18 +1601,8 @@ CREATE TABLE IF NOT EXISTS `currencytypes_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_map_bounds
-CREATE TABLE IF NOT EXISTS `dc_map_bounds` (
-  `mapid` int unsigned NOT NULL,
-  `minX` double NOT NULL,
-  `maxX` double NOT NULL,
-  `minY` double NOT NULL,
-  `maxY` double NOT NULL,
-  `source` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`mapid`),
-  KEY `idx_source` (`source`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Hotspots system - world map coordinate boundaries per map';
+-- dc_map_bounds table removed (obsolete). Use var/map_bounds.csv or client data parsing instead.
+-- If you need persistent custom map bounds, add CSV entries to `var/map_bounds.csv` or recreate an equivalent table manually.
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

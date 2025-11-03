@@ -109,15 +109,66 @@ static Map* GetBaseMapSafe(uint32 mapId)
     return map;
 }
 
-// Build map bounds from DBC WorldMapArea entries. This attempts to compute accurate
-// map extents by aggregating all WorldMapArea entries for a given map_id.
+// Build map bounds from DBC WorldMapArea entries. This computes map extents by
+// aggregating all WorldMapArea entries for a given map_id. It prefers DBC data
+// only (no CSV/client fallbacks) when called.
 static void BuildMapBoundsFromDBC()
 {
-    // WorldMapArea.dbc-based bounds are not available in this build. sWorldMapAreaStore
-    // is intentionally not exported in DBCStores.h. We'll rely on CSV and runtime
-    // ADT/WDT parsing (if available) to populate sMapBounds instead.
     sMapBounds.clear();
-    LOG_INFO("scripts", "Skipping DBC-derived map bounds: WorldMapArea DBC not available; rely on CSV or client data");
+
+    // The global DBC storage for WorldMapArea may not be exported in some builds
+    // via DBCStores.h; declare it here to link against the symbol defined in
+    // the core's DBCStores.cpp. If the symbol is not present at link time the
+    // build will fail — in that case the previous CSV/client-data fallbacks
+    // should be used instead. For current environments where WorldMapArea.dbc
+    // is available (e.g. Hyjal/Azshara entries present), this will populate
+    // sMapBounds.
+    extern DBCStorage<WorldMapAreaEntry> sWorldMapAreaStore;
+
+    uint32 loaded = 0;
+    try
+    {
+        for (auto it = sWorldMapAreaStore.begin(); it != sWorldMapAreaStore.end(); ++it)
+        {
+            WorldMapAreaEntry const* wma = *it;
+            if (!wma) continue;
+
+            uint32 mapId = wma->map_id;
+
+            // worldmaparea entries store x1/x2/y1/y2 (note ordering may vary)
+            float x1 = wma->x1;
+            float x2 = wma->x2;
+            float y1 = wma->y1;
+            float y2 = wma->y2;
+
+            float minX = std::min(x1, x2);
+            float maxX = std::max(x1, x2);
+            float minY = std::min(y1, y2);
+            float maxY = std::max(y1, y2);
+
+            auto found = sMapBounds.find(mapId);
+            if (found == sMapBounds.end())
+            {
+                sMapBounds.emplace(mapId, std::array<float,4>{minX, maxX, minY, maxY});
+                ++loaded;
+            }
+            else
+            {
+                auto &arr = found->second;
+                arr[0] = std::min(arr[0], minX);
+                arr[1] = std::max(arr[1], maxX);
+                arr[2] = std::min(arr[2], minY);
+                arr[3] = std::max(arr[3], maxY);
+            }
+        }
+    }
+    catch (...) {
+        LOG_WARN("scripts", "Exception while building map bounds from WorldMapArea DBC - aborting DBC-derived bounds");
+        sMapBounds.clear();
+        return;
+    }
+
+    LOG_INFO("scripts", "Loaded {} DBC-derived map bounds entries", loaded);
 }
 
 // Load additional map bounds from an optional CSV file: var/map_bounds.csv
@@ -1335,49 +1386,7 @@ public:
             // Build DBC-derived map bounds used for normalized coordinates
             BuildMapBoundsFromDBC();
 
-            // Load optional DB-backed bounds (dc_map_bounds) which can override or provide missing maps
-            // Note: user preference is DB-only storage for custom bounds; CSV loader intentionally omitted.
-            auto LoadMapBoundsFromDB = []()
-            {
-                // Query world database table dc_map_bounds: mapid,minX,maxX,minY,maxY,source
-                try
-                {
-                    QueryResult result = WorldDatabase.Query("SELECT mapid, minX, maxX, minY, maxY FROM dc_map_bounds");
-                    if (!result)
-                    {
-                        LOG_INFO("scripts", "No dc_map_bounds rows found (or table missing)");
-                        return;
-                    }
-
-                    do
-                    {
-                        Field* fields = result->Fetch();
-                        uint32 mapId = fields[0].Get<uint32>();
-                        double minX = fields[1].Get<double>();
-                        double maxX = fields[2].Get<double>();
-                        double minY = fields[3].Get<double>();
-                        double maxY = fields[4].Get<double>();
-
-                        // Only set bounds if not already present (DBC preferred)
-                        if (sMapBounds.find(mapId) == sMapBounds.end())
-                        {
-                            sMapBounds.emplace(mapId, std::array<float,4>{static_cast<float>(minX), static_cast<float>(maxX), static_cast<float>(minY), static_cast<float>(maxY)});
-                            LOG_INFO("scripts", "Loaded map bounds from DB for map {} -> [{},{},{},{}]", mapId, minX, maxX, minY, maxY);
-                        }
-
-                    } while (result->NextRow());
-                }
-                catch (...) {
-                    LOG_WARN("scripts", "Exception while loading dc_map_bounds from DB - skipping");
-                }
-            };
-
-            LoadMapBoundsFromDB();
-
-            // Try runtime ADT/WDT parsing of client data path to fill missing maps
-            // Config option: Hotspots.ClientDataPath (default: "Data" or server's data dir)
-            std::string clientDataPath = sConfigMgr->GetOption<std::string>("Hotspots.ClientDataPath", "Data");
-            TryLoadBoundsFromClientData(clientDataPath);
+            // Only use DBC-derived bounds in this configuration (Hyjal/Azshara DBC entries expected)
 
             // Debug: report loaded map bounds count and presence of map 37
             {
@@ -1385,7 +1394,7 @@ public:
                 bool has37 = (sMapBounds.find(37) != sMapBounds.end());
                 LOG_INFO("scripts", "Hotspots: loaded map bounds count = {} ; map 37 present = {}", count, has37);
                 if (!has37)
-                    LOG_WARN("scripts", "Hotspots: map 37 not found in loaded map bounds - check dc_map_bounds or var/map_bounds.csv");
+                    LOG_WARN("scripts", "Hotspots: map 37 not found in DBC-derived map bounds - ensure WorldMapArea.dbc contains entries for this map");
             }
 
             // Startup diagnostic: dump parsed per-map enabled zones and preset matches
@@ -2605,13 +2614,8 @@ public:
 
 void AddSC_ac_hotspots()
 {
-    // Populate map bounds from available sources so normalized coordinate helpers work.
+    // Populate map bounds from DBC only (WorldMapArea.dbc must contain entries for the maps you need)
     BuildMapBoundsFromDBC();
-    LoadMapBoundsFromCSV();
-    // Allow optional client data path via config (e.g., "Hotspots.ClientDataPath")
-    std::string clientDataPath = sConfigMgr->GetOption<std::string>("Hotspots.ClientDataPath", std::string(""));
-    if (!clientDataPath.empty())
-        TryLoadBoundsFromClientData(clientDataPath);
 
     new HotspotsWorldScript();
     new HotspotsPlayerScript();
