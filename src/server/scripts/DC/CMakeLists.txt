@@ -76,7 +76,6 @@ set(SCRIPTS_DC_Gilneas
 set(SCRIPTS_DC_DungeonQuests
     DungeonQuests/DungeonQuestSystem.cpp
     DungeonQuests/npc_dungeon_quest_master.cpp
-    DungeonQuests/npc_dungeon_quest_master_v2.cpp
     DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 )
 
