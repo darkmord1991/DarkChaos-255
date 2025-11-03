@@ -219,7 +219,7 @@ namespace DC_DungeonQuests
         // Validate token ID
         if (tokenId < TOKEN_EXPLORER || tokenId > TOKEN_SPEEDRUNNER)
         {
-            handler->PSendSysMessage("Invalid token ID! Valid range: %u-%u", TOKEN_EXPLORER, TOKEN_SPEEDRUNNER);
+            handler->PSendSysMessage("Invalid token ID! Valid range: %u-%u", uint32(TOKEN_EXPLORER), uint32(TOKEN_SPEEDRUNNER));
             return false;
         }
 
