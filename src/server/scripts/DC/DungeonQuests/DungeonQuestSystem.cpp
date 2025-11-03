@@ -32,9 +32,7 @@ constexpr uint32 QUEST_WEEKLY_MAX = 700204;
 constexpr uint32 QUEST_DUNGEON_MIN = 700701;
 constexpr uint32 QUEST_DUNGEON_MAX = 700999;
 
-// Achievement ID range (13500-13551)
-constexpr uint32 ACHIEVEMENT_MIN = 13500;
-constexpr uint32 ACHIEVEMENT_MAX = 13551;
+// Achievement ID range (13500-13551) -- constants removed because not currently used
 
 // Database helper functions
 class DungeonQuestDB
@@ -302,6 +300,8 @@ private:
     // Check and award achievements
     void CheckAchievements(Player* player, uint32 questId, bool isDailyQuest, bool isWeeklyQuest, bool isDungeonQuest)
     {
+        // questId currently unused in this implementation; keep parameter for future use
+        (void)questId;
         if (!player)
             return;
 

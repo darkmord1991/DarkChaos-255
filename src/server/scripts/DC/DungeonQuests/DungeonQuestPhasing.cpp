@@ -137,7 +137,7 @@ class DungeonQuestGroupPhasing : public GroupScript
 public:
     DungeonQuestGroupPhasing() : GroupScript("DungeonQuestGroupPhasing") {}
 
-    void OnAddMember(Group* group, ObjectGuid guid) override
+    void OnAddMember(Group* /*group*/, ObjectGuid guid) override
     {
         Player* player = ObjectAccessor::FindPlayer(guid);
         if (!player) return;

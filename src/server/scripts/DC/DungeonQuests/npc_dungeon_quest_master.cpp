@@ -161,6 +161,8 @@ namespace DungeonQuestHelper
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action)
     {
         ClearGossipMenuFor(player);
+        // sender is not used in this helper implementation
+        (void)sender;
 
         switch (action)
         {
@@ -205,6 +207,8 @@ namespace DungeonQuestHelper
     void ShowFilteredQuests(Player* player, Creature* creature, uint32 rangeStart, uint32 rangeEnd, const std::string& category)
     {
         // Prepare AC's quest menu, but we'll filter it
+        // rangeStart/rangeEnd/category are not used by the current filtered display implementation
+        (void)rangeStart; (void)rangeEnd; (void)category;
         player->PrepareGossipMenu(creature);
         
         // Note: AC automatically adds quests from creature_questrelation and creature_involvedrelation
@@ -351,6 +355,8 @@ public:
          * - Quest acceptance/completion through standard gossip menu
          * - No custom action handling needed!
          */
+        // parameters unused in this simple pass-through implementation
+        (void)creature; (void)sender; (void)action;
         player->PlayerTalkClass->ClearMenus();
         return true;
     }
@@ -365,6 +371,8 @@ public:
          * - No custom tracking needed!
          */
 
+        // creature is unused here; keep parameter for API compatibility
+        (void)creature;
         if (quest->GetQuestId() >= QUEST_DAILY_START && quest->GetQuestId() <= QUEST_WEEKLY_END)
         {
             // Optional: Custom messaging for dungeon quests
@@ -401,7 +409,9 @@ public:
          * This is where we award tokens and achievements!
          */
 
-        uint32 questId = quest->GetQuestId();
+    // creature and opt are unused in this implementation (opt kept for API compatibility)
+    (void)creature; (void)opt;
+    uint32 questId = quest->GetQuestId();
 
         // Check if this is a dungeon quest
         if (questId < QUEST_DUNGEON_START || questId > QUEST_DUNGEON_END)
