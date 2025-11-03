@@ -39,12 +39,63 @@ constexpr uint32 DEFAULT_QUEST_MASTER_ENTRY = 700000;
 static std::unordered_map<ObjectGuid, ObjectGuid> sQuestMasterFollowers;
 
 // Helper: Get the appropriate quest master entry for a map
+// Each dungeon has its own quest master NPC that shows that dungeon's quests
 static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 {
-    // You can customize this to return different NPC entries per dungeon
-    // For now, return default entry
-    (void)mapId;
-    return DEFAULT_QUEST_MASTER_ENTRY;
+    switch (mapId)
+    {
+        // Classic Dungeons
+        case 389:  return 700000; // Ragefire Chasm
+        case 400:  return 700001; // Blackfathom Deeps
+        case 412:  return 700002; // Gnomeregan
+        case 436:  return 700003; // Shadowfang Keep
+        case 226:  return 700004; // The Scarlet Monastery
+        case 429:  return 700005; // Stratholme
+        case 230:  return 700006; // The Temple of Atal'Hakkar (Sunken Temple)
+        
+        // Burning Crusade Dungeons
+        case 532:  return 700010; // The Shattered Halls
+        case 540:  return 700011; // The Steam Vaults
+        case 542:  return 700012; // The Underbog
+        case 543:  return 700013; // The Mechanar
+        case 545:  return 700014; // The Botanica
+        case 546:  return 700015; // The Arcatraz
+        case 547:  return 700016; // Karazhan
+        case 550:  return 700017; // The Eye
+        case 552:  return 700018; // Tempest Keep
+        case 553:  return 700019; // The Black Morass
+        case 554:  return 700020; // The Battle for Mount Hyjal
+        case 555:  return 700021; // Magtheridon's Lair
+        
+        // Wrath of the Lich King Dungeons
+        case 533:  return 700030; // The Hellfire Ramparts
+        case 534:  return 700031; // The Blood Furnace
+        case 535:  return 700032; // The Slave Pens
+        case 536:  return 700033; // The Underbog
+        case 537:  return 700034; // The Mana-Tombs
+        case 538:  return 700035; // Auchenai Crypts
+        case 539:  return 700036; // The Sethekk Halls
+        case 541:  return 700037; // The Botanica
+        case 544:  return 700038; // The Arcatraz
+        case 548:  return 700039; // Magister's Terrace
+        case 556:  return 700040; // The Black Temple
+        case 564:  return 700041; // The Black Morass (Timeline)
+        case 565:  return 700042; // Mount Hyjal
+        case 568:  return 700043; // The Sunwell
+        case 578:  return 700044; // The Culling of Stratholme
+        case 595:  return 700045; // The Halls of Lightning
+        case 599:  return 700046; // The Halls of Stone
+        case 600:  return 700047; // The Violet Hold
+        case 601:  return 700048; // The Utgarde Keep
+        case 602:  return 700049; // The Utgarde Pinnacle
+        case 603:  return 700050; // The Nexus
+        case 604:  return 700051; // The Dragonblight Dungeons
+        case 619:  return 700052; // Azjol-Nerub
+        
+        default:
+            LOG_WARN("scripts", "DungeonQuestMaster: Unknown dungeon map ID: {}", mapId);
+            return DEFAULT_QUEST_MASTER_ENTRY;
+    }
 }
 
 // Helper: Spawn quest master follower for player

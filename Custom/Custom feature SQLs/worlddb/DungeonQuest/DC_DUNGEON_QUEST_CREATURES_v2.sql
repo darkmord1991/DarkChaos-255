@@ -17,20 +17,20 @@ INSERT INTO `creature_template`
 VALUES
 -- Quest Master NPCs (53 total: 700000-700052)
 -- Classic Dungeons Quest Masters
-(700000, 0, 0, 0, 0, 0, 'Dungeon Quest Master', 'Classic Dungeons', 'Speak', 700000, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700000, 0, 0, 0, 0, 0, 'Dungeon Quest Master', 'Classic Dungeons', 'Speak', 0, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
 
 -- TBC Dungeons Quest Masters
-(700001, 0, 0, 0, 0, 0, 'Outland Quest Master', 'Burning Crusade Dungeons', 'Speak', 700001, 62, 62, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700001, 0, 0, 0, 0, 0, 'Outland Quest Master', 'Burning Crusade Dungeons', 'Speak', 0, 62, 62, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
 
 -- WotLK Dungeons Quest Masters
-(700002, 0, 0, 0, 0, 0, 'Northrend Quest Master', 'Wrath of the Lich King Dungeons', 'Speak', 700002, 68, 68, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700002, 0, 0, 0, 0, 0, 'Northrend Quest Master', 'Wrath of the Lich King Dungeons', 'Speak', 0, 68, 68, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
 
 -- More quest masters (700003-700052) - Add as needed per dungeon
 -- Following same pattern but with different models and names per dungeon
-(700003, 0, 0, 0, 0, 0, 'Ragefire Chasm Quartermaster', 'Classic Dungeon', 'Speak', 700003, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
-(700004, 0, 0, 0, 0, 0, 'Blackfathom Deeps Keeper', 'Classic Dungeon', 'Speak', 700004, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
-(700005, 0, 0, 0, 0, 0, 'Gnomeregan Liaison', 'Classic Dungeon', 'Speak', 700005, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
-(700006, 0, 0, 0, 0, 0, 'Shadowfang Keep Guardian', 'Classic Dungeon', 'Speak', 700006, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0);
+(700003, 0, 0, 0, 0, 0, 'Ragefire Chasm Quartermaster', 'Classic Dungeon', 'Speak', 0, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700004, 0, 0, 0, 0, 0, 'Blackfathom Deeps Keeper', 'Classic Dungeon', 'Speak', 0, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700005, 0, 0, 0, 0, 0, 'Gnomeregan Liaison', 'Classic Dungeon', 'Speak', 0, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0),
+(700006, 0, 0, 0, 0, 0, 'Shadowfang Keep Guardian', 'Classic Dungeon', 'Speak', 0, 55, 55, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1000, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_dungeon_quest_master', 0);
 
 -- NOTE: Display models must be set via creature_template_model table (see below)
 
@@ -55,27 +55,43 @@ INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES
 -- Gossip menu options for each NPC (linking quests)
 DELETE FROM `gossip_menu_option` WHERE `MenuID` IN (700000, 700001, 700002, 700003, 700004, 700005, 700006);
 INSERT INTO `gossip_menu_option` (`MenuID`, `OptionID`, `OptionIcon`, `OptionText`, `OptionBroadcastTextID`, `OptionType`, `OptionNpcFlag`, `ActionMenuID`, `ActionPoiID`, `BoxCoded`, `BoxMoney`, `BoxText`, `BoxBroadcastTextID`, `VerifiedBuild`) VALUES
--- NPC 700000 (Classic Masters) - Ragefire Quests
-(700000, 0, 1, 'I wish to challenge Ragefire Chasm', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
-(700000, 1, 1, 'I wish to challenge other classic dungeons', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+-- NPC 700000 (Classic Masters) - Quest options for Ragefire/Classic dungeons
+(700000, 0, 3, 'Ragefire Chasm Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 1, 3, 'Ragefire Chasm Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 2, 3, 'Blackfathom Deeps Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 3, 3, 'Blackfathom Deeps Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 4, 3, 'Gnomeregan Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 5, 3, 'Gnomeregan Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 6, 3, 'Shadowfang Keep Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700000, 7, 3, 'Shadowfang Keep Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
 -- NPC 700001 (Outland Masters)
-(700001, 0, 1, 'I wish to challenge Burning Crusade dungeons', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700001, 0, 3, 'Hellfire Ramparts Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700001, 1, 3, 'Hellfire Ramparts Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700001, 2, 3, 'The Blood Furnace Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700001, 3, 3, 'The Blood Furnace Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
 -- NPC 700002 (Northrend Masters)
-(700002, 0, 1, 'I wish to challenge Northrend dungeons', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700002, 0, 3, 'Utgarde Keep Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700002, 1, 3, 'Utgarde Keep Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700002, 2, 3, 'The Nexus Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700002, 3, 3, 'The Nexus Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
--- NPC 700003 (Ragefire Specific)
-(700003, 0, 1, 'Tell me about Ragefire Chasm challenges', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+-- NPC 700003 (Ragefire Specific) - Direct quest options
+(700003, 0, 3, 'Ragefire Chasm Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700003, 1, 3, 'Ragefire Chasm Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
 -- NPC 700004 (Blackfathom Specific)
-(700004, 0, 1, 'Tell me about Blackfathom Deeps challenges', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700004, 0, 3, 'Blackfathom Deeps Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700004, 1, 3, 'Blackfathom Deeps Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
 -- NPC 700005 (Gnomeregan Specific)
-(700005, 0, 1, 'Tell me about Gnomeregan challenges', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700005, 0, 3, 'Gnomeregan Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700005, 1, 3, 'Gnomeregan Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
 
 -- NPC 700006 (Shadowfang Specific)
-(700006, 0, 1, 'Tell me about Shadowfang Keep challenges', 0, 2, 2, 0, 0, 0, 0, '', 0, 0);
+(700006, 0, 3, 'Shadowfang Keep Quest 1', 0, 2, 2, 0, 0, 0, 0, '', 0, 0),
+(700006, 1, 3, 'Shadowfang Keep Quest 2', 0, 2, 2, 0, 0, 0, 0, '', 0, 0);
 
 -- =====================================================================
 -- CREATURE DISPLAY MODELS
