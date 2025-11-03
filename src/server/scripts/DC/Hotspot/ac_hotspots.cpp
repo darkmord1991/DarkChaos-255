@@ -173,7 +173,7 @@ static void BuildMapBoundsFromDBC()
 
 // Load additional map bounds from an optional CSV file: var/map_bounds.csv
 // CSV format: mapId,minX,maxX,minY,maxY,source
-static void LoadMapBoundsFromCSV()
+[[maybe_unused]] static void LoadMapBoundsFromCSV()
 {
     std::string csvPath = "var/map_bounds.csv";
     if (!std::filesystem::exists(csvPath))
@@ -271,7 +271,7 @@ static void LoadMapBoundsFromCSV()
 // and compute tile-based bounds for maps missing DBC rows.
 // This is a conservative tile-based approach using ADT presence. It requires client data available
 // under the configured data path (default: "Data/" or "data/World/Maps/").
-static void TryLoadBoundsFromClientData(const std::string& clientDataPath)
+[[maybe_unused]] static void TryLoadBoundsFromClientData(const std::string& clientDataPath)
 {
     // Look for World/Maps folder inside clientDataPath
     std::string mapsRoot = clientDataPath;

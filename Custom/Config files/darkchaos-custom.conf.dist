@@ -1550,6 +1550,17 @@ ChallengeMode.Solo.DisableLevel = 60
 #
 ChallengeMode.DungeonOnly.Enable = 1
 
+# -------------------------------------------------------------------------
+# DungeonQuest system
+# -------------------------------------------------------------------------
+# DungeonQuest.FollowerEnable
+#   Description: Enable the DungeonQuest follower/Quest Master helper that can be
+#                automatically spawned to follow party leaders inside dungeons.
+#   Default:     1 (Enabled)
+#                0 (Disabled)
+#
+DungeonQuest.FollowerEnable = 1
+
 #
 #    ChallengeMode.DungeonOnly.XpBonus
 #        Description: Experience bonus percentage
@@ -1727,6 +1738,17 @@ ChallengeMode.MaxLevel = 10
 #                     0 (Disabled - all quest NPCs inactive)
 #
 DungeonQuest.Enable = 1
+
+# -------------------------------------------------------------------------
+# DungeonQuest system
+# -------------------------------------------------------------------------
+# DungeonQuest.FollowerEnable
+#   Description: Enable the DungeonQuest follower/Quest Master helper that can be
+#                automatically spawned to follow party leaders inside dungeons.
+#   Default:     1 (Enabled)
+#                0 (Disabled)
+#
+DungeonQuest.FollowerEnable = 1
 
 #
 #    DungeonQuest.MinPlayerLevel
