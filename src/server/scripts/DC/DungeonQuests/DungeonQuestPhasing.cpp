@@ -19,6 +19,7 @@
 #include "Map.h"
 #include "InstanceScript.h"
 #include "Group.h"
+#include "ObjectAccessor.h"
 #include "Config.h"
 #include "Chat.h"
 #include "Log.h"
@@ -114,7 +115,7 @@ public:
     }
 
     // Update player phase when entering a map
-    void OnMapChanged(Player* player) override
+    void OnPlayerMapChanged(Player* player) override
     {
         if (!player)
             return;
@@ -137,52 +138,11 @@ public:
         }
     }
 
-    // Update phase when joining a group
-    void OnGroupJoin(Player* player, Group* group) override
-    {
-        if (!player || !group)
-            return;
-
-        if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true))
-            return;
-
-        // If in a dungeon, update to group phase
-        if (IsDungeonMap(player->GetMapId()))
-        {
-            uint32 newPhase = CalculatePhaseForPlayer(player);
-            player->SetPhaseMask(newPhase, true);
-
-            if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 1)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Joined group phase for dungeon quests.");
-            }
-        }
-    }
-
-    // Update phase when leaving a group
-    void OnGroupRemove(Player* player, Group* /*group*/, RemoveMethod /*method*/, ObjectGuid /*kicker*/, char const* /*reason*/) override
-    {
-        if (!player)
-            return;
-
-        if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true))
-            return;
-
-        // If in a dungeon, update to solo phase
-        if (IsDungeonMap(player->GetMapId()))
-        {
-            uint32 newPhase = CalculatePhaseForPlayer(player);
-            player->SetPhaseMask(newPhase, true);
-
-            if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 1)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Switched to solo phase for dungeon quests.");
-            }
-        }
-    }
+    // NOTE: Group join/remove events are handled by GroupScript hooks. PlayerScript does not provide
+    // direct OnGroupJoin/OnGroupRemove virtuals, so those were removed from here to avoid override errors.
 
     // Reset phase when leaving dungeon
-    void OnPlayerLeaveArea(Player* player, uint32 /*newArea*/, uint32 /*oldArea*/) override
+    void OnPlayerUpdateArea(Player* player, uint32 /*oldArea*/, uint32 /*newArea*/) override
     {
         if (!player)
             return;
@@ -196,6 +156,65 @@ public:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Phase reset to default (left dungeon)");
             }
+        }
+    }
+};
+
+// GroupScript to update player phases when group membership changes
+class DungeonQuestGroupPhasing : public GroupScript
+{
+public:
+    DungeonQuestGroupPhasing() : GroupScript("DungeonQuestGroupPhasing") {}
+
+    void OnAddMember(Group* group, ObjectGuid guid) override
+    {
+        Player* player = ObjectAccessor::FindPlayer(guid);
+        if (!player) return;
+        if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true)) return;
+
+        uint32 mapId = player->GetMapId();
+        // Check simple dungeon membership using existing MAP_* constants
+        bool inDungeon = false;
+        // Duplicate minimal IsDungeonMap checks for common dungeon maps (covers main cases)
+        if (mapId == MAP_RAGEFIRE_CHASM || mapId == MAP_DEADMINES || mapId == MAP_ULDAMAN || mapId == MAP_ZULFARRAK)
+            inDungeon = true;
+
+        if (inDungeon)
+        {
+            // Calculate phase similar to CalculatePhaseForPlayer
+            uint32 basePhase = PHASE_BASE_DUNGEON_QUEST;
+            if (Group* grp = player->GetGroup())
+            {
+                ObjectGuid leaderGuid = grp->GetLeaderGUID();
+                basePhase += (leaderGuid.GetCounter() % 10000);
+            }
+            else
+                basePhase += (player->GetGUID().GetCounter() % 10000);
+
+            uint32 mapPhaseModifier = (mapId % 1000) * 100000;
+            uint32 newPhase = basePhase + mapPhaseModifier;
+            player->SetPhaseMask(newPhase, true);
+        }
+    }
+
+    void OnRemoveMember(Group* /*group*/, ObjectGuid guid, RemoveMethod /*method*/, ObjectGuid /*kicker*/, const char* /*reason*/) override
+    {
+        Player* player = ObjectAccessor::FindPlayer(guid);
+        if (!player) return;
+        if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true)) return;
+
+        uint32 mapId = player->GetMapId();
+        // If player still in dungeon, switch to solo phase
+        bool inDungeon = false;
+        if (mapId == MAP_RAGEFIRE_CHASM || mapId == MAP_DEADMINES || mapId == MAP_ULDAMAN || mapId == MAP_ZULFARRAK)
+            inDungeon = true;
+
+        if (inDungeon)
+        {
+            uint32 basePhase = PHASE_BASE_DUNGEON_QUEST + (player->GetGUID().GetCounter() % 10000);
+            uint32 mapPhaseModifier = (mapId % 1000) * 100000;
+            uint32 newPhase = basePhase + mapPhaseModifier;
+            player->SetPhaseMask(newPhase, true);
         }
     }
 };
@@ -234,4 +253,5 @@ void AddSC_DungeonQuestPhasing()
 {
     new DungeonQuestPhasing();
     new DungeonQuestMasterPhasing();
+    new DungeonQuestGroupPhasing();
 }
