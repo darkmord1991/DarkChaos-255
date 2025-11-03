@@ -72,6 +72,14 @@ set(SCRIPTS_DC_Gilneas
     Gilneas/BattlegroundBFG.cpp
 )
 
+# DC Dungeon Quest System implementation
+set(SCRIPTS_DC_DungeonQuests
+    DungeonQuests/DungeonQuestSystem.cpp
+    DungeonQuests/npc_dungeon_quest_master.cpp
+    DungeonQuests/npc_dungeon_quest_master_v2.cpp
+    DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
+)
+
 # Add sources to AzerothCore scripts
 set(SCRIPTS_WORLD
     ${SCRIPTS_WORLD}
@@ -81,6 +89,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_AC}
     ${SCRIPTS_DC_HinterlandBG}
     ${SCRIPTS_DC_Gilneas}
+    ${SCRIPTS_DC_DungeonQuests}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

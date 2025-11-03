@@ -1,96 +1,143 @@
 /*
  * Hinterlands Battleground Battlemaster NPC
- * Allows players to queue for Hinterlands BG via NPC interaction
+ * Allows players to join the custom Hinterlands BG queue
  */
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
-#include "OutdoorPvP/OutdoorPvPHL.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
+#include "Battleground.h"
+#include "BattlegroundMgr.h"
 
-enum BattlemasterActions
-{
-    ACTION_JOIN_QUEUE   = GOSSIP_ACTION_INFO_DEF + 1,
-    ACTION_LEAVE_QUEUE  = GOSSIP_ACTION_INFO_DEF + 2,
-    ACTION_QUEUE_STATUS = GOSSIP_ACTION_INFO_DEF + 3
-};
+// Custom Battleground Type ID for Hinterlands
+// TODO: Define this in BattlegroundMgr.h or use existing custom BG type
+#define BATTLEGROUND_HINTERLANDS 32  // Adjust based on your server's custom BG ID
 
 class npc_hinterlands_battlemaster : public CreatureScript
 {
 public:
     npc_hinterlands_battlemaster() : CreatureScript("npc_hinterlands_battlemaster") { }
 
+    struct npc_hinterlands_battlemasterAI : public ScriptedAI
+    {
+        npc_hinterlands_battlemasterAI(Creature* creature) : ScriptedAI(creature) { }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_hinterlands_battlemasterAI(creature);
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        // Check if player can join
+        if (!player || !creature)
+            return false;
+
+        // Check if player meets requirements
         if (player->GetLevel() < 255)
         {
-            CloseGossipMenuFor(player);
-            ChatHandler(player->GetSession()).PSendSysMessage("You must be level 255 to enter the Hinterlands Battleground.");
+            player->GetSession()->SendNotification("You must be level 255 to enter Hinterlands Battleground!");
             return true;
         }
 
-        // Get OutdoorPvP instance
-        OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!outdoorPvP)
+        // Add gossip menu options
+        ClearGossipMenuFor(player);
+        
+        // Check if player is already in queue
+        BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_HINTERLANDS, 0);
+        if (player->InBattlegroundQueueForBattlegroundQueueType(bgQueueTypeId))
         {
-            CloseGossipMenuFor(player);
-            ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
-            return true;
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
         }
-
-        OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
-        if (!hlbg)
+        else
         {
-            CloseGossipMenuFor(player);
-            ChatHandler(player->GetSession()).PSendSysMessage("Hinterlands Battleground is currently unavailable.");
-            return true;
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         }
-
-        // Show menu options
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_JOIN_QUEUE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave Hinterlands Battleground Queue", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Queue Status", GOSSIP_SENDER_MAIN, ACTION_QUEUE_STATUS);
-
+        
+        // Add info option
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Tell me about Hinterlands Battleground", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+        
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
+        if (!player || !creature)
+            return false;
+
         ClearGossipMenuFor(player);
-
-        OutdoorPvP* outdoorPvP = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!outdoorPvP)
-        {
-            CloseGossipMenuFor(player);
-            return true;
-        }
-
-        OutdoorPvPHL* hlbg = dynamic_cast<OutdoorPvPHL*>(outdoorPvP);
-        if (!hlbg)
-        {
-            CloseGossipMenuFor(player);
-            return true;
-        }
 
         switch (action)
         {
-            case ACTION_JOIN_QUEUE:
-                hlbg->QueueCommandFromAddon(player, "queue", "join");
+            case GOSSIP_ACTION_INFO_DEF + 1: // Join Queue
+            {
+                // Join battleground queue
+                BattlegroundTypeId bgTypeId = BattlegroundTypeId(BATTLEGROUND_HINTERLANDS);
+                BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(bgTypeId, 0);
+                
+                // Get bracket ID based on level (for level 255, use max bracket)
+                PvPDifficultyEntry const* pvpDiff = GetBattlegroundBracketByLevel(571, player->GetLevel()); // Use Northrend map for 255 bracket
+                if (!pvpDiff)
+                {
+                    player->GetSession()->SendNotification("Could not find appropriate bracket!");
+                    CloseGossipMenuFor(player);
+                    return true;
+                }
+
+                uint8 arenaType = 0; // 0 for battleground
+                bool isPremade = false;
+                uint8 arenaRating = 0;
+                uint8 matchmakerRating = 0;
+
+                GroupQueueInfo* ginfo = sBattlegroundMgr->AddGroup(player, nullptr, bgTypeId, pvpDiff, arenaType, 
+                    isPremade, arenaRating, matchmakerRating, 0);
+
+                if (ginfo)
+                {
+                    uint32 avgWaitTime = sBattlegroundMgr->GetAverageQueueWaitTime(ginfo, pvpDiff->bracket_id);
+                    uint32 queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
+
+                    WorldPacket data;
+                    sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, bg, queueSlot, STATUS_WAIT_QUEUE, 
+                        avgWaitTime, 0, arenaType, TEAM_NEUTRAL);
+                    player->SendDirectMessage(&data);
+
+                    player->GetSession()->SendNotification("You have joined the Hinterlands Battleground queue!");
+                }
+                else
+                {
+                    player->GetSession()->SendNotification("Could not join queue. Please try again.");
+                }
+                
+                CloseGossipMenuFor(player);
                 break;
-            case ACTION_LEAVE_QUEUE:
-                hlbg->QueueCommandFromAddon(player, "queue", "leave");
+            }
+            case GOSSIP_ACTION_INFO_DEF + 2: // Leave Queue
+            {
+                BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_HINTERLANDS, 0);
+                player->RemoveBattlegroundQueueId(bgQueueTypeId);
+                
+                WorldPacket data;
+                sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, nullptr, 0, STATUS_NONE, 0, 0, 0, TEAM_NEUTRAL);
+                player->SendDirectMessage(&data);
+
+                player->GetSession()->SendNotification("You have left the Hinterlands Battleground queue.");
+                CloseGossipMenuFor(player);
                 break;
-            case ACTION_QUEUE_STATUS:
-                hlbg->QueueCommandFromAddon(player, "queue", "status");
+            }
+            case GOSSIP_ACTION_INFO_DEF + 3: // Info
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+                player->GetSession()->SendGossipMenu(50000, creature->GetGUID()); // Custom text ID - add to gossip_menu_option
                 break;
+            }
             default:
+                OnGossipHello(player, creature);
                 break;
         }
 
-        CloseGossipMenuFor(player);
         return true;
     }
 };

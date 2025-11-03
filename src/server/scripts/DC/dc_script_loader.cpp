@@ -41,6 +41,7 @@ void AddSC_dc_challenge_modes(); // location: scripts\DC\dc_challenge_modes_cust
 void AddSC_dc_challenge_mode_gameobject(); // location: scripts\DC\ChallengeMode\dc_challenge_mode_gameobject.cpp
 void AddSC_spell_challenge_mode_auras(); // location: scripts\DC\ChallengeMode\spell_challenge_mode_auras.cpp
 void AddSC_dc_achievements(); // location: scripts\DC\Achievements\dc_achievements.cpp
+void AddSC_DungeonQuestSystem(); // location: scripts\DC\DungeonQuests\DungeonQuestSystem.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -71,4 +72,5 @@ void AddDCScripts()
     AddSC_dc_challenge_mode_gameobject();
     AddSC_dc_challenge_modes();
     AddSC_dc_achievements();
+    AddSC_DungeonQuestSystem();
 }

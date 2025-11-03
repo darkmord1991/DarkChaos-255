@@ -65,6 +65,7 @@ void AddSC_player_settings_commandscript();
 void AddSC_worldstate_commandscript();
 void AddSC_faq_commandscript();
 void AddSC_dc_addons_commandscript();
+void AddSC_dc_dungeonquests_commandscript();
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -119,4 +120,6 @@ void AddCommandsScripts()
     AddSC_worldstate_commandscript();
     AddSC_faq_commandscript();
     AddSC_dc_addons_commandscript();
+    AddSC_dc_dungeonquests_commandscript();
 }
+
