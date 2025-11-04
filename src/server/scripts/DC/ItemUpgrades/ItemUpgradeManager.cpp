@@ -262,6 +262,19 @@ namespace DarkChaos
                 return base_ilvl + total_ilvl_increase;
             }
 
+            bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) override
+            {
+                ItemUpgradeState* state = GetItemUpgradeState(item_guid);
+                if (!state)
+                    return false;
+
+                // Ensure the item belongs to the player
+                if (state->player_guid != player_guid)
+                    return false;
+
+                return state->upgrade_level < MAX_UPGRADE_LEVEL;
+            }
+
             // ====================================================================
             // Tier Functions
             // ====================================================================
