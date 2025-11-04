@@ -16,7 +16,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Creature.h"
-#include "Quest.h"
+#include "Quests/QuestDef.h"
 #include "Log.h"
 #include "ItemUpgradeManager.h"
 #include <sstream>
