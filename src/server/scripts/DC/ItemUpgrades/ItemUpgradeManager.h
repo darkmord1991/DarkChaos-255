@@ -28,7 +28,7 @@ namespace DarkChaos
             TIER_HEROIC = 2,        // T2: Heroic Dungeons
             TIER_RAID = 3,          // T3: Heroic Raid + Mythic Dungeons
             TIER_MYTHIC = 4,        // T4: Mythic Raid + Mythic+
-            TIER_ARTIFACT = 5,      // T5: Prestige Artifacts
+            TIER_ARTIFACT = 5,      // T5: Chaos Artifacts
             TIER_INVALID = 0
         };
 
@@ -90,10 +90,10 @@ namespace DarkChaos
         };
 
         // =====================================================================
-        // Prestige Artifact Definition
+        // Chaos Artifact Definition
         // =====================================================================
         
-        struct PrestigeArtifact
+        struct ChaosArtifact
         {
             uint32 artifact_id;             // Artifact ID
             std::string artifact_name;      // Display name
@@ -106,7 +106,7 @@ namespace DarkChaos
             bool is_active;                 // Is this artifact available
             uint32 season;                  // Season
 
-            PrestigeArtifact() : artifact_id(0), item_id(0), cosmetic_variant(0),
+            ChaosArtifact() : artifact_id(0), item_id(0), cosmetic_variant(0),
                                 rarity(4), essence_cost(250), is_active(true), season(1) {}
         };
 
@@ -137,8 +137,8 @@ namespace DarkChaos
             virtual uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) = 0;
 
             // Artifact functions
-            virtual PrestigeArtifact* GetArtifact(uint32 artifact_id) = 0;
-            virtual std::vector<PrestigeArtifact*> GetArtifactsByLocation(const std::string& location) = 0;
+            virtual ChaosArtifact* GetArtifact(uint32 artifact_id) = 0;
+            virtual std::vector<ChaosArtifact*> GetArtifactsByLocation(const std::string& location) = 0;
             virtual bool DiscoverArtifact(uint32 player_guid, uint32 artifact_id) = 0;
 
             // Database functions

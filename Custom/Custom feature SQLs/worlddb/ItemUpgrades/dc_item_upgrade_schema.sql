@@ -73,10 +73,10 @@ CREATE TABLE IF NOT EXISTS `dc_item_templates_upgrade` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Upgradeable item template mappings';
 
 -- =========================================================================
--- TABLE: dc_prestige_artifact_items
--- PURPOSE: Map artifact cosmetic variants and their drop locations
+-- TABLE: dc_chaos_artifact_items
+-- PURPOSE: Map chaos artifact cosmetic variants and their drop locations
 -- =========================================================================
-CREATE TABLE IF NOT EXISTS `dc_prestige_artifact_items` (
+CREATE TABLE IF NOT EXISTS `dc_chaos_artifact_items` (
   `artifact_id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Artifact ID',
   `artifact_name` VARCHAR(100) NOT NULL COMMENT 'Artifact display name',
   `item_id` INT UNSIGNED NOT NULL COMMENT 'Base item ID',
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_artifact_items` (
   KEY `idx_location_type` (`location_type`),
   KEY `idx_season` (`season`),
   KEY `idx_variant` (`item_id`, `cosmetic_variant`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prestige artifact item definitions (replaces "worldforged")';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Chaos artifact item definitions (manually spawned by user)';
 
 -- =========================================================================
 -- INDEXES AND COMMENTS
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_artifact_items` (
 -- 1. dc_item_upgrade_tiers: T1-T5 tier definitions (5 rows per season)
 -- 2. dc_item_upgrade_costs: Upgrade costs by tier/level (25 rows per season)
 -- 3. dc_item_templates_upgrade: Item template mappings (940 rows per season)
--- 4. dc_prestige_artifact_items: Artifact variants (110 rows per season)
+-- 4. dc_chaos_artifact_items: Chaos artifact variants (110 rows per season)
 
 -- Total expected rows: ~1,080 rows per season
 -- Estimated storage: ~2-3 MB per season

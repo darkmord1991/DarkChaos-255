@@ -29,7 +29,7 @@ namespace DarkChaos
             // Cache maps for fast lookup
             std::map<uint8, UpgradeCost> upgrade_costs;           // tier_id+level -> cost
             std::map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
-            std::map<uint32, PrestigeArtifact> artifacts;         // artifact_id -> artifact
+            std::map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
             std::map<uint32, ItemUpgradeState> item_states;       // item_guid -> state
 
         public:
@@ -305,7 +305,7 @@ namespace DarkChaos
             // Artifact Functions
             // ====================================================================
 
-            PrestigeArtifact* GetArtifact(uint32 artifact_id) override
+            ChaosArtifact* GetArtifact(uint32 artifact_id) override
             {
                 auto it = artifacts.find(artifact_id);
                 if (it != artifacts.end())
@@ -314,9 +314,9 @@ namespace DarkChaos
                 return nullptr;
             }
 
-            std::vector<PrestigeArtifact*> GetArtifactsByLocation(const std::string& location) override
+            std::vector<ChaosArtifact*> GetArtifactsByLocation(const std::string& location) override
             {
-                std::vector<PrestigeArtifact*> result;
+                std::vector<ChaosArtifact*> result;
                 for (auto& [id, artifact] : artifacts)
                 {
                     if (artifact.location_name == location)
@@ -366,7 +366,7 @@ namespace DarkChaos
 
                 // Load artifacts
                 std::ostringstream oss3;
-                oss3 << "SELECT artifact_id, artifact_name, item_id, location_name FROM dc_prestige_artifact_items WHERE season = " << season;
+                oss3 << "SELECT artifact_id, artifact_name, item_id, location_name FROM dc_chaos_artifact_items WHERE season = " << season;
 
                 result = WorldDatabase.Query(oss3.str().c_str());
                 if (result)
