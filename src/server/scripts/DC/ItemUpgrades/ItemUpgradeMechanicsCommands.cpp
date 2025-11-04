@@ -17,6 +17,8 @@
 #include <sstream>
 #include <iomanip>
 
+using namespace Acore::ChatCommands;
+
 class ItemUpgradeMechanicsCommands : public CommandScript
 {
 public:
