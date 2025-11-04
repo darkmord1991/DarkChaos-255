@@ -17,6 +17,8 @@
 #include "WorldSession.h"
 #include <cmath>
 
+using namespace DarkChaos::ItemUpgrade;
+
 // ========== UpgradeCostCalculator Implementation ==========
 
 uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)

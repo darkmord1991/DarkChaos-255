@@ -18,6 +18,7 @@
 #include <iomanip>
 
 using namespace Acore::ChatCommands;
+using namespace DarkChaos::ItemUpgrade;
 
 class ItemUpgradeMechanicsCommands : public CommandScript
 {
