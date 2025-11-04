@@ -36,9 +36,9 @@ public:
     {
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> upgradeSubCommands =
         {
-            ChatCommandBuilder("status", &HandleUpgradeStatus, "Show your upgrade token balance", 0, Console::Yes),
-            ChatCommandBuilder("list", &HandleUpgradeList, "List available upgrades for equipped items", 0, Console::Yes),
-            ChatCommandBuilder("info", &HandleUpgradeInfo, "Show upgrade info [usage: .upgrade info <item_id>]", 0, Console::Yes),
+            ChatCommandBuilder("status", &HandleUpgradeStatus, AcoreStrings("Show your upgrade token balance"), 0, Console::Yes),
+            ChatCommandBuilder("list", &HandleUpgradeList, AcoreStrings("List available upgrades for equipped items"), 0, Console::Yes),
+            ChatCommandBuilder("info", &HandleUpgradeInfo, AcoreStrings("Show upgrade info [usage: .upgrade info <item_id>]"), 0, Console::Yes),
         };
 
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> commandTable =

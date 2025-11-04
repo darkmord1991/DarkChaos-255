@@ -22,38 +22,34 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        player->ClearGossipMenu();
-
         // Main menu options
-        player->AddGossipMenuItem(0, "[Item Upgrades] View available upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-        player->AddGossipMenuItem(0, "[Token Exchange] Trade tokens", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-        player->AddGossipMenuItem(0, "[Artifact Shop] View artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-        player->AddGossipMenuItem(0, "[Help] System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+        AddGossipItemFor(player, 0, "[Item Upgrades] View available upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        AddGossipItemFor(player, 0, "[Token Exchange] Trade tokens", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+        AddGossipItemFor(player, 0, "[Artifact Shop] View artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+        AddGossipItemFor(player, 0, "[Help] System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
         
-        player->SendGossipMenu(68, creature->GetGUID());
+        SendGossipMenuFor(player, 68, creature->GetGUID());
         return true;
     }
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
-        player->ClearGossipMenu();
-
         switch (action)
         {
             case GOSSIP_ACTION_INFO_DEF + 1: // View upgrades
-                player->AddGossipMenuItem(0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
-                player->SendGossipMenu(68, creature->GetGUID());
+                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 2: // Token exchange
-                player->AddGossipMenuItem(0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
-                player->SendGossipMenu(68, creature->GetGUID());
+                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 3: // Artifact shop
-                player->AddGossipMenuItem(0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
-                player->SendGossipMenu(68, creature->GetGUID());
+                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 4: // Help
-                player->SendGossipMenu(68, creature->GetGUID());
+                SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 20: // Back
                 OnGossipHello(player, creature);
