@@ -57,7 +57,7 @@ namespace DarkChaos
                     return false;
                 }
 
-                uint8 next_level = state->current_upgrade_level + 1;
+                uint8 next_level = state->upgrade_level + 1;
 
                 // Get upgrade cost
                 uint32 token_cost = GetUpgradeCost(state->tier_id, next_level);
@@ -100,7 +100,7 @@ namespace DarkChaos
                 }
 
                 // Update item state
-                state->current_upgrade_level = next_level;
+                state->upgrade_level = next_level;
                 state->last_upgraded_at = time(nullptr);
                 if (state->first_upgraded_at == 0)
                     state->first_upgraded_at = state->last_upgraded_at;
@@ -199,7 +199,7 @@ namespace DarkChaos
                 state.item_guid = fields[0].Get<uint32>();
                 state.player_guid = fields[1].Get<uint32>();
                 state.tier_id = fields[2].Get<uint8>();
-                state.current_upgrade_level = fields[3].Get<uint8>();
+                state.upgrade_level = fields[3].Get<uint8>();
                 state.tokens_invested = fields[4].Get<uint32>();
                 state.essence_invested = fields[5].Get<uint32>();
                 state.stat_multiplier = fields[6].Get<float>();
@@ -221,7 +221,7 @@ namespace DarkChaos
                 if (!state)
                     return false;
 
-                state->current_upgrade_level = level;
+                state->upgrade_level = level;
                 SaveItemUpgrade(item_guid);
                 return true;
             }
@@ -238,12 +238,12 @@ namespace DarkChaos
             uint16 GetUpgradedItemLevel(uint32 item_guid, uint16 base_ilvl) override
             {
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
-                if (!state || state->current_upgrade_level == 0)
+                if (!state || state->upgrade_level == 0)
                     return base_ilvl;
 
                 // Get iLvL increase per upgrade
                 uint16 total_ilvl_increase = 0;
-                for (uint8 i = 1; i <= state->current_upgrade_level; ++i)
+                for (uint8 i = 1; i <= state->upgrade_level; ++i)
                 {
                     // TODO: Fetch from dc_item_upgrade_costs
                     // For now, use tier-based defaults
@@ -387,11 +387,11 @@ namespace DarkChaos
                 oss << "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, "
                     << "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
                     << "VALUES (" << state->item_guid << ", " << state->player_guid << ", " << (int)state->tier_id 
-                    << ", " << (int)state->current_upgrade_level << ", " << state->tokens_invested 
+                    << ", " << (int)state->upgrade_level << ", " << state->tokens_invested 
                     << ", " << state->essence_invested << ", " << state->stat_multiplier 
                     << ", " << state->first_upgraded_at << ", " << state->last_upgraded_at << ", " << state->season << ") "
                     << "ON DUPLICATE KEY UPDATE "
-                    << "upgrade_level = " << (int)state->current_upgrade_level
+                    << "upgrade_level = " << (int)state->upgrade_level
                     << ", tokens_invested = " << state->tokens_invested
                     << ", essence_invested = " << state->essence_invested
                     << ", stat_multiplier = " << state->stat_multiplier
