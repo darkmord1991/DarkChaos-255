@@ -21,6 +21,8 @@
 #include <string>
 #include <memory>
 #include <cmath>
+// Include shared manager header for CurrencyType enum and core interfaces
+#include "ItemUpgradeManager.h"
 
 namespace DarkChaos
 {
