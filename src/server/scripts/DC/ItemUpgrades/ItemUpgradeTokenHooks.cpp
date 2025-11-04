@@ -260,16 +260,20 @@ namespace DarkChaos
                           << "VALUES (" << player->GetGUID().GetCounter() << ", " << achievement->ID << ", NOW(), 1)";
                 CharacterDatabase.Execute(insert_oss.str().c_str());
                 
+                // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
+                uint8 loc = player->GetSession() ? player->GetSession()->GetSessionDbcLocale() : 0;
+                const char* achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
+
                 // Log transaction
                 std::ostringstream reason;
-                reason << "Achievement: " << achievement->name;
+                reason << "Achievement: " << achName;
                 LogTokenTransaction(player->GetGUID().GetCounter(), "Achievement", reason.str().c_str(), 0, essence_reward);
-                
+
                 // Send notification
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achievement->name);
-                
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achName);
+
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})", 
-            player->GetGUID().GetCounter(), essence_reward, achievement->ID, achievement->name);
+            player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);
             }
         };
         
