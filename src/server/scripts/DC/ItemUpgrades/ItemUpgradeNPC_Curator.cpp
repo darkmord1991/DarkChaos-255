@@ -38,8 +38,6 @@ public:
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
         
-        player->SetGossipMenuForTalking(ss.str());
-        
         // Main menu options with enhanced formatting
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);

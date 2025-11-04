@@ -38,8 +38,6 @@ public:
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
         
-        player->SetGossipMenuForTalking(ss.str());
-        
         // Main menu options with enhanced formatting
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Upgrades|r - View available upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffffff00Token Exchange|r - Trade your tokens for upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
@@ -77,7 +75,6 @@ public:
                 ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Weekly Earnings", 40);
                 ss << "\n\n";
                 ss << "Coming Soon: Weekly earning tracking\n";
-                player->SetGossipMenuForTalking(ss.str());
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
