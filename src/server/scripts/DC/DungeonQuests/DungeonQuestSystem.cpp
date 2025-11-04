@@ -32,10 +32,6 @@ constexpr uint32 QUEST_WEEKLY_MAX = 700224; // UPDATED v4.0
 constexpr uint32 QUEST_DUNGEON_MIN = 700701;
 constexpr uint32 QUEST_DUNGEON_MAX = 700999;
 
-// Achievement ID range v4.0
-constexpr uint32 ACHIEVEMENT_DUNGEON_MIN = 10800;
-constexpr uint32 ACHIEVEMENT_DUNGEON_MAX = 10999;
-
 // Difficulty enumeration v4.0
 enum QuestDifficulty
 {

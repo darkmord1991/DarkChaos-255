@@ -317,8 +317,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- NPC 700040: Utgarde Keep - Vrykul Warrior (Model: 25616 - Vrykul)
 (700040, 0, 25616, 1.2, 1, 0),
 
--- NPC 700041: Utgarde Pinnacle - Vrykul King (Model: 26503 - King Ymiron)
-(700041, 0, 26503, 1.2, 1, 0),
+-- NPC 700041: Utgarde Pinnacle - Vrykul King (Model: 26503 - King Ymiron) - REDUCED SCALE
+(700041, 0, 26503, 0.5, 1, 0),
 
 -- NPC 700042: The Nexus - Arcane Mage (Model: 25871 - Nexus Mage)
 (700042, 0, 25871, 1.1, 1, 0),
@@ -332,8 +332,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- NPC 700045: Halls of Lightning - Lightning Caller (Model: 26639 - Lightning Caster)
 (700045, 0, 26639, 1.15, 1, 0),
 
--- NPC 700046: Azjol-Nerub - Nerubian (Model: 26253 - Nerubian Vizier)
-(700046, 0, 26253, 1.1, 1, 0),
+-- NPC 700046: Azjol-Nerub - Nerubian (Model: 26253 - Nerubian Vizier) - REDUCED SCALE
+(700046, 0, 26253, 0.5, 1, 0),
 
 -- NPC 700047: Ahn'kahet - Faceless One (Model: 26682 - Faceless)
 (700047, 0, 26682, 1.1, 1, 0),

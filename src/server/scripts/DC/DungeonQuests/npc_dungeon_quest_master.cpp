@@ -343,6 +343,8 @@ public:
          * IMPORTANT: Return false to let AC handle it automatically!
          * If we handle it manually, AC's auto-quest-list won't work.
          */
+        (void)player;
+        (void)creature;
         return false;  // Let AzerothCore handle quest list generation
     }
 
@@ -353,6 +355,10 @@ public:
          * - Quest acceptance/completion through standard gossip menu
          * - No custom action handling needed!
          */
+        (void)player;
+        (void)creature;
+        (void)sender;
+        (void)action;
         // Let AC handle it - return false for default behavior
         return false;
     }
