@@ -32,16 +32,18 @@ class ItemUpgradeCommand : public CommandScript
 public:
     ItemUpgradeCommand() : CommandScript("ItemUpgradeCommand") { }
 
-    [[nodiscard]] std::vector<ChatCommandBuilder> GetCommands() const override
+    [[nodiscard]] std::vector<Acore::ChatCommands::ChatCommandBuilder> GetCommands() const override
     {
-        static const std::vector<ChatCommandBuilder> commandTable =
+        static const std::vector<Acore::ChatCommands::ChatCommandBuilder> upgradeSubCommands =
         {
-            ChatCommandBuilder("upgrade", {}, "Chaos item upgrade system commands", Console::Yes)
-                .SetSubGroup({
-                    ChatCommandBuilder("status", {}, "Show your upgrade token balance", Console::Yes, &HandleUpgradeStatus),
-                    ChatCommandBuilder("list", {}, "List available upgrades for equipped items", Console::Yes, &HandleUpgradeList),
-                    ChatCommandBuilder("info", {}, "Show upgrade info [usage: .upgrade info <item_id>]", Console::Yes, &HandleUpgradeInfo),
-                })
+            ChatCommandBuilder("status", &HandleUpgradeStatus, "Show your upgrade token balance", 0, Console::Yes),
+            ChatCommandBuilder("list", &HandleUpgradeList, "List available upgrades for equipped items", 0, Console::Yes),
+            ChatCommandBuilder("info", &HandleUpgradeInfo, "Show upgrade info [usage: .upgrade info <item_id>]", 0, Console::Yes),
+        };
+
+        static const std::vector<Acore::ChatCommands::ChatCommandBuilder> commandTable =
+        {
+            ChatCommandBuilder("upgrade", upgradeSubCommands),
         };
 
         return commandTable;
