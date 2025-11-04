@@ -97,7 +97,7 @@ private:
         }
 
         // Award tokens
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (mgr)
         {
             mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount);
@@ -152,7 +152,7 @@ private:
             return false;
         }
 
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (mgr)
         {
             if (mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount))
@@ -210,7 +210,7 @@ private:
         }
 
         // Query current amount, then adjust
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (mgr)
         {
             uint32 current = mgr->GetCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency);
@@ -252,7 +252,7 @@ private:
             }
         }
 
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!mgr)
         {
             handler->SendSysMessage("Error: Upgrade Manager not initialized.");
