@@ -159,7 +159,8 @@ private:
             {
                 handler->PSendSysMessage("Removed %u %s from player %s", amount,
                     currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
-                target->SendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
+                ChatHandler targetHandler(target->GetSession());
+                targetHandler.PSendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
                     currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
             }
             else
