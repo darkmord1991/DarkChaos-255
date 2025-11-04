@@ -141,6 +141,8 @@ namespace DarkChaos
             virtual bool AddCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season = 1) = 0;
             virtual bool RemoveCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season = 1) = 0;
             virtual uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season = 1) = 0;
+            // Check if an item can be upgraded for a player
+            virtual bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) = 0;
             
             // Item upgrade state functions
             virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
