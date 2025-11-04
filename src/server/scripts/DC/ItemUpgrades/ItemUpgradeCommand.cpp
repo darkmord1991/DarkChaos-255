@@ -140,7 +140,7 @@ private:
             return false;
         }
 
-        ItemTemplate const* itemTemplate = sItemStore.LookupEntry(itemId);
+    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
         if (!itemTemplate)
         {
             handler->SendSysMessage("Item not found.");
