@@ -22,18 +22,26 @@ class ItemUpgradeMechanicsCommands : public CommandScript
 public:
     ItemUpgradeMechanicsCommands() : CommandScript("item_upgrade_mechanics_commands") { }
     
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> upgradeCommandTable =
+        static ChatCommandTable upgradeCommandTable =
         {
-            { "mech",      SEC_ADMINISTRATOR,  false,  &HandleUpgradeMechCommand,      "" },
+            ChatCommandBuilder("cost", HandleCostCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("stats", HandleStatsCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("ilvl", HandleILvLCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("reset", HandleResetCommand, SEC_ADMINISTRATOR, Console::No),
         };
-        
-        static std::vector<ChatCommand> commandTable =
+
+        static ChatCommandTable mechCommandTable =
         {
-            { "upgrade",   SEC_ADMINISTRATOR,  false,  nullptr,                         "", upgradeCommandTable },
+            ChatCommandBuilder("mech", upgradeCommandTable),
         };
-        
+
+        static ChatCommandTable commandTable =
+        {
+            ChatCommandBuilder("upgrade", mechCommandTable),
+        };
+
         return commandTable;
     }
     
