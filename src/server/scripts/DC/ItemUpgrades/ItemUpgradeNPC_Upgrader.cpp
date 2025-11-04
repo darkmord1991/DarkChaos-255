@@ -39,9 +39,9 @@ public:
         if (!player || !creature)
             return false;
         
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT, "View Upgradeable Items", GOSSIP_SENDER_MAIN, 10);
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT, "View My Upgrade Statistics", GOSSIP_SENDER_MAIN, 20);
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT, "How does item upgrading work?", GOSSIP_SENDER_MAIN, 30);
+    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View Upgradeable Items", GOSSIP_SENDER_MAIN, 10);
+    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View My Upgrade Statistics", GOSSIP_SENDER_MAIN, 20);
+    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "How does item upgrading work?", GOSSIP_SENDER_MAIN, 30);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Nevermind", GOSSIP_SENDER_MAIN, 100);
         
         SendGossipMenuFor(player, 1, creature);
@@ -103,7 +103,7 @@ private:
                 std::string item_name = proto ? proto->Name1 : "Unknown Item";
                 
                 uint32 item_guid = item->GetGUID().GetCounter();
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT, item_name, GOSSIP_SENDER_MAIN, 1000 + item_guid);
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, item_name, GOSSIP_SENDER_MAIN, 1000 + item_guid);
                 item_count++;
             }
         }
@@ -176,7 +176,7 @@ private:
             if (can_afford)
             {
                 oss << "\n|cff00ff00✓ You can afford this upgrade!|r\n";
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT, 
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
                     "PERFORM UPGRADE", GOSSIP_SENDER_MAIN, 2000 + item_guid);
             }
             else

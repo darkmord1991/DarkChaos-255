@@ -39,7 +39,7 @@ namespace DarkChaos
         };
 
         // Constants
-        static const uint8 MAX_UPGRADE_LEVEL = 5;
+    static const uint8 MAX_UPGRADE_LEVEL = 15;
         static const uint8 MIN_UPGRADE_LEVEL = 0;
         static const uint8 NUM_TIERS = 5;
         static const float STAT_MULTIPLIER_BASE = 1.0f;
@@ -149,6 +149,9 @@ namespace DarkChaos
             virtual bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) = 0;
             virtual float GetStatMultiplier(uint32 item_guid) = 0;
             virtual uint16 GetUpgradedItemLevel(uint32 item_guid, uint16 base_ilvl) = 0;
+            // Convenience/UI helpers
+            virtual bool GetNextUpgradeCost(uint32 item_guid, uint32& out_essence, uint32& out_tokens) = 0;
+            virtual std::string GetUpgradeDisplay(uint32 item_guid) = 0;
 
             // Tier functions
             virtual uint8 GetItemTier(uint32 item_id) = 0;
@@ -170,7 +173,8 @@ namespace DarkChaos
         // Singleton accessor
         // =====================================================================
         
-        UpgradeManager* sUpgradeManager();
+    // Singleton accessor (implementation provides GetUpgradeManager)
+    UpgradeManager* GetUpgradeManager();
 
     } // namespace ItemUpgrade
 } // namespace DarkChaos
