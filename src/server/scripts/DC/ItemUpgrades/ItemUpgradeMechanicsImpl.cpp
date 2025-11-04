@@ -265,7 +265,7 @@ class ItemUpgradeManagerImpl : public UpgradeManager
 public:
     ItemUpgradeManagerImpl() = default;
     
-    bool PerformItemUpgrade(uint32 player_guid, uint32 item_guid, uint32 essence_cost, uint32 token_cost) override
+    bool UpgradeItem(uint32 player_guid, uint32 item_guid) override
     {
         // Load item state
         ItemUpgradeState state;
@@ -294,22 +294,40 @@ public:
         uint8 next_level = state.upgrade_level + 1;
         if (next_level > 15)
             return false; // Already maxed
-        
+
         uint8 tier_id = GetItemTier(state.base_item_level);
-        
-        // Deduct resources (assumed already validated by caller)
-        // This just records the investment
-        state.essence_invested += essence_cost;
-        state.tokens_invested += token_cost;
+
+        // Calculate costs for this upgrade
+        uint32 token_cost = UpgradeCostCalculator::GetTokenCost(tier_id, state.upgrade_level);
+        uint32 essence_cost = UpgradeCostCalculator::GetEssenceCost(tier_id, state.upgrade_level);
+
+        // Check currency and deduct
+        if (tier_id == TIER_ARTIFACT)
+        {
+            uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state.season_id ? state.season_id : state.season);
+            if (essence < essence_cost)
+                return false;
+            RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state.season_id ? state.season_id : state.season);
+            state.essence_invested += essence_cost;
+        }
+        else
+        {
+            uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state.season_id ? state.season_id : state.season);
+            if (tokens < token_cost)
+                return false;
+            RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state.season_id ? state.season_id : state.season);
+            state.tokens_invested += token_cost;
+        }
+
         state.upgrade_level = next_level;
-        
+
         // Recalculate stat multiplier and ilvl
         state.current_stat_multiplier = StatScalingCalculator::GetFinalMultiplier(next_level, tier_id);
         state.upgraded_item_level = ItemLevelCalculator::GetUpgradedItemLevel(
             state.base_item_level, next_level, tier_id);
-        
+
         state.last_upgraded_timestamp = static_cast<uint32>(time(nullptr));
-        
+
         // Save to database
         return state.SaveToDatabase();
     }
