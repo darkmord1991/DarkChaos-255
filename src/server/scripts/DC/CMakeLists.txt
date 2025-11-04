@@ -84,6 +84,7 @@ set(SCRIPTS_DC_ItemUpgrade
     ItemUpgrade/ItemUpgradeCommand.cpp
     ItemUpgrade/ItemUpgradeNPC_Vendor.cpp
     ItemUpgrade/ItemUpgradeNPC_Curator.cpp
+    ItemUpgrade/ItemUpgradeTokenHooks.cpp
 )
 
 # Add sources to AzerothCore scripts

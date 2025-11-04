@@ -34,11 +34,20 @@ public:
 
     [[nodiscard]] std::vector<Acore::ChatCommands::ChatCommandBuilder> GetCommands() const override
     {
+        static const std::vector<Acore::ChatCommands::ChatCommandBuilder> tokenSubCommands =
+        {
+            ChatCommandBuilder("add", HandleTokenAdd, 3, Console::Yes),
+            ChatCommandBuilder("remove", HandleTokenRemove, 3, Console::Yes),
+            ChatCommandBuilder("set", HandleTokenSet, 3, Console::Yes),
+            ChatCommandBuilder("info", HandleTokenInfo, 1, Console::Yes),
+        };
+
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> upgradeSubCommands =
         {
             ChatCommandBuilder("status", HandleUpgradeStatus, 0, Console::Yes),
             ChatCommandBuilder("list", HandleUpgradeList, 0, Console::Yes),
             ChatCommandBuilder("info", HandleUpgradeInfo, 0, Console::Yes),
+            ChatCommandBuilder("token", tokenSubCommands),
         };
 
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> commandTable =
@@ -47,6 +56,215 @@ public:
         };
 
         return commandTable;
+    }
+
+private:
+    // Handler for .upgrade token add
+    static bool HandleTokenAdd(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            handler->SendSysMessage("Usage: .upgrade token add <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        char* playerName = strtok((char*)args, " ");
+        char* amountStr = strtok(nullptr, " ");
+        char* tokenType = strtok(nullptr, " ");
+
+        if (!playerName || !amountStr)
+        {
+            handler->SendSysMessage("Usage: .upgrade token add <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        uint32 amount = 0;
+        if (!Acore::StringTo<uint32>(amountStr, amount) || amount == 0)
+        {
+            handler->SendSysMessage("Invalid amount.");
+            return false;
+        }
+
+        // Determine token type (default: upgrade_token)
+        uint8 currency = 1;  // 1 = upgrade_token, 2 = artifact_essence
+        if (tokenType && std::string(tokenType) == "artifact_essence")
+            currency = 2;
+
+        // Get player (by name or GUID)
+        Player* target = ObjectAccessor::FindPlayerByName(playerName);
+        if (!target)
+        {
+            handler->SendSysMessage("Player not found.");
+            return false;
+        }
+
+        // Award tokens
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+        if (mgr)
+        {
+            mgr->AddCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount);
+            handler->PSendSysMessage("Added %u %s to player %s", amount, 
+                currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
+            target->SendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
+                currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
+        }
+        else
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+
+        return true;
+    }
+
+    // Handler for .upgrade token remove
+    static bool HandleTokenRemove(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            handler->SendSysMessage("Usage: .upgrade token remove <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        char* playerName = strtok((char*)args, " ");
+        char* amountStr = strtok(nullptr, " ");
+        char* tokenType = strtok(nullptr, " ");
+
+        if (!playerName || !amountStr)
+        {
+            handler->SendSysMessage("Usage: .upgrade token remove <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        uint32 amount = 0;
+        if (!Acore::StringTo<uint32>(amountStr, amount) || amount == 0)
+        {
+            handler->SendSysMessage("Invalid amount.");
+            return false;
+        }
+
+        uint8 currency = 1;
+        if (tokenType && std::string(tokenType) == "artifact_essence")
+            currency = 2;
+
+        Player* target = ObjectAccessor::FindPlayerByName(playerName);
+        if (!target)
+        {
+            handler->SendSysMessage("Player not found.");
+            return false;
+        }
+
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+        if (mgr)
+        {
+            if (mgr->RemoveCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount))
+            {
+                handler->PSendSysMessage("Removed %u %s from player %s", amount,
+                    currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
+                target->SendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
+                    currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
+            }
+            else
+                handler->SendSysMessage("Player does not have enough tokens.");
+        }
+        else
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+
+        return true;
+    }
+
+    // Handler for .upgrade token set
+    static bool HandleTokenSet(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            handler->SendSysMessage("Usage: .upgrade token set <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        char* playerName = strtok((char*)args, " ");
+        char* amountStr = strtok(nullptr, " ");
+        char* tokenType = strtok(nullptr, " ");
+
+        if (!playerName || !amountStr)
+        {
+            handler->SendSysMessage("Usage: .upgrade token set <player_name_or_guid> <amount> [upgrade_token|artifact_essence]");
+            return false;
+        }
+
+        uint32 amount = 0;
+        if (!Acore::StringTo<uint32>(amountStr, amount))
+        {
+            handler->SendSysMessage("Invalid amount.");
+            return false;
+        }
+
+        uint8 currency = 1;
+        if (tokenType && std::string(tokenType) == "artifact_essence")
+            currency = 2;
+
+        Player* target = ObjectAccessor::FindPlayerByName(playerName);
+        if (!target)
+        {
+            handler->SendSysMessage("Player not found.");
+            return false;
+        }
+
+        // Query current amount, then adjust
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+        if (mgr)
+        {
+            uint32 current = mgr->GetCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency);
+            if (amount > current)
+                mgr->AddCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount - current);
+            else if (amount < current)
+                mgr->RemoveCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount);
+
+            handler->PSendSysMessage("Set %s to %u for player %s", 
+                currency == 1 ? "Upgrade Tokens" : "Artifact Essence", amount, target->GetName().c_str());
+        }
+        else
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+
+        return true;
+    }
+
+    // Handler for .upgrade token info
+    static bool HandleTokenInfo(ChatHandler* handler, char const* args)
+    {
+        Player* player = nullptr;
+
+        if (args && *args)
+        {
+            player = ObjectAccessor::FindPlayerByName(args);
+            if (!player)
+            {
+                handler->SendSysMessage("Player not found.");
+                return false;
+            }
+        }
+        else
+        {
+            player = handler->GetSession()->GetPlayer();
+            if (!player)
+            {
+                handler->SendSysMessage("No player specified and not in-game.");
+                return false;
+            }
+        }
+
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+        if (!mgr)
+        {
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+            return true;
+        }
+
+        uint32 tokens = mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
+        uint32 essence = mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+
+        handler->PSendSysMessage("=== Token Info for %s ===", player->GetName().c_str());
+        handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
+        handler->PSendSysMessage("Artifact Essence: %u", essence);
+
+        return true;
     }
 
 private:
