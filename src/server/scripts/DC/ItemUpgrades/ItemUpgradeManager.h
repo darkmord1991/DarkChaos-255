@@ -93,6 +93,15 @@ namespace DarkChaos
                                  first_upgraded_at(0), last_upgraded_at(0), last_upgraded_timestamp(0),
                                  season(1), season_id(1) {}
 
+            // Persistence helpers
+            bool LoadFromDatabase(uint32 item_guid);
+            bool SaveToDatabase() const;
+
+            // Convenience helpers (used by mechanics/UI)
+            uint32 GetTotalCostInvested() const;
+            uint8 GetProgressPercentage() const;
+            bool IsFullyUpgraded() const;
+
             bool IsMaxUpgraded() const { return upgrade_level >= MAX_UPGRADE_LEVEL; }
             bool CanUpgrade() const { return upgrade_level < MAX_UPGRADE_LEVEL; }
         };
