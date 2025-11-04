@@ -30,7 +30,6 @@ public:
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
         uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
-        uint32 weeklyEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID().GetCounter()) : 0;
         
         // Build enhanced header with progress bar
         std::ostringstream ss;
@@ -38,9 +37,6 @@ public:
         ss << "\n\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
-        ss << "Weekly Progress (500 cap):\n";
-        ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(weeklyEarned, 500) << "\n";
-        ss << "Status: " << DarkChaos::ItemUpgrade::UI::CreateTierIndicator(weeklyEarned, 500);
         
         player->SetGossipMenuForTalking(ss.str());
         
@@ -77,18 +73,11 @@ public:
                 break;
             case GOSSIP_ACTION_INFO_DEF + 5: // Weekly Stats
             {
-                auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
-                if (mgr)
-                {
-                    uint32 weeklyEarned = mgr->GetWeeklyEarned(player->GetGUID().GetCounter());
-                    std::ostringstream ss;
-                    ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Weekly Earnings", 40);
-                    ss << "\n\n";
-                    ss << "Total This Week: " << DarkChaos::ItemUpgrade::UI::COLOR_POSITIVE 
-                       << weeklyEarned << "/500" << DarkChaos::ItemUpgrade::UI::COLOR_RESET << "\n\n";
-                    ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(weeklyEarned, 500);
-                    player->SetGossipMenuForTalking(ss.str());
-                }
+                std::ostringstream ss;
+                ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Weekly Earnings", 40);
+                ss << "\n\n";
+                ss << "Coming Soon: Weekly earning tracking\n";
+                player->SetGossipMenuForTalking(ss.str());
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;

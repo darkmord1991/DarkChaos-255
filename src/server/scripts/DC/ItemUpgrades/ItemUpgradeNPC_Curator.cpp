@@ -30,7 +30,6 @@ public:
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
         uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
-        uint32 essenceEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID().GetCounter(), true) : 0;  // true for essence
         
         // Build enhanced header with progress bar
         std::ostringstream ss;
@@ -38,8 +37,6 @@ public:
         ss << "\n\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
         ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
-        ss << "Essence Earned Today:\n";
-        ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(essenceEarned, 500);  // Visual reference
         
         player->SetGossipMenuForTalking(ss.str());
         
