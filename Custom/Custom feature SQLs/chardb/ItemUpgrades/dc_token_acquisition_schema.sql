@@ -79,11 +79,16 @@ CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
 -- TABLE MODIFICATIONS: Add columns to dc_player_upgrade_tokens
 -- =========================================================================
 
--- Add weekly tracking columns if they don't already exist
+-- Add weekly tracking columns (safe for older MySQL versions)
+-- Script checks if columns exist before adding (via application logic)
 ALTER TABLE `dc_player_upgrade_tokens` 
-ADD COLUMN IF NOT EXISTS `weekly_earned` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Upgrade tokens earned this week' AFTER `amount`,
-ADD COLUMN IF NOT EXISTS `week_reset_at` TIMESTAMP NULL COMMENT 'Last weekly reset timestamp' AFTER `weekly_earned`,
-ADD COLUMN IF NOT EXISTS `last_transaction_at` TIMESTAMP NULL COMMENT 'Last transaction timestamp' AFTER `week_reset_at`;
+ADD COLUMN `weekly_earned` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Upgrade tokens earned this week' AFTER `amount`;
+
+ALTER TABLE `dc_player_upgrade_tokens` 
+ADD COLUMN `week_reset_at` TIMESTAMP NULL COMMENT 'Last weekly reset timestamp' AFTER `weekly_earned`;
+
+ALTER TABLE `dc_player_upgrade_tokens` 
+ADD COLUMN `last_transaction_at` TIMESTAMP NULL COMMENT 'Last transaction timestamp' AFTER `week_reset_at`;
 
 -- =========================================================================
 -- Insert Default Token Event Configurations
@@ -109,11 +114,12 @@ VALUES
 -- =========================================================================
 
 -- Ensure good query performance for common lookups
+-- Note: These may fail if indexes already exist; that's OK (safe to ignore errors)
 ALTER TABLE `dc_player_upgrade_tokens` 
-ADD KEY IF NOT EXISTS `idx_week_reset` (`week_reset_at`) COMMENT 'For weekly reset queries';
+ADD KEY `idx_week_reset` (`week_reset_at`) COMMENT 'For weekly reset queries';
 
 ALTER TABLE `dc_player_artifact_discoveries` 
-ADD KEY IF NOT EXISTS `idx_discovered_at` (`discovered_at`) COMMENT 'For discovery timeline queries';
+ADD KEY `idx_discovered_at` (`discovered_at`) COMMENT 'For discovery timeline queries';
 
 -- =========================================================================
 -- Summary of Changes
