@@ -281,16 +281,20 @@ namespace DarkChaos
         // Creature Script Hooks
         // =====================================================================
         
-        class CreatureTokenHooks : public CreatureScript
+        class CreatureTokenHooks : public UnitScript
         {
         public:
-            CreatureTokenHooks() : CreatureScript("CreatureTokenHooks") {}
-            
-            void OnDeath(Creature* creature, Unit* killer) override
+            CreatureTokenHooks() : UnitScript("CreatureTokenHooks") {}
+
+            void OnUnitDeath(Unit* unit, Unit* killer) override
             {
-                if (!creature || !killer)
+                if (!unit || !killer)
                     return;
-                
+
+                Creature* creature = unit->ToCreature();
+                if (!creature)
+                    return;
+
                 Player* player = killer->ToPlayer();
                 if (!player)
                     return;
