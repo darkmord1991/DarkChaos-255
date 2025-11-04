@@ -18,6 +18,7 @@
 #include "Creature.h"
 #include "Quests/QuestDef.h"
 #include "Log.h"
+#include "Chat.h"
 #include "ItemUpgradeManager.h"
 #include <sstream>
 
@@ -169,7 +170,7 @@ namespace DarkChaos
                 // Check weekly cap
                     if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter()))
                 {
-                    killer->SendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
+                    ChatHandler(killer->GetSession()).PSendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
                     return;
                 }
                 
@@ -183,7 +184,7 @@ namespace DarkChaos
                 LogTokenTransaction(killer->GetGUID().GetCounter(), "PvP", reason.str().c_str(), reward, 0);
                 
                 // Send notification
-                killer->SendSysMessage("|cff00ff00+" << reward << " Upgrade Tokens|r (PvP Kill)");
+                    ChatHandler(killer->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (PvP Kill)", reward);
                 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}", 
             killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
@@ -222,7 +223,7 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "Quest", reason.str().c_str(), reward, 0);
                 
                 // Send notification
-                player->SendSysMessage("|cff00ff00+" << reward << " Upgrade Tokens|r (Quest Complete: " << quest->GetTitle() << ")");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (Quest Complete: %s)", reward, quest->GetTitle().c_str());
                 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})", 
             player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
@@ -265,7 +266,7 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "Achievement", reason.str().c_str(), 0, essence_reward);
                 
                 // Send notification
-                player->SendSysMessage("|cffff9900+" << essence_reward << " Artifact Essence|r (Achievement: " << achievement->name << ")");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achievement->name);
                 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})", 
             player->GetGUID().GetCounter(), essence_reward, achievement->ID, achievement->name);
@@ -359,11 +360,11 @@ namespace DarkChaos
                 
                 // Send notification
                 if (token_reward > 0 && essence_reward > 0)
-                    player->SendSysMessage("|cff00ff00+" << token_reward << " Tokens|r, |cffff9900+" << essence_reward << " Essence|r");
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Tokens|r, |cffff9900+%u Essence|r", token_reward, essence_reward);
                 else if (token_reward > 0)
-                    player->SendSysMessage("|cff00ff00+" << token_reward << " Upgrade Tokens|r");
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r", token_reward);
                 else if (essence_reward > 0)
-                    player->SendSysMessage("|cffff9900+" << essence_reward << " Artifact Essence|r");
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r", essence_reward);
                 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}", 
             player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());
