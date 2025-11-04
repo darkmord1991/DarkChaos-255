@@ -126,8 +126,8 @@ namespace DarkChaos
         static bool IsAtWeeklyTokenCap(uint32 player_guid, uint32 season = 1)
         {
             std::ostringstream oss;
-            oss << "SELECT weekly_earned FROM dc_player_upgrade_tokens "
-                << "WHERE player_guid = " << player_guid 
+                oss << "SELECT weekly_earned FROM dc_player_upgrade_tokens "
+                    << "WHERE player_guid = " << player_guid 
                 << " AND currency_type = 'upgrade_token' AND season = " << season;
             
             QueryResult result = CharacterDatabase.Query(oss.str().c_str());
@@ -167,26 +167,26 @@ namespace DarkChaos
                 uint32 reward = (uint32)(PVP_KILL_REWARD * (1.0f + (victim->GetLevel() - 60) * 0.05f));
                 
                 // Check weekly cap
-                if (IsAtWeeklyTokenCap(killer->GetGUID()))
+                    if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter()))
                 {
                     killer->SendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
                     return;
                 }
                 
                 // Award tokens
-                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID(), CURRENCY_UPGRADE_TOKEN, reward);
-                UpdateWeeklyEarned(killer->GetGUID(), reward);
+                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward);
+                    UpdateWeeklyEarned(killer->GetGUID().GetCounter(), reward);
                 
                 // Log transaction
                 std::ostringstream reason;
                 reason << "PvP Kill: " << victim->GetName();
-                LogTokenTransaction(killer->GetGUID(), "PvP", reason.str().c_str(), reward, 0);
+                LogTokenTransaction(killer->GetGUID().GetCounter(), "PvP", reason.str().c_str(), reward, 0);
                 
                 // Send notification
                 killer->SendSysMessage("|cff00ff00+" << reward << " Upgrade Tokens|r (PvP Kill)");
                 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}", 
-                        killer->GetGUID(), reward, victim->GetGUID());
+        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}", 
+            killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
             }
             
             void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
@@ -202,9 +202,9 @@ namespace DarkChaos
                     return;
                 
                 // Check weekly cap
-                if (IsAtWeeklyTokenCap(player->GetGUID()))
+                    if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID());
+                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID().GetCounter());
                     return;
                 }
                 
@@ -213,19 +213,19 @@ namespace DarkChaos
                 UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 
                 // Award tokens
-                mgr->AddCurrency(player->GetGUID(), CURRENCY_UPGRADE_TOKEN, reward, season);
-                UpdateWeeklyEarned(player->GetGUID(), reward, season);
+                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward, season);
+                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), reward, season);
                 
                 // Log transaction
                 std::ostringstream reason;
                 reason << "Quest: " << quest->GetTitle();
-                LogTokenTransaction(player->GetGUID(), "Quest", reason.str().c_str(), reward, 0);
+                LogTokenTransaction(player->GetGUID().GetCounter(), "Quest", reason.str().c_str(), reward, 0);
                 
                 // Send notification
                 player->SendSysMessage("|cff00ff00+" << reward << " Upgrade Tokens|r (Quest Complete: " << quest->GetTitle() << ")");
                 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})", 
-                        player->GetGUID(), reward, quest->GetQuestId(), quest->GetTitle());
+        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})", 
+            player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
             }
             
             void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override
@@ -239,36 +239,36 @@ namespace DarkChaos
                 // Check if achievement was already claimed (one-time only)
                 std::ostringstream oss;
                 oss << "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
-                    << "WHERE player_guid = " << player->GetGUID() 
+                    << "WHERE player_guid = " << player->GetGUID().GetCounter() 
                     << " AND artifact_id = " << achievement->ID;
                 
                 QueryResult result = CharacterDatabase.Query(oss.str().c_str());
                 if (result && result->Fetch()[0].Get<uint32>() > 0)
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Achievement {} already claimed by player {}", 
-                             achievement->ID, player->GetGUID());
+                             achievement->ID, player->GetGUID().GetCounter());
                     return;  // Already claimed
                 }
                 
                 // Award essence
-                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
                 
                 // Mark as claimed
                 std::ostringstream insert_oss;
                 insert_oss << "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovered_at, season) "
-                          << "VALUES (" << player->GetGUID() << ", " << achievement->ID << ", NOW(), 1)";
+                          << "VALUES (" << player->GetGUID().GetCounter() << ", " << achievement->ID << ", NOW(), 1)";
                 CharacterDatabase.Execute(insert_oss.str().c_str());
                 
                 // Log transaction
                 std::ostringstream reason;
                 reason << "Achievement: " << achievement->name;
-                LogTokenTransaction(player->GetGUID(), "Achievement", reason.str().c_str(), 0, essence_reward);
+                LogTokenTransaction(player->GetGUID().GetCounter(), "Achievement", reason.str().c_str(), 0, essence_reward);
                 
                 // Send notification
                 player->SendSysMessage("|cffff9900+" << essence_reward << " Artifact Essence|r (Achievement: " << achievement->name << ")");
                 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})", 
-                        player->GetGUID(), essence_reward, achievement->ID, achievement->name);
+        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})", 
+            player->GetGUID().GetCounter(), essence_reward, achievement->ID, achievement->name);
             }
         };
         
@@ -337,9 +337,9 @@ namespace DarkChaos
                     return;
                 
                 // Check weekly cap (only for regular tokens, not essence)
-                if (IsAtWeeklyTokenCap(player->GetGUID()))
+                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, creature kill reward only essence", player->GetGUID());
+                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, creature kill reward only essence", player->GetGUID().GetCounter());
                     token_reward = 0;  // Zero out tokens, but still award essence
                 }
                 
@@ -347,14 +347,14 @@ namespace DarkChaos
                 UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 if (token_reward > 0)
                 {
-                    mgr->AddCurrency(player->GetGUID(), CURRENCY_UPGRADE_TOKEN, token_reward);
-                    UpdateWeeklyEarned(player->GetGUID(), token_reward);
+                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, token_reward);
+                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), token_reward);
                 }
                 if (essence_reward > 0)
-                    mgr->AddCurrency(player->GetGUID(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
                 
                 // Log transaction
-                LogTokenTransaction(player->GetGUID(), "Creature", reward_reason.str().c_str(), 
+                LogTokenTransaction(player->GetGUID().GetCounter(), "Creature", reward_reason.str().c_str(), 
                                    token_reward, essence_reward);
                 
                 // Send notification
@@ -365,8 +365,8 @@ namespace DarkChaos
                 else if (essence_reward > 0)
                     player->SendSysMessage("|cffff9900+" << essence_reward << " Artifact Essence|r");
                 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}", 
-                        player->GetGUID(), token_reward, essence_reward, creature->GetGUID());
+        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}", 
+            player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());
             }
         };
         
