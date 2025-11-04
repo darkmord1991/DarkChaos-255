@@ -103,7 +103,7 @@ private:
             mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount);
             handler->PSendSysMessage("Added %u %s to player %s", amount, 
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
-            target->SendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
+            target->GetSession()->SendNotification("|cff00ff00You received %u %s from GM.|r", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
         }
         else
