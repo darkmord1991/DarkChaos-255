@@ -36,9 +36,9 @@ public:
     {
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> upgradeSubCommands =
         {
-            ChatCommandBuilder("status", &HandleUpgradeStatus, 0, Console::Yes),
-            ChatCommandBuilder("list", &HandleUpgradeList, 0, Console::Yes),
-            ChatCommandBuilder("info", &HandleUpgradeInfo, 0, Console::Yes),
+            ChatCommandBuilder("status", HandleUpgradeStatus, 0, Console::Yes),
+            ChatCommandBuilder("list", HandleUpgradeList, 0, Console::Yes),
+            ChatCommandBuilder("info", HandleUpgradeInfo, 0, Console::Yes),
         };
 
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> commandTable =
