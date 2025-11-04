@@ -88,7 +88,7 @@ private:
         oss << "|cffffd700===== Upgradeable Items =====|r\n";
         
         uint32 item_count = 0;
-        UpgradeManager* manager = GetUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* manager = DarkChaos::ItemUpgrade::GetUpgradeManager();
         
         // Iterate through player's items
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
@@ -128,7 +128,7 @@ private:
     {
         ClearGossipMenuFor(player);
         
-        UpgradeManager* manager = GetUpgradeManager();
+    DarkChaos::ItemUpgrade::UpgradeManager* manager = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!manager)
         {
             SendErrorMessage(player, "Upgrade system not available.");

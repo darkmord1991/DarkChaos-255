@@ -27,9 +27,9 @@ public:
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         // Get player's token balances
-        auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
-        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
-        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+    auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+    uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
+    uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
         
         // Build enhanced header with progress bar
         std::ostringstream ss;

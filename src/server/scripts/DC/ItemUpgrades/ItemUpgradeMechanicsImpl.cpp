@@ -258,210 +258,30 @@ bool ItemUpgradeState::SaveToDatabase() const
     return true;
 }
 
-// ========== UpgradeManager Core Implementation ==========
-
-class ItemUpgradeManagerImpl : public UpgradeManager
+// Local helper functions (used by mechanics implementations)
+static Item* Mechanics_GetItemByGuid(uint32 /*player_guid*/, uint32 /*item_guid*/)
 {
-public:
-    ItemUpgradeManagerImpl() = default;
-    
-    bool UpgradeItem(uint32 player_guid, uint32 item_guid) override
-    {
-        // Load item state
-        ItemUpgradeState state;
-        state.item_guid = item_guid;
-        
-        if (!state.LoadFromDatabase(item_guid))
-        {
-            // New item - initialize state
-            Item* item = GetItemByGuid(player_guid, item_guid);
-            if (!item)
-                return false;
-            
-            ItemTemplate const* proto = item->GetTemplate();
-            state.item_guid = item_guid;
-            state.player_guid = player_guid;
-            state.upgrade_level = 0;
-            state.essence_invested = 0;
-            state.tokens_invested = 0;
-            state.base_item_level = proto->ItemLevel;
-            state.upgraded_item_level = proto->ItemLevel;
-            state.current_stat_multiplier = 1.0f;
-            state.season_id = GetCurrentSeason();
-        }
-        
-        // Perform upgrade
-        uint8 next_level = state.upgrade_level + 1;
-        if (next_level > 15)
-            return false; // Already maxed
-
-        uint8 tier_id = GetItemTier(state.base_item_level);
-
-        // Calculate costs for this upgrade
-        uint32 token_cost = UpgradeCostCalculator::GetTokenCost(tier_id, state.upgrade_level);
-        uint32 essence_cost = UpgradeCostCalculator::GetEssenceCost(tier_id, state.upgrade_level);
-
-        // Check currency and deduct
-        if (tier_id == TIER_ARTIFACT)
-        {
-            uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state.season_id ? state.season_id : state.season);
-            if (essence < essence_cost)
-                return false;
-            RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state.season_id ? state.season_id : state.season);
-            state.essence_invested += essence_cost;
-        }
-        else
-        {
-            uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state.season_id ? state.season_id : state.season);
-            if (tokens < token_cost)
-                return false;
-            RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state.season_id ? state.season_id : state.season);
-            state.tokens_invested += token_cost;
-        }
-
-        state.upgrade_level = next_level;
-
-        // Recalculate stat multiplier and ilvl
-        state.current_stat_multiplier = StatScalingCalculator::GetFinalMultiplier(next_level, tier_id);
-        state.upgraded_item_level = ItemLevelCalculator::GetUpgradedItemLevel(
-            state.base_item_level, next_level, tier_id);
-
-        state.last_upgraded_timestamp = static_cast<uint32>(time(nullptr));
-
-        // Save to database
-        return state.SaveToDatabase();
-    }
-    
-    bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) override
-    {
-        Item* item = GetItemByGuid(player_guid, item_guid);
-        if (!item)
-            return false;
-        
-        ItemTemplate const* proto = item->GetTemplate();
-        if (!proto)
-            return false;
-        
-        // Check if item is upgradeable (quality checks, etc.)
-        uint8 quality = proto->Quality;
-        if (quality < ITEM_QUALITY_UNCOMMON || quality > ITEM_QUALITY_LEGENDARY)
-            return false;
-        
-        // Check current upgrade level
-        ItemUpgradeState state;
-        state.item_guid = item_guid;
-        
-        if (state.LoadFromDatabase(item_guid))
-        {
-            if (state.upgrade_level >= 15)
-                return false; // Already maxed
-        }
-        
-        return true;
-    }
-    
-    bool GetNextUpgradeCost(uint32 item_guid, uint32& out_essence, uint32& out_tokens) override
-    {
-        Item* item = nullptr;
-        // In real implementation, would look up from inventory
-        if (!item)
-            return false;
-        
-        ItemUpgradeState state;
-        state.item_guid = item_guid;
-        
-        if (!state.LoadFromDatabase(item_guid))
-            state.upgrade_level = 0;
-        
-        uint8 tier_id = GetItemTier(state.base_item_level);
-        
-        out_essence = UpgradeCostCalculator::GetEssenceCost(tier_id, state.upgrade_level);
-        out_tokens = UpgradeCostCalculator::GetTokenCost(tier_id, state.upgrade_level);
-        
-        return true;
-    }
-    
-    std::string GetUpgradeDisplay(uint32 item_guid) override
-    {
-        ItemUpgradeState state;
-        state.item_guid = item_guid;
-        
-        std::ostringstream oss;
-        
-        if (state.LoadFromDatabase(item_guid))
-        {
-            uint8 tier_id = GetItemTier(state.base_item_level);
-            uint32 next_essence, next_tokens;
-            
-            oss << "|cffffd700===== Item Upgrade Status =====|r\n";
-            oss << "Upgrade Level: " << static_cast<int>(state.upgrade_level) << "/15\n";
-            oss << "Stat Bonus: " << StatScalingCalculator::GetStatBonusDisplay(state.upgrade_level, tier_id) << "\n";
-            oss << "Item Level: " << ItemLevelCalculator::GetItemLevelDisplay(
-                state.base_item_level, state.upgraded_item_level) << "\n";
-            oss << "Total Investment: " << state.essence_invested << " Essence, " 
-                << state.tokens_invested << " Tokens\n";
-            
-            if (state.upgrade_level < 15)
-            {
-                next_essence = UpgradeCostCalculator::GetEssenceCost(tier_id, state.upgrade_level);
-                next_tokens = UpgradeCostCalculator::GetTokenCost(tier_id, state.upgrade_level);
-                oss << "\n|cff00ff00Next Upgrade Cost:|r\n";
-                oss << "Essence: " << next_essence << "\n";
-                oss << "Tokens: " << next_tokens << "\n";
-            }
-            else
-            {
-                oss << "\n|cffff0000This item is fully upgraded!|r\n";
-            }
-        }
-        else
-        {
-            oss << "|cffffd700===== Item Upgrade Status =====|r\n";
-            oss << "Upgrade Level: 0/15 (New)\n";
-            oss << "Stat Bonus: +0%\n";
-            oss << "Total Investment: 0 Essence, 0 Tokens\n";
-            oss << "\n|cff00ff00Next Upgrade Cost:|r\n";
-            oss << "Essence: [Not yet determined]\n";
-            oss << "Tokens: [Not yet determined]\n";
-        }
-        
-        return oss.str();
-    }
-
-private:
-    Item* GetItemByGuid(uint32 player_guid, uint32 item_guid)
-    {
-        // Placeholder - would integrate with actual inventory system
-        return nullptr;
-    }
-    
-    uint8 GetItemTier(uint16 item_level)
-    {
-        // Determine tier from item level
-        if (item_level < 340)
-            return 1; // Common
-        else if (item_level < 355)
-            return 2; // Uncommon
-        else if (item_level < 370)
-            return 3; // Rare
-        else if (item_level < 385)
-            return 4; // Epic
-        else
-            return 5; // Legendary
-    }
-    
-    uint32 GetCurrentSeason()
-    {
-        // Placeholder - would query seasons table
-        return 1;
-    }
-};
-
-// ========== Global Manager Instance ==========
-
-static ItemUpgradeManagerImpl sUpgradeManager;
-
-UpgradeManager* GetUpgradeManager()
-{
-    return &sUpgradeManager;
+    // Placeholder - mechanics layer does not access inventory directly
+    return nullptr;
 }
+
+static uint8 Mechanics_GetItemTierByIlvl(uint16 item_level)
+{
+    if (item_level < 340)
+        return TIER_LEVELING;
+    else if (item_level < 355)
+        return TIER_HEROIC;
+    else if (item_level < 370)
+        return TIER_RAID;
+    else if (item_level < 385)
+        return TIER_MYTHIC;
+    else
+        return TIER_ARTIFACT;
+}
+
+static uint32 Mechanics_GetCurrentSeason()
+{
+    return 1; // TODO: wire to seasons DB
+}
+
+// (Do not define a global GetUpgradeManager here; use DarkChaos::ItemUpgrade::GetUpgradeManager())

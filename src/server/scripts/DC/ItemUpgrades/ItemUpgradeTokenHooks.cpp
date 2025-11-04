@@ -174,7 +174,7 @@ namespace DarkChaos
                 }
                 
                 // Award tokens
-                sUpgradeManager()->AddCurrency(killer->GetGUID(), CURRENCY_UPGRADE_TOKEN, reward);
+                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID(), CURRENCY_UPGRADE_TOKEN, reward);
                 UpdateWeeklyEarned(killer->GetGUID(), reward);
                 
                 // Log transaction
@@ -210,7 +210,7 @@ namespace DarkChaos
                 
                 // Cap reward if it would exceed weekly limit
                 uint32 season = 1;  // TODO: Get current season from player
-                UpgradeManager* mgr = sUpgradeManager();
+                UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 
                 // Award tokens
                 mgr->AddCurrency(player->GetGUID(), CURRENCY_UPGRADE_TOKEN, reward, season);
@@ -251,7 +251,7 @@ namespace DarkChaos
                 }
                 
                 // Award essence
-                sUpgradeManager()->AddCurrency(player->GetGUID(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
                 
                 // Mark as claimed
                 std::ostringstream insert_oss;
@@ -344,7 +344,7 @@ namespace DarkChaos
                 }
                 
                 // Award tokens and essence
-                UpgradeManager* mgr = sUpgradeManager();
+                UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 if (token_reward > 0)
                 {
                     mgr->AddCurrency(player->GetGUID(), CURRENCY_UPGRADE_TOKEN, token_reward);

@@ -9,6 +9,7 @@
  */
 
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeMechanics.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -262,6 +263,57 @@ namespace DarkChaos
                 return base_ilvl + total_ilvl_increase;
             }
 
+            bool GetNextUpgradeCost(uint32 item_guid, uint32& out_essence, uint32& out_tokens) override
+            {
+                ItemUpgradeState* state = GetItemUpgradeState(item_guid);
+                if (!state)
+                    return false;
+
+                uint8 tier = state->tier_id;
+                // Use current upgrade level to compute next level cost
+                out_essence = UpgradeCostCalculator::GetEssenceCost(tier, state->upgrade_level);
+                out_tokens = UpgradeCostCalculator::GetTokenCost(tier, state->upgrade_level);
+                return true;
+            }
+
+            std::string GetUpgradeDisplay(uint32 item_guid) override
+            {
+                ItemUpgradeState* state = GetItemUpgradeState(item_guid);
+                if (!state)
+                {
+                    std::ostringstream oss;
+                    oss << "|cffffd700===== Item Upgrade Status =====|r\n";
+                    oss << "Upgrade Level: 0/15 (New)\n";
+                    oss << "Stat Bonus: +0%\n";
+                    oss << "Total Investment: 0 Essence, 0 Tokens\n";
+                    return oss.str();
+                }
+
+                uint8 tier = state->tier_id;
+                // Build display using mechanics helpers
+                std::ostringstream oss;
+                oss << "|cffffd700===== Item Upgrade Status =====|r\n";
+                oss << "Upgrade Level: " << static_cast<int>(state->upgrade_level) << "/15\n";
+                oss << "Stat Bonus: " << StatScalingCalculator::GetStatBonusDisplay(state->upgrade_level, tier) << "\n";
+                oss << "Item Level: " << ItemLevelCalculator::GetItemLevelDisplay(state->base_item_level, state->upgraded_item_level) << "\n";
+                oss << "Total Investment: " << state->essence_invested << " Essence, " << state->tokens_invested << " Tokens\n";
+
+                if (state->upgrade_level < MAX_UPGRADE_LEVEL)
+                {
+                    uint32 next_ess = UpgradeCostCalculator::GetEssenceCost(tier, state->upgrade_level);
+                    uint32 next_tok = UpgradeCostCalculator::GetTokenCost(tier, state->upgrade_level);
+                    oss << "\n|cff00ff00Next Upgrade Cost:|r\n";
+                    oss << "Essence: " << next_ess << "\n";
+                    oss << "Tokens: " << next_tok << "\n";
+                }
+                else
+                {
+                    oss << "\n|cffff0000This item is fully upgraded!|r\n";
+                }
+
+                return oss.str();
+            }
+
             bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) override
             {
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
@@ -433,6 +485,12 @@ namespace DarkChaos
                 _upgrade_manager = new UpgradeManagerImpl();
 
             return _upgrade_manager;
+        }
+
+        // Backwards-compatible wrapper to match header declaration
+        UpgradeManager* GetUpgradeManager()
+        {
+            return sUpgradeManager();
         }
 
     } // namespace ItemUpgrade
