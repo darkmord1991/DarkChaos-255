@@ -108,8 +108,8 @@ namespace DarkChaos
             /**
              * Create upgrade cost display
              */
-            static std::string CreateCostDisplay(uint32 essence_cost, uint32 token_cost,
-                                                uint32 player_essence, uint32 player_tokens)
+            inline static std::string CreateCostDisplay([[maybe_unused]] uint32 essence_cost, [[maybe_unused]] uint32 token_cost,
+                                                [[maybe_unused]] uint32 player_essence, [[maybe_unused]] uint32 player_tokens)
             {
                 std::ostringstream ss;
                 bool can_afford_essence = (player_essence >= essence_cost);
