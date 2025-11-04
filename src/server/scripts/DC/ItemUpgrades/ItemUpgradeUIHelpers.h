@@ -122,7 +122,7 @@ namespace DarkChaos
                     ss << "═";
                 ss << "╗\n";
                 
-                int padding = (width - title.length()) / 2;
+                int padding = (width - (int)title.length()) / 2;
                 ss << "║";
                 for (int i = 0; i < padding; ++i)
                     ss << " ";

@@ -28,9 +28,9 @@ public:
     {
         // Get player's token balances
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
-        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
-        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
-        uint32 weeklyEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID()) : 0;
+        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
+        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        uint32 weeklyEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID().GetCounter()) : 0;
         
         // Build enhanced header with progress bar
         std::ostringstream ss;
@@ -80,7 +80,7 @@ public:
                 auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
                 if (mgr)
                 {
-                    uint32 weeklyEarned = mgr->GetWeeklyEarned(player->GetGUID());
+                    uint32 weeklyEarned = mgr->GetWeeklyEarned(player->GetGUID().GetCounter());
                     std::ostringstream ss;
                     ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Weekly Earnings", 40);
                     ss << "\n\n";

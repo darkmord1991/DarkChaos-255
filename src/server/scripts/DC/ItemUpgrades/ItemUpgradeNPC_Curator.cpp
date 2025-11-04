@@ -28,9 +28,9 @@ public:
     {
         // Get player's token balances and artifact discovery count
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
-        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
-        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
-        uint32 essenceEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID(), true) : 0;  // true for essence
+        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
+        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        uint32 essenceEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID().GetCounter(), true) : 0;  // true for essence
         
         // Build enhanced header with progress bar
         std::ostringstream ss;
