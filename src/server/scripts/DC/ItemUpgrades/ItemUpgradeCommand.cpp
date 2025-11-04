@@ -25,7 +25,6 @@
 namespace DarkChaos { namespace ItemUpgrade { class UpgradeManager; UpgradeManager* sUpgradeManager(); } }
 
 using Acore::ChatCommands::ChatCommandBuilder;
-using Acore::ChatCommands::ChatCommandResult;
 using Acore::ChatCommands::Console;
 
 class ItemUpgradeCommand : public CommandScript
