@@ -22,12 +22,12 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        // Main menu options
-        AddGossipItemFor(player, 0, "[Artifact Collection] View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-        AddGossipItemFor(player, 0, "[Discovery Info] Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-        AddGossipItemFor(player, 0, "[Cosmetics] Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-        AddGossipItemFor(player, 0, "[Statistics] View collection stats", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-        AddGossipItemFor(player, 0, "[Help] System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
+    // Main menu options (use icons and color to improve readability)
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+    AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff66ff66Cosmetics|r - Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffStatistics|r - View collection stats", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffHelp|r - System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
         
         SendGossipMenuFor(player, 68, creature->GetGUID());
         return true;
@@ -35,18 +35,19 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
+        (void)sender;
         switch (action)
         {
             case GOSSIP_ACTION_INFO_DEF + 1: // Artifact collection
-                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 2: // Discovery info
-                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 3: // Cosmetics
-                AddGossipItemFor(player, 0, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
             case GOSSIP_ACTION_INFO_DEF + 4: // Statistics
