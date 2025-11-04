@@ -21,8 +21,10 @@
 #include <string>
 #include <memory>
 #include <cmath>
-// Include shared manager header for CurrencyType enum and core interfaces
-#include "ItemUpgradeManager.h"
+// Forward-declare CurrencyType to avoid pulling in full manager header and
+// prevent duplicate type/struct definitions when both headers are included
+// in the same translation unit.
+enum CurrencyType : uint8;
 
 namespace DarkChaos
 {
