@@ -11,6 +11,7 @@
 */
 
 #include "ItemUpgradeMechanics.h"
+#include "ItemUpgradeManager.h"
 #include "Item.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -67,30 +68,30 @@ uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
     return static_cast<uint32>(std::ceil(escalated_cost));
 }
 
-uint32 UpgradeCostCalculator::GetCumulativeCost(uint8 tier_id, uint8 target_level, 
-                                               uint32& out_tokens, uint32& out_essence)
+void UpgradeCostCalculator::GetCumulativeCost(uint8 tier_id, uint8 target_level,
+                                              uint32& out_essence, uint32& out_tokens)
 {
     out_tokens = 0;
     out_essence = 0;
-    
+
     if (target_level > 15)
         target_level = 15;
-    
+
     // Sum costs from level 0 to target_level - 1
     for (uint8 level = 0; level < target_level; ++level)
     {
         out_essence += GetEssenceCost(tier_id, level);
         out_tokens += GetTokenCost(tier_id, level);
     }
-    
-    return out_tokens + out_essence; // Total resource cost
 }
 
-uint32 UpgradeCostCalculator::GetRefundCost(uint32 tokens_invested, uint32 essence_invested)
+void UpgradeCostCalculator::GetRefundCost(uint8 tier_id, uint8 current_level,
+                                          uint32& out_essence, uint32& out_tokens)
 {
-    // Players get 50% refund when downgrading/respecting
-    uint32 total_refund = (tokens_invested / 2) + (essence_invested / 2);
-    return total_refund;
+    // Calculate cumulative invested cost up to current_level and return 50%
+    GetCumulativeCost(tier_id, current_level, out_essence, out_tokens);
+    out_essence = out_essence / 2;
+    out_tokens = out_tokens / 2;
 }
 
 // ========== StatScalingCalculator Implementation ==========
@@ -186,6 +187,30 @@ std::string ItemLevelCalculator::GetItemLevelDisplay(uint16 base_ilvl, uint16 cu
     return oss.str();
 }
 
+// ========== UI Helper Implementation ==========
+
+namespace DarkChaos { namespace ItemUpgrade { namespace UI {
+
+std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id)
+{
+    std::ostringstream ss;
+
+    float current_mult = StatScalingCalculator::GetFinalMultiplier(state.upgrade_level, tier_id);
+    uint16 upgraded_ilvl = ItemLevelCalculator::GetUpgradedItemLevel(
+        state.base_item_level, state.upgrade_level, tier_id);
+
+    ss << "|cff00ff00Upgrade Level: " << static_cast<int>(state.upgrade_level) << "/15|r\n";
+    ss << "|cffffffff Item Level: " << state.base_item_level << " -> " << upgraded_ilvl << "|r\n";
+    ss << "|cffffff00Stat Bonus: " << std::fixed << std::setprecision(1) 
+       << (current_mult - 1.0f) * 100 << "%|r\n";
+    ss << "|cffccccccInvested: " << state.tokens_invested << " Tokens, "
+       << state.essence_invested << " Essence|r\n";
+
+    return ss.str();
+}
+
+}}} // namespace DarkChaos::ItemUpgrade::UI
+
 // ========== ItemUpgradeState Database Persistence ==========
 
 bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
@@ -199,16 +224,16 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
         return false;
     
     Field* fields = result->Fetch();
-    item_guid = fields[0].GetUInt32();
-    player_guid = fields[1].GetUInt32();
-    upgrade_level = fields[2].GetUInt8();
-    essence_invested = fields[3].GetUInt32();
-    tokens_invested = fields[4].GetUInt32();
-    base_item_level = fields[5].GetUInt16();
-    upgraded_item_level = fields[6].GetUInt16();
-    current_stat_multiplier = fields[7].GetFloat();
-    last_upgraded_timestamp = fields[8].GetUInt32();
-    season_id = fields[9].GetUInt32();
+    item_guid = fields[0].Get<uint32>();
+    player_guid = fields[1].Get<uint32>();
+    upgrade_level = fields[2].Get<uint8>();
+    essence_invested = fields[3].Get<uint32>();
+    tokens_invested = fields[4].Get<uint32>();
+    base_item_level = fields[5].Get<uint16>();
+    upgraded_item_level = fields[6].Get<uint16>();
+    current_stat_multiplier = fields[7].Get<float>();
+    last_upgraded_timestamp = fields[8].Get<uint32>();
+    season_id = fields[9].Get<uint32>();
     
     return true;
 }

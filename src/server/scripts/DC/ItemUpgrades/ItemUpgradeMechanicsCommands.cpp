@@ -112,7 +112,8 @@ public:
         uint32 tokens = UpgradeCostCalculator::GetTokenCost(tier, level);
         uint32 total_essence, total_tokens;
         
-        UpgradeCostCalculator::GetCumulativeCost(tier, level + 1, total_tokens, total_essence);
+    // Get cumulative cost (out_essence, out_tokens)
+    UpgradeCostCalculator::GetCumulativeCost(tier, level + 1, total_essence, total_tokens);
         
         std::ostringstream oss;
         oss << "|cffffd700===== Upgrade Cost: " << tier_names[tier] << " Level " << (int)level << " → " << (int)(level + 1) << " =====|r\n";
@@ -243,7 +244,7 @@ public:
         
         uint32 count = 0;
         if (result)
-            count = result->Fetch()[0].GetUInt32();
+            count = result->Fetch()[0].Get<uint32>();
         
         if (count == 0)
         {

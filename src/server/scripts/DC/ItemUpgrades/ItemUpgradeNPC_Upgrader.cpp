@@ -216,13 +216,13 @@ private:
         if (result)
         {
             Field* fields = result->Fetch();
-            uint32 items_upgraded = fields[0].GetUInt32();
-            uint32 total_essence = fields[1].GetUInt32();
-            uint32 total_tokens = fields[2].GetUInt32();
-            float avg_stat_mult = fields[3].GetFloat();
-            float avg_ilvl_gain = fields[4].GetFloat();
-            uint32 fully_upgraded = fields[5].GetUInt32();
-            uint32 last_upgrade = fields[6].GetUInt32();
+            uint32 items_upgraded = fields[0].Get<uint32>();
+            uint32 total_essence = fields[1].Get<uint32>();
+            uint32 total_tokens = fields[2].Get<uint32>();
+            float avg_stat_mult = fields[3].Get<float>();
+            float avg_ilvl_gain = fields[4].Get<float>();
+            uint32 fully_upgraded = fields[5].Get<uint32>();
+            uint32 last_upgrade = fields[6].Get<uint32>();
             
             oss << "|cff00ff00Items Upgraded:|r " << items_upgraded << "\n";
             oss << "|cff00ff00Fully Upgraded:|r " << fully_upgraded << "\n";
@@ -297,14 +297,14 @@ private:
     {
         QueryResult result = CharacterDatabase.Query(
             "SELECT essence FROM dc_player_upgrade_tokens WHERE player_guid = {}", player_guid);
-        return result ? result->Fetch()[0].GetUInt32() : 0;
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
     
     uint32 GetPlayerUpgradeTokens(uint32 player_guid)
     {
         QueryResult result = CharacterDatabase.Query(
             "SELECT tokens FROM dc_player_upgrade_tokens WHERE player_guid = {}", player_guid);
-        return result ? result->Fetch()[0].GetUInt32() : 0;
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
     
     void SendErrorMessage(Player* player, const char* message)

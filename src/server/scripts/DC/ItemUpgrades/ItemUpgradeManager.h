@@ -70,23 +70,24 @@ namespace DarkChaos
         
         struct ItemUpgradeState
         {
-            uint32 item_guid;               // Item GUID from item_instance
-            uint32 player_guid;             // Player GUID
-            uint8 tier_id;                  // Item tier (1-5)
-            uint8 current_upgrade_level;    // Current upgrade level (0-5)
-            uint32 tokens_invested;         // Total tokens invested
-            uint32 essence_invested;        // Total essence invested
-            float stat_multiplier;          // Current stat multiplier
-            time_t first_upgraded_at;       // When first upgraded
-            time_t last_upgraded_at;        // When last upgraded
-            uint32 season;                  // Current season
+            uint32 item_guid;                    // Item GUID from item_instance
+            uint32 player_guid;                  // Player GUID
+            uint8 upgrade_level;                 // Current upgrade level (0 = base, 1-15 = upgraded)
+            uint32 essence_invested;             // Total essence invested
+            uint32 tokens_invested;              // Total tokens invested
+            uint16 base_item_level;              // Original item level
+            uint16 upgraded_item_level;          // Current item level after upgrades
+            float current_stat_multiplier;       // Current stat scaling multiplier
+            uint32 last_upgraded_timestamp;      // When this item was last upgraded
+            uint32 season_id;                    // Current season
 
-            ItemUpgradeState() : item_guid(0), player_guid(0), tier_id(0),
-                                current_upgrade_level(0), tokens_invested(0), essence_invested(0),
-                                stat_multiplier(1.0f), first_upgraded_at(0), last_upgraded_at(0), season(1) {}
+            ItemUpgradeState() : item_guid(0), player_guid(0), upgrade_level(0),
+                                 essence_invested(0), tokens_invested(0),
+                                 base_item_level(0), upgraded_item_level(0),
+                                 current_stat_multiplier(1.0f), last_upgraded_timestamp(0), season_id(1) {}
 
-            bool IsMaxUpgraded() const { return current_upgrade_level >= MAX_UPGRADE_LEVEL; }
-            bool CanUpgrade() const { return current_upgrade_level < MAX_UPGRADE_LEVEL; }
+            bool IsMaxUpgraded() const { return upgrade_level >= MAX_UPGRADE_LEVEL; }
+            bool CanUpgrade() const { return upgrade_level < MAX_UPGRADE_LEVEL; }
         };
 
         // =====================================================================
