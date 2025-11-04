@@ -20,9 +20,7 @@
 #include "Player.h"
 #include "Item.h"
 #include <sstream>
-
-// Forward declare ItemUpgradeManager functions we'll use
-namespace DarkChaos { namespace ItemUpgrade { class UpgradeManager; UpgradeManager* sUpgradeManager(); } }
+#include "ItemUpgradeManager.h"
 
 using Acore::ChatCommands::ChatCommandBuilder;
 using Acore::ChatCommands::Console;
