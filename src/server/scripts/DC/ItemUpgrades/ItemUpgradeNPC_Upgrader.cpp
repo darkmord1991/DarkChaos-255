@@ -15,6 +15,7 @@
 #include "Item.h"
 #include "Chat.h"
 #include "GossipDef.h"
+#include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
 #include <sstream>
 #include <iomanip>

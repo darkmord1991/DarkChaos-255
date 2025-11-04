@@ -158,7 +158,7 @@ namespace DarkChaos
         public:
             PlayerTokenHooks() : PlayerScript("PlayerTokenHooks") {}
             
-            void OnPVPKill(Player* killer, Player* victim) override
+            void OnPlayerPVPKill(Player* killer, Player* victim) override
             {
                 if (!killer || !victim)
                     return;
@@ -189,7 +189,7 @@ namespace DarkChaos
                         killer->GetGUID(), reward, victim->GetGUID());
             }
             
-            void OnQuestComplete(Player* player, Quest const* quest) override
+            void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
             {
                 if (!player || !quest)
                     return;
@@ -228,7 +228,7 @@ namespace DarkChaos
                         player->GetGUID(), reward, quest->GetQuestId(), quest->GetTitle());
             }
             
-            void OnAchievementComplete(Player* player, AchievementEntry const* achievement) override
+            void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override
             {
                 if (!player || !achievement)
                     return;
