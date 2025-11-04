@@ -335,17 +335,15 @@ public:
     {
         /*
          * Standard AzerothCore behavior:
-         * - creature_questrelation is automatically queried
+         * - creature_queststarter is automatically queried
          * - Quests the NPC starts are shown as "Accept Quest"
-         * - creature_involvedrelation is automatically queried
+         * - creature_questender is automatically queried
          * - Quests the NPC completes are shown as "Complete Quest"
-         * - No custom gossip menu code needed!
+         * 
+         * IMPORTANT: Return false to let AC handle it automatically!
+         * If we handle it manually, AC's auto-quest-list won't work.
          */
-
-        // Optional: Add custom greeting text
-        player->PrepareGossipMenu(creature);
-        player->SendPreparedGossip(creature);
-        return true;
+        return false;  // Let AzerothCore handle quest list generation
     }
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
@@ -355,10 +353,8 @@ public:
          * - Quest acceptance/completion through standard gossip menu
          * - No custom action handling needed!
          */
-        // parameters unused in this simple pass-through implementation
-        (void)creature; (void)sender; (void)action;
-        player->PlayerTalkClass->ClearMenus();
-        return true;
+        // Let AC handle it - return false for default behavior
+        return false;
     }
 
     bool OnQuestAccept(Player* player, Creature* creature, Quest const* quest) override
