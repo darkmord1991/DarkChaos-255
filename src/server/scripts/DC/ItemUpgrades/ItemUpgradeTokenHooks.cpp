@@ -30,8 +30,8 @@ namespace DarkChaos
         // Constants for Token Rewards
         // =====================================================================
         
-        static const uint32 WEEKLY_TOKEN_CAP = 500;
-        static const uint32 DAILY_QUEST_CAP = 100;
+    static const uint32 WEEKLY_TOKEN_CAP = 500;
+    [[maybe_unused]] static const uint32 DAILY_QUEST_CAP = 100;
         
         // Quest reward tier: base tokens awarded for quest completion
         static const uint32 QUEST_REWARD_BASE = 10;
@@ -44,16 +44,16 @@ namespace DarkChaos
         static const uint32 RAID_TRASH_REWARD = 10;
         static const uint32 RAID_BOSS_REWARD = 50;
         static const uint32 RAID_BOSS_ESSENCE = 10;
-        static const uint32 WORLD_BOSS_REWARD = 100;
-        static const uint32 WORLD_BOSS_ESSENCE = 20;
+    [[maybe_unused]] static const uint32 WORLD_BOSS_REWARD = 100;
+    [[maybe_unused]] static const uint32 WORLD_BOSS_ESSENCE = 20;
         
         // PvP rewards
         static const uint32 PVP_KILL_REWARD = 15;
-        static const float PVP_LEVEL_SCALING = 1.0f;
+    [[maybe_unused]] static const float PVP_LEVEL_SCALING = 1.0f;
         
         // Battleground rewards
-        static const uint32 BATTLEGROUND_WIN_REWARD = 25;
-        static const uint32 BATTLEGROUND_LOSS_REWARD = 5;
+    [[maybe_unused]] static const uint32 BATTLEGROUND_WIN_REWARD = 25;
+    [[maybe_unused]] static const uint32 BATTLEGROUND_LOSS_REWARD = 5;
         
         // Achievement essence rewards
         static const uint32 ACHIEVEMENT_ESSENCE_REWARD = 50;
@@ -203,7 +203,7 @@ namespace DarkChaos
                     return;
                 
                 // Check weekly cap
-                    if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
+                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID().GetCounter());
                     return;

@@ -259,13 +259,13 @@ bool ItemUpgradeState::SaveToDatabase() const
 }
 
 // Local helper functions (used by mechanics implementations)
-static Item* Mechanics_GetItemByGuid(uint32 /*player_guid*/, uint32 /*item_guid*/)
+[[maybe_unused]] static Item* Mechanics_GetItemByGuid(uint32 /*player_guid*/, uint32 /*item_guid*/)
 {
     // Placeholder - mechanics layer does not access inventory directly
     return nullptr;
 }
 
-static uint8 Mechanics_GetItemTierByIlvl(uint16 item_level)
+[[maybe_unused]] static uint8 Mechanics_GetItemTierByIlvl(uint16 item_level)
 {
     if (item_level < 340)
         return TIER_LEVELING;
@@ -279,7 +279,7 @@ static uint8 Mechanics_GetItemTierByIlvl(uint16 item_level)
         return TIER_ARTIFACT;
 }
 
-static uint32 Mechanics_GetCurrentSeason()
+[[maybe_unused]] static uint32 Mechanics_GetCurrentSeason()
 {
     return 1; // TODO: wire to seasons DB
 }

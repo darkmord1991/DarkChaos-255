@@ -127,8 +127,10 @@ namespace DarkChaos
                 for (int i = 0; i < padding; ++i)
                     ss << " ";
                 ss << title;
-                for (int i = 0; i < width - padding - (int)title.length(); ++i)
-                    ss << " ";
+                int fill = (int)width - padding - (int)title.length();
+                if (fill > 0)
+                    for (int i = 0; i < fill; ++i)
+                        ss << " ";
                 ss << "║\n";
                 
                 ss << "╚";
