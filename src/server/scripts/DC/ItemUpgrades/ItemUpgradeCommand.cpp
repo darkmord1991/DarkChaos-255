@@ -155,7 +155,7 @@ private:
         DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         if (mgr)
         {
-            if (mgr->RemoveCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount))
+            if (mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount))
             {
                 handler->PSendSysMessage("Removed %u %s from player %s", amount,
                     currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
@@ -212,11 +212,11 @@ private:
         DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         if (mgr)
         {
-            uint32 current = mgr->GetCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency);
+            uint32 current = mgr->GetCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency);
             if (amount > current)
-                mgr->AddCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount - current);
+                mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount - current);
             else if (amount < current)
-                mgr->RemoveCurrency(target->GetGUID(), (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount);
+                mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount);
 
             handler->PSendSysMessage("Set %s to %u for player %s", 
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", amount, target->GetName().c_str());
@@ -258,8 +258,8 @@ private:
             return true;
         }
 
-        uint32 tokens = mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
-        uint32 essence = mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+        uint32 tokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
+        uint32 essence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
 
         handler->PSendSysMessage("=== Token Info for %s ===", player->GetName().c_str());
         handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
