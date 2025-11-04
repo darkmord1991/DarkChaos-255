@@ -11,6 +11,8 @@
 #include "ScriptMgr.h"
 #include "CreatureScript.h"
 #include "Player.h"
+#include "ItemUpgradeManager.h"
+#include <sstream>
 
 // NPC ID: 190002 - Artifact Curator
 // Location: Single location (curator museum/vault)
@@ -22,12 +24,26 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-    // Main menu options (use icons and color to improve readability)
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-    AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff66ff66Cosmetics|r - Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffStatistics|r - View collection stats", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffHelp|r - System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
+        // Get player's token balances and artifact discovery count
+        auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
+        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        
+        // Build header with token info
+        std::ostringstream ss;
+        ss << "|cff99ccff=== Artifact Curator ===|r\n";
+        ss << "|cffff0000Upgrade Tokens:|r |cff00ff00" << upgradeTokens << "|r\n";
+        ss << "|cffff0000Artifact Essence:|r |cff99ccff" << artifactEssence << "|r\n\n";
+        ss << "|cffffffffManage your artifact collection|r";
+        
+        player->SetGossipMenuForTalking(ss.str());
+        
+        // Main menu options (use icons and color to improve readability)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff66ff66Cosmetics|r - Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffStatistics|r - View collection stats", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffHelp|r - System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
         
         SendGossipMenuFor(player, 68, creature->GetGUID());
         return true;
