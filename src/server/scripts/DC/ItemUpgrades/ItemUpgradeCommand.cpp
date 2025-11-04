@@ -105,7 +105,8 @@ private:
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
             
             // Send notification to player
-            ChatHandler(target->GetSession()).SendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
+            ChatHandler playerHandler(target->GetSession());
+            playerHandler.PSendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
         }
         else
