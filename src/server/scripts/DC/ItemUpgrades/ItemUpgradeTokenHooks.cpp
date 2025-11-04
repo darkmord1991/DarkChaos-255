@@ -107,7 +107,7 @@ namespace DarkChaos
                 return false;
             
             CreatureTemplate const* cTemplate = creature->GetCreatureTemplate();
-            return cTemplate && cTemplate->type_flags & CREATURE_TYPEFLAGS_BOSS;
+            return cTemplate && cTemplate->type_flags & CREATURE_TYPE_FLAG_BOSS_MOB;
         }
         
         // Log token transaction to database
