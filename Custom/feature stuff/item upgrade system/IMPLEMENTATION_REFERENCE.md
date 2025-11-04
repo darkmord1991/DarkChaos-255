@@ -13,7 +13,7 @@
 - `dc_item_upgrade_tiers` - Tier definitions
 - `dc_item_upgrade_costs` - Upgrade token costs
 - `dc_item_templates_upgrade` - Item mappings
-- `dc_prestige_artifact_items` - Artifact definitions (replaces "worldforged")
+- `dc_chaos_artifact_items` - Chaos artifact definitions (manually spawned by user)
 
 **Character Database (`acore_characters`):**
 - `dc_player_upgrade_tokens` - Player currency tracking
@@ -65,11 +65,11 @@ src/server/scripts/DC/ItemUpgrades/
 
 ---
 
-## 🏆 Prestige Artifact System (Replaces "Worldforged")
+## 🏆 Chaos Artifact System
 
-### What Are Prestige Artifacts?
+### What Are Chaos Artifacts?
 
-Prestige Artifacts are **special cosmetic prestige items** that players discover throughout the world. They:
+Chaos Artifacts are **special cosmetic prestige items** that players discover throughout the world. They:
 - Use a separate currency (`artifact_essence`) for upgrades
 - Have higher stat scaling (1.75 vs 1.5 multiplier)
 - Provide cosmetic variants
@@ -101,7 +101,7 @@ Prestige Artifacts are **special cosmetic prestige items** that players discover
 
 ```sql
 -- Example artifact entry
-INSERT INTO dc_prestige_artifact_items 
+INSERT INTO dc_chaos_artifact_items 
 (artifact_id, artifact_name, item_id, cosmetic_variant, rarity, location_name, location_type, essence_cost, season)
 VALUES
 (1, 'Artifact of Stormwind', 90001, 0, 4, 'Stormwind', 'zone', 250, 1),
@@ -195,7 +195,7 @@ SELECT
   pa.location_type,
   pad.discovered_at
 FROM dc_player_artifact_discoveries pad
-JOIN dc_prestige_artifact_items pa ON pad.artifact_id = pa.artifact_id
+JOIN dc_chaos_artifact_items pa ON pad.artifact_id = pa.artifact_id
 WHERE pad.player_guid = 1
 ORDER BY pad.discovered_at DESC;
 
@@ -204,7 +204,7 @@ SELECT
   pa.location_type,
   COUNT(*) as discovered_count
 FROM dc_player_artifact_discoveries pad
-JOIN dc_prestige_artifact_items pa ON pad.artifact_id = pa.artifact_id
+JOIN dc_chaos_artifact_items pa ON pad.artifact_id = pa.artifact_id
 WHERE pad.player_guid = 1
 GROUP BY pa.location_type;
 ```
@@ -318,7 +318,7 @@ Success + notify player
 ## 📝 Important Notes
 
 ### Prestige Artifact Naming
-- Uses table: `dc_prestige_artifact_items`
+- Uses table: `dc_chaos_artifact_items`
 - Field: `artifact_name` for display
 - Field: `location_type` for categorization (zone/dungeon/raid/world)
 - You create the actual game objects manually

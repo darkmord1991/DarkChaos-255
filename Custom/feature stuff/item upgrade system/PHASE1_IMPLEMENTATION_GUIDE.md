@@ -69,7 +69,7 @@ src/server/scripts/DC/ItemUpgrades/
 - is_active: 0/1
 ```
 
-**4. dc_prestige_artifact_items** (110 rows per season)
+**4. dc_chaos_artifact_items** (110 rows per season)
 ```sql
 - artifact_id (PK): Unique artifact ID
 - artifact_name: Display name
@@ -144,7 +144,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'acore_wor
 -- dc_item_upgrade_costs
 -- dc_item_upgrade_tiers
 -- dc_item_templates_upgrade
--- dc_prestige_artifact_items
+-- dc_chaos_artifact_items
 
 -- Verify data loaded
 SELECT * FROM dc_item_upgrade_tiers;   -- Should have 5 rows
@@ -198,7 +198,7 @@ make -j$(nproc)
 ✅ **Data Structures**
 - `UpgradeCost` struct
 - `ItemUpgradeState` struct
-- `PrestigeArtifact` struct
+- `ChaosArtifact` struct
 - `UpgradeTier` and `CurrencyType` enums
 
 ---
@@ -209,7 +209,7 @@ make -j$(nproc)
 ❌ Loot table integration (quest/dungeon/raid drops)  
 ❌ Upgrade command implementation  
 ❌ Player UI/packet handling  
-❌ Prestige artifact spawning (you will do manually)  
+❌ Chaos artifact spawning (you will do manually)  
 ❌ Testing and tuning
 
 ---

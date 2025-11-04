@@ -80,11 +80,24 @@ set(SCRIPTS_DC_DungeonQuests
 )
 
 # DC Item Upgrade System implementation
+# Phase 3: Token System
+set(SCRIPTS_DC_ItemUpgrade_Phase3
+    ItemUpgrades/ItemUpgradeCommand.cpp
+    ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
+    ItemUpgrades/ItemUpgradeNPC_Curator.cpp
+    ItemUpgrades/ItemUpgradeTokenHooks.cpp
+)
+
+# Phase 4A: Item Upgrade Mechanics
+set(SCRIPTS_DC_ItemUpgrade_Phase4A
+    ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
+    ItemUpgrades/ItemUpgradeNPC_Upgrader.cpp
+    ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
-    ItemUpgrade/ItemUpgradeCommand.cpp
-    ItemUpgrade/ItemUpgradeNPC_Vendor.cpp
-    ItemUpgrade/ItemUpgradeNPC_Curator.cpp
-    ItemUpgrade/ItemUpgradeTokenHooks.cpp
+    ${SCRIPTS_DC_ItemUpgrade_Phase3}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4A}
 )
 
 # Add sources to AzerothCore scripts
