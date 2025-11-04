@@ -12,6 +12,8 @@
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeUIHelpers.h"
+#include "DatabaseEnv.h"
 #include <sstream>
 
 // NPC ID: 190001 - Item Upgrade Vendor
@@ -28,20 +30,25 @@ public:
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
         uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        uint32 weeklyEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID()) : 0;
         
-        // Build header with token info
+        // Build enhanced header with progress bar
         std::ostringstream ss;
-        ss << "|cff00ff00=== Item Upgrade Vendor ===|r\n";
-        ss << "|cffff0000Upgrade Tokens:|r |cff00ff00" << upgradeTokens << "|r\n";
-        ss << "|cffff0000Artifact Essence:|r |cff99ccff" << artifactEssence << "|r\n\n";
-        ss << "|cffffffffClick below to browse services|r";
+        ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Item Upgrade Vendor", 40);
+        ss << "\n\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
+        ss << "Weekly Progress (500 cap):\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(weeklyEarned, 500) << "\n";
+        ss << "Status: " << DarkChaos::ItemUpgrade::UI::CreateTierIndicator(weeklyEarned, 500);
         
         player->SetGossipMenuForTalking(ss.str());
         
-        // Main menu options (use icons and colored text for nicer look)
+        // Main menu options with enhanced formatting
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Upgrades|r - View available upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffffff00Token Exchange|r - Trade your tokens for upgrades", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff99ccffArtifact Shop|r - View available artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ffffWeekly Stats|r - View your earnings breakdown", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffHelp|r - System Information and tips", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
         
         SendGossipMenuFor(player, 68, creature->GetGUID());
@@ -68,6 +75,24 @@ public:
             case GOSSIP_ACTION_INFO_DEF + 4: // Help
                 SendGossipMenuFor(player, 68, creature->GetGUID());
                 break;
+            case GOSSIP_ACTION_INFO_DEF + 5: // Weekly Stats
+            {
+                auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
+                if (mgr)
+                {
+                    uint32 weeklyEarned = mgr->GetWeeklyEarned(player->GetGUID());
+                    std::ostringstream ss;
+                    ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Weekly Earnings", 40);
+                    ss << "\n\n";
+                    ss << "Total This Week: " << DarkChaos::ItemUpgrade::UI::COLOR_POSITIVE 
+                       << weeklyEarned << "/500" << DarkChaos::ItemUpgrade::UI::COLOR_RESET << "\n\n";
+                    ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(weeklyEarned, 500);
+                    player->SetGossipMenuForTalking(ss.str());
+                }
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
+                SendGossipMenuFor(player, 68, creature->GetGUID());
+                break;
+            }
             case GOSSIP_ACTION_INFO_DEF + 20: // Back
                 OnGossipHello(player, creature);
                 break;

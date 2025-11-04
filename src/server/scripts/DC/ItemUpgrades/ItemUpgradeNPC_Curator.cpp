@@ -12,6 +12,8 @@
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeUIHelpers.h"
+#include "DatabaseEnv.h"
 #include <sstream>
 
 // NPC ID: 190002 - Artifact Curator
@@ -28,17 +30,20 @@ public:
         auto mgr = DarkChaos::ItemUpgrade::sUpgradeManager();
         uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
         uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        uint32 essenceEarned = mgr ? mgr->GetWeeklyEarned(player->GetGUID(), true) : 0;  // true for essence
         
-        // Build header with token info
+        // Build enhanced header with progress bar
         std::ostringstream ss;
-        ss << "|cff99ccff=== Artifact Curator ===|r\n";
-        ss << "|cffff0000Upgrade Tokens:|r |cff00ff00" << upgradeTokens << "|r\n";
-        ss << "|cffff0000Artifact Essence:|r |cff99ccff" << artifactEssence << "|r\n\n";
-        ss << "|cffffffffManage your artifact collection|r";
+        ss << DarkChaos::ItemUpgrade::UI::CreateHeader("Artifact Curator", 40);
+        ss << "\n\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Upgrade Tokens:", DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens), 40) << "\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateStatRow("Artifact Essence:", DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence), 40) << "\n\n";
+        ss << "Essence Earned Today:\n";
+        ss << DarkChaos::ItemUpgrade::UI::CreateProgressBar(essenceEarned, 500);  // Visual reference
         
         player->SetGossipMenuForTalking(ss.str());
         
-        // Main menu options (use icons and color to improve readability)
+        // Main menu options with enhanced formatting
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff66ff66Cosmetics|r - Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
