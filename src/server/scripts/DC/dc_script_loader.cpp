@@ -45,6 +45,9 @@ void AddSC_DungeonQuestPhasing(); // location: scripts\DC\DungeonQuests\DungeonQ
 void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\DungeonQuestMasterFollower.cpp
 void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
+void AddItemUpgradeCommandScript(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommand.cpp
+void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
+void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -79,4 +82,7 @@ void AddDCScripts()
     AddSC_DungeonQuestMasterFollower();
     AddSC_npc_dungeon_quest_master();
     AddSC_npc_dungeon_quest_daily_weekly();
+    AddItemUpgradeCommandScript();
+    AddSC_ItemUpgradeVendor();
+    AddSC_ItemUpgradeCurator();
 }

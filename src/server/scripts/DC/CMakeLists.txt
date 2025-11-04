@@ -79,6 +79,13 @@ set(SCRIPTS_DC_DungeonQuests
     DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 )
 
+# DC Item Upgrade System implementation
+set(SCRIPTS_DC_ItemUpgrade
+    ItemUpgrade/ItemUpgradeCommand.cpp
+    ItemUpgrade/ItemUpgradeNPC_Vendor.cpp
+    ItemUpgrade/ItemUpgradeNPC_Curator.cpp
+)
+
 # Add sources to AzerothCore scripts
 set(SCRIPTS_WORLD
     ${SCRIPTS_WORLD}
@@ -89,6 +96,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_HinterlandBG}
     ${SCRIPTS_DC_Gilneas}
     ${SCRIPTS_DC_DungeonQuests}
+    ${SCRIPTS_DC_ItemUpgrade}
 )
 
 # The DC HinterlandBG config was merged into the consolidated
