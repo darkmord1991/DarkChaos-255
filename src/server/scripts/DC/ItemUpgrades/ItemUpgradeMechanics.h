@@ -87,89 +87,10 @@ namespace DarkChaos
             static std::string GetItemLevelDisplay(uint16 base_ilvl, uint16 current_ilvl);
         };
 
-        // =====================================================================
-        // Upgrade Manager Interface Extension
-        // =====================================================================
-
-        /**
-         * Extended upgrade manager interface with mechanics methods
-         * Implements Phase 4A functionality
-         */
-        class UpgradeManager
-        {
-        public:
-            virtual ~UpgradeManager() = default;
-
-            // Phase 3 methods (existing)
-            virtual bool UpgradeItem(uint32 player_guid, uint32 item_guid) = 0;
-            virtual bool AddCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season = 1) = 0;
-            virtual bool RemoveCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season = 1) = 0;
-            virtual uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season = 1) = 0;
-
-            // Phase 4A methods (new)
-            
-            /**
-             * Get upgrade state for an item
-             */
-            virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
-
-            /**
-             * Perform an item upgrade
-             * @param player_guid: Player GUID
-             * @param item_guid: Item GUID
-             * @param essence_cost: Essence to consume
-             * @param token_cost: Tokens to consume
-             * @return true if upgrade successful
-             */
-            virtual bool PerformItemUpgrade(uint32 player_guid, uint32 item_guid,
-                                           uint32 essence_cost, uint32 token_cost) = 0;
-
-            /**
-             * Get tier ID for an item
-             * @param item_id: Item entry ID
-             * @return Tier ID (1-5) or 0 if not upgradeable
-             */
-            virtual uint8 GetItemTier(uint32 item_id) = 0;
-
-            /**
-             * Check if item can be upgraded
-             * @param item_guid: Item GUID
-             * @param player_guid: Player GUID
-             * @return true if item can be upgraded further
-             */
-            virtual bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) = 0;
-
-            /**
-             * Get next upgrade cost
-             * @param item_guid: Item GUID
-             * @param out_essence: Output essence cost
-             * @param out_tokens: Output token cost
-             * @return true if costs calculated
-             */
-            virtual bool GetNextUpgradeCost(uint32 item_guid,
-                                          uint32& out_essence, uint32& out_tokens) = 0;
-
-            /**
-             * Save item upgrade state to database
-             */
-            virtual void SaveItemUpgradeState(uint32 item_guid) = 0;
-
-            /**
-             * Load item upgrade state from database
-             */
-            virtual void LoadItemUpgradeState(uint32 item_guid) = 0;
-
-            /**
-             * Get refund values for item
-             */
-            virtual void GetDowngradeRefund(uint32 item_guid,
-                                           uint32& out_essence, uint32& out_tokens) = 0;
-
-            /**
-             * Downgrade an item (reset upgrades)
-             */
-            virtual bool DowngradeItem(uint32 player_guid, uint32 item_guid) = 0;
-        };
+        // The concrete UpgradeManager interface is declared in ItemUpgradeManager.h.
+        // Forward-declare it here so mechanics code can refer to the type without
+        // causing duplicate definitions when both headers are included.
+        class UpgradeManager;
 
         // =====================================================================
         // UI Display Helpers (Phase 4A)
