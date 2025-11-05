@@ -507,10 +507,16 @@ public:
         uint32 items_added = 0;
         for (uint32 itemId : gearSet.item_ids)
         {
-            if (Item* item = player->StoreNewItemInBestSlots(itemId, 1))
+            ItemPosCountVec dest;
+            InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
+            if (msg == EQUIP_ERR_OK)
             {
-                player->SendNewItem(item, 1, true, false);
-                items_added++;
+                Item* item = player->StoreNewItem(dest, itemId, true);
+                if (item)
+                {
+                    player->SendNewItem(item, 1, true, false);
+                    items_added++;
+                }
             }
         }
         
@@ -520,14 +526,28 @@ public:
         const uint32 TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
         const uint32 TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
         
-        if (Item* essence = player->StoreNewItemInBestSlots(ESSENCE_ID, TEST_ESSENCE_AMOUNT))
+        // Grant essence
+        ItemPosCountVec essenceDest;
+        InventoryResult essenceMsg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, essenceDest, ESSENCE_ID, TEST_ESSENCE_AMOUNT);
+        if (essenceMsg == EQUIP_ERR_OK)
         {
-            player->SendNewItem(essence, TEST_ESSENCE_AMOUNT, true, false);
+            Item* essence = player->StoreNewItem(essenceDest, ESSENCE_ID, true);
+            if (essence)
+            {
+                player->SendNewItem(essence, TEST_ESSENCE_AMOUNT, true, false);
+            }
         }
         
-        if (Item* tokens = player->StoreNewItemInBestSlots(TOKEN_ID, TEST_TOKEN_AMOUNT))
+        // Grant tokens
+        ItemPosCountVec tokenDest;
+        InventoryResult tokenMsg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, tokenDest, TOKEN_ID, TEST_TOKEN_AMOUNT);
+        if (tokenMsg == EQUIP_ERR_OK)
         {
-            player->SendNewItem(tokens, TEST_TOKEN_AMOUNT, true, false);
+            Item* tokens = player->StoreNewItem(tokenDest, TOKEN_ID, true);
+            if (tokens)
+            {
+                player->SendNewItem(tokens, TEST_TOKEN_AMOUNT, true, false);
+            }
         }
         
         handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
