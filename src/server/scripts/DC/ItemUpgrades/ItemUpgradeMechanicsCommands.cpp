@@ -260,7 +260,7 @@ public:
         // For safety, require second confirmation
         // In a real implementation, would use player session flag
         
-        CharacterDatabase.Execute("DELETE FROM item_upgrades WHERE player_guid = {}", player_guid);
+        CharacterDatabase.Execute("DELETE FROM dc_item_upgrades WHERE player_guid = {}", player_guid);
         
         handler->PSendSysMessage("|cff00ff00Successfully reset %u items for %s|r", 
             count, target->GetName().c_str());
