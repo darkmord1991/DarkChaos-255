@@ -9,6 +9,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "ItemUpgradeCommunication.h"
 #include "Player.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
