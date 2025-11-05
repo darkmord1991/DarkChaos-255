@@ -65,6 +65,7 @@ namespace DarkChaos
 
             // Input requirements
             std::vector<TransmutationInput> input_items;  // Input items with tier/upgrade requirements
+            std::map<uint32, uint8> input_upgrades;       // item_guid -> minimum upgrade level
             uint32 input_essence;
             uint32 input_tokens;
 
