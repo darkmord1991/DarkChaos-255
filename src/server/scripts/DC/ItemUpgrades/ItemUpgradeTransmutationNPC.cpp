@@ -49,7 +49,7 @@ namespace DarkChaos
                 return true;
             }
 
-            bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+            bool OnGossipSelect(Player* player, Creature* creature, [[maybe_unused]] uint32 sender, uint32 action) override
             {
                 ClearGossipMenuFor(player);
 
@@ -301,8 +301,8 @@ namespace DarkChaos
                 SendGossipMenuFor(player, 1, creature->GetGUID());
             }
 
-            bool OnGossipSelectCode(Player* player, Creature* creature, uint32 sender,
-                                  uint32 action, const char* code) override
+            bool OnGossipSelectCode(Player* player, Creature* creature, [[maybe_unused]] uint32 sender,
+                                  uint32 action, [[maybe_unused]] const char* code) override
             {
                 ClearGossipMenuFor(player);
 

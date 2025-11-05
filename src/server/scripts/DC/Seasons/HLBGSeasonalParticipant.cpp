@@ -92,7 +92,7 @@ namespace DarkChaos
                 return true;
             }
 
-            bool ValidateSeasonTransition(uint32 player_guid, uint32 new_season_id) override
+            bool ValidateSeasonTransition(uint32 player_guid, [[maybe_unused]] uint32 new_season_id) override
             {
                 // Check if player has completed required HLBG activities for transition
                 QueryResult result = CharacterDatabase.Query(
@@ -401,7 +401,7 @@ namespace DarkChaos
                 } while (result->NextRow() && rank <= 100); // Top 100 players
             }
 
-            uint32 GetSeasonRewardItem(uint32 rank, uint32 rating, uint32 highest_rating)
+            uint32 GetSeasonRewardItem(uint32 rank, uint32 rating, [[maybe_unused]] uint32 highest_rating)
             {
                 // Reward logic based on rank and performance
                 if (rank == 1)
@@ -418,7 +418,7 @@ namespace DarkChaos
                     return 123461; // Participation reward
             }
 
-            void UpdatePlayerCache(uint32 player_guid, uint32 season_id)
+            void UpdatePlayerCache([[maybe_unused]] uint32 player_guid, [[maybe_unused]] uint32 season_id)
             {
                 // Update any cached player data for the new season
                 // TODO: Implement caching logic if needed
