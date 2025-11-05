@@ -63,10 +63,10 @@ namespace DarkChaos
 
                 // Load tier conversion recipes
                 QueryResult result = WorldDatabase.Query(
-                    "SELECT recipe_id, name, description, type, required_level, cooldown_seconds, "
-                    "input_essence, input_tokens, output_item_id, output_upgrade_level, output_tier_id, "
-                    "output_essence, output_tokens, success_rate, failure_penalty_percent, "
-                    "requires_catalyst, catalyst_item_id FROM dc_transmutation_recipes");
+                    "SELECT recipe_id, name, description, required_level, cooldown_seconds, "
+                    "input_essence, input_tokens, output_item_id, output_quantity, success_rate_base, "
+                    "required_tier, required_upgrade_level, catalyst_item_id, catalyst_quantity "
+                    "FROM dc_item_upgrade_synthesis_recipes WHERE active = 1");
 
                 if (result)
                 {
@@ -79,20 +79,24 @@ namespace DarkChaos
                         recipe.recipe_id = fields[0].Get<uint32>();
                         recipe.name = fields[1].Get<std::string>();
                         recipe.description = fields[2].Get<std::string>();
-                        recipe.type = static_cast<TransmutationType>(fields[3].Get<uint8>());
-                        recipe.required_level = fields[4].Get<uint32>();
-                        recipe.cooldown_seconds = fields[5].Get<uint32>();
-                        recipe.input_essence = fields[6].Get<uint32>();
-                        recipe.input_tokens = fields[7].Get<uint32>();
-                        recipe.output_item_id = fields[8].Get<uint32>();
-                        recipe.output_upgrade_level = fields[9].Get<uint8>();
-                        recipe.output_tier_id = fields[10].Get<uint8>();
-                        recipe.output_essence = fields[11].Get<uint32>();
-                        recipe.output_tokens = fields[12].Get<uint32>();
-                        recipe.success_rate_base = fields[13].Get<float>();
-                        recipe.failure_penalty_percent = fields[14].Get<uint32>();
-                        recipe.requires_catalyst = fields[15].Get<bool>();
-                        recipe.catalyst_item_id = fields[16].Get<uint32>();
+                        recipe.type = TRANSMUTATION_SYNTHESIS; // All recipes from this table are synthesis
+                        recipe.required_level = fields[3].Get<uint32>();
+                        recipe.cooldown_seconds = fields[4].Get<uint32>();
+                        recipe.input_essence = fields[5].Get<uint32>();
+                        recipe.input_tokens = fields[6].Get<uint32>();
+                        recipe.output_item_id = fields[7].Get<uint32>();
+                        recipe.output_quantity = fields[8].Get<uint32>();
+                        recipe.success_rate_base = fields[9].Get<float>();
+                        recipe.required_tier = fields[10].Get<uint8>();
+                        recipe.required_upgrade_level = fields[11].Get<uint8>();
+                        recipe.catalyst_item_id = fields[12].Get<uint32>();
+                        recipe.catalyst_quantity = fields[13].Get<uint32>();
+                        recipe.requires_catalyst = (recipe.catalyst_item_id > 0);
+                        recipe.failure_penalty_percent = 50; // Default 50% loss on failure
+                        recipe.output_essence = 0;
+                        recipe.output_tokens = 0;
+                        recipe.output_upgrade_level = 0;
+                        recipe.output_tier_id = 1;
 
                         recipes[recipe.recipe_id] = recipe;
                         count++;
@@ -103,7 +107,7 @@ namespace DarkChaos
 
                 // Load recipe input requirements
                 result = WorldDatabase.Query(
-                    "SELECT recipe_id, input_type, input_id, quantity FROM dc_transmutation_inputs");
+                    "SELECT recipe_id, item_id, quantity, required_tier, required_upgrade_level FROM dc_item_upgrade_synthesis_inputs");
 
                 if (result)
                 {
@@ -112,17 +116,20 @@ namespace DarkChaos
                     {
                         Field* fields = result->Fetch();
                         uint32 recipe_id = fields[0].Get<uint32>();
-                        uint8 input_type = fields[1].Get<uint8>(); // 1=item, 2=upgrade
-                        uint32 input_id = fields[2].Get<uint32>();
-                        uint32 quantity = fields[3].Get<uint32>();
+                        uint32 item_id = fields[1].Get<uint32>();
+                        uint32 quantity = fields[2].Get<uint32>();
+                        uint8 required_tier = fields[3].Get<uint8>();
+                        uint8 required_upgrade_level = fields[4].Get<uint8>();
 
                         auto it = recipes.find(recipe_id);
                         if (it != recipes.end())
                         {
-                            if (input_type == 1) // item
-                                it->second.input_items[input_id] = quantity;
-                            else if (input_type == 2) // upgrade
-                                it->second.input_upgrades[input_id] = quantity;
+                            TransmutationInput input;
+                            input.item_id = item_id;
+                            input.quantity = quantity;
+                            input.required_tier = required_tier;
+                            input.required_upgrade_level = required_upgrade_level;
+                            it->second.input_items.push_back(input);
                             count++;
                         }
                     } while (result->NextRow());

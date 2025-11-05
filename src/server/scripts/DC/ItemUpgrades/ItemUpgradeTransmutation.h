@@ -277,6 +277,11 @@ namespace DarkChaos
          * Get the global transmutation manager instance
          */
         TransmutationManager* GetTransmutationManager();
+
+        /**
+         * Get the global synthesis manager instance
+         */
+        SynthesisManager* GetSynthesisManager();
     }
 }
 
