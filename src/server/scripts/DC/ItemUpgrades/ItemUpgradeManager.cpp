@@ -191,8 +191,25 @@ namespace DarkChaos
                 QueryResult result = CharacterDatabase.Query(oss.str().c_str());
                 if (!result)
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database", item_guid);
-                    return nullptr;
+                    LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
+                    
+                    // NEW: Create default state for items not in database yet
+                    // This allows newly equipped items to be upgradeable without manual SQL initialization
+                    ItemUpgradeState default_state;
+                    default_state.item_guid = item_guid;
+                    default_state.player_guid = 0; // Will be set when first upgraded or by CanUpgradeItem
+                    default_state.tier_id = 1;     // Default to Tier 1 (Leveling)
+                    default_state.upgrade_level = 0;
+                    default_state.tokens_invested = 0;
+                    default_state.essence_invested = 0;
+                    default_state.stat_multiplier = 1.0f;
+                    default_state.first_upgraded_at = 0;
+                    default_state.last_upgraded_at = 0;
+                    default_state.season = 1;
+                    
+                    // Cache the default state
+                    item_states[item_guid] = default_state;
+                    return &item_states[item_guid];
                 }
 
                 ItemUpgradeState state;
@@ -318,11 +335,22 @@ namespace DarkChaos
             {
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                 if (!state)
-                    return false;
+                    return false; // This should never happen now with default state creation
+
+                // NEW: If this is a newly seen item (player_guid not set), assign ownership
+                if (state->player_guid == 0)
+                {
+                    state->player_guid = player_guid;
+                    LOG_DEBUG("scripts", "ItemUpgrade: Assigned item {} to player {}", item_guid, player_guid);
+                }
 
                 // Ensure the item belongs to the player
                 if (state->player_guid != player_guid)
+                {
+                    LOG_WARN("scripts", "ItemUpgrade: Item {} belongs to player {}, not {}", 
+                             item_guid, state->player_guid, player_guid);
                     return false;
+                }
 
                 return state->upgrade_level < MAX_UPGRADE_LEVEL;
             }

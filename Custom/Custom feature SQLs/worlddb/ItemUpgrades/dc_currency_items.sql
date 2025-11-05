@@ -4,8 +4,8 @@
 -- =========================================================================
 -- 
 -- Currency Items: 2 total
---   1. Upgrade Token (49999) - Used for Tiers 1-4 upgrades
---   2. Artifact Essence (49998) - Used for Tier 5 (Chaos Artifacts)
+--   1. Upgrade Token (100999) - Used for Tiers 1-4 upgrades
+--   2. Artifact Essence (109998) - Used for Tier 5 (Chaos Artifacts)
 --
 -- These are quest items that can't be traded or sold, used for currency
 -- They appear in player bags but are "currency" type with no durability
