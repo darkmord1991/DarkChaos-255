@@ -104,7 +104,7 @@ private:
         }
 
         // Get item info
-        Item* item = player->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, itemGuid));
+        Item* item = player->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(itemGuid));
         if (!item)
         {
             SendErrorResponse(player, "Item not found in inventory");
@@ -174,7 +174,7 @@ private:
         }
 
         // Check if player owns the item
-        Item* item = player->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, itemGuid));
+        Item* item = player->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(itemGuid));
         if (!item)
         {
             SendErrorResponse(player, "Item not found in your inventory");
