@@ -442,7 +442,6 @@ namespace DarkChaos
             reg.system_name = "hlbg";
             reg.system_version = "1.0";
             reg.priority = 90;
-            reg.participant = _hlbg_participant;
 
             // Set up callbacks
             reg.validate_season_transition = [hlbg = _hlbg_participant](uint32 player_guid, uint32 new_season_id) {
