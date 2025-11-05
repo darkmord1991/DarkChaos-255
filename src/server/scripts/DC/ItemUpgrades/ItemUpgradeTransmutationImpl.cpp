@@ -514,7 +514,7 @@ namespace DarkChaos
 
                 // Determine success
                 float success_roll = frand(0.0f, 1.0f);
-                session.success = (success_roll <= recipe.success_rate);
+                session.success = (success_roll <= recipe.success_rate_base);
                 session.completed = true;
                 session.end_time = time(nullptr);
 

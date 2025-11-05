@@ -282,6 +282,11 @@ namespace DarkChaos
          * Get the global synthesis manager instance
          */
         SynthesisManager* GetSynthesisManager();
+
+        /**
+         * Get the global tier conversion manager instance
+         */
+        TierConversionManager* GetTierConversionManager();
     }
 }
 
