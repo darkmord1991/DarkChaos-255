@@ -297,24 +297,24 @@ namespace DarkChaos
         // =====================================================================
 
         /**
-         * Player prestige information
+         * Player artifact mastery information
          */
-        struct PlayerPrestigeInfo
+        struct PlayerArtifactMasteryInfo
         {
             uint32 player_guid;
-            uint32 total_prestige_points;        // Total prestige earned
-            uint8 prestige_rank;                 // Prestige level (0+)
-            uint32 prestige_points_this_rank;    // Progress to next rank
+            uint32 total_mastery_points;         // Total mastery points earned
+            uint8 mastery_rank;                  // Mastery level (0+)
+            uint32 mastery_points_this_rank;     // Progress to next rank
             uint32 items_fully_upgraded;         // Number of fully upgraded items
             uint32 total_upgrades_applied;       // Total number of upgrades
             uint64 last_upgrade_timestamp;       // When last upgrade was applied
-            std::string prestige_title;          // Display title
+            std::string mastery_title;           // Display title
 
-            PlayerPrestigeInfo() :
-                player_guid(0), total_prestige_points(0), prestige_rank(0),
-                prestige_points_this_rank(0), items_fully_upgraded(0),
+            PlayerArtifactMasteryInfo() :
+                player_guid(0), total_mastery_points(0), mastery_rank(0),
+                mastery_points_this_rank(0), items_fully_upgraded(0),
                 total_upgrades_applied(0), last_upgrade_timestamp(0),
-                prestige_title("Novice Upgrader") {}
+                mastery_title("Novice Upgrader") {}
 
             /**
              * Get progress to next rank (0-100%)
@@ -322,40 +322,40 @@ namespace DarkChaos
             uint8 GetProgressToNextRank() const
             {
                 const uint32 points_per_rank = 1000;
-                return static_cast<uint8>((prestige_points_this_rank * 100) / points_per_rank);
+                return static_cast<uint8>((mastery_points_this_rank * 100) / points_per_rank);
             }
 
             /**
-             * Get prestige title based on rank
+             * Get mastery title based on rank
              */
-            std::string GetPrestigeTitle() const
+            std::string GetMasteryTitle() const
             {
-                if (prestige_rank < 1) return "Novice Upgrader";
-                if (prestige_rank < 5) return "Skilled Upgrader";
-                if (prestige_rank < 10) return "Master Upgrader";
-                if (prestige_rank < 20) return "Grand Master";
-                if (prestige_rank < 50) return "Artifact Lord";
+                if (mastery_rank < 1) return "Novice Upgrader";
+                if (mastery_rank < 5) return "Skilled Upgrader";
+                if (mastery_rank < 10) return "Master Upgrader";
+                if (mastery_rank < 20) return "Grand Master";
+                if (mastery_rank < 50) return "Artifact Lord";
                 return "Supreme Artifact Master";
             }
         };
 
         /**
-         * Manages prestige system
+         * Manages artifact mastery system
          */
-        class PrestigeManager
+        class ArtifactMasteryManager
         {
         public:
-            virtual ~PrestigeManager() = default;
+            virtual ~ArtifactMasteryManager() = default;
 
             /**
-             * Get prestige info for player
+             * Get mastery info for player
              */
-            virtual PlayerPrestigeInfo* GetPrestigeInfo(uint32 player_guid) = 0;
+            virtual PlayerArtifactMasteryInfo* GetMasteryInfo(uint32 player_guid) = 0;
 
             /**
-             * Award prestige points to player
+             * Award mastery points to player
              */
-            virtual void AwardPrestigePoints(uint32 player_guid, uint32 points) = 0;
+            virtual void AwardMasteryPoints(uint32 player_guid, uint32 points) = 0;
 
             /**
              * Increment fully upgraded item counter
@@ -363,14 +363,14 @@ namespace DarkChaos
             virtual void IncrementFullyUpgradedCount(uint32 player_guid) = 0;
 
             /**
-             * Get prestige leaderboard
+             * Get mastery leaderboard
              */
-            virtual std::vector<PlayerPrestigeInfo> GetPrestigeLeaderboard(uint32 limit = 10) = 0;
+            virtual std::vector<PlayerArtifactMasteryInfo> GetMasteryLeaderboard(uint32 limit = 10) = 0;
 
             /**
-             * Get player's prestige rank (1-based)
+             * Get player's mastery rank (1-based)
              */
-            virtual uint32 GetPlayerPrestigeRank(uint32 player_guid) = 0;
+            virtual uint32 GetPlayerMasteryRank(uint32 player_guid) = 0;
         };
 
         // =====================================================================
