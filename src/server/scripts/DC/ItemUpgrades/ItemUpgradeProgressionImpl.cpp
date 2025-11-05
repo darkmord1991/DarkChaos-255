@@ -337,20 +337,20 @@ class ItemUpgradeProgressionCommands : public CommandScript
 public:
     ItemUpgradeProgressionCommands() : CommandScript("ItemUpgradeProgressionCommands") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> upgradeProgressionCommandTable =
+        static ChatCommandTable upgradeProgressionCommandTable =
         {
-            { "mastery",    SEC_PLAYER,      false, &HandleMasteryCommand,       "" },
-            { "unlocktier", SEC_GAMEMASTER,  false, &HandleUnlockTierCommand,    "" },
-            { "weekcap",    SEC_PLAYER,      false, &HandleWeekCapCommand,       "" },
-            { "tiercap",    SEC_GAMEMASTER,  false, &HandleTierCapCommand,       "" },
-            { "testset",    SEC_GAMEMASTER,  false, &HandleTestSetCommand,       "" },
+            { "mastery",    HandleMasteryCommand,       SEC_PLAYER, Console::No },
+            { "unlocktier", HandleUnlockTierCommand,    SEC_GAMEMASTER, Console::No },
+            { "weekcap",    HandleWeekCapCommand,       SEC_PLAYER, Console::No },
+            { "tiercap",    HandleTierCapCommand,       SEC_GAMEMASTER, Console::No },
+            { "testset",    HandleTestSetCommand,       SEC_GAMEMASTER, Console::No },
         };
         
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "upgradeprog", SEC_PLAYER, false, nullptr, "", upgradeProgressionCommandTable },
+            { "upgradeprog", upgradeProgressionCommandTable },
         };
         
         return commandTable;

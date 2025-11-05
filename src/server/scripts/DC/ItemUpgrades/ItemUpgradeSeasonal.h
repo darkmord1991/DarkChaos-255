@@ -138,7 +138,7 @@ namespace DarkChaos
             /**
              * Transition to next season
              */
-            void TransitionToNextSeason(const Season& next_season)
+            void TransitionToNextSeason(Season& next_season)
             {
                 Season* current = GetActiveSeason();
                 if (current)

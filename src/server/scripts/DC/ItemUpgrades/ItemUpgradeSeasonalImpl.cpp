@@ -446,19 +446,19 @@ class ItemUpgradeSeasonalCommands : public CommandScript
 public:
     ItemUpgradeSeasonalCommands() : CommandScript("ItemUpgradeSeasonalCommands") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> upgradeSeasonalCommandTable =
+        static ChatCommandTable upgradeSeasonalCommandTable =
         {
-            { "info",       SEC_PLAYER,      false, &HandleSeasonInfoCommand,    "" },
-            { "leaderboard", SEC_PLAYER,     false, &HandleLeaderboardCommand,   "" },
-            { "history",    SEC_PLAYER,      false, &HandleHistoryCommand,       "" },
-            { "reset",      SEC_ADMINISTRATOR, false, &HandleSeasonResetCommand, "" },
+            { "info",       HandleSeasonInfoCommand,    SEC_PLAYER, Console::No },
+            { "leaderboard", HandleLeaderboardCommand,   SEC_PLAYER, Console::No },
+            { "history",    HandleHistoryCommand,       SEC_PLAYER, Console::No },
+            { "reset",      HandleSeasonResetCommand,   SEC_ADMINISTRATOR, Console::No },
         };
         
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "season", SEC_PLAYER, false, nullptr, "", upgradeSeasonalCommandTable },
+            { "season", upgradeSeasonalCommandTable },
         };
         
         return commandTable;
