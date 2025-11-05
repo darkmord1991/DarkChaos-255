@@ -2547,3 +2547,365 @@ ItemUpgrade.Test.TokensGrant = 2500
 #    - Artifact Mastery = Item upgrade rank progression (Section 7)
 #
 ###########################################################################
+
+
+###########################################################################
+#
+#    SECTION 5: AZEROTHCORE MODULE CONFIGURATIONS
+#
+#    Configuration for various AzerothCore gameplay modules that provide
+#    different difficulty modes and progression systems.
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+
+
+#
+#    SLOW XP GAIN MODULE
+#    Reduces experience gain for a more challenging progression
+#
+
+#
+#    SlowXpGain.Enable
+#        Description: Enable the Slow XP Gain module
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+SlowXpGain.Enable = 1
+
+#
+#    SlowXpGain.XPMultiplier
+#        Description: XP multiplier for slow XP mode (0.1 = 10% normal XP)
+#        Default:     0.5 (50% of normal XP)
+#        Range:       0.1 - 1.0
+#
+SlowXpGain.XPMultiplier = 0.5
+
+#
+#    SlowXpGain.DisableLevel
+#        Description: Level at which slow XP is disabled (0 = never disable)
+#        Default:     0 (Always active)
+#        Range:       0 - 255
+#
+SlowXpGain.DisableLevel = 0
+
+#
+#    SlowXpGain.ItemRewardAmount
+#        Description: Amount of reward items given for achievements
+#        Default:     1
+#        Range:       1 - 100
+#
+SlowXpGain.ItemRewardAmount = 1
+
+#
+#    SlowXpGain.AchievementReward
+#        Description: Achievement ID granted for completing slow XP challenges
+#        Default:     "" (empty - no achievement)
+#
+SlowXpGain.AchievementReward = ""
+
+#
+#    SlowXpGain.TalentRewards
+#        Description: Talent points rewarded for slow XP progression
+#        Default:     "" (empty - no talent rewards)
+#
+SlowXpGain.TalentRewards = ""
+
+#
+#    SlowXpGain.TitleRewards
+#        Description: Title ID granted for slow XP completion
+#        Default:     "" (empty - no title)
+#
+SlowXpGain.TitleRewards = ""
+
+#
+#    SlowXpGain.ItemRewards
+#        Description: Item rewards for slow XP milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+SlowXpGain.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    VERY SLOW XP GAIN MODULE
+#    Extremely challenging XP reduction for hardcore players
+#
+
+#
+#    VerySlowXpGain.Enable
+#        Description: Enable the Very Slow XP Gain module
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+VerySlowXpGain.Enable = 1
+
+#
+#    VerySlowXpGain.XPMultiplier
+#        Description: XP multiplier for very slow XP mode (0.05 = 5% normal XP)
+#        Default:     0.25 (25% of normal XP)
+#        Range:       0.01 - 0.5
+#
+VerySlowXpGain.XPMultiplier = 0.25
+
+#
+#    VerySlowXpGain.DisableLevel
+#        Description: Level at which very slow XP is disabled (0 = never disable)
+#        Default:     0 (Always active)
+#        Range:       0 - 255
+#
+VerySlowXpGain.DisableLevel = 0
+
+#
+#    VerySlowXpGain.ItemRewardAmount
+#        Description: Amount of reward items given for achievements
+#        Default:     1
+#        Range:       1 - 100
+#
+VerySlowXpGain.ItemRewardAmount = 1
+
+#
+#    VerySlowXpGain.AchievementReward
+#        Description: Achievement ID granted for completing very slow XP challenges
+#        Default:     "" (empty - no achievement)
+#
+VerySlowXpGain.AchievementReward = ""
+
+#
+#    VerySlowXpGain.TalentRewards
+#        Description: Talent points rewarded for very slow XP progression
+#        Default:     "" (empty - no talent rewards)
+#
+VerySlowXpGain.TalentRewards = ""
+
+#
+#    VerySlowXpGain.TitleRewards
+#        Description: Title ID granted for very slow XP completion
+#        Default:     "" (empty - no title)
+#
+VerySlowXpGain.TitleRewards = ""
+
+#
+#    VerySlowXpGain.ItemRewards
+#        Description: Item rewards for very slow XP milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+VerySlowXpGain.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    QUEST XP ONLY MODULE
+#    Players can only gain XP through quest completion
+#
+
+#
+#    QuestXpOnly.AchievementReward
+#        Description: Achievement ID granted for quest-only XP completion
+#        Default:     "" (empty - no achievement)
+#
+QuestXpOnly.AchievementReward = ""
+
+#
+#    QuestXpOnly.TalentRewards
+#        Description: Talent points rewarded for quest-only progression
+#        Default:     "" (empty - no talent rewards)
+#
+QuestXpOnly.TalentRewards = ""
+
+#
+#    QuestXpOnly.TitleRewards
+#        Description: Title ID granted for quest-only completion
+#        Default:     "" (empty - no title)
+#
+QuestXpOnly.TitleRewards = ""
+
+#
+#    QuestXpOnly.ItemRewards
+#        Description: Item rewards for quest-only milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+QuestXpOnly.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    SELF CRAFTED MODULE
+#    Players must craft their own gear and items
+#
+
+#
+#    SelfCrafted.AchievementReward
+#        Description: Achievement ID granted for self-crafted completion
+#        Default:     "" (empty - no achievement)
+#
+SelfCrafted.AchievementReward = ""
+
+#
+#    SelfCrafted.TalentRewards
+#        Description: Talent points rewarded for self-crafted progression
+#        Default:     "" (empty - no talent rewards)
+#
+SelfCrafted.TalentRewards = ""
+
+#
+#    SelfCrafted.TitleRewards
+#        Description: Title ID granted for self-crafted completion
+#        Default:     "" (empty - no title)
+#
+SelfCrafted.TitleRewards = ""
+
+#
+#    SelfCrafted.ItemRewards
+#        Description: Item rewards for self-crafted milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+SelfCrafted.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    SEMI HARDCORE MODULE
+#    Moderate difficulty mode with some restrictions
+#
+
+#
+#    SemiHardcore.AchievementReward
+#        Description: Achievement ID granted for semi-hardcore completion
+#        Default:     "" (empty - no achievement)
+#
+SemiHardcore.AchievementReward = ""
+
+#
+#    SemiHardcore.TalentRewards
+#        Description: Talent points rewarded for semi-hardcore progression
+#        Default:     "" (empty - no talent rewards)
+#
+SemiHardcore.TalentRewards = ""
+
+#
+#    SemiHardcore.TitleRewards
+#        Description: Title ID granted for semi-hardcore completion
+#        Default:     "" (empty - no title)
+#
+SemiHardcore.TitleRewards = ""
+
+#
+#    SemiHardcore.ItemRewards
+#        Description: Item rewards for semi-hardcore milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+SemiHardcore.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    ITEM QUALITY LEVEL MODULE
+#    Restrictions based on item quality progression
+#
+
+#
+#    ItemQualityLevel.AchievementReward
+#        Description: Achievement ID granted for item quality level completion
+#        Default:     "" (empty - no achievement)
+#
+ItemQualityLevel.AchievementReward = ""
+
+#
+#    ItemQualityLevel.TalentRewards
+#        Description: Talent points rewarded for item quality progression
+#        Default:     "" (empty - no talent rewards)
+#
+ItemQualityLevel.TalentRewards = ""
+
+#
+#    ItemQualityLevel.TitleRewards
+#        Description: Title ID granted for item quality completion
+#        Default:     "" (empty - no title)
+#
+ItemQualityLevel.TitleRewards = ""
+
+#
+#    ItemQualityLevel.ItemRewards
+#        Description: Item rewards for quality level milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+ItemQualityLevel.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    IRON MAN MODULE
+#    Extreme difficulty with severe restrictions
+#
+
+#
+#    IronMan.AchievementReward
+#        Description: Achievement ID granted for Iron Man completion
+#        Default:     "" (empty - no achievement)
+#
+IronMan.AchievementReward = ""
+
+#
+#    IronMan.TalentRewards
+#        Description: Talent points rewarded for Iron Man progression
+#        Default:     "" (empty - no talent rewards)
+#
+IronMan.TalentRewards = ""
+
+#
+#    IronMan.TitleRewards
+#        Description: Title ID granted for Iron Man completion
+#        Default:     "" (empty - no title)
+#
+IronMan.TitleRewards = ""
+
+#
+#    IronMan.ItemRewards
+#        Description: Item rewards for Iron Man milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+IronMan.ItemRewards = ""
+
+# -------------------------------------------------------------------------
+
+
+#
+#    HARDCORE MODULE
+#    Ultimate difficulty with maximum restrictions
+#
+
+#
+#    Hardcore.AchievementReward
+#        Description: Achievement ID granted for Hardcore completion
+#        Default:     "" (empty - no achievement)
+#
+Hardcore.AchievementReward = ""
+
+#
+#    Hardcore.TalentRewards
+#        Description: Talent points rewarded for Hardcore progression
+#        Default:     "" (empty - no talent rewards)
+#
+Hardcore.TalentRewards = ""
+
+#
+#    Hardcore.TitleRewards
+#        Description: Title ID granted for Hardcore completion
+#        Default:     "" (empty - no title)
+#
+Hardcore.TitleRewards = ""
+
+#
+#    Hardcore.ItemRewards
+#        Description: Item rewards for Hardcore milestones (format: "level:item:count")
+#        Default:     "" (empty - no item rewards)
+#
+Hardcore.ItemRewards = ""

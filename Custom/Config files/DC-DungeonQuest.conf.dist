@@ -1,0 +1,366 @@
+#    SECTION 6: DUNGEON QUEST NPC SYSTEM
+#
+#    Allows players to undertake quests in dungeons across all expansions
+#    with token-based rewards, daily/weekly challenges, and achievement
+#    tracking. Supports 54 dungeons (20 Classic, 16 TBC, 18 WotLK) with
+#    tier-based progression (Beginner, Intermediate, Advanced).
+#
+#    Features:
+#    - 53 Quest Master NPCs (IDs 700000-700052)
+#    - 630+ Dungeon Quests (IDs 700701-700999)
+#    - 8 Daily/Weekly Quests (IDs 700101-700204)
+#    - 5 Token Types with configurable rewards
+#    - 50+ Achievements and Titles
+#    - Multi-expansion support with tier progression
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Master Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Enable
+#        Description: Master toggle for the Dungeon Quest NPC system
+#        Default:     1 (Enabled)
+#                     0 (Disabled - all quest NPCs inactive)
+#
+DungeonQuest.Enable = 1
+
+# -------------------------------------------------------------------------
+# DungeonQuest system
+# -------------------------------------------------------------------------
+# DungeonQuest.FollowerEnable
+#   Description: Enable the DungeonQuest follower/Quest Master helper that can be
+#                automatically spawned to follow party leaders inside dungeons.
+#   Default:     1 (Enabled)
+#                0 (Disabled)
+#
+DungeonQuest.FollowerEnable = 1
+
+#
+#    DungeonQuest.MinPlayerLevel
+#        Description: Minimum player level to interact with quest NPCs
+#                     Players below this level cannot accept quests.
+#        Default:     15
+#        Range:       1 - 255
+#
+DungeonQuest.MinPlayerLevel = 15
+
+#
+#    DungeonQuest.MaxPlayerLevel
+#        Description: Maximum player level for dungeon quests
+#                     Set to 0 to allow all levels.
+#        Default:     0 (No maximum, all levels can do quests)
+#        Range:       0 - 255
+#
+DungeonQuest.MaxPlayerLevel = 0
+
+# -------------------------------------------------------------------------
+# Tier Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Tier.1.Enable
+#        Description: Enable Tier 1 quests (Beginner, Classic dungeons)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Tier.1.Enable = 1
+
+#
+#    DungeonQuest.Tier.2.Enable
+#        Description: Enable Tier 2 quests (Intermediate, TBC dungeons)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Tier.2.Enable = 1
+
+#
+#    DungeonQuest.Tier.3.Enable
+#        Description: Enable Tier 3 quests (Advanced, WotLK dungeons)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Tier.3.Enable = 1
+
+# -------------------------------------------------------------------------
+# Daily Quest Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Daily.Enable
+#        Description: Enable daily dungeon quests (700101-700104)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Daily.Enable = 1
+
+#
+#    DungeonQuest.Daily.ResetHour
+#        Description: Server reset hour for daily quests (24-hour format)
+#                     Quests reset at this hour each day.
+#        Default:     4 (4 AM server time)
+#        Range:       0 - 23
+#
+DungeonQuest.Daily.ResetHour = 4
+
+#
+#    DungeonQuest.Daily.QuestCount
+#        Description: Number of daily quests available
+#        Default:     4 (Explorer's Challenge, Focused Exploration, Quick Runner, Gauntlet)
+#        Range:       1 - 10
+#
+DungeonQuest.Daily.QuestCount = 4
+
+# -------------------------------------------------------------------------
+# Weekly Quest Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Weekly.Enable
+#        Description: Enable weekly dungeon quests (700201-700204)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Weekly.Enable = 1
+
+#
+#    DungeonQuest.Weekly.ResetDay
+#        Description: Day of week for weekly quest reset (0=Sunday, 1=Monday, etc.)
+#                     Quests reset at DungeonQuest.Daily.ResetHour on this day.
+#        Default:     3 (Wednesday)
+#        Range:       0 - 6
+#
+DungeonQuest.Weekly.ResetDay = 3
+
+#
+#    DungeonQuest.Weekly.QuestCount
+#        Description: Number of weekly quests available
+#        Default:     4 (Specialist, Speed Runner, Devoted, Collector)
+#        Range:       1 - 10
+#
+DungeonQuest.Weekly.QuestCount = 4
+
+# -------------------------------------------------------------------------
+# Token Reward Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Token.Enable
+#        Description: Enable token reward system
+#        Default:     1 (Enabled - players receive tokens)
+#                     0 (Disabled - quests give gold/XP only)
+#
+DungeonQuest.Token.Enable = 1
+
+#
+#    DungeonQuest.Token.Types
+#        Description: Number of token types (5 by default)
+#                     1=Explorer, 2=Specialist, 3=Legendary, 4=Challenge, 5=Speed Runner
+#        Default:     5
+#        Range:       1 - 10
+#
+DungeonQuest.Token.Types = 5
+
+#
+#    DungeonQuest.Token.Explorer.Multiplier
+#        Description: Multiplier for Dungeon Explorer Token rewards
+#                     1.0 = default, 1.5 = 50% more tokens, 0.5 = 50% fewer
+#        Default:     1.0
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Token.Explorer.Multiplier = 1.0
+
+#
+#    DungeonQuest.Token.Specialist.Multiplier
+#        Description: Multiplier for Expansion Specialist Token rewards
+#        Default:     1.0
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Token.Specialist.Multiplier = 1.0
+
+#
+#    DungeonQuest.Token.Legendary.Multiplier
+#        Description: Multiplier for Legendary Token rewards (rare)
+#        Default:     1.0
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Token.Legendary.Multiplier = 1.0
+
+#
+#    DungeonQuest.Token.Challenge.Multiplier
+#        Description: Multiplier for Challenge Master Token rewards
+#        Default:     1.0
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Token.Challenge.Multiplier = 1.0
+
+#
+#    DungeonQuest.Token.SpeedRunner.Multiplier
+#        Description: Multiplier for Speed Runner Token rewards
+#        Default:     1.0
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Token.SpeedRunner.Multiplier = 1.0
+
+# -------------------------------------------------------------------------
+# Experience & Gold Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Experience.Multiplier
+#        Description: Multiplier for base XP rewards from dungeon quests
+#                     Scales all XP rewards up or down.
+#        Default:     1.0 (standard)
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Experience.Multiplier = 1.0
+
+#
+#    DungeonQuest.Gold.Multiplier
+#        Description: Multiplier for gold rewards from dungeon quests
+#        Default:     1.0 (standard)
+#        Range:       0.1 - 10.0
+#
+DungeonQuest.Gold.Multiplier = 1.0
+
+# -------------------------------------------------------------------------
+# Announcements & Notifications
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Announce.QuestCompletion
+#        Description: Announce dungeon quest completions to the zone
+#        Default:     0 (Disabled - private notifications only)
+#                     1 (Enabled - zone announcement)
+#        Options:     0 = No announcement
+#                     1 = Zone announcement
+#                     2 = Zone + Achievement announcements
+#
+DungeonQuest.Announce.QuestCompletion = 0
+
+#
+#    DungeonQuest.Announce.AchievementReward
+#        Description: Announce achievement rewards to the zone
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Announce.AchievementReward = 1
+
+#
+#    DungeonQuest.Announce.FirstCompletion
+#        Description: Special announcement for first-time dungeon completions
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Announce.FirstCompletion = 1
+
+#
+#    DungeonQuest.WorldChat.Enable
+#        Description: Enable world chat announcements for notable achievements
+#        Default:     0 (Disabled - zone/private only)
+#                     1 (Enabled - world announcements for major milestones)
+#
+DungeonQuest.WorldChat.Enable = 0
+
+# -------------------------------------------------------------------------
+# Statistics & Tracking
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Statistics.Enable
+#        Description: Enable statistics tracking for leaderboards
+#        Default:     1 (Enabled - track all stats)
+#                     0 (Disabled - no tracking)
+#
+DungeonQuest.Statistics.Enable = 1
+
+#
+#    DungeonQuest.Leaderboard.Enable
+#        Description: Enable leaderboard commands (.dungeonleaderboard)
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DungeonQuest.Leaderboard.Enable = 1
+
+#
+#    DungeonQuest.Statistics.ResetSeason
+#        Description: Reset season statistics (for seasonal leaderboards)
+#                     Change this value to start a new season.
+#        Default:     1
+#        Range:       1 - 999
+#
+DungeonQuest.Statistics.ResetSeason = 1
+
+# -------------------------------------------------------------------------
+# Advanced Options
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.AllowGroupQuests
+#        Description: Allow group members to complete dungeon quests together
+#                     If disabled, each player must complete quests individually.
+#        Default:     1 (Enabled - group completion allowed)
+#                     0 (Disabled - solo only)
+#
+DungeonQuest.AllowGroupQuests = 1
+
+#
+#    DungeonQuest.ShareRewards
+#        Description: When group completes quest, all members receive rewards
+#        Default:     1 (Enabled - all group members rewarded)
+#                     0 (Disabled - only quest completer gets rewards)
+#
+DungeonQuest.ShareRewards = 1
+
+#
+#    DungeonQuest.ScaleRewardsByGroupSize
+#        Description: Reduce rewards per player based on group size
+#                     Prevents reward inflation for large groups.
+#        Default:     1 (Enabled - scale down rewards)
+#                     0 (Disabled - full rewards regardless of group size)
+#
+DungeonQuest.ScaleRewardsByGroupSize = 1
+
+#
+#    DungeonQuest.AbandonPenalty
+#        Description: Apply penalty for abandoning quest
+#        Default:     0 (No penalty)
+#                     1 = Remove partial rewards
+#                     2 = Cooldown period before re-accepting
+#
+DungeonQuest.AbandonPenalty = 0
+
+#
+#    DungeonQuest.AbandonCooldownMinutes
+#        Description: Minutes player must wait before re-accepting abandoned quest
+#                     Only applies if DungeonQuest.AbandonPenalty = 2
+#        Default:     10
+#        Range:       1 - 1440 (1 minute to 24 hours)
+#
+DungeonQuest.AbandonCooldownMinutes = 10
+
+# -------------------------------------------------------------------------
+# Debug & Logging
+# -------------------------------------------------------------------------
+
+#
+#    DungeonQuest.Debug.Enable
+#        Description: Enable debug logging for dungeon quest system
+#        Default:     0 (Disabled - minimal logging)
+#                     1 (Enabled - quest acceptance/completion logged)
+#                     2 (Enabled - verbose logging including NPC interactions)
+#
+DungeonQuest.Debug.Enable = 0
+
+#
+#    DungeonQuest.Debug.LogFile
+#        Description: Log file path for debug output
+#                     If empty, logs to server console.
+#        Default:     "logs/dungeon_quest_system.log"
+#
+DungeonQuest.Debug.LogFile = "logs/dungeon_quest_system.log"
+
+
+###########################################################################

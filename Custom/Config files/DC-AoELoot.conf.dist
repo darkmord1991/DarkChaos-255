@@ -1,0 +1,171 @@
+# =====================================================================
+# DarkChaos-255 AoE Loot System Configuration
+# =====================================================================
+# Configuration for the AoE Loot system that allows players to collect
+# loot from multiple nearby corpses with a single interaction.
+#
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
+# Released under the GNU AGPL v3 license
+# =====================================================================
+
+###########################################################################
+#
+#    AOE LOOT SYSTEM
+#
+#    Allows players to collect loot from multiple nearby corpses with a
+#    single interaction, significantly improving gameplay flow in areas
+#    with high mob density.
+#
+###########################################################################
+
+#
+#    AoELoot.Enable
+#        Description: Master toggle for the AoE Loot system
+#        Default:     1 (Enabled)
+#                     0 (Disabled - players loot corpses individually)
+#
+AoELoot.Enable = 1
+
+#
+#    AoELoot.Range
+#        Description: Maximum range (in yards) to collect loot from nearby corpses
+#                     When a player loots one corpse, all lootable corpses within
+#                     this range are included in the AoE loot operation.
+#        Default:     30.0
+#        Range:       1.0 - 100.0 (values above 100 may cause performance issues)
+#
+AoELoot.Range = 30.0
+
+#
+#    AoELoot.MaxCorpses
+#        Description: Maximum number of corpses to include in a single AoE loot operation
+#                     Prevents server lag from looting excessive numbers of corpses.
+#                     Even if 50 corpses are in range, only this many will be looted.
+#        Default:     10
+#        Range:       1 - 50 (higher values increase server load)
+#
+AoELoot.MaxCorpses = 10
+
+#
+#    AoELoot.ShowMessage
+#        Description: Show a message to players on login about AoE loot feature
+#                     Helps new players discover the AoE loot system.
+#        Default:     1 (Enabled - "AoE Loot is enabled! Loot one corpse to collect nearby loot.")
+#                     0 (Disabled - no login message)
+#
+AoELoot.ShowMessage = 1
+
+#
+#    AoELoot.AutoLoot
+#        Description: Controls automatic looting behavior (overrides client setting)
+#                     IMPORTANT: Only use mode 2 if your core supports autostore packet detection
+#        Default:     Commented out (respects client AutoLoot setting)
+#        Options:     0 = Force open loot windows (never auto-loot)
+#                     1 = Force auto-loot all corpses (bypass client setting)
+#                     2 = Respect player's AutoLoot setting (requires client packet detection)
+#
+#AoELoot.AutoLoot = 2
+
+#
+#    AoELoot.AllowInGroup
+#        Description: Allow AoE looting while in a group or raid
+#                     When disabled, AoE loot only works for solo players.
+#        Default:     1 (Enabled - works in groups/raids)
+#                     0 (Disabled - solo only)
+#
+AoELoot.AllowInGroup = 1
+
+#
+#    AoELoot.LootDelay
+#        Description: Delay in milliseconds between looting each corpse
+#                     Adds artificial throttling to reduce server load spikes.
+#                     0 = no delay (loot all corpses instantly)
+#        Default:     Commented out (no delay)
+#        Range:       0 - 500 (higher values make looting slower but reduce lag)
+#
+#AoELoot.LootDelay = 50
+
+#
+#    AoELoot.ShowCount
+#        Description: Show how many corpses were looted in the confirmation message
+#                     Example: "You looted 7 nearby corpses!" vs "Nearby corpses looted!"
+#        Default:     1 (Enabled - show count)
+#                     0 (Disabled - generic message)
+#
+AoELoot.ShowCount = 1
+
+#
+#    AoELoot.QuestItems
+#        Description: Include quest items in AoE loot collection
+#                     When disabled, quest items remain on their original corpse.
+#        Default:     1 (Enabled - quest items are collected)
+#                     0 (Disabled - quest items excluded from AoE loot)
+#
+AoELoot.QuestItems = 1
+
+#
+#    AoELoot.Money
+#        Description: Include money (copper/silver/gold) in AoE loot collection
+#                     When disabled, players must loot each corpse individually for money.
+#        Default:     1 (Enabled - money is collected from all corpses)
+#                     0 (Disabled - money excluded from AoE loot)
+#
+AoELoot.Money = 1
+
+#
+#    AoELoot.RequireLineOfSight
+#        Description: Require line of sight to corpses for AoE looting
+#                     Prevents looting through walls, floors, or terrain.
+#        Default:     0 (Disabled - can loot through obstacles)
+#                     1 (Enabled - must have LoS to corpse)
+#
+AoELoot.RequireLineOfSight = 0
+
+#
+#    AoELoot.IgnoreTapped
+#        Description: Skip corpses that are tapped by other players/groups
+#                     Prevents looting corpses that belong to other players.
+#        Default:     1 (Enabled - skip tapped corpses)
+#                     0 (Disabled - attempt to loot all corpses regardless of tap)
+#
+AoELoot.IgnoreTapped = 1
+
+#
+#    AoELoot.PlayersOnly
+#        Description: Only allow players to use AoE loot (not NPCs/pets)
+#                     Prevents exploits with pet/NPC looting.
+#        Default:     1 (Enabled - players only)
+#                     0 (Disabled - NPCs and pets can trigger AoE loot)
+#
+AoELoot.PlayersOnly = 1
+
+#
+#    AoELoot.AutoStoreWindowSeconds
+#        Description: Number of seconds after the client sends an autostore packet
+#                     where we consider autostore "recent". Only used when AoELoot.AutoLoot = 2
+#                     This helps detect if the player has auto-loot enabled client-side.
+#        Default:     5
+#        Range:       1 - 30 (higher values are more lenient for laggy connections)
+#
+AoELoot.AutoStoreWindowSeconds = 5
+
+#
+#    AoELoot.MaxMergeSlots
+#        Description: Maximum number of item slots to merge into the client's loot window
+#                     WoW 3.3.5a clients have a 16-slot loot window. This setting prevents
+#                     overflow by limiting merged items. Excess items are skipped.
+#        Default:     15 (leaves one spare slot)
+#        Range:       1 - 16 (setting to 16 may cause client issues)
+#
+AoELoot.MaxMergeSlots = 15
+
+#
+#    AoELoot.AutoCreditGold
+#        Description: When enabled, merged gold from nearby corpses is automatically
+#                     credited to the looter when they are solo (not in a group).
+#                     When disabled, gold remains in the loot window for normal
+#                     group/master-loot handling.
+#        Default:     1 (Enabled - auto-credit gold when solo)
+#                     0 (Disabled - gold stays in loot window)
+#
+AoELoot.AutoCreditGold = 1

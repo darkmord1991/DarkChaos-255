@@ -1,0 +1,255 @@
+#    SECTION 4: PRESTIGE SYSTEM
+#
+#    Allows level 255 players to reset to level 1 with permanent stat
+#    bonuses and exclusive rewards. Up to 10 prestige levels with
+#    cumulative 1% stat bonus per level.
+#
+#    Features:
+#    - Reset level 255 players to level 1
+#    - Permanent stat bonuses (1% per prestige, stacking)
+#    - Exclusive titles and rewards
+#    - Optional gear/profession/gold retention
+#    - Prestige leaderboards and statistics
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Basic Prestige Settings
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.Enable
+#        Description: Master toggle for the Prestige system
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no prestige functionality)
+#
+Prestige.Enable = 1
+
+#
+#    Prestige.RequiredLevel
+#        Description: Minimum level required to prestige
+#                     Players must reach this level before they can reset.
+#        Default:     255 (maximum level)
+#        Range:       1 - 255
+#
+Prestige.RequiredLevel = 255
+
+#
+#    Prestige.MaxLevel
+#        Description: Maximum prestige level achievable
+#                     Players can prestige this many times total.
+#        Default:     10
+#        Range:       1 - 20 (higher values allow more resets)
+#
+Prestige.MaxLevel = 10
+
+#
+#    Prestige.StatBonusPercent
+#        Description: Stat bonus percentage per prestige level
+#                     Each prestige grants this % bonus to all stats.
+#                     Bonuses stack (Prestige 5 = 5% total bonus).
+#        Default:     1 (1% per prestige)
+#        Range:       1 - 10 (higher values make prestige very powerful)
+#
+Prestige.StatBonusPercent = 1
+
+#
+#    Prestige.ResetLevel
+#        Description: Level to reset player to after prestige
+#                     After prestiging, player starts at this level.
+#        Default:     1
+#        Range:       1 - 80
+#
+Prestige.ResetLevel = 1
+
+# -------------------------------------------------------------------------
+# Retention Options (What players keep after prestige)
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.KeepGear
+#        Description: Allow players to keep equipped gear and inventory
+#                     When disabled, all gear is removed on prestige.
+#        Default:     1 (Enabled - keep gear)
+#                     0 (Disabled - gear removed)
+#
+Prestige.KeepGear = 1
+
+#
+#    Prestige.KeepProfessions
+#        Description: Allow players to keep profession skills and recipes
+#                     When disabled, all professions reset to 0.
+#        Default:     1 (Enabled - keep professions)
+#                     0 (Disabled - professions reset)
+#
+Prestige.KeepProfessions = 1
+
+#
+#    Prestige.KeepGold
+#        Description: Allow players to keep their gold after prestige
+#                     When disabled, gold is reset to 0.
+#        Default:     1 (Enabled - keep gold)
+#                     0 (Disabled - gold removed)
+#
+Prestige.KeepGold = 1
+
+#
+#    Prestige.ClearBank
+#        Description: Remove items from player's bank on prestige
+#                     Only applies when KeepGear = 0.
+#        Default:     0 (Disabled - bank items remain)
+#                     1 (Enabled - bank cleared)
+#
+Prestige.ClearBank = 0
+
+# -------------------------------------------------------------------------
+# Starter Gear System
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.GrantStarterGear
+#        Description: Grant class-specific starter gear after prestige
+#                     Only applies when KeepGear = 0.
+#        Default:     0 (Disabled - no starter gear)
+#                     1 (Enabled - grant starter items)
+#
+Prestige.GrantStarterGear = 0
+
+#
+#    Prestige Starter Gear by Class
+#        Description: Comma-separated list of item IDs to grant on prestige
+#                     Format: "itemID1,itemID2,itemID3"
+#                     Configure per class using class ID (1-12)
+#        Examples:
+#          Warrior (1):   Basic weapons and armor
+#          Paladin (2):   Plate gear and one-hander
+#          Hunter (3):    Mail armor and bow
+#          Rogue (4):     Leather and daggers
+#          Priest (5):    Cloth and staff
+#          Death Knight (6): Plate and two-hander
+#          Shaman (7):    Mail and mace
+#          Mage (8):      Cloth and staff
+#          Warlock (9):   Cloth and staff
+#          Monk (10):     Leather and staff
+#          Druid (11):    Leather and staff
+#          Demon Hunter (12): Leather and warglaives
+#
+#Prestige.StarterGear.1 = 25,35,117
+#Prestige.StarterGear.2 = 25,35,117,45
+#Prestige.StarterGear.3 = 25,35,117,2504
+# ... (configure for each class as needed)
+
+# -------------------------------------------------------------------------
+# Rewards System
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.Rewards
+#        Description: Prestige rewards granted when reaching each level
+#                     Format: "prestigeLevel:itemEntry:count;prestigeLevel:itemEntry:count"
+#                     Example: "1:49623:1;5:49623:5;10:49623:10"
+#                     (Prestige 1 grants 1x item 49623, Prestige 5 grants 5x, etc.)
+#        Default:     "" (no special item rewards)
+#
+Prestige.Rewards = ""
+
+#
+#    Example Prestige Rewards (uncomment to use):
+#    Prestige 1: Emblems or special mount
+#    Prestige 5: Rare pet or toy
+#    Prestige 10: Legendary item or title token
+#
+#Prestige.Rewards = "1:49623:10;5:49623:50;10:49623:100"
+
+# -------------------------------------------------------------------------
+# Announcements and Achievements
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.AnnounceWorld
+#        Description: Announce prestige achievements to the entire server
+#                     Example: "Player Arthas has achieved Prestige Level 5!"
+#        Default:     1 (Enabled - world announcement)
+#                     0 (Disabled - private notification only)
+#
+Prestige.AnnounceWorld = 1
+
+#
+#    Prestige.AchievementBase
+#        Description: Base achievement ID for prestige milestones
+#                     System will grant achievement (Base + PrestigeLevel)
+#                     Example: Base 10000 â†’ Prestige 1 = Achievement 10001
+#                     Set to 0 to disable achievement integration.
+#        Default:     10000
+#        Range:       0 - 65535
+#
+Prestige.AchievementBase = 10000
+
+# -------------------------------------------------------------------------
+# Title System (Requires DBC editing)
+# -------------------------------------------------------------------------
+
+#
+#    Prestige Title IDs (Reference)
+#        Description: Custom titles granted at each prestige level
+#                     These must be added to CharTitles.dbc client-side
+#                     Default IDs: 300-309 for Prestige I through X
+#
+#        To add custom titles:
+#        1. Open CharTitles.dbc in a DBC editor
+#        2. Add new entries with IDs 300-309
+#        3. Set title format: "Prestige I %s" through "Prestige X %s"
+#        4. Rebuild client MPQ and distribute to players
+#
+#        Alternative: Use existing title IDs from the game if you
+#                     prefer not to modify client files.
+#
+
+# -------------------------------------------------------------------------
+# Advanced Options
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.AllowMultiplePrestigePerDay
+#        Description: Allow players to prestige multiple times in one day
+#                     When disabled, players can only prestige once per 24h.
+#        Default:     1 (Enabled - no daily limit)
+#                     0 (Disabled - 1 prestige per day max)
+#
+Prestige.AllowMultiplePrestigePerDay = 1
+
+#
+#    Prestige.ConfirmationRequired
+#        Description: Require players to confirm prestige with .prestige confirm
+#                     Prevents accidental prestige resets.
+#        Default:     1 (Enabled - requires confirmation)
+#                     0 (Disabled - instant prestige with .prestige reset)
+#
+Prestige.ConfirmationRequired = 1
+
+#
+#    Prestige.ResetMounts
+#        Description: Remove all mounts from player on prestige
+#        Default:     0 (Disabled - keep mounts)
+#                     1 (Enabled - remove mounts)
+#
+Prestige.ResetMounts = 0
+
+#
+#    Prestige.ResetReputation
+#        Description: Reset all faction reputations to neutral
+#        Default:     0 (Disabled - keep reputation)
+#                     1 (Enabled - reset reputation)
+#
+Prestige.ResetReputation = 0
+
+#
+#    Prestige.ResetAchievements
+#        Description: Remove all achievements (except prestige achievements)
+#        Default:     0 (Disabled - keep achievements)
+#                     1 (Enabled - reset achievements)
+#
+Prestige.ResetAchievements = 0
+
+
+###########################################################################
