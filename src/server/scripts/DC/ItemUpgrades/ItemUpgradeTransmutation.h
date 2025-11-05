@@ -59,6 +59,8 @@ namespace DarkChaos
             std::string name;
             std::string description;
             uint32 required_level;              // Minimum player level
+            uint8 required_tier;                // Minimum item tier requirement
+            uint8 required_upgrade_level;       // Minimum upgrade level requirement
             uint32 cooldown_seconds;            // Cooldown between uses
 
             // Input requirements
@@ -83,8 +85,8 @@ namespace DarkChaos
 
             TransmutationRecipe() :
                 recipe_id(0), type(TRANSMUTATION_TIER_DOWNGRADE), required_level(1),
-                cooldown_seconds(3600), input_essence(0), input_tokens(0),
-                output_item_id(0), output_upgrade_level(0), output_tier_id(1),
+                required_tier(1), required_upgrade_level(0), cooldown_seconds(3600),
+                input_essence(0), input_tokens(0), output_item_id(0), output_upgrade_level(0), output_tier_id(1),
                 output_essence(0), output_tokens(0), output_quantity(1),
                 success_rate_base(1.0f), failure_penalty_percent(0), requires_catalyst(false),
                 catalyst_item_id(0), catalyst_quantity(0) {}
