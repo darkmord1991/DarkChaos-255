@@ -455,7 +455,10 @@ namespace DarkChaos
                 return true;
             }
 
-            bool PerformSynthesis(uint32 player_guid, uint32 recipe_id, uint32& result_item_guid) override
+            bool PerformSynthesis(uint32 player_guid, uint32 recipe_id,
+                                std::vector<uint32>& consumed_items,
+                                bool& success, uint32& output_item_id,
+                                uint32& output_quantity) override
             {
                 std::vector<uint32> required_items;
                 std::string error_message;
@@ -464,19 +467,23 @@ namespace DarkChaos
                 {
                     LOG_ERROR("scripts", "ItemUpgrade: Cannot perform synthesis {} for player {}: {}",
                              recipe_id, player_guid, error_message);
+                    success = false;
                     return false;
                 }
 
                 auto it = synthesis_recipes.find(recipe_id);
                 if (it == synthesis_recipes.end())
+                {
+                    success = false;
                     return false;
+                }
 
                 const TransmutationRecipe& recipe = it->second;
 
                 // Calculate success rate
                 float success_rate = GetSynthesisSuccessRate(recipe_id, player_guid);
                 float roll = frand(0.0f, 1.0f);
-                bool success = (roll <= success_rate);
+                success = (roll <= success_rate);
 
                 try
                 {
@@ -499,8 +506,10 @@ namespace DarkChaos
                                 "WHERE item_guid = {} AND player_guid = {}", item_guid, player_guid);
                         }
 
-                        // Create result item (placeholder - would need item creation system integration)
-                        result_item_guid = 0; // Would be set by item creation
+                        // Set consumed items and output
+                        consumed_items = required_items;
+                        output_item_id = recipe.output_item_id;
+                        output_quantity = recipe.output_quantity;
 
                         LOG_INFO("scripts", "ItemUpgrade: Synthesis {} succeeded for player {}", recipe_id, player_guid);
                     }
@@ -508,13 +517,18 @@ namespace DarkChaos
                     {
                         // Synthesis failed - lose some input items
                         size_t items_to_lose = std::max(size_t(1), required_items.size() / 2);
+                        consumed_items.clear();
                         for (size_t i = 0; i < items_to_lose; ++i)
                         {
                             uint32 item_guid = required_items[i];
                             CharacterDatabase.Execute(
                                 "UPDATE dc_player_item_upgrades SET consumed_in_synthesis = 1 "
                                 "WHERE item_guid = {} AND player_guid = {}", item_guid, player_guid);
+                            consumed_items.push_back(item_guid);
                         }
+
+                        output_item_id = 0;
+                        output_quantity = 0;
 
                         LOG_INFO("scripts", "ItemUpgrade: Synthesis {} failed for player {} - lost {} items",
                                 recipe_id, player_guid, items_to_lose);
@@ -531,15 +545,16 @@ namespace DarkChaos
                         "INSERT INTO dc_synthesis_log "
                         "(player_guid, recipe_id, success, input_items_consumed, cost_essence, cost_tokens, timestamp) "
                         "VALUES ({}, {}, {}, {}, {}, {}, UNIX_TIMESTAMP())",
-                        player_guid, recipe_id, success ? 1 : 0, static_cast<uint32>(required_items.size()),
+                        player_guid, recipe_id, success ? 1 : 0, static_cast<uint32>(consumed_items.size()),
                         recipe.input_essence, recipe.input_tokens);
 
-                    return success;
+                    return true;
 
                 }
                 catch (const std::exception& e)
                 {
                     LOG_ERROR("scripts", "ItemUpgrade: Synthesis failed for player {}: {}", player_guid, e.what());
+                    success = false;
                     return false;
                 }
             }
