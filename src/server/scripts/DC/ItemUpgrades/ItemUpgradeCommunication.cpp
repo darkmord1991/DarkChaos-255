@@ -28,42 +28,55 @@ enum ItemUpgradeOpcodes
     SMSG_ITEM_UPGRADE_OPEN_INTERFACE  = 1007, // Open upgrade interface (from NPC)
 };
 
-class ItemUpgradeCommunicationHandler : public ServerScript
+// =====================================================================
+// Static Method Implementation
+// =====================================================================
+
+void ItemUpgradeCommunicationHandler::OpenUpgradeInterface(Player* player)
 {
-public:
-    ItemUpgradeCommunicationHandler() : ServerScript("ItemUpgradeCommunicationHandler") {}
+    if (!player)
+        return;
 
-    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    // Send packet to open the interface
+    WorldPacket packet(SMSG_ITEM_UPGRADE_OPEN_INTERFACE, 4);
+    packet << uint32(1); // Simple flag to indicate interface should open
+
+    player->SendDirectMessage(&packet);
+}
+
+// =====================================================================
+// Member Method Implementations
+// =====================================================================
+
+bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, WorldPacket& packet)
+{
+    if (!session)
+        return true;
+
+    Player* player = session->GetPlayer();
+    if (!player)
+        return true;
+
+    uint16 opcode = packet.GetOpcode();
+
+    switch (opcode)
     {
-        if (!session)
-            return true;
+        case CMSG_ITEM_UPGRADE_REQUEST_INFO:
+            HandleItemUpgradeInfoRequest(player, packet);
+            return false; // Don't process further
 
-        Player* player = session->GetPlayer();
-        if (!player)
-            return true;
+        case CMSG_ITEM_UPGRADE_PERFORM:
+            HandleItemUpgradePerform(player, packet);
+            return false; // Don't process further
 
-        uint16 opcode = packet.GetOpcode();
+        case CMSG_ITEM_UPGRADE_INVENTORY_SCAN:
+            HandleInventoryScanRequest(player, packet);
+            return false; // Don't process further
 
-        switch (opcode)
-        {
-            case CMSG_ITEM_UPGRADE_REQUEST_INFO:
-                HandleItemUpgradeInfoRequest(player, packet);
-                return false; // Don't process further
-
-            case CMSG_ITEM_UPGRADE_PERFORM:
-                HandleItemUpgradePerform(player, packet);
-                return false; // Don't process further
-
-            case CMSG_ITEM_UPGRADE_INVENTORY_SCAN:
-                HandleInventoryScanRequest(player, packet);
-                return false; // Don't process further
-
-            default:
-                return true; // Allow other packets to be processed
-        }
+        default:
+            return true; // Allow other packets to be processed
     }
-
-private:
+}
     void HandleItemUpgradeInfoRequest(Player* player, WorldPacket& packet)
     {
         uint32 itemGuid;

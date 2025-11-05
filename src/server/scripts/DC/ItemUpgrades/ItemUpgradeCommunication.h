@@ -12,12 +12,23 @@
 #define ITEM_UPGRADE_COMMUNICATION_H
 
 #include "Player.h"
+#include "ScriptMgr.h"
 
-class ItemUpgradeCommunicationHandler
+class ItemUpgradeCommunicationHandler : public ServerScript
 {
 public:
+    ItemUpgradeCommunicationHandler() : ServerScript("ItemUpgradeCommunicationHandler") {}
+
     // Public function for NPCs to call to open the upgrade interface
     static void OpenUpgradeInterface(Player* player);
+
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override;
+
+private:
+    void HandleItemUpgradeInfoRequest(Player* player, WorldPacket& packet);
+    void HandleItemUpgradePerform(Player* player, WorldPacket& packet);
+    void HandleInventoryScanRequest(Player* player, WorldPacket& packet);
+    void SendErrorResponse(Player* player, const std::string& errorMessage);
 };
 
 #endif // ITEM_UPGRADE_COMMUNICATION_H
