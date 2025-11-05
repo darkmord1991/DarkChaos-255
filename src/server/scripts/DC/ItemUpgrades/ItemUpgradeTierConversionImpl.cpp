@@ -360,7 +360,7 @@ namespace DarkChaos
 
             bool CheckSynthesisRequirements(uint32 player_guid, uint32 recipe_id,
                                           std::vector<uint32>& required_items,
-                                          std::string& error_message) override
+                                          std::string& error_message) const override
             {
                 auto it = synthesis_recipes.find(recipe_id);
                 if (it == synthesis_recipes.end())
