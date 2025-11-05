@@ -17,6 +17,7 @@
 #include "GossipDef.h"
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
+#include "ItemUpgradeCommunication.h"
 #include <sstream>
 #include <iomanip>
 
@@ -39,12 +40,16 @@ public:
     {
         if (!player || !creature)
             return false;
-        
-    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View Upgradeable Items", GOSSIP_SENDER_MAIN, 10);
-    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View My Upgrade Statistics", GOSSIP_SENDER_MAIN, 20);
-    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "How does item upgrading work?", GOSSIP_SENDER_MAIN, 30);
+
+        // Open the retail-like upgrade interface directly
+        ItemUpgradeCommunicationHandler::OpenUpgradeInterface(player);
+
+        // Still show a basic gossip menu for additional options
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View Upgradeable Items (Legacy)", GOSSIP_SENDER_MAIN, 10);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "View My Upgrade Statistics", GOSSIP_SENDER_MAIN, 20);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "How does item upgrading work?", GOSSIP_SENDER_MAIN, 30);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Nevermind", GOSSIP_SENDER_MAIN, 100);
-        
+
         SendGossipMenuFor(player, 1, creature);
         return true;
     }

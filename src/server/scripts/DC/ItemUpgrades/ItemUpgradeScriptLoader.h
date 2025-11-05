@@ -33,6 +33,11 @@ void AddSC_ItemUpgradeSeasonal();
 void AddSC_ItemUpgradeAdvanced();
 
 // =====================================================================
+// Phase 4E: Client Communication
+// =====================================================================
+void AddSC_ItemUpgradeCommunication();
+
+// =====================================================================
 // Main Loader Function
 // =====================================================================
 inline void AddSC_ItemUpgradeScripts()
@@ -51,4 +56,7 @@ inline void AddSC_ItemUpgradeScripts()
     
     // Phase 4D: Advanced
     AddSC_ItemUpgradeAdvanced();
+
+    // Phase 4E: Client Communication
+    AddSC_ItemUpgradeCommunication();
 }

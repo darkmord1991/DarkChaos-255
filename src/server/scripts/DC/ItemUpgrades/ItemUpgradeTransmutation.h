@@ -36,6 +36,20 @@ namespace DarkChaos
         };
 
         /**
+         * Transmutation input item requirements
+         */
+        struct TransmutationInput
+        {
+            uint32 item_id;
+            uint32 quantity;
+            uint8 required_tier;
+            uint8 required_upgrade_level;
+
+            TransmutationInput() :
+                item_id(0), quantity(0), required_tier(1), required_upgrade_level(0) {}
+        };
+
+        /**
          * Transmutation recipe configuration
          */
         struct TransmutationRecipe
@@ -48,8 +62,7 @@ namespace DarkChaos
             uint32 cooldown_seconds;            // Cooldown between uses
 
             // Input requirements
-            std::map<uint32, uint32> input_items;     // item_id -> quantity
-            std::map<uint32, uint32> input_upgrades;  // item_guid -> min_upgrade_level
+            std::vector<TransmutationInput> input_items;  // Input items with tier/upgrade requirements
             uint32 input_essence;
             uint32 input_tokens;
 
@@ -59,19 +72,22 @@ namespace DarkChaos
             uint8 output_tier_id;
             uint32 output_essence;
             uint32 output_tokens;
+            uint32 output_quantity;             // Quantity of output item
 
             // Success rates and costs
-            float success_rate;                 // 0.0 to 1.0
+            float success_rate_base;            // Base success rate (0.0 to 1.0)
             uint32 failure_penalty_percent;     // Percentage of inputs lost on failure
             bool requires_catalyst;             // Special item required
             uint32 catalyst_item_id;
+            uint32 catalyst_quantity;
 
             TransmutationRecipe() :
                 recipe_id(0), type(TRANSMUTATION_TIER_DOWNGRADE), required_level(1),
                 cooldown_seconds(3600), input_essence(0), input_tokens(0),
                 output_item_id(0), output_upgrade_level(0), output_tier_id(1),
-                output_essence(0), output_tokens(0), success_rate(1.0f),
-                failure_penalty_percent(0), requires_catalyst(false), catalyst_item_id(0) {}
+                output_essence(0), output_tokens(0), output_quantity(1),
+                success_rate_base(1.0f), failure_penalty_percent(0), requires_catalyst(false),
+                catalyst_item_id(0), catalyst_quantity(0) {}
         };
 
         /**
@@ -198,26 +214,44 @@ namespace DarkChaos
             virtual ~SynthesisManager() = default;
 
             /**
+             * Initialize the synthesis manager
+             */
+            virtual bool Initialize() = 0;
+
+            /**
              * Get available synthesis recipes
              */
-            virtual std::vector<TransmutationRecipe> GetSynthesisRecipes(uint32 player_guid) = 0;
+            virtual std::vector<TransmutationRecipe> GetSynthesisRecipes(uint32 player_guid) const = 0;
 
             /**
              * Check if synthesis requirements are met
              */
             virtual bool CheckSynthesisRequirements(uint32 player_guid, uint32 recipe_id,
                                                   std::vector<uint32>& required_items,
-                                                  std::string& error_message) = 0;
+                                                  std::string& error_message) const = 0;
 
             /**
              * Perform item synthesis
              */
-            virtual bool PerformSynthesis(uint32 player_guid, uint32 recipe_id, uint32& result_item_guid) = 0;
+            virtual bool PerformSynthesis(uint32 player_guid, uint32 recipe_id,
+                                        std::vector<uint32>& consumed_items,
+                                        bool& success, uint32& output_item_id,
+                                        uint32& output_quantity) = 0;
 
             /**
              * Get synthesis success rate
              */
-            virtual float GetSynthesisSuccessRate(uint32 recipe_id, uint32 player_guid) = 0;
+            virtual float GetSynthesisSuccessRate(uint32 recipe_id, uint32 player_guid) const = 0;
+
+            /**
+             * Check if recipe is on cooldown
+             */
+            virtual bool HasCooldown(uint32 player_guid, uint32 recipe_id) const = 0;
+
+            /**
+             * Get remaining cooldown time
+             */
+            virtual uint32 GetCooldownRemaining(uint32 player_guid, uint32 recipe_id) const = 0;
 
             /**
              * Calculate synthesis cost
