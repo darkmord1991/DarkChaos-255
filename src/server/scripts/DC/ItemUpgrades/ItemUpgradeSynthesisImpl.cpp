@@ -232,8 +232,7 @@ namespace DarkChaos
                     // Consume catalyst if required
                     if (recipe.catalyst_item_id != 0)
                     {
-                        if (!player->DestroyItemCount(recipe.catalyst_item_id, recipe.catalyst_quantity, true))
-                            throw std::runtime_error("Failed to consume catalyst");
+                        player->DestroyItemCount(recipe.catalyst_item_id, recipe.catalyst_quantity, true);
                     }
 
                     // Consume input items
@@ -447,8 +446,7 @@ namespace DarkChaos
                         uint32 item_count = item->GetCount();
                         uint32 consume_count = std::min(remaining, item_count);
 
-                        if (!player->DestroyItemCount(item->GetEntry(), consume_count, true, false))
-                            return false;
+                        player->DestroyItemCount(item->GetEntry(), consume_count, true, false);
 
                         consumed_items.push_back(item->GetGUID().GetCounter());
                         remaining -= consume_count;
