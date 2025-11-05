@@ -232,14 +232,14 @@ namespace DarkChaos
                 }
 
                 // Check item requirements
-                for (const auto& [item_id, quantity] : recipe.input_items)
+                for (const auto& input : recipe.input_items)
                 {
                     QueryResult item_result = CharacterDatabase.Query(
                         "SELECT COUNT(*) FROM item_instance ii "
                         "JOIN inventory i ON ii.guid = i.item "
-                        "WHERE i.guid = {} AND ii.itemEntry = {}", player_guid, item_id);
+                        "WHERE i.guid = {} AND ii.itemEntry = {}", player_guid, input.item_id);
 
-                    if (!item_result || item_result->Fetch()[0].Get<uint32>() < quantity)
+                    if (!item_result || item_result->Fetch()[0].Get<uint32>() < input.quantity)
                     {
                         error_message = "Missing required items.";
                         return false;
