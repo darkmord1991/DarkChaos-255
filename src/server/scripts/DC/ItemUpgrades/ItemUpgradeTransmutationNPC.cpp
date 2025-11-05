@@ -520,5 +520,6 @@ namespace DarkChaos
      // Registration (moved outside namespace)
      void AddSC_ItemUpgradeTransmutation()
      {
-         new ItemUpgradeTransmutationNPC();
+         new DarkChaos::ItemUpgrade::ItemUpgradeTransmutationNPC();
      }
+
