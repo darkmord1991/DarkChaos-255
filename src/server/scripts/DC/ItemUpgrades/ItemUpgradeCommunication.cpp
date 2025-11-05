@@ -11,6 +11,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "WorldPacket.h"
+#include "WorldSession.h"
 #include "ItemUpgradeManager.h"
 #include "Chat.h"
 #include <sstream>
@@ -26,19 +27,10 @@ enum ItemUpgradeOpcodes
     SMSG_ITEM_UPGRADE_OPEN_INTERFACE  = 1007, // Open upgrade interface (from NPC)
 };
 
-class ItemUpgradeCommunicationHandler : public PlayerScript
+class ItemUpgradeCommunicationHandler : public ServerScript
 {
 public:
-    ItemUpgradeCommunicationHandler() : PlayerScript("ItemUpgradeCommunicationHandler") {}
-
-    void OnPlayerLogin(Player* player) override
-    {
-        // Send welcome message about the upgrade system
-        if (player)
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00DarkChaos Item Upgrade System loaded! Visit the Item Upgrader NPC to access the interface.|r");
-        }
-    }
+    ItemUpgradeCommunicationHandler() : ServerScript("ItemUpgradeCommunicationHandler") {}
 
     // Public function for NPCs to call
     static void OpenUpgradeInterface(Player* player)
@@ -53,25 +45,29 @@ public:
         player->SendDirectMessage(&packet);
     }
 
-    bool OnBeforePacketReceive(Player* player, WorldPacket* packet) override
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
     {
-        if (!player || !packet)
+        if (!session)
             return true;
 
-        uint16 opcode = packet->GetOpcode();
+        Player* player = session->GetPlayer();
+        if (!player)
+            return true;
+
+        uint16 opcode = packet.GetOpcode();
 
         switch (opcode)
         {
             case CMSG_ITEM_UPGRADE_REQUEST_INFO:
-                HandleItemUpgradeInfoRequest(player, *packet);
+                HandleItemUpgradeInfoRequest(player, packet);
                 return false; // Don't process further
 
             case CMSG_ITEM_UPGRADE_PERFORM:
-                HandleItemUpgradePerform(player, *packet);
+                HandleItemUpgradePerform(player, packet);
                 return false; // Don't process further
 
             case CMSG_ITEM_UPGRADE_INVENTORY_SCAN:
-                HandleInventoryScanRequest(player, *packet);
+                HandleInventoryScanRequest(player, packet);
                 return false; // Don't process further
 
             default:
