@@ -115,8 +115,12 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 4: // Statistics
             {
-                auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-                uint32 essence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+                // Query database for artifact essence
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+                    player->GetGUID().GetCounter());
+                
+                uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
                 
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                     "Total Artifact Essence: " + std::to_string(essence), 

@@ -418,7 +418,8 @@ private:
     {
         if (player && message)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000[Upgrade Error]|r %s", message);
+            ChatHandler(player->GetSession()).PSendSysMessage("%s", "|cffff0000[Upgrade Error]|r ");
+            ChatHandler(player->GetSession()).SendSysMessage(message);
         }
     }
 };
