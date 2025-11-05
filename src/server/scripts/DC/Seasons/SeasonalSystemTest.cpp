@@ -44,6 +44,18 @@ namespace DarkChaos
                 std::cout << "========================================\n";
             }
 
+            static std::string GetSeasonTypeName(SeasonType type)
+            {
+                switch (type)
+                {
+                    case SEASON_TYPE_TIME_BASED: return "Time-Based";
+                    case SEASON_TYPE_EVENT_BASED: return "Event-Based";
+                    case SEASON_TYPE_INFINITE: return "Infinite";
+                    case SEASON_TYPE_MANUAL: return "Manual";
+                    default: return "Unknown";
+                }
+            }
+
         private:
             static void TestSeasonCreation()
             {
@@ -189,18 +201,6 @@ namespace DarkChaos
                 manager->UnregisterSystem("event_test");
                 manager->DeleteSeason(2001);
                 std::cout << "  Cleanup: PASS\n\n";
-            }
-
-            static std::string GetSeasonTypeName(SeasonType type)
-            {
-                switch (type)
-                {
-                    case SEASON_TYPE_TIME_BASED: return "Time-Based";
-                    case SEASON_TYPE_EVENT_BASED: return "Event-Based";
-                    case SEASON_TYPE_INFINITE: return "Infinite";
-                    case SEASON_TYPE_MANUAL: return "Manual";
-                    default: return "Unknown";
-                }
             }
         };
 
