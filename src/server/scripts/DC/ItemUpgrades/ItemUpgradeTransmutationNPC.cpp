@@ -514,14 +514,11 @@ namespace DarkChaos
             }
         };
 
-        // =====================================================================
-        // Registration
-        // =====================================================================
+     } // namespace ItemUpgrade
+     } // namespace DarkChaos
 
-        void AddSC_ItemUpgradeTransmutation()
-        {
-            new ItemUpgradeTransmutationNPC();
-        }
-
-    } // namespace ItemUpgrade
-} // namespace DarkChaos
+     // Registration (moved outside namespace)
+     void AddSC_ItemUpgradeTransmutation()
+     {
+         new ItemUpgradeTransmutationNPC();
+     }
