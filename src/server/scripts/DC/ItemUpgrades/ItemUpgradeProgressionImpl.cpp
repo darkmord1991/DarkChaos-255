@@ -158,12 +158,11 @@ public:
         timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
         time_t week_start = mktime(timeinfo);
         
-        std::string spending_type = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence" : "tokens";
+        std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(amount), 0) FROM dc_weekly_spending "
-            "WHERE player_guid = {} AND week_start = {} AND spending_type = '{}'",
-            player_guid, week_start, spending_type);
+            "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = {}",
+            column, player_guid, week_start);
         
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }

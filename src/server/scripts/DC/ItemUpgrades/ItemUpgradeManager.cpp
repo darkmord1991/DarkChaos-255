@@ -178,12 +178,11 @@ namespace DarkChaos
                 CharacterDatabase.Execute(oss.str().c_str());
 
                 // Record weekly spending for Phase 4B progression system
-                std::string spending_type = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens" : "essence";
+                std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
                 std::ostringstream spend_oss;
-                spend_oss << "INSERT INTO dc_weekly_spending (player_guid, week_start, spending_type, amount, season) "
-                          << "VALUES (" << player_guid << ", UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), "
-                          << "'" << spending_type << "', " << amount << ", " << season << ") "
-                          << "ON DUPLICATE KEY UPDATE amount = amount + " << amount;
+                spend_oss << "INSERT INTO dc_weekly_spending (player_guid, week_start, " << spending_column << ") "
+                          << "VALUES (" << player_guid << ", UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), " << amount << ") "
+                          << "ON DUPLICATE KEY UPDATE " << spending_column << " = " << spending_column << " + " << amount;
 
                 CharacterDatabase.Execute(spend_oss.str().c_str());
 

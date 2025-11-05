@@ -105,58 +105,8 @@ private:
             return;
         }
         
-        // Find the item in player's inventory (all locations)
-        Item* item = nullptr;
-        
-        // Check equipment slots first
-        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        {
-            Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-            {
-                item = test_item;
-                break;
-            }
-        }
-        
-        // If not found in equipment, check backpack and bags
-        if (!item)
-        {
-            // Check backpack (INVENTORY_SLOT_BAG_0)
-            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-            {
-                Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-                {
-                    item = test_item;
-                    break;
-                }
-            }
-        }
-        
-        // If still not found, check bags
-        if (!item)
-        {
-            for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
-            {
-                Bag* bag_item = player->GetBagByPos(bag);
-                if (bag_item)
-                {
-                    for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
-                    {
-                        Item* test_item = player->GetItemByPos(bag, slot);
-                        if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-                        {
-                            item = test_item;
-                            break;
-                        }
-                    }
-                    if (item)
-                        break;
-                }
-            }
-        }
-        
+        // Find the item by GUID
+        Item* item = FindItemByGuid(player, item_guid);
         if (!item)
         {
             SendErrorMessage(player, "Item not found in your inventory!");
@@ -340,57 +290,8 @@ private:
             return;
         }
         
-        // Get item details from all inventory locations
-        Item* item = nullptr;
-        
-        // Check equipment slots first
-        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        {
-            Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-            {
-                item = test_item;
-                break;
-            }
-        }
-        
-        // If not found in equipment, check backpack
-        if (!item)
-        {
-            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-            {
-                Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-                {
-                    item = test_item;
-                    break;
-                }
-            }
-        }
-        
-        // If still not found, check bags
-        if (!item)
-        {
-            for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
-            {
-                Bag* bag_item = player->GetBagByPos(bag);
-                if (bag_item)
-                {
-                    for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
-                    {
-                        Item* test_item = player->GetItemByPos(bag, slot);
-                        if (test_item && test_item->GetGUID().GetCounter() == item_guid)
-                        {
-                            item = test_item;
-                            break;
-                        }
-                    }
-                    if (item)
-                        break;
-                }
-            }
-        }
-        
+        // Find the item by GUID
+        Item* item = FindItemByGuid(player, item_guid);
         if (!item)
         {
             SendErrorMessage(player, "Item not found in your inventory.");
@@ -449,7 +350,52 @@ private:
         std::ostringstream oss;
         oss << "|cffffd700===== Your Upgrade Statistics =====|r\n\n";
         
-        // Query from database
+        // Get current currency balances
+        uint32 current_essence = GetPlayerUpgradeEssence(player_guid);
+        uint32 current_tokens = GetPlayerUpgradeTokens(player_guid);
+        
+        oss << "|cff00ff00Current Currency:|r\n";
+        oss << "  Essence: " << current_essence << "\n";
+        oss << "  Tokens: " << current_tokens << "\n\n";
+        
+        // Get weekly spending
+        QueryResult weekly_result = CharacterDatabase.Query(
+            "SELECT essence_spent, tokens_spent FROM dc_weekly_spending "
+            "WHERE player_guid = {} AND week_start >= UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL 7 DAY))",
+            player_guid);
+        uint32 weekly_essence_spent = 0;
+        uint32 weekly_tokens_spent = 0;
+        if (weekly_result)
+        {
+            do
+            {
+                weekly_essence_spent += weekly_result->Fetch()[0].Get<uint32>();
+                weekly_tokens_spent += weekly_result->Fetch()[1].Get<uint32>();
+            } while (weekly_result->NextRow());
+        }
+        
+        oss << "|cff00ff00Weekly Spending:|r\n";
+        oss << "  Essence: " << weekly_essence_spent << "\n";
+        oss << "  Tokens: " << weekly_tokens_spent << "\n\n";
+        
+        // Get total spending (all time)
+        QueryResult total_result = CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(essence_spent), 0), COALESCE(SUM(tokens_spent), 0) FROM dc_weekly_spending "
+            "WHERE player_guid = {}",
+            player_guid);
+        uint32 total_essence_spent = 0;
+        uint32 total_tokens_spent = 0;
+        if (total_result)
+        {
+            total_essence_spent = total_result->Fetch()[0].Get<uint32>();
+            total_tokens_spent = total_result->Fetch()[1].Get<uint32>();
+        }
+        
+        oss << "|cff00ff00Total Spent (All Time):|r\n";
+        oss << "  Essence: " << total_essence_spent << "\n";
+        oss << "  Tokens: " << total_tokens_spent << "\n\n";
+        
+        // Query item upgrade statistics
         QueryResult result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT item_guid), SUM(essence_invested), SUM(tokens_invested), "
             "AVG(stat_multiplier), "
@@ -461,23 +407,26 @@ private:
         {
             Field* fields = result->Fetch();
             uint32 items_upgraded = fields[0].Get<uint32>();
-            uint32 total_essence = fields[1].Get<uint32>();
-            uint32 total_tokens = fields[2].Get<uint32>();
+            uint32 items_essence_invested = fields[1].Get<uint32>();
+            uint32 items_tokens_invested = fields[2].Get<uint32>();
             float avg_stat_mult = fields[3].Get<float>();
             uint32 fully_upgraded = fields[4].Get<uint32>();
             uint32 last_upgrade = fields[5].Get<uint32>();
             
-            oss << "|cff00ff00Items Upgraded:|r " << items_upgraded << "\n";
-            oss << "|cff00ff00Fully Upgraded:|r " << fully_upgraded << "\n";
-            oss << "|cff00ff00Total Essence Spent:|r " << total_essence << "\n";
-            oss << "|cff00ff00Total Tokens Spent:|r " << total_tokens << "\n";
+            oss << "|cff00ff00Item Upgrade Progress:|r\n";
+            oss << "  Items Upgraded: " << items_upgraded << "\n";
+            oss << "  Fully Upgraded: " << fully_upgraded << "\n";
+            oss << "  Essence Invested: " << items_essence_invested << "\n";
+            oss << "  Tokens Invested: " << items_tokens_invested << "\n";
             oss << std::fixed << std::setprecision(2);
-            oss << "|cff00ff00Average Stat Bonus:|r " << (avg_stat_mult - 1.0f) * 100.0f << "%\n";
+            oss << "  Average Stat Bonus: " << (avg_stat_mult - 1.0f) * 100.0f << "%\n";
             
             if (last_upgrade > 0)
             {
                 time_t last_time = last_upgrade;
-                oss << "|cff00ff00Last Upgrade:|r " << ctime(&last_time);
+                char time_str[26];
+                ctime_s(time_str, sizeof(time_str), &last_time);
+                oss << "  Last Upgrade: " << time_str;
             }
         }
         else
@@ -535,11 +484,66 @@ private:
         SendGossipMenuFor(player, 1, creature->GetGUID());
     }
     
-    uint32 GetPlayerUpgradeEssence(uint32 player_guid)
+    Item* FindItemByGuid(Player* player, uint32 item_guid)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", player_guid);
-        return result ? result->Fetch()[0].Get<uint32>() : 0;
+        if (!player || item_guid == 0)
+            return nullptr;
+        
+        // Check equipment slots first
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (item && item->GetGUID().GetCounter() == item_guid)
+                return item;
+        }
+        
+        // Check backpack
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (item && item->GetGUID().GetCounter() == item_guid)
+                return item;
+        }
+        
+        // Check bags
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            Bag* bag_item = player->GetBagByPos(bag);
+            if (bag_item)
+            {
+                for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
+                {
+                    Item* item = player->GetItemByPos(bag, slot);
+                    if (item && item->GetGUID().GetCounter() == item_guid)
+                        return item;
+                }
+            }
+        }
+        
+        // Check bank slots
+        for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (item && item->GetGUID().GetCounter() == item_guid)
+                return item;
+        }
+        
+        // Check bank bags
+        for (uint8 bag = BANK_SLOT_BAG_START; bag < BANK_SLOT_BAG_END; ++bag)
+        {
+            Bag* bag_item = player->GetBagByPos(bag);
+            if (bag_item)
+            {
+                for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
+                {
+                    Item* item = player->GetItemByPos(bag, slot);
+                    if (item && item->GetGUID().GetCounter() == item_guid)
+                        return item;
+                }
+            }
+        }
+        
+        return nullptr;
     }
     
     uint32 GetPlayerUpgradeTokens(uint32 player_guid)
