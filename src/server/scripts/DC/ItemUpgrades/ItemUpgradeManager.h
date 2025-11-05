@@ -158,6 +158,7 @@ namespace DarkChaos
             virtual uint8 GetItemTier(uint32 item_id) = 0;
             virtual uint32 GetUpgradeCost(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) = 0;
+            virtual uint8 GetPlayerHighestTier(uint32 player_guid) = 0;
 
             // Artifact functions
             virtual ChaosArtifact* GetArtifact(uint32 artifact_id) = 0;

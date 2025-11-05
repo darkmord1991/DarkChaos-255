@@ -498,6 +498,34 @@ namespace DarkChaos
                 return 0;
             }
 
+            uint8 GetPlayerHighestTier(uint32 player_guid) override
+            {
+                if (player_guid == 0)
+                    return TIER_LEVELING;
+
+                try
+                {
+                    // Query for the highest tier among player's upgraded items
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT MAX(tier_id) FROM dc_player_item_upgrades WHERE player_guid = {}",
+                        player_guid);
+
+                    if (result && result->GetRowCount() > 0)
+                    {
+                        uint8 highest_tier = result->Fetch()[0].Get<uint8>();
+                        return highest_tier > 0 ? highest_tier : TIER_LEVELING;
+                    }
+
+                    // If no upgraded items found, return default tier
+                    return TIER_LEVELING;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to get highest tier for player {}: {}", player_guid, e.what());
+                    return TIER_LEVELING;
+                }
+            }
+
             // ====================================================================
             // Artifact Functions
             // ====================================================================

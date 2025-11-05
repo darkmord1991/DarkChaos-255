@@ -46,7 +46,7 @@ namespace DarkChaos
 
                 if (!result)
                 {
-                    LOG_ERROR("module", "ItemUpgrade: No synthesis recipes found in database.");
+                    // LOG_ERROR("scripts", "ItemUpgrade: No synthesis recipes found in database.");
                     return false;
                 }
 
@@ -77,7 +77,7 @@ namespace DarkChaos
 
                 } while (result->NextRow());
 
-                LOG_INFO("module", "ItemUpgrade: Loaded {} synthesis recipes.", synthesis_recipes_.size());
+                // LOG_INFO("scripts", "ItemUpgrade: Loaded {} synthesis recipes.", synthesis_recipes_.size());
                 return true;
             }
 
@@ -279,7 +279,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("module", "ItemUpgrade: Synthesis failed: {}", e.what());
+                    // LOG_ERROR("scripts", "ItemUpgrade: Synthesis failed: {}", e.what());
                     return false;
                 }
             }
@@ -303,7 +303,7 @@ namespace DarkChaos
 
                 // Apply tier bonus (2% per tier above requirement)
                 UpgradeManager* mgr = GetUpgradeManager();
-                uint32 player_tier = mgr->GetPlayerHighestTier(player_guid);
+                uint8 player_tier = mgr->GetPlayerHighestTier(player_guid);
                 uint32 tier_diff = (player_tier > recipe.required_tier) ? (player_tier - recipe.required_tier) : 0;
                 float tier_bonus = tier_diff * 0.02f;
 
@@ -335,6 +335,21 @@ namespace DarkChaos
                 }
 
                 return 0;
+            }
+
+            void CalculateSynthesisCost(uint32 recipe_id, uint32& out_essence, uint32& out_tokens) override
+            {
+                auto recipe_it = synthesis_recipes_.find(recipe_id);
+                if (recipe_it == synthesis_recipes_.end())
+                {
+                    out_essence = 0;
+                    out_tokens = 0;
+                    return;
+                }
+
+                const TransmutationRecipe& recipe = recipe_it->second;
+                out_essence = recipe.input_essence;
+                out_tokens = recipe.input_tokens;
             }
 
         private:
@@ -394,24 +409,46 @@ namespace DarkChaos
             {
                 uint32 count = 0;
 
-                // Count items in inventory
-                for (uint8 bag = 0; bag < MAX_BAG_SIZE; ++bag)
+                // Count items in main inventory
+                for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
                 {
-                    for (uint32 slot = 0; slot < player->GetBagSize(bag); ++slot)
+                    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                    if (!item || item->GetEntry() != input.item_id)
+                        continue;
+
+                    // Check if item meets tier/upgrade requirements
+                    UpgradeManager* mgr = GetUpgradeManager();
+                    ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+
+                    if (state &&
+                        state->tier_id >= input.required_tier &&
+                        state->upgrade_level >= input.required_upgrade_level)
                     {
-                        Item* item = player->GetItemByPos(bag, slot);
-                        if (!item || item->GetEntry() != input.item_id)
-                            continue;
+                        count += item->GetCount();
+                    }
+                }
 
-                        // Check if item meets tier/upgrade requirements
-                        UpgradeManager* mgr = GetUpgradeManager();
-                        ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
-
-                        if (state &&
-                            state->tier_id >= input.required_tier &&
-                            state->upgrade_level >= input.required_upgrade_level)
+                // Count items in bags
+                for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+                {
+                    if (Bag* pBag = player->GetBagByPos(bag))
+                    {
+                        for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
                         {
-                            count += item->GetCount();
+                            Item* item = player->GetItemByPos(bag, slot);
+                            if (!item || item->GetEntry() != input.item_id)
+                                continue;
+
+                            // Check if item meets tier/upgrade requirements
+                            UpgradeManager* mgr = GetUpgradeManager();
+                            ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+
+                            if (state &&
+                                state->tier_id >= input.required_tier &&
+                                state->upgrade_level >= input.required_upgrade_level)
+                            {
+                                count += item->GetCount();
+                            }
                         }
                     }
                 }
@@ -424,31 +461,59 @@ namespace DarkChaos
             {
                 uint32 remaining = input.quantity;
 
-                // Consume from inventory
-                for (uint8 bag = 0; bag < MAX_BAG_SIZE && remaining > 0; ++bag)
+                // Consume from main inventory
+                for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && remaining > 0; ++slot)
                 {
-                    for (uint32 slot = 0; slot < player->GetBagSize(bag) && remaining > 0; ++slot)
+                    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                    if (!item || item->GetEntry() != input.item_id)
+                        continue;
+
+                    // Check if item meets requirements
+                    UpgradeManager* mgr = GetUpgradeManager();
+                    ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+
+                    if (!state ||
+                        state->tier_id < input.required_tier ||
+                        state->upgrade_level < input.required_upgrade_level)
+                        continue;
+
+                    uint32 item_count = item->GetCount();
+                    uint32 consume_count = std::min(remaining, item_count);
+
+                    player->DestroyItemCount(item->GetEntry(), consume_count, true, false);
+
+                    consumed_items.push_back(item->GetGUID().GetCounter());
+                    remaining -= consume_count;
+                }
+
+                // Consume from bags
+                for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && remaining > 0; ++bag)
+                {
+                    if (Bag* pBag = player->GetBagByPos(bag))
                     {
-                        Item* item = player->GetItemByPos(bag, slot);
-                        if (!item || item->GetEntry() != input.item_id)
-                            continue;
+                        for (uint32 slot = 0; slot < pBag->GetBagSize() && remaining > 0; ++slot)
+                        {
+                            Item* item = player->GetItemByPos(bag, slot);
+                            if (!item || item->GetEntry() != input.item_id)
+                                continue;
 
-                        // Check if item meets requirements
-                        UpgradeManager* mgr = GetUpgradeManager();
-                        ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+                            // Check if item meets requirements
+                            UpgradeManager* mgr = GetUpgradeManager();
+                            ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
 
-                        if (!state ||
-                            state->tier_id < input.required_tier ||
-                            state->upgrade_level < input.required_upgrade_level)
-                            continue;
+                            if (!state ||
+                                state->tier_id < input.required_tier ||
+                                state->upgrade_level < input.required_upgrade_level)
+                                continue;
 
-                        uint32 item_count = item->GetCount();
-                        uint32 consume_count = std::min(remaining, item_count);
+                            uint32 item_count = item->GetCount();
+                            uint32 consume_count = std::min(remaining, item_count);
 
-                        player->DestroyItemCount(item->GetEntry(), consume_count, true, false);
+                            player->DestroyItemCount(item->GetEntry(), consume_count, true, false);
 
-                        consumed_items.push_back(item->GetGUID().GetCounter());
-                        remaining -= consume_count;
+                            consumed_items.push_back(item->GetGUID().GetCounter());
+                            remaining -= consume_count;
+                        }
                     }
                 }
 
@@ -463,7 +528,7 @@ namespace DarkChaos
 
                 uint32 cooldown_end = time(nullptr) + recipe_it->second.cooldown_seconds;
 
-                CharacterDatabase.DirectExecute(trans,
+                trans->Append(
                     "INSERT INTO dc_item_upgrade_synthesis_cooldowns (player_guid, recipe_id, cooldown_end) "
                     "VALUES ({}, {}, {}) ON DUPLICATE KEY UPDATE cooldown_end = VALUES(cooldown_end)",
                     player_guid, recipe_id, cooldown_end);
@@ -472,7 +537,7 @@ namespace DarkChaos
             void LogSynthesisAttempt(uint32 player_guid, uint32 recipe_id, bool success,
                                    CharacterDatabaseTransaction& trans)
             {
-                CharacterDatabase.DirectExecute(trans,
+                trans->Append(
                     "INSERT INTO dc_item_upgrade_synthesis_log (player_guid, recipe_id, success, attempt_time) "
                     "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
                     player_guid, recipe_id, success ? 1 : 0);
