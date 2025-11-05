@@ -209,10 +209,10 @@ private:
         // Query from database
         QueryResult result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT item_guid), SUM(essence_invested), SUM(tokens_invested), "
-            "AVG(current_stat_multiplier), AVG(upgraded_item_level - base_item_level), "
+            "AVG(stat_multiplier), "
             "SUM(CASE WHEN upgrade_level = 15 THEN 1 ELSE 0 END), "
-            "MAX(last_upgraded_timestamp) "
-            "FROM item_upgrades WHERE player_guid = {}", player_guid);
+            "MAX(UNIX_TIMESTAMP(last_upgraded_at)) "
+            "FROM dc_player_item_upgrades WHERE player_guid = {}", player_guid);
         
         if (result)
         {
@@ -221,9 +221,8 @@ private:
             uint32 total_essence = fields[1].Get<uint32>();
             uint32 total_tokens = fields[2].Get<uint32>();
             float avg_stat_mult = fields[3].Get<float>();
-            float avg_ilvl_gain = fields[4].Get<float>();
-            uint32 fully_upgraded = fields[5].Get<uint32>();
-            uint32 last_upgrade = fields[6].Get<uint32>();
+            uint32 fully_upgraded = fields[4].Get<uint32>();
+            uint32 last_upgrade = fields[5].Get<uint32>();
             
             oss << "|cff00ff00Items Upgraded:|r " << items_upgraded << "\n";
             oss << "|cff00ff00Fully Upgraded:|r " << fully_upgraded << "\n";
@@ -231,7 +230,6 @@ private:
             oss << "|cff00ff00Total Tokens Spent:|r " << total_tokens << "\n";
             oss << std::fixed << std::setprecision(2);
             oss << "|cff00ff00Average Stat Bonus:|r " << (avg_stat_mult - 1.0f) * 100.0f << "%\n";
-            oss << "|cff00ff00Average iLvL Gain:|r " << avg_ilvl_gain << "\n";
             
             if (last_upgrade > 0)
             {
@@ -297,14 +295,14 @@ private:
     uint32 GetPlayerUpgradeEssence(uint32 player_guid)
     {
         QueryResult result = CharacterDatabase.Query(
-            "SELECT essence FROM dc_player_upgrade_tokens WHERE player_guid = {}", player_guid);
+            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", player_guid);
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
     
     uint32 GetPlayerUpgradeTokens(uint32 player_guid)
     {
         QueryResult result = CharacterDatabase.Query(
-            "SELECT tokens FROM dc_player_upgrade_tokens WHERE player_guid = {}", player_guid);
+            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'upgrade_token'", player_guid);
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
     
