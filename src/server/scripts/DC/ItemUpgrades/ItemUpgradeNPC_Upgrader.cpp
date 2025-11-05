@@ -105,8 +105,10 @@ private:
             return;
         }
         
-        // Find the item in player's equipment
+        // Find the item in player's inventory (all locations)
         Item* item = nullptr;
+        
+        // Check equipment slots first
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -117,9 +119,47 @@ private:
             }
         }
         
+        // If not found in equipment, check backpack and bags
         if (!item)
         {
-            SendErrorMessage(player, "Item not found in your equipment!");
+            // Check backpack (INVENTORY_SLOT_BAG_0)
+            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            {
+                Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (test_item && test_item->GetGUID().GetCounter() == item_guid)
+                {
+                    item = test_item;
+                    break;
+                }
+            }
+        }
+        
+        // If still not found, check bags
+        if (!item)
+        {
+            for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+            {
+                Bag* bag_item = player->GetBagByPos(bag);
+                if (bag_item)
+                {
+                    for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
+                    {
+                        Item* test_item = player->GetItemByPos(bag, slot);
+                        if (test_item && test_item->GetGUID().GetCounter() == item_guid)
+                        {
+                            item = test_item;
+                            break;
+                        }
+                    }
+                    if (item)
+                        break;
+                }
+            }
+        }
+        
+        if (!item)
+        {
+            SendErrorMessage(player, "Item not found in your inventory!");
             ShowUpgradableItems(player, creature);
             return;
         }
@@ -244,8 +284,10 @@ private:
             return;
         }
         
-        // Get item details
+        // Get item details from all inventory locations
         Item* item = nullptr;
+        
+        // Check equipment slots first
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -253,6 +295,43 @@ private:
             {
                 item = test_item;
                 break;
+            }
+        }
+        
+        // If not found in equipment, check backpack
+        if (!item)
+        {
+            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            {
+                Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (test_item && test_item->GetGUID().GetCounter() == item_guid)
+                {
+                    item = test_item;
+                    break;
+                }
+            }
+        }
+        
+        // If still not found, check bags
+        if (!item)
+        {
+            for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+            {
+                Bag* bag_item = player->GetBagByPos(bag);
+                if (bag_item)
+                {
+                    for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
+                    {
+                        Item* test_item = player->GetItemByPos(bag, slot);
+                        if (test_item && test_item->GetGUID().GetCounter() == item_guid)
+                        {
+                            item = test_item;
+                            break;
+                        }
+                    }
+                    if (item)
+                        break;
+                }
             }
         }
         
