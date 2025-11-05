@@ -56,7 +56,7 @@ namespace DarkChaos
                 season.season_id = 999;
                 season.season_name = "Test Season";
                 season.season_description = "Season for testing purposes";
-                season.season_type = SEASON_TYPE_NORMAL;
+                season.season_type = SEASON_TYPE_TIME_BASED;
                 season.start_timestamp = time(nullptr);
                 season.end_timestamp = time(nullptr) + 86400 * 30; // 30 days
                 season.allow_carryover = true;
@@ -337,10 +337,10 @@ namespace DarkChaos
         {
             switch (type)
             {
-                case SEASON_TYPE_NORMAL: return "Normal";
-                case SEASON_TYPE_CHAMPIONSHIP: return "Championship";
-                case SEASON_TYPE_TOURNAMENT: return "Tournament";
-                case SEASON_TYPE_EVENT: return "Event";
+                case SEASON_TYPE_TIME_BASED: return "Time-Based";
+                case SEASON_TYPE_EVENT_BASED: return "Event-Based";
+                case SEASON_TYPE_INFINITE: return "Infinite";
+                case SEASON_TYPE_MANUAL: return "Manual";
                 default: return "Unknown";
             }
         }

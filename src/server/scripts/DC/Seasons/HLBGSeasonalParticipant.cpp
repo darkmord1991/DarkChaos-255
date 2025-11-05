@@ -330,7 +330,7 @@ namespace DarkChaos
 
                 // Broadcast season start message
                 std::string message = "HLBG Season " + std::to_string(season_id) + " has begun!";
-                sWorld->SendWorldText(WORLD_TEXT_HLBG_SEASON_START, message.c_str());
+                ChatHandler(nullptr).SendWorldText(message);
 
                 // Reset any cached data
                 // TODO: Clear player caches if needed
@@ -345,7 +345,7 @@ namespace DarkChaos
 
                 // Broadcast season end message
                 std::string message = "HLBG Season " + std::to_string(season_id) + " has ended!";
-                sWorld->SendWorldText(WORLD_TEXT_HLBG_SEASON_END, message.c_str());
+                ChatHandler(nullptr).SendWorldText(message);
             }
 
             void OnSeasonReset(uint32 season_id)
