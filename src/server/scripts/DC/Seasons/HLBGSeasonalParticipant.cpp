@@ -295,7 +295,8 @@ namespace DarkChaos
                     << "VALUES (" << season_id << ", 1500, 50, 5, 10, 1800) "
                     << "ON DUPLICATE KEY UPDATE season_id = " << season_id;
 
-                return CharacterDatabase.Execute(oss.str().c_str());
+                CharacterDatabase.Execute(oss.str().c_str());
+                return true;
             }
 
             bool ArchiveSeasonData(uint32 season_id)
@@ -307,7 +308,8 @@ namespace DarkChaos
                 std::ostringstream oss;
                 oss << "INSERT INTO " << dest_table << " SELECT *, " << season_id << " FROM " << source_table;
 
-                return CharacterDatabase.Execute(oss.str().c_str());
+                CharacterDatabase.Execute(oss.str().c_str());
+                return true;
             }
 
             bool CleanupSeasonData(uint32 season_id)
@@ -318,10 +320,11 @@ namespace DarkChaos
                 std::ostringstream oss;
                 oss << "DROP TABLE IF EXISTS " << table_name;
 
-                return CharacterDatabase.Execute(oss.str().c_str());
+                CharacterDatabase.Execute(oss.str().c_str());
+                return true;
             }
 
-            void OnSeasonStart(uint32 season_id)
+            void OnSeasonStart(uint32 season_id) override
             {
                 LOG_INFO("hlbg.seasonal", "HLBG Season {} started", season_id);
 
@@ -333,7 +336,7 @@ namespace DarkChaos
                 // TODO: Clear player caches if needed
             }
 
-            void OnSeasonEnd(uint32 season_id)
+            void OnSeasonEnd(uint32 season_id) override
             {
                 LOG_INFO("hlbg.seasonal", "HLBG Season {} ended", season_id);
 
