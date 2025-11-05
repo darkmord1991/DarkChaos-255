@@ -559,7 +559,7 @@ namespace DarkChaos
                 }
             }
 
-            float GetSynthesisSuccessRate(uint32 recipe_id, uint32 player_guid) override
+            float GetSynthesisSuccessRate(uint32 recipe_id, uint32 player_guid) const override
             {
                 auto it = synthesis_recipes.find(recipe_id);
                 if (it == synthesis_recipes.end())
