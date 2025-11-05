@@ -195,6 +195,13 @@ namespace DarkChaos
             virtual void OnSeasonEnd(uint32 season_id) = 0;
             virtual void OnPlayerSeasonChange(uint32 player_guid, uint32 old_season, uint32 new_season) = 0;
             virtual bool ValidateSeasonTransition(uint32 player_guid, uint32 season_id) = 0;
+
+            // Optional lifecycle methods
+            virtual bool InitializeForSeason(uint32 season_id) { return true; }
+            virtual bool CleanupFromSeason(uint32 season_id) { return true; }
+            virtual bool ArchivePlayerData(uint32 player_guid, uint32 season_id) { return true; }
+            virtual bool InitializePlayerData(uint32 player_guid, uint32 season_id) { return true; }
+            virtual void OnSeasonEvent(uint32 season_id, SeasonEventType event_type) {}
         };
 
         // =====================================================================

@@ -9,7 +9,7 @@
  */
 
 #include "SeasonalSystem.h"
-#include "HLBGSeasonalParticipant.h"
+// #include "HLBGSeasonalParticipant.h" // HLBG functions are declared in the .cpp file
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"

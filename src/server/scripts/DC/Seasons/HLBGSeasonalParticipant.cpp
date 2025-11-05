@@ -128,12 +128,7 @@ namespace DarkChaos
                     << "SELECT *, " << time(nullptr) << " FROM dc_hlbg_player_season_data "
                     << "WHERE player_guid = " << player_guid << " AND season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("hlbg.seasonal", "Failed to archive HLBG player data for player {} season {}",
-                             player_guid, season_id);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 LOG_INFO("hlbg.seasonal", "Archived HLBG player data for player {} season {}",
                         player_guid, season_id);
@@ -151,12 +146,7 @@ namespace DarkChaos
                     << "1500, 0, 0, 0, 1500, 1500, 0, 0) "
                     << "ON DUPLICATE KEY UPDATE season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("hlbg.seasonal", "Failed to initialize HLBG player data for player {} season {}",
-                             player_guid, season_id);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 LOG_INFO("hlbg.seasonal", "Initialized HLBG player data for player {} season {}",
                         player_guid, season_id);
@@ -224,11 +214,7 @@ namespace DarkChaos
                     << "lowest_rating = LEAST(lowest_rating, rating + " << (int)rating_change << ") "
                     << "WHERE player_guid = " << player_guid << " AND season_id = " << hlbg_season_id_;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("hlbg.seasonal", "Failed to update HLBG player stats for player {}", player_guid);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 return true;
             }
@@ -296,9 +282,7 @@ namespace DarkChaos
                     << "player_count TINYINT DEFAULT 0"
                     << ")";
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                    return false;
-
+                CharacterDatabase.Execute(oss.str().c_str());
                 return true;
             }
 
