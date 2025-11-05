@@ -553,6 +553,13 @@ private:
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
     
+    uint32 GetPlayerUpgradeEssence(uint32 player_guid)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", player_guid);
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
+    }
+    
     void SendErrorMessage(Player* player, const char* message)
     {
         if (player && message)

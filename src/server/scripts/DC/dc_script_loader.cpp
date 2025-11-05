@@ -52,6 +52,7 @@ void AddSC_ItemUpgradeMechanics(); // location: scripts\DC\ItemUpgrades\ItemUpgr
 void AddSC_ItemUpgradeProgression(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProgressionImpl.cpp
 void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
 void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
+void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -93,4 +94,5 @@ void AddDCScripts()
     AddSC_ItemUpgradeProgression();
     AddSC_ItemUpgradeSeasonal();
     AddSC_ItemUpgradeAdvanced();
+    AddSC_ItemUpgradeTransmutation();
 }

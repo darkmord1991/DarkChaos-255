@@ -1,0 +1,575 @@
+/*
+ * DarkChaos Item Upgrade System - Phase 5: Item Transmutation Implementation
+ *
+ * Implementation of the transmutation system for tier conversion,
+ * currency exchange, and item synthesis.
+ *
+ * Author: DarkChaos Development Team
+ * Date: November 5, 2025
+ */
+
+#include "ItemUpgradeTransmutation.h"
+#include "ItemUpgradeManager.h"
+#include "Player.h"
+#include "Item.h"
+#include "DatabaseEnv.h"
+#include "Log.h"
+#include "World.h"
+#include <sstream>
+#include <algorithm>
+
+namespace DarkChaos
+{
+    namespace ItemUpgrade
+    {
+        // =====================================================================
+        // Transmutation Manager Implementation
+        // =====================================================================
+
+        class TransmutationManagerImpl : public TransmutationManager
+        {
+        private:
+            std::map<uint32, TransmutationRecipe> recipes;
+            std::map<uint32, TransmutationSession> active_sessions;
+
+            // Configuration
+            struct TransmutationConfig
+            {
+                uint32 base_cooldown_seconds;
+                float tier_downgrade_success_rate;
+                float tier_upgrade_success_rate;
+                uint32 currency_exchange_fee_percent;
+                uint32 synthesis_base_cost_essence;
+                uint32 synthesis_base_cost_tokens;
+                bool allow_partial_refunds;
+                uint32 max_concurrent_transmutations;
+
+                TransmutationConfig() :
+                    base_cooldown_seconds(3600), tier_downgrade_success_rate(0.95f),
+                    tier_upgrade_success_rate(0.75f), currency_exchange_fee_percent(5),
+                    synthesis_base_cost_essence(100), synthesis_base_cost_tokens(50),
+                    allow_partial_refunds(true), max_concurrent_transmutations(3) {}
+            } config;
+
+        public:
+            TransmutationManagerImpl()
+            {
+                LoadTransmutationData();
+            }
+
+            void LoadTransmutationData()
+            {
+                LOG_INFO("scripts", "ItemUpgrade: Loading transmutation recipes...");
+
+                // Load tier conversion recipes
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT recipe_id, name, description, type, required_level, cooldown_seconds, "
+                    "input_essence, input_tokens, output_item_id, output_upgrade_level, output_tier_id, "
+                    "output_essence, output_tokens, success_rate, failure_penalty_percent, "
+                    "requires_catalyst, catalyst_item_id FROM dc_transmutation_recipes");
+
+                if (result)
+                {
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        TransmutationRecipe recipe;
+
+                        recipe.recipe_id = fields[0].Get<uint32>();
+                        recipe.name = fields[1].Get<std::string>();
+                        recipe.description = fields[2].Get<std::string>();
+                        recipe.type = static_cast<TransmutationType>(fields[3].Get<uint8>());
+                        recipe.required_level = fields[4].Get<uint32>();
+                        recipe.cooldown_seconds = fields[5].Get<uint32>();
+                        recipe.input_essence = fields[6].Get<uint32>();
+                        recipe.input_tokens = fields[7].Get<uint32>();
+                        recipe.output_item_id = fields[8].Get<uint32>();
+                        recipe.output_upgrade_level = fields[9].Get<uint8>();
+                        recipe.output_tier_id = fields[10].Get<uint8>();
+                        recipe.output_essence = fields[11].Get<uint32>();
+                        recipe.output_tokens = fields[12].Get<uint32>();
+                        recipe.success_rate = fields[13].Get<float>();
+                        recipe.failure_penalty_percent = fields[14].Get<uint32>();
+                        recipe.requires_catalyst = fields[15].Get<bool>();
+                        recipe.catalyst_item_id = fields[16].Get<uint32>();
+
+                        recipes[recipe.recipe_id] = recipe;
+                        count++;
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} transmutation recipes", count);
+                }
+
+                // Load recipe input requirements
+                result = WorldDatabase.Query(
+                    "SELECT recipe_id, input_type, input_id, quantity FROM dc_transmutation_inputs");
+
+                if (result)
+                {
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 recipe_id = fields[0].Get<uint32>();
+                        uint8 input_type = fields[1].Get<uint8>(); // 1=item, 2=upgrade
+                        uint32 input_id = fields[2].Get<uint32>();
+                        uint32 quantity = fields[3].Get<uint32>();
+
+                        auto it = recipes.find(recipe_id);
+                        if (it != recipes.end())
+                        {
+                            if (input_type == 1) // item
+                                it->second.input_items[input_id] = quantity;
+                            else if (input_type == 2) // upgrade
+                                it->second.input_upgrades[input_id] = quantity;
+                            count++;
+                        }
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} transmutation input requirements", count);
+                }
+            }
+
+            std::vector<TransmutationRecipe> GetAvailableRecipes(uint32 player_guid) override
+            {
+                std::vector<TransmutationRecipe> available;
+
+                // Get player level for filtering
+                QueryResult level_result = CharacterDatabase.Query(
+                    "SELECT level FROM characters WHERE guid = {}", player_guid);
+
+                if (!level_result)
+                    return available;
+
+                uint8 player_level = level_result->Fetch()[0].Get<uint8>();
+
+                for (const auto& [id, recipe] : recipes)
+                {
+                    if (recipe.required_level <= player_level)
+                    {
+                        available.push_back(recipe);
+                    }
+                }
+
+                return available;
+            }
+
+            bool CanPerformTransmutation(uint32 player_guid, uint32 recipe_id, std::string& error_message) override
+            {
+                auto it = recipes.find(recipe_id);
+                if (it == recipes.end())
+                {
+                    error_message = "Recipe not found.";
+                    return false;
+                }
+
+                const TransmutationRecipe& recipe = it->second;
+
+                // Check player level
+                QueryResult level_result = CharacterDatabase.Query(
+                    "SELECT level FROM characters WHERE guid = {}", player_guid);
+
+                if (!level_result)
+                {
+                    error_message = "Player data not found.";
+                    return false;
+                }
+
+                uint8 player_level = level_result->Fetch()[0].Get<uint8>();
+                if (player_level < recipe.required_level)
+                {
+                    error_message = "Player level too low for this recipe.";
+                    return false;
+                }
+
+                // Check cooldown
+                QueryResult cooldown_result = CharacterDatabase.Query(
+                    "SELECT last_used FROM dc_player_transmutation_cooldowns "
+                    "WHERE player_guid = {} AND recipe_id = {}", player_guid, recipe_id);
+
+                if (cooldown_result)
+                {
+                    time_t last_used = cooldown_result->Fetch()[0].Get<time_t>();
+                    time_t now = time(nullptr);
+                    time_t cooldown_end = last_used + recipe.cooldown_seconds;
+
+                    if (now < cooldown_end)
+                    {
+                        uint32 remaining_seconds = cooldown_end - now;
+                        error_message = "Recipe on cooldown. " + std::to_string(remaining_seconds) + " seconds remaining.";
+                        return false;
+                    }
+                }
+
+                // Check currency requirements
+                UpgradeManager* mgr = GetUpgradeManager();
+                if (recipe.input_essence > 0)
+                {
+                    uint32 essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
+                    if (essence < recipe.input_essence)
+                    {
+                        error_message = "Insufficient artifact essence.";
+                        return false;
+                    }
+                }
+
+                if (recipe.input_tokens > 0)
+                {
+                    uint32 tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                    if (tokens < recipe.input_tokens)
+                    {
+                        error_message = "Insufficient upgrade tokens.";
+                        return false;
+                    }
+                }
+
+                // Check item requirements
+                for (const auto& [item_id, quantity] : recipe.input_items)
+                {
+                    QueryResult item_result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM item_instance ii "
+                        "JOIN inventory i ON ii.guid = i.item "
+                        "WHERE i.guid = {} AND ii.itemEntry = {}", player_guid, item_id);
+
+                    if (!item_result || item_result->Fetch()[0].Get<uint32>() < quantity)
+                    {
+                        error_message = "Missing required items.";
+                        return false;
+                    }
+                }
+
+                // Check upgrade requirements
+                for (const auto& [item_guid, min_level] : recipe.input_upgrades)
+                {
+                    QueryResult upgrade_result = CharacterDatabase.Query(
+                        "SELECT upgrade_level FROM dc_player_item_upgrades "
+                        "WHERE item_guid = {} AND player_guid = {}", item_guid, player_guid);
+
+                    if (!upgrade_result || upgrade_result->Fetch()[0].Get<uint8>() < min_level)
+                    {
+                        error_message = "Item upgrade level requirement not met.";
+                        return false;
+                    }
+                }
+
+                // Check catalyst if required
+                if (recipe.requires_catalyst)
+                {
+                    QueryResult catalyst_result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM item_instance ii "
+                        "JOIN inventory i ON ii.guid = i.item "
+                        "WHERE i.guid = {} AND ii.itemEntry = {}", player_guid, recipe.catalyst_item_id);
+
+                    if (!catalyst_result || catalyst_result->Fetch()[0].Get<uint32>() < 1)
+                    {
+                        error_message = "Required catalyst item not found.";
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            bool StartTransmutation(uint32 player_guid, uint32 recipe_id) override
+            {
+                std::string error_message;
+                if (!CanPerformTransmutation(player_guid, recipe_id, error_message))
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Cannot start transmutation {} for player {}: {}",
+                             recipe_id, player_guid, error_message);
+                    return false;
+                }
+
+                auto it = recipes.find(recipe_id);
+                if (it == recipes.end())
+                    return false;
+
+                const TransmutationRecipe& recipe = it->second;
+
+                try
+                {
+                    // Deduct currencies
+                    UpgradeManager* mgr = GetUpgradeManager();
+                    if (recipe.input_essence > 0)
+                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, 1);
+                    if (recipe.input_tokens > 0)
+                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, 1);
+
+                    // Create transmutation session
+                    TransmutationSession session;
+                    session.player_guid = player_guid;
+                    session.recipe_id = recipe_id;
+                    session.start_time = time(nullptr);
+                    session.end_time = session.start_time + 30; // 30 second process time
+                    session.completed = false;
+                    session.success = false;
+
+                    // Store session
+                    active_sessions[player_guid] = session;
+
+                    // Update cooldown
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_player_transmutation_cooldowns (player_guid, recipe_id, last_used) "
+                        "VALUES ({}, {}, {}) ON DUPLICATE KEY UPDATE last_used = {}",
+                        player_guid, recipe_id, session.start_time, session.start_time);
+
+                    LOG_INFO("scripts", "ItemUpgrade: Started transmutation {} for player {}", recipe_id, player_guid);
+                    return true;
+
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to start transmutation {} for player {}: {}",
+                             recipe_id, player_guid, e.what());
+                    return false;
+                }
+            }
+
+            TransmutationSession GetTransmutationStatus(uint32 player_guid) override
+            {
+                auto it = active_sessions.find(player_guid);
+                if (it == active_sessions.end())
+                {
+                    // Check if there's a completed session in database
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT recipe_id, start_time, end_time, success FROM dc_item_upgrade_transmutation_sessions "
+                        "WHERE player_guid = {} AND completed = 1 ORDER BY end_time DESC LIMIT 1", player_guid);
+
+                    if (result)
+                    {
+                        TransmutationSession session;
+                        session.player_guid = player_guid;
+                        session.recipe_id = result->Fetch()[0].Get<uint32>();
+                        session.start_time = result->Fetch()[1].Get<time_t>();
+                        session.end_time = result->Fetch()[2].Get<time_t>();
+                        session.completed = true;
+                        session.success = result->Fetch()[3].Get<bool>();
+                        return session;
+                    }
+
+                    return TransmutationSession(); // Empty session
+                }
+
+                TransmutationSession session = it->second;
+                time_t now = time(nullptr);
+
+                if (now >= session.end_time && !session.completed)
+                {
+                    // Complete the transmutation
+                    CompleteTransmutation(player_guid);
+                    session = active_sessions[player_guid];
+                }
+
+                return session;
+            }
+
+            bool CancelTransmutation(uint32 player_guid) override
+            {
+                auto it = active_sessions.find(player_guid);
+                if (it == active_sessions.end())
+                    return false;
+
+                const TransmutationSession& session = it->second;
+                if (session.completed)
+                    return false;
+
+                auto recipe_it = recipes.find(session.recipe_id);
+                if (recipe_it == recipes.end())
+                    return false;
+
+                const TransmutationRecipe& recipe = recipe_it->second;
+
+                try
+                {
+                    // Refund partial costs
+                    UpgradeManager* mgr = GetUpgradeManager();
+                    if (config.allow_partial_refunds)
+                    {
+                        uint32 refund_essence = recipe.input_essence * 0.5f;
+                        uint32 refund_tokens = recipe.input_tokens * 0.5f;
+
+                        if (refund_essence > 0)
+                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, refund_essence, 1);
+                        if (refund_tokens > 0)
+                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, refund_tokens, 1);
+                    }
+
+                    // Remove session
+                    active_sessions.erase(it);
+
+                    LOG_INFO("scripts", "ItemUpgrade: Cancelled transmutation {} for player {}", session.recipe_id, player_guid);
+                    return true;
+
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to cancel transmutation for player {}: {}", player_guid, e.what());
+                    return false;
+                }
+            }
+
+            void GetExchangeRates(uint32& tokens_to_essence_rate, uint32& essence_to_tokens_rate) override
+            {
+                // Base exchange rate: 1 essence = 2 tokens
+                tokens_to_essence_rate = 2;
+                essence_to_tokens_rate = 1;
+            }
+
+            bool ExchangeCurrency(uint32 player_guid, bool tokens_to_essence, uint32 amount) override
+            {
+                if (amount == 0)
+                    return false;
+
+                UpgradeManager* mgr = GetUpgradeManager();
+
+                try
+                {
+                    uint32 exchange_rate, fee_amount, final_amount;
+
+                    if (tokens_to_essence)
+                    {
+                        // Tokens to essence
+                        exchange_rate = 2; // 2 tokens = 1 essence
+                        uint32 required_tokens = amount * exchange_rate;
+                        fee_amount = required_tokens * config.currency_exchange_fee_percent / 100;
+                        final_amount = amount;
+
+                        uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                        if (current_tokens < (required_tokens + fee_amount))
+                            return false;
+
+                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, required_tokens + fee_amount, 1);
+                        mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, final_amount, 1);
+                    }
+                    else
+                    {
+                        // Essence to tokens
+                        exchange_rate = 1; // 1 essence = 1 token (unfavorable rate)
+                        uint32 required_essence = amount * exchange_rate;
+                        fee_amount = required_essence * config.currency_exchange_fee_percent / 100;
+                        final_amount = amount;
+
+                        uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
+                        if (current_essence < (required_essence + fee_amount))
+                            return false;
+
+                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, required_essence + fee_amount, 1);
+                        mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, 1);
+                    }
+
+                    LOG_INFO("scripts", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
+                            player_guid, amount, tokens_to_essence ? "tokens" : "essence",
+                            final_amount, tokens_to_essence ? "essence" : "tokens", fee_amount);
+
+                    return true;
+
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Currency exchange failed for player {}: {}", player_guid, e.what());
+                    return false;
+                }
+            }
+
+            std::map<std::string, uint32> GetPlayerStatistics(uint32 player_guid) override
+            {
+                std::map<std::string, uint32> stats;
+
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT COUNT(*), SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), "
+                    "SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) FROM dc_item_upgrade_transmutation_sessions "
+                    "WHERE player_guid = {}", player_guid);
+
+                if (result)
+                {
+                    stats["total_transmutations"] = result->Fetch()[0].Get<uint32>();
+                    stats["successful_transmutations"] = result->Fetch()[1].Get<uint32>();
+                    stats["failed_transmutations"] = result->Fetch()[2].Get<uint32>();
+                }
+
+                return stats;
+            }
+
+        private:
+            void CompleteTransmutation(uint32 player_guid)
+            {
+                auto it = active_sessions.find(player_guid);
+                if (it == active_sessions.end())
+                    return;
+
+                TransmutationSession& session = it->second;
+                auto recipe_it = recipes.find(session.recipe_id);
+                if (recipe_it == recipes.end())
+                    return;
+
+                const TransmutationRecipe& recipe = recipe_it->second;
+
+                // Determine success
+                float success_roll = frand(0.0f, 1.0f);
+                session.success = (success_roll <= recipe.success_rate);
+                session.completed = true;
+                session.end_time = time(nullptr);
+
+                try
+                {
+                    if (session.success)
+                    {
+                        // Grant rewards
+                        UpgradeManager* mgr = GetUpgradeManager();
+                        if (recipe.output_essence > 0)
+                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.output_essence, 1);
+                        if (recipe.output_tokens > 0)
+                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.output_tokens, 1);
+
+                        // Create output item if specified
+                        if (recipe.output_item_id > 0)
+                        {
+                            // This would need integration with item creation system
+                            LOG_INFO("scripts", "ItemUpgrade: Transmutation success - would create item {}", recipe.output_item_id);
+                        }
+                    }
+                    else
+                    {
+                        // Apply failure penalty
+                        if (recipe.failure_penalty_percent > 0)
+                        {
+                            LOG_INFO("scripts", "ItemUpgrade: Transmutation failed with {}% penalty", recipe.failure_penalty_percent);
+                        }
+                    }
+
+                    // Save to database
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_item_upgrade_transmutation_sessions "
+                        "(player_guid, recipe_id, start_time, end_time, success, completed) "
+                        "VALUES ({}, {}, {}, {}, {}, 1)",
+                        player_guid, session.recipe_id, session.start_time,
+                        session.end_time, session.success ? 1 : 0);
+
+                    LOG_INFO("scripts", "ItemUpgrade: Completed transmutation {} for player {} - {}",
+                            session.recipe_id, player_guid, session.success ? "SUCCESS" : "FAILED");
+
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to complete transmutation for player {}: {}", player_guid, e.what());
+                }
+            }
+        };
+
+        // =====================================================================
+        // Singleton Implementation
+        // =====================================================================
+
+        static TransmutationManagerImpl* _transmutation_manager = nullptr;
+
+        TransmutationManager* GetTransmutationManager()
+        {
+            if (!_transmutation_manager)
+                _transmutation_manager = new TransmutationManagerImpl();
+
+            return _transmutation_manager;
+        }
+
+    } // namespace ItemUpgrade
+} // namespace DarkChaos
