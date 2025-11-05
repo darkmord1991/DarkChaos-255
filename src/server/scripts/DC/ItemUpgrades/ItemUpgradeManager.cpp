@@ -113,8 +113,31 @@ namespace DarkChaos
                 // Save to database
                 SaveItemUpgrade(item_guid);
 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {}", 
-                        player_guid, item_guid, next_level);
+                // Award artifact mastery points for Phase 4B progression system
+                uint32 mastery_points = 0;
+                switch (state->tier_id)
+                {
+                    case TIER_LEVELING: mastery_points = 1; break;
+                    case TIER_HEROIC: mastery_points = 2; break;
+                    case TIER_RAID: mastery_points = 3; break;
+                    case TIER_MYTHIC: mastery_points = 5; break;
+                    case TIER_ARTIFACT: mastery_points = 10; break;
+                    default: mastery_points = 1; break;
+                }
+
+                // Award bonus points for reaching certain upgrade milestones
+                if (next_level % 5 == 0)
+                    mastery_points *= 2; // Double points at levels 5, 10, 15
+
+                std::ostringstream mastery_oss;
+                mastery_oss << "INSERT INTO dc_player_artifact_mastery (player_guid, mastery_points, season) "
+                           << "VALUES (" << player_guid << ", " << mastery_points << ", " << state->season << ") "
+                           << "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + " << mastery_points;
+
+                CharacterDatabase.Execute(mastery_oss.str().c_str());
+
+                LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points", 
+                        player_guid, item_guid, next_level, mastery_points);
 
                 return true;
             }
@@ -153,6 +176,17 @@ namespace DarkChaos
                     << " AND currency_type = '" << currency_str << "' AND season = " << season;
 
                 CharacterDatabase.Execute(oss.str().c_str());
+
+                // Record weekly spending for Phase 4B progression system
+                std::string spending_type = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens" : "essence";
+                std::ostringstream spend_oss;
+                spend_oss << "INSERT INTO dc_weekly_spending (player_guid, week_start, spending_type, amount, season) "
+                          << "VALUES (" << player_guid << ", UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), "
+                          << "'" << spending_type << "', " << amount << ", " << season << ") "
+                          << "ON DUPLICATE KEY UPDATE amount = amount + " << amount;
+
+                CharacterDatabase.Execute(spend_oss.str().c_str());
+
                 return true;
             }
 
@@ -253,28 +287,39 @@ namespace DarkChaos
                 return state->stat_multiplier;
             }
 
+            uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level) 
+            {
+                if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
+                    return 0;
+
+                uint8 key = (tier_id << 4) | upgrade_level;
+                auto it = upgrade_costs.find(key);
+                if (it != upgrade_costs.end())
+                    return it->second.ilvl_increase;
+
+                // Fallback to hardcoded values if database not loaded
+                switch (tier_id)
+                {
+                    case TIER_LEVELING: return 5;
+                    case TIER_HEROIC: return 8;
+                    case TIER_RAID: return 15;
+                    case TIER_MYTHIC: return 8;
+                    case TIER_ARTIFACT: return 12;
+                    default: return 5;
+                }
+            }
+
             uint16 GetUpgradedItemLevel(uint32 item_guid, uint16 base_ilvl) override
             {
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                 if (!state || state->upgrade_level == 0)
                     return base_ilvl;
 
-                // Get iLvL increase per upgrade
+                // Get iLvL increase per upgrade using database values
                 uint16 total_ilvl_increase = 0;
                 for (uint8 i = 1; i <= state->upgrade_level; ++i)
                 {
-                    // TODO: Fetch from dc_item_upgrade_costs
-                    // For now, use tier-based defaults
-                    uint16 increase = 0;
-                    switch (state->tier_id)
-                    {
-                        case TIER_LEVELING: increase = 5; break;
-                        case TIER_HEROIC: increase = 8; break;
-                        case TIER_RAID: increase = 15; break;
-                        case TIER_MYTHIC: increase = 8; break;
-                        case TIER_ARTIFACT: increase = 12; break;
-                    }
-                    total_ilvl_increase += increase;
+                    total_ilvl_increase += GetIlvlIncrease(state->tier_id, i);
                 }
 
                 return base_ilvl + total_ilvl_increase;
@@ -449,22 +494,91 @@ namespace DarkChaos
 
                 // Load upgrade costs
                 std::ostringstream oss2;
-                oss2 << "SELECT tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase FROM dc_item_upgrade_costs WHERE season = " << season;
+                oss2 << "SELECT tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase, stat_increase_percent FROM dc_item_upgrade_costs WHERE season = " << season;
 
                 result = WorldDatabase.Query(oss2.str().c_str());
                 if (result)
                 {
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} upgrade cost entries", result->GetRowCount());
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint8 tier_id = fields[0].Get<uint8>();
+                        uint8 upgrade_level = fields[1].Get<uint8>();
+                        uint32 token_cost = fields[2].Get<uint32>();
+                        uint32 essence_cost = fields[3].Get<uint32>();
+                        uint16 ilvl_increase = fields[4].Get<uint16>();
+                        float stat_increase = fields[5].Get<float>();
+
+                        // Store in upgrade_costs map
+                        uint8 key = (tier_id << 4) | upgrade_level;
+                        upgrade_costs[key] = UpgradeCost{tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase, stat_increase, season};
+
+                        count++;
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} upgrade cost entries", count);
                 }
 
-                // Load artifacts
+                // Load item to tier mappings
                 std::ostringstream oss3;
-                oss3 << "SELECT artifact_id, artifact_name, item_id, location_name FROM dc_chaos_artifact_items WHERE season = " << season;
+                oss3 << "SELECT item_id, tier_id FROM dc_item_templates_upgrade WHERE season = " << season << " AND is_active = 1";
 
                 result = WorldDatabase.Query(oss3.str().c_str());
                 if (result)
                 {
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} prestige artifacts", result->GetRowCount());
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 item_id = fields[0].Get<uint32>();
+                        uint8 tier_id = fields[1].Get<uint8>();
+
+                        item_to_tier[item_id] = tier_id;
+                        count++;
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
+                }
+
+                // Load artifacts
+                std::ostringstream oss4;
+                oss4 << "SELECT artifact_id, artifact_name, item_id, cosmetic_variant, rarity, location_name, location_type, essence_cost, is_active FROM dc_chaos_artifact_items WHERE season = " << season << " AND is_active = 1";
+
+                result = WorldDatabase.Query(oss4.str().c_str());
+                if (result)
+                {
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 artifact_id = fields[0].Get<uint32>();
+                        std::string artifact_name = fields[1].Get<std::string>();
+                        uint32 item_id = fields[2].Get<uint32>();
+                        uint8 cosmetic_variant = fields[3].Get<uint8>();
+                        uint8 rarity = fields[4].Get<uint8>();
+                        std::string location_name = fields[5].Get<std::string>();
+                        std::string location_type = fields[6].Get<std::string>();
+                        uint32 essence_cost = fields[7].Get<uint32>();
+                        bool is_active = fields[8].Get<bool>();
+
+                        ChaosArtifact artifact;
+                        artifact.artifact_id = artifact_id;
+                        artifact.artifact_name = artifact_name;
+                        artifact.item_id = item_id;
+                        artifact.cosmetic_variant = cosmetic_variant;
+                        artifact.rarity = rarity;
+                        artifact.location_name = location_name;
+                        artifact.location_type = location_type;
+                        artifact.essence_cost = essence_cost;
+                        artifact.is_active = is_active;
+                        artifact.season = season;
+
+                        artifacts[artifact_id] = artifact;
+                        count++;
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} chaos artifacts", count);
                 }
 
                 LOG_INFO("scripts", "ItemUpgrade: Data loading complete for season {}", season);

@@ -95,9 +95,15 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
 )
 
+# Phase 4B: Progression System (Artifact Mastery)
+set(SCRIPTS_DC_ItemUpgrade_Phase4B
+    ItemUpgrades/ItemUpgradeProgressionImpl.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4B}
 )
 
 # Add sources to AzerothCore scripts

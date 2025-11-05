@@ -73,11 +73,30 @@ public:
         if (tier_id <= 3)
             return true;
         
+        // Check if manually unlocked by GM
         QueryResult result = CharacterDatabase.Query(
             "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = {}",
             player_guid, tier_id);
         
-        return result != nullptr;
+        if (result)
+            return true;
+        
+        // Check mastery requirements for automatic unlocks
+        ArtifactMasteryManagerImpl masteryMgr;
+        PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player_guid);
+        if (!info)
+            return false;
+        
+        // Tier unlock requirements based on mastery rank
+        switch (tier_id)
+        {
+            case 4: // Mythic tier - requires rank 5
+                return info->mastery_rank >= 5;
+            case 5: // Artifact tier - requires rank 10
+                return info->mastery_rank >= 10;
+            default:
+                return false;
+        }
     }
 
     void UnlockTier(uint32 player_guid, uint8 tier_id) override
@@ -139,12 +158,12 @@ public:
         timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
         time_t week_start = mktime(timeinfo);
         
-        std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
+        std::string spending_type = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence" : "tokens";
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT SUM({}) FROM dc_item_upgrade_log "
-            "WHERE player_guid = {} AND timestamp >= {}",
-            column, player_guid, week_start);
+            "SELECT COALESCE(SUM(amount), 0) FROM dc_weekly_spending "
+            "WHERE player_guid = {} AND week_start = {} AND spending_type = '{}'",
+            player_guid, week_start, spending_type);
         
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
@@ -203,7 +222,7 @@ public:
         info->total_mastery_points += points;
         info->mastery_points_this_rank += points;
         
-        // Check for rank up
+        // Check for rank up (1000 points per rank)
         const uint32 POINTS_PER_RANK = 1000;
         while (info->mastery_points_this_rank >= POINTS_PER_RANK)
         {
@@ -212,10 +231,16 @@ public:
             
             // Notify player of rank up
             NotifyMasteryRankUp(player_guid, info->mastery_rank);
+            
+            // Check for automatic tier unlocks
+            CheckTierUnlocks(player_guid, info->mastery_rank);
         }
         
         info->mastery_title = info->GetMasteryTitle();
         SaveMasteryInfo(*info);
+        
+        // Update cache
+        mastery_cache[player_guid] = *info;
     }
 
     void IncrementFullyUpgradedCount(uint32 player_guid) override
@@ -303,6 +328,31 @@ private:
             "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, new_rank, timestamp) "
             "VALUES ({}, 'RANK_UP', {}, UNIX_TIMESTAMP())",
             player_guid, new_rank);
+    }
+
+    void CheckTierUnlocks(uint32 player_guid, uint8 mastery_rank)
+    {
+        LevelCapManagerImpl capMgr;
+        
+        // Unlock Mythic tier at rank 5
+        if (mastery_rank >= 5 && !capMgr.IsTierUnlocked(player_guid, 4))
+        {
+            capMgr.UnlockTier(player_guid, 4);
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
+                "VALUES ({}, 'TIER_UNLOCK', 4, UNIX_TIMESTAMP())",
+                player_guid);
+        }
+        
+        // Unlock Artifact tier at rank 10
+        if (mastery_rank >= 10 && !capMgr.IsTierUnlocked(player_guid, 5))
+        {
+            capMgr.UnlockTier(player_guid, 5);
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
+                "VALUES ({}, 'TIER_UNLOCK', 5, UNIX_TIMESTAMP())",
+                player_guid);
+        }
     }
 };
 
