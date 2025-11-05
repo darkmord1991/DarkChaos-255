@@ -33,7 +33,7 @@ namespace DarkChaos
                 return LoadSynthesisRecipes();
             }
 
-            bool LoadSynthesisRecipes() override
+            bool LoadSynthesisRecipes()
             {
                 synthesis_recipes_.clear();
 

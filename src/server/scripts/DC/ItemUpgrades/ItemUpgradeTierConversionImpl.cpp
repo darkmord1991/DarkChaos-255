@@ -145,6 +145,7 @@ namespace DarkChaos
                         else
                         {
                             // Downgrading: gain some levels
+                            uint8 tier_difference = std::abs(state->tier_id - target_tier);
                             uint8 level_bonus = tier_difference * 2;
                             state->upgrade_level = std::min(static_cast<uint8>(MAX_UPGRADE_LEVEL),
                                                           static_cast<uint8>(state->upgrade_level + level_bonus));

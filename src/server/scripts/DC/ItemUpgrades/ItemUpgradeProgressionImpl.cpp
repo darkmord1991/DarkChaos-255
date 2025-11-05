@@ -190,26 +190,52 @@ private:
 
     void CheckTierUnlocks(uint32 player_guid, uint8 mastery_rank)
     {
-        LevelCapManagerImpl capMgr;
-        
         // Unlock Mythic tier at rank 5
-        if (mastery_rank >= 5 && !capMgr.IsTierUnlocked(player_guid, 4))
+        if (mastery_rank >= 5)
         {
-            capMgr.UnlockTier(player_guid, 4);
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
-                "VALUES ({}, 'TIER_UNLOCK', 4, UNIX_TIMESTAMP())",
+            // Check if already unlocked
+            QueryResult checkResult = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = 4",
                 player_guid);
+            
+            if (!checkResult)
+            {
+                // Unlock the tier
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
+                    "VALUES ({}, 4, UNIX_TIMESTAMP())",
+                    player_guid);
+                
+                // Log the event
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
+                    "VALUES ({}, 'TIER_UNLOCK', 4, UNIX_TIMESTAMP())",
+                    player_guid);
+            }
         }
         
         // Unlock Artifact tier at rank 10
-        if (mastery_rank >= 10 && !capMgr.IsTierUnlocked(player_guid, 5))
+        if (mastery_rank >= 10)
         {
-            capMgr.UnlockTier(player_guid, 5);
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
-                "VALUES ({}, 'TIER_UNLOCK', 5, UNIX_TIMESTAMP())",
+            // Check if already unlocked
+            QueryResult checkResult = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = 5",
                 player_guid);
+            
+            if (!checkResult)
+            {
+                // Unlock the tier
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
+                    "VALUES ({}, 5, UNIX_TIMESTAMP())",
+                    player_guid);
+                
+                // Log the event
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
+                    "VALUES ({}, 'TIER_UNLOCK', 5, UNIX_TIMESTAMP())",
+                    player_guid);
+            }
         }
     }
 };
