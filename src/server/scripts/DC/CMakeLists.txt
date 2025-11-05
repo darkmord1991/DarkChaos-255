@@ -100,10 +100,31 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4B
     ItemUpgrades/ItemUpgradeProgressionImpl.cpp
 )
 
+# Phase 4C: Seasonal System
+set(SCRIPTS_DC_ItemUpgrade_Phase4C
+    ItemUpgrades/ItemUpgradeSeasonalImpl.cpp
+)
+
+# Phase 4D: Advanced Features (Respec, Achievements, Guild Progression)
+set(SCRIPTS_DC_ItemUpgrade_Phase4D
+    ItemUpgrades/ItemUpgradeAdvancedImpl.cpp
+)
+
+# DC Seasonal System - Independent Framework
+set(SCRIPTS_DC_SeasonalSystem
+    Seasons/SeasonalSystem.h
+    Seasons/SeasonalSystem.cpp
+    Seasons/SeasonalSystemTest.cpp
+    Seasons/HLBGSeasonalParticipant.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
     ${SCRIPTS_DC_ItemUpgrade_Phase4B}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4C}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4D}
+    ${SCRIPTS_DC_SeasonalSystem}
 )
 
 # Add sources to AzerothCore scripts

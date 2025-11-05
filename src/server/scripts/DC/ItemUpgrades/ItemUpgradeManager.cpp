@@ -10,6 +10,7 @@
 
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
+#include "ItemUpgradeAdvanced.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -43,103 +44,122 @@ namespace DarkChaos
 
             bool UpgradeItem(uint32 player_guid, uint32 item_guid) override
             {
-                // Get current item upgrade state
-                ItemUpgradeState* state = GetItemUpgradeState(item_guid);
-                if (!state)
+                if (player_guid == 0 || item_guid == 0)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Item {} not found for upgrade", item_guid);
+                    LOG_ERROR("scripts", "ItemUpgrade: Invalid parameters - player_guid: {}, item_guid: {}", player_guid, item_guid);
                     return false;
                 }
 
-                // Check if item can be upgraded
-                if (!state->CanUpgrade())
+                try
                 {
-                    LOG_INFO("scripts", "ItemUpgrade: Item {} already at max level", item_guid);
+                    // Get current item upgrade state
+                    ItemUpgradeState* state = GetItemUpgradeState(item_guid);
+                    if (!state)
+                    {
+                        LOG_ERROR("scripts", "ItemUpgrade: Item {} not found for upgrade", item_guid);
+                        return false;
+                    }
+
+                    // Check if item can be upgraded
+                    if (!state->CanUpgrade())
+                    {
+                        LOG_INFO("scripts", "ItemUpgrade: Item {} already at max level", item_guid);
+                        return false;
+                    }
+
+                    uint8 next_level = state->upgrade_level + 1;
+
+                    // Get upgrade cost
+                    uint32 token_cost = GetUpgradeCost(state->tier_id, next_level);
+                    uint32 essence_cost = GetEssenceCost(state->tier_id, next_level);
+
+                    // Check currency
+                    if (state->tier_id == TIER_ARTIFACT)
+                    {
+                        // Artifacts use essence
+                        uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
+                        if (essence < essence_cost)
+                        {
+                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient essence (need {}, have {})", 
+                                     player_guid, essence_cost, essence);
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        // Regular items use upgrade tokens
+                        uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state->season);
+                        if (tokens < token_cost)
+                        {
+                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})", 
+                                     player_guid, token_cost, tokens);
+                            return false;
+                        }
+                    }
+
+                    // Perform upgrade
+                    if (state->tier_id == TIER_ARTIFACT)
+                    {
+                        if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
+                            return false;
+                        state->essence_invested += essence_cost;
+                    }
+                    else
+                    {
+                        if (!RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season))
+                            return false;
+                        state->tokens_invested += token_cost;
+                    }
+
+                    // Update item state
+                    state->upgrade_level = next_level;
+                    state->last_upgraded_at = time(nullptr);
+                    if (state->first_upgraded_at == 0)
+                        state->first_upgraded_at = state->last_upgraded_at;
+
+                    // Calculate new stat multiplier
+                    float max_mult = (state->tier_id == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                    state->stat_multiplier = 1.0f + (next_level / 5.0f) * (max_mult - 1.0f);
+
+                    // Save to database
+                    SaveItemUpgrade(item_guid);
+
+                    // Award artifact mastery points for Phase 4B progression system
+                    uint32 mastery_points = 0;
+                    switch (state->tier_id)
+                    {
+                        case TIER_LEVELING: mastery_points = 1; break;
+                        case TIER_HEROIC: mastery_points = 2; break;
+                        case TIER_RAID: mastery_points = 3; break;
+                        case TIER_MYTHIC: mastery_points = 5; break;
+                        case TIER_ARTIFACT: mastery_points = 10; break;
+                        default: mastery_points = 1; break;
+                    }
+
+                    // Award bonus points for reaching certain upgrade milestones
+                    if (next_level % 5 == 0)
+                        mastery_points *= 2; // Double points at levels 5, 10, 15
+
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_player_artifact_mastery (player_guid, mastery_points, season) "
+                        "VALUES ({}, {}, {}) "
+                        "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + {}",
+                        player_guid, mastery_points, state->season, mastery_points);
+
+                    LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points", 
+                            player_guid, item_guid, next_level, mastery_points);
+
+                    // Check and award achievements for this upgrade
+                    AchievementManagerImpl achMgr;
+                    achMgr.CheckAndAwardAchievements(player_guid);
+
+                    return true;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to upgrade item {} for player {}: {}", item_guid, player_guid, e.what());
                     return false;
                 }
-
-                uint8 next_level = state->upgrade_level + 1;
-
-                // Get upgrade cost
-                uint32 token_cost = GetUpgradeCost(state->tier_id, next_level);
-                uint32 essence_cost = GetEssenceCost(state->tier_id, next_level);
-
-                // Check currency
-                if (state->tier_id == TIER_ARTIFACT)
-                {
-                    // Artifacts use essence
-                    uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
-                    if (essence < essence_cost)
-                    {
-                        LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient essence (need {}, have {})", 
-                                 player_guid, essence_cost, essence);
-                        return false;
-                    }
-                }
-                else
-                {
-                    // Regular items use upgrade tokens
-                    uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state->season);
-                    if (tokens < token_cost)
-                    {
-                        LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})", 
-                                 player_guid, token_cost, tokens);
-                        return false;
-                    }
-                }
-
-                // Perform upgrade
-                if (state->tier_id == TIER_ARTIFACT)
-                {
-                    RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season);
-                    state->essence_invested += essence_cost;
-                }
-                else
-                {
-                    RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season);
-                    state->tokens_invested += token_cost;
-                }
-
-                // Update item state
-                state->upgrade_level = next_level;
-                state->last_upgraded_at = time(nullptr);
-                if (state->first_upgraded_at == 0)
-                    state->first_upgraded_at = state->last_upgraded_at;
-
-                // Calculate new stat multiplier
-                float max_mult = (state->tier_id == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
-                state->stat_multiplier = 1.0f + (next_level / 5.0f) * (max_mult - 1.0f);
-
-                // Save to database
-                SaveItemUpgrade(item_guid);
-
-                // Award artifact mastery points for Phase 4B progression system
-                uint32 mastery_points = 0;
-                switch (state->tier_id)
-                {
-                    case TIER_LEVELING: mastery_points = 1; break;
-                    case TIER_HEROIC: mastery_points = 2; break;
-                    case TIER_RAID: mastery_points = 3; break;
-                    case TIER_MYTHIC: mastery_points = 5; break;
-                    case TIER_ARTIFACT: mastery_points = 10; break;
-                    default: mastery_points = 1; break;
-                }
-
-                // Award bonus points for reaching certain upgrade milestones
-                if (next_level % 5 == 0)
-                    mastery_points *= 2; // Double points at levels 5, 10, 15
-
-                std::ostringstream mastery_oss;
-                mastery_oss << "INSERT INTO dc_player_artifact_mastery (player_guid, mastery_points, season) "
-                           << "VALUES (" << player_guid << ", " << mastery_points << ", " << state->season << ") "
-                           << "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + " << mastery_points;
-
-                CharacterDatabase.Execute(mastery_oss.str().c_str());
-
-                LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points", 
-                        player_guid, item_guid, next_level, mastery_points);
-
-                return true;
             }
 
             bool AddCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season) override
@@ -147,61 +167,106 @@ namespace DarkChaos
                 if (amount == 0)
                     return true;
 
+                if (player_guid == 0)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in AddCurrency", player_guid);
+                    return false;
+                }
+
                 // Build currency type string
                 std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
 
-                // Insert or update
-                std::ostringstream oss;
-                oss << "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-                    << "VALUES (" << player_guid << ", '" << currency_str << "', " << amount << ", " << season << ") "
-                    << "ON DUPLICATE KEY UPDATE amount = amount + " << amount;
+                try
+                {
+                    // Insert or update using parameterized query
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+                        "VALUES ({}, '{}', {}, {}) "
+                        "ON DUPLICATE KEY UPDATE amount = amount + {}",
+                        player_guid, currency_str, amount, season, amount);
 
-                CharacterDatabase.Execute(oss.str().c_str());
-                LOG_DEBUG("scripts", "ItemUpgrade: Added {} {} to player {}", amount, currency_str, player_guid);
-
-                return true;
+                    LOG_DEBUG("scripts", "ItemUpgrade: Added {} {} to player {}", amount, currency_str, player_guid);
+                    return true;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to add currency for player {}: {}", player_guid, e.what());
+                    return false;
+                }
             }
 
             bool RemoveCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season) override
             {
+                if (player_guid == 0)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in RemoveCurrency", player_guid);
+                    return false;
+                }
+
+                if (amount == 0)
+                    return true;
+
                 uint32 current = GetCurrency(player_guid, currency, season);
                 if (current < amount)
+                {
+                    LOG_WARN("scripts", "ItemUpgrade: Player {} has insufficient {} (has {}, needs {})",
+                             player_guid, (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens" : "essence", current, amount);
                     return false;
+                }
 
                 std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
 
-                std::ostringstream oss;
-                oss << "UPDATE dc_player_upgrade_tokens SET amount = amount - " << amount 
-                    << " WHERE player_guid = " << player_guid 
-                    << " AND currency_type = '" << currency_str << "' AND season = " << season;
+                try
+                {
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_player_upgrade_tokens SET amount = amount - {} "
+                        "WHERE player_guid = {} AND currency_type = '{}' AND season = {}",
+                        amount, player_guid, currency_str, season);
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                    // Record weekly spending for Phase 4B progression system
+                    std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_weekly_spending (player_guid, week_start, {}) "
+                        "VALUES ({}, UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), {}) "
+                        "ON DUPLICATE KEY UPDATE {} = {} + {}",
+                        spending_column, player_guid, amount, spending_column, spending_column, amount);
 
-                // Record weekly spending for Phase 4B progression system
-                std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
-                std::ostringstream spend_oss;
-                spend_oss << "INSERT INTO dc_weekly_spending (player_guid, week_start, " << spending_column << ") "
-                          << "VALUES (" << player_guid << ", UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), " << amount << ") "
-                          << "ON DUPLICATE KEY UPDATE " << spending_column << " = " << spending_column << " + " << amount;
-
-                CharacterDatabase.Execute(spend_oss.str().c_str());
-
-                return true;
+                    return true;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to remove currency for player {}: {}", player_guid, e.what());
+                    return false;
+                }
             }
 
             uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season) override
             {
+                if (player_guid == 0)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in GetCurrency", player_guid);
+                    return 0;
+                }
+
                 std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
 
-                std::ostringstream oss;
-                oss << "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = " << player_guid 
-                    << " AND currency_type = '" << currency_str << "' AND season = " << season;
+                try
+                {
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} "
+                        "AND currency_type = '{}' AND season = {}",
+                        player_guid, currency_str, season);
 
-                QueryResult result = CharacterDatabase.Query(oss.str().c_str());
-                if (!result)
+                    if (!result)
+                        return 0;
+
+                    return result->Fetch()[0].Get<uint32>();
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to get currency for player {}: {}", player_guid, e.what());
                     return 0;
-
-                return result->Fetch()[0].Get<uint32>();
+                }
             }
 
             // ====================================================================
@@ -216,12 +281,11 @@ namespace DarkChaos
                     return &it->second;
 
                 // Load from database
-                std::ostringstream oss;
-                oss << "SELECT item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
-                    << "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
-                    << "FROM dc_player_item_upgrades WHERE item_guid = " << item_guid;
-
-                QueryResult result = CharacterDatabase.Query(oss.str().c_str());
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
+                    "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
+                    "FROM dc_player_item_upgrades WHERE item_guid = {}",
+                    item_guid);
                 if (!result)
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
@@ -464,11 +528,11 @@ namespace DarkChaos
 
             bool DiscoverArtifact(uint32 player_guid, uint32 artifact_id) override
             {
-                std::ostringstream oss;
-                oss << "INSERT IGNORE INTO dc_player_artifact_discoveries (player_guid, artifact_id) "
-                    << "VALUES (" << player_guid << ", " << artifact_id << ")";
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_player_artifact_discoveries (player_guid, artifact_id) "
+                    "VALUES ({}, {})",
+                    player_guid, artifact_id);
 
-                CharacterDatabase.Execute(oss.str().c_str());
                 return true;
             }
 
@@ -481,21 +545,19 @@ namespace DarkChaos
                 LOG_INFO("scripts", "ItemUpgrade: Loading upgrade data for season {}", season);
 
                 // Load tier definitions
-                std::ostringstream oss1;
-                oss1 << "SELECT tier_id, tier_name, min_ilvl, max_ilvl, max_upgrade_level, stat_multiplier_max, "
-                     << "upgrade_cost_per_level, source_content, is_artifact FROM dc_item_upgrade_tiers WHERE season = " << season;
-
-                QueryResult result = WorldDatabase.Query(oss1.str().c_str());
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT tier_id, tier_name, min_ilvl, max_ilvl, max_upgrade_level, stat_multiplier_max, "
+                    "upgrade_cost_per_level, source_content, is_artifact FROM dc_item_upgrade_tiers WHERE season = {}",
+                    season);
                 if (result)
                 {
                     LOG_INFO("scripts", "ItemUpgrade: Loaded {} tier definitions", result->GetRowCount());
                 }
 
                 // Load upgrade costs
-                std::ostringstream oss2;
-                oss2 << "SELECT tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase, stat_increase_percent FROM dc_item_upgrade_costs WHERE season = " << season;
-
-                result = WorldDatabase.Query(oss2.str().c_str());
+                result = WorldDatabase.Query(
+                    "SELECT tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase, stat_increase_percent FROM dc_item_upgrade_costs WHERE season = {}",
+                    season);
                 if (result)
                 {
                     uint32 count = 0;
@@ -520,10 +582,9 @@ namespace DarkChaos
                 }
 
                 // Load item to tier mappings
-                std::ostringstream oss3;
-                oss3 << "SELECT item_id, tier_id FROM dc_item_templates_upgrade WHERE season = " << season << " AND is_active = 1";
-
-                result = WorldDatabase.Query(oss3.str().c_str());
+                result = WorldDatabase.Query(
+                    "SELECT item_id, tier_id FROM dc_item_templates_upgrade WHERE season = {} AND is_active = 1",
+                    season);
                 if (result)
                 {
                     uint32 count = 0;
@@ -541,10 +602,9 @@ namespace DarkChaos
                 }
 
                 // Load artifacts
-                std::ostringstream oss4;
-                oss4 << "SELECT artifact_id, artifact_name, item_id, cosmetic_variant, rarity, location_name, location_type, essence_cost, is_active FROM dc_chaos_artifact_items WHERE season = " << season << " AND is_active = 1";
-
-                result = WorldDatabase.Query(oss4.str().c_str());
+                result = WorldDatabase.Query(
+                    "SELECT artifact_id, artifact_name, item_id, cosmetic_variant, rarity, location_name, location_type, essence_cost, is_active FROM dc_chaos_artifact_items WHERE season = {} AND is_active = 1",
+                    season);
                 if (result)
                 {
                     uint32 count = 0;
@@ -589,21 +649,19 @@ namespace DarkChaos
                 if (!state)
                     return;
 
-                std::ostringstream oss;
-                oss << "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, "
-                    << "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                    << "VALUES (" << state->item_guid << ", " << state->player_guid << ", " << (int)state->tier_id 
-                    << ", " << (int)state->upgrade_level << ", " << state->tokens_invested 
-                    << ", " << state->essence_invested << ", " << state->stat_multiplier 
-                    << ", " << state->first_upgraded_at << ", " << state->last_upgraded_at << ", " << state->season << ") "
-                    << "ON DUPLICATE KEY UPDATE "
-                    << "upgrade_level = " << (int)state->upgrade_level
-                    << ", tokens_invested = " << state->tokens_invested
-                    << ", essence_invested = " << state->essence_invested
-                    << ", stat_multiplier = " << state->stat_multiplier
-                    << ", last_upgraded_at = " << state->last_upgraded_at;
-
-                CharacterDatabase.Execute(oss.str().c_str());
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, "
+                    "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
+                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
+                    "ON DUPLICATE KEY UPDATE "
+                    "upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
+                    "stat_multiplier = {}, last_upgraded_at = {}",
+                    state->item_guid, state->player_guid, static_cast<uint32>(state->tier_id),
+                    static_cast<uint32>(state->upgrade_level), state->tokens_invested,
+                    state->essence_invested, state->stat_multiplier,
+                    state->first_upgraded_at, state->last_upgraded_at, state->season,
+                    static_cast<uint32>(state->upgrade_level), state->tokens_invested,
+                    state->essence_invested, state->stat_multiplier, state->last_upgraded_at);
             }
 
             void SavePlayerCurrency(uint32 player_guid, uint32 season) override

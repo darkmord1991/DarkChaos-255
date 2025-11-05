@@ -58,7 +58,7 @@ public:
         // Get current upgrade level
         QueryResult result = CharacterDatabase.Query(
             "SELECT upgrade_level, essence_invested, tokens_invested "
-            "FROM dc_item_upgrades WHERE player_guid = {} AND item_guid = {}",
+            "FROM dc_player_item_upgrades WHERE player_guid = {} AND item_guid = {}",
             player_guid, item_guid);
         
         if (!result)
@@ -85,7 +85,7 @@ public:
         
         // Reset item
         CharacterDatabase.Execute(
-            "UPDATE dc_item_upgrades "
+            "UPDATE dc_player_item_upgrades "
             "SET upgrade_level = 0, current_stat_multiplier = 1.0, "
             "upgraded_item_level = base_item_level, essence_invested = 0, tokens_invested = 0 "
             "WHERE player_guid = {} AND item_guid = {}",
@@ -111,7 +111,7 @@ public:
         // Get all upgraded items
         QueryResult result = CharacterDatabase.Query(
             "SELECT item_guid, essence_invested, tokens_invested "
-            "FROM dc_item_upgrades WHERE player_guid = {} AND upgrade_level > 0",
+            "FROM dc_player_item_upgrades WHERE player_guid = {} AND upgrade_level > 0",
             player_guid);
         
         if (!result)
@@ -302,7 +302,7 @@ public:
         if (ach->reward_prestige_points > 0)
         {
             CharacterDatabase.Execute(
-                "UPDATE dc_player_prestige "
+                "UPDATE dc_player_artifact_mastery "
                 "SET total_prestige_points = total_prestige_points + {}, "
                 "prestige_points_this_rank = prestige_points_this_rank + {} "
                 "WHERE player_guid = {}",
@@ -364,14 +364,14 @@ public:
         if (ach->unlock_type == "UPGRADE_COUNT")
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT total_upgrades_applied FROM dc_player_prestige WHERE player_guid = {}",
+                "SELECT total_upgrades_applied FROM dc_player_artifact_mastery WHERE player_guid = {}",
                 player_guid);
             return result ? result->Fetch()[0].Get<uint32>() : 0;
         }
         else if (ach->unlock_type == "MAX_LEVEL")
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_item_upgrades WHERE player_guid = {} AND upgrade_level = 15",
+                "SELECT COUNT(*) FROM dc_player_item_upgrades WHERE player_guid = {} AND upgrade_level = 15",
                 player_guid);
             return result ? result->Fetch()[0].Get<uint32>() : 0;
         }
@@ -427,7 +427,7 @@ public:
             "COUNT(DISTINCT u.item_guid), AVG(u.current_stat_multiplier), "
             "AVG(u.upgraded_item_level - u.base_item_level), "
             "SUM(u.essence_invested), SUM(u.tokens_invested) "
-            "FROM dc_item_upgrades u "
+            "FROM dc_player_item_upgrades u "
             "INNER JOIN guild_member gm ON gm.guid = u.player_guid "
             "WHERE gm.guildid = {}",
             guild_id);

@@ -115,23 +115,19 @@ namespace DarkChaos
         static void LogTokenTransaction(uint32 player_guid, const char* event_type, 
                                        const char* reason, int32 token_change, int32 essence_change)
         {
-            std::ostringstream oss;
-            oss << "INSERT INTO dc_token_transaction_log (player_guid, event_type, token_change, essence_change, reason, timestamp) "
-                << "VALUES (" << player_guid << ", '" << event_type << "', " << token_change << ", " << essence_change 
-                << ", '" << reason << "', NOW())";
-            
-            CharacterDatabase.Execute(oss.str().c_str());
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_token_transaction_log (player_guid, event_type, token_change, essence_change, reason, timestamp) "
+                "VALUES ({}, '{}', {}, {}, '{}', NOW())",
+                player_guid, event_type, token_change, essence_change, reason);
         }
         
         // Check if player is at weekly token cap
         static bool IsAtWeeklyTokenCap(uint32 player_guid, uint32 season = 1)
         {
-            std::ostringstream oss;
-                oss << "SELECT weekly_earned FROM dc_player_upgrade_tokens "
-                    << "WHERE player_guid = " << player_guid 
-                << " AND currency_type = 'upgrade_token' AND season = " << season;
-            
-            QueryResult result = CharacterDatabase.Query(oss.str().c_str());
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT weekly_earned FROM dc_player_upgrade_tokens "
+                "WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
+                player_guid, season);
             if (!result)
                 return false;
             
@@ -142,12 +138,10 @@ namespace DarkChaos
         // Update weekly earned counter
         static void UpdateWeeklyEarned(uint32 player_guid, uint32 amount, uint32 season = 1)
         {
-            std::ostringstream oss;
-            oss << "UPDATE dc_player_upgrade_tokens SET weekly_earned = weekly_earned + " << amount 
-                << " WHERE player_guid = " << player_guid 
-                << " AND currency_type = 'upgrade_token' AND season = " << season;
-            
-            CharacterDatabase.Execute(oss.str().c_str());
+            CharacterDatabase.Execute(
+                "UPDATE dc_player_upgrade_tokens SET weekly_earned = weekly_earned + {} "
+                "WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
+                amount, player_guid, season);
         }
         
         // =====================================================================
@@ -237,13 +231,10 @@ namespace DarkChaos
                 // Award essence for achievement
                 uint32 essence_reward = ACHIEVEMENT_ESSENCE_REWARD;
                 
-                // Check if achievement was already claimed (one-time only)
-                std::ostringstream oss;
-                oss << "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
-                    << "WHERE player_guid = " << player->GetGUID().GetCounter() 
-                    << " AND artifact_id = " << achievement->ID;
-                
-                QueryResult result = CharacterDatabase.Query(oss.str().c_str());
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
+                    "WHERE player_guid = {} AND artifact_id = {}",
+                    player->GetGUID().GetCounter(), achievement->ID);
                 if (result && result->Fetch()[0].Get<uint32>() > 0)
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Achievement {} already claimed by player {}", 
@@ -255,10 +246,10 @@ namespace DarkChaos
                     DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
                 
                 // Mark as claimed
-                std::ostringstream insert_oss;
-                insert_oss << "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovered_at, season) "
-                          << "VALUES (" << player->GetGUID().GetCounter() << ", " << achievement->ID << ", NOW(), 1)";
-                CharacterDatabase.Execute(insert_oss.str().c_str());
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovered_at, season) "
+                    "VALUES ({}, {}, NOW(), 1)",
+                    player->GetGUID().GetCounter(), achievement->ID);
                 
                 // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
                 uint8 loc = player->GetSession() ? player->GetSession()->GetSessionDbcLocale() : 0;

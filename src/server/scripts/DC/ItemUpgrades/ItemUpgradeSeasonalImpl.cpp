@@ -49,8 +49,8 @@ public:
         {
             // Reset all item upgrades
             CharacterDatabase.Execute(
-                "UPDATE dc_item_upgrades SET upgrade_level = 0, "
-                "current_stat_multiplier = 1.0, upgraded_item_level = base_item_level "
+                "UPDATE dc_player_item_upgrades SET upgrade_level = 0, "
+                "stat_multiplier = 1.0, upgraded_item_level = base_item_level "
                 "WHERE player_guid = {}",
                 player_guid);
         }
@@ -96,7 +96,7 @@ public:
     {
         // Get all players with upgrade data
         QueryResult result = CharacterDatabase.Query(
-            "SELECT DISTINCT player_guid FROM dc_item_upgrades");
+            "SELECT DISTINCT player_guid FROM dc_player_item_upgrades");
         
         if (!result)
             return;
@@ -303,7 +303,7 @@ public:
             "p.total_prestige_points, p.prestige_rank "
             "FROM dc_player_season_data d "
             "LEFT JOIN characters c ON c.guid = d.player_guid "
-            "LEFT JOIN dc_player_prestige p ON p.player_guid = d.player_guid "
+            "LEFT JOIN dc_player_artifact_mastery p ON p.player_guid = d.player_guid "
             "WHERE d.season_id = {} "
             "ORDER BY d.upgrades_applied DESC "
             "LIMIT {}",
@@ -338,7 +338,7 @@ public:
         QueryResult result = CharacterDatabase.Query(
             "SELECT p.player_guid, c.name, p.total_prestige_points, p.prestige_rank, "
             "d.items_upgraded, d.upgrades_applied "
-            "FROM dc_player_prestige p "
+            "FROM dc_player_artifact_mastery p "
             "LEFT JOIN characters c ON c.guid = p.player_guid "
             "LEFT JOIN dc_player_season_data d ON d.player_guid = p.player_guid AND d.season_id = {} "
             "ORDER BY p.total_prestige_points DESC "
@@ -378,7 +378,7 @@ public:
             "p.total_prestige_points, p.prestige_rank "
             "FROM dc_player_season_data d "
             "LEFT JOIN characters c ON c.guid = d.player_guid "
-            "LEFT JOIN dc_player_prestige p ON p.player_guid = d.player_guid "
+            "LEFT JOIN dc_player_artifact_mastery p ON p.player_guid = d.player_guid "
             "WHERE d.season_id = {} AND d.upgrades_applied > 0 "
             "ORDER BY efficiency DESC "
             "LIMIT {}",
@@ -428,11 +428,11 @@ public:
             "SELECT {}, player_guid, "
             "  (SELECT COUNT(*) + 1 FROM dc_player_season_data d2 "
             "   WHERE d2.season_id = d1.season_id AND d2.upgrades_applied > d1.upgrades_applied), "
-            "  (SELECT COUNT(*) + 1 FROM dc_player_prestige p2 "
+            "  (SELECT COUNT(*) + 1 FROM dc_player_artifact_mastery p2 "
             "   WHERE p2.total_prestige_points > p1.total_prestige_points), "
             "  0, UNIX_TIMESTAMP() "
             "FROM dc_player_season_data d1 "
-            "LEFT JOIN dc_player_prestige p1 ON p1.player_guid = d1.player_guid "
+            "LEFT JOIN dc_player_artifact_mastery p1 ON p1.player_guid = d1.player_guid "
             "WHERE d1.season_id = {}",
             season_id, season_id);
     }

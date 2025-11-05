@@ -217,8 +217,8 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
 {
     QueryResult result = CharacterDatabase.Query(
         "SELECT item_guid, player_guid, upgrade_level, essence_invested, tokens_invested, "
-        "base_item_level, upgraded_item_level, current_stat_multiplier, last_upgraded_timestamp, season_id "
-        "FROM item_upgrades WHERE item_guid = {}", item_guid);
+        "base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season "
+        "FROM dc_player_item_upgrades WHERE item_guid = {}", item_guid);
     
     if (!result)
         return false;
@@ -231,9 +231,9 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
     tokens_invested = fields[4].Get<uint32>();
     base_item_level = fields[5].Get<uint16>();
     upgraded_item_level = fields[6].Get<uint16>();
-    current_stat_multiplier = fields[7].Get<float>();
-    last_upgraded_timestamp = fields[8].Get<uint32>();
-    season_id = fields[9].Get<uint32>();
+    stat_multiplier = fields[7].Get<float>();
+    last_upgraded_at = fields[8].Get<time_t>();
+    season = fields[9].Get<uint32>();
     
     return true;
 }
@@ -242,18 +242,18 @@ bool ItemUpgradeState::SaveToDatabase() const
 {
     // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
     CharacterDatabase.Execute(
-        "INSERT INTO item_upgrades (item_guid, player_guid, upgrade_level, essence_invested, tokens_invested, "
-        "base_item_level, upgraded_item_level, current_stat_multiplier, last_upgraded_timestamp, season_id) "
+        "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, upgrade_level, essence_invested, tokens_invested, "
+        "base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season) "
         "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
         "ON DUPLICATE KEY UPDATE "
         "upgrade_level = VALUES(upgrade_level), "
         "essence_invested = VALUES(essence_invested), "
         "tokens_invested = VALUES(tokens_invested), "
         "upgraded_item_level = VALUES(upgraded_item_level), "
-        "current_stat_multiplier = VALUES(current_stat_multiplier), "
-        "last_upgraded_timestamp = VALUES(last_upgraded_timestamp)",
+        "stat_multiplier = VALUES(stat_multiplier), "
+        "last_upgraded_at = VALUES(last_upgraded_at)",
         item_guid, player_guid, static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
-        base_item_level, upgraded_item_level, current_stat_multiplier, last_upgraded_timestamp, season_id);
+        base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season);
     
     return true;
 }

@@ -62,6 +62,10 @@ namespace DarkChaos
 
             UpgradeCost() : tier_id(0), upgrade_level(0), token_cost(0), 
                            essence_cost(0), ilvl_increase(0), stat_increase_percent(0.0f), season(1) {}
+
+            UpgradeCost(uint8 t, uint8 l, uint32 tc, uint32 ec, uint16 il, float sp, uint32 s)
+                : tier_id(t), upgrade_level(l), token_cost(tc), essence_cost(ec),
+                  ilvl_increase(il), stat_increase_percent(sp), season(s) {}
         };
 
         // =====================================================================
@@ -78,20 +82,17 @@ namespace DarkChaos
             uint32 tokens_invested;              // Total tokens invested
             uint16 base_item_level;              // Original item level
             uint16 upgraded_item_level;          // Current item level after upgrades
-            float current_stat_multiplier;       // legacy name for stat multiplier
-            float stat_multiplier;               // primary stat multiplier field
+            float stat_multiplier;               // Stat multiplier (1.0 = base, higher = bonus)
             time_t first_upgraded_at;            // When first upgraded
             time_t last_upgraded_at;             // When this item was last upgraded
-            uint32 last_upgraded_timestamp;      // legacy timestamp field
-            uint32 season;                       // primary season field
-            uint32 season_id;                    // legacy season id
+            uint32 season;                       // Season this upgrade belongs to
 
             ItemUpgradeState() : item_guid(0), player_guid(0), tier_id(0), upgrade_level(0),
                                  essence_invested(0), tokens_invested(0),
                                  base_item_level(0), upgraded_item_level(0),
-                                 current_stat_multiplier(1.0f), stat_multiplier(1.0f),
-                                 first_upgraded_at(0), last_upgraded_at(0), last_upgraded_timestamp(0),
-                                 season(1), season_id(1) {}
+                                 stat_multiplier(1.0f),
+                                 first_upgraded_at(0), last_upgraded_at(0),
+                                 season(1) {}
 
             // Persistence helpers
             bool LoadFromDatabase(uint32 item_guid);
