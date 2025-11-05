@@ -625,9 +625,6 @@ namespace DarkChaos
                 return false;
             }
 
-                return false;
-            }
-
             uint32 GetCooldownRemaining(uint32 player_guid, uint32 recipe_id) const override
             {
                 QueryResult cooldown_result = CharacterDatabase.Query(
@@ -642,9 +639,6 @@ namespace DarkChaos
                     if (now < cooldown_end)
                         return cooldown_end - now;
                 }
-
-                return 0;
-            }
 
                 return 0;
             }
