@@ -542,9 +542,9 @@ public:
     {
         static ChatCommandTable upgradeAdvancedCommandTable =
         {
-            { "respec",       HandleRespecCommand,      rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
-            { "achievements", HandleAchievementsCommand, rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
-            { "guild",        HandleGuildStatsCommand,   rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
+            { "respec",       HandleRespecCommand,      SEC_PLAYER, Console::No },
+            { "achievements", HandleAchievementsCommand, SEC_PLAYER, Console::No },
+            { "guild",        HandleGuildStatsCommand,   SEC_PLAYER, Console::No },
         };
         
         static ChatCommandTable commandTable =
