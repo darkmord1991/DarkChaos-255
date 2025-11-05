@@ -22,6 +22,7 @@
 #include <iomanip>
 #include <algorithm>
 
+using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
 
 // =====================================================================
