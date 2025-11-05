@@ -239,7 +239,7 @@ private:
         uint32 item_count = 0;
     DarkChaos::ItemUpgrade::UpgradeManager* manager = DarkChaos::ItemUpgrade::GetUpgradeManager();
         
-        // Iterate through player's items
+        // Iterate through equipment slots
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -251,9 +251,63 @@ private:
                 ItemTemplate const* proto = item->GetTemplate();
                 std::string item_name = proto ? proto->Name1 : "Unknown Item";
                 
+                // Mark equipped items with [EQUIPPED] tag
+                item_name = "|cff00ff00[EQUIPPED]|r " + item_name;
+                
                 uint32 item_guid = item->GetGUID().GetCounter();
                 AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, item_name, GOSSIP_SENDER_MAIN, 1000 + item_guid);
                 item_count++;
+            }
+        }
+        
+        // Iterate through backpack
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item)
+                continue;
+            
+            if (manager && manager->CanUpgradeItem(item->GetGUID().GetCounter(), player->GetGUID().GetCounter()))
+            {
+                ItemTemplate const* proto = item->GetTemplate();
+                std::string item_name = proto ? proto->Name1 : "Unknown Item";
+                
+                // Mark backpack items with [BACKPACK] tag
+                item_name = "|cffffff00[BACKPACK]|r " + item_name;
+                
+                uint32 item_guid = item->GetGUID().GetCounter();
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, item_name, GOSSIP_SENDER_MAIN, 1000 + item_guid);
+                item_count++;
+            }
+        }
+        
+        // Iterate through bags
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            Bag* bag_item = player->GetBagByPos(bag);
+            if (!bag_item)
+                continue;
+            
+            for (uint32 slot = 0; slot < bag_item->GetBagSize(); ++slot)
+            {
+                Item* item = player->GetItemByPos(bag, slot);
+                if (!item)
+                    continue;
+                
+                if (manager && manager->CanUpgradeItem(item->GetGUID().GetCounter(), player->GetGUID().GetCounter()))
+                {
+                    ItemTemplate const* proto = item->GetTemplate();
+                    std::string item_name = proto ? proto->Name1 : "Unknown Item";
+                    
+                    // Mark bag items with [BAG X] tag where X is the bag number
+                    std::ostringstream bag_label;
+                    bag_label << "|cffff8000[BAG " << (bag - INVENTORY_SLOT_BAG_START + 1) << "]|r ";
+                    item_name = bag_label.str() + item_name;
+                    
+                    uint32 item_guid = item->GetGUID().GetCounter();
+                    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, item_name, GOSSIP_SENDER_MAIN, 1000 + item_guid);
+                    item_count++;
+                }
             }
         }
         
@@ -265,7 +319,9 @@ private:
         else
         {
             oss << "|cff00ff00Found " << item_count << " upgradeable item(s)|r\n";
-            oss << "Click on an item to see upgrade details.\n";
+            oss << "|cff00ff00[EQUIPPED]|r Equipment\n";
+            oss << "|cffffff00[BACKPACK]|r Inventory\n";
+            oss << "|cffff8000[BAG X]|r In Bags\n";
         }
         
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Back", GOSSIP_SENDER_MAIN, 100);
