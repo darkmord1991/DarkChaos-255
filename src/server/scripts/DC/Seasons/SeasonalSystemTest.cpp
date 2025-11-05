@@ -284,19 +284,25 @@ namespace DarkChaos
         // Utility Functions
         // =====================================================================
 
-        std::string GetSeasonTypeName(SeasonType type)
-        {
-            switch (type)
-            {
-                case SEASON_TYPE_TIME_BASED: return "Time-Based";
-                case SEASON_TYPE_EVENT_BASED: return "Event-Based";
-                case SEASON_TYPE_INFINITE: return "Infinite";
-                case SEASON_TYPE_MANUAL: return "Manual";
-                default: return "Unknown";
-            }
-        }
+    } // class SeasonalSystemTest
 
-    } // namespace Seasonal
+    // =====================================================================
+    // Utility Functions
+    // =====================================================================
+
+    std::string GetSeasonTypeName(SeasonType type)
+    {
+        switch (type)
+        {
+            case SEASON_TYPE_TIME_BASED: return "Time-Based";
+            case SEASON_TYPE_EVENT_BASED: return "Event-Based";
+            case SEASON_TYPE_INFINITE: return "Infinite";
+            case SEASON_TYPE_MANUAL: return "Manual";
+            default: return "Unknown";
+        }
+    }
+
+} // namespace Seasonal
 } // namespace DarkChaos
 
 // =====================================================================
