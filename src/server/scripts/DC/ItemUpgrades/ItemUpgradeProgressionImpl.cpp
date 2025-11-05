@@ -357,7 +357,7 @@ public:
         return commandTable;
     }
 
-    static bool HandleMasteryCommand(ChatHandler* handler, const char* args)
+    static bool HandleMasteryCommand(ChatHandler* handler, const char* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -486,7 +486,7 @@ public:
         return true;
     }
 
-    static bool HandleTestSetCommand(ChatHandler* handler, const char* args)
+    static bool HandleTestSetCommand(ChatHandler* handler, const char* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
