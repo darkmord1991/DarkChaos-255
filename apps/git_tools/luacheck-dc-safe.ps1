@@ -4,7 +4,7 @@ Run luacheck on each .lua file under the given root with error-safe handling.
 This version prevents the PowerShell window from closing on errors.
 
 Usage:
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\luacheck-dc-safe.ps1 -Root "Custom\Client addons needed\DCHotspotXP"
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\luacheck-dc-safe.ps1 -Root "Custom\Client addons needed\DC-HotspotXP"
   
 Or double-click this file to check default addons with interactive prompt.
 #>

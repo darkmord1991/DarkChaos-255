@@ -2,11 +2,11 @@
 luacheck-dc-run.ps1
 Run luacheck on each .lua file under the given root, invoking the explicit luacheck executable path to avoid quoting/shim issues.
 Usage:
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\luacheck-dc-run.ps1 -Root "Custom\Client addons needed\DCHotspotXP"
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\luacheck-dc-run.ps1 -Root "Custom\Client addons needed\DC-HotspotXP"
 #>
 
 param(
-    [string]$Root = "Custom\Client addons needed\DCHotspotXP"
+    [string]$Root = "Custom\Client addons needed\DC-HotspotXP"
 )
 
 Write-Host "Running luacheck for .lua files under: $Root" -ForegroundColor Cyan

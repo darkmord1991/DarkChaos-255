@@ -31,7 +31,7 @@ class ItemUpgradeCommunicationHandler : public PlayerScript
 public:
     ItemUpgradeCommunicationHandler() : PlayerScript("ItemUpgradeCommunicationHandler") {}
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         // Send welcome message about the upgrade system
         if (player)

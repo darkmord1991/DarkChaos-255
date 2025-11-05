@@ -730,7 +730,7 @@ local function CreateHotspotMarkers(mapType)
                 -- Hotspot icon texture - use a glowing effect
                 local tex = marker:CreateTexture(nil, "OVERLAY")
                 tex:SetAllPoints()
-                tex:SetTexture("Interface\\AddOns\\DCHotspotXP\\textures\\hotspot_icon")  -- Try custom icon
+                tex:SetTexture("Interface\\AddOns\\DC-HotspotXP\\textures\\hotspot_icon")  -- Try custom icon
                 if not tex:GetTexture() or tex:GetTexture() == "" then
                     -- Fallback to standard icons
                     tex:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")

@@ -2533,7 +2533,7 @@ ItemUpgrade.Test.TokensGrant = 2500
 #
 # 4. Client addon support:
 #    - Hotspots: Optional addon for "XP+" text display on map
-#    - HLBG: DCHinterlandBG addon for queue/stats/info panels
+#    - HLBG: DC-HinterlandBG addon for queue/stats/info panels
 #    - Item Upgrade: No addon required (uses standard gossip UI)
 #
 # 5. Database requirements:

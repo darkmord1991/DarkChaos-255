@@ -81,7 +81,7 @@ files["**/DC-MapExtension/*.lua"] = {
     }
 }
 
-files["**/DCHotspotXP/*.lua"] = {
+files["**/DC-HotspotXP/*.lua"] = {
     globals = {
         "HotspotDisplayDB",
         "SLASH_HOTSPOT1",
