@@ -251,7 +251,7 @@ namespace DarkChaos
                         if (msg != EQUIP_ERR_OK)
                             throw std::runtime_error("No space for output item");
 
-                        Item* new_item = player->StoreNewItem(dest, recipe.output_item_id, true, 0, true);
+                        Item* new_item = player->StoreNewItem(dest, recipe.output_item_id, true, 0);
                         if (!new_item)
                             throw std::runtime_error("Failed to create output item");
 

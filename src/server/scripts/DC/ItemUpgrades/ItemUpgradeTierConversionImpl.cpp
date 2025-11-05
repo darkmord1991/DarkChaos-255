@@ -334,7 +334,7 @@ namespace DarkChaos
                 }
             }
 
-            std::vector<TransmutationRecipe> GetSynthesisRecipes(uint32 player_guid) override
+            std::vector<TransmutationRecipe> GetSynthesisRecipes(uint32 player_guid) const override
             {
                 std::vector<TransmutationRecipe> available;
 
