@@ -84,7 +84,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
 
         if (itemGuid == 0)
         {
-            SendErrorResponse(player, "Invalid item GUID");
+            SendErrorResponse(player, std::string("Invalid item GUID"));
             return;
         }
 
@@ -92,7 +92,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         DarkChaos::ItemUpgrade::UpgradeManager* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!upgradeMgr)
         {
-            SendErrorResponse(player, "Upgrade system not available");
+            SendErrorResponse(player, std::string("Upgrade system not available"));
             return;
         }
 
@@ -100,7 +100,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         DarkChaos::ItemUpgrade::ItemUpgradeState* state = upgradeMgr->GetItemUpgradeState(itemGuid);
         if (!state)
         {
-            SendErrorResponse(player, "Item not found in upgrade system");
+            SendErrorResponse(player, std::string("Item not found in upgrade system"));
             return;
         }
 
@@ -108,7 +108,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         Item* item = player->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(itemGuid));
         if (!item)
         {
-            SendErrorResponse(player, "Item not found in inventory");
+            SendErrorResponse(player, std::string("Item not found in inventory"));
             return;
         }
 
@@ -142,7 +142,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
 
         if (itemGuid == 0 || targetLevel > 15 || targetLevel < 1)
         {
-            SendErrorResponse(player, "Invalid upgrade parameters");
+            SendErrorResponse(player, std::string("Invalid upgrade parameters"));
             return;
         }
 
@@ -150,7 +150,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         DarkChaos::ItemUpgrade::UpgradeManager* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!upgradeMgr)
         {
-            SendErrorResponse(player, "Upgrade system not available");
+            SendErrorResponse(player, std::string("Upgrade system not available"));
             return;
         }
 
@@ -158,19 +158,19 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         DarkChaos::ItemUpgrade::ItemUpgradeState* state = upgradeMgr->GetItemUpgradeState(itemGuid);
         if (!state)
         {
-            SendErrorResponse(player, "Item not found in upgrade system");
+            SendErrorResponse(player, std::string("Item not found in upgrade system"));
             return;
         }
 
         if (targetLevel <= state->upgrade_level)
         {
-            SendErrorResponse(player, "Target level must be higher than current level");
+            SendErrorResponse(player, std::string("Target level must be higher than current level"));
             return;
         }
 
         if (targetLevel > 15)
         {
-            SendErrorResponse(player, "Maximum upgrade level is 15");
+            SendErrorResponse(player, std::string("Maximum upgrade level is 15"));
             return;
         }
 
@@ -178,7 +178,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         Item* item = player->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(itemGuid));
         if (!item)
         {
-            SendErrorResponse(player, "Item not found in your inventory");
+            SendErrorResponse(player, std::string("Item not found in your inventory"));
             return;
         }
 
@@ -201,12 +201,12 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
 
         if (state->tier_id == DarkChaos::ItemUpgrade::TIER_ARTIFACT && playerEssence < totalEssenceCost)
         {
-            SendErrorResponse(player, "Not enough Artifact Essence");
+            SendErrorResponse(player, std::string("Not enough Artifact Essence"));
             return;
         }
         else if (state->tier_id != DarkChaos::ItemUpgrade::TIER_ARTIFACT && playerTokens < totalTokenCost)
         {
-            SendErrorResponse(player, "Not enough Upgrade Tokens");
+            SendErrorResponse(player, std::string("Not enough Upgrade Tokens"));
             return;
         }
 
@@ -251,7 +251,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         }
         else
         {
-            SendErrorResponse(player, "Upgrade failed - insufficient currency or other error");
+            SendErrorResponse(player, std::string("Upgrade failed - insufficient currency or other error"));
         }
     }
 
@@ -261,7 +261,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         DarkChaos::ItemUpgrade::UpgradeManager* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!upgradeMgr)
         {
-            SendErrorResponse(player, "Upgrade system not available");
+            SendErrorResponse(player, std::string("Upgrade system not available"));
             return;
         }
 
