@@ -149,10 +149,6 @@ namespace DarkChaos
                     LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points", 
                             player_guid, item_guid, next_level, mastery_points);
 
-                    // Check and award achievements for this upgrade
-                    AchievementManagerImpl achMgr;
-                    achMgr.CheckAndAwardAchievements(player_guid);
-
                     return true;
                 }
                 catch (const std::exception& e)
