@@ -90,6 +90,7 @@ set(SCRIPTS_DC_ItemUpgrade_Phase3
 
 # Phase 4A: Item Upgrade Mechanics
 set(SCRIPTS_DC_ItemUpgrade_Phase4A
+    ItemUpgrades/ItemUpgradeManager.cpp
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
     ItemUpgrades/ItemUpgradeNPC_Upgrader.cpp
     ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
@@ -110,6 +111,19 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4D
     ItemUpgrades/ItemUpgradeAdvancedImpl.cpp
 )
 
+# Phase 4E: Client Communication
+set(SCRIPTS_DC_ItemUpgrade_Phase4E
+    ItemUpgrades/ItemUpgradeCommunication.cpp
+)
+
+# Phase 4F: Transmutation System
+set(SCRIPTS_DC_ItemUpgrade_Phase4F
+    ItemUpgrades/ItemUpgradeSynthesisImpl.cpp
+    ItemUpgrades/ItemUpgradeTierConversionImpl.cpp
+    ItemUpgrades/ItemUpgradeTransmutationImpl.cpp
+    ItemUpgrades/ItemUpgradeTransmutationNPC.cpp
+)
+
 # DC Seasonal System - Independent Framework
 set(SCRIPTS_DC_SeasonalSystem
     Seasons/SeasonalSystem.h
@@ -124,6 +138,8 @@ set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase4B}
     ${SCRIPTS_DC_ItemUpgrade_Phase4C}
     ${SCRIPTS_DC_ItemUpgrade_Phase4D}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4E}
+    ${SCRIPTS_DC_ItemUpgrade_Phase4F}
     ${SCRIPTS_DC_SeasonalSystem}
 )
 

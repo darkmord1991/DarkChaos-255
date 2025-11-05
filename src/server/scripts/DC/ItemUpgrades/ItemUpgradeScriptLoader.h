@@ -38,6 +38,11 @@ void AddSC_ItemUpgradeAdvanced();
 void AddSC_ItemUpgradeCommunication();
 
 // =====================================================================
+// Phase 4F: Transmutation System
+// =====================================================================
+void AddSC_ItemUpgradeTransmutation();
+
+// =====================================================================
 // Main Loader Function
 // =====================================================================
 inline void AddSC_ItemUpgradeScripts()
@@ -59,4 +64,7 @@ inline void AddSC_ItemUpgradeScripts()
 
     // Phase 4E: Client Communication
     AddSC_ItemUpgradeCommunication();
+
+    // Phase 4F: Transmutation
+    AddSC_ItemUpgradeTransmutation();
 }
