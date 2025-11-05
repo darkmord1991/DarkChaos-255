@@ -48,36 +48,7 @@ void ItemUpgradeCommunicationHandler::OpenUpgradeInterface(Player* player)
 // Member Method Implementations
 // =====================================================================
 
-bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, WorldPacket& packet)
-{
-    if (!session)
-        return true;
-
-    Player* player = session->GetPlayer();
-    if (!player)
-        return true;
-
-    uint16 opcode = packet.GetOpcode();
-
-    switch (opcode)
-    {
-        case CMSG_ITEM_UPGRADE_REQUEST_INFO:
-            HandleItemUpgradeInfoRequest(player, packet);
-            return false; // Don't process further
-
-        case CMSG_ITEM_UPGRADE_PERFORM:
-            HandleItemUpgradePerform(player, packet);
-            return false; // Don't process further
-
-        case CMSG_ITEM_UPGRADE_INVENTORY_SCAN:
-            HandleInventoryScanRequest(player, packet);
-            return false; // Don't process further
-
-        default:
-            return true; // Allow other packets to be processed
-    }
-}
-    void HandleItemUpgradeInfoRequest(Player* player, WorldPacket& packet)
+void ItemUpgradeCommunicationHandler::HandleItemUpgradeInfoRequest(Player* player, WorldPacket& packet)
     {
         uint32 itemGuid;
         packet >> itemGuid;
@@ -133,7 +104,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         player->SendDirectMessage(&response);
     }
 
-    void HandleItemUpgradePerform(Player* player, WorldPacket& packet)
+    void ItemUpgradeCommunicationHandler::HandleItemUpgradePerform(Player* player, WorldPacket& packet)
     {
         uint32 itemGuid;
         uint8 targetLevel;
@@ -255,7 +226,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         }
     }
 
-    void HandleInventoryScanRequest(Player* player, WorldPacket& /*packet*/)
+    void ItemUpgradeCommunicationHandler::HandleInventoryScanRequest(Player* player, WorldPacket& /*packet*/)
     {
         // Get upgrade manager
         DarkChaos::ItemUpgrade::UpgradeManager* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
@@ -312,7 +283,7 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         player->SendDirectMessage(&response);
     }
 
-    void SendErrorResponse(Player* player, const std::string& errorMessage)
+    void ItemUpgradeCommunicationHandler::SendErrorResponse(Player* player, const std::string& errorMessage)
     {
         WorldPacket response(SMSG_ITEM_UPGRADE_RESULT, 100);
         response << uint8(0); // Failure
@@ -323,23 +294,36 @@ bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, Wo
         // Also send chat message
         ChatHandler(player->GetSession()).SendSysMessage(errorMessage.c_str());
     }
-};
 
-// =====================================================================
-// Static Method Implementation
-// =====================================================================
+    bool ItemUpgradeCommunicationHandler::CanPacketReceive(WorldSession* session, WorldPacket& packet)
+    {
+        if (!session)
+            return true;
 
-void ItemUpgradeCommunicationHandler::OpenUpgradeInterface(Player* player)
-{
-    if (!player)
-        return;
+        Player* player = session->GetPlayer();
+        if (!player)
+            return true;
 
-    // Send packet to open the interface
-    WorldPacket packet(SMSG_ITEM_UPGRADE_OPEN_INTERFACE, 4);
-    packet << uint32(1); // Simple flag to indicate interface should open
+        uint16 opcode = packet.GetOpcode();
 
-    player->SendDirectMessage(&packet);
-}
+        switch (opcode)
+        {
+            case CMSG_ITEM_UPGRADE_REQUEST_INFO:
+                HandleItemUpgradeInfoRequest(player, packet);
+                return false; // Don't process further
+
+            case CMSG_ITEM_UPGRADE_PERFORM:
+                HandleItemUpgradePerform(player, packet);
+                return false; // Don't process further
+
+            case CMSG_ITEM_UPGRADE_INVENTORY_SCAN:
+                HandleInventoryScanRequest(player, packet);
+                return false; // Don't process further
+
+            default:
+                return true; // Allow other packets to be processed
+        }
+    }
 
 // =====================================================================
 // Script Registration
