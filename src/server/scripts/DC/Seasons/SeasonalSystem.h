@@ -190,6 +190,7 @@ namespace DarkChaos
             virtual ~SeasonalParticipant() = default;
 
             virtual std::string GetSystemName() const = 0;
+            virtual uint32 GetSystemVersion() const = 0;
             virtual void OnSeasonStart(uint32 season_id) = 0;
             virtual void OnSeasonEnd(uint32 season_id) = 0;
             virtual void OnPlayerSeasonChange(uint32 player_guid, uint32 old_season, uint32 new_season) = 0;

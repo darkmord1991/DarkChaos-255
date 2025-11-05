@@ -60,11 +60,7 @@ namespace DarkChaos
                     << (season.allow_carryover ? 1 : 0) << ", " << season.carryover_percentage << ", "
                     << (season.reset_on_end ? 1 : 0) << ", '" << season.theme_name << "', '" << season.banner_path << "')";
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("seasonal", "Failed to create season {} in database", season.season_id);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 seasons_[season.season_id] = season;
                 LOG_INFO("seasonal", "Created season {}: {}", season.season_id, season.season_name);
@@ -91,11 +87,7 @@ namespace DarkChaos
                     << "banner_path = '" << season.banner_path << "' "
                     << "WHERE season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("seasonal", "Failed to update season {} in database", season_id);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 seasons_[season_id] = season;
                 LOG_INFO("seasonal", "Updated season {}", season_id);
@@ -112,11 +104,7 @@ namespace DarkChaos
                 std::ostringstream oss;
                 oss << "DELETE FROM dc_seasons WHERE season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                {
-                    LOG_ERROR("seasonal", "Failed to delete season {} from database", season_id);
-                    return false;
-                }
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 seasons_.erase(it);
                 LOG_INFO("seasonal", "Deleted season {}", season_id);
@@ -157,8 +145,7 @@ namespace DarkChaos
                 oss << "UPDATE dc_seasons SET season_state = " << (int)SEASON_STATE_ACTIVE
                     << " WHERE season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                    return false;
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 season->season_state = SEASON_STATE_ACTIVE;
                 active_season_id_ = season_id;
@@ -181,8 +168,7 @@ namespace DarkChaos
                 oss << "UPDATE dc_seasons SET season_state = " << (int)SEASON_STATE_INACTIVE
                     << " WHERE season_id = " << season_id;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                    return false;
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 season->season_state = SEASON_STATE_INACTIVE;
 
@@ -287,8 +273,7 @@ namespace DarkChaos
                     << "total_seasons_played = " << data.total_seasons_played << ", "
                     << "seasons_completed = " << data.seasons_completed;
 
-                if (!CharacterDatabase.Execute(oss.str().c_str()))
-                    return false;
+                CharacterDatabase.Execute(oss.str().c_str());
 
                 player_data_[player_guid] = data;
                 return true;
