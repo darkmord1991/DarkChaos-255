@@ -32,19 +32,6 @@ class ItemUpgradeCommunicationHandler : public ServerScript
 public:
     ItemUpgradeCommunicationHandler() : ServerScript("ItemUpgradeCommunicationHandler") {}
 
-    // Public function for NPCs to call
-    static void OpenUpgradeInterface(Player* player)
-    {
-        if (!player)
-            return;
-
-        // Send packet to open the interface
-        WorldPacket packet(SMSG_ITEM_UPGRADE_OPEN_INTERFACE, 4);
-        packet << uint32(1); // Simple flag to indicate interface should open
-
-        player->SendDirectMessage(&packet);
-    }
-
     bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
     {
         if (!session)
@@ -323,6 +310,22 @@ private:
         ChatHandler(player->GetSession()).SendSysMessage(errorMessage.c_str());
     }
 };
+
+// =====================================================================
+// Static Method Implementation
+// =====================================================================
+
+void ItemUpgradeCommunicationHandler::OpenUpgradeInterface(Player* player)
+{
+    if (!player)
+        return;
+
+    // Send packet to open the interface
+    WorldPacket packet(SMSG_ITEM_UPGRADE_OPEN_INTERFACE, 4);
+    packet << uint32(1); // Simple flag to indicate interface should open
+
+    player->SendDirectMessage(&packet);
+}
 
 // =====================================================================
 // Script Registration

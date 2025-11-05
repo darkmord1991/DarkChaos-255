@@ -649,7 +649,6 @@ namespace DarkChaos
         // =====================================================================
 
         static TierConversionManagerImpl* _tier_conversion_manager = nullptr;
-        static SynthesisManagerImpl* _synthesis_manager = nullptr;
 
         TierConversionManager* GetTierConversionManager()
         {
@@ -659,13 +658,7 @@ namespace DarkChaos
             return _tier_conversion_manager;
         }
 
-        SynthesisManager* GetSynthesisManager()
-        {
-            if (!_synthesis_manager)
-                _synthesis_manager = new SynthesisManagerImpl();
-
-            return _synthesis_manager;
-        }
+        // Note: GetSynthesisManager() is implemented in ItemUpgradeSynthesisImpl.cpp
 
     } // namespace ItemUpgrade
 } // namespace DarkChaos
