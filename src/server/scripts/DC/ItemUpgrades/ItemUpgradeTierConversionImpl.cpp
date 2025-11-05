@@ -324,7 +324,7 @@ namespace DarkChaos
                         recipe.output_item_id = fields[6].Get<uint32>();
                         recipe.output_upgrade_level = fields[7].Get<uint8>();
                         recipe.output_tier_id = fields[8].Get<uint8>();
-                        recipe.success_rate = fields[9].Get<float>();
+                        recipe.success_rate_base = fields[9].Get<float>();
 
                         synthesis_recipes[recipe.recipe_id] = recipe;
                         count++;
