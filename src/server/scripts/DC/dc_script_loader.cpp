@@ -48,6 +48,10 @@ void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQues
 void AddItemUpgradeCommandScript(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommand.cpp
 void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
+void AddSC_ItemUpgradeMechanics(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Upgrader.cpp
+void AddSC_ItemUpgradeProgression(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProgressionImpl.cpp
+void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
+void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -85,4 +89,8 @@ void AddDCScripts()
     AddItemUpgradeCommandScript();
     AddSC_ItemUpgradeVendor();
     AddSC_ItemUpgradeCurator();
+    AddSC_ItemUpgradeMechanics();
+    AddSC_ItemUpgradeProgression();
+    AddSC_ItemUpgradeSeasonal();
+    AddSC_ItemUpgradeAdvanced();
 }
