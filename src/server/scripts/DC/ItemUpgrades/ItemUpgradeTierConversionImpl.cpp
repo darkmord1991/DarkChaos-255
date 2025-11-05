@@ -297,6 +297,11 @@ namespace DarkChaos
                 LoadSynthesisRecipes();
             }
 
+            bool Initialize() override
+            {
+                return true;
+            }
+
             void LoadSynthesisRecipes()
             {
                 LOG_INFO("scripts", "ItemUpgrade: Loading synthesis recipes...");
@@ -601,6 +606,43 @@ namespace DarkChaos
                 const TransmutationRecipe& recipe = it->second;
                 out_essence = recipe.input_essence;
                 out_tokens = recipe.input_tokens;
+            }
+
+            bool HasCooldown(uint32 player_guid, uint32 recipe_id) const override
+            {
+                QueryResult cooldown_result = CharacterDatabase.Query(
+                    "SELECT last_synthesis FROM dc_player_synthesis_cooldowns "
+                    "WHERE player_guid = {}", player_guid);
+
+                if (cooldown_result)
+                {
+                    time_t last_synthesis = cooldown_result->Fetch()[0].Get<time_t>();
+                    time_t now = time(nullptr);
+                    time_t cooldown_end = last_synthesis + (config.synthesis_cooldown_hours * 3600);
+
+                    return now < cooldown_end;
+                }
+
+                return false;
+            }
+
+            uint32 GetCooldownRemaining(uint32 player_guid, uint32 recipe_id) const override
+            {
+                QueryResult cooldown_result = CharacterDatabase.Query(
+                    "SELECT last_synthesis FROM dc_player_synthesis_cooldowns "
+                    "WHERE player_guid = {}", player_guid);
+
+                if (cooldown_result)
+                {
+                    time_t last_synthesis = cooldown_result->Fetch()[0].Get<time_t>();
+                    time_t now = time(nullptr);
+                    time_t cooldown_end = last_synthesis + (config.synthesis_cooldown_hours * 3600);
+
+                    if (now < cooldown_end)
+                        return cooldown_end - now;
+                }
+
+                return 0;
             }
         };
 
