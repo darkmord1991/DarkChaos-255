@@ -28,147 +28,6 @@ using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
 
 // =====================================================================
-// Level Cap Manager Implementation
-// =====================================================================
-
-class LevelCapManagerImpl : public LevelCapManager
-{
-private:
-    std::map<uint64, std::map<uint8, uint8>> player_tier_caps;  // player_guid -> tier_id -> max_level
-    std::map<uint64, std::set<uint8>> unlocked_tiers;           // player_guid -> set of unlocked tiers
-
-public:
-    bool CanUpgradeToLevel(uint32 player_guid, uint8 target_level, uint8 tier_id) const override
-    {
-        uint8 max_level = GetPlayerMaxUpgradeLevel(player_guid, tier_id);
-        return target_level <= max_level && IsTierUnlocked(player_guid, tier_id);
-    }
-
-    uint8 GetPlayerMaxUpgradeLevel(uint32 player_guid, uint8 tier_id) const override
-    {
-        // Check database first
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT max_level FROM dc_player_tier_caps WHERE player_guid = {} AND tier_id = {}",
-            player_guid, tier_id);
-        
-        if (result)
-            return result->Fetch()[0].Get<uint8>();
-        
-        // Default caps based on tier
-        TierProgressionManager tierMgr;
-        return tierMgr.GetMaxUpgradeLevel(tier_id);
-    }
-
-    void SetPlayerTierCap(uint32 player_guid, uint8 tier_id, uint8 max_level) override
-    {
-        CharacterDatabase.Execute(
-            "REPLACE INTO dc_player_tier_caps (player_guid, tier_id, max_level, last_updated) "
-            "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
-            player_guid, tier_id, max_level);
-    }
-
-    bool IsTierUnlocked(uint32 player_guid, uint8 tier_id) const override
-    {
-        // Tiers 1-3 are always unlocked
-        if (tier_id <= 3)
-            return true;
-        
-        // Check if manually unlocked by GM
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = {}",
-            player_guid, tier_id);
-        
-        if (result)
-            return true;
-        
-        // Check mastery requirements for automatic unlocks
-        ArtifactMasteryManagerImpl masteryMgr;
-        PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player_guid);
-        if (!info)
-            return false;
-        
-        // Tier unlock requirements based on mastery rank
-        switch (tier_id)
-        {
-            case 4: // Mythic tier - requires rank 5
-                return info->mastery_rank >= 5;
-            case 5: // Artifact tier - requires rank 10
-                return info->mastery_rank >= 10;
-            default:
-                return false;
-        }
-    }
-
-    void UnlockTier(uint32 player_guid, uint8 tier_id) override
-    {
-        CharacterDatabase.Execute(
-            "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
-            "VALUES ({}, {}, UNIX_TIMESTAMP())",
-            player_guid, tier_id);
-    }
-};
-
-// =====================================================================
-// Cost Scaling Manager Implementation
-// =====================================================================
-
-class CostScalingManagerImpl : public CostScalingManager
-{
-private:
-    CostScalingConfig config;
-
-public:
-    CostScalingManagerImpl()
-    {
-        // Default config already initialized in base class
-    }
-
-    bool HasHitWeeklyCap(uint32 player_guid, CurrencyType currency) const override
-    {
-        if (!config.enable_weekly_caps)
-            return false;
-        
-        uint32 spent = GetWeeklySpending(player_guid, currency);
-        uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
-            config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
-        
-        return spent >= hard_cap;
-    }
-
-    uint32 GetWeeklyRemainingBudget(uint32 player_guid, CurrencyType currency) const override
-    {
-        if (!config.enable_weekly_caps)
-            return 999999;  // Effectively unlimited
-        
-        uint32 spent = GetWeeklySpending(player_guid, currency);
-        uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
-            config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
-        
-        return (spent < hard_cap) ? (hard_cap - spent) : 0;
-    }
-
-    uint32 GetWeeklySpending(uint32 player_guid, CurrencyType currency) const override
-    {
-        // Get start of current week (Sunday 00:00)
-        time_t now = time(nullptr);
-        struct tm* timeinfo = localtime(&now);
-        timeinfo->tm_hour = 0;
-        timeinfo->tm_min = 0;
-        timeinfo->tm_sec = 0;
-        timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
-        time_t week_start = mktime(timeinfo);
-        
-        std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
-        
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = {}",
-            column, player_guid, week_start);
-        
-        return result ? result->Fetch()[0].Get<uint32>() : 0;
-    }
-};
-
-// =====================================================================
 // Artifact Mastery Manager Implementation (renamed from Prestige)
 // =====================================================================
 
@@ -352,6 +211,147 @@ private:
                 "VALUES ({}, 'TIER_UNLOCK', 5, UNIX_TIMESTAMP())",
                 player_guid);
         }
+    }
+};
+
+// =====================================================================
+// Level Cap Manager Implementation
+// =====================================================================
+
+class LevelCapManagerImpl : public LevelCapManager
+{
+private:
+    std::map<uint64, std::map<uint8, uint8>> player_tier_caps;  // player_guid -> tier_id -> max_level
+    std::map<uint64, std::set<uint8>> unlocked_tiers;           // player_guid -> set of unlocked tiers
+
+public:
+    bool CanUpgradeToLevel(uint32 player_guid, uint8 target_level, uint8 tier_id) const override
+    {
+        uint8 max_level = GetPlayerMaxUpgradeLevel(player_guid, tier_id);
+        return target_level <= max_level && IsTierUnlocked(player_guid, tier_id);
+    }
+
+    uint8 GetPlayerMaxUpgradeLevel(uint32 player_guid, uint8 tier_id) const override
+    {
+        // Check database first
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT max_level FROM dc_player_tier_caps WHERE player_guid = {} AND tier_id = {}",
+            player_guid, tier_id);
+        
+        if (result)
+            return result->Fetch()[0].Get<uint8>();
+        
+        // Default caps based on tier
+        TierProgressionManager tierMgr;
+        return tierMgr.GetMaxUpgradeLevel(tier_id);
+    }
+
+    void SetPlayerTierCap(uint32 player_guid, uint8 tier_id, uint8 max_level) override
+    {
+        CharacterDatabase.Execute(
+            "REPLACE INTO dc_player_tier_caps (player_guid, tier_id, max_level, last_updated) "
+            "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
+            player_guid, tier_id, max_level);
+    }
+
+    bool IsTierUnlocked(uint32 player_guid, uint8 tier_id) const override
+    {
+        // Tiers 1-3 are always unlocked
+        if (tier_id <= 3)
+            return true;
+        
+        // Check if manually unlocked by GM
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = {}",
+            player_guid, tier_id);
+        
+        if (result)
+            return true;
+        
+        // Check mastery requirements for automatic unlocks
+        ArtifactMasteryManagerImpl masteryMgr;
+        PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player_guid);
+        if (!info)
+            return false;
+        
+        // Tier unlock requirements based on mastery rank
+        switch (tier_id)
+        {
+            case 4: // Mythic tier - requires rank 5
+                return info->mastery_rank >= 5;
+            case 5: // Artifact tier - requires rank 10
+                return info->mastery_rank >= 10;
+            default:
+                return false;
+        }
+    }
+
+    void UnlockTier(uint32 player_guid, uint8 tier_id) override
+    {
+        CharacterDatabase.Execute(
+            "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
+            "VALUES ({}, {}, UNIX_TIMESTAMP())",
+            player_guid, tier_id);
+    }
+};
+
+// =====================================================================
+// Cost Scaling Manager Implementation
+// =====================================================================
+
+class CostScalingManagerImpl : public CostScalingManager
+{
+private:
+    CostScalingConfig config;
+
+public:
+    CostScalingManagerImpl()
+    {
+        // Default config already initialized in base class
+    }
+
+    bool HasHitWeeklyCap(uint32 player_guid, CurrencyType currency) const override
+    {
+        if (!config.enable_weekly_caps)
+            return false;
+        
+        uint32 spent = GetWeeklySpending(player_guid, currency);
+        uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
+            config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
+        
+        return spent >= hard_cap;
+    }
+
+    uint32 GetWeeklyRemainingBudget(uint32 player_guid, CurrencyType currency) const override
+    {
+        if (!config.enable_weekly_caps)
+            return 999999;  // Effectively unlimited
+        
+        uint32 spent = GetWeeklySpending(player_guid, currency);
+        uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
+            config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
+        
+        return (spent < hard_cap) ? (hard_cap - spent) : 0;
+    }
+
+    uint32 GetWeeklySpending(uint32 player_guid, CurrencyType currency) const override
+    {
+        // Get start of current week (Sunday 00:00)
+        time_t now = time(nullptr);
+        struct tm* timeinfo = localtime(&now);
+        timeinfo->tm_hour = 0;
+        timeinfo->tm_min = 0;
+        timeinfo->tm_sec = 0;
+        timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
+        time_t week_start = mktime(timeinfo);
+        
+        std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
+        
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = {}",
+            column, player_guid, week_start);
+        
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 };
 
