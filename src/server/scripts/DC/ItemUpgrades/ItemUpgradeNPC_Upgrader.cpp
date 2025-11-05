@@ -71,9 +71,16 @@ public:
                 OnGossipHello(player, creature);
                 return true;
             default:
-                // Item selection (100+)
-                if (action >= 1000)
+                // Item selection (1000+)
+                if (action >= 1000 && action < 2000)
+                {
                     ShowItemUpgradeUI(player, creature, action - 1000);
+                }
+                // Perform upgrade (2000+)
+                else if (action >= 2000)
+                {
+                    PerformUpgrade(player, creature, action - 2000);
+                }
                 break;
         }
         
@@ -81,6 +88,107 @@ public:
     }
     
 private:
+    void PerformUpgrade(Player* player, Creature* creature, uint32 item_guid)
+    {
+        ClearGossipMenuFor(player);
+        
+        if (!player)
+        {
+            SendErrorMessage(player, "Invalid player!");
+            return;
+        }
+        
+        DarkChaos::ItemUpgrade::UpgradeManager* manager = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!manager)
+        {
+            SendErrorMessage(player, "Upgrade system not available.");
+            return;
+        }
+        
+        // Find the item in player's equipment
+        Item* item = nullptr;
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* test_item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (test_item && test_item->GetGUID().GetCounter() == item_guid)
+            {
+                item = test_item;
+                break;
+            }
+        }
+        
+        if (!item)
+        {
+            SendErrorMessage(player, "Item not found in your equipment!");
+            ShowUpgradableItems(player, creature);
+            return;
+        }
+        
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto)
+        {
+            SendErrorMessage(player, "Item template not found!");
+            return;
+        }
+        
+        // Get current upgrade cost
+        uint32 next_essence, next_tokens;
+        if (!manager->GetNextUpgradeCost(item_guid, next_essence, next_tokens))
+        {
+            SendErrorMessage(player, "Item is already fully upgraded!");
+            ShowUpgradableItems(player, creature);
+            return;
+        }
+        
+        // Check player currency
+        uint32 player_essence = GetPlayerUpgradeEssence(player->GetGUID().GetCounter());
+        uint32 player_tokens = GetPlayerUpgradeTokens(player->GetGUID().GetCounter());
+        
+        if (player_essence < next_essence)
+        {
+            SendErrorMessage(player, "Not enough Artifact Essence!");
+            return;
+        }
+        
+        if (player_tokens < next_tokens)
+        {
+            SendErrorMessage(player, "Not enough Upgrade Tokens!");
+            return;
+        }
+        
+        // Perform the upgrade
+        if (!manager->UpgradeItem(player->GetGUID().GetCounter(), item_guid))
+        {
+            SendErrorMessage(player, "Upgrade failed! Please try again later.");
+            return;
+        }
+        
+        // Deduct currency
+        if (!manager->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, next_essence))
+        {
+            SendErrorMessage(player, "Failed to deduct Essence!");
+            return;
+        }
+        
+        if (!manager->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, next_tokens))
+        {
+            SendErrorMessage(player, "Failed to deduct Tokens!");
+            return;
+        }
+        
+        // Success message
+        std::ostringstream success_msg;
+        success_msg << "|cff00ff00✓ " << proto->Name1 << " upgraded successfully!|r\n";
+        success_msg << "  Deducted: " << next_essence << " Essence, " << next_tokens << " Tokens\n";
+        success_msg << "  Your new essence: " << (player_essence - next_essence) << "\n";
+        success_msg << "  Your new tokens: " << (player_tokens - next_tokens);
+        
+        ChatHandler(player->GetSession()).SendSysMessage(success_msg.str().c_str());
+        
+        // Show the item again with updated state
+        ShowItemUpgradeUI(player, creature, item_guid);
+    }
+    
     void ShowUpgradableItems(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);

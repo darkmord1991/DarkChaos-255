@@ -28,8 +28,25 @@ public:
     {
         // Get player's token balances and artifact discovery count
         auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-        uint32 upgradeTokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
-        uint32 artifactEssence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE) : 0;
+        
+        uint32 upgradeTokens = 0;
+        uint32 artifactEssence = 0;
+        
+        if (mgr)
+        {
+            upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
+            artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+        }
+        
+        // Also query from database to verify
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+            player->GetGUID().GetCounter());
+        
+        if (result)
+        {
+            artifactEssence = result->Fetch()[0].Get<uint32>();
+        }
         
         // Clear any previous menu
         ClearGossipMenuFor(player);
