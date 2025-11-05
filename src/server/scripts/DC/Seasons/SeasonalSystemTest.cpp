@@ -254,7 +254,7 @@ namespace DarkChaos
                 if (season->season_id >= 3000) // Only show demo seasons
                 {
                     std::cout << "  - " << season->season_name << " (ID: " << season->season_id << ")\n";
-                    std::cout << "    Type: " << DarkChaos::Seasonal::GetSeasonTypeName(season->season_type) << "\n";
+                    std::cout << "    Type: " << SeasonalSystemTest::GetSeasonTypeName(season->season_type) << "\n";
                     std::cout << "    Carryover: " << (season->allow_carryover ? "Yes" : "No");
                     if (season->allow_carryover)
                         std::cout << " (" << season->carryover_percentage << "%)\n";
@@ -284,23 +284,23 @@ namespace DarkChaos
         // Utility Functions
         // =====================================================================
 
+        static std::string GetSeasonTypeName(SeasonType type)
+        {
+            switch (type)
+            {
+                case SEASON_TYPE_TIME_BASED: return "Time-Based";
+                case SEASON_TYPE_EVENT_BASED: return "Event-Based";
+                case SEASON_TYPE_INFINITE: return "Infinite";
+                case SEASON_TYPE_MANUAL: return "Manual";
+                default: return "Unknown";
+            }
+        }
+
     } // class SeasonalSystemTest
 
     // =====================================================================
     // Utility Functions
     // =====================================================================
-
-    std::string GetSeasonTypeName(SeasonType type)
-    {
-        switch (type)
-        {
-            case SEASON_TYPE_TIME_BASED: return "Time-Based";
-            case SEASON_TYPE_EVENT_BASED: return "Event-Based";
-            case SEASON_TYPE_INFINITE: return "Infinite";
-            case SEASON_TYPE_MANUAL: return "Manual";
-            default: return "Unknown";
-        }
-    }
 
 } // namespace Seasonal
 } // namespace DarkChaos
