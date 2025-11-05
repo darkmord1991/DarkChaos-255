@@ -254,7 +254,7 @@ namespace DarkChaos
                 if (season->season_id >= 3000) // Only show demo seasons
                 {
                     std::cout << "  - " << season->season_name << " (ID: " << season->season_id << ")\n";
-                    std::cout << "    Type: " << GetSeasonTypeName(season->season_type) << "\n";
+                    std::cout << "    Type: " << DarkChaos::Seasonal::GetSeasonTypeName(season->season_type) << "\n";
                     std::cout << "    Carryover: " << (season->allow_carryover ? "Yes" : "No");
                     if (season->allow_carryover)
                         std::cout << " (" << season->carryover_percentage << "%)\n";
