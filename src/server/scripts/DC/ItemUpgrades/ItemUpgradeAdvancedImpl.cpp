@@ -14,6 +14,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Chat.h"
+#include "ChatCommand.h"
 #include "DatabaseEnv.h"
 #include "Guild.h"
 #include "ItemUpgradeAdvanced.h"
@@ -21,6 +22,7 @@
 #include <sstream>
 #include <iomanip>
 
+using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
 
 // =====================================================================
@@ -177,7 +179,7 @@ public:
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 
-    void CalculateRespecCost(uint32 player_guid, bool full_respec,
+    void CalculateRespecCost(uint32 /*player_guid*/, bool full_respec,
                             uint32& out_tokens, uint32& out_essence) override
     {
         if (full_respec)
@@ -536,18 +538,18 @@ class ItemUpgradeAdvancedCommands : public CommandScript
 public:
     ItemUpgradeAdvancedCommands() : CommandScript("ItemUpgradeAdvancedCommands") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> upgradeAdvancedCommandTable =
+        static ChatCommandTable upgradeAdvancedCommandTable =
         {
-            { "respec",      SEC_PLAYER,      false, &HandleRespecCommand,      "" },
-            { "achievements", SEC_PLAYER,     false, &HandleAchievementsCommand, "" },
-            { "guild",       SEC_PLAYER,      false, &HandleGuildStatsCommand,  "" },
+            { "respec",       HandleRespecCommand,      rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
+            { "achievements", HandleAchievementsCommand, rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
+            { "guild",        HandleGuildStatsCommand,   rbac::RBAC_PERM_COMMAND_UPGRADE_ADVANCED, Console::No },
         };
         
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "upgradeadv", SEC_PLAYER, false, nullptr, "", upgradeAdvancedCommandTable },
+            { "upgradeadv", upgradeAdvancedCommandTable },
         };
         
         return commandTable;
