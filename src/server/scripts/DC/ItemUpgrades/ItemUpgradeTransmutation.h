@@ -265,4 +265,19 @@ namespace DarkChaos
     } // namespace ItemUpgrade
 } // namespace DarkChaos
 
+// =====================================================================
+// Global Access Functions
+// =====================================================================
+
+namespace DarkChaos
+{
+    namespace ItemUpgrade
+    {
+        /**
+         * Get the global transmutation manager instance
+         */
+        TransmutationManager* GetTransmutationManager();
+    }
+}
+
 #endif // ITEM_UPGRADE_TRANSMUTATION_H

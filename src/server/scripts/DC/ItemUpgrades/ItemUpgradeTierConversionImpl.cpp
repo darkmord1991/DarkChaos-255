@@ -611,14 +611,13 @@ namespace DarkChaos
             bool HasCooldown(uint32 player_guid, uint32 recipe_id) const override
             {
                 QueryResult cooldown_result = CharacterDatabase.Query(
-                    "SELECT last_synthesis FROM dc_player_synthesis_cooldowns "
-                    "WHERE player_guid = {}", player_guid);
+                    "SELECT cooldown_end FROM dc_item_upgrade_synthesis_cooldowns "
+                    "WHERE player_guid = {} AND recipe_id = {}", player_guid, recipe_id);
 
                 if (cooldown_result)
                 {
-                    time_t last_synthesis = cooldown_result->Fetch()[0].Get<time_t>();
+                    time_t cooldown_end = cooldown_result->Fetch()[0].Get<time_t>();
                     time_t now = time(nullptr);
-                    time_t cooldown_end = last_synthesis + (config.synthesis_cooldown_hours * 3600);
 
                     return now < cooldown_end;
                 }
@@ -626,21 +625,26 @@ namespace DarkChaos
                 return false;
             }
 
+                return false;
+            }
+
             uint32 GetCooldownRemaining(uint32 player_guid, uint32 recipe_id) const override
             {
                 QueryResult cooldown_result = CharacterDatabase.Query(
-                    "SELECT last_synthesis FROM dc_player_synthesis_cooldowns "
-                    "WHERE player_guid = {}", player_guid);
+                    "SELECT cooldown_end FROM dc_item_upgrade_synthesis_cooldowns "
+                    "WHERE player_guid = {} AND recipe_id = {}", player_guid, recipe_id);
 
                 if (cooldown_result)
                 {
-                    time_t last_synthesis = cooldown_result->Fetch()[0].Get<time_t>();
+                    time_t cooldown_end = cooldown_result->Fetch()[0].Get<time_t>();
                     time_t now = time(nullptr);
-                    time_t cooldown_end = last_synthesis + (config.synthesis_cooldown_hours * 3600);
 
                     if (now < cooldown_end)
                         return cooldown_end - now;
                 }
+
+                return 0;
+            }
 
                 return 0;
             }

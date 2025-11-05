@@ -89,7 +89,7 @@ namespace DarkChaos
                         recipe.output_tier_id = fields[10].Get<uint8>();
                         recipe.output_essence = fields[11].Get<uint32>();
                         recipe.output_tokens = fields[12].Get<uint32>();
-                        recipe.success_rate = fields[13].Get<float>();
+                        recipe.success_rate_base = fields[13].Get<float>();
                         recipe.failure_penalty_percent = fields[14].Get<uint32>();
                         recipe.requires_catalyst = fields[15].Get<bool>();
                         recipe.catalyst_item_id = fields[16].Get<uint32>();
