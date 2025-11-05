@@ -424,9 +424,15 @@ private:
             if (last_upgrade > 0)
             {
                 time_t last_time = last_upgrade;
-                char time_str[26];
-                ctime_s(time_str, sizeof(time_str), &last_time);
-                oss << "  Last Upgrade: " << time_str;
+                char* time_str = ctime(&last_time);
+                if (time_str)
+                {
+                    // Remove trailing newline from ctime
+                    size_t len = strlen(time_str);
+                    if (len > 0 && time_str[len-1] == '\n')
+                        time_str[len-1] = '\0';
+                    oss << "  Last Upgrade: " << time_str << "\n";
+                }
             }
         }
         else
