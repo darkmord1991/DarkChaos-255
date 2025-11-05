@@ -219,13 +219,13 @@ namespace DarkChaos
                     // Consume currencies
                     if (recipe.input_essence > 0)
                     {
-                        if (!mgr->ConsumeCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, trans))
+                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, 1))
                             throw std::runtime_error("Failed to consume essence");
                     }
 
                     if (recipe.input_tokens > 0)
                     {
-                        if (!mgr->ConsumeCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, trans))
+                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, 1))
                             throw std::runtime_error("Failed to consume tokens");
                     }
 
