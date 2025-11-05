@@ -70,7 +70,16 @@ AoELoot.ShowMessage = 1
 #                     1 = Force auto-loot all corpses (bypass client setting)
 #                     2 = Respect player's AutoLoot setting (requires client packet detection)
 #
-#AoELoot.AutoLoot = 2
+AoELoot.AutoLoot = 2
+
+#
+#    AoELoot.DebugPerCorpse
+#        Description: Enable debug logging for each corpse looted in AoE loot
+#                     Shows detailed information about loot distribution.
+#        Default:     0 (Disabled - no debug output)
+#                     1 (Enabled - log each corpse looted)
+#
+AoELoot.DebugPerCorpse = 0
 
 #
 #    AoELoot.AllowInGroup
@@ -307,7 +316,7 @@ Hotspots.AnnounceRadius = 500.0
 #                     530 = Outland (Burning Crusade)
 #                     571 = Northrend (Wrath of the Lich King)
 #
-Hotspots.EnabledMaps = "0,1,530,571"
+Hotspots.EnabledMaps = "0,1,530,571,37"
 
 #
 #    Hotspots.EnabledZones
