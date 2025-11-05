@@ -2076,6 +2076,444 @@ DungeonQuest.Debug.LogFile = "logs/dungeon_quest_system.log"
 
 
 ###########################################################################
+#
+#    SECTION 7: ITEM UPGRADE SYSTEM
+#
+#    Advanced item progression system allowing players to upgrade Epic and
+#    Legendary items with currency-based mechanics. Includes artifact mastery
+#    progression, seasonal competition, achievements, and guild tracking.
+#
+#    Phases Implemented:
+#    - Phase 4A: Core system (15 levels, ilvl scaling, dual currency)
+#    - Phase 4B: Progression (artifact mastery, tier unlocks, weekly caps)
+#    - Phase 4C: Seasonal (seasons, leaderboards, history tracking)
+#    - Phase 4D: Advanced (respec, achievements, guild progression)
+#
+#    NPCs:
+#    - Curator (600007): Information, guides, progression tracking
+#    - Vendor (600006): Token exchange, catalog, upgrades
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Master Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Enable
+#        Description: Master toggle for the Item Upgrade system
+#        Default:     1 (Enabled)
+#                     0 (Disabled - all upgrade NPCs and commands inactive)
+#
+ItemUpgrade.Enable = 1
+
+#
+#    ItemUpgrade.MaxUpgradeLevel
+#        Description: Maximum upgrade level for items
+#                     Each level adds +4 item levels to the base item.
+#        Default:     15 (max +60 item levels)
+#        Range:       1 - 20
+#        Note:        Database tables default to 15; higher values require DB schema updates
+#
+ItemUpgrade.MaxUpgradeLevel = 15
+
+# -------------------------------------------------------------------------
+# Currency & Cost Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Currency.EssenceId
+#        Description: Item ID for Upgrade Essence (primary currency)
+#        Default:     900001 (Custom item: Upgrade Essence)
+#        Range:       Any valid item_template entry
+#
+ItemUpgrade.Currency.EssenceId = 900001
+
+#
+#    ItemUpgrade.Currency.TokenId
+#        Description: Item ID for Upgrade Tokens (secondary currency)
+#        Default:     900002 (Custom item: Upgrade Token)
+#        Range:       Any valid item_template entry
+#
+ItemUpgrade.Currency.TokenId = 900002
+
+#
+#    ItemUpgrade.Cost.BaseCostEssence
+#        Description: Base essence cost for upgrading Epic items (level 1→2)
+#                     Costs scale exponentially with each level.
+#        Default:     500
+#        Range:       10 - 10000
+#
+ItemUpgrade.Cost.BaseCostEssence = 500
+
+#
+#    ItemUpgrade.Cost.BaseCostTokens
+#        Description: Base token cost for upgrading Epic items (level 1→2)
+#        Default:     250
+#        Range:       5 - 5000
+#
+ItemUpgrade.Cost.BaseCostTokens = 250
+
+#
+#    ItemUpgrade.Cost.LegendaryMultiplier
+#        Description: Multiplier for Legendary item upgrade costs
+#                     Legendary items cost this much more than Epic items.
+#        Default:     1.5 (50% more expensive)
+#        Range:       1.0 - 5.0
+#
+ItemUpgrade.Cost.LegendaryMultiplier = 1.5
+
+#
+#    ItemUpgrade.Cost.ScalingExponent
+#        Description: Exponent for cost scaling per level
+#                     Higher values make higher levels exponentially more expensive.
+#                     Formula: baseCost * (level ^ exponent)
+#        Default:     1.35
+#        Range:       1.0 - 2.0
+#
+ItemUpgrade.Cost.ScalingExponent = 1.35
+
+# -------------------------------------------------------------------------
+# Phase 4B: Progression System (Artifact Mastery)
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.ArtifactMastery.Enable
+#        Description: Enable Artifact Mastery progression system
+#                     Renamed from "Prestige" to avoid conflict with DarkChaos Prestige System
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no mastery ranks or bonuses)
+#
+ItemUpgrade.ArtifactMastery.Enable = 1
+
+#
+#    ItemUpgrade.ArtifactMastery.MaxRank
+#        Description: Maximum artifact mastery rank achievable
+#        Default:     10
+#        Range:       1 - 20
+#
+ItemUpgrade.ArtifactMastery.MaxRank = 10
+
+#
+#    ItemUpgrade.ArtifactMastery.PointsPerLevel
+#        Description: Mastery points earned per item upgrade level
+#                     Example: Upgrading item to level 5 = 5 mastery points
+#        Default:     1
+#        Range:       1 - 10
+#
+ItemUpgrade.ArtifactMastery.PointsPerLevel = 1
+
+#
+#    ItemUpgrade.ArtifactMastery.BonusPerRank
+#        Description: Discount percentage bonus per mastery rank
+#                     Each rank reduces upgrade costs by this percentage.
+#        Default:     2 (2% discount per rank, max 20% at rank 10)
+#        Range:       1 - 5
+#
+ItemUpgrade.ArtifactMastery.BonusPerRank = 2
+
+#
+#    ItemUpgrade.WeeklyCaps.Enable
+#        Description: Enable weekly spending caps on currency
+#                     Prevents excessive grinding; resets every Sunday.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - unlimited weekly spending)
+#
+ItemUpgrade.WeeklyCaps.Enable = 1
+
+#
+#    ItemUpgrade.WeeklyCaps.Essence
+#        Description: Maximum essence spendable per week
+#        Default:     50000
+#        Range:       10000 - 500000
+#
+ItemUpgrade.WeeklyCaps.Essence = 50000
+
+#
+#    ItemUpgrade.WeeklyCaps.Tokens
+#        Description: Maximum tokens spendable per week
+#        Default:     25000
+#        Range:       5000 - 250000
+#
+ItemUpgrade.WeeklyCaps.Tokens = 25000
+
+#
+#    ItemUpgrade.TierUnlocks.Enable
+#        Description: Enable tier-based level cap unlocking
+#                     Players must unlock higher tiers to access levels 6+, 11+, etc.
+#        Default:     1 (Enabled - tier progression required)
+#                     0 (Disabled - all 15 levels available immediately)
+#
+ItemUpgrade.TierUnlocks.Enable = 1
+
+#
+#    ItemUpgrade.TierUnlocks.Tier2Cost
+#        Description: Cost to unlock Tier 2 (levels 6-10)
+#                     Format: essence,tokens (e.g., "10000,5000" = 10k essence + 5k tokens)
+#        Default:     10000,5000
+#
+ItemUpgrade.TierUnlocks.Tier2Cost = 10000,5000
+
+#
+#    ItemUpgrade.TierUnlocks.Tier3Cost
+#        Description: Cost to unlock Tier 3 (levels 11-15)
+#        Default:     25000,12500
+#
+ItemUpgrade.TierUnlocks.Tier3Cost = 25000,12500
+
+# -------------------------------------------------------------------------
+# Phase 4C: Seasonal System
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Seasons.Enable
+#        Description: Enable seasonal competition and leaderboards
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no seasons)
+#
+ItemUpgrade.Seasons.Enable = 1
+
+#
+#    ItemUpgrade.Seasons.CurrentSeason
+#        Description: Active season ID (change this to start a new season)
+#        Default:     1
+#        Range:       1 - 999
+#
+ItemUpgrade.Seasons.CurrentSeason = 1
+
+#
+#    ItemUpgrade.Seasons.ArchiveOnEnd
+#        Description: Automatically archive season data when ending a season
+#        Default:     1 (Enabled - data preserved)
+#                     0 (Disabled - data deleted)
+#
+ItemUpgrade.Seasons.ArchiveOnEnd = 1
+
+#
+#    ItemUpgrade.Leaderboards.Enable
+#        Description: Enable leaderboard tracking and commands
+#        Default:     1 (Enabled - .season leaderboard available)
+#                     0 (Disabled)
+#
+ItemUpgrade.Leaderboards.Enable = 1
+
+#
+#    ItemUpgrade.Leaderboards.TopCount
+#        Description: Number of top players shown in leaderboards
+#        Default:     10
+#        Range:       5 - 50
+#
+ItemUpgrade.Leaderboards.TopCount = 10
+
+# -------------------------------------------------------------------------
+# Phase 4D: Advanced Features
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Respec.Enable
+#        Description: Enable item upgrade respec functionality
+#                     Allows players to reset upgrades and reclaim 75% of costs.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - upgrades are permanent)
+#
+ItemUpgrade.Respec.Enable = 1
+
+#
+#    ItemUpgrade.Respec.RefundPercent
+#        Description: Percentage of costs refunded when respeccing
+#        Default:     75 (75% refund)
+#        Range:       50 - 100
+#
+ItemUpgrade.Respec.RefundPercent = 75
+
+#
+#    ItemUpgrade.Achievements.Enable
+#        Description: Enable upgrade-specific achievements
+#                     6 achievements: First Blood, Dedicated, Maxed Out, Legendary, Master, Mastery Hunter
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ItemUpgrade.Achievements.Enable = 1
+
+#
+#    ItemUpgrade.GuildProgression.Enable
+#        Description: Enable guild-wide upgrade statistics and leaderboards
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+ItemUpgrade.GuildProgression.Enable = 1
+
+# -------------------------------------------------------------------------
+# Currency Earning Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Earn.BossKill.EssenceMin
+#        Description: Minimum essence earned from boss kills
+#        Default:     50
+#        Range:       10 - 500
+#
+ItemUpgrade.Earn.BossKill.EssenceMin = 50
+
+#
+#    ItemUpgrade.Earn.BossKill.EssenceMax
+#        Description: Maximum essence earned from boss kills
+#        Default:     150
+#        Range:       50 - 1000
+#
+ItemUpgrade.Earn.BossKill.EssenceMax = 150
+
+#
+#    ItemUpgrade.Earn.BossKill.TokenChance
+#        Description: Percentage chance to earn a token from boss kill
+#        Default:     25 (25% chance)
+#        Range:       0 - 100
+#
+ItemUpgrade.Earn.BossKill.TokenChance = 25
+
+#
+#    ItemUpgrade.Earn.BossKill.TokenMin
+#        Description: Minimum tokens earned from boss kills (when proc occurs)
+#        Default:     1
+#        Range:       1 - 10
+#
+ItemUpgrade.Earn.BossKill.TokenMin = 1
+
+#
+#    ItemUpgrade.Earn.BossKill.TokenMax
+#        Description: Maximum tokens earned from boss kills (when proc occurs)
+#        Default:     3
+#        Range:       1 - 20
+#
+ItemUpgrade.Earn.BossKill.TokenMax = 3
+
+#
+#    ItemUpgrade.Earn.PvPKill.EssenceAmount
+#        Description: Essence earned per honorable PvP kill
+#        Default:     10
+#        Range:       1 - 100
+#
+ItemUpgrade.Earn.PvPKill.EssenceAmount = 10
+
+#
+#    ItemUpgrade.Earn.PvPKill.KillingBlowBonus
+#        Description: Bonus essence for landing the killing blow
+#        Default:     5
+#        Range:       0 - 50
+#
+ItemUpgrade.Earn.PvPKill.KillingBlowBonus = 5
+
+#
+#    ItemUpgrade.Earn.Quest.EssencePerQuest
+#        Description: Essence earned per quest completion
+#        Default:     25
+#        Range:       5 - 200
+#
+ItemUpgrade.Earn.Quest.EssencePerQuest = 25
+
+#
+#    ItemUpgrade.Earn.Quest.DailyMultiplier
+#        Description: Multiplier for daily quest essence rewards
+#        Default:     2.0 (daily quests give double essence)
+#        Range:       1.0 - 5.0
+#
+ItemUpgrade.Earn.Quest.DailyMultiplier = 2.0
+
+# -------------------------------------------------------------------------
+# NPC Configuration
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.NPC.Curator
+#        Description: NPC entry ID for the Upgrade Curator
+#                     Provides information, guides, and progression tracking
+#        Default:     600007
+#
+ItemUpgrade.NPC.Curator = 600007
+
+#
+#    ItemUpgrade.NPC.Vendor
+#        Description: NPC entry ID for the Upgrade Vendor
+#                     Handles upgrades, token exchange, and catalog
+#        Default:     600006
+#
+ItemUpgrade.NPC.Vendor = 600006
+
+# -------------------------------------------------------------------------
+# Announcements & Notifications
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Announce.MaxLevelReached
+#        Description: Announce when a player fully upgrades an item to max level
+#        Default:     1 (Enabled - zone announcement)
+#                     0 (Disabled - private notification)
+#
+ItemUpgrade.Announce.MaxLevelReached = 1
+
+#
+#    ItemUpgrade.Announce.LegendaryUpgrade
+#        Description: Announce when a player upgrades a Legendary item
+#        Default:     1 (Enabled - zone announcement)
+#                     0 (Disabled)
+#
+ItemUpgrade.Announce.LegendaryUpgrade = 1
+
+#
+#    ItemUpgrade.Announce.MasteryRankup
+#        Description: Announce when a player ranks up in artifact mastery
+#        Default:     1 (Enabled - zone announcement)
+#                     0 (Disabled)
+#
+ItemUpgrade.Announce.MasteryRankup = 1
+
+# -------------------------------------------------------------------------
+# Testing & Debug
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Debug.Enable
+#        Description: Enable debug logging for upgrade system
+#        Default:     0 (Disabled)
+#                     1 (Enabled - log upgrades and cost calculations)
+#                     2 (Verbose - log all interactions)
+#
+ItemUpgrade.Debug.Enable = 0
+
+#
+#    ItemUpgrade.Debug.LogFile
+#        Description: Log file path for debug output
+#        Default:     "logs/item_upgrade_system.log"
+#
+ItemUpgrade.Debug.LogFile = "logs/item_upgrade_system.log"
+
+#
+#    ItemUpgrade.Test.EnableTestCommand
+#        Description: Enable .upgradeprog testset command for testing
+#                     Grants class-specific gear and currency for testing
+#        Default:     1 (Enabled)
+#                     0 (Disabled - command unavailable)
+#
+ItemUpgrade.Test.EnableTestCommand = 1
+
+#
+#    ItemUpgrade.Test.EssenceGrant
+#        Description: Amount of essence granted by .upgradeprog testset
+#        Default:     5000
+#        Range:       1000 - 100000
+#
+ItemUpgrade.Test.EssenceGrant = 5000
+
+#
+#    ItemUpgrade.Test.TokensGrant
+#        Description: Amount of tokens granted by .upgradeprog testset
+#        Default:     2500
+#        Range:       500 - 50000
+#
+ItemUpgrade.Test.TokensGrant = 2500
+
+
+###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################
 #
@@ -2091,13 +2529,21 @@ DungeonQuest.Debug.LogFile = "logs/dungeon_quest_system.log"
 #    - AoE Loot: Kill multiple mobs, loot one corpse
 #    - Hotspots: Use GM command .hotspot spawnhere
 #    - HLBG: Queue via NPC or use .hlbg commands
+#    - Item Upgrade: Use .upgradeprog testset to get test gear
 #
 # 4. Client addon support:
 #    - Hotspots: Optional addon for "XP+" text display on map
 #    - HLBG: DCHinterlandBG addon for queue/stats/info panels
+#    - Item Upgrade: No addon required (uses standard gossip UI)
 #
 # 5. Database requirements:
 #    - Hotspots: No dedicated table required; use var/map_bounds.csv or client data for spawn locations
 #    - HLBG: hlbg_history table (for persistent statistics)
+#    - Item Upgrade: 23 character DB tables (dc_item_upgrades, dc_player_artifact_mastery, etc.)
+#
+# 6. Item Upgrade System Notes:
+#    - "Artifact Mastery" system is separate from DarkChaos Prestige System
+#    - Prestige = Level 255 reset with stat bonuses (Section 4)
+#    - Artifact Mastery = Item upgrade rank progression (Section 7)
 #
 ###########################################################################
