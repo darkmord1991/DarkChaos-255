@@ -279,7 +279,6 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    CharacterDatabase.RollbackTransaction(trans);
                     LOG_ERROR("module", "ItemUpgrade: Synthesis failed: {}", e.what());
                     return false;
                 }
