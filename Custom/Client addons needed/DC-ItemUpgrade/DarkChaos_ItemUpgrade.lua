@@ -36,6 +36,7 @@ local INVENTORY_SLOTS = {
 local selectedItem = nil;
 local currentItemStats = nil;
 local targetUpgradeLevel = 0;
+local mainFrame;
 
 -- Cached frame references
 local frameItemName;
@@ -49,7 +50,15 @@ local frameStatsFrameCurrentStatsValue;
 local frameStatsFrameUpgradedStatsValue;
 local frameUpgradeButton;
 
+local function EnsureMainFrame()
+    if not mainFrame then
+        mainFrame = _G.DarkChaos_ItemUpgradeFrame;
+    end;
+    return mainFrame;
+end;
+
 local function CacheFrameReferences()
+    EnsureMainFrame();
     frameItemName = _G.DarkChaos_ItemUpgradeFrameItemName;
     frameItemSlot = _G.DarkChaos_ItemUpgradeFrameItemSlot;
     frameItemLevel = _G.DarkChaos_ItemUpgradeFrameItemLevel;
@@ -132,30 +141,39 @@ function DarkChaos_ItemUpgrade.ScanTooltipForStats(itemLink, outputTable)
 end
 
 -- Main UI functions
-function DarkChaos_ItemUpgrade_OnLoad()
+function DarkChaos_ItemUpgrade_OnLoad(frame)
+    mainFrame = frame or EnsureMainFrame();
     CacheFrameReferences();
 
     -- Register events
-    DarkChaos_ItemUpgradeFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
-    DarkChaos_ItemUpgradeFrame:RegisterEvent("BAG_UPDATE");
-    DarkChaos_ItemUpgradeFrame:RegisterEvent("UNIT_INVENTORY_CHANGED");
+    if frame then
+        frame:RegisterEvent("PLAYER_ENTERING_WORLD");
+        frame:RegisterEvent("BAG_UPDATE");
+        frame:RegisterEvent("UNIT_INVENTORY_CHANGED");
+        frame:SetScript("OnEvent", DarkChaos_ItemUpgrade_OnEvent);
+        frame:RegisterForDrag("LeftButton");
+        frame:SetScript("OnDragStart", function(self) self:StartMoving(); end);
+        frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); end);
+    end;
 
     -- Make frame movable
-    DarkChaos_ItemUpgradeFrame:RegisterForDrag("LeftButton");
-    DarkChaos_ItemUpgradeFrame:SetScript("OnDragStart", function() this:StartMoving() end);
-    DarkChaos_ItemUpgradeFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end);
 
     -- Initialize UI
     DarkChaos_ItemUpgrade_UpdateUI();
 end
 
-function DarkChaos_ItemUpgrade_OnHide()
+function DarkChaos_ItemUpgrade_OnHide(frame)
     -- Hide inventory frame when main frame is hidden
-    DarkChaos_ItemUpgradeFrameInventoryFrame:Hide();
+    local inventoryFrame = _G.DarkChaos_ItemUpgradeFrameInventoryFrame;
+    if inventoryFrame then
+        inventoryFrame:Hide();
+    end;
 end
 
 function DarkChaos_ItemUpgrade_ShowFrame()
-    DarkChaos_ItemUpgradeFrame:Show();
+    local frame = EnsureMainFrame();
+    if not frame then return end;
+    frame:Show();
     DarkChaos_ItemUpgrade_UpdateUI();
 end
 
@@ -164,7 +182,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
         CacheFrameReferences();
     end;
 
-    local frame = DarkChaos_ItemUpgradeFrame;
+    local frame = EnsureMainFrame();
+    if not frame then return end;
 
     if selectedItem then
         -- Update item display
@@ -449,12 +468,16 @@ end
 -- Inventory frame functions
 function DarkChaos_ItemUpgrade_ShowInventoryFrame()
     local inventoryFrame = DarkChaos_ItemUpgradeFrameInventoryFrame;
+    if not inventoryFrame then return end;
 
     -- Request upgradable items from server
     DarkChaos_ItemUpgrade_SendPacket(SERVER_OPCODES.CMSG_ITEM_UPGRADE_INVENTORY_SCAN, {});
 
     -- Show loading message
-    DarkChaos_ItemUpgradeFrameInventoryFrameTitle:SetText("Loading upgradable items...");
+    local title = _G.DarkChaos_ItemUpgradeFrameInventoryFrameTitle;
+    if title then
+        title:SetText("Loading upgradable items...");
+    end;
 
     inventoryFrame:Show();
 end
@@ -548,14 +571,11 @@ function DarkChaos_ItemUpgrade_OnUpgradeClick()
 end
 
 -- Event handlers
-function DarkChaos_ItemUpgrade_OnEvent(event, arg1)
+function DarkChaos_ItemUpgrade_OnEvent(self, event, arg1)
     if event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED" then
         -- Refresh inventory display if inventory frame is shown
-        if DarkChaos_ItemUpgradeFrameInventoryFrame:IsShown() then
+        if DarkChaos_ItemUpgradeFrameInventoryFrame and DarkChaos_ItemUpgradeFrameInventoryFrame:IsShown() then
             DarkChaos_ItemUpgrade_ShowInventoryFrame();
         end
     end
 end
-
--- Hook into the frame's event handler
-DarkChaos_ItemUpgradeFrame:SetScript("OnEvent", DarkChaos_ItemUpgrade_OnEvent);

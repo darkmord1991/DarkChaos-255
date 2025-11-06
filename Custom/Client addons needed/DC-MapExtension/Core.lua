@@ -1839,8 +1839,9 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
 
             if addon.currentMap and addon.loadedTextures then
                 local expectedType = addon.currentMap
+                local maxTiles = NUM_WORLDMAP_DETAIL_TILES or 16
 
-                for i = 1, (NUM_WORLDMAP_DETAIL_TILES or 16) do
+                for i = 1, maxTiles do
                     local tile = _G["WorldMapDetailTile" .. i]
                     if tile then
                         if i <= #addon.loadedTextures then

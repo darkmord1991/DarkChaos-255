@@ -7,15 +7,15 @@
 ## OptionalDeps: DC_DebugUtils
 
 ..\DC_DebugUtils.lua
-
-# Use the 3.3.5a-compatible core implementation by default
-Core_wrath.lua
-
+ 
 # Safe replacement libraries (Astrolabe) and helpers
 Libs/LibStub/LibStub.lua
 Libs/Astrolabe/DongleStub.lua
 Libs/Astrolabe/Astrolabe.lua
 Libs/Astrolabe/AstrolabeMapMonitor.lua
+
+# Use the 3.3.5a-compatible core implementation by default
+Core_wrath.lua
 
 # Enhanced modules
 ProximityTimer.lua

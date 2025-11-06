@@ -45,48 +45,48 @@
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="DarkChaos_ItemUpgradeFrameItemName" inherits="GameFontNormalLarge" justifyH="LEFT">
+                <FontString name="$parentItemName" inherits="GameFontNormalLarge" justifyH="LEFT">
                     <Size>
                         <AbsDimension x="300" y="20"/>
                     </Size>
                     <Anchors>
-                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemSlot" relativePoint="TOPRIGHT">
+                        <Anchor point="TOPLEFT" relativeTo="$parentItemSlot" relativePoint="TOPRIGHT">
                             <Offset>
                                 <AbsDimension x="10" y="0"/>
                             </Offset>
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="DarkChaos_ItemUpgradeFrameItemLevel" inherits="GameFontNormal" justifyH="LEFT">
+                <FontString name="$parentItemLevel" inherits="GameFontNormal" justifyH="LEFT">
                     <Size>
                         <AbsDimension x="300" y="16"/>
                     </Size>
                     <Anchors>
-                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemName" relativePoint="BOTTOMLEFT">
+                        <Anchor point="TOPLEFT" relativeTo="$parentItemName" relativePoint="BOTTOMLEFT">
                             <Offset>
                                 <AbsDimension x="0" y="-2"/>
                             </Offset>
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="DarkChaos_ItemUpgradeFrameCurrentLevel" inherits="GameFontNormal" justifyH="LEFT" text="Upgrade Level:">
+                <FontString name="$parentCurrentLevel" inherits="GameFontNormal" justifyH="LEFT" text="Upgrade Level:">
                     <Size>
                         <AbsDimension x="150" y="16"/>
                     </Size>
                     <Anchors>
-                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemLevel" relativePoint="BOTTOMLEFT">
+                        <Anchor point="TOPLEFT" relativeTo="$parentItemLevel" relativePoint="BOTTOMLEFT">
                             <Offset>
                                 <AbsDimension x="0" y="-10"/>
                             </Offset>
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="DarkChaos_ItemUpgradeFrameCurrentLevelValue" inherits="GameFontHighlight" justifyH="LEFT">
+                <FontString name="$parentCurrentLevelValue" inherits="GameFontHighlight" justifyH="LEFT">
                     <Size>
                         <AbsDimension x="100" y="16"/>
                     </Size>
                     <Anchors>
-                        <Anchor point="LEFT" relativeTo="DarkChaos_ItemUpgradeFrameCurrentLevel" relativePoint="RIGHT">
+                        <Anchor point="LEFT" relativeTo="$parentCurrentLevel" relativePoint="RIGHT">
                             <Offset>
                                 <AbsDimension x="5" y="0"/>
                             </Offset>
@@ -138,7 +138,7 @@
                     <AbsDimension x="200" y="17"/>
                 </Size>
                 <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameCurrentLevel" relativePoint="BOTTOMLEFT">
+                    <Anchor point="TOPLEFT" relativeTo="$parentCurrentLevel" relativePoint="BOTTOMLEFT">
                         <Offset>
                             <AbsDimension x="0" y="-20"/>
                         </Offset>
@@ -395,10 +395,10 @@
         </Frames>
         <Scripts>
             <OnLoad>
-                DarkChaos_ItemUpgrade_OnLoad();
+                DarkChaos_ItemUpgrade_OnLoad(self);
             </OnLoad>
             <OnHide>
-                DarkChaos_ItemUpgrade_OnHide();
+                DarkChaos_ItemUpgrade_OnHide(self);
             </OnHide>
         </Scripts>
     </Frame>
