@@ -37,6 +37,31 @@ local selectedItem = nil;
 local currentItemStats = nil;
 local targetUpgradeLevel = 0;
 
+-- Cached frame references
+local frameItemName;
+local frameItemSlot;
+local frameItemLevel;
+local frameCurrentLevelValue;
+local frameUpgradeSlider;
+local frameCostFrameEssenceCost;
+local frameCostFrameTokenCost;
+local frameStatsFrameCurrentStatsValue;
+local frameStatsFrameUpgradedStatsValue;
+local frameUpgradeButton;
+
+local function CacheFrameReferences()
+    frameItemName = _G.DarkChaos_ItemUpgradeFrameItemName;
+    frameItemSlot = _G.DarkChaos_ItemUpgradeFrameItemSlot;
+    frameItemLevel = _G.DarkChaos_ItemUpgradeFrameItemLevel;
+    frameCurrentLevelValue = _G.DarkChaos_ItemUpgradeFrameCurrentLevelValue;
+    frameUpgradeSlider = _G.DarkChaos_ItemUpgradeFrameUpgradeSlider;
+    frameCostFrameEssenceCost = _G.DarkChaos_ItemUpgradeFrameCostFrameEssenceCost;
+    frameCostFrameTokenCost = _G.DarkChaos_ItemUpgradeFrameCostFrameTokenCost;
+    frameStatsFrameCurrentStatsValue = _G.DarkChaos_ItemUpgradeFrameStatsFrameCurrentStatsValue;
+    frameStatsFrameUpgradedStatsValue = _G.DarkChaos_ItemUpgradeFrameStatsFrameUpgradedStatsValue;
+    frameUpgradeButton = _G.DarkChaos_ItemUpgradeFrameUpgradeButton;
+end;
+
 -- Utility functions
 local function FormatNumber(num)
     if not num then return "0" end;
@@ -108,6 +133,8 @@ end
 
 -- Main UI functions
 function DarkChaos_ItemUpgrade_OnLoad()
+    CacheFrameReferences();
+
     -- Register events
     DarkChaos_ItemUpgradeFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
     DarkChaos_ItemUpgradeFrame:RegisterEvent("BAG_UPDATE");
@@ -133,6 +160,10 @@ function DarkChaos_ItemUpgrade_ShowFrame()
 end
 
 function DarkChaos_ItemUpgrade_UpdateUI()
+    if not frameItemName then
+        CacheFrameReferences();
+    end;
+
     local frame = DarkChaos_ItemUpgradeFrame;
 
     if selectedItem then
@@ -189,14 +220,18 @@ function DarkChaos_ItemUpgrade_GetItemLevel(itemLink)
 end
 
 function DarkChaos_ItemUpgrade_UpdateCosts()
+    if not frameCostFrameEssenceCost then
+        CacheFrameReferences();
+    end;
+
     if not selectedItem or not currentItemStats then return end;
 
     local currentLevel = currentItemStats.upgradeLevel;
     local levelsToUpgrade = targetUpgradeLevel - currentLevel;
 
     if levelsToUpgrade <= 0 then
-        DarkChaos_ItemUpgradeFrameCostFrameEssenceCost:SetText("Essence Cost: 0");
-        DarkChaos_ItemUpgradeFrameCostFrameTokenCost:SetText("Token Cost: 0");
+        frameCostFrameEssenceCost:SetText("Essence Cost: 0");
+        frameCostFrameTokenCost:SetText("Token Cost: 0");
         return;
     end
 
@@ -214,23 +249,27 @@ function DarkChaos_ItemUpgrade_UpdateCosts()
         end
     end
 
-    DarkChaos_ItemUpgradeFrameCostFrameEssenceCost:SetText("Essence Cost: " .. FormatNumber(totalEssence));
-    DarkChaos_ItemUpgradeFrameCostFrameTokenCost:SetText("Token Cost: " .. FormatNumber(totalTokens));
+    frameCostFrameEssenceCost:SetText("Essence Cost: " .. FormatNumber(totalEssence));
+    frameCostFrameTokenCost:SetText("Token Cost: " .. FormatNumber(totalTokens));
 end
 
 function DarkChaos_ItemUpgrade_UpdateStatsDisplay()
+    if not frameStatsFrameCurrentStatsValue then
+        CacheFrameReferences();
+    end;
+
     if not selectedItem then return end;
 
     -- Current stats
     local currentStatsText = GetItemStatsText(selectedItem.itemLink, currentItemStats and currentItemStats.upgradeLevel or 0, false);
-    DarkChaos_ItemUpgradeFrameStatsFrameCurrentStatsValue:SetText(currentStatsText);
+    frameStatsFrameCurrentStatsValue:SetText(currentStatsText);
 
     -- Upgraded stats
     if targetUpgradeLevel > (currentItemStats and currentItemStats.upgradeLevel or 0) then
         local upgradedStatsText = GetItemStatsText(selectedItem.itemLink, targetUpgradeLevel, true);
-        DarkChaos_ItemUpgradeFrameStatsFrameUpgradedStatsValue:SetText(upgradedStatsText);
+        frameStatsFrameUpgradedStatsValue:SetText(upgradedStatsText);
     else
-        DarkChaos_ItemUpgradeFrameStatsFrameUpgradedStatsValue:SetText("No upgrade selected");
+        frameStatsFrameUpgradedStatsValue:SetText("No upgrade selected");
     end
 end
 
@@ -462,18 +501,28 @@ function DarkChaos_ItemUpgrade_CreateInventoryButton(index, bag, slot, itemLink)
 end
 
 -- Slider functions
-function DarkChaos_ItemUpgrade_OnSliderValueChanged()
-    targetUpgradeLevel = DarkChaos_ItemUpgradeFrameUpgradeSlider:GetValue();
-    getglobal(DarkChaos_ItemUpgradeFrameUpgradeSlider:GetName() .. "Text"):SetText("Target Level: " .. targetUpgradeLevel);
+function DarkChaos_ItemUpgrade_OnSliderValueChanged(self, value)
+    if not frameUpgradeSlider then
+        CacheFrameReferences();
+    end;
+
+    local slider = self or frameUpgradeSlider or _G.DarkChaos_ItemUpgradeFrameUpgradeSlider;
+    if not slider then return end;
+
+    targetUpgradeLevel = value or slider:GetValue() or 0;
+    getglobal(slider:GetName() .. "Text"):SetText("Target Level: " .. targetUpgradeLevel);
 
     DarkChaos_ItemUpgrade_UpdateCosts();
     DarkChaos_ItemUpgrade_UpdateStatsDisplay();
 
     -- Enable/disable upgrade button
-    if selectedItem and targetUpgradeLevel > (currentItemStats and currentItemStats.upgradeLevel or 0) then
-        DarkChaos_ItemUpgradeFrameUpgradeButton:Enable();
-    else
-        DarkChaos_ItemUpgradeFrameUpgradeButton:Disable();
+    local upgradeButton = frameUpgradeButton or _G.DarkChaos_ItemUpgradeFrameUpgradeButton;
+    if upgradeButton then
+        if selectedItem and targetUpgradeLevel > (currentItemStats and currentItemStats.upgradeLevel or 0) then
+            upgradeButton:Enable();
+        else
+            upgradeButton:Disable();
+        end
     end
 end
 

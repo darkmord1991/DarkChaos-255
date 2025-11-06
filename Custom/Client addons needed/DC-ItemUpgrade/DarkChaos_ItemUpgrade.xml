@@ -45,6 +45,54 @@
                         </Anchor>
                     </Anchors>
                 </FontString>
+                <FontString name="DarkChaos_ItemUpgradeFrameItemName" inherits="GameFontNormalLarge" justifyH="LEFT">
+                    <Size>
+                        <AbsDimension x="300" y="20"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemSlot" relativePoint="TOPRIGHT">
+                            <Offset>
+                                <AbsDimension x="10" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="DarkChaos_ItemUpgradeFrameItemLevel" inherits="GameFontNormal" justifyH="LEFT">
+                    <Size>
+                        <AbsDimension x="300" y="16"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemName" relativePoint="BOTTOMLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="-2"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="DarkChaos_ItemUpgradeFrameCurrentLevel" inherits="GameFontNormal" justifyH="LEFT" text="Upgrade Level:">
+                    <Size>
+                        <AbsDimension x="150" y="16"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemLevel" relativePoint="BOTTOMLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="-10"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="DarkChaos_ItemUpgradeFrameCurrentLevelValue" inherits="GameFontHighlight" justifyH="LEFT">
+                    <Size>
+                        <AbsDimension x="100" y="16"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="LEFT" relativeTo="DarkChaos_ItemUpgradeFrameCurrentLevel" relativePoint="RIGHT">
+                            <Offset>
+                                <AbsDimension x="5" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
             </Layer>
         </Layers>
         <Frames>
@@ -60,7 +108,7 @@
             </Button>
 
             <!-- Item Selection Area -->
-            <Frame name="$parentItemSlot" inherits="ItemButtonTemplate">
+            <Button name="$parentItemSlot" inherits="ItemButtonTemplate">
                 <Size>
                     <AbsDimension x="60" y="60"/>
                 </Size>
@@ -73,8 +121,8 @@
                 </Anchors>
                 <Scripts>
                     <OnLoad>
-                        this:RegisterForClicks("LeftButtonUp", "RightButtonUp");
-                        this:RegisterForDrag("LeftButton");
+                        self:RegisterForClicks("LeftButtonUp", "RightButtonUp");
+                        self:RegisterForDrag("LeftButton");
                     </OnLoad>
                     <OnClick>
                         DarkChaos_ItemUpgrade_OnItemSlotClick();
@@ -83,70 +131,14 @@
                         DarkChaos_ItemUpgrade_OnItemSlotReceiveDrag();
                     </OnReceiveDrag>
                 </Scripts>
-            </Frame>
-
-            <!-- Item Name -->
-            <FontString name="$parentItemName" inherits="GameFontNormalLarge" justifyH="LEFT">
-                <Size>
-                    <AbsDimension x="300" y="20"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentItemSlot" relativePoint="TOPRIGHT">
-                        <Offset>
-                            <AbsDimension x="10" y="0"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-            </FontString>
-
-            <!-- Item Level -->
-            <FontString name="$parentItemLevel" inherits="GameFontNormal" justifyH="LEFT">
-                <Size>
-                    <AbsDimension x="300" y="16"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentItemName" relativePoint="BOTTOMLEFT">
-                        <Offset>
-                            <AbsDimension x="0" y="-2"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-            </FontString>
-
-            <!-- Current Upgrade Level -->
-            <FontString name="$parentCurrentLevel" inherits="GameFontNormal" justifyH="LEFT" text="Upgrade Level:">
-                <Size>
-                    <AbsDimension x="150" y="16"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentItemLevel" relativePoint="BOTTOMLEFT">
-                        <Offset>
-                            <AbsDimension x="0" y="-10"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-            </FontString>
-
-            <FontString name="$parentCurrentLevelValue" inherits="GameFontHighlight" justifyH="LEFT">
-                <Size>
-                    <AbsDimension x="100" y="16"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="LEFT" relativeTo="$parentCurrentLevel" relativePoint="RIGHT">
-                        <Offset>
-                            <AbsDimension x="5" y="0"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-            </FontString>
-
+            </Button>
             <!-- Upgrade Level Slider -->
             <Slider name="$parentUpgradeSlider" inherits="OptionsSliderTemplate">
                 <Size>
                     <AbsDimension x="200" y="17"/>
                 </Size>
                 <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentCurrentLevel" relativePoint="BOTTOMLEFT">
+                    <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameCurrentLevel" relativePoint="BOTTOMLEFT">
                         <Offset>
                             <AbsDimension x="0" y="-20"/>
                         </Offset>
@@ -154,15 +146,16 @@
                 </Anchors>
                 <Scripts>
                     <OnLoad>
-                        this:SetMinMaxValues(0, 15);
-                        this:SetValueStep(1);
-                        this:SetValue(0);
-                        getglobal(this:GetName().."Text"):SetText("Target Level: 0");
-                        getglobal(this:GetName().."Low"):SetText("0");
-                        getglobal(this:GetName().."High"):SetText("15");
+                        self:SetMinMaxValues(0, 15);
+                        self:SetValueStep(1);
+                        self:SetValue(0);
+                        getglobal(self:GetName().."Text"):SetText("Target Level: 0");
+                        getglobal(self:GetName().."Low"):SetText("0");
+                        getglobal(self:GetName().."High"):SetText("15");
+                        DarkChaos_ItemUpgrade_OnSliderValueChanged(self, self:GetValue());
                     </OnLoad>
                     <OnValueChanged>
-                        DarkChaos_ItemUpgrade_OnSliderValueChanged();
+                        DarkChaos_ItemUpgrade_OnSliderValueChanged(self, value);
                     </OnValueChanged>
                 </Scripts>
             </Slider>

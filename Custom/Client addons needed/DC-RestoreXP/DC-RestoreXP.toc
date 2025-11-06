@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: DC Restore XP Bar
+## Title: DC-Restore XP Bar
 ## Notes: Restores XP bar for servers that raise the max level beyond the stock client
 ## Author: DarkChaos team
 ## Version: 1.0

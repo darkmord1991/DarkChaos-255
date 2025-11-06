@@ -1,10 +1,10 @@
-## Interface: 30400
-## Title: DarkChaos Item Upgrade
+## Interface: 30300
+## Title: DC-Item Upgrade
 ## Notes: Retail-like item upgrade interface for AzerothCore
 ## Author: DarkChaos Development Team
 ## Version: 1.0.0
 ## SavedVariables:
 
-DarkChaos_ItemUpgrade.xml
 DarkChaos_ItemUpgrade.lua
+DarkChaos_ItemUpgrade.xml
 DarkChaos_ItemUpgrade_Test.lua

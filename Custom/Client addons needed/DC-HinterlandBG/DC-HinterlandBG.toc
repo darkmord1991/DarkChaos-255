@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: DC HLBG Addon
+## Title: DC-HLBG Addon
 ## Notes: Battleground addon with HUD, statistics, and match history
 ## Author: DC-255
 ## Version: 1.3.0

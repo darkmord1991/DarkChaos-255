@@ -865,16 +865,13 @@ local function CreatePOIMarkers(mapType)
             GameTooltip:Hide()
         end)
         
-            marker:Show()
-            table.insert(addon.poiMarkers, marker)
-            Debug("Created POI marker:", poi.name, "at", poiX, poiY)
-        end
+        marker:Show()
+        table.insert(addon.poiMarkers, marker)
+        Debug("Created POI marker:", poi.name, "at", pixelX, pixelY)
     end
-    
-    Debug("Created", #addon.poiMarkers, "POI markers for", mapType)
-end
 
-----------------------------------------------
+    Debug("Created", #addon.poiMarkers, "POI markers for", mapType)
+end----------------------------------------------
 -- Texture Loading
 ----------------------------------------------
 local function ClearTiles()
@@ -1837,36 +1834,31 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     -- TILE WATCHDOG: Continuously hide non-custom tiles that Blizzard adds
     if not addon.nativeMapActive then
         tileWatchdogTimer = tileWatchdogTimer + elapsed
-        if tileWatchdogTimer >= 0.1 then  -- Check 10 times per second
+        if tileWatchdogTimer >= 0.1 then -- Check 10 times per second
             tileWatchdogTimer = 0
+
             if addon.currentMap and addon.loadedTextures then
-            local expectedType = addon.currentMap
-            
-            -- Hide tiles that shouldn't be shown
-            for i = 1, NUM_WORLDMAP_DETAIL_TILES or 16 do
-                local tile = _G["WorldMapDetailTile" .. i]
-                if tile then
-                    if i <= #addon.loadedTextures then
-                        -- This tile SHOULD be showing our custom texture
-                        if not tile._DCMapCustom or tile._DCMapType ~= expectedType then
-                            -- Blizzard overwrote our tile - reclaim it
-                            tile:Hide()  -- Hide it first
-                            if DCMapExtensionDB.debug and math.random() < 0.01 then  -- 1% chance to log
-                                Debug("Watchdog: Hiding non-custom tile", i)
+                local expectedType = addon.currentMap
+
+                for i = 1, (NUM_WORLDMAP_DETAIL_TILES or 16) do
+                    local tile = _G["WorldMapDetailTile" .. i]
+                    if tile then
+                        if i <= #addon.loadedTextures then
+                            if not tile._DCMapCustom or tile._DCMapType ~= expectedType then
+                                tile:Hide()
+                                if DCMapExtensionDB.debug and math.random() < 0.01 then -- 1% chance to log
+                                    Debug("Watchdog: Hiding non-custom tile", i)
+                                end
+                            elseif not tile:IsShown() then
+                                tile:Show()
                             end
-                        elseif not tile:IsShown() then
-                            -- Our tile got hidden - show it again
-                            tile:Show()
-                        end
-                    else
-                        -- This tile should NOT be shown at all
-                        if tile:IsShown() then
+                        elseif tile:IsShown() then
                             tile:Hide()
                         end
                     end
                 end
             end
-            
+
             -- AGGRESSIVE: Hide any unknown children of WorldMapDetailFrame
             -- that aren't our tiles or DC-MapExtension frames
             if WorldMapDetailFrame then
@@ -1874,11 +1866,9 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
                     local child = select(i, WorldMapDetailFrame:GetChildren())
                     if child and child:IsShown() then
                         local name = child:GetName() or ""
-                        -- Don't hide our own frames or essential Blizzard tiles
-                        if not name:find("DCMap_") and 
+                        if not name:find("DCMap_") and
                            not name:find("WorldMapDetailTile") and
                            not name:find("WorldMapButton") then
-                            -- This might be a POI or other addon frame - hide it
                             child:Hide()
                             if DCMapExtensionDB.debug and math.random() < 0.05 then
                                 Debug("Watchdog: Hiding unknown child:", name or "Unnamed")
@@ -1886,7 +1876,6 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
                         end
                     end
                 end
-            end
             end
         end
     end
@@ -1909,7 +1898,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
             CreateHotspotMarkers(addon.currentMap)
         end
     end
-end)
+end
 
 ----------------------------------------------
 -- Interface Options
