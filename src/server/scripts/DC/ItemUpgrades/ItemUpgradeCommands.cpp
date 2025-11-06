@@ -40,7 +40,7 @@ private:
         // INIT: Get player's current currency
         if (subcommand == "init")
         {
-            uint32 playerGuid = player->GetGUIDLow();
+            uint32 playerGuid = player->GetGUID().GetCounter();
             
             QueryResult tokens_result = CharacterDatabase.Query(
                 "SELECT amount FROM dc_item_upgrade_currency WHERE player_guid = %u AND currency_type = 1",
@@ -79,7 +79,7 @@ private:
                 return true;
             }
 
-            uint32 itemGUID = item->GetGUIDLow();
+            uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetItemLevel(player);
 
             QueryResult result = CharacterDatabase.Query(
@@ -135,8 +135,8 @@ private:
                 return true;
             }
 
-            uint32 itemGUID = item->GetGUIDLow();
-            uint32 playerGuid = player->GetGUIDLow();
+            uint32 itemGUID = item->GetGUID().GetCounter();
+            uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetItemLevel(player);
 
             // Get current upgrade state
