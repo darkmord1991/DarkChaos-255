@@ -17,7 +17,7 @@ public:
     {
         static const std::vector<ChatCommandBuilder> dcupgradeCommandTable =
         {
-            ChatCommandBuilder("dcupgrade", HandleItemUpgradeCommand, Console::No),
+            ChatCommandBuilder("dcupgrade", HandleItemUpgradeCommand, 0, Console::No),
         };
         return dcupgradeCommandTable;
     }
