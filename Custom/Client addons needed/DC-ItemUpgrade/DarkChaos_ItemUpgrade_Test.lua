@@ -2,7 +2,8 @@
 -- Run this to verify the addon loads and basic functions work
 
 local function TestAddonLoading()
-    if not DarkChaos_ItemUpgrade then
+    -- Check if addon table exists globally
+    if not _G.DarkChaos_ItemUpgrade then
         DEFAULT_CHAT_FRAME:AddMessage("ERROR: DarkChaos_ItemUpgrade addon not loaded!", 1, 0, 0);
         return false;
     end
@@ -23,11 +24,11 @@ end
 
 local function TestFunctions()
     local tests = {
-        {name = "DarkChaos_ItemUpgrade_OnLoad", func = DarkChaos_ItemUpgrade_OnLoad},
-        {name = "DarkChaos_ItemUpgrade_ShowFrame", func = DarkChaos_ItemUpgrade_ShowFrame},
-        {name = "DarkChaos_ItemUpgrade_UpdateUI", func = DarkChaos_ItemUpgrade_UpdateUI},
-        {name = "DarkChaos_ItemUpgrade_OnSliderValueChanged", func = DarkChaos_ItemUpgrade_OnSliderValueChanged},
-        {name = "DarkChaos_ItemUpgrade_OnUpgradeClick", func = DarkChaos_ItemUpgrade_OnUpgradeClick},
+        {name = "DarkChaos_ItemUpgrade_OnLoad", func = _G.DarkChaos_ItemUpgrade_OnLoad},
+        {name = "DarkChaos_ItemUpgrade_ShowFrame", func = _G.DarkChaos_ItemUpgrade_ShowFrame},
+        {name = "DarkChaos_ItemUpgrade_UpdateUI", func = _G.DarkChaos_ItemUpgrade_UpdateUI},
+        {name = "DarkChaos_ItemUpgrade_OnSliderValueChanged", func = _G.DarkChaos_ItemUpgrade_OnSliderValueChanged},
+        {name = "DarkChaos_ItemUpgrade_OnUpgradeClick", func = _G.DarkChaos_ItemUpgrade_OnUpgradeClick},
     };
 
     local passed = 0;
@@ -45,6 +46,16 @@ local function TestFunctions()
     return passed == total;
 end
 
+local function TestSlashCommands()
+    if not SlashCmdList["DCUPGRADE"] then
+        DEFAULT_CHAT_FRAME:AddMessage("ERROR: Slash command /dcupgrade not registered!", 1, 0, 0);
+        return false;
+    end
+
+    DEFAULT_CHAT_FRAME:AddMessage("Slash commands registered successfully!", 0, 1, 0);
+    return true;
+end
+
 -- Slash command for testing
 SLASH_DCUPGRADETEST1 = "/dcupgradetest";
 SlashCmdList["DCUPGRADETEST"] = function()
@@ -53,8 +64,9 @@ SlashCmdList["DCUPGRADETEST"] = function()
     local addonTest = TestAddonLoading();
     local uiTest = TestUILoading();
     local funcTest = TestFunctions();
+    local slashTest = TestSlashCommands();
 
-    if addonTest and uiTest and funcTest then
+    if addonTest and uiTest and funcTest and slashTest then
         DEFAULT_CHAT_FRAME:AddMessage("All tests passed! Addon is ready to use.", 0, 1, 0);
         DEFAULT_CHAT_FRAME:AddMessage("Type /dcupgrade to open the interface.", 0, 1, 0);
     else

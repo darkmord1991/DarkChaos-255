@@ -39,6 +39,7 @@ local addon = {
     hotspotMarkers = {},
     currentMap = nil,
     forcedMap = nil,
+    nativeMapActive = true,
     initialized = false,
     lastDebugMap = nil,
     lastDebugTime = 0,
@@ -1529,7 +1530,8 @@ end
 function addon:HideCustomMap()
     Debug("HideCustomMap called")
     local wasNative = self.nativeMapActive
-    self.nativeMapActive = false
+    -- Assume native map should resume once custom overlay is hidden
+    self.nativeMapActive = true
 
     -- Hide custom frames if we were using stitched tiles
     if not wasNative and self.stitchFrame then
@@ -1899,7 +1901,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
             CreateHotspotMarkers(addon.currentMap)
         end
     end
-end
+end)
 
 ----------------------------------------------
 -- Interface Options

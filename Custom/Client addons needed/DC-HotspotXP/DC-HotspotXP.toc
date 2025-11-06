@@ -6,7 +6,7 @@
 ## SavedVariables: HotspotDisplayDB
 ## OptionalDeps: DC_DebugUtils
 
-..\DC_DebugUtils.lua
+Libs/DC_DebugUtils.lua
  
 # Safe replacement libraries (Astrolabe) and helpers
 Libs/LibStub/LibStub.lua
