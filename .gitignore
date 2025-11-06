@@ -113,3 +113,5 @@ apps/git_tools/README.md
 apps/git_tools/ssh-config.json
 apps/git_tools/ssh-sync-and-build.ps1
 Custom/Custom feature SQLs/acore_world.sql
+Custom/Custom feature SQLs/acore_chars.sql
+Custom/Retail_Reference/*
