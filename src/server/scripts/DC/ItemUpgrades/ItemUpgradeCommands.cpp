@@ -40,9 +40,6 @@ private:
             return true;
         }
 
-        // DEBUG
-        sLog->outInfo(LOG_FILTER_GENERAL, "DC-ItemUpgrade: Processing command '%s' from player %s", subcommand.c_str(), player->GetName().c_str());
-
         // INIT: Get player's current currency
         if (subcommand == "init")
         {
