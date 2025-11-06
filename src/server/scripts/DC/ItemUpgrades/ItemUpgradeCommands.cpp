@@ -80,7 +80,7 @@ private:
             }
 
             uint32 itemGUID = item->GetGUID().GetCounter();
-            uint32 baseItemLevel = item->GetItemLevel(player);
+            uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
             QueryResult result = CharacterDatabase.Query(
                 "SELECT upgrade_level, tier FROM dc_item_upgrade_state WHERE item_guid = %u",
@@ -137,7 +137,7 @@ private:
 
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 playerGuid = player->GetGUID().GetCounter();
-            uint32 baseItemLevel = item->GetItemLevel(player);
+            uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
