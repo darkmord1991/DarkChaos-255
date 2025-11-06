@@ -46,6 +46,7 @@ void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\D
 void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 void AddItemUpgradeCommandScript(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommand.cpp
+// ItemUpgrade addon communication moved to Eluna: Custom/Eluna scripts/itemupgrade_communication.lua
 void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
 void AddSC_ItemUpgradeMechanics(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Upgrader.cpp
@@ -89,6 +90,7 @@ void AddDCScripts()
     AddSC_npc_dungeon_quest_master();
     AddSC_npc_dungeon_quest_daily_weekly();
     AddItemUpgradeCommandScript();
+    // ItemUpgrade addon communication moved to Eluna script
     AddSC_ItemUpgradeVendor();
     AddSC_ItemUpgradeCurator();
     AddSC_ItemUpgradeMechanics();

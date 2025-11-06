@@ -13,6 +13,7 @@
 // Phase 4A: Core System
 // =====================================================================
 void AddItemUpgradeCommandScript();
+void AddSC_ItemUpgradeCommands();
 void AddSC_ItemUpgradeVendor();
 void AddSC_ItemUpgradeCurator();
 void AddSC_ItemUpgradeMechanics();
@@ -49,6 +50,7 @@ inline void AddSC_ItemUpgradeScripts()
 {
     // Phase 4A: Core
     AddItemUpgradeCommandScript();
+    AddSC_ItemUpgradeCommands();  // Addon communication handler
     AddSC_ItemUpgradeVendor();
     AddSC_ItemUpgradeCurator();
     AddSC_ItemUpgradeMechanics();
