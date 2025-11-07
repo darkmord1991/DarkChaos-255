@@ -16,6 +16,25 @@
 
 ###########################################################################
 #
+#    SECTION 0: ITEM UPGRADE (CLIENT ADDON INTEGRATION)
+#
+#    Controls debug echo and messaging for the DC-ItemUpgrade addon.
+#    The addon listens on system messages by default; enabling the SAY echo
+#    is useful only for debugging or when developing new flows.
+#
+###########################################################################
+
+#
+#    ItemUpgrade.DebugToSay
+#        Description: Echo DCUPGRADE_* responses to SAY in addition to system text
+#                     System messages are always sent; SAY echo is optional and noisy.
+#        Default:     0 (Disabled - clean player chat)
+#                     1 (Enabled  - also echo to SAY for debug)
+#
+ItemUpgrade.DebugToSay = 0
+
+###########################################################################
+#
 #    SECTION 1: AOE LOOT SYSTEM
 #
 #    Allows players to collect loot from multiple nearby corpses with a
