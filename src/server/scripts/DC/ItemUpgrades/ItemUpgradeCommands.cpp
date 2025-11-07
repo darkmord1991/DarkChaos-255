@@ -8,6 +8,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <limits>
 #include "SharedDefines.h"
 
 using Acore::ChatCommands::ChatCommandBuilder;
@@ -62,6 +63,49 @@ private:
             return true;
         }
 
+        auto TranslateAddonBagSlot = [](uint32 extBag, uint32 extSlot, uint8& bagOut, uint8& slotOut) -> bool
+        {
+            if (extSlot > std::numeric_limits<uint8>::max())
+                return false;
+
+            // Direct values already in server representation (e.g. manual commands)
+            if (extBag == INVENTORY_SLOT_BAG_0 ||
+                (extBag >= INVENTORY_SLOT_BAG_START && extBag < INVENTORY_SLOT_BAG_END) ||
+                (extBag >= BANK_SLOT_BAG_START && extBag < BANK_SLOT_BAG_END))
+            {
+                bagOut = static_cast<uint8>(extBag);
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            if (extBag == 0)
+            {
+                uint32 const backpackSlots = INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START;
+                if (extSlot >= backpackSlots)
+                    return false;
+
+                bagOut = INVENTORY_SLOT_BAG_0;
+                slotOut = static_cast<uint8>(INVENTORY_SLOT_ITEM_START + extSlot);
+                return true;
+            }
+
+            if (extBag >= 1 && extBag <= 4)
+            {
+                bagOut = static_cast<uint8>(INVENTORY_SLOT_BAG_START + (extBag - 1));
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            if (extBag >= 5 && extBag <= 11)
+            {
+                bagOut = static_cast<uint8>(BANK_SLOT_BAG_START + (extBag - 5));
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            return false;
+        };
+
         // INIT: Get player's current currency (item count)
         if (subcommand == "init")
         {
@@ -88,17 +132,12 @@ private:
                 return true;
             }
 
-            // Accept addon-style bag indices (0..4) and convert to internal bag positions
             uint8 bag = 0;
             uint8 slot = 0;
-            slot = static_cast<uint8>(extSlot); // expecting 0-based from addon
-            if (extBag <= 4)
+            if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                bag = (extBag == 0) ? INVENTORY_SLOT_BAG_0 : (INVENTORY_SLOT_BAG_START + static_cast<uint8>(extBag - 1));
-            }
-            else
-            {
-                bag = static_cast<uint8>(extBag);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
+                return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
@@ -177,17 +216,12 @@ private:
                 return true;
             }
 
-            // Convert addon-style bag/slot to internal positions
             uint8 bag = 0;
             uint8 slot = 0;
-            slot = static_cast<uint8>(extSlot); // expecting 0-based
-            if (extBag <= 4)
+            if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                bag = (extBag == 0) ? INVENTORY_SLOT_BAG_0 : (INVENTORY_SLOT_BAG_START + static_cast<uint8>(extBag - 1));
-            }
-            else
-            {
-                bag = static_cast<uint8>(extBag);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
+                return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
