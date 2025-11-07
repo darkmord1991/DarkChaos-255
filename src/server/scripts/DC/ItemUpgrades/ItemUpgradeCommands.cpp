@@ -109,7 +109,7 @@ private:
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
             QueryResult result = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier FROM dc_item_upgrade_state WHERE item_guid = %u",
+                "SELECT upgrade_level, tier FROM dc_item_upgrade_state WHERE item_guid = {}",
                 itemGUID
             );
 
@@ -183,7 +183,7 @@ private:
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier FROM dc_item_upgrade_state WHERE item_guid = %u",
+                "SELECT upgrade_level, tier FROM dc_item_upgrade_state WHERE item_guid = {}",
                 itemGUID
             );
 
@@ -212,7 +212,7 @@ private:
 
             // Get upgrade cost
             QueryResult costResult = WorldDatabase.Query(
-                "SELECT token_cost, essence_cost FROM dc_item_upgrade_costs WHERE tier = %u AND upgrade_level = %u",
+                "SELECT token_cost, essence_cost FROM dc_item_upgrade_costs WHERE tier = {} AND upgrade_level = {}",
                 tier, targetLevel
             );
 
@@ -254,8 +254,8 @@ private:
             // Update item state
             CharacterDatabase.Execute(
                 "INSERT INTO dc_item_upgrade_state (item_guid, player_guid, upgrade_level, tier, tokens_invested) "
-                "VALUES (%u, %u, %u, %u, %u) "
-                "ON DUPLICATE KEY UPDATE upgrade_level = %u, tokens_invested = tokens_invested + %u",
+                "VALUES ({}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE upgrade_level = {}, tokens_invested = tokens_invested + {}",
                 itemGUID, playerGuid, targetLevel, tier, tokensNeeded, targetLevel, tokensNeeded
             );
 
