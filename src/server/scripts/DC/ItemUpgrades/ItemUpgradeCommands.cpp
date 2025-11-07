@@ -3,6 +3,7 @@
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
+#include "Config.h"
 #include <sstream>
 
 using Acore::ChatCommands::ChatCommandBuilder;
@@ -23,6 +24,19 @@ public:
     }
 
 private:
+    // Helper: send response to addon via SYSTEM chat; optionally echo to SAY when debug is enabled
+    static void SendAddonResponse(Player* player, std::string const& msg)
+    {
+        if (!player)
+            return;
+
+        ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+
+        // Optional debug echo to SAY (visible in world) controlled by config
+        bool debugToSay = sConfigMgr->GetOption<bool>("ItemUpgrade.DebugToSay", false);
+        if (debugToSay)
+            player->Say(msg, LANG_UNIVERSAL);
+    }
     static bool HandleDCUpgradeCommand(ChatHandler* handler, const char* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
@@ -40,7 +54,7 @@ private:
         
         if (subcommand.empty())
         {
-            player->Say("DCUPGRADE_ERROR:No command specified", LANG_UNIVERSAL);
+            SendAddonResponse(player, "DCUPGRADE_ERROR:No command specified");
             return true;
         }
 
@@ -50,10 +64,10 @@ private:
             uint32 tokens = player->GetItemCount(tokenId);
             uint32 essence = player->GetItemCount(essenceId);
 
-            // Send response via SAY chat (addon listens to CHAT_MSG_SAY)
+            // Send response via SYSTEM chat (addon listens to CHAT_MSG_SYSTEM)
             std::ostringstream ss;
             ss << "DCUPGRADE_INIT:" << tokens << ":" << essence;
-            player->Say(ss.str(), LANG_UNIVERSAL);
+            SendAddonResponse(player, ss.str());
             return true;
         }
 
@@ -66,14 +80,14 @@ private:
             
             if (!(iss >> bag >> slot))
             {
-                player->Say("DCUPGRADE_ERROR:Invalid parameters", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
                 return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                player->Say("DCUPGRADE_ERROR:Item not found", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
                 return true;
             }
 
@@ -103,10 +117,10 @@ private:
                 else tier = 1;
             }
 
-            // Send response via SAY chat
+            // Send response via SYSTEM chat
             std::ostringstream ss;
             ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << baseItemLevel;
-            player->Say(ss.str(), LANG_UNIVERSAL);
+            SendAddonResponse(player, ss.str());
             return true;
         }
 
@@ -119,20 +133,20 @@ private:
             
             if (!(iss >> bag >> slot >> targetLevel))
             {
-                player->Say("DCUPGRADE_ERROR:Invalid parameters", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
                 return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                player->Say("DCUPGRADE_ERROR:Item not found", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
                 return true;
             }
 
             if (targetLevel > 15)
             {
-                player->Say("DCUPGRADE_ERROR:Max level is 15", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Max level is 15");
                 return true;
             }
 
@@ -165,7 +179,7 @@ private:
 
             if (targetLevel <= currentLevel)
             {
-                player->Say("DCUPGRADE_ERROR:Must upgrade to higher level", LANG_UNIVERSAL);
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Must upgrade to higher level");
                 return true;
             }
 
@@ -179,7 +193,7 @@ private:
             {
                 std::ostringstream ss;
                 ss << "DCUPGRADE_ERROR:Cost not found for tier " << tier << " level " << targetLevel;
-                player->Say(ss.str(), LANG_UNIVERSAL);
+                SendAddonResponse(player, ss.str());
                 return true;
             }
 
@@ -194,7 +208,7 @@ private:
             {
                 std::ostringstream ss;
                 ss << "DCUPGRADE_ERROR:Need " << tokensNeeded << " tokens, have " << currentTokens;
-                player->Say(ss.str(), LANG_UNIVERSAL);
+                SendAddonResponse(player, ss.str());
                 return true;
             }
 
@@ -202,7 +216,7 @@ private:
             {
                 std::ostringstream ss;
                 ss << "DCUPGRADE_ERROR:Need " << essenceNeeded << " essence, have " << currentEssence;
-                player->Say(ss.str(), LANG_UNIVERSAL);
+                SendAddonResponse(player, ss.str());
                 return true;
             }
 
@@ -218,10 +232,10 @@ private:
                 itemGUID, playerGuid, targetLevel, tier, tokensNeeded, targetLevel, tokensNeeded
             );
 
-            // Send success response via SAY chat
+            // Send success response via SYSTEM chat
             std::ostringstream successMsg;
             successMsg << "DCUPGRADE_SUCCESS:" << itemGUID << ":" << targetLevel;
-            player->Say(successMsg.str(), LANG_UNIVERSAL);
+            SendAddonResponse(player, successMsg.str());
 
             return true;
         }

@@ -62,6 +62,23 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	self:RegisterEvent("CHAT_MSG_SYSTEM");
 	self:RegisterEvent("BAG_UPDATE");
 	self:RegisterEvent("PLAYER_LOGIN");
+
+	-- Slash command: /dcupgrade [debug]
+	SLASH_DCUPGRADE1 = "/dcupgrade";
+	SlashCmdList["DCUPGRADE"] = function(msg)
+		msg = (msg or ""):lower();
+		if msg == "debug" or msg == "dbg" then
+			DC_ItemUpgrade_Settings = DC_ItemUpgrade_Settings or {};
+			DC_ItemUpgrade_Settings.debug = not DC_ItemUpgrade_Settings.debug;
+			print("|cffffd700DC-ItemUpgrade debug " .. (DC_ItemUpgrade_Settings.debug and "ON" or "OFF") .. "|r");
+			return;
+		end
+		if not DarkChaos_ItemUpgradeFrame:IsShown() then
+			DarkChaos_ItemUpgradeFrame:Show();
+		else
+			DarkChaos_ItemUpgradeFrame:Hide();
+		end
+	end
 	
 	-- Set title
 	self.title:SetText("Item Upgrade");
@@ -111,6 +128,20 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 	if event == "PLAYER_LOGIN" then
 		-- Initialize upgrade costs cache
 		DarkChaos_ItemUpgrade_InitializeCosts();
+
+		-- Install chat filters to hide DCUPGRADE_* unless debug enabled
+		if ChatFrame_AddMessageEventFilter and not _G.__DC_ItemUpgrade_RetailFilterInstalled then
+			local function DC_ItemUpgrade_Filter(frame, ev, msg, ...)
+				if type(msg) == "string" and string.find(msg, "^DCUPGRADE_") then
+					local dbg = DC_ItemUpgrade_Settings and DC_ItemUpgrade_Settings.debug;
+					if not dbg then return true end
+				end
+				return false
+			end
+			ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", DC_ItemUpgrade_Filter);
+			ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", DC_ItemUpgrade_Filter);
+			_G.__DC_ItemUpgrade_RetailFilterInstalled = true;
+		end
 		
 	elseif event == "CHAT_MSG_SAY" or event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_SYSTEM" then
 		local message, sender = ...;

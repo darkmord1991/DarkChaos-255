@@ -469,6 +469,13 @@ function DarkChaos_ItemUpgrade_OnLoad(frame)
     SLASH_DCUPGRADE1 = "/dcupgrade";
     SLASH_DCUPGRADE2 = "/itemupgrade";
     SlashCmdList["DCUPGRADE"] = function(msg)
+        msg = (msg or ""):lower();
+        if msg == "debug" or msg == "dbg" then
+            DC_ItemUpgrade_Settings = DC_ItemUpgrade_Settings or {};
+            DC_ItemUpgrade_Settings.debug = not DC_ItemUpgrade_Settings.debug;
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffd700DC-ItemUpgrade debug " .. (DC_ItemUpgrade_Settings.debug and "ON" or "OFF") .. "|r");
+            return;
+        end
         DarkChaos_ItemUpgrade_ShowFrame();
     end;
 
@@ -483,6 +490,21 @@ function DarkChaos_ItemUpgrade_OnLoad(frame)
         frame:SetScript("OnDragStart", function(self) self:StartMoving(); end);
         frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); end);
     end;
+
+    -- Hide raw DCUPGRADE_* system messages from chat unless debug is enabled
+    if ChatFrame_AddMessageEventFilter and not _G.__DC_ItemUpgrade_FilterInstalled then
+        local function DC_ItemUpgrade_ChatFilter(self, event, msg, ...)
+            if type(msg) == "string" and string.find(msg, "^DCUPGRADE_") then
+                local debug = DC_ItemUpgrade_Settings and DC_ItemUpgrade_Settings.debug;
+                if not debug then
+                    return true; -- filter out
+                end
+            end
+            return false;
+        end
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", DC_ItemUpgrade_ChatFilter);
+        _G.__DC_ItemUpgrade_FilterInstalled = true;
+    end
 
     -- Make frame movable
 
