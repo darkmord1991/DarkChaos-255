@@ -4,6 +4,9 @@
 #include "Item.h"
 #include "DatabaseEnv.h"
 #include "Config.h"
+#include "ItemUpgradeMechanics.h"
+#include <ctime>
+#include <iomanip>
 #include <sstream>
 #include "SharedDefines.h"
 
@@ -109,17 +112,28 @@ private:
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
             QueryResult result = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier_id FROM dc_item_upgrade_state WHERE item_guid = {}",
+                "SELECT upgrade_level, tier_id, base_item_level, upgraded_item_level, stat_multiplier "
+                "FROM dc_item_upgrade_state WHERE item_guid = {}",
                 itemGUID
             );
 
             uint32 upgradeLevel = 0;
             uint32 tier = 1;
+            uint16 storedBaseIlvl = baseItemLevel;
+            uint16 upgradedIlvl = baseItemLevel;
+            float statMultiplier = 1.0f;
 
             if (result)
             {
-                upgradeLevel = (*result)[0].Get<uint32>();
-                tier = (*result)[1].Get<uint32>();
+                Field* fields = result->Fetch();
+                upgradeLevel = fields[0].Get<uint32>();
+                tier = fields[1].Get<uint32>();
+                if (!fields[2].IsNull())
+                    storedBaseIlvl = fields[2].Get<uint16>();
+                if (!fields[3].IsNull())
+                    upgradedIlvl = fields[3].Get<uint16>();
+                if (!fields[4].IsNull())
+                    statMultiplier = fields[4].Get<float>();
             }
             else
             {
@@ -129,11 +143,23 @@ private:
                 else if (baseItemLevel >= 350) tier = 3;
                 else if (baseItemLevel >= 300) tier = 2;
                 else tier = 1;
+
+                storedBaseIlvl = baseItemLevel;
+                upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                    storedBaseIlvl, static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                    static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
             }
 
-            // Send response via SYSTEM chat
+            if (upgradedIlvl < storedBaseIlvl)
+                upgradedIlvl = storedBaseIlvl;
+
+            // Send response via SYSTEM chat (now includes upgraded ilvl and stat multiplier)
             std::ostringstream ss;
-            ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << baseItemLevel;
+            ss.setf(std::ios::fixed);
+            ss << std::setprecision(3);
+            ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
+               << ":" << upgradedIlvl << ":" << statMultiplier;
             SendAddonResponse(player, ss.str());
             return true;
         }
@@ -210,22 +236,44 @@ private:
                 return true;
             }
 
-            // Get upgrade cost
+            // Determine aggregated upgrade cost for all levels between current and target
+            if (targetLevel <= currentLevel)
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Target level must exceed current level");
+                return true;
+            }
+
+            uint32 nextLevel = currentLevel + 1;
             QueryResult costResult = WorldDatabase.Query(
-                "SELECT token_cost, essence_cost FROM dc_item_upgrade_costs WHERE tier_id = {} AND upgrade_level = {}",
-                tier, targetLevel
+                "SELECT SUM(token_cost) AS total_tokens, SUM(essence_cost) AS total_essence "
+                "FROM dc_item_upgrade_costs WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
+                tier, nextLevel, targetLevel
             );
+
+            uint32 tokensNeeded = 0;
+            uint32 essenceNeeded = 0;
 
             if (!costResult)
             {
                 std::ostringstream ss;
-                ss << "DCUPGRADE_ERROR:Cost not found for tier " << tier << " level " << targetLevel;
+                ss << "DCUPGRADE_ERROR:Cost data missing for tier " << tier << " levels " << nextLevel << "-" << targetLevel;
                 SendAddonResponse(player, ss.str());
                 return true;
             }
 
-            uint32 tokensNeeded = (*costResult)[0].Get<uint32>();
-            uint32 essenceNeeded = (*costResult)[1].Get<uint32>();
+            Field* costFields = costResult->Fetch();
+            if (!costFields || (costFields[0].IsNull() && costFields[1].IsNull()))
+            {
+                std::ostringstream ss;
+                ss << "DCUPGRADE_ERROR:No cost configured for tier " << tier << " levels " << nextLevel << "-" << targetLevel;
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            if (!costFields[0].IsNull())
+                tokensNeeded = costFields[0].Get<uint32>();
+            if (!costFields[1].IsNull())
+                essenceNeeded = costFields[1].Get<uint32>();
 
             // Check inventory for currency items (using item-based system)
             uint32 currentTokens = player->GetItemCount(tokenId);
@@ -248,15 +296,39 @@ private:
             }
 
             // Deduct currency items from inventory
-            player->DestroyItemCount(tokenId, tokensNeeded, true);
-            player->DestroyItemCount(essenceId, essenceNeeded, true);
+            if (tokensNeeded > 0)
+                player->DestroyItemCount(tokenId, tokensNeeded, true);
+            if (essenceNeeded > 0)
+                player->DestroyItemCount(essenceId, essenceNeeded, true);
 
-            // Update item state
+            // Compute upgraded stats for persistence
+            uint16 upgradedItemLevel = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                static_cast<uint16>(baseItemLevel), static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+            float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+
+            uint32 now = static_cast<uint32>(std::time(nullptr));
+            uint32 season = 1; // TODO: make configurable
+
+            // Update item state (include all non-nullable columns)
             CharacterDatabase.Execute(
-                "INSERT INTO dc_item_upgrade_state (item_guid, player_guid, upgrade_level, tier_id, tokens_invested) "
-                "VALUES ({}, {}, {}, {}, {}) "
-                "ON DUPLICATE KEY UPDATE upgrade_level = {}, tokens_invested = tokens_invested + {}",
-                itemGUID, playerGuid, targetLevel, tier, tokensNeeded, targetLevel, tokensNeeded
+                "INSERT INTO dc_item_upgrade_state "
+                "(item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
+                " base_item_level, upgraded_item_level, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE "
+                " upgrade_level = VALUES(upgrade_level),"
+                " tier_id = VALUES(tier_id),"
+                " tokens_invested = tokens_invested + VALUES(tokens_invested),"
+                " essence_invested = essence_invested + VALUES(essence_invested),"
+                " base_item_level = VALUES(base_item_level),"
+                " upgraded_item_level = VALUES(upgraded_item_level),"
+                " stat_multiplier = VALUES(stat_multiplier),"
+                " last_upgraded_at = VALUES(last_upgraded_at),"
+                " season = VALUES(season),"
+                " first_upgraded_at = IF(first_upgraded_at = 0, VALUES(first_upgraded_at), first_upgraded_at)",
+                itemGUID, playerGuid, tier, targetLevel, tokensNeeded, essenceNeeded,
+                baseItemLevel, upgradedItemLevel, statMultiplier, now, now, season
             );
 
             // Send success response via SYSTEM chat
