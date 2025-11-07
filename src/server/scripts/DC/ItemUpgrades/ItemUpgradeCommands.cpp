@@ -5,6 +5,7 @@
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include <sstream>
+#include "SharedDefines.h"
 
 using Acore::ChatCommands::ChatCommandBuilder;
 using Acore::ChatCommands::Console;
@@ -44,8 +45,8 @@ private:
             return false;
 
         // Get currency item IDs from config
-        uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 100998);
-        uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 100999);
+    uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 109998); // updated default per configuration note
+    uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 100999);
 
         // Parse arguments
         std::string argStr = args ? args : "";
@@ -76,12 +77,25 @@ private:
         {
             std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
             std::istringstream iss(remainingArgs);
-            uint32 bag, slot;
+            uint32 extBag, extSlot;
             
-            if (!(iss >> bag >> slot))
+            if (!(iss >> extBag >> extSlot))
             {
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
                 return true;
+            }
+
+            // Accept addon-style bag indices (0..4) and convert to internal bag positions
+            uint8 bag = 0;
+            uint8 slot = 0;
+            slot = static_cast<uint8>(extSlot); // expecting 0-based from addon
+            if (extBag <= 4)
+            {
+                bag = (extBag == 0) ? INVENTORY_SLOT_BAG_0 : (INVENTORY_SLOT_BAG_START + static_cast<uint8>(extBag - 1));
+            }
+            else
+            {
+                bag = static_cast<uint8>(extBag);
             }
 
             Item* item = player->GetItemByPos(bag, slot);
@@ -129,12 +143,25 @@ private:
         {
             std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
             std::istringstream iss(remainingArgs);
-            uint32 bag, slot, targetLevel;
+            uint32 extBag, extSlot, targetLevel;
             
-            if (!(iss >> bag >> slot >> targetLevel))
+            if (!(iss >> extBag >> extSlot >> targetLevel))
             {
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
                 return true;
+            }
+
+            // Convert addon-style bag/slot to internal positions
+            uint8 bag = 0;
+            uint8 slot = 0;
+            slot = static_cast<uint8>(extSlot); // expecting 0-based
+            if (extBag <= 4)
+            {
+                bag = (extBag == 0) ? INVENTORY_SLOT_BAG_0 : (INVENTORY_SLOT_BAG_START + static_cast<uint8>(extBag - 1));
+            }
+            else
+            {
+                bag = static_cast<uint8>(extBag);
             }
 
             Item* item = player->GetItemByPos(bag, slot);

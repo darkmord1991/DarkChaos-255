@@ -33,6 +33,22 @@
 #
 ItemUpgrade.DebugToSay = 0
 
+#
+#    ItemUpgrade.Currency.TokenId
+#        Description: Item entry used as Upgrade Token currency.
+#        Default:     100999 (fallback if not set)
+#
+ItemUpgrade.Currency.TokenId = 100999
+
+#
+#    ItemUpgrade.Currency.EssenceId
+#        Description: Item entry used as Artifact Essence currency (Tier 5 upgrades).
+#        Default:     109998 (updated default)
+#
+ItemUpgrade.Currency.EssenceId = 109998
+
+###########################################################################
+
 ###########################################################################
 #
 #    SECTION 1: AOE LOOT SYSTEM
