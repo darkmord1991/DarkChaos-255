@@ -30,6 +30,7 @@ namespace DarkChaos
         private:
             // Cache maps for fast lookup
             std::map<uint8, UpgradeCost> upgrade_costs;           // tier_id+level -> cost
+            std::map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
             std::map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
             std::map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
             std::map<uint32, ItemUpgradeState> item_states;       // item_guid -> state
@@ -60,21 +61,24 @@ namespace DarkChaos
                         return false;
                     }
 
-                    // Check if item can be upgraded
-                    if (!state->CanUpgrade())
+                    uint8 tier = state->tier_id;
+                    uint8 max_level = GetTierMaxLevel(tier);
+                    if (state->upgrade_level >= max_level)
                     {
-                        LOG_INFO("scripts", "ItemUpgrade: Item {} already at max level", item_guid);
+                        LOG_INFO("scripts", "ItemUpgrade: Item {} already at max level {}", item_guid, max_level);
                         return false;
                     }
 
                     uint8 next_level = state->upgrade_level + 1;
+                    if (next_level > max_level)
+                        next_level = max_level;
 
                     // Get upgrade cost
-                    uint32 token_cost = GetUpgradeCost(state->tier_id, next_level);
-                    uint32 essence_cost = GetEssenceCost(state->tier_id, next_level);
+                    uint32 token_cost = GetUpgradeCost(tier, next_level);
+                    uint32 essence_cost = GetEssenceCost(tier, next_level);
 
                     // Check currency
-                    if (state->tier_id == TIER_ARTIFACT)
+                    if (tier == TIER_ARTIFACT)
                     {
                         // Artifacts use essence
                         uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
@@ -98,7 +102,7 @@ namespace DarkChaos
                     }
 
                     // Perform upgrade
-                    if (state->tier_id == TIER_ARTIFACT)
+                    if (tier == TIER_ARTIFACT)
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
                             return false;
@@ -118,7 +122,11 @@ namespace DarkChaos
                         state->first_upgraded_at = state->last_upgraded_at;
 
                     // Calculate new stat multiplier
-                    float max_mult = (state->tier_id == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                    float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
+                    if (const TierDefinition* def = GetTierDefinition(tier))
+                        max_mult = def->stat_multiplier_max;
+                    else if (tier == TIER_ARTIFACT)
+                        max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
                     state->stat_multiplier = 1.0f + (next_level / 5.0f) * (max_mult - 1.0f);
 
                     // Save to database
@@ -126,7 +134,7 @@ namespace DarkChaos
 
                     // Award artifact mastery points for Phase 4B progression system
                     uint32 mastery_points = 0;
-                    switch (state->tier_id)
+                    switch (tier)
                     {
                         case TIER_LEVELING: mastery_points = 1; break;
                         case TIER_HEROIC: mastery_points = 2; break;
@@ -325,11 +333,11 @@ namespace DarkChaos
 
             bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) override
             {
-                if (level > MAX_UPGRADE_LEVEL)
-                    return false;
-
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                 if (!state)
+                    return false;
+
+                if (level > GetTierMaxLevel(state->tier_id))
                     return false;
 
                 state->upgrade_level = level;
@@ -411,15 +419,16 @@ namespace DarkChaos
                 }
 
                 uint8 tier = state->tier_id;
+                uint8 max_level = GetTierMaxLevel(tier);
                 // Build display using mechanics helpers
                 std::ostringstream oss;
                 oss << "|cffffd700===== Item Upgrade Status =====|r\n";
-                oss << "Upgrade Level: " << static_cast<int>(state->upgrade_level) << "/15\n";
+                oss << "Upgrade Level: " << static_cast<int>(state->upgrade_level) << "/" << static_cast<int>(max_level) << "\n";
                 oss << "Stat Bonus: " << StatScalingCalculator::GetStatBonusDisplay(state->upgrade_level, tier) << "\n";
                 oss << "Item Level: " << ItemLevelCalculator::GetItemLevelDisplay(state->base_item_level, state->upgraded_item_level) << "\n";
                 oss << "Total Investment: " << state->essence_invested << " Essence, " << state->tokens_invested << " Tokens\n";
 
-                if (state->upgrade_level < MAX_UPGRADE_LEVEL)
+                if (state->upgrade_level < max_level)
                 {
                     uint32 next_ess = UpgradeCostCalculator::GetEssenceCost(tier, state->upgrade_level);
                     uint32 next_tok = UpgradeCostCalculator::GetTokenCost(tier, state->upgrade_level);
@@ -456,7 +465,7 @@ namespace DarkChaos
                     return false;
                 }
 
-                return state->upgrade_level < MAX_UPGRADE_LEVEL;
+                return state->upgrade_level < GetTierMaxLevel(state->tier_id);
             }
 
             // ====================================================================
@@ -474,7 +483,8 @@ namespace DarkChaos
 
             uint32 GetUpgradeCost(uint8 tier_id, uint8 upgrade_level) override
             {
-                if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
+                uint8 max_level = GetTierMaxLevel(tier_id);
+                if (upgrade_level > max_level || upgrade_level == 0)
                     return 0;
 
                 uint8 key = (tier_id << 4) | upgrade_level;
@@ -487,7 +497,8 @@ namespace DarkChaos
 
             uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) override
             {
-                if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
+                uint8 max_level = GetTierMaxLevel(tier_id);
+                if (upgrade_level > max_level || upgrade_level == 0)
                     return 0;
 
                 uint8 key = (tier_id << 4) | upgrade_level;
@@ -524,6 +535,24 @@ namespace DarkChaos
                     LOG_ERROR("scripts", "ItemUpgrade: Failed to get highest tier for player {}: {}", player_guid, e.what());
                     return TIER_LEVELING;
                 }
+            }
+
+            uint8 GetTierMaxLevel(uint8 tier_id) override
+            {
+                auto it = tier_definitions.find(tier_id);
+                if (it != tier_definitions.end())
+                    return it->second.max_upgrade_level;
+
+                return MAX_UPGRADE_LEVEL;
+            }
+
+            const TierDefinition* GetTierDefinition(uint8 tier_id) override
+            {
+                auto it = tier_definitions.find(tier_id);
+                if (it != tier_definitions.end())
+                    return &it->second;
+
+                return nullptr;
             }
 
             // ====================================================================
@@ -568,6 +597,11 @@ namespace DarkChaos
             {
                 LOG_INFO("scripts", "ItemUpgrade: Loading upgrade data for season {}", season);
 
+                tier_definitions.clear();
+                upgrade_costs.clear();
+                item_to_tier.clear();
+                artifacts.clear();
+
                 // Load tier definitions
                 QueryResult result = WorldDatabase.Query(
                     "SELECT tier_id, tier_name, min_ilvl, max_ilvl, max_upgrade_level, stat_multiplier_max, "
@@ -575,7 +609,26 @@ namespace DarkChaos
                     season);
                 if (result)
                 {
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} tier definitions", result->GetRowCount());
+                    uint32 count = 0;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint8 tier_id = fields[0].Get<uint8>();
+                        uint8 max_upgrade_level = fields[4].Get<uint8>();
+                        float stat_multiplier_max = fields[5].Get<float>();
+                        bool is_artifact = fields[8].Get<bool>();
+
+                        TierDefinition def;
+                        def.tier_id = tier_id;
+                        def.max_upgrade_level = max_upgrade_level;
+                        def.stat_multiplier_max = stat_multiplier_max;
+                        def.is_artifact = is_artifact;
+
+                        tier_definitions[tier_id] = def;
+                        count++;
+                    } while (result->NextRow());
+
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} tier definitions", count);
                 }
 
                 // Load upgrade costs

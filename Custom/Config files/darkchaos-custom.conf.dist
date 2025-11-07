@@ -47,6 +47,15 @@ ItemUpgrade.Currency.TokenId = 100999
 #
 ItemUpgrade.Currency.EssenceId = 109998
 
+#
+#    ItemUpgrade.EndgamePlayerLevel
+#        Description: Minimum player level that marks gear as "Endgame" for the upgrade system.
+#                     Players at or above this level use the Tier 2 cost/track configuration.
+#                     Adjust per release bracket so leveling phases can raise the ceiling gradually.
+#        Default:     200
+#
+ItemUpgrade.EndgamePlayerLevel = 200
+
 ###########################################################################
 
 ###########################################################################

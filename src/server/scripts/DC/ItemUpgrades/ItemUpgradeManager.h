@@ -41,7 +41,7 @@ namespace DarkChaos
         // Constants
     static const uint8 MAX_UPGRADE_LEVEL = 15;
         static const uint8 MIN_UPGRADE_LEVEL = 0;
-        static const uint8 NUM_TIERS = 5;
+    static const uint8 NUM_TIERS = 2;
         static const float STAT_MULTIPLIER_BASE = 1.0f;
         static const float STAT_MULTIPLIER_MAX_REGULAR = 1.5f;
         static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.75f;
@@ -107,6 +107,18 @@ namespace DarkChaos
             bool CanUpgrade() const { return upgrade_level < MAX_UPGRADE_LEVEL; }
         };
 
+        struct TierDefinition
+        {
+            uint8 tier_id;
+            uint8 max_upgrade_level;
+            float stat_multiplier_max;
+            bool is_artifact;
+
+            TierDefinition()
+                : tier_id(0), max_upgrade_level(MAX_UPGRADE_LEVEL),
+                  stat_multiplier_max(STAT_MULTIPLIER_MAX_REGULAR), is_artifact(false) {}
+        };
+
         // =====================================================================
         // Chaos Artifact Definition
         // =====================================================================
@@ -159,6 +171,8 @@ namespace DarkChaos
             virtual uint32 GetUpgradeCost(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual uint8 GetPlayerHighestTier(uint32 player_guid) = 0;
+            virtual uint8 GetTierMaxLevel(uint8 tier_id) = 0;
+            virtual const TierDefinition* GetTierDefinition(uint8 tier_id) = 0;
 
             // Artifact functions
             virtual ChaosArtifact* GetArtifact(uint32 artifact_id) = 0;
