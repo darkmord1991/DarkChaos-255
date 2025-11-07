@@ -40,7 +40,7 @@ private:
         
         if (subcommand.empty())
         {
-            handler->PSendSysMessage("DCUPGRADE_ERROR:No command specified");
+            player->Say("DCUPGRADE_ERROR:No command specified", LANG_UNIVERSAL);
             return true;
         }
 
@@ -50,8 +50,10 @@ private:
             uint32 tokens = player->GetItemCount(tokenId);
             uint32 essence = player->GetItemCount(essenceId);
 
-            // Send response
-            handler->PSendSysMessage("DCUPGRADE_INIT:%u:%u", tokens, essence);
+            // Send response via SAY chat (addon listens to CHAT_MSG_SAY)
+            std::ostringstream ss;
+            ss << "DCUPGRADE_INIT:" << tokens << ":" << essence;
+            player->Say(ss.str(), LANG_UNIVERSAL);
             return true;
         }
 
@@ -64,14 +66,14 @@ private:
             
             if (!(iss >> bag >> slot))
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Invalid parameters");
+                player->Say("DCUPGRADE_ERROR:Invalid parameters", LANG_UNIVERSAL);
                 return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Item not found");
+                player->Say("DCUPGRADE_ERROR:Item not found", LANG_UNIVERSAL);
                 return true;
             }
 
@@ -101,7 +103,10 @@ private:
                 else tier = 1;
             }
 
-            handler->PSendSysMessage("DCUPGRADE_QUERY:%u:%u:%u:%u", itemGUID, upgradeLevel, tier, baseItemLevel);
+            // Send response via SAY chat
+            std::ostringstream ss;
+            ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << baseItemLevel;
+            player->Say(ss.str(), LANG_UNIVERSAL);
             return true;
         }
 
@@ -114,20 +119,20 @@ private:
             
             if (!(iss >> bag >> slot >> targetLevel))
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Invalid parameters");
+                player->Say("DCUPGRADE_ERROR:Invalid parameters", LANG_UNIVERSAL);
                 return true;
             }
 
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Item not found");
+                player->Say("DCUPGRADE_ERROR:Item not found", LANG_UNIVERSAL);
                 return true;
             }
 
             if (targetLevel > 15)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Max level is 15");
+                player->Say("DCUPGRADE_ERROR:Max level is 15", LANG_UNIVERSAL);
                 return true;
             }
 
@@ -160,7 +165,7 @@ private:
 
             if (targetLevel <= currentLevel)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Must upgrade to higher level");
+                player->Say("DCUPGRADE_ERROR:Must upgrade to higher level", LANG_UNIVERSAL);
                 return true;
             }
 
@@ -172,7 +177,9 @@ private:
 
             if (!costResult)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Cost not found for tier %u level %u", tier, targetLevel);
+                std::ostringstream ss;
+                ss << "DCUPGRADE_ERROR:Cost not found for tier " << tier << " level " << targetLevel;
+                player->Say(ss.str(), LANG_UNIVERSAL);
                 return true;
             }
 
@@ -185,13 +192,17 @@ private:
 
             if (currentTokens < tokensNeeded)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Need %u tokens, have %u", tokensNeeded, currentTokens);
+                std::ostringstream ss;
+                ss << "DCUPGRADE_ERROR:Need " << tokensNeeded << " tokens, have " << currentTokens;
+                player->Say(ss.str(), LANG_UNIVERSAL);
                 return true;
             }
 
             if (currentEssence < essenceNeeded)
             {
-                handler->PSendSysMessage("DCUPGRADE_ERROR:Need %u essence, have %u", essenceNeeded, currentEssence);
+                std::ostringstream ss;
+                ss << "DCUPGRADE_ERROR:Need " << essenceNeeded << " essence, have " << currentEssence;
+                player->Say(ss.str(), LANG_UNIVERSAL);
                 return true;
             }
 
@@ -207,8 +218,10 @@ private:
                 itemGUID, playerGuid, targetLevel, tier, tokensNeeded, targetLevel, tokensNeeded
             );
 
-            handler->PSendSysMessage("DCUPGRADE_SUCCESS:%u:%u", itemGUID, targetLevel);
-            handler->PSendSysMessage("|cff00ff00Item upgraded to level %u!", targetLevel);
+            // Send success response via SAY chat
+            std::ostringstream successMsg;
+            successMsg << "DCUPGRADE_SUCCESS:" << itemGUID << ":" << targetLevel;
+            player->Say(successMsg.str(), LANG_UNIVERSAL);
 
             return true;
         }

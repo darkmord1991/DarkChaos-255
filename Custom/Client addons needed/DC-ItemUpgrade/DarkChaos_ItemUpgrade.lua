@@ -477,9 +477,7 @@ function DarkChaos_ItemUpgrade_OnLoad(frame)
         frame:RegisterEvent("PLAYER_ENTERING_WORLD");
         frame:RegisterEvent("BAG_UPDATE");
         frame:RegisterEvent("UNIT_INVENTORY_CHANGED");
-        frame:RegisterEvent("CHAT_MSG_GUILD");  -- Listen for server responses
-        frame:RegisterEvent("CHAT_MSG_OFFICER");
-        frame:RegisterEvent("CHAT_MSG_WHISPER");
+        frame:RegisterEvent("CHAT_MSG_SYSTEM");  -- Listen for server responses via system messages
         frame:SetScript("OnEvent", DarkChaos_ItemUpgrade_OnEvent);
         frame:RegisterForDrag("LeftButton");
         frame:SetScript("OnDragStart", function(self) self:StartMoving(); end);
@@ -1235,8 +1233,8 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, arg1, arg2)
         if DarkChaos_ItemUpgradeFrameInventoryFrame and DarkChaos_ItemUpgradeFrameInventoryFrame:IsShown() then
             DarkChaos_ItemUpgrade_ShowInventoryFrame();
         end
-    elseif event == "CHAT_MSG_GUILD" or event == "CHAT_MSG_OFFICER" or event == "CHAT_MSG_WHISPER" then
-        -- Check for server responses
+    elseif event == "CHAT_MSG_SYSTEM" then
+        -- Check for server responses from system messages
         DarkChaos_ItemUpgrade_OnChatMessage(event, arg1, arg2);
     end
 end
