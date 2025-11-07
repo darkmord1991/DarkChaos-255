@@ -596,8 +596,8 @@ public:
         }
         
         // Grant currency
-        const uint32 ESSENCE_ID = 900001;  // From config: ItemUpgrade.Currency.EssenceId
-        const uint32 TOKEN_ID = 900002;    // From config: ItemUpgrade.Currency.TokenId
+        const uint32 ESSENCE_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 100998);
+        const uint32 TOKEN_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 100999);
         const uint32 TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
         const uint32 TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
         
