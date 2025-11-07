@@ -15,6 +15,9 @@
 #include "Item.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
+#include "ObjectGuid.h"
+#include "ObjectMgr.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -34,6 +37,108 @@ namespace DarkChaos
             std::map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
             std::map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
             std::map<uint32, ItemUpgradeState> item_states;       // item_guid -> state
+
+            void EnsureStateMetadata(ItemUpgradeState& state, uint32 owner_hint = 0)
+            {
+                if (state.item_guid == 0)
+                    return;
+
+                if (owner_hint != 0 && state.player_guid == 0)
+                    state.player_guid = owner_hint;
+
+                bool needsOwner = state.player_guid == 0;
+                bool needsTier = state.tier_id == 0 || state.tier_id == TIER_INVALID;
+                bool needsBase = state.base_item_level == 0;
+
+                if (needsOwner || needsTier || needsBase)
+                {
+                    QueryResult itemInfo = CharacterDatabase.Query(
+                        "SELECT owner_guid, itemEntry FROM item_instance WHERE guid = {}",
+                        state.item_guid);
+
+                    if (itemInfo)
+                    {
+                        Field* infoFields = itemInfo->Fetch();
+
+                        if (needsOwner)
+                            state.player_guid = infoFields[0].Get<uint32>();
+
+                        uint32 itemEntry = infoFields[1].Get<uint32>();
+
+                        if (needsTier)
+                        {
+                            uint8 mappedTier = GetItemTier(itemEntry);
+                            if (mappedTier == TIER_INVALID)
+                                mappedTier = TIER_LEVELING;
+                            state.tier_id = mappedTier;
+                        }
+
+                        if (needsBase)
+                        {
+                            if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
+                                state.base_item_level = itemTemplate->ItemLevel;
+                        }
+                    }
+                }
+
+                if ((state.tier_id == 0 || state.tier_id == TIER_INVALID || state.base_item_level == 0) && state.player_guid != 0)
+                {
+                    if (Player* owner = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(state.player_guid)))
+                    {
+                        if (Item* ownedItem = owner->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(state.item_guid)))
+                        {
+                            if (state.tier_id == 0 || state.tier_id == TIER_INVALID)
+                            {
+                                uint8 mappedTier = GetItemTier(ownedItem->GetEntry());
+                                if (mappedTier == TIER_INVALID)
+                                    mappedTier = TIER_LEVELING;
+                                state.tier_id = mappedTier;
+                            }
+
+                            if (state.base_item_level == 0)
+                            {
+                                if (const ItemTemplate* itemTemplate = ownedItem->GetTemplate())
+                                    state.base_item_level = itemTemplate->ItemLevel;
+                            }
+                        }
+                    }
+                }
+
+                if (state.tier_id == 0 || state.tier_id == TIER_INVALID)
+                    state.tier_id = TIER_LEVELING;
+
+                if (state.base_item_level != 0)
+                {
+                    uint16 upgraded = state.base_item_level;
+                    if (state.upgrade_level > 0)
+                    {
+                        upgraded = state.base_item_level;
+                        for (uint8 level = 1; level <= state.upgrade_level; ++level)
+                            upgraded += GetIlvlIncrease(state.tier_id, level);
+                    }
+
+                    state.upgraded_item_level = upgraded;
+                }
+
+                float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
+                if (const TierDefinition* def = GetTierDefinition(state.tier_id))
+                    max_mult = def->stat_multiplier_max;
+                else if (state.tier_id == TIER_ARTIFACT)
+                    max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
+
+                if (state.upgrade_level > 0)
+                {
+                    uint8 max_level = GetTierMaxLevel(state.tier_id);
+                    float progress = max_level > 0 ? static_cast<float>(state.upgrade_level) / static_cast<float>(max_level) : 0.0f;
+                    if (progress > 1.0f)
+                        progress = 1.0f;
+                    state.stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
+                }
+                else
+                {
+                    state.stat_multiplier = 1.0f;
+                }
+            }
 
         public:
             UpgradeManagerImpl() = default;
@@ -60,6 +165,8 @@ namespace DarkChaos
                         LOG_ERROR("scripts", "ItemUpgrade: Item {} not found for upgrade", item_guid);
                         return false;
                     }
+
+                    EnsureStateMetadata(*state, player_guid);
 
                     uint8 tier = state->tier_id;
                     uint8 max_level = GetTierMaxLevel(tier);
@@ -127,7 +234,23 @@ namespace DarkChaos
                         max_mult = def->stat_multiplier_max;
                     else if (tier == TIER_ARTIFACT)
                         max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
-                    state->stat_multiplier = 1.0f + (next_level / 5.0f) * (max_mult - 1.0f);
+
+                    float progress = max_level > 0 ? static_cast<float>(next_level) / static_cast<float>(max_level) : 0.0f;
+                    if (progress > 1.0f)
+                        progress = 1.0f;
+
+                    state->stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
+
+                    if (state->base_item_level == 0)
+                        EnsureStateMetadata(*state, player_guid);
+
+                    if (state->base_item_level != 0)
+                    {
+                        uint16 upgraded = state->base_item_level;
+                        for (uint8 level = 1; level <= state->upgrade_level; ++level)
+                            upgraded += GetIlvlIncrease(state->tier_id, level);
+                        state->upgraded_item_level = upgraded;
+                    }
 
                     // Save to database
                     SaveItemUpgrade(item_guid);
@@ -293,22 +416,13 @@ namespace DarkChaos
                 if (!result)
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
-                    
-                    // NEW: Create default state for items not in database yet
-                    // This allows newly equipped items to be upgradeable without manual SQL initialization
+
                     ItemUpgradeState default_state;
                     default_state.item_guid = item_guid;
-                    default_state.player_guid = 0; // Will be set when first upgraded or by CanUpgradeItem
-                    default_state.tier_id = 1;     // Default to Tier 1 (Leveling)
-                    default_state.upgrade_level = 0;
-                    default_state.tokens_invested = 0;
-                    default_state.essence_invested = 0;
-                    default_state.stat_multiplier = 1.0f;
-                    default_state.first_upgraded_at = 0;
-                    default_state.last_upgraded_at = 0;
-                    default_state.season = 1;
-                    
-                    // Cache the default state
+                    EnsureStateMetadata(default_state);
+                    if (default_state.tier_id == 0 || default_state.tier_id == TIER_INVALID)
+                        default_state.tier_id = TIER_LEVELING;
+
                     item_states[item_guid] = default_state;
                     return &item_states[item_guid];
                 }
@@ -326,6 +440,8 @@ namespace DarkChaos
                 state.last_upgraded_at = fields[8].Get<time_t>();
                 state.season = fields[9].Get<uint32>();
 
+                EnsureStateMetadata(state, state.player_guid);
+
                 // Cache and return
                 item_states[item_guid] = state;
                 return &item_states[item_guid];
@@ -337,10 +453,34 @@ namespace DarkChaos
                 if (!state)
                     return false;
 
-                if (level > GetTierMaxLevel(state->tier_id))
+                EnsureStateMetadata(*state, state->player_guid);
+
+                uint8 max_level = GetTierMaxLevel(state->tier_id);
+                if (level > max_level)
                     return false;
 
                 state->upgrade_level = level;
+
+                float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
+                if (const TierDefinition* def = GetTierDefinition(state->tier_id))
+                    max_mult = def->stat_multiplier_max;
+                else if (state->tier_id == TIER_ARTIFACT)
+                    max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
+
+                float progress = max_level > 0 ? static_cast<float>(level) / static_cast<float>(max_level) : 0.0f;
+                if (progress > 1.0f)
+                    progress = 1.0f;
+
+                state->stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
+
+                if (state->base_item_level != 0)
+                {
+                    uint16 upgraded = state->base_item_level;
+                    for (uint8 i = 1; i <= state->upgrade_level; ++i)
+                        upgraded += GetIlvlIncrease(state->tier_id, i);
+                    state->upgraded_item_level = upgraded;
+                }
+
                 SaveItemUpgrade(item_guid);
                 return true;
             }
@@ -382,14 +522,20 @@ namespace DarkChaos
                 if (!state || state->upgrade_level == 0)
                     return base_ilvl;
 
+                EnsureStateMetadata(*state, state->player_guid);
+                if (state->base_item_level == 0)
+                    state->base_item_level = base_ilvl;
+
                 // Get iLvL increase per upgrade using database values
                 uint16 total_ilvl_increase = 0;
                 for (uint8 i = 1; i <= state->upgrade_level; ++i)
                 {
                     total_ilvl_increase += GetIlvlIncrease(state->tier_id, i);
                 }
-
-                return base_ilvl + total_ilvl_increase;
+                uint16 baseLevel = state->base_item_level != 0 ? state->base_item_level : base_ilvl;
+                uint16 upgradedLevel = baseLevel + total_ilvl_increase;
+                state->upgraded_item_level = upgradedLevel;
+                return upgradedLevel;
             }
 
             bool GetNextUpgradeCost(uint32 item_guid, uint32& out_essence, uint32& out_tokens) override
@@ -398,10 +544,21 @@ namespace DarkChaos
                 if (!state)
                     return false;
 
+                EnsureStateMetadata(*state, state->player_guid);
+
                 uint8 tier = state->tier_id;
-                // Use current upgrade level to compute next level cost
-                out_essence = UpgradeCostCalculator::GetEssenceCost(tier, state->upgrade_level);
-                out_tokens = UpgradeCostCalculator::GetTokenCost(tier, state->upgrade_level);
+                uint8 max_level = GetTierMaxLevel(tier);
+
+                if (state->upgrade_level >= max_level)
+                {
+                    out_essence = 0;
+                    out_tokens = 0;
+                    return false;
+                }
+
+                uint8 next_level = state->upgrade_level + 1;
+                out_essence = GetEssenceCost(tier, next_level);
+                out_tokens = GetUpgradeCost(tier, next_level);
                 return true;
             }
 
@@ -412,11 +569,14 @@ namespace DarkChaos
                 {
                     std::ostringstream oss;
                     oss << "|cffffd700===== Item Upgrade Status =====|r\n";
-                    oss << "Upgrade Level: 0/15 (New)\n";
+                    uint8 default_max = GetTierMaxLevel(TIER_LEVELING);
+                    oss << "Upgrade Level: 0/" << static_cast<int>(default_max) << " (New)\n";
                     oss << "Stat Bonus: +0%\n";
                     oss << "Total Investment: 0 Essence, 0 Tokens\n";
                     return oss.str();
                 }
+
+                EnsureStateMetadata(*state, state->player_guid);
 
                 uint8 tier = state->tier_id;
                 uint8 max_level = GetTierMaxLevel(tier);
@@ -430,8 +590,8 @@ namespace DarkChaos
 
                 if (state->upgrade_level < max_level)
                 {
-                    uint32 next_ess = UpgradeCostCalculator::GetEssenceCost(tier, state->upgrade_level);
-                    uint32 next_tok = UpgradeCostCalculator::GetTokenCost(tier, state->upgrade_level);
+                    uint32 next_ess = GetEssenceCost(tier, state->upgrade_level + 1);
+                    uint32 next_tok = GetUpgradeCost(tier, state->upgrade_level + 1);
                     oss << "\n|cff00ff00Next Upgrade Cost:|r\n";
                     oss << "Essence: " << next_ess << "\n";
                     oss << "Tokens: " << next_tok << "\n";
@@ -449,6 +609,8 @@ namespace DarkChaos
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                 if (!state)
                     return false; // This should never happen now with default state creation
+
+                EnsureStateMetadata(*state, player_guid);
 
                 // NEW: If this is a newly seen item (player_guid not set), assign ownership
                 if (state->player_guid == 0)
