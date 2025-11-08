@@ -393,7 +393,21 @@ private:
 
 void AddSC_ItemUpgradeAddonHandler()
 {
-    new ItemUpgradeAddonCommands();
+    try
+    {
+        new ItemUpgradeAddonCommands();
+        LOG_INFO("scripts", "ItemUpgrade: Addon handler registered successfully");
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("scripts", "ItemUpgrade: Exception registering addon handler: {}", e.what());
+        // Don't throw - system can work without addon handler
+    }
+    catch (...)
+    {
+        LOG_ERROR("scripts", "ItemUpgrade: Unknown error registering addon handler");
+        // Don't throw - system can work without addon handler
+    }
 }
 
 // Legacy function name for backwards compatibility

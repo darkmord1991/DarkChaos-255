@@ -127,9 +127,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        // AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
-        LOG_INFO("scripts", ">>   ⚠ Addon handler DISABLED (debugging)");
+        AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
+        LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in addon handler: {}", e.what());
     } catch (...) {
