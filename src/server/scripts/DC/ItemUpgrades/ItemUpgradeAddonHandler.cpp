@@ -372,7 +372,7 @@ private:
                 " stat_multiplier = VALUES(stat_multiplier),"
                 " last_upgraded_at = {}",
                 itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
-                1.0f, now, now, season, now
+                1.0f, static_cast<uint32>(now), static_cast<uint32>(now), season, static_cast<uint32>(now)
             );
 
             // Send success response via SYSTEM chat
