@@ -189,9 +189,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        // AddSC_ItemUpgradeTokenHooks();
-        LOG_INFO("scripts", ">>   ⚠ Token hooks DISABLED (debugging)");
+        AddSC_ItemUpgradeTokenHooks();
+        LOG_INFO("scripts", ">>   ✓ Token hooks loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in token hooks: {}", e.what());
     } catch (...) {
