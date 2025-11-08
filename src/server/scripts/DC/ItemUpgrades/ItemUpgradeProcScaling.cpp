@@ -194,27 +194,29 @@ namespace DarkChaos
         }
         
         // =====================================================================
-        // Spell Hook: Scale Proc Damage/Healing
+        // Player Hook: Track Item Equip/Logout
         // =====================================================================
         
         // NOTE: AzerothCore's PlayerScript does not provide OnSpellDamage/OnSpellHeal hooks.
-        // Proc scaling would require either:
-        // 1. Core modification to add damage/healing hooks
-        // 2. Using a different approach (like modifying item stats directly)
-        // 3. Using SpellScript hooks (but those are per-spell, not global)
+        // Proc scaling would require core modification. This implementation only tracks items.
         //
-        // Current implementation: Database tracking only, actual scaling disabled
-        // To enable proc scaling, core engine modifications are required.
+        // Current functionality:
+        // - Maintains cache of equipped items with upgrade multipliers
+        // - Database tracking of proc spell -> item mappings
+        // - Infrastructure ready for when/if damage hooks are added
+        //
+        // Procs currently scale INDIRECTLY via spell power/attack power increases.
         
         class ItemProcDamageHook : public PlayerScript
         {
         public:
             ItemProcDamageHook() : PlayerScript("ItemProcDamageHook") {}
             
-            // Update cache when items are equipped
-            void OnAfterEquipItem(Player* player, uint8 /*slot*/, Item* /*item*/) override
+            // Update cache when items are equipped (use correct hook name)
+            void OnPlayerEquip(Player* player, Item* /*it*/, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
             {
-                UpdatePlayerItemCache(player);
+                if (player)
+                    UpdatePlayerItemCache(player);
             }
             
             // Clean up cache on logout
@@ -240,7 +242,7 @@ namespace DarkChaos
             // Register hooks
             new ItemProcDamageHook();
             
-            LOG_INFO("scripts", "ItemUpgrade: Proc scaling system registered (tracking only - requires core hooks for actual scaling)");
+            LOG_INFO("scripts", "ItemUpgrade: Proc scaling infrastructure registered (tracking only - requires core hooks for direct scaling)");
         }
     }
 }
