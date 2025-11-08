@@ -111,6 +111,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeMechanicsImpl();     // Core mechanics (MUST load first - provides static functions)
         LOG_INFO("scripts", ">>   ✓ Core mechanics loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in core mechanics: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in core mechanics");
     }
@@ -118,6 +120,8 @@ void AddDCScripts()
     try {
         AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
         LOG_INFO("scripts", ">>   ✓ GM commands loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GM commands: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in GM commands");
     }
@@ -125,6 +129,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
         LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in addon handler: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in addon handler");
     }
@@ -132,6 +138,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeVendor();
         LOG_INFO("scripts", ">>   ✓ Token vendor NPC loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in vendor: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in vendor");
     }
@@ -139,6 +147,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeCurator();
         LOG_INFO("scripts", ">>   ✓ Artifact curator NPC loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in curator: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in curator");
     }
@@ -154,6 +164,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeProgression();
         LOG_INFO("scripts", ">>   ✓ Progression system loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in progression: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in progression");
     }
@@ -161,6 +173,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeSeasonal();
         LOG_INFO("scripts", ">>   ✓ Seasonal system loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal");
     }
@@ -168,6 +182,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeAdvanced();
         LOG_INFO("scripts", ">>   ✓ Advanced features loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in advanced: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in advanced");
     }
@@ -175,6 +191,8 @@ void AddDCScripts()
     try {
         AddSC_ItemUpgradeTransmutation();
         LOG_INFO("scripts", ">>   ✓ Transmutation NPC loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in transmutation: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in transmutation");
     }
