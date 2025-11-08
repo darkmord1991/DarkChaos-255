@@ -95,17 +95,97 @@ void AddDCScripts()
     AddSC_npc_dungeon_quest_daily_weekly();
     
     // Item Upgrade System
-    AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
-    AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
-    AddSC_ItemUpgradeVendor();
-    AddSC_ItemUpgradeCurator();
-    AddSC_ItemUpgradeMechanics();
-    AddSC_ItemUpgradeProgression();
-    AddSC_ItemUpgradeSeasonal();
-    AddSC_ItemUpgradeAdvanced();
-    AddSC_ItemUpgradeTransmutation();
-    AddSC_ItemUpgradeCommunication();
-    AddSC_ItemUpgradeTokenHooks();
-    AddSC_ItemUpgradeStatApplication();
-    AddSC_ItemUpgradeProcScaling();
+    LOG_INFO("scripts", "ItemUpgrade: Starting registration...");
+    
+    try {
+        AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
+        LOG_INFO("scripts", "ItemUpgrade: GM commands registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in GM commands");
+    }
+    
+    try {
+        AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
+        LOG_INFO("scripts", "ItemUpgrade: Addon handler registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in addon handler");
+    }
+    
+    try {
+        AddSC_ItemUpgradeVendor();
+        LOG_INFO("scripts", "ItemUpgrade: Vendor registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in vendor");
+    }
+    
+    try {
+        AddSC_ItemUpgradeCurator();
+        LOG_INFO("scripts", "ItemUpgrade: Curator registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in curator");
+    }
+    
+    try {
+        AddSC_ItemUpgradeMechanics();
+        LOG_INFO("scripts", "ItemUpgrade: Mechanics registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in mechanics");
+    }
+    try {
+        AddSC_ItemUpgradeProgression();
+        LOG_INFO("scripts", "ItemUpgrade: Progression registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in progression");
+    }
+    
+    try {
+        AddSC_ItemUpgradeSeasonal();
+        LOG_INFO("scripts", "ItemUpgrade: Seasonal registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in seasonal");
+    }
+    
+    try {
+        AddSC_ItemUpgradeAdvanced();
+        LOG_INFO("scripts", "ItemUpgrade: Advanced registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in advanced");
+    }
+    
+    try {
+        AddSC_ItemUpgradeTransmutation();
+        LOG_INFO("scripts", "ItemUpgrade: Transmutation registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in transmutation");
+    }
+    
+    try {
+        AddSC_ItemUpgradeCommunication();
+        LOG_INFO("scripts", "ItemUpgrade: Communication registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in communication");
+    }
+    
+    try {
+        AddSC_ItemUpgradeTokenHooks();
+        LOG_INFO("scripts", "ItemUpgrade: Token hooks registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in token hooks");
+    }
+    
+    try {
+        AddSC_ItemUpgradeStatApplication();
+        LOG_INFO("scripts", "ItemUpgrade: Stat application registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in stat application");
+    }
+    
+    try {
+        AddSC_ItemUpgradeProcScaling();
+        LOG_INFO("scripts", "ItemUpgrade: Proc scaling registered");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in proc scaling");
+    }
+    
+    LOG_INFO("scripts", "ItemUpgrade: All registrations complete");
 }
