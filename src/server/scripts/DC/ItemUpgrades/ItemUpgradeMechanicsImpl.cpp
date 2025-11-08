@@ -141,7 +141,7 @@ std::string StatScalingCalculator::GetStatBonusDisplay(uint8 upgrade_level, uint
     float bonus_percent = (multiplier - 1.0f) * 100.0f;
     
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(1) << bonus_percent << "%";
+    oss << "|cff00ff00+" << static_cast<int>(std::round(bonus_percent)) << "%|r";
     return oss.str();
 }
 

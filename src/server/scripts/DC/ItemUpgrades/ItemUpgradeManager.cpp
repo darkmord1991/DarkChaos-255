@@ -570,9 +570,9 @@ namespace DarkChaos
                     std::ostringstream oss;
                     oss << "|cffffd700===== Item Upgrade Status =====|r\n";
                     uint8 default_max = GetTierMaxLevel(TIER_LEVELING);
-                    oss << "Upgrade Level: 0/" << static_cast<int>(default_max) << " (New)\n";
-                    oss << "Stat Bonus: +0%\n";
-                    oss << "Total Investment: 0 Essence, 0 Tokens\n";
+                    oss << "|cff00ff00Upgrade Level: 0/" << static_cast<int>(default_max) << " (New)|r\n";
+                    oss << "|cff00ff00Stat Bonus: +0%|r\n";
+                    oss << "|cff00ff00Total Investment: 0 Essence, 0 Tokens|r\n";
                     return oss.str();
                 }
 
@@ -580,21 +580,30 @@ namespace DarkChaos
 
                 uint8 tier = state->tier_id;
                 uint8 max_level = GetTierMaxLevel(tier);
+                
+                // Calculate stat multiplier
+                float multiplier = 1.0f;
+                if (state->upgrade_level > 0)
+                {
+                    multiplier = StatScalingCalculator::GetFinalMultiplier(state->upgrade_level, tier);
+                }
+                float bonus_percent = (multiplier - 1.0f) * 100.0f;
+                
                 // Build display using mechanics helpers
                 std::ostringstream oss;
                 oss << "|cffffd700===== Item Upgrade Status =====|r\n";
-                oss << "Upgrade Level: " << static_cast<int>(state->upgrade_level) << "/" << static_cast<int>(max_level) << "\n";
-                oss << "Stat Bonus: " << StatScalingCalculator::GetStatBonusDisplay(state->upgrade_level, tier) << "\n";
-                oss << "Item Level: " << ItemLevelCalculator::GetItemLevelDisplay(state->base_item_level, state->upgraded_item_level) << "\n";
-                oss << "Total Investment: " << state->essence_invested << " Essence, " << state->tokens_invested << " Tokens\n";
+                oss << "|cff00ff00Upgrade Level: " << static_cast<int>(state->upgrade_level) << "/" << static_cast<int>(max_level) << "|r\n";
+                oss << "|cff00ff00Stat Bonus: +" << static_cast<int>(std::round(bonus_percent)) << "%|r\n";
+                oss << "|cff00ff00Item Level: " << ItemLevelCalculator::GetItemLevelDisplay(state->base_item_level, state->upgraded_item_level) << "|r\n";
+                oss << "|cff00ff00Total Investment: " << state->essence_invested << " Essence, " << state->tokens_invested << " Tokens|r\n";
 
                 if (state->upgrade_level < max_level)
                 {
                     uint32 next_ess = GetEssenceCost(tier, state->upgrade_level + 1);
                     uint32 next_tok = GetUpgradeCost(tier, state->upgrade_level + 1);
-                    oss << "\n|cff00ff00Next Upgrade Cost:|r\n";
-                    oss << "Essence: " << next_ess << "\n";
-                    oss << "Tokens: " << next_tok << "\n";
+                    oss << "\n|cffffd700Next Upgrade Cost:|r\n";
+                    oss << "|cff00ff00Essence: " << next_ess << "|r\n";
+                    oss << "|cff00ff00Tokens: " << next_tok << "|r\n";
                 }
                 else
                 {

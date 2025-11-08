@@ -2,7 +2,7 @@
 -- Host:                         192.168.178.45
 -- Server-Version:               8.0.43-0ubuntu0.24.04.2 - (Ubuntu)
 -- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.11.0.7117
+-- HeidiSQL Version:             12.13.0.7147
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -418,15 +418,6 @@ CREATE TABLE IF NOT EXISTS `arena_season_reward_group` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.auctionhousebot_professionItems
-CREATE TABLE IF NOT EXISTS `auctionhousebot_professionItems` (
-  `Entry` int NOT NULL AUTO_INCREMENT,
-  `Item` int NOT NULL,
-  PRIMARY KEY (`Entry`)
-) ENGINE=InnoDB AUTO_INCREMENT=3661 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.auctionhouse_dbc
 CREATE TABLE IF NOT EXISTS `auctionhouse_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -452,6 +443,15 @@ CREATE TABLE IF NOT EXISTS `auctionhouse_dbc` (
   `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.auctionhousebot_professionItems
+CREATE TABLE IF NOT EXISTS `auctionhousebot_professionItems` (
+  `Entry` int NOT NULL AUTO_INCREMENT,
+  `Item` int NOT NULL,
+  PRIMARY KEY (`Entry`)
+) ENGINE=InnoDB AUTO_INCREMENT=3661 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -531,6 +531,15 @@ CREATE TABLE IF NOT EXISTS `battleground_template` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.battlemaster_entry
+CREATE TABLE IF NOT EXISTS `battlemaster_entry` (
+  `entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Entry of a creature',
+  `bg_template` int unsigned NOT NULL DEFAULT '0' COMMENT 'Battleground template id',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.battlemasterlist_dbc
 CREATE TABLE IF NOT EXISTS `battlemasterlist_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -566,15 +575,6 @@ CREATE TABLE IF NOT EXISTS `battlemasterlist_dbc` (
   `Minlevel` int NOT NULL DEFAULT '0',
   `Maxlevel` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.battlemaster_entry
-CREATE TABLE IF NOT EXISTS `battlemaster_entry` (
-  `entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Entry of a creature',
-  `bg_template` int unsigned NOT NULL DEFAULT '0' COMMENT 'Battleground template id',
-  PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -1033,170 +1033,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=5300685 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturedisplayinfoextra_dbc
-CREATE TABLE IF NOT EXISTS `creaturedisplayinfoextra_dbc` (
-  `ID` int unsigned NOT NULL DEFAULT '0',
-  `DisplayRaceID` int unsigned NOT NULL DEFAULT '0',
-  `DisplaySexID` int unsigned NOT NULL DEFAULT '0',
-  `SkinID` int unsigned NOT NULL DEFAULT '0',
-  `FaceID` int unsigned NOT NULL DEFAULT '0',
-  `HairStyleID` int unsigned NOT NULL DEFAULT '0',
-  `HairColorID` int unsigned NOT NULL DEFAULT '0',
-  `FacialHairID` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay1` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay2` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay3` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay4` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay5` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay6` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay7` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay8` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay9` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay10` int unsigned NOT NULL DEFAULT '0',
-  `NPCItemDisplay11` int unsigned NOT NULL DEFAULT '0',
-  `Flags` int unsigned NOT NULL DEFAULT '0',
-  `BakeName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturedisplayinfo_dbc
-CREATE TABLE IF NOT EXISTS `creaturedisplayinfo_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `ModelID` int NOT NULL DEFAULT '0',
-  `SoundID` int NOT NULL DEFAULT '0',
-  `ExtendedDisplayInfoID` int NOT NULL DEFAULT '0',
-  `CreatureModelScale` float NOT NULL DEFAULT '0',
-  `CreatureModelAlpha` int NOT NULL DEFAULT '0',
-  `TextureVariation_1` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `TextureVariation_2` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `TextureVariation_3` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `PortraitTextureName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `BloodLevel` int NOT NULL DEFAULT '0',
-  `BloodID` int NOT NULL DEFAULT '0',
-  `NPCSoundID` int NOT NULL DEFAULT '0',
-  `ParticleColorID` int NOT NULL DEFAULT '0',
-  `CreatureGeosetData` int NOT NULL DEFAULT '0',
-  `ObjectEffectPackageID` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturefamily_dbc
-CREATE TABLE IF NOT EXISTS `creaturefamily_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `MinScale` float NOT NULL DEFAULT '0',
-  `MinScaleLevel` int NOT NULL DEFAULT '0',
-  `MaxScale` float NOT NULL DEFAULT '0',
-  `MaxScaleLevel` int NOT NULL DEFAULT '0',
-  `SkillLine_1` int NOT NULL DEFAULT '0',
-  `SkillLine_2` int NOT NULL DEFAULT '0',
-  `PetFoodMask` int NOT NULL DEFAULT '0',
-  `PetTalentType` int NOT NULL DEFAULT '0',
-  `CategoryEnumID` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `IconFile` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturemodeldata_dbc
-CREATE TABLE IF NOT EXISTS `creaturemodeldata_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `ModelName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SizeClass` int NOT NULL DEFAULT '0',
-  `ModelScale` float NOT NULL DEFAULT '0',
-  `BloodID` int NOT NULL DEFAULT '0',
-  `FootprintTextureID` int NOT NULL DEFAULT '0',
-  `FootprintTextureLength` float NOT NULL DEFAULT '0',
-  `FootprintTextureWidth` float NOT NULL DEFAULT '0',
-  `FootprintParticleScale` float NOT NULL DEFAULT '0',
-  `FoleyMaterialID` int NOT NULL DEFAULT '0',
-  `FootstepShakeSize` int NOT NULL DEFAULT '0',
-  `DeathThudShakeSize` int NOT NULL DEFAULT '0',
-  `SoundID` int NOT NULL DEFAULT '0',
-  `CollisionWidth` float NOT NULL DEFAULT '0',
-  `CollisionHeight` float NOT NULL DEFAULT '0',
-  `MountHeight` float NOT NULL DEFAULT '0',
-  `GeoBoxMinX` float NOT NULL DEFAULT '0',
-  `GeoBoxMinY` float NOT NULL DEFAULT '0',
-  `GeoBoxMinZ` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxX` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxY` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxZ` float NOT NULL DEFAULT '0',
-  `WorldEffectScale` float NOT NULL DEFAULT '0',
-  `AttachedEffectScale` float NOT NULL DEFAULT '0',
-  `MissileCollisionRadius` float NOT NULL DEFAULT '0',
-  `MissileCollisionPush` float NOT NULL DEFAULT '0',
-  `MissileCollisionRaise` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturespelldata_dbc
-CREATE TABLE IF NOT EXISTS `creaturespelldata_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Spells_1` int NOT NULL DEFAULT '0',
-  `Spells_2` int NOT NULL DEFAULT '0',
-  `Spells_3` int NOT NULL DEFAULT '0',
-  `Spells_4` int NOT NULL DEFAULT '0',
-  `Availability_1` int NOT NULL DEFAULT '0',
-  `Availability_2` int NOT NULL DEFAULT '0',
-  `Availability_3` int NOT NULL DEFAULT '0',
-  `Availability_4` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.creaturetype_dbc
-CREATE TABLE IF NOT EXISTS `creaturetype_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5300695 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1590,6 +1427,169 @@ CREATE TABLE IF NOT EXISTS `creature_text_locale` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.creaturedisplayinfo_dbc
+CREATE TABLE IF NOT EXISTS `creaturedisplayinfo_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `ModelID` int NOT NULL DEFAULT '0',
+  `SoundID` int NOT NULL DEFAULT '0',
+  `ExtendedDisplayInfoID` int NOT NULL DEFAULT '0',
+  `CreatureModelScale` float NOT NULL DEFAULT '0',
+  `CreatureModelAlpha` int NOT NULL DEFAULT '0',
+  `TextureVariation_1` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TextureVariation_2` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TextureVariation_3` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PortraitTextureName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `BloodLevel` int NOT NULL DEFAULT '0',
+  `BloodID` int NOT NULL DEFAULT '0',
+  `NPCSoundID` int NOT NULL DEFAULT '0',
+  `ParticleColorID` int NOT NULL DEFAULT '0',
+  `CreatureGeosetData` int NOT NULL DEFAULT '0',
+  `ObjectEffectPackageID` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.creaturedisplayinfoextra_dbc
+CREATE TABLE IF NOT EXISTS `creaturedisplayinfoextra_dbc` (
+  `ID` int unsigned NOT NULL DEFAULT '0',
+  `DisplayRaceID` int unsigned NOT NULL DEFAULT '0',
+  `DisplaySexID` int unsigned NOT NULL DEFAULT '0',
+  `SkinID` int unsigned NOT NULL DEFAULT '0',
+  `FaceID` int unsigned NOT NULL DEFAULT '0',
+  `HairStyleID` int unsigned NOT NULL DEFAULT '0',
+  `HairColorID` int unsigned NOT NULL DEFAULT '0',
+  `FacialHairID` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay1` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay2` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay3` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay4` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay5` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay6` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay7` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay8` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay9` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay10` int unsigned NOT NULL DEFAULT '0',
+  `NPCItemDisplay11` int unsigned NOT NULL DEFAULT '0',
+  `Flags` int unsigned NOT NULL DEFAULT '0',
+  `BakeName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.creaturefamily_dbc
+CREATE TABLE IF NOT EXISTS `creaturefamily_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `MinScale` float NOT NULL DEFAULT '0',
+  `MinScaleLevel` int NOT NULL DEFAULT '0',
+  `MaxScale` float NOT NULL DEFAULT '0',
+  `MaxScaleLevel` int NOT NULL DEFAULT '0',
+  `SkillLine_1` int NOT NULL DEFAULT '0',
+  `SkillLine_2` int NOT NULL DEFAULT '0',
+  `PetFoodMask` int NOT NULL DEFAULT '0',
+  `PetTalentType` int NOT NULL DEFAULT '0',
+  `CategoryEnumID` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `IconFile` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.creaturemodeldata_dbc
+CREATE TABLE IF NOT EXISTS `creaturemodeldata_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `ModelName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SizeClass` int NOT NULL DEFAULT '0',
+  `ModelScale` float NOT NULL DEFAULT '0',
+  `BloodID` int NOT NULL DEFAULT '0',
+  `FootprintTextureID` int NOT NULL DEFAULT '0',
+  `FootprintTextureLength` float NOT NULL DEFAULT '0',
+  `FootprintTextureWidth` float NOT NULL DEFAULT '0',
+  `FootprintParticleScale` float NOT NULL DEFAULT '0',
+  `FoleyMaterialID` int NOT NULL DEFAULT '0',
+  `FootstepShakeSize` int NOT NULL DEFAULT '0',
+  `DeathThudShakeSize` int NOT NULL DEFAULT '0',
+  `SoundID` int NOT NULL DEFAULT '0',
+  `CollisionWidth` float NOT NULL DEFAULT '0',
+  `CollisionHeight` float NOT NULL DEFAULT '0',
+  `MountHeight` float NOT NULL DEFAULT '0',
+  `GeoBoxMinX` float NOT NULL DEFAULT '0',
+  `GeoBoxMinY` float NOT NULL DEFAULT '0',
+  `GeoBoxMinZ` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxX` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxY` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxZ` float NOT NULL DEFAULT '0',
+  `WorldEffectScale` float NOT NULL DEFAULT '0',
+  `AttachedEffectScale` float NOT NULL DEFAULT '0',
+  `MissileCollisionRadius` float NOT NULL DEFAULT '0',
+  `MissileCollisionPush` float NOT NULL DEFAULT '0',
+  `MissileCollisionRaise` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.creaturespelldata_dbc
+CREATE TABLE IF NOT EXISTS `creaturespelldata_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Spells_1` int NOT NULL DEFAULT '0',
+  `Spells_2` int NOT NULL DEFAULT '0',
+  `Spells_3` int NOT NULL DEFAULT '0',
+  `Spells_4` int NOT NULL DEFAULT '0',
+  `Availability_1` int NOT NULL DEFAULT '0',
+  `Availability_2` int NOT NULL DEFAULT '0',
+  `Availability_3` int NOT NULL DEFAULT '0',
+  `Availability_4` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.creaturetype_dbc
+CREATE TABLE IF NOT EXISTS `creaturetype_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.currencytypes_dbc
 CREATE TABLE IF NOT EXISTS `currencytypes_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -1601,8 +1601,272 @@ CREATE TABLE IF NOT EXISTS `currencytypes_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- dc_map_bounds table removed (obsolete). Use var/map_bounds.csv or client data parsing instead.
--- If you need persistent custom map bounds, add CSV entries to `var/map_bounds.csv` or recreate an equivalent table manually.
+-- Exportiere Struktur von Tabelle acore_world.dc_chaos_artifact_items
+CREATE TABLE IF NOT EXISTS `dc_chaos_artifact_items` (
+  `item_id` int unsigned NOT NULL,
+  `artifact_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `artifact_rarity` enum('common','uncommon','rare','epic','legendary') COLLATE utf8mb4_unicode_ci DEFAULT 'rare',
+  `power_level` tinyint unsigned DEFAULT '1',
+  `is_active` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`item_id`),
+  KEY `idx_rarity` (`artifact_rarity`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_daily_quest_token_rewards
+CREATE TABLE IF NOT EXISTS `dc_daily_quest_token_rewards` (
+  `quest_id` int unsigned NOT NULL COMMENT 'Daily quest ID (700101-700104)',
+  `token_item_id` int unsigned NOT NULL COMMENT 'Token item ID to award',
+  `token_count` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Number of tokens awarded',
+  `bonus_multiplier` float NOT NULL DEFAULT '1' COMMENT 'Multiplier for bonus tokens (difficulty-based)',
+  `created_date` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`quest_id`),
+  KEY `token_idx` (`token_item_id`),
+  CONSTRAINT `dc_daily_quest_token_rewards_ibfk_1` FOREIGN KEY (`token_item_id`) REFERENCES `dc_quest_reward_tokens` (`token_item_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily dungeon quest token rewards - triggers on QUEST_REWARDED status';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_difficulty_config
+CREATE TABLE IF NOT EXISTS `dc_difficulty_config` (
+  `difficulty_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `difficulty_name` enum('Normal','Heroic','Mythic','Mythic+') NOT NULL,
+  `display_name` varchar(50) NOT NULL COMMENT 'Display name for players',
+  `min_level` tinyint unsigned NOT NULL DEFAULT '1',
+  `token_multiplier` decimal(4,2) NOT NULL DEFAULT '1.00' COMMENT 'Token reward multiplier',
+  `gold_multiplier` decimal(4,2) NOT NULL DEFAULT '1.00' COMMENT 'Gold reward multiplier',
+  `xp_multiplier` decimal(4,2) NOT NULL DEFAULT '1.00' COMMENT 'XP reward multiplier',
+  `min_group_size` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Minimum players required',
+  `max_group_size` tinyint unsigned NOT NULL DEFAULT '5' COMMENT 'Maximum group size',
+  `time_limit_minutes` smallint unsigned NOT NULL DEFAULT '0' COMMENT '0 = no limit',
+  `deaths_allowed` tinyint unsigned NOT NULL DEFAULT '255' COMMENT '255 = unlimited',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT '1=active, 0=disabled',
+  `sort_order` tinyint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`difficulty_id`),
+  UNIQUE KEY `difficulty_name` (`difficulty_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='v4.0 - Difficulty tier configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_dungeon_npc_mapping
+CREATE TABLE IF NOT EXISTS `dc_dungeon_npc_mapping` (
+  `map_id` int unsigned NOT NULL COMMENT 'Dungeon map ID from Map.dbc',
+  `quest_master_entry` int unsigned NOT NULL COMMENT 'Quest master NPC creature entry (700000-700052)',
+  `dungeon_name` varchar(100) NOT NULL COMMENT 'Human-readable dungeon name',
+  `expansion` tinyint unsigned DEFAULT '0' COMMENT '0=Classic, 1=TBC, 2=WotLK, 3=Cata',
+  `min_level` tinyint unsigned DEFAULT '1' COMMENT 'Recommended minimum level',
+  `max_level` tinyint unsigned DEFAULT '80' COMMENT 'Recommended maximum level',
+  `enabled` tinyint(1) DEFAULT '1' COMMENT 'Is this dungeon quest system enabled?',
+  PRIMARY KEY (`map_id`,`quest_master_entry`),
+  KEY `idx_quest_master` (`quest_master_entry`),
+  KEY `idx_expansion` (`expansion`,`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='v4.0 - Maps dungeon map IDs to quest master NPCs';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_proc_spells
+CREATE TABLE IF NOT EXISTS `dc_item_proc_spells` (
+  `spell_id` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL DEFAULT '0',
+  `proc_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `proc_type` enum('damage','healing','buff','debuff') COLLATE utf8mb4_unicode_ci DEFAULT 'damage',
+  `scales_with_upgrade` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`spell_id`),
+  KEY `idx_proc_type` (`proc_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_templates_upgrade
+CREATE TABLE IF NOT EXISTS `dc_item_templates_upgrade` (
+  `item_id` int unsigned NOT NULL,
+  `tier_id` tinyint unsigned DEFAULT '1',
+  `armor_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'misc',
+  `item_slot` tinyint unsigned DEFAULT '0',
+  `rarity` tinyint unsigned DEFAULT '0',
+  `source_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'import',
+  `source_id` int unsigned DEFAULT '0',
+  `base_stat_value` smallint unsigned DEFAULT '0',
+  `cosmetic_variant` tinyint unsigned DEFAULT '0',
+  `is_active` tinyint(1) DEFAULT '1',
+  `upgrade_category` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'common',
+  `season` tinyint unsigned DEFAULT '1',
+  PRIMARY KEY (`item_id`),
+  KEY `idx_tier_season` (`tier_id`,`season`),
+  KEY `idx_armor_type` (`armor_type`),
+  KEY `idx_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Upgrade Template Mappings v2.0';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_costs
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
+  `cost_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `tier_id` tinyint unsigned NOT NULL,
+  `upgrade_level` tinyint unsigned NOT NULL,
+  `token_cost` int unsigned NOT NULL,
+  `essence_cost` int unsigned NOT NULL,
+  `gold_cost` int unsigned DEFAULT '0',
+  PRIMARY KEY (`cost_id`),
+  UNIQUE KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
+) ENGINE=InnoDB AUTO_INCREMENT=226 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_enchants
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_enchants` (
+  `enchant_id` int unsigned NOT NULL,
+  `tier_id` tinyint unsigned NOT NULL,
+  `upgrade_level` tinyint unsigned NOT NULL,
+  `stat_multiplier` float NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`enchant_id`),
+  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_stage
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stage` (
+  `tier_id` tinyint unsigned NOT NULL,
+  `item_id` int unsigned NOT NULL,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `item_level` smallint unsigned DEFAULT NULL,
+  `required_level` tinyint unsigned DEFAULT NULL,
+  `inventory_type` tinyint unsigned DEFAULT NULL,
+  `quality` tinyint unsigned DEFAULT NULL,
+  `item_class` tinyint unsigned DEFAULT NULL,
+  `item_subclass` tinyint unsigned DEFAULT NULL,
+  PRIMARY KEY (`tier_id`,`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Staging rows loaded from tier dumps for validation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_state
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_state` (
+  `item_guid` int unsigned NOT NULL COMMENT 'From item_instance.guid',
+  `player_guid` int unsigned NOT NULL,
+  `tier_id` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Leveling, 2=Heroic, 3=Raid, 4=Mythic, 5=Artifact',
+  `upgrade_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0-15, 0=base, 15=max',
+  `tokens_invested` int unsigned NOT NULL DEFAULT '0',
+  `essence_invested` int unsigned NOT NULL DEFAULT '0',
+  `base_item_level` smallint unsigned NOT NULL,
+  `upgraded_item_level` smallint unsigned NOT NULL,
+  `stat_multiplier` float NOT NULL DEFAULT '1' COMMENT '1.0=base, 1.5=+50% stats, etc',
+  `first_upgraded_at` int unsigned NOT NULL COMMENT 'Unix timestamp',
+  `last_upgraded_at` int unsigned NOT NULL COMMENT 'Unix timestamp',
+  `season` int unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`item_guid`),
+  KEY `idx_player` (`player_guid`),
+  KEY `idx_tier_level` (`tier_id`,`upgrade_level`),
+  KEY `idx_season` (`season`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Item upgrade states for each item';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_synthesis_inputs
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_inputs` (
+  `input_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `item_id` int unsigned NOT NULL,
+  `essence_value` int unsigned DEFAULT '1',
+  `synthesis_category` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`input_id`),
+  KEY `idx_item_id` (`item_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_synthesis_recipes
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_recipes` (
+  `recipe_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `recipe_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `input_item_1` int unsigned DEFAULT NULL,
+  `input_count_1` int unsigned DEFAULT '1',
+  `input_item_2` int unsigned DEFAULT NULL,
+  `input_count_2` int unsigned DEFAULT '1',
+  `output_item` int unsigned NOT NULL,
+  `output_count` int unsigned DEFAULT '1',
+  `is_active` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`recipe_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_tiers
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_tiers` (
+  `tier_id` tinyint unsigned NOT NULL,
+  `tier_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `min_item_level` smallint unsigned DEFAULT '0',
+  `max_item_level` smallint unsigned DEFAULT '0',
+  `is_active` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`tier_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_npc_quest_link
+CREATE TABLE IF NOT EXISTS `dc_npc_quest_link` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `npc_entry` int unsigned NOT NULL COMMENT 'NPC entry ID (700000-700052)',
+  `quest_id` int unsigned NOT NULL COMMENT 'Quest ID (700101-700999)',
+  `is_starter` tinyint(1) NOT NULL DEFAULT '1',
+  `is_ender` tinyint(1) NOT NULL DEFAULT '1',
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Admin notes',
+  `created_date` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `npc_quest_link` (`npc_entry`,`quest_id`),
+  KEY `quest_idx` (`quest_id`),
+  KEY `npc_idx` (`npc_entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Optional tracking - standard AC tables (creature_questrelation, creature_involvedrelation) are authoritative';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_quest_reward_tokens
+CREATE TABLE IF NOT EXISTS `dc_quest_reward_tokens` (
+  `token_item_id` int unsigned NOT NULL COMMENT 'Item ID for token (700001-700005)',
+  `token_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Display name of token',
+  `token_description` text COLLATE utf8mb4_unicode_ci COMMENT 'Token description for players',
+  `token_type` enum('explorer','specialist','legendary','challenge','speedrunner') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Token category/type',
+  `rarity` tinyint unsigned DEFAULT '1' COMMENT 'Item rarity (1=common, 2=uncommon, 3=rare, 4=epic)',
+  `icon_id` int unsigned DEFAULT NULL COMMENT 'Item icon ID from client DBC',
+  `created_date` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`token_item_id`),
+  KEY `token_type` (`token_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom dungeon quest token definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_synthesis_recipes
+CREATE TABLE IF NOT EXISTS `dc_synthesis_recipes` (
+  `recipe_id` int unsigned NOT NULL,
+  `type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `required_level` int unsigned NOT NULL DEFAULT '1',
+  `input_essence` int unsigned NOT NULL DEFAULT '0',
+  `input_tokens` int unsigned NOT NULL DEFAULT '0',
+  `output_item_id` int unsigned NOT NULL,
+  `success_rate_base` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`recipe_id`),
+  KEY `idx_type` (`type`),
+  KEY `idx_required_level` (`required_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Synthesis recipes for item transmutation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_weekly_quest_token_rewards
+CREATE TABLE IF NOT EXISTS `dc_weekly_quest_token_rewards` (
+  `quest_id` int unsigned NOT NULL COMMENT 'Weekly quest ID (700201-700204)',
+  `token_item_id` int unsigned NOT NULL COMMENT 'Token item ID to award',
+  `token_count` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Number of tokens awarded',
+  `bonus_multiplier` float NOT NULL DEFAULT '1' COMMENT 'Multiplier for bonus tokens (difficulty-based)',
+  `created_date` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`quest_id`),
+  KEY `token_idx` (`token_item_id`),
+  CONSTRAINT `dc_weekly_quest_token_rewards_ibfk_1` FOREIGN KEY (`token_item_id`) REFERENCES `dc_quest_reward_tokens` (`token_item_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly dungeon quest token rewards - triggers on QUEST_REWARDED status';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1662,36 +1926,6 @@ CREATE TABLE IF NOT EXISTS `disenchant_loot_template` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dungeonencounter_dbc
-CREATE TABLE IF NOT EXISTS `dungeonencounter_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `MapID` int NOT NULL DEFAULT '0',
-  `Difficulty` int NOT NULL DEFAULT '0',
-  `OrderIndex` int NOT NULL DEFAULT '0',
-  `Bit` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `SpellIconID` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.dungeon_access_requirements
 CREATE TABLE IF NOT EXISTS `dungeon_access_requirements` (
   `dungeon_access_id` tinyint unsigned NOT NULL COMMENT 'ID from dungeon_access_template',
@@ -1719,6 +1953,36 @@ CREATE TABLE IF NOT EXISTS `dungeon_access_template` (
   PRIMARY KEY (`id`),
   KEY `FK_dungeon_access_template__instance_template` (`map_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=122 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dungeon/raid access template and single requirements';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dungeonencounter_dbc
+CREATE TABLE IF NOT EXISTS `dungeonencounter_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `MapID` int NOT NULL DEFAULT '0',
+  `Difficulty` int NOT NULL DEFAULT '0',
+  `OrderIndex` int NOT NULL DEFAULT '0',
+  `Bit` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `SpellIconID` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1786,6 +2050,20 @@ CREATE TABLE IF NOT EXISTS `eluna_teleporter` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.emotes_dbc
+CREATE TABLE IF NOT EXISTS `emotes_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `EmoteSlashCommand` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `AnimID` int NOT NULL DEFAULT '0',
+  `EmoteFlags` int NOT NULL DEFAULT '0',
+  `EmoteSpecProc` int NOT NULL DEFAULT '0',
+  `EmoteSpecProcParam` int NOT NULL DEFAULT '0',
+  `EventSoundID` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.emotestext_dbc
 CREATE TABLE IF NOT EXISTS `emotestext_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -1807,20 +2085,6 @@ CREATE TABLE IF NOT EXISTS `emotestext_dbc` (
   `EmoteText_14` int NOT NULL DEFAULT '0',
   `EmoteText_15` int NOT NULL DEFAULT '0',
   `EmoteText_16` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.emotes_dbc
-CREATE TABLE IF NOT EXISTS `emotes_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `EmoteSlashCommand` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `AnimID` int NOT NULL DEFAULT '0',
-  `EmoteFlags` int NOT NULL DEFAULT '0',
-  `EmoteSpecProc` int NOT NULL DEFAULT '0',
-  `EmoteSpecProcParam` int NOT NULL DEFAULT '0',
-  `EventSoundID` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1848,27 +2112,6 @@ CREATE TABLE IF NOT EXISTS `exploration_basexp` (
   `basexp` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Exploration System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.factiontemplate_dbc
-CREATE TABLE IF NOT EXISTS `factiontemplate_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Faction` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `FactionGroup` int NOT NULL DEFAULT '0',
-  `FriendGroup` int NOT NULL DEFAULT '0',
-  `EnemyGroup` int NOT NULL DEFAULT '0',
-  `Enemies_1` int NOT NULL DEFAULT '0',
-  `Enemies_2` int NOT NULL DEFAULT '0',
-  `Enemies_3` int NOT NULL DEFAULT '0',
-  `Enemies_4` int NOT NULL DEFAULT '0',
-  `Friend_1` int NOT NULL DEFAULT '0',
-  `Friend_2` int NOT NULL DEFAULT '0',
-  `Friend_3` int NOT NULL DEFAULT '0',
-  `Friend_4` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1936,6 +2179,27 @@ CREATE TABLE IF NOT EXISTS `faction_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.factiontemplate_dbc
+CREATE TABLE IF NOT EXISTS `factiontemplate_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Faction` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `FactionGroup` int NOT NULL DEFAULT '0',
+  `FriendGroup` int NOT NULL DEFAULT '0',
+  `EnemyGroup` int NOT NULL DEFAULT '0',
+  `Enemies_1` int NOT NULL DEFAULT '0',
+  `Enemies_2` int NOT NULL DEFAULT '0',
+  `Enemies_3` int NOT NULL DEFAULT '0',
+  `Enemies_4` int NOT NULL DEFAULT '0',
+  `Friend_1` int NOT NULL DEFAULT '0',
+  `Friend_2` int NOT NULL DEFAULT '0',
+  `Friend_3` int NOT NULL DEFAULT '0',
+  `Friend_4` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.fishing_loot_template
 CREATE TABLE IF NOT EXISTS `fishing_loot_template` (
   `Entry` int unsigned NOT NULL DEFAULT '0',
@@ -1950,6 +2214,215 @@ CREATE TABLE IF NOT EXISTS `fishing_loot_template` (
   `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`Entry`,`Item`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event
+CREATE TABLE IF NOT EXISTS `game_event` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `start_time` timestamp NULL DEFAULT '2000-01-01 13:00:00' COMMENT 'Absolute start date, the event will never start before',
+  `end_time` timestamp NULL DEFAULT '2000-01-01 13:00:00' COMMENT 'Absolute end date, the event will never start after',
+  `occurence` bigint unsigned NOT NULL DEFAULT '5184000' COMMENT 'Delay in minutes between occurences of the event',
+  `length` bigint unsigned NOT NULL DEFAULT '2592000' COMMENT 'Length in minutes of the event',
+  `holiday` int unsigned NOT NULL DEFAULT '0' COMMENT 'Client side holiday id',
+  `holidayStage` tinyint unsigned NOT NULL DEFAULT '0',
+  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Description of the event displayed in console',
+  `world_event` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0 if normal event, 1 if world event',
+  `announce` tinyint unsigned NOT NULL DEFAULT '2' COMMENT '0 dont announce, 1 announce, 2 value from config',
+  PRIMARY KEY (`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_arena_seasons
+CREATE TABLE IF NOT EXISTS `game_event_arena_seasons` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `season` tinyint unsigned NOT NULL COMMENT 'Arena season number',
+  UNIQUE KEY `season` (`season`,`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_battleground_holiday
+CREATE TABLE IF NOT EXISTS `game_event_battleground_holiday` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `bgflag` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_condition
+CREATE TABLE IF NOT EXISTS `game_event_condition` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `condition_id` int unsigned NOT NULL DEFAULT '0',
+  `req_num` float DEFAULT '0',
+  `max_world_state_field` smallint unsigned NOT NULL DEFAULT '0',
+  `done_world_state_field` smallint unsigned NOT NULL DEFAULT '0',
+  `description` varchar(25) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  PRIMARY KEY (`eventEntry`,`condition_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_creature
+CREATE TABLE IF NOT EXISTS `game_event_creature` (
+  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
+  `guid` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`,`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_creature_quest
+CREATE TABLE IF NOT EXISTS `game_event_creature_quest` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
+  `id` int unsigned NOT NULL DEFAULT '0',
+  `quest` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`,`quest`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_gameobject
+CREATE TABLE IF NOT EXISTS `game_event_gameobject` (
+  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
+  `guid` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`,`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_gameobject_quest
+CREATE TABLE IF NOT EXISTS `game_event_gameobject_quest` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `id` int unsigned NOT NULL DEFAULT '0',
+  `quest` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`,`quest`,`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_model_equip
+CREATE TABLE IF NOT EXISTS `game_event_model_equip` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
+  `guid` int unsigned NOT NULL DEFAULT '0',
+  `modelid` int unsigned NOT NULL DEFAULT '0',
+  `equipment_id` tinyint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_npc_vendor
+CREATE TABLE IF NOT EXISTS `game_event_npc_vendor` (
+  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event.',
+  `guid` int unsigned NOT NULL DEFAULT '0',
+  `slot` smallint NOT NULL DEFAULT '0',
+  `item` int unsigned NOT NULL DEFAULT '0',
+  `maxcount` int unsigned NOT NULL DEFAULT '0',
+  `incrtime` int unsigned NOT NULL DEFAULT '0',
+  `ExtendedCost` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`eventEntry`,`guid`,`item`) USING BTREE,
+  KEY `slot` (`slot`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_npcflag
+CREATE TABLE IF NOT EXISTS `game_event_npcflag` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `guid` int unsigned NOT NULL DEFAULT '0',
+  `npcflag` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guid`,`eventEntry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_pool
+CREATE TABLE IF NOT EXISTS `game_event_pool` (
+  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
+  `pool_entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Id of the pool',
+  PRIMARY KEY (`pool_entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_prerequisite
+CREATE TABLE IF NOT EXISTS `game_event_prerequisite` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
+  `prerequisite_event` int unsigned NOT NULL,
+  PRIMARY KEY (`eventEntry`,`prerequisite_event`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_quest_condition
+CREATE TABLE IF NOT EXISTS `game_event_quest_condition` (
+  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
+  `quest` int unsigned NOT NULL DEFAULT '0',
+  `condition_id` int unsigned NOT NULL DEFAULT '0',
+  `num` float DEFAULT '0',
+  PRIMARY KEY (`quest`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_event_seasonal_questrelation
+CREATE TABLE IF NOT EXISTS `game_event_seasonal_questrelation` (
+  `questId` int unsigned NOT NULL COMMENT 'Quest Identifier',
+  `eventEntry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Entry of the game event',
+  PRIMARY KEY (`questId`,`eventEntry`),
+  KEY `idx_quest` (`questId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_graveyard
+CREATE TABLE IF NOT EXISTS `game_graveyard` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Map` int NOT NULL DEFAULT '0',
+  `x` float NOT NULL DEFAULT '0',
+  `y` float NOT NULL DEFAULT '0',
+  `z` float NOT NULL DEFAULT '0',
+  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`ID`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_tele
+CREATE TABLE IF NOT EXISTS `game_tele` (
+  `id` int unsigned NOT NULL,
+  `position_x` float NOT NULL DEFAULT '0',
+  `position_y` float NOT NULL DEFAULT '0',
+  `position_z` float NOT NULL DEFAULT '0',
+  `orientation` float NOT NULL DEFAULT '0',
+  `map` smallint unsigned NOT NULL DEFAULT '0',
+  `name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tele Command';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.game_weather
+CREATE TABLE IF NOT EXISTS `game_weather` (
+  `zone` int unsigned NOT NULL DEFAULT '0',
+  `spring_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `spring_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `spring_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `summer_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `summer_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `summer_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `fall_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `fall_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `fall_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `winter_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `winter_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `winter_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
+  `ScriptName` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  PRIMARY KEY (`zone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weather System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1978,47 +2451,6 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5530824 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.gameobjectartkit_dbc
-CREATE TABLE IF NOT EXISTS `gameobjectartkit_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Texture_1` int NOT NULL DEFAULT '0',
-  `Texture_2` int NOT NULL DEFAULT '0',
-  `Texture_3` int NOT NULL DEFAULT '0',
-  `Attach_Model_1` int NOT NULL DEFAULT '0',
-  `Attach_Model_2` int NOT NULL DEFAULT '0',
-  `Attach_Model_3` int NOT NULL DEFAULT '0',
-  `Attach_Model_4` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.gameobjectdisplayinfo_dbc
-CREATE TABLE IF NOT EXISTS `gameobjectdisplayinfo_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `ModelName` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Sound_1` int NOT NULL DEFAULT '0',
-  `Sound_2` int NOT NULL DEFAULT '0',
-  `Sound_3` int NOT NULL DEFAULT '0',
-  `Sound_4` int NOT NULL DEFAULT '0',
-  `Sound_5` int NOT NULL DEFAULT '0',
-  `Sound_6` int NOT NULL DEFAULT '0',
-  `Sound_7` int NOT NULL DEFAULT '0',
-  `Sound_8` int NOT NULL DEFAULT '0',
-  `Sound_9` int NOT NULL DEFAULT '0',
-  `Sound_10` int NOT NULL DEFAULT '0',
-  `GeoBoxMinX` float NOT NULL DEFAULT '0',
-  `GeoBoxMinY` float NOT NULL DEFAULT '0',
-  `GeoBoxMinZ` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxX` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxY` float NOT NULL DEFAULT '0',
-  `GeoBoxMaxZ` float NOT NULL DEFAULT '0',
-  `ObjectEffectPackageID` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2149,212 +2581,44 @@ CREATE TABLE IF NOT EXISTS `gameobject_template_locale` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.game_event
-CREATE TABLE IF NOT EXISTS `game_event` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `start_time` timestamp NULL DEFAULT '2000-01-01 13:00:00' COMMENT 'Absolute start date, the event will never start before',
-  `end_time` timestamp NULL DEFAULT '2000-01-01 13:00:00' COMMENT 'Absolute end date, the event will never start after',
-  `occurence` bigint unsigned NOT NULL DEFAULT '5184000' COMMENT 'Delay in minutes between occurences of the event',
-  `length` bigint unsigned NOT NULL DEFAULT '2592000' COMMENT 'Length in minutes of the event',
-  `holiday` int unsigned NOT NULL DEFAULT '0' COMMENT 'Client side holiday id',
-  `holidayStage` tinyint unsigned NOT NULL DEFAULT '0',
-  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Description of the event displayed in console',
-  `world_event` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0 if normal event, 1 if world event',
-  `announce` tinyint unsigned NOT NULL DEFAULT '2' COMMENT '0 dont announce, 1 announce, 2 value from config',
-  PRIMARY KEY (`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_arena_seasons
-CREATE TABLE IF NOT EXISTS `game_event_arena_seasons` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `season` tinyint unsigned NOT NULL COMMENT 'Arena season number',
-  UNIQUE KEY `season` (`season`,`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_battleground_holiday
-CREATE TABLE IF NOT EXISTS `game_event_battleground_holiday` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `bgflag` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_condition
-CREATE TABLE IF NOT EXISTS `game_event_condition` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `condition_id` int unsigned NOT NULL DEFAULT '0',
-  `req_num` float DEFAULT '0',
-  `max_world_state_field` smallint unsigned NOT NULL DEFAULT '0',
-  `done_world_state_field` smallint unsigned NOT NULL DEFAULT '0',
-  `description` varchar(25) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  PRIMARY KEY (`eventEntry`,`condition_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_creature
-CREATE TABLE IF NOT EXISTS `game_event_creature` (
-  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
-  `guid` int unsigned NOT NULL,
-  PRIMARY KEY (`guid`,`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_creature_quest
-CREATE TABLE IF NOT EXISTS `game_event_creature_quest` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
-  `id` int unsigned NOT NULL DEFAULT '0',
-  `quest` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`,`quest`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_gameobject
-CREATE TABLE IF NOT EXISTS `game_event_gameobject` (
-  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
-  `guid` int unsigned NOT NULL,
-  PRIMARY KEY (`guid`,`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_gameobject_quest
-CREATE TABLE IF NOT EXISTS `game_event_gameobject_quest` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `id` int unsigned NOT NULL DEFAULT '0',
-  `quest` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`,`quest`,`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_model_equip
-CREATE TABLE IF NOT EXISTS `game_event_model_equip` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
-  `guid` int unsigned NOT NULL DEFAULT '0',
-  `modelid` int unsigned NOT NULL DEFAULT '0',
-  `equipment_id` tinyint unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_npcflag
-CREATE TABLE IF NOT EXISTS `game_event_npcflag` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `guid` int unsigned NOT NULL DEFAULT '0',
-  `npcflag` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`guid`,`eventEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_npc_vendor
-CREATE TABLE IF NOT EXISTS `game_event_npc_vendor` (
-  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event.',
-  `guid` int unsigned NOT NULL DEFAULT '0',
-  `slot` smallint NOT NULL DEFAULT '0',
-  `item` int unsigned NOT NULL DEFAULT '0',
-  `maxcount` int unsigned NOT NULL DEFAULT '0',
-  `incrtime` int unsigned NOT NULL DEFAULT '0',
-  `ExtendedCost` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`eventEntry`,`guid`,`item`) USING BTREE,
-  KEY `slot` (`slot`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_pool
-CREATE TABLE IF NOT EXISTS `game_event_pool` (
-  `eventEntry` smallint NOT NULL COMMENT 'Entry of the game event. Put negative entry to remove during event.',
-  `pool_entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Id of the pool',
-  PRIMARY KEY (`pool_entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_prerequisite
-CREATE TABLE IF NOT EXISTS `game_event_prerequisite` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event',
-  `prerequisite_event` int unsigned NOT NULL,
-  PRIMARY KEY (`eventEntry`,`prerequisite_event`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_quest_condition
-CREATE TABLE IF NOT EXISTS `game_event_quest_condition` (
-  `eventEntry` tinyint unsigned NOT NULL COMMENT 'Entry of the game event.',
-  `quest` int unsigned NOT NULL DEFAULT '0',
-  `condition_id` int unsigned NOT NULL DEFAULT '0',
-  `num` float DEFAULT '0',
-  PRIMARY KEY (`quest`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_event_seasonal_questrelation
-CREATE TABLE IF NOT EXISTS `game_event_seasonal_questrelation` (
-  `questId` int unsigned NOT NULL COMMENT 'Quest Identifier',
-  `eventEntry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Entry of the game event',
-  PRIMARY KEY (`questId`,`eventEntry`),
-  KEY `idx_quest` (`questId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_graveyard
-CREATE TABLE IF NOT EXISTS `game_graveyard` (
+-- Exportiere Struktur von Tabelle acore_world.gameobjectartkit_dbc
+CREATE TABLE IF NOT EXISTS `gameobjectartkit_dbc` (
   `ID` int NOT NULL DEFAULT '0',
-  `Map` int NOT NULL DEFAULT '0',
-  `x` float NOT NULL DEFAULT '0',
-  `y` float NOT NULL DEFAULT '0',
-  `z` float NOT NULL DEFAULT '0',
-  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`ID`) USING BTREE
+  `Texture_1` int NOT NULL DEFAULT '0',
+  `Texture_2` int NOT NULL DEFAULT '0',
+  `Texture_3` int NOT NULL DEFAULT '0',
+  `Attach_Model_1` int NOT NULL DEFAULT '0',
+  `Attach_Model_2` int NOT NULL DEFAULT '0',
+  `Attach_Model_3` int NOT NULL DEFAULT '0',
+  `Attach_Model_4` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.game_tele
-CREATE TABLE IF NOT EXISTS `game_tele` (
-  `id` int unsigned NOT NULL,
-  `position_x` float NOT NULL DEFAULT '0',
-  `position_y` float NOT NULL DEFAULT '0',
-  `position_z` float NOT NULL DEFAULT '0',
-  `orientation` float NOT NULL DEFAULT '0',
-  `map` smallint unsigned NOT NULL DEFAULT '0',
-  `name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tele Command';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.game_weather
-CREATE TABLE IF NOT EXISTS `game_weather` (
-  `zone` int unsigned NOT NULL DEFAULT '0',
-  `spring_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `spring_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `spring_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `summer_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `summer_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `summer_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `fall_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `fall_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `fall_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `winter_rain_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `winter_snow_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `winter_storm_chance` tinyint unsigned NOT NULL DEFAULT '25',
-  `ScriptName` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  PRIMARY KEY (`zone`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weather System';
+-- Exportiere Struktur von Tabelle acore_world.gameobjectdisplayinfo_dbc
+CREATE TABLE IF NOT EXISTS `gameobjectdisplayinfo_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `ModelName` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Sound_1` int NOT NULL DEFAULT '0',
+  `Sound_2` int NOT NULL DEFAULT '0',
+  `Sound_3` int NOT NULL DEFAULT '0',
+  `Sound_4` int NOT NULL DEFAULT '0',
+  `Sound_5` int NOT NULL DEFAULT '0',
+  `Sound_6` int NOT NULL DEFAULT '0',
+  `Sound_7` int NOT NULL DEFAULT '0',
+  `Sound_8` int NOT NULL DEFAULT '0',
+  `Sound_9` int NOT NULL DEFAULT '0',
+  `Sound_10` int NOT NULL DEFAULT '0',
+  `GeoBoxMinX` float NOT NULL DEFAULT '0',
+  `GeoBoxMinY` float NOT NULL DEFAULT '0',
+  `GeoBoxMinZ` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxX` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxY` float NOT NULL DEFAULT '0',
+  `GeoBoxMaxZ` float NOT NULL DEFAULT '0',
+  `ObjectEffectPackageID` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2453,15 +2717,6 @@ CREATE TABLE IF NOT EXISTS `gtbarbershopcostbase_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.gtchancetomeleecritbase_dbc
-CREATE TABLE IF NOT EXISTS `gtchancetomeleecritbase_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Data` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.gtchancetomeleecrit_dbc
 CREATE TABLE IF NOT EXISTS `gtchancetomeleecrit_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -2471,8 +2726,8 @@ CREATE TABLE IF NOT EXISTS `gtchancetomeleecrit_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.gtchancetospellcritbase_dbc
-CREATE TABLE IF NOT EXISTS `gtchancetospellcritbase_dbc` (
+-- Exportiere Struktur von Tabelle acore_world.gtchancetomeleecritbase_dbc
+CREATE TABLE IF NOT EXISTS `gtchancetomeleecritbase_dbc` (
   `ID` int NOT NULL DEFAULT '0',
   `Data` float NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`) USING BTREE
@@ -2482,6 +2737,15 @@ CREATE TABLE IF NOT EXISTS `gtchancetospellcritbase_dbc` (
 
 -- Exportiere Struktur von Tabelle acore_world.gtchancetospellcrit_dbc
 CREATE TABLE IF NOT EXISTS `gtchancetospellcrit_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Data` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.gtchancetospellcritbase_dbc
+CREATE TABLE IF NOT EXISTS `gtchancetospellcritbase_dbc` (
   `ID` int NOT NULL DEFAULT '0',
   `Data` float NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`) USING BTREE
@@ -2539,6 +2803,17 @@ CREATE TABLE IF NOT EXISTS `gtregenmpperspt_dbc` (
   `ID` int NOT NULL DEFAULT '0',
   `Data` float NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.holiday_dates
+CREATE TABLE IF NOT EXISTS `holiday_dates` (
+  `id` int unsigned NOT NULL,
+  `date_id` tinyint unsigned NOT NULL,
+  `date_value` int unsigned NOT NULL,
+  `holiday_duration` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`,`date_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -2605,17 +2880,6 @@ CREATE TABLE IF NOT EXISTS `holidays_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.holiday_dates
-CREATE TABLE IF NOT EXISTS `holiday_dates` (
-  `id` int unsigned NOT NULL,
-  `date_id` tinyint unsigned NOT NULL,
-  `date_value` int unsigned NOT NULL,
-  `holiday_duration` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`,`date_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.instance_encounters
 CREATE TABLE IF NOT EXISTS `instance_encounters` (
   `entry` int unsigned NOT NULL COMMENT 'Unique entry from DungeonEncounter.dbc',
@@ -2635,6 +2899,230 @@ CREATE TABLE IF NOT EXISTS `instance_template` (
   `script` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `allowMount` tinyint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`map`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_dbc
+CREATE TABLE IF NOT EXISTS `item_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `ClassID` int NOT NULL DEFAULT '0',
+  `SubclassID` int NOT NULL DEFAULT '0',
+  `Sound_Override_Subclassid` int NOT NULL DEFAULT '0',
+  `Material` int NOT NULL DEFAULT '0',
+  `DisplayInfoID` int NOT NULL DEFAULT '0',
+  `InventoryType` int NOT NULL DEFAULT '0',
+  `SheatheType` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_enchantment_template
+CREATE TABLE IF NOT EXISTS `item_enchantment_template` (
+  `entry` int unsigned NOT NULL DEFAULT '0',
+  `ench` int unsigned NOT NULL DEFAULT '0',
+  `chance` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`entry`,`ench`),
+  CONSTRAINT `item_enchantment_template_chk_1` CHECK ((`chance` >= 0))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Random Enchantment System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_loot_template
+CREATE TABLE IF NOT EXISTS `item_loot_template` (
+  `Entry` int unsigned NOT NULL DEFAULT '0',
+  `Item` int unsigned NOT NULL DEFAULT '0',
+  `Reference` int NOT NULL DEFAULT '0',
+  `Chance` float NOT NULL DEFAULT '100',
+  `QuestRequired` tinyint NOT NULL DEFAULT '0',
+  `LootMode` smallint unsigned NOT NULL DEFAULT '1',
+  `GroupId` tinyint unsigned NOT NULL DEFAULT '0',
+  `MinCount` tinyint unsigned NOT NULL DEFAULT '1',
+  `MaxCount` tinyint unsigned NOT NULL DEFAULT '1',
+  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Entry`,`Item`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_set_names
+CREATE TABLE IF NOT EXISTS `item_set_names` (
+  `entry` int unsigned NOT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `InventoryType` tinyint unsigned NOT NULL DEFAULT '0',
+  `VerifiedBuild` int DEFAULT NULL,
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_set_names_locale
+CREATE TABLE IF NOT EXISTS `item_set_names_locale` (
+  `ID` int unsigned NOT NULL DEFAULT '0',
+  `locale` varchar(4) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `VerifiedBuild` int DEFAULT NULL,
+  PRIMARY KEY (`ID`,`locale`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_template
+CREATE TABLE IF NOT EXISTS `item_template` (
+  `entry` int unsigned NOT NULL DEFAULT '0',
+  `class` tinyint unsigned NOT NULL DEFAULT '0',
+  `subclass` tinyint unsigned NOT NULL DEFAULT '0',
+  `SoundOverrideSubclass` tinyint NOT NULL DEFAULT '-1',
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `displayid` int unsigned NOT NULL DEFAULT '0',
+  `Quality` tinyint unsigned NOT NULL DEFAULT '0',
+  `Flags` int unsigned NOT NULL DEFAULT '0',
+  `FlagsExtra` int unsigned NOT NULL DEFAULT '0',
+  `BuyCount` tinyint unsigned NOT NULL DEFAULT '1',
+  `BuyPrice` bigint NOT NULL DEFAULT '0',
+  `SellPrice` int unsigned NOT NULL DEFAULT '0',
+  `InventoryType` tinyint unsigned NOT NULL DEFAULT '0',
+  `AllowableClass` int NOT NULL DEFAULT '-1',
+  `AllowableRace` int NOT NULL DEFAULT '-1',
+  `ItemLevel` smallint unsigned NOT NULL DEFAULT '0',
+  `RequiredLevel` tinyint unsigned NOT NULL DEFAULT '0',
+  `RequiredSkill` smallint unsigned NOT NULL DEFAULT '0',
+  `RequiredSkillRank` smallint unsigned NOT NULL DEFAULT '0',
+  `requiredspell` int unsigned NOT NULL DEFAULT '0',
+  `requiredhonorrank` int unsigned NOT NULL DEFAULT '0',
+  `RequiredCityRank` int unsigned NOT NULL DEFAULT '0',
+  `RequiredReputationFaction` smallint unsigned NOT NULL DEFAULT '0',
+  `RequiredReputationRank` smallint unsigned NOT NULL DEFAULT '0',
+  `maxcount` int NOT NULL DEFAULT '0',
+  `stackable` int DEFAULT '1',
+  `ContainerSlots` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_type1` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value1` int NOT NULL DEFAULT '0',
+  `stat_type2` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value2` int NOT NULL DEFAULT '0',
+  `stat_type3` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value3` int NOT NULL DEFAULT '0',
+  `stat_type4` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value4` int NOT NULL DEFAULT '0',
+  `stat_type5` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value5` int NOT NULL DEFAULT '0',
+  `stat_type6` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value6` int NOT NULL DEFAULT '0',
+  `stat_type7` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value7` int NOT NULL DEFAULT '0',
+  `stat_type8` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value8` int NOT NULL DEFAULT '0',
+  `stat_type9` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value9` int NOT NULL DEFAULT '0',
+  `stat_type10` tinyint unsigned NOT NULL DEFAULT '0',
+  `stat_value10` int NOT NULL DEFAULT '0',
+  `ScalingStatDistribution` smallint NOT NULL DEFAULT '0',
+  `ScalingStatValue` int unsigned NOT NULL DEFAULT '0',
+  `dmg_min1` float NOT NULL DEFAULT '0',
+  `dmg_max1` float NOT NULL DEFAULT '0',
+  `dmg_type1` tinyint unsigned NOT NULL DEFAULT '0',
+  `dmg_min2` float NOT NULL DEFAULT '0',
+  `dmg_max2` float NOT NULL DEFAULT '0',
+  `dmg_type2` tinyint unsigned NOT NULL DEFAULT '0',
+  `armor` int unsigned NOT NULL DEFAULT '0',
+  `holy_res` smallint DEFAULT NULL,
+  `fire_res` smallint DEFAULT NULL,
+  `nature_res` smallint DEFAULT NULL,
+  `frost_res` smallint DEFAULT NULL,
+  `shadow_res` smallint DEFAULT NULL,
+  `arcane_res` smallint DEFAULT NULL,
+  `delay` smallint unsigned NOT NULL DEFAULT '1000',
+  `ammo_type` tinyint unsigned NOT NULL DEFAULT '0',
+  `RangedModRange` float NOT NULL DEFAULT '0',
+  `spellid_1` int NOT NULL DEFAULT '0',
+  `spelltrigger_1` tinyint unsigned NOT NULL DEFAULT '0',
+  `spellcharges_1` smallint NOT NULL DEFAULT '0',
+  `spellppmRate_1` float NOT NULL DEFAULT '0',
+  `spellcooldown_1` int NOT NULL DEFAULT '-1',
+  `spellcategory_1` smallint unsigned NOT NULL DEFAULT '0',
+  `spellcategorycooldown_1` int NOT NULL DEFAULT '-1',
+  `spellid_2` int NOT NULL DEFAULT '0',
+  `spelltrigger_2` tinyint unsigned NOT NULL DEFAULT '0',
+  `spellcharges_2` smallint NOT NULL DEFAULT '0',
+  `spellppmRate_2` float NOT NULL DEFAULT '0',
+  `spellcooldown_2` int NOT NULL DEFAULT '-1',
+  `spellcategory_2` smallint unsigned NOT NULL DEFAULT '0',
+  `spellcategorycooldown_2` int NOT NULL DEFAULT '-1',
+  `spellid_3` int NOT NULL DEFAULT '0',
+  `spelltrigger_3` tinyint unsigned NOT NULL DEFAULT '0',
+  `spellcharges_3` smallint NOT NULL DEFAULT '0',
+  `spellppmRate_3` float NOT NULL DEFAULT '0',
+  `spellcooldown_3` int NOT NULL DEFAULT '-1',
+  `spellcategory_3` smallint unsigned NOT NULL DEFAULT '0',
+  `spellcategorycooldown_3` int NOT NULL DEFAULT '-1',
+  `spellid_4` int NOT NULL DEFAULT '0',
+  `spelltrigger_4` tinyint unsigned NOT NULL DEFAULT '0',
+  `spellcharges_4` smallint NOT NULL DEFAULT '0',
+  `spellppmRate_4` float NOT NULL DEFAULT '0',
+  `spellcooldown_4` int NOT NULL DEFAULT '-1',
+  `spellcategory_4` smallint unsigned NOT NULL DEFAULT '0',
+  `spellcategorycooldown_4` int NOT NULL DEFAULT '-1',
+  `spellid_5` int NOT NULL DEFAULT '0',
+  `spelltrigger_5` tinyint unsigned NOT NULL DEFAULT '0',
+  `spellcharges_5` smallint NOT NULL DEFAULT '0',
+  `spellppmRate_5` float NOT NULL DEFAULT '0',
+  `spellcooldown_5` int NOT NULL DEFAULT '-1',
+  `spellcategory_5` smallint unsigned NOT NULL DEFAULT '0',
+  `spellcategorycooldown_5` int NOT NULL DEFAULT '-1',
+  `bonding` tinyint unsigned NOT NULL DEFAULT '0',
+  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `PageText` int unsigned NOT NULL DEFAULT '0',
+  `LanguageID` tinyint unsigned NOT NULL DEFAULT '0',
+  `PageMaterial` tinyint unsigned NOT NULL DEFAULT '0',
+  `startquest` int unsigned NOT NULL DEFAULT '0',
+  `lockid` int unsigned NOT NULL DEFAULT '0',
+  `Material` tinyint NOT NULL DEFAULT '0',
+  `sheath` tinyint unsigned NOT NULL DEFAULT '0',
+  `RandomProperty` int NOT NULL DEFAULT '0',
+  `RandomSuffix` int unsigned NOT NULL DEFAULT '0',
+  `block` int unsigned NOT NULL DEFAULT '0',
+  `itemset` int unsigned NOT NULL DEFAULT '0',
+  `MaxDurability` smallint unsigned NOT NULL DEFAULT '0',
+  `area` int unsigned NOT NULL DEFAULT '0',
+  `Map` smallint NOT NULL DEFAULT '0',
+  `BagFamily` int NOT NULL DEFAULT '0',
+  `TotemCategory` int NOT NULL DEFAULT '0',
+  `socketColor_1` tinyint NOT NULL DEFAULT '0',
+  `socketContent_1` int NOT NULL DEFAULT '0',
+  `socketColor_2` tinyint NOT NULL DEFAULT '0',
+  `socketContent_2` int NOT NULL DEFAULT '0',
+  `socketColor_3` tinyint NOT NULL DEFAULT '0',
+  `socketContent_3` int NOT NULL DEFAULT '0',
+  `socketBonus` int NOT NULL DEFAULT '0',
+  `GemProperties` int NOT NULL DEFAULT '0',
+  `RequiredDisenchantSkill` smallint NOT NULL DEFAULT '-1',
+  `ArmorDamageModifier` float NOT NULL DEFAULT '0',
+  `duration` int unsigned NOT NULL DEFAULT '0',
+  `ItemLimitCategory` smallint NOT NULL DEFAULT '0',
+  `HolidayId` int unsigned NOT NULL DEFAULT '0',
+  `ScriptName` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `DisenchantID` int unsigned NOT NULL DEFAULT '0',
+  `FoodType` tinyint unsigned NOT NULL DEFAULT '0',
+  `minMoneyLoot` int unsigned NOT NULL DEFAULT '0',
+  `maxMoneyLoot` int unsigned NOT NULL DEFAULT '0',
+  `flagsCustom` int unsigned NOT NULL DEFAULT '0',
+  `VerifiedBuild` int DEFAULT NULL,
+  PRIMARY KEY (`entry`),
+  KEY `idx_name` (`name`(250)),
+  KEY `items_index` (`class`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.item_template_locale
+CREATE TABLE IF NOT EXISTS `item_template_locale` (
+  `ID` int unsigned NOT NULL DEFAULT '0',
+  `locale` varchar(4) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `VerifiedBuild` int DEFAULT NULL,
+  PRIMARY KEY (`ID`,`locale`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -2873,226 +3361,27 @@ CREATE TABLE IF NOT EXISTS `itemset_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.item_dbc
-CREATE TABLE IF NOT EXISTS `item_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `ClassID` int NOT NULL DEFAULT '0',
-  `SubclassID` int NOT NULL DEFAULT '0',
-  `Sound_Override_Subclassid` int NOT NULL DEFAULT '0',
-  `Material` int NOT NULL DEFAULT '0',
-  `DisplayInfoID` int NOT NULL DEFAULT '0',
-  `InventoryType` int NOT NULL DEFAULT '0',
-  `SheatheType` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
+-- Exportiere Struktur von Tabelle acore_world.lfg_dungeon_rewards
+CREATE TABLE IF NOT EXISTS `lfg_dungeon_rewards` (
+  `dungeonId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Dungeon entry from dbc',
+  `maxLevel` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Max level at which this reward is rewarded',
+  `firstQuestId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest id with rewards for first dungeon this day',
+  `otherQuestId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest id with rewards for Nth dungeon this day',
+  PRIMARY KEY (`dungeonId`,`maxLevel`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.item_enchantment_template
-CREATE TABLE IF NOT EXISTS `item_enchantment_template` (
-  `entry` int unsigned NOT NULL DEFAULT '0',
-  `ench` int unsigned NOT NULL DEFAULT '0',
-  `chance` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`entry`,`ench`),
-  CONSTRAINT `item_enchantment_template_chk_1` CHECK ((`chance` >= 0))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Random Enchantment System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.item_loot_template
-CREATE TABLE IF NOT EXISTS `item_loot_template` (
-  `Entry` int unsigned NOT NULL DEFAULT '0',
-  `Item` int unsigned NOT NULL DEFAULT '0',
-  `Reference` int NOT NULL DEFAULT '0',
-  `Chance` float NOT NULL DEFAULT '100',
-  `QuestRequired` tinyint NOT NULL DEFAULT '0',
-  `LootMode` smallint unsigned NOT NULL DEFAULT '1',
-  `GroupId` tinyint unsigned NOT NULL DEFAULT '0',
-  `MinCount` tinyint unsigned NOT NULL DEFAULT '1',
-  `MaxCount` tinyint unsigned NOT NULL DEFAULT '1',
-  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`Entry`,`Item`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.item_set_names
-CREATE TABLE IF NOT EXISTS `item_set_names` (
-  `entry` int unsigned NOT NULL,
-  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  `InventoryType` tinyint unsigned NOT NULL DEFAULT '0',
+-- Exportiere Struktur von Tabelle acore_world.lfg_dungeon_template
+CREATE TABLE IF NOT EXISTS `lfg_dungeon_template` (
+  `dungeonId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Unique id from LFGDungeons.dbc',
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `position_x` float NOT NULL DEFAULT '0',
+  `position_y` float NOT NULL DEFAULT '0',
+  `position_z` float NOT NULL DEFAULT '0',
+  `orientation` float NOT NULL DEFAULT '0',
   `VerifiedBuild` int DEFAULT NULL,
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.item_set_names_locale
-CREATE TABLE IF NOT EXISTS `item_set_names_locale` (
-  `ID` int unsigned NOT NULL DEFAULT '0',
-  `locale` varchar(4) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `VerifiedBuild` int DEFAULT NULL,
-  PRIMARY KEY (`ID`,`locale`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.item_template
-CREATE TABLE IF NOT EXISTS `item_template` (
-  `entry` int unsigned NOT NULL DEFAULT '0',
-  `class` tinyint unsigned NOT NULL DEFAULT '0',
-  `subclass` tinyint unsigned NOT NULL DEFAULT '0',
-  `SoundOverrideSubclass` tinyint NOT NULL DEFAULT '-1',
-  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  `displayid` int unsigned NOT NULL DEFAULT '0',
-  `Quality` tinyint unsigned NOT NULL DEFAULT '0',
-  `Flags` int unsigned NOT NULL DEFAULT '0',
-  `FlagsExtra` int unsigned NOT NULL DEFAULT '0',
-  `BuyCount` tinyint unsigned NOT NULL DEFAULT '1',
-  `BuyPrice` bigint NOT NULL DEFAULT '0',
-  `SellPrice` int unsigned NOT NULL DEFAULT '0',
-  `InventoryType` tinyint unsigned NOT NULL DEFAULT '0',
-  `AllowableClass` int NOT NULL DEFAULT '-1',
-  `AllowableRace` int NOT NULL DEFAULT '-1',
-  `ItemLevel` smallint unsigned NOT NULL DEFAULT '0',
-  `RequiredLevel` tinyint unsigned NOT NULL DEFAULT '0',
-  `RequiredSkill` smallint unsigned NOT NULL DEFAULT '0',
-  `RequiredSkillRank` smallint unsigned NOT NULL DEFAULT '0',
-  `requiredspell` int unsigned NOT NULL DEFAULT '0',
-  `requiredhonorrank` int unsigned NOT NULL DEFAULT '0',
-  `RequiredCityRank` int unsigned NOT NULL DEFAULT '0',
-  `RequiredReputationFaction` smallint unsigned NOT NULL DEFAULT '0',
-  `RequiredReputationRank` smallint unsigned NOT NULL DEFAULT '0',
-  `maxcount` int NOT NULL DEFAULT '0',
-  `stackable` int DEFAULT '1',
-  `ContainerSlots` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_type1` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value1` int NOT NULL DEFAULT '0',
-  `stat_type2` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value2` int NOT NULL DEFAULT '0',
-  `stat_type3` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value3` int NOT NULL DEFAULT '0',
-  `stat_type4` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value4` int NOT NULL DEFAULT '0',
-  `stat_type5` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value5` int NOT NULL DEFAULT '0',
-  `stat_type6` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value6` int NOT NULL DEFAULT '0',
-  `stat_type7` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value7` int NOT NULL DEFAULT '0',
-  `stat_type8` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value8` int NOT NULL DEFAULT '0',
-  `stat_type9` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value9` int NOT NULL DEFAULT '0',
-  `stat_type10` tinyint unsigned NOT NULL DEFAULT '0',
-  `stat_value10` int NOT NULL DEFAULT '0',
-  `ScalingStatDistribution` smallint NOT NULL DEFAULT '0',
-  `ScalingStatValue` int unsigned NOT NULL DEFAULT '0',
-  `dmg_min1` float NOT NULL DEFAULT '0',
-  `dmg_max1` float NOT NULL DEFAULT '0',
-  `dmg_type1` tinyint unsigned NOT NULL DEFAULT '0',
-  `dmg_min2` float NOT NULL DEFAULT '0',
-  `dmg_max2` float NOT NULL DEFAULT '0',
-  `dmg_type2` tinyint unsigned NOT NULL DEFAULT '0',
-  `armor` int unsigned NOT NULL DEFAULT '0',
-  `holy_res` smallint DEFAULT NULL,
-  `fire_res` smallint DEFAULT NULL,
-  `nature_res` smallint DEFAULT NULL,
-  `frost_res` smallint DEFAULT NULL,
-  `shadow_res` smallint DEFAULT NULL,
-  `arcane_res` smallint DEFAULT NULL,
-  `delay` smallint unsigned NOT NULL DEFAULT '1000',
-  `ammo_type` tinyint unsigned NOT NULL DEFAULT '0',
-  `RangedModRange` float NOT NULL DEFAULT '0',
-  `spellid_1` int NOT NULL DEFAULT '0',
-  `spelltrigger_1` tinyint unsigned NOT NULL DEFAULT '0',
-  `spellcharges_1` smallint NOT NULL DEFAULT '0',
-  `spellppmRate_1` float NOT NULL DEFAULT '0',
-  `spellcooldown_1` int NOT NULL DEFAULT '-1',
-  `spellcategory_1` smallint unsigned NOT NULL DEFAULT '0',
-  `spellcategorycooldown_1` int NOT NULL DEFAULT '-1',
-  `spellid_2` int NOT NULL DEFAULT '0',
-  `spelltrigger_2` tinyint unsigned NOT NULL DEFAULT '0',
-  `spellcharges_2` smallint NOT NULL DEFAULT '0',
-  `spellppmRate_2` float NOT NULL DEFAULT '0',
-  `spellcooldown_2` int NOT NULL DEFAULT '-1',
-  `spellcategory_2` smallint unsigned NOT NULL DEFAULT '0',
-  `spellcategorycooldown_2` int NOT NULL DEFAULT '-1',
-  `spellid_3` int NOT NULL DEFAULT '0',
-  `spelltrigger_3` tinyint unsigned NOT NULL DEFAULT '0',
-  `spellcharges_3` smallint NOT NULL DEFAULT '0',
-  `spellppmRate_3` float NOT NULL DEFAULT '0',
-  `spellcooldown_3` int NOT NULL DEFAULT '-1',
-  `spellcategory_3` smallint unsigned NOT NULL DEFAULT '0',
-  `spellcategorycooldown_3` int NOT NULL DEFAULT '-1',
-  `spellid_4` int NOT NULL DEFAULT '0',
-  `spelltrigger_4` tinyint unsigned NOT NULL DEFAULT '0',
-  `spellcharges_4` smallint NOT NULL DEFAULT '0',
-  `spellppmRate_4` float NOT NULL DEFAULT '0',
-  `spellcooldown_4` int NOT NULL DEFAULT '-1',
-  `spellcategory_4` smallint unsigned NOT NULL DEFAULT '0',
-  `spellcategorycooldown_4` int NOT NULL DEFAULT '-1',
-  `spellid_5` int NOT NULL DEFAULT '0',
-  `spelltrigger_5` tinyint unsigned NOT NULL DEFAULT '0',
-  `spellcharges_5` smallint NOT NULL DEFAULT '0',
-  `spellppmRate_5` float NOT NULL DEFAULT '0',
-  `spellcooldown_5` int NOT NULL DEFAULT '-1',
-  `spellcategory_5` smallint unsigned NOT NULL DEFAULT '0',
-  `spellcategorycooldown_5` int NOT NULL DEFAULT '-1',
-  `bonding` tinyint unsigned NOT NULL DEFAULT '0',
-  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  `PageText` int unsigned NOT NULL DEFAULT '0',
-  `LanguageID` tinyint unsigned NOT NULL DEFAULT '0',
-  `PageMaterial` tinyint unsigned NOT NULL DEFAULT '0',
-  `startquest` int unsigned NOT NULL DEFAULT '0',
-  `lockid` int unsigned NOT NULL DEFAULT '0',
-  `Material` tinyint NOT NULL DEFAULT '0',
-  `sheath` tinyint unsigned NOT NULL DEFAULT '0',
-  `RandomProperty` int NOT NULL DEFAULT '0',
-  `RandomSuffix` int unsigned NOT NULL DEFAULT '0',
-  `block` int unsigned NOT NULL DEFAULT '0',
-  `itemset` int unsigned NOT NULL DEFAULT '0',
-  `MaxDurability` smallint unsigned NOT NULL DEFAULT '0',
-  `area` int unsigned NOT NULL DEFAULT '0',
-  `Map` smallint NOT NULL DEFAULT '0',
-  `BagFamily` int NOT NULL DEFAULT '0',
-  `TotemCategory` int NOT NULL DEFAULT '0',
-  `socketColor_1` tinyint NOT NULL DEFAULT '0',
-  `socketContent_1` int NOT NULL DEFAULT '0',
-  `socketColor_2` tinyint NOT NULL DEFAULT '0',
-  `socketContent_2` int NOT NULL DEFAULT '0',
-  `socketColor_3` tinyint NOT NULL DEFAULT '0',
-  `socketContent_3` int NOT NULL DEFAULT '0',
-  `socketBonus` int NOT NULL DEFAULT '0',
-  `GemProperties` int NOT NULL DEFAULT '0',
-  `RequiredDisenchantSkill` smallint NOT NULL DEFAULT '-1',
-  `ArmorDamageModifier` float NOT NULL DEFAULT '0',
-  `duration` int unsigned NOT NULL DEFAULT '0',
-  `ItemLimitCategory` smallint NOT NULL DEFAULT '0',
-  `HolidayId` int unsigned NOT NULL DEFAULT '0',
-  `ScriptName` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  `DisenchantID` int unsigned NOT NULL DEFAULT '0',
-  `FoodType` tinyint unsigned NOT NULL DEFAULT '0',
-  `minMoneyLoot` int unsigned NOT NULL DEFAULT '0',
-  `maxMoneyLoot` int unsigned NOT NULL DEFAULT '0',
-  `flagsCustom` int unsigned NOT NULL DEFAULT '0',
-  `VerifiedBuild` int DEFAULT NULL,
-  PRIMARY KEY (`entry`),
-  KEY `idx_name` (`name`(250)),
-  KEY `items_index` (`class`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.item_template_locale
-CREATE TABLE IF NOT EXISTS `item_template_locale` (
-  `ID` int unsigned NOT NULL DEFAULT '0',
-  `locale` varchar(4) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `Description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `VerifiedBuild` int DEFAULT NULL,
-  PRIMARY KEY (`ID`,`locale`)
+  PRIMARY KEY (`dungeonId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -3149,31 +3438,6 @@ CREATE TABLE IF NOT EXISTS `lfgdungeons_dbc` (
   `Description_Lang_Unk` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
   `Description_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.lfg_dungeon_rewards
-CREATE TABLE IF NOT EXISTS `lfg_dungeon_rewards` (
-  `dungeonId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Dungeon entry from dbc',
-  `maxLevel` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Max level at which this reward is rewarded',
-  `firstQuestId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest id with rewards for first dungeon this day',
-  `otherQuestId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest id with rewards for Nth dungeon this day',
-  PRIMARY KEY (`dungeonId`,`maxLevel`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.lfg_dungeon_template
-CREATE TABLE IF NOT EXISTS `lfg_dungeon_template` (
-  `dungeonId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Unique id from LFGDungeons.dbc',
-  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `position_x` float NOT NULL DEFAULT '0',
-  `position_y` float NOT NULL DEFAULT '0',
-  `position_z` float NOT NULL DEFAULT '0',
-  `orientation` float NOT NULL DEFAULT '0',
-  `VerifiedBuild` int DEFAULT NULL,
-  PRIMARY KEY (`dungeonId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -3302,6 +3566,34 @@ CREATE TABLE IF NOT EXISTS `lock_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.mail_level_reward
+CREATE TABLE IF NOT EXISTS `mail_level_reward` (
+  `level` tinyint unsigned NOT NULL DEFAULT '0',
+  `raceMask` int unsigned NOT NULL DEFAULT '0',
+  `mailTemplateId` int unsigned NOT NULL DEFAULT '0',
+  `senderEntry` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`level`,`raceMask`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mail System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.mail_loot_template
+CREATE TABLE IF NOT EXISTS `mail_loot_template` (
+  `Entry` int unsigned NOT NULL DEFAULT '0',
+  `Item` int unsigned NOT NULL DEFAULT '0',
+  `Reference` int NOT NULL DEFAULT '0',
+  `Chance` float NOT NULL DEFAULT '100',
+  `QuestRequired` tinyint NOT NULL DEFAULT '0',
+  `LootMode` smallint unsigned NOT NULL DEFAULT '1',
+  `GroupId` tinyint unsigned NOT NULL DEFAULT '0',
+  `MinCount` tinyint unsigned NOT NULL DEFAULT '1',
+  `MaxCount` tinyint unsigned NOT NULL DEFAULT '1',
+  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Entry`,`Item`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.mailtemplate_dbc
 CREATE TABLE IF NOT EXISTS `mailtemplate_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -3339,64 +3631,6 @@ CREATE TABLE IF NOT EXISTS `mailtemplate_dbc` (
   `Body_Lang_itIT` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Body_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Body_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mail_level_reward
-CREATE TABLE IF NOT EXISTS `mail_level_reward` (
-  `level` tinyint unsigned NOT NULL DEFAULT '0',
-  `raceMask` int unsigned NOT NULL DEFAULT '0',
-  `mailTemplateId` int unsigned NOT NULL DEFAULT '0',
-  `senderEntry` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`level`,`raceMask`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mail System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mail_loot_template
-CREATE TABLE IF NOT EXISTS `mail_loot_template` (
-  `Entry` int unsigned NOT NULL DEFAULT '0',
-  `Item` int unsigned NOT NULL DEFAULT '0',
-  `Reference` int NOT NULL DEFAULT '0',
-  `Chance` float NOT NULL DEFAULT '100',
-  `QuestRequired` tinyint NOT NULL DEFAULT '0',
-  `LootMode` smallint unsigned NOT NULL DEFAULT '1',
-  `GroupId` tinyint unsigned NOT NULL DEFAULT '0',
-  `MinCount` tinyint unsigned NOT NULL DEFAULT '1',
-  `MaxCount` tinyint unsigned NOT NULL DEFAULT '1',
-  `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`Entry`,`Item`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mapdifficulty_dbc
-CREATE TABLE IF NOT EXISTS `mapdifficulty_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `MapID` int NOT NULL DEFAULT '0',
-  `Difficulty` int NOT NULL DEFAULT '0',
-  `Message_Lang_enUS` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_enGB` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_koKR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_frFR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_deDE` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_enCN` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_zhCN` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_enTW` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_zhTW` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_esES` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_esMX` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_ruRU` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_ptPT` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_ptBR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_itIT` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Message_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `RaidDuration` int NOT NULL DEFAULT '0',
-  `MaxPlayers` int NOT NULL DEFAULT '0',
-  `Difficultystring` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -3475,6 +3709,36 @@ CREATE TABLE IF NOT EXISTS `map_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.mapdifficulty_dbc
+CREATE TABLE IF NOT EXISTS `mapdifficulty_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `MapID` int NOT NULL DEFAULT '0',
+  `Difficulty` int NOT NULL DEFAULT '0',
+  `Message_Lang_enUS` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_enGB` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_koKR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_frFR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_deDE` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_enCN` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_zhCN` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_enTW` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_zhTW` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_esES` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_esMX` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_ruRU` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_ptPT` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_ptBR` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_itIT` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Message_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `RaidDuration` int NOT NULL DEFAULT '0',
+  `MaxPlayers` int NOT NULL DEFAULT '0',
+  `Difficultystring` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.milling_loot_template
 CREATE TABLE IF NOT EXISTS `milling_loot_template` (
   `Entry` int unsigned NOT NULL DEFAULT '0',
@@ -3489,27 +3753,6 @@ CREATE TABLE IF NOT EXISTS `milling_loot_template` (
   `Comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`Entry`,`Item`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Loot System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.module_string
-CREATE TABLE IF NOT EXISTS `module_string` (
-  `module` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'module dir name, eg mod-cfbg',
-  `id` int unsigned NOT NULL,
-  `string` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  PRIMARY KEY (`module`,`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.module_string_locale
-CREATE TABLE IF NOT EXISTS `module_string_locale` (
-  `module` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Corresponds to an existing entry in module_string',
-  `id` int unsigned NOT NULL COMMENT 'Corresponds to an existing entry in module_string',
-  `locale` enum('koKR','frFR','deDE','zhCN','zhTW','esES','esMX','ruRU') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `string` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  PRIMARY KEY (`module`,`id`,`locale`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -3590,82 +3833,33 @@ CREATE TABLE IF NOT EXISTS `mod_auctionhousebot_disabled_items` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.module_string
+CREATE TABLE IF NOT EXISTS `module_string` (
+  `module` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'module dir name, eg mod-cfbg',
+  `id` int unsigned NOT NULL,
+  `string` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`module`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.module_string_locale
+CREATE TABLE IF NOT EXISTS `module_string_locale` (
+  `module` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Corresponds to an existing entry in module_string',
+  `id` int unsigned NOT NULL COMMENT 'Corresponds to an existing entry in module_string',
+  `locale` enum('koKR','frFR','deDE','zhCN','zhTW','esES','esMX','ruRU') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `string` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`module`,`id`,`locale`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.movie_dbc
 CREATE TABLE IF NOT EXISTS `movie_dbc` (
   `ID` int NOT NULL DEFAULT '0',
   `Filename` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Volume` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_affix
-CREATE TABLE IF NOT EXISTS `mythic_plus_affix` (
-  `lvl` int unsigned NOT NULL,
-  `affixtype` smallint unsigned NOT NULL,
-  `val1` float DEFAULT NULL,
-  `val2` float DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_capable_dungeon
-CREATE TABLE IF NOT EXISTS `mythic_plus_capable_dungeon` (
-  `map` smallint unsigned NOT NULL,
-  `mapdifficulty` smallint unsigned NOT NULL,
-  `final_boss_entry` int unsigned NOT NULL,
-  PRIMARY KEY (`map`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_ignore_multiply_affix
-CREATE TABLE IF NOT EXISTS `mythic_plus_ignore_multiply_affix` (
-  `entry` int unsigned NOT NULL,
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_level
-CREATE TABLE IF NOT EXISTS `mythic_plus_level` (
-  `lvl` int unsigned NOT NULL,
-  `timelimit` int unsigned NOT NULL,
-  `random_affix_count` int unsigned DEFAULT '0',
-  PRIMARY KEY (`lvl`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_level_rewards
-CREATE TABLE IF NOT EXISTS `mythic_plus_level_rewards` (
-  `lvl` int unsigned NOT NULL,
-  `rewardtype` smallint unsigned NOT NULL,
-  `val1` int unsigned NOT NULL,
-  `val2` int unsigned DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_map_scale
-CREATE TABLE IF NOT EXISTS `mythic_plus_map_scale` (
-  `map` smallint unsigned NOT NULL,
-  `mapdifficulty` smallint unsigned NOT NULL,
-  `dmg_scale_trash` float NOT NULL DEFAULT '1',
-  `dmg_scale_boss` float NOT NULL DEFAULT '1'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.mythic_plus_spell_override
-CREATE TABLE IF NOT EXISTS `mythic_plus_spell_override` (
-  `spellid` int unsigned NOT NULL,
-  `map` int unsigned NOT NULL,
-  `modpct` float DEFAULT '-1',
-  `dotmodpct` float DEFAULT '-1',
-  `comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`spellid`,`map`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -3962,80 +4156,6 @@ CREATE TABLE IF NOT EXISTS `pickpocketing_loot_template` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo
-CREATE TABLE IF NOT EXISTS `playercreateinfo` (
-  `race` tinyint unsigned NOT NULL DEFAULT '0',
-  `class` tinyint unsigned NOT NULL DEFAULT '0',
-  `map` smallint unsigned NOT NULL DEFAULT '0',
-  `zone` int unsigned NOT NULL DEFAULT '0',
-  `position_x` float NOT NULL DEFAULT '0',
-  `position_y` float NOT NULL DEFAULT '0',
-  `position_z` float NOT NULL DEFAULT '0',
-  `orientation` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`race`,`class`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo_action
-CREATE TABLE IF NOT EXISTS `playercreateinfo_action` (
-  `race` tinyint unsigned NOT NULL DEFAULT '0',
-  `class` tinyint unsigned NOT NULL DEFAULT '0',
-  `button` smallint unsigned NOT NULL DEFAULT '0',
-  `action` int unsigned NOT NULL DEFAULT '0',
-  `type` smallint unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`race`,`class`,`button`),
-  KEY `playercreateinfo_race_class_index` (`race`,`class`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo_cast_spell
-CREATE TABLE IF NOT EXISTS `playercreateinfo_cast_spell` (
-  `raceMask` int unsigned NOT NULL DEFAULT '0',
-  `classMask` int unsigned NOT NULL DEFAULT '0',
-  `spell` int unsigned NOT NULL DEFAULT '0',
-  `note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo_item
-CREATE TABLE IF NOT EXISTS `playercreateinfo_item` (
-  `race` tinyint unsigned NOT NULL DEFAULT '0',
-  `class` tinyint unsigned NOT NULL DEFAULT '0',
-  `itemid` int unsigned NOT NULL DEFAULT '0',
-  `amount` int NOT NULL DEFAULT '1',
-  `Note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`race`,`class`,`itemid`),
-  KEY `playercreateinfo_race_class_index` (`race`,`class`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo_skills
-CREATE TABLE IF NOT EXISTS `playercreateinfo_skills` (
-  `raceMask` int unsigned NOT NULL,
-  `classMask` int unsigned NOT NULL,
-  `skill` smallint unsigned NOT NULL,
-  `rank` smallint unsigned NOT NULL DEFAULT '0',
-  `comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`raceMask`,`classMask`,`skill`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.playercreateinfo_spell_custom
-CREATE TABLE IF NOT EXISTS `playercreateinfo_spell_custom` (
-  `racemask` int unsigned NOT NULL DEFAULT '0',
-  `classmask` int unsigned NOT NULL DEFAULT '0',
-  `Spell` int unsigned NOT NULL DEFAULT '0',
-  `Note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`racemask`,`classmask`,`Spell`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.player_class_stats
 CREATE TABLE IF NOT EXISTS `player_class_stats` (
   `Class` tinyint unsigned NOT NULL,
@@ -4179,6 +4299,80 @@ CREATE TABLE IF NOT EXISTS `player_xp_for_level` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo
+CREATE TABLE IF NOT EXISTS `playercreateinfo` (
+  `race` tinyint unsigned NOT NULL DEFAULT '0',
+  `class` tinyint unsigned NOT NULL DEFAULT '0',
+  `map` smallint unsigned NOT NULL DEFAULT '0',
+  `zone` int unsigned NOT NULL DEFAULT '0',
+  `position_x` float NOT NULL DEFAULT '0',
+  `position_y` float NOT NULL DEFAULT '0',
+  `position_z` float NOT NULL DEFAULT '0',
+  `orientation` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`race`,`class`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo_action
+CREATE TABLE IF NOT EXISTS `playercreateinfo_action` (
+  `race` tinyint unsigned NOT NULL DEFAULT '0',
+  `class` tinyint unsigned NOT NULL DEFAULT '0',
+  `button` smallint unsigned NOT NULL DEFAULT '0',
+  `action` int unsigned NOT NULL DEFAULT '0',
+  `type` smallint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`race`,`class`,`button`),
+  KEY `playercreateinfo_race_class_index` (`race`,`class`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo_cast_spell
+CREATE TABLE IF NOT EXISTS `playercreateinfo_cast_spell` (
+  `raceMask` int unsigned NOT NULL DEFAULT '0',
+  `classMask` int unsigned NOT NULL DEFAULT '0',
+  `spell` int unsigned NOT NULL DEFAULT '0',
+  `note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo_item
+CREATE TABLE IF NOT EXISTS `playercreateinfo_item` (
+  `race` tinyint unsigned NOT NULL DEFAULT '0',
+  `class` tinyint unsigned NOT NULL DEFAULT '0',
+  `itemid` int unsigned NOT NULL DEFAULT '0',
+  `amount` int NOT NULL DEFAULT '1',
+  `Note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`race`,`class`,`itemid`),
+  KEY `playercreateinfo_race_class_index` (`race`,`class`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo_skills
+CREATE TABLE IF NOT EXISTS `playercreateinfo_skills` (
+  `raceMask` int unsigned NOT NULL,
+  `classMask` int unsigned NOT NULL,
+  `skill` smallint unsigned NOT NULL,
+  `rank` smallint unsigned NOT NULL DEFAULT '0',
+  `comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`raceMask`,`classMask`,`skill`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.playercreateinfo_spell_custom
+CREATE TABLE IF NOT EXISTS `playercreateinfo_spell_custom` (
+  `racemask` int unsigned NOT NULL DEFAULT '0',
+  `classmask` int unsigned NOT NULL DEFAULT '0',
+  `Spell` int unsigned NOT NULL DEFAULT '0',
+  `Note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`racemask`,`classmask`,`Spell`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.points_of_interest
 CREATE TABLE IF NOT EXISTS `points_of_interest` (
   `ID` int unsigned NOT NULL DEFAULT '0',
@@ -4300,67 +4494,6 @@ CREATE TABLE IF NOT EXISTS `pvpdifficulty_dbc` (
   `MinLevel` int NOT NULL DEFAULT '0',
   `MaxLevel` int NOT NULL DEFAULT '0',
   `Difficulty` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.questfactionreward_dbc
-CREATE TABLE IF NOT EXISTS `questfactionreward_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Difficulty_1` int NOT NULL DEFAULT '0',
-  `Difficulty_2` int NOT NULL DEFAULT '0',
-  `Difficulty_3` int NOT NULL DEFAULT '0',
-  `Difficulty_4` int NOT NULL DEFAULT '0',
-  `Difficulty_5` int NOT NULL DEFAULT '0',
-  `Difficulty_6` int NOT NULL DEFAULT '0',
-  `Difficulty_7` int NOT NULL DEFAULT '0',
-  `Difficulty_8` int NOT NULL DEFAULT '0',
-  `Difficulty_9` int NOT NULL DEFAULT '0',
-  `Difficulty_10` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.questsort_dbc
-CREATE TABLE IF NOT EXISTS `questsort_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `SortName_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `SortName_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.questxp_dbc
-CREATE TABLE IF NOT EXISTS `questxp_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Difficulty_1` int NOT NULL DEFAULT '0',
-  `Difficulty_2` int NOT NULL DEFAULT '0',
-  `Difficulty_3` int NOT NULL DEFAULT '0',
-  `Difficulty_4` int NOT NULL DEFAULT '0',
-  `Difficulty_5` int NOT NULL DEFAULT '0',
-  `Difficulty_6` int NOT NULL DEFAULT '0',
-  `Difficulty_7` int NOT NULL DEFAULT '0',
-  `Difficulty_8` int NOT NULL DEFAULT '0',
-  `Difficulty_9` int NOT NULL DEFAULT '0',
-  `Difficulty_10` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -4673,6 +4806,67 @@ CREATE TABLE IF NOT EXISTS `quest_template_locale` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.questfactionreward_dbc
+CREATE TABLE IF NOT EXISTS `questfactionreward_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Difficulty_1` int NOT NULL DEFAULT '0',
+  `Difficulty_2` int NOT NULL DEFAULT '0',
+  `Difficulty_3` int NOT NULL DEFAULT '0',
+  `Difficulty_4` int NOT NULL DEFAULT '0',
+  `Difficulty_5` int NOT NULL DEFAULT '0',
+  `Difficulty_6` int NOT NULL DEFAULT '0',
+  `Difficulty_7` int NOT NULL DEFAULT '0',
+  `Difficulty_8` int NOT NULL DEFAULT '0',
+  `Difficulty_9` int NOT NULL DEFAULT '0',
+  `Difficulty_10` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.questsort_dbc
+CREATE TABLE IF NOT EXISTS `questsort_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `SortName_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SortName_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.questxp_dbc
+CREATE TABLE IF NOT EXISTS `questxp_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Difficulty_1` int NOT NULL DEFAULT '0',
+  `Difficulty_2` int NOT NULL DEFAULT '0',
+  `Difficulty_3` int NOT NULL DEFAULT '0',
+  `Difficulty_4` int NOT NULL DEFAULT '0',
+  `Difficulty_5` int NOT NULL DEFAULT '0',
+  `Difficulty_6` int NOT NULL DEFAULT '0',
+  `Difficulty_7` int NOT NULL DEFAULT '0',
+  `Difficulty_8` int NOT NULL DEFAULT '0',
+  `Difficulty_9` int NOT NULL DEFAULT '0',
+  `Difficulty_10` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.randproppoints_dbc
 CREATE TABLE IF NOT EXISTS `randproppoints_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -4828,24 +5022,45 @@ CREATE TABLE IF NOT EXISTS `script_waypoint` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.skilllineability_dbc
-CREATE TABLE IF NOT EXISTS `skilllineability_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `SkillLine` int NOT NULL DEFAULT '0',
-  `Spell` int NOT NULL DEFAULT '0',
-  `RaceMask` int NOT NULL DEFAULT '0',
-  `ClassMask` int NOT NULL DEFAULT '0',
-  `ExcludeRace` int NOT NULL DEFAULT '0',
-  `ExcludeClass` int NOT NULL DEFAULT '0',
-  `MinSkillLineRank` int NOT NULL DEFAULT '0',
-  `SupercededBySpell` int NOT NULL DEFAULT '0',
-  `AcquireMethod` int NOT NULL DEFAULT '0',
-  `TrivialSkillLineRankHigh` int NOT NULL DEFAULT '0',
-  `TrivialSkillLineRankLow` int NOT NULL DEFAULT '0',
-  `CharacterPoints_1` int NOT NULL DEFAULT '0',
-  `CharacterPoints_2` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Exportiere Struktur von Tabelle acore_world.skill_discovery_template
+CREATE TABLE IF NOT EXISTS `skill_discovery_template` (
+  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the discoverable spell',
+  `reqSpell` int unsigned NOT NULL DEFAULT '0' COMMENT 'spell requirement',
+  `reqSkillValue` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'skill points requirement',
+  `chance` float NOT NULL DEFAULT '0' COMMENT 'chance to discover',
+  PRIMARY KEY (`spellId`,`reqSpell`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Skill Discovery System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.skill_extra_item_template
+CREATE TABLE IF NOT EXISTS `skill_extra_item_template` (
+  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the item creation spell',
+  `requiredSpecialization` int unsigned NOT NULL DEFAULT '0' COMMENT 'Specialization spell id',
+  `additionalCreateChance` float NOT NULL DEFAULT '0' COMMENT 'chance to create add',
+  `additionalMaxNum` tinyint NOT NULL DEFAULT '0',
+  PRIMARY KEY (`spellId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Skill Specialization System';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.skill_fishing_base_level
+CREATE TABLE IF NOT EXISTS `skill_fishing_base_level` (
+  `entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Area identifier',
+  `skill` smallint NOT NULL DEFAULT '0' COMMENT 'Base skill level requirement',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Fishing system';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.skill_perfect_item_template
+CREATE TABLE IF NOT EXISTS `skill_perfect_item_template` (
+  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the item creation spell',
+  `requiredSpecialization` int unsigned NOT NULL DEFAULT '0' COMMENT 'Specialization spell id',
+  `perfectCreateChance` float NOT NULL DEFAULT '0' COMMENT 'chance to create the perfect item instead',
+  `perfectItemType` int unsigned NOT NULL DEFAULT '0' COMMENT 'perfect item type to create instead',
+  PRIMARY KEY (`spellId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Crafting Perfection System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -4912,6 +5127,27 @@ CREATE TABLE IF NOT EXISTS `skillline_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.skilllineability_dbc
+CREATE TABLE IF NOT EXISTS `skilllineability_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `SkillLine` int NOT NULL DEFAULT '0',
+  `Spell` int NOT NULL DEFAULT '0',
+  `RaceMask` int NOT NULL DEFAULT '0',
+  `ClassMask` int NOT NULL DEFAULT '0',
+  `ExcludeRace` int NOT NULL DEFAULT '0',
+  `ExcludeClass` int NOT NULL DEFAULT '0',
+  `MinSkillLineRank` int NOT NULL DEFAULT '0',
+  `SupercededBySpell` int NOT NULL DEFAULT '0',
+  `AcquireMethod` int NOT NULL DEFAULT '0',
+  `TrivialSkillLineRankHigh` int NOT NULL DEFAULT '0',
+  `TrivialSkillLineRankLow` int NOT NULL DEFAULT '0',
+  `CharacterPoints_1` int NOT NULL DEFAULT '0',
+  `CharacterPoints_2` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.skillraceclassinfo_dbc
 CREATE TABLE IF NOT EXISTS `skillraceclassinfo_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -4964,48 +5200,6 @@ CREATE TABLE IF NOT EXISTS `skilltiers_dbc` (
   `Value_16` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.skill_discovery_template
-CREATE TABLE IF NOT EXISTS `skill_discovery_template` (
-  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the discoverable spell',
-  `reqSpell` int unsigned NOT NULL DEFAULT '0' COMMENT 'spell requirement',
-  `reqSkillValue` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'skill points requirement',
-  `chance` float NOT NULL DEFAULT '0' COMMENT 'chance to discover',
-  PRIMARY KEY (`spellId`,`reqSpell`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Skill Discovery System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.skill_extra_item_template
-CREATE TABLE IF NOT EXISTS `skill_extra_item_template` (
-  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the item creation spell',
-  `requiredSpecialization` int unsigned NOT NULL DEFAULT '0' COMMENT 'Specialization spell id',
-  `additionalCreateChance` float NOT NULL DEFAULT '0' COMMENT 'chance to create add',
-  `additionalMaxNum` tinyint NOT NULL DEFAULT '0',
-  PRIMARY KEY (`spellId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Skill Specialization System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.skill_fishing_base_level
-CREATE TABLE IF NOT EXISTS `skill_fishing_base_level` (
-  `entry` int unsigned NOT NULL DEFAULT '0' COMMENT 'Area identifier',
-  `skill` smallint NOT NULL DEFAULT '0' COMMENT 'Base skill level requirement',
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Fishing system';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.skill_perfect_item_template
-CREATE TABLE IF NOT EXISTS `skill_perfect_item_template` (
-  `spellId` int unsigned NOT NULL DEFAULT '0' COMMENT 'SpellId of the item creation spell',
-  `requiredSpecialization` int unsigned NOT NULL DEFAULT '0' COMMENT 'Specialization spell id',
-  `perfectCreateChance` float NOT NULL DEFAULT '0' COMMENT 'chance to create the perfect item instead',
-  `perfectItemType` int unsigned NOT NULL DEFAULT '0' COMMENT 'perfect item type to create instead',
-  PRIMARY KEY (`spellId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Crafting Perfection System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -5096,308 +5290,6 @@ CREATE TABLE IF NOT EXISTS `soundentries_dbc` (
   `DistanceCutoff` float NOT NULL DEFAULT '0',
   `EAXDef` int NOT NULL DEFAULT '0',
   `SoundEntriesAdvancedID` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellcasttimes_dbc
-CREATE TABLE IF NOT EXISTS `spellcasttimes_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Base` int NOT NULL DEFAULT '0',
-  `PerLevel` int NOT NULL DEFAULT '0',
-  `Minimum` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellcategory_dbc
-CREATE TABLE IF NOT EXISTS `spellcategory_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spelldifficulty_dbc
-CREATE TABLE IF NOT EXISTS `spelldifficulty_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `DifficultySpellID_1` int NOT NULL DEFAULT '0',
-  `DifficultySpellID_2` int NOT NULL DEFAULT '0',
-  `DifficultySpellID_3` int NOT NULL DEFAULT '0',
-  `DifficultySpellID_4` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellduration_dbc
-CREATE TABLE IF NOT EXISTS `spellduration_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Duration` int NOT NULL DEFAULT '0',
-  `DurationPerLevel` int NOT NULL DEFAULT '0',
-  `MaxDuration` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellfocusobject_dbc
-CREATE TABLE IF NOT EXISTS `spellfocusobject_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellitemenchantmentcondition_dbc
-CREATE TABLE IF NOT EXISTS `spellitemenchantmentcondition_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Lt_OperandType_1` tinyint unsigned NOT NULL DEFAULT '0',
-  `Lt_OperandType_2` tinyint unsigned NOT NULL DEFAULT '0',
-  `Lt_OperandType_3` tinyint unsigned NOT NULL DEFAULT '0',
-  `Lt_OperandType_4` tinyint unsigned NOT NULL DEFAULT '0',
-  `Lt_OperandType_5` tinyint unsigned NOT NULL DEFAULT '0',
-  `Lt_Operand_1` int NOT NULL DEFAULT '0',
-  `Lt_Operand_2` int NOT NULL DEFAULT '0',
-  `Lt_Operand_3` int NOT NULL DEFAULT '0',
-  `Lt_Operand_4` int NOT NULL DEFAULT '0',
-  `Lt_Operand_5` int NOT NULL DEFAULT '0',
-  `Operator_1` tinyint unsigned NOT NULL DEFAULT '0',
-  `Operator_2` tinyint unsigned NOT NULL DEFAULT '0',
-  `Operator_3` tinyint unsigned NOT NULL DEFAULT '0',
-  `Operator_4` tinyint unsigned NOT NULL DEFAULT '0',
-  `Operator_5` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_OperandType_1` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_OperandType_2` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_OperandType_3` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_OperandType_4` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_OperandType_5` tinyint unsigned NOT NULL DEFAULT '0',
-  `Rt_Operand_1` int NOT NULL DEFAULT '0',
-  `Rt_Operand_2` int NOT NULL DEFAULT '0',
-  `Rt_Operand_3` int NOT NULL DEFAULT '0',
-  `Rt_Operand_4` int NOT NULL DEFAULT '0',
-  `Rt_Operand_5` int NOT NULL DEFAULT '0',
-  `Logic_1` tinyint unsigned NOT NULL DEFAULT '0',
-  `Logic_2` tinyint unsigned NOT NULL DEFAULT '0',
-  `Logic_3` tinyint unsigned NOT NULL DEFAULT '0',
-  `Logic_4` tinyint unsigned NOT NULL DEFAULT '0',
-  `Logic_5` tinyint unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellitemenchantment_dbc
-CREATE TABLE IF NOT EXISTS `spellitemenchantment_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Charges` int NOT NULL DEFAULT '0',
-  `Effect_1` int NOT NULL DEFAULT '0',
-  `Effect_2` int NOT NULL DEFAULT '0',
-  `Effect_3` int NOT NULL DEFAULT '0',
-  `EffectPointsMin_1` int NOT NULL DEFAULT '0',
-  `EffectPointsMin_2` int NOT NULL DEFAULT '0',
-  `EffectPointsMin_3` int NOT NULL DEFAULT '0',
-  `EffectPointsMax_1` int NOT NULL DEFAULT '0',
-  `EffectPointsMax_2` int NOT NULL DEFAULT '0',
-  `EffectPointsMax_3` int NOT NULL DEFAULT '0',
-  `EffectArg_1` int NOT NULL DEFAULT '0',
-  `EffectArg_2` int NOT NULL DEFAULT '0',
-  `EffectArg_3` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `ItemVisual` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `Src_ItemID` int NOT NULL DEFAULT '0',
-  `Condition_Id` int NOT NULL DEFAULT '0',
-  `RequiredSkillID` int NOT NULL DEFAULT '0',
-  `RequiredSkillRank` int NOT NULL DEFAULT '0',
-  `MinLevel` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellradius_dbc
-CREATE TABLE IF NOT EXISTS `spellradius_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Radius` float NOT NULL DEFAULT '0',
-  `RadiusPerLevel` float NOT NULL DEFAULT '0',
-  `RadiusMax` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellrange_dbc
-CREATE TABLE IF NOT EXISTS `spellrange_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `RangeMin_1` float NOT NULL DEFAULT '0',
-  `RangeMin_2` float NOT NULL DEFAULT '0',
-  `RangeMax_1` float NOT NULL DEFAULT '0',
-  `RangeMax_2` float NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `DisplayName_Lang_enUS` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_enGB` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_koKR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_frFR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_deDE` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_enCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_zhCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_enTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_zhTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_esES` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_esMX` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_ruRU` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_ptPT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_ptBR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_itIT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_Unk` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayName_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `DisplayNameShort_Lang_enUS` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_enGB` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_koKR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_frFR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_deDE` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_enCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_zhCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_enTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_zhTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_esES` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_esMX` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_ruRU` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_ptPT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_ptBR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_itIT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_Unk` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `DisplayNameShort_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellrunecost_dbc
-CREATE TABLE IF NOT EXISTS `spellrunecost_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Blood` int NOT NULL DEFAULT '0',
-  `Unholy` int NOT NULL DEFAULT '0',
-  `Frost` int NOT NULL DEFAULT '0',
-  `RunicPower` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellshapeshiftform_dbc
-CREATE TABLE IF NOT EXISTS `spellshapeshiftform_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `BonusActionBar` int NOT NULL DEFAULT '0',
-  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `CreatureType` int NOT NULL DEFAULT '0',
-  `AttackIconID` int NOT NULL DEFAULT '0',
-  `CombatRoundTime` int NOT NULL DEFAULT '0',
-  `CreatureDisplayID_1` int NOT NULL DEFAULT '0',
-  `CreatureDisplayID_2` int NOT NULL DEFAULT '0',
-  `CreatureDisplayID_3` int NOT NULL DEFAULT '0',
-  `CreatureDisplayID_4` int NOT NULL DEFAULT '0',
-  `PresetSpellID_1` int NOT NULL DEFAULT '0',
-  `PresetSpellID_2` int NOT NULL DEFAULT '0',
-  `PresetSpellID_3` int NOT NULL DEFAULT '0',
-  `PresetSpellID_4` int NOT NULL DEFAULT '0',
-  `PresetSpellID_5` int NOT NULL DEFAULT '0',
-  `PresetSpellID_6` int NOT NULL DEFAULT '0',
-  `PresetSpellID_7` int NOT NULL DEFAULT '0',
-  `PresetSpellID_8` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spellvisual_dbc
-CREATE TABLE IF NOT EXISTS `spellvisual_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `PrecastKit` int NOT NULL DEFAULT '0',
-  `CastKit` int NOT NULL DEFAULT '0',
-  `ImpactKit` int NOT NULL DEFAULT '0',
-  `StateKit` int NOT NULL DEFAULT '0',
-  `StateDoneKit` int NOT NULL DEFAULT '0',
-  `ChannelKit` int NOT NULL DEFAULT '0',
-  `HasMissile` int NOT NULL DEFAULT '0',
-  `MissileModel` int NOT NULL DEFAULT '0',
-  `MissilePathType` int NOT NULL DEFAULT '0',
-  `MissileDestinationAttachment` int NOT NULL DEFAULT '0',
-  `MissileSound` int NOT NULL DEFAULT '0',
-  `AnimEventSoundID` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `CasterImpactKit` int NOT NULL DEFAULT '0',
-  `TargetImpactKit` int NOT NULL DEFAULT '0',
-  `MissileAttachment` int NOT NULL DEFAULT '0',
-  `MissileFollowGroundHeight` int NOT NULL DEFAULT '0',
-  `MissileFollowGroundDropSpeed` int NOT NULL DEFAULT '0',
-  `MissileFollowGroundApproach` int NOT NULL DEFAULT '0',
-  `MissileFollowGroundFlags` int NOT NULL DEFAULT '0',
-  `MissileMotion` int NOT NULL DEFAULT '0',
-  `MissileTargetingKit` int NOT NULL DEFAULT '0',
-  `InstantAreaKit` int NOT NULL DEFAULT '0',
-  `ImpactAreaKit` int NOT NULL DEFAULT '0',
-  `PersistentAreaKit` int NOT NULL DEFAULT '0',
-  `MissileCastOffsetX` float NOT NULL DEFAULT '0',
-  `MissileCastOffsetY` float NOT NULL DEFAULT '0',
-  `MissileCastOffsetZ` float NOT NULL DEFAULT '0',
-  `MissileImpactOffsetX` float NOT NULL DEFAULT '0',
-  `MissileImpactOffsetY` float NOT NULL DEFAULT '0',
-  `MissileImpactOffsetZ` float NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -5838,6 +5730,15 @@ CREATE TABLE IF NOT EXISTS `spell_required` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.spell_script_names
+CREATE TABLE IF NOT EXISTS `spell_script_names` (
+  `spell_id` int NOT NULL,
+  `ScriptName` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  UNIQUE KEY `spell_id` (`spell_id`,`ScriptName`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.spell_scripts
 CREATE TABLE IF NOT EXISTS `spell_scripts` (
   `id` int unsigned NOT NULL DEFAULT '0',
@@ -5851,15 +5752,6 @@ CREATE TABLE IF NOT EXISTS `spell_scripts` (
   `y` float NOT NULL DEFAULT '0',
   `z` float NOT NULL DEFAULT '0',
   `o` float NOT NULL DEFAULT '0'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.spell_script_names
-CREATE TABLE IF NOT EXISTS `spell_script_names` (
-  `spell_id` int NOT NULL,
-  `ScriptName` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  UNIQUE KEY `spell_id` (`spell_id`,`ScriptName`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -5890,6 +5782,308 @@ CREATE TABLE IF NOT EXISTS `spell_threat` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.spellcasttimes_dbc
+CREATE TABLE IF NOT EXISTS `spellcasttimes_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Base` int NOT NULL DEFAULT '0',
+  `PerLevel` int NOT NULL DEFAULT '0',
+  `Minimum` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellcategory_dbc
+CREATE TABLE IF NOT EXISTS `spellcategory_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spelldifficulty_dbc
+CREATE TABLE IF NOT EXISTS `spelldifficulty_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `DifficultySpellID_1` int NOT NULL DEFAULT '0',
+  `DifficultySpellID_2` int NOT NULL DEFAULT '0',
+  `DifficultySpellID_3` int NOT NULL DEFAULT '0',
+  `DifficultySpellID_4` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellduration_dbc
+CREATE TABLE IF NOT EXISTS `spellduration_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Duration` int NOT NULL DEFAULT '0',
+  `DurationPerLevel` int NOT NULL DEFAULT '0',
+  `MaxDuration` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellfocusobject_dbc
+CREATE TABLE IF NOT EXISTS `spellfocusobject_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellitemenchantment_dbc
+CREATE TABLE IF NOT EXISTS `spellitemenchantment_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Charges` int NOT NULL DEFAULT '0',
+  `Effect_1` int NOT NULL DEFAULT '0',
+  `Effect_2` int NOT NULL DEFAULT '0',
+  `Effect_3` int NOT NULL DEFAULT '0',
+  `EffectPointsMin_1` int NOT NULL DEFAULT '0',
+  `EffectPointsMin_2` int NOT NULL DEFAULT '0',
+  `EffectPointsMin_3` int NOT NULL DEFAULT '0',
+  `EffectPointsMax_1` int NOT NULL DEFAULT '0',
+  `EffectPointsMax_2` int NOT NULL DEFAULT '0',
+  `EffectPointsMax_3` int NOT NULL DEFAULT '0',
+  `EffectArg_1` int NOT NULL DEFAULT '0',
+  `EffectArg_2` int NOT NULL DEFAULT '0',
+  `EffectArg_3` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `ItemVisual` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `Src_ItemID` int NOT NULL DEFAULT '0',
+  `Condition_Id` int NOT NULL DEFAULT '0',
+  `RequiredSkillID` int NOT NULL DEFAULT '0',
+  `RequiredSkillRank` int NOT NULL DEFAULT '0',
+  `MinLevel` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellitemenchantmentcondition_dbc
+CREATE TABLE IF NOT EXISTS `spellitemenchantmentcondition_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Lt_OperandType_1` tinyint unsigned NOT NULL DEFAULT '0',
+  `Lt_OperandType_2` tinyint unsigned NOT NULL DEFAULT '0',
+  `Lt_OperandType_3` tinyint unsigned NOT NULL DEFAULT '0',
+  `Lt_OperandType_4` tinyint unsigned NOT NULL DEFAULT '0',
+  `Lt_OperandType_5` tinyint unsigned NOT NULL DEFAULT '0',
+  `Lt_Operand_1` int NOT NULL DEFAULT '0',
+  `Lt_Operand_2` int NOT NULL DEFAULT '0',
+  `Lt_Operand_3` int NOT NULL DEFAULT '0',
+  `Lt_Operand_4` int NOT NULL DEFAULT '0',
+  `Lt_Operand_5` int NOT NULL DEFAULT '0',
+  `Operator_1` tinyint unsigned NOT NULL DEFAULT '0',
+  `Operator_2` tinyint unsigned NOT NULL DEFAULT '0',
+  `Operator_3` tinyint unsigned NOT NULL DEFAULT '0',
+  `Operator_4` tinyint unsigned NOT NULL DEFAULT '0',
+  `Operator_5` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_OperandType_1` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_OperandType_2` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_OperandType_3` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_OperandType_4` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_OperandType_5` tinyint unsigned NOT NULL DEFAULT '0',
+  `Rt_Operand_1` int NOT NULL DEFAULT '0',
+  `Rt_Operand_2` int NOT NULL DEFAULT '0',
+  `Rt_Operand_3` int NOT NULL DEFAULT '0',
+  `Rt_Operand_4` int NOT NULL DEFAULT '0',
+  `Rt_Operand_5` int NOT NULL DEFAULT '0',
+  `Logic_1` tinyint unsigned NOT NULL DEFAULT '0',
+  `Logic_2` tinyint unsigned NOT NULL DEFAULT '0',
+  `Logic_3` tinyint unsigned NOT NULL DEFAULT '0',
+  `Logic_4` tinyint unsigned NOT NULL DEFAULT '0',
+  `Logic_5` tinyint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellradius_dbc
+CREATE TABLE IF NOT EXISTS `spellradius_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Radius` float NOT NULL DEFAULT '0',
+  `RadiusPerLevel` float NOT NULL DEFAULT '0',
+  `RadiusMax` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellrange_dbc
+CREATE TABLE IF NOT EXISTS `spellrange_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `RangeMin_1` float NOT NULL DEFAULT '0',
+  `RangeMin_2` float NOT NULL DEFAULT '0',
+  `RangeMax_1` float NOT NULL DEFAULT '0',
+  `RangeMax_2` float NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `DisplayName_Lang_enUS` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_enGB` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_koKR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_frFR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_deDE` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_enCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_zhCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_enTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_zhTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_esES` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_esMX` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_ruRU` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_ptPT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_ptBR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_itIT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_Unk` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayName_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `DisplayNameShort_Lang_enUS` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_enGB` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_koKR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_frFR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_deDE` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_enCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_zhCN` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_enTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_zhTW` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_esES` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_esMX` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_ruRU` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_ptPT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_ptBR` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_itIT` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_Unk` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `DisplayNameShort_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellrunecost_dbc
+CREATE TABLE IF NOT EXISTS `spellrunecost_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Blood` int NOT NULL DEFAULT '0',
+  `Unholy` int NOT NULL DEFAULT '0',
+  `Frost` int NOT NULL DEFAULT '0',
+  `RunicPower` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellshapeshiftform_dbc
+CREATE TABLE IF NOT EXISTS `spellshapeshiftform_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `BonusActionBar` int NOT NULL DEFAULT '0',
+  `Name_Lang_enUS` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enGB` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_koKR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_frFR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_deDE` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhCN` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_enTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_zhTW` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esES` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_esMX` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ruRU` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptPT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_ptBR` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_itIT` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Unk` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Name_Lang_Mask` int unsigned NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `CreatureType` int NOT NULL DEFAULT '0',
+  `AttackIconID` int NOT NULL DEFAULT '0',
+  `CombatRoundTime` int NOT NULL DEFAULT '0',
+  `CreatureDisplayID_1` int NOT NULL DEFAULT '0',
+  `CreatureDisplayID_2` int NOT NULL DEFAULT '0',
+  `CreatureDisplayID_3` int NOT NULL DEFAULT '0',
+  `CreatureDisplayID_4` int NOT NULL DEFAULT '0',
+  `PresetSpellID_1` int NOT NULL DEFAULT '0',
+  `PresetSpellID_2` int NOT NULL DEFAULT '0',
+  `PresetSpellID_3` int NOT NULL DEFAULT '0',
+  `PresetSpellID_4` int NOT NULL DEFAULT '0',
+  `PresetSpellID_5` int NOT NULL DEFAULT '0',
+  `PresetSpellID_6` int NOT NULL DEFAULT '0',
+  `PresetSpellID_7` int NOT NULL DEFAULT '0',
+  `PresetSpellID_8` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.spellvisual_dbc
+CREATE TABLE IF NOT EXISTS `spellvisual_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `PrecastKit` int NOT NULL DEFAULT '0',
+  `CastKit` int NOT NULL DEFAULT '0',
+  `ImpactKit` int NOT NULL DEFAULT '0',
+  `StateKit` int NOT NULL DEFAULT '0',
+  `StateDoneKit` int NOT NULL DEFAULT '0',
+  `ChannelKit` int NOT NULL DEFAULT '0',
+  `HasMissile` int NOT NULL DEFAULT '0',
+  `MissileModel` int NOT NULL DEFAULT '0',
+  `MissilePathType` int NOT NULL DEFAULT '0',
+  `MissileDestinationAttachment` int NOT NULL DEFAULT '0',
+  `MissileSound` int NOT NULL DEFAULT '0',
+  `AnimEventSoundID` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `CasterImpactKit` int NOT NULL DEFAULT '0',
+  `TargetImpactKit` int NOT NULL DEFAULT '0',
+  `MissileAttachment` int NOT NULL DEFAULT '0',
+  `MissileFollowGroundHeight` int NOT NULL DEFAULT '0',
+  `MissileFollowGroundDropSpeed` int NOT NULL DEFAULT '0',
+  `MissileFollowGroundApproach` int NOT NULL DEFAULT '0',
+  `MissileFollowGroundFlags` int NOT NULL DEFAULT '0',
+  `MissileMotion` int NOT NULL DEFAULT '0',
+  `MissileTargetingKit` int NOT NULL DEFAULT '0',
+  `InstantAreaKit` int NOT NULL DEFAULT '0',
+  `ImpactAreaKit` int NOT NULL DEFAULT '0',
+  `PersistentAreaKit` int NOT NULL DEFAULT '0',
+  `MissileCastOffsetX` float NOT NULL DEFAULT '0',
+  `MissileCastOffsetY` float NOT NULL DEFAULT '0',
+  `MissileCastOffsetZ` float NOT NULL DEFAULT '0',
+  `MissileImpactOffsetX` float NOT NULL DEFAULT '0',
+  `MissileImpactOffsetY` float NOT NULL DEFAULT '0',
+  `MissileImpactOffsetZ` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.stableslotprices_dbc
 CREATE TABLE IF NOT EXISTS `stableslotprices_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -5907,6 +6101,36 @@ CREATE TABLE IF NOT EXISTS `summonproperties_dbc` (
   `Title` int NOT NULL DEFAULT '0',
   `Slot` int NOT NULL DEFAULT '0',
   `Flags` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.talent_dbc
+CREATE TABLE IF NOT EXISTS `talent_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `TabID` int NOT NULL DEFAULT '0',
+  `TierID` int NOT NULL DEFAULT '0',
+  `ColumnIndex` int NOT NULL DEFAULT '0',
+  `SpellRank_1` int NOT NULL DEFAULT '0',
+  `SpellRank_2` int NOT NULL DEFAULT '0',
+  `SpellRank_3` int NOT NULL DEFAULT '0',
+  `SpellRank_4` int NOT NULL DEFAULT '0',
+  `SpellRank_5` int NOT NULL DEFAULT '0',
+  `SpellRank_6` int NOT NULL DEFAULT '0',
+  `SpellRank_7` int NOT NULL DEFAULT '0',
+  `SpellRank_8` int NOT NULL DEFAULT '0',
+  `SpellRank_9` int NOT NULL DEFAULT '0',
+  `PrereqTalent_1` int NOT NULL DEFAULT '0',
+  `PrereqTalent_2` int NOT NULL DEFAULT '0',
+  `PrereqTalent_3` int NOT NULL DEFAULT '0',
+  `PrereqRank_1` int NOT NULL DEFAULT '0',
+  `PrereqRank_2` int NOT NULL DEFAULT '0',
+  `PrereqRank_3` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `RequiredSpellID` int NOT NULL DEFAULT '0',
+  `CategoryMask_1` int NOT NULL DEFAULT '0',
+  `CategoryMask_2` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -5943,36 +6167,6 @@ CREATE TABLE IF NOT EXISTS `talenttab_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.talent_dbc
-CREATE TABLE IF NOT EXISTS `talent_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `TabID` int NOT NULL DEFAULT '0',
-  `TierID` int NOT NULL DEFAULT '0',
-  `ColumnIndex` int NOT NULL DEFAULT '0',
-  `SpellRank_1` int NOT NULL DEFAULT '0',
-  `SpellRank_2` int NOT NULL DEFAULT '0',
-  `SpellRank_3` int NOT NULL DEFAULT '0',
-  `SpellRank_4` int NOT NULL DEFAULT '0',
-  `SpellRank_5` int NOT NULL DEFAULT '0',
-  `SpellRank_6` int NOT NULL DEFAULT '0',
-  `SpellRank_7` int NOT NULL DEFAULT '0',
-  `SpellRank_8` int NOT NULL DEFAULT '0',
-  `SpellRank_9` int NOT NULL DEFAULT '0',
-  `PrereqTalent_1` int NOT NULL DEFAULT '0',
-  `PrereqTalent_2` int NOT NULL DEFAULT '0',
-  `PrereqTalent_3` int NOT NULL DEFAULT '0',
-  `PrereqRank_1` int NOT NULL DEFAULT '0',
-  `PrereqRank_2` int NOT NULL DEFAULT '0',
-  `PrereqRank_3` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `RequiredSpellID` int NOT NULL DEFAULT '0',
-  `CategoryMask_1` int NOT NULL DEFAULT '0',
-  `CategoryMask_2` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.taxinodes_dbc
 CREATE TABLE IF NOT EXISTS `taxinodes_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -6004,6 +6198,17 @@ CREATE TABLE IF NOT EXISTS `taxinodes_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.taxipath_dbc
+CREATE TABLE IF NOT EXISTS `taxipath_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `FromTaxiNode` int NOT NULL DEFAULT '0',
+  `ToTaxiNode` int NOT NULL DEFAULT '0',
+  `Cost` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.taxipathnode_dbc
 CREATE TABLE IF NOT EXISTS `taxipathnode_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -6017,17 +6222,6 @@ CREATE TABLE IF NOT EXISTS `taxipathnode_dbc` (
   `Delay` int NOT NULL DEFAULT '0',
   `ArrivalEventID` int NOT NULL DEFAULT '0',
   `DepartureEventID` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.taxipath_dbc
-CREATE TABLE IF NOT EXISTS `taxipath_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `FromTaxiNode` int NOT NULL DEFAULT '0',
-  `ToTaxiNode` int NOT NULL DEFAULT '0',
-  `Cost` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -6130,71 +6324,6 @@ CREATE TABLE IF NOT EXISTS `updates_include` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.vehicleseat_dbc
-CREATE TABLE IF NOT EXISTS `vehicleseat_dbc` (
-  `ID` int NOT NULL DEFAULT '0',
-  `Flags` int NOT NULL DEFAULT '0',
-  `AttachmentID` int NOT NULL DEFAULT '0',
-  `AttachmentOffsetX` float NOT NULL DEFAULT '0',
-  `AttachmentOffsetY` float NOT NULL DEFAULT '0',
-  `AttachmentOffsetZ` float NOT NULL DEFAULT '0',
-  `EnterPreDelay` float NOT NULL DEFAULT '0',
-  `EnterSpeed` float NOT NULL DEFAULT '0',
-  `EnterGravity` float NOT NULL DEFAULT '0',
-  `EnterMinDuration` float NOT NULL DEFAULT '0',
-  `EnterMaxDuration` float NOT NULL DEFAULT '0',
-  `EnterMinArcHeight` float NOT NULL DEFAULT '0',
-  `EnterMaxArcHeight` float NOT NULL DEFAULT '0',
-  `EnterAnimStart` int NOT NULL DEFAULT '0',
-  `EnterAnimLoop` int NOT NULL DEFAULT '0',
-  `RideAnimStart` int NOT NULL DEFAULT '0',
-  `RideAnimLoop` int NOT NULL DEFAULT '0',
-  `RideUpperAnimStart` int NOT NULL DEFAULT '0',
-  `RideUpperAnimLoop` int NOT NULL DEFAULT '0',
-  `ExitPreDelay` float NOT NULL DEFAULT '0',
-  `ExitSpeed` float NOT NULL DEFAULT '0',
-  `ExitGravity` float NOT NULL DEFAULT '0',
-  `ExitMinDuration` float NOT NULL DEFAULT '0',
-  `ExitMaxDuration` float NOT NULL DEFAULT '0',
-  `ExitMinArcHeight` float NOT NULL DEFAULT '0',
-  `ExitMaxArcHeight` float NOT NULL DEFAULT '0',
-  `ExitAnimStart` int NOT NULL DEFAULT '0',
-  `ExitAnimLoop` int NOT NULL DEFAULT '0',
-  `ExitAnimEnd` int NOT NULL DEFAULT '0',
-  `PassengerYaw` float NOT NULL DEFAULT '0',
-  `PassengerPitch` float NOT NULL DEFAULT '0',
-  `PassengerRoll` float NOT NULL DEFAULT '0',
-  `PassengerAttachmentID` int NOT NULL DEFAULT '0',
-  `VehicleEnterAnim` int NOT NULL DEFAULT '0',
-  `VehicleExitAnim` int NOT NULL DEFAULT '0',
-  `VehicleRideAnimLoop` int NOT NULL DEFAULT '0',
-  `VehicleEnterAnimBone` int NOT NULL DEFAULT '0',
-  `VehicleExitAnimBone` int NOT NULL DEFAULT '0',
-  `VehicleRideAnimLoopBone` int NOT NULL DEFAULT '0',
-  `VehicleEnterAnimDelay` float NOT NULL DEFAULT '0',
-  `VehicleExitAnimDelay` float NOT NULL DEFAULT '0',
-  `VehicleAbilityDisplay` int NOT NULL DEFAULT '0',
-  `EnterUISoundID` int NOT NULL DEFAULT '0',
-  `ExitUISoundID` int NOT NULL DEFAULT '0',
-  `UiSkin` int NOT NULL DEFAULT '0',
-  `FlagsB` int NOT NULL DEFAULT '0',
-  `CameraEnteringDelay` float NOT NULL DEFAULT '0',
-  `CameraEnteringDuration` float NOT NULL DEFAULT '0',
-  `CameraExitingDelay` float NOT NULL DEFAULT '0',
-  `CameraExitingDuration` float NOT NULL DEFAULT '0',
-  `CameraOffsetX` float NOT NULL DEFAULT '0',
-  `CameraOffsetY` float NOT NULL DEFAULT '0',
-  `CameraOffsetZ` float NOT NULL DEFAULT '0',
-  `CameraPosChaseRate` float NOT NULL DEFAULT '0',
-  `CameraFacingChaseRate` float NOT NULL DEFAULT '0',
-  `CameraEnteringZoom` float NOT NULL DEFAULT '0',
-  `CameraSeatZoomMin` float NOT NULL DEFAULT '0',
-  `CameraSeatZoomMax` float NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.vehicle_accessory
 CREATE TABLE IF NOT EXISTS `vehicle_accessory` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -6284,6 +6413,71 @@ CREATE TABLE IF NOT EXISTS `vehicle_template_accessory` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.vehicleseat_dbc
+CREATE TABLE IF NOT EXISTS `vehicleseat_dbc` (
+  `ID` int NOT NULL DEFAULT '0',
+  `Flags` int NOT NULL DEFAULT '0',
+  `AttachmentID` int NOT NULL DEFAULT '0',
+  `AttachmentOffsetX` float NOT NULL DEFAULT '0',
+  `AttachmentOffsetY` float NOT NULL DEFAULT '0',
+  `AttachmentOffsetZ` float NOT NULL DEFAULT '0',
+  `EnterPreDelay` float NOT NULL DEFAULT '0',
+  `EnterSpeed` float NOT NULL DEFAULT '0',
+  `EnterGravity` float NOT NULL DEFAULT '0',
+  `EnterMinDuration` float NOT NULL DEFAULT '0',
+  `EnterMaxDuration` float NOT NULL DEFAULT '0',
+  `EnterMinArcHeight` float NOT NULL DEFAULT '0',
+  `EnterMaxArcHeight` float NOT NULL DEFAULT '0',
+  `EnterAnimStart` int NOT NULL DEFAULT '0',
+  `EnterAnimLoop` int NOT NULL DEFAULT '0',
+  `RideAnimStart` int NOT NULL DEFAULT '0',
+  `RideAnimLoop` int NOT NULL DEFAULT '0',
+  `RideUpperAnimStart` int NOT NULL DEFAULT '0',
+  `RideUpperAnimLoop` int NOT NULL DEFAULT '0',
+  `ExitPreDelay` float NOT NULL DEFAULT '0',
+  `ExitSpeed` float NOT NULL DEFAULT '0',
+  `ExitGravity` float NOT NULL DEFAULT '0',
+  `ExitMinDuration` float NOT NULL DEFAULT '0',
+  `ExitMaxDuration` float NOT NULL DEFAULT '0',
+  `ExitMinArcHeight` float NOT NULL DEFAULT '0',
+  `ExitMaxArcHeight` float NOT NULL DEFAULT '0',
+  `ExitAnimStart` int NOT NULL DEFAULT '0',
+  `ExitAnimLoop` int NOT NULL DEFAULT '0',
+  `ExitAnimEnd` int NOT NULL DEFAULT '0',
+  `PassengerYaw` float NOT NULL DEFAULT '0',
+  `PassengerPitch` float NOT NULL DEFAULT '0',
+  `PassengerRoll` float NOT NULL DEFAULT '0',
+  `PassengerAttachmentID` int NOT NULL DEFAULT '0',
+  `VehicleEnterAnim` int NOT NULL DEFAULT '0',
+  `VehicleExitAnim` int NOT NULL DEFAULT '0',
+  `VehicleRideAnimLoop` int NOT NULL DEFAULT '0',
+  `VehicleEnterAnimBone` int NOT NULL DEFAULT '0',
+  `VehicleExitAnimBone` int NOT NULL DEFAULT '0',
+  `VehicleRideAnimLoopBone` int NOT NULL DEFAULT '0',
+  `VehicleEnterAnimDelay` float NOT NULL DEFAULT '0',
+  `VehicleExitAnimDelay` float NOT NULL DEFAULT '0',
+  `VehicleAbilityDisplay` int NOT NULL DEFAULT '0',
+  `EnterUISoundID` int NOT NULL DEFAULT '0',
+  `ExitUISoundID` int NOT NULL DEFAULT '0',
+  `UiSkin` int NOT NULL DEFAULT '0',
+  `FlagsB` int NOT NULL DEFAULT '0',
+  `CameraEnteringDelay` float NOT NULL DEFAULT '0',
+  `CameraEnteringDuration` float NOT NULL DEFAULT '0',
+  `CameraExitingDelay` float NOT NULL DEFAULT '0',
+  `CameraExitingDuration` float NOT NULL DEFAULT '0',
+  `CameraOffsetX` float NOT NULL DEFAULT '0',
+  `CameraOffsetY` float NOT NULL DEFAULT '0',
+  `CameraOffsetZ` float NOT NULL DEFAULT '0',
+  `CameraPosChaseRate` float NOT NULL DEFAULT '0',
+  `CameraFacingChaseRate` float NOT NULL DEFAULT '0',
+  `CameraEnteringZoom` float NOT NULL DEFAULT '0',
+  `CameraSeatZoomMin` float NOT NULL DEFAULT '0',
+  `CameraSeatZoomMax` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.version
 CREATE TABLE IF NOT EXISTS `version` (
   `core_version` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Core revision dumped at startup.',
@@ -6307,21 +6501,6 @@ CREATE TABLE IF NOT EXISTS `warden_checks` (
   `comment` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=812 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.waypoints
-CREATE TABLE IF NOT EXISTS `waypoints` (
-  `entry` int unsigned NOT NULL DEFAULT '0',
-  `pointid` int unsigned NOT NULL DEFAULT '0',
-  `position_x` float NOT NULL DEFAULT '0',
-  `position_y` float NOT NULL DEFAULT '0',
-  `position_z` float NOT NULL DEFAULT '0',
-  `orientation` float DEFAULT NULL,
-  `delay` int unsigned NOT NULL DEFAULT '0',
-  `point_comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  PRIMARY KEY (`entry`,`pointid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature waypoints';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -6358,6 +6537,21 @@ CREATE TABLE IF NOT EXISTS `waypoint_scripts` (
   `guid` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.waypoints
+CREATE TABLE IF NOT EXISTS `waypoints` (
+  `entry` int unsigned NOT NULL DEFAULT '0',
+  `pointid` int unsigned NOT NULL DEFAULT '0',
+  `position_x` float NOT NULL DEFAULT '0',
+  `position_y` float NOT NULL DEFAULT '0',
+  `position_z` float NOT NULL DEFAULT '0',
+  `orientation` float DEFAULT NULL,
+  `delay` int unsigned NOT NULL DEFAULT '0',
+  `point_comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`entry`,`pointid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature waypoints';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

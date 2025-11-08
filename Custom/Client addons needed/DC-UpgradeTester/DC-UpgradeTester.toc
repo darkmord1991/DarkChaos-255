@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: DC Upgrade Tester
+## Notes: Minimal helper to relay DCUPGRADE messages while testing server changes.
+## Author: DarkChaos QA
+## Version: 1.0.0
+
+DC-UpgradeTester.lua
