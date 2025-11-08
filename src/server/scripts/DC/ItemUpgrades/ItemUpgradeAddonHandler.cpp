@@ -184,8 +184,10 @@ private:
                 // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
                 // storedBaseIlvl remains baseItemLevel from template
                 // upgradedIlvl will be calculated below
-                if (!fields[2].IsNull())
-                    statMultiplier = fields[2].Get<float>();
+                
+                // ALWAYS recalculate statMultiplier based on level and tier (don't trust database value)
+                statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                    static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
             }
             else
             {
@@ -212,6 +214,10 @@ private:
             ss << std::setprecision(3);
             ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
                << ":" << upgradedIlvl << ":" << statMultiplier;
+            
+            // Log what we're sending
+            sLog->outInfo(LOG_FILTER_SQL, "[ItemUpgrade ADDON RESPONSE] Sending: {}", ss.str());
+            
             SendAddonResponse(player, ss.str());
             return true;
         }
@@ -372,7 +378,7 @@ private:
                 " stat_multiplier = VALUES(stat_multiplier),"
                 " last_upgraded_at = {}",
                 itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
-                1.0f, static_cast<uint32>(now), static_cast<uint32>(now), season, static_cast<uint32>(now)
+                statMultiplier, static_cast<uint32>(now), static_cast<uint32>(now), season, static_cast<uint32>(now)
             );
 
             // Send success response via SYSTEM chat
