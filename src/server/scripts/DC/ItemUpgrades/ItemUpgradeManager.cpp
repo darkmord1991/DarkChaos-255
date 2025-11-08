@@ -907,9 +907,9 @@ namespace DarkChaos
                     state->item_guid, state->player_guid, static_cast<uint32>(state->tier_id),
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     state->essence_invested, state->stat_multiplier,
-                    state->first_upgraded_at, state->last_upgraded_at, state->season,
+                    static_cast<uint32>(state->first_upgraded_at), static_cast<uint32>(state->last_upgraded_at), state->season,
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,
-                    state->essence_invested, state->stat_multiplier, state->last_upgraded_at);
+                    state->essence_invested, state->stat_multiplier, static_cast<uint32>(state->last_upgraded_at));
             }
 
             void SavePlayerCurrency(uint32 player_guid, uint32 season) override

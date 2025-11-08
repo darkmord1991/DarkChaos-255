@@ -252,7 +252,7 @@ bool ItemUpgradeState::SaveToDatabase() const
         "stat_multiplier = VALUES(stat_multiplier), "
         "last_upgraded_at = VALUES(last_upgraded_at)",
         item_guid, player_guid, static_cast<uint32>(tier_id), static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
-        stat_multiplier, first_upgraded_at, last_upgraded_at, season);
+        stat_multiplier, static_cast<uint32>(first_upgraded_at), static_cast<uint32>(last_upgraded_at), season);
     
     return true;
 }
