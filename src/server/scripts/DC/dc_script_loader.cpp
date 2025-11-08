@@ -102,7 +102,7 @@ void AddDCScripts()
     LOG_INFO("scripts", ">>   Core Features:");
     LOG_INFO("scripts", ">>     • Enchantment-Based Stat Scaling");
     LOG_INFO("scripts", ">>     • UnitScript Proc Damage/Healing Scaling");
-    LOG_INFO("scripts", ">>     • 5 Tiers × 15 Levels = 75 Upgrade Paths");
+    LOG_INFO("scripts", ">>     • 2 Tiers × 15 Levels = 30 Upgrade Paths");
     LOG_INFO("scripts", ">>     • Mastery & Artifact Progression");
     LOG_INFO("scripts", ">>     • Transmutation & Tier Conversion");
     LOG_INFO("scripts", ">>     • Seasonal Content Support");
@@ -144,9 +144,11 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
+        // TEMPORARILY DISABLED FOR DEBUGGING - RE-ENABLE AFTER FINDING CRASH
         // AddSC_ItemUpgradeMechanics();
         LOG_INFO("scripts", ">>   ⚠ Upgrader NPC DISABLED (debugging)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in mechanics");
     }
@@ -179,29 +181,41 @@ void AddDCScripts()
     }
     
     try {
-        AddSC_ItemUpgradeCommunication();
-        LOG_INFO("scripts", ">>   ✓ Communication system loaded");
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // AddSC_ItemUpgradeCommunication();
+        LOG_INFO("scripts", ">>   ⚠ Communication system DISABLED (debugging)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in communication: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in communication");
     }
     
     try {
-        AddSC_ItemUpgradeTokenHooks();
-        LOG_INFO("scripts", ">>   ✓ Token hooks loaded");
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // AddSC_ItemUpgradeTokenHooks();
+        LOG_INFO("scripts", ">>   ⚠ Token hooks DISABLED (debugging)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in token hooks: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in token hooks");
     }
     
     try {
-        AddSC_ItemUpgradeStatApplication();
-        LOG_INFO("scripts", ">>   ✓ Stat scaling loaded (Enchantment-based)");
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // AddSC_ItemUpgradeStatApplication();
+        LOG_INFO("scripts", ">>   ⚠ Stat scaling DISABLED (debugging)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in stat application: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in stat application");
     }
     
     try {
-        AddSC_ItemUpgradeProcScaling();
-        LOG_INFO("scripts", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // AddSC_ItemUpgradeProcScaling();
+        LOG_INFO("scripts", ">>   ⚠ Proc scaling DISABLED (debugging)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in proc scaling: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in proc scaling");
     }
