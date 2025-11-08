@@ -219,8 +219,8 @@ namespace DarkChaos
                     UpdatePlayerItemCache(player);
             }
             
-            // Clean up cache on logout
-            void OnLogout(Player* player) override
+            // Clean up cache on logout (use correct hook name)
+            void OnPlayerLogout(Player* player) override
             {
                 if (!player)
                     return;
