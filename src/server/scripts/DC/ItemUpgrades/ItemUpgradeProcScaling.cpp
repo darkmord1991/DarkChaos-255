@@ -59,40 +59,47 @@ namespace DarkChaos
         {
             spell_to_item_map.clear();
             
-            // Load from database
-            QueryResult result = WorldDatabase.Query("SELECT spell_id, item_entry FROM dc_item_proc_spells WHERE scales_with_upgrade = 1");
-            
-            if (result)
+            // Safety check: Don't query database during early initialization
+            // This will be populated later when database is ready
+            try
             {
-                do
+                // Load from database (wrapped in try-catch for safety)
+                QueryResult result = WorldDatabase.Query("SELECT spell_id, item_entry FROM dc_item_proc_spells WHERE scales_with_upgrade = 1");
+                
+                if (result)
                 {
-                    Field* fields = result->Fetch();
-                    uint32 spell_id = fields[0].Get<uint32>();
-                    uint32 item_entry = fields[1].Get<uint32>();
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 spell_id = fields[0].Get<uint32>();
+                        uint32 item_entry = fields[1].Get<uint32>();
+                        
+                        spell_to_item_map[spell_id] = item_entry;
+                        
+                    } while (result->NextRow());
                     
-                    spell_to_item_map[spell_id] = item_entry;
-                    
-                } while (result->NextRow());
-                
-                LOG_INFO("scripts", "ItemUpgrade: Loaded {} proc spell mappings from database", spell_to_item_map.size());
+                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} proc spell mappings from database", spell_to_item_map.size());
+                    return; // Success, no need for fallback
+                }
             }
-            else
+            catch (...)
             {
-                LOG_WARN("scripts", "ItemUpgrade: No proc spell mappings found in database. Run dc_item_proc_spells.sql");
-                
-                // Fallback: Hardcode some common procs if database table doesn't exist
-                LOG_INFO("scripts", "ItemUpgrade: Using fallback hardcoded proc mappings");
-                
-                // Darkmoon Card: Greatness (various procs)
-                spell_to_item_map[60229] = 42989; // Agility proc
-                spell_to_item_map[60233] = 42990; // Strength proc
-                spell_to_item_map[60234] = 42991; // Intellect proc
-                spell_to_item_map[60235] = 42992; // Spirit proc
-                
-                // Mjolnir Runestone
-                spell_to_item_map[45522] = 33831;
-                
-                // Illustration of the Dragon Soul
+                LOG_WARN("scripts", "ItemUpgrade: Could not load proc mappings from database (table may not exist yet)");
+            }
+            
+            // Fallback: Use hardcoded mappings
+            LOG_INFO("scripts", "ItemUpgrade: Using fallback hardcoded proc mappings");
+            
+            // Darkmoon Card: Greatness (various procs)
+            spell_to_item_map[60229] = 42989; // Agility proc
+            spell_to_item_map[60233] = 42990; // Strength proc
+            spell_to_item_map[60234] = 42991; // Intellect proc
+            spell_to_item_map[60235] = 42992; // Spirit proc
+            
+            // Mjolnir Runestone
+            spell_to_item_map[45522] = 33831;
+            
+            // Illustration of the Dragon Soul
                 spell_to_item_map[60486] = 40432;
                 
                 // Dying Curse
@@ -240,11 +247,18 @@ namespace DarkChaos
 // Registration function must be in global namespace for dc_script_loader.cpp
 void AddSC_ItemUpgradeProcScaling()
 {
-    // Build the spell->item mapping
-    DarkChaos::ItemUpgrade::BuildSpellToItemMapping();
-    
-    // Register hooks
-    new DarkChaos::ItemUpgrade::ItemProcDamageHook();
-    
-    LOG_INFO("scripts", "ItemUpgrade: Proc scaling infrastructure registered (tracking only - requires core hooks for direct scaling)");
+    try
+    {
+        // Build the spell->item mapping
+        DarkChaos::ItemUpgrade::BuildSpellToItemMapping();
+        
+        // Register hooks
+        new DarkChaos::ItemUpgrade::ItemProcDamageHook();
+        
+        LOG_INFO("scripts", "ItemUpgrade: Proc scaling infrastructure registered (tracking only - requires core hooks for direct scaling)");
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("scripts", "ItemUpgrade: Failed to register proc scaling: {}", e.what());
+    }
 }
