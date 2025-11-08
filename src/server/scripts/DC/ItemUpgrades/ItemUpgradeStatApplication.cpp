@@ -32,8 +32,8 @@ namespace DarkChaos
         public:
             ItemUpgradeStatHook() : PlayerScript("ItemUpgradeStatHook") {}
             
-            // Called when a player equips an item
-            void OnAfterEquipItem(Player* player, uint8 /*slot*/, Item* item) override
+            // Called when a player equips an item (use correct hook name)
+            void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
             {
                 if (!player || !item)
                     return;
@@ -42,8 +42,8 @@ namespace DarkChaos
                 ApplyUpgradeStats(player, item);
             }
             
-            // Called when player logs in - apply all equipment stats
-            void OnLogin(Player* player) override
+            // Called when player logs in - apply all equipment stats (use correct hook name)
+            void OnPlayerLogin(Player* player) override
             {
                 if (!player)
                     return;
