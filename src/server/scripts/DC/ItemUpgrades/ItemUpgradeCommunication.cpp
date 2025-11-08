@@ -200,6 +200,9 @@ void ItemUpgradeCommunicationHandler::HandleItemUpgradeInfoRequest(Player* playe
 
         if (success)
         {
+            // CRITICAL: Force player stat update to apply upgraded stats immediately
+            DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
+            
             // Send success response
             WorldPacket response(SMSG_ITEM_UPGRADE_RESULT, 50);
             response << uint8(1); // Success

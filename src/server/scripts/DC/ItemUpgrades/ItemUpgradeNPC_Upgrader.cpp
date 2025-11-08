@@ -180,6 +180,9 @@ private:
         
         ChatHandler(player->GetSession()).SendSysMessage(success_msg.str().c_str());
         
+        // CRITICAL: Force player stat update to apply upgraded stats immediately
+        DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
+        
         // Show the item again with updated state
         ShowItemUpgradeUI(player, creature, item_guid);
     }

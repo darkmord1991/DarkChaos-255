@@ -189,8 +189,16 @@ namespace DarkChaos
         // Singleton accessor
         // =====================================================================
         
-    // Singleton accessor (implementation provides GetUpgradeManager)
-    UpgradeManager* GetUpgradeManager();
+        // Singleton accessor (implementation provides GetUpgradeManager)
+        UpgradeManager* GetUpgradeManager();
+        
+        // =====================================================================
+        // Stat Application Helper (defined in ItemUpgradeStatApplication.cpp)
+        // =====================================================================
+        
+        // Force update all player stats with upgraded item stats
+        // Call this after performing an upgrade to ensure stats are applied
+        void ForcePlayerStatUpdate(class Player* player);
 
     } // namespace ItemUpgrade
 } // namespace DarkChaos

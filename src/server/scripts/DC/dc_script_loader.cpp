@@ -56,6 +56,8 @@ void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgra
 void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
 void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 void AddSC_ItemUpgradeCommunication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommunication.cpp
+void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
+void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -101,4 +103,6 @@ void AddDCScripts()
     AddSC_ItemUpgradeAdvanced();
     AddSC_ItemUpgradeTransmutation();
     AddSC_ItemUpgradeCommunication();
+    AddSC_ItemUpgradeTokenHooks();
+    AddSC_ItemUpgradeStatApplication();
 }
