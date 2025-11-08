@@ -166,7 +166,7 @@ private:
 
             QueryResult result = CharacterDatabase.Query(
                 "SELECT upgrade_level, tier_id, base_item_level, upgraded_item_level, stat_multiplier "
-                "FROM dc_item_upgrade_state WHERE item_guid = {}",
+                "FROM dc_player_item_upgrades WHERE item_guid = {}",
                 itemGUID
             );
 
@@ -257,7 +257,7 @@ private:
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier_id FROM dc_item_upgrade_state WHERE item_guid = {}",
+                "SELECT upgrade_level, tier_id FROM dc_player_item_upgrades WHERE item_guid = {}",
                 itemGUID
             );
 
@@ -360,7 +360,7 @@ private:
 
             // Update item state (include all non-nullable columns)
             CharacterDatabase.Execute(
-                "INSERT INTO dc_item_upgrade_state "
+                "INSERT INTO dc_player_item_upgrades "
                 "(item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
                 " base_item_level, upgraded_item_level, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "

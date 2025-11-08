@@ -1,13 +1,17 @@
 /*
- * DarkChaos Item Upgrade - Stat Application System
+ * DarkChaos Item Upgrade - Stat Application System (Enchantment-Based)
  * 
- * This file implements the hooks that apply upgraded stats to items
- * when they are equipped, inspected, or their stats are queried.
+ * This file implements stat scaling using the enchantment system.
+ * When items are equipped, a temporary enchantment is applied that grants
+ * bonus stats based on the item's upgrade level and tier.
  * 
- * CRITICAL: This ensures upgraded items actually increase player stats!
+ * APPROACH: Hybrid Solution
+ * - Base stats: Scaled via temporary enchantments
+ * - Proc effects: Scaled via UnitScript hooks (see ItemUpgradeProcScaling.cpp)
  * 
  * Author: DarkChaos Development Team
  * Date: November 8, 2025
+ * Version: 2.0 (Enchantment-based)
  */
 
 #include "ScriptMgr.h"
@@ -15,8 +19,9 @@
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "ItemUpgradeManager.h"
+#include "SpellMgr.h"
+#include "DatabaseEnv.h"
 #include "Log.h"
-#include "Chat.h"
 #include <algorithm>
 
 namespace DarkChaos
@@ -24,7 +29,21 @@ namespace DarkChaos
     namespace ItemUpgrade
     {
         // =====================================================================
-        // Stat Application Hook
+        // Enchantment ID Calculator
+        // =====================================================================
+        
+        uint32 GetUpgradeEnchantId(uint8 tier_id, uint8 upgrade_level)
+        {
+            // Enchant ID format: 80000 + (tier * 100) + level
+            // Example: Tier 3 Level 10 = 80310
+            if (tier_id < 1 || tier_id > 5 || upgrade_level < 1 || upgrade_level > 15)
+                return 0;
+            
+            return 80000 + (tier_id * 100) + upgrade_level;
+        }
+        
+        // =====================================================================
+        // Stat Application Hook (Enchantment-Based)
         // =====================================================================
         
         class ItemUpgradeStatHook : public PlayerScript
@@ -32,46 +51,45 @@ namespace DarkChaos
         public:
             ItemUpgradeStatHook() : PlayerScript("ItemUpgradeStatHook") {}
             
-            // Called when a player equips an item (use correct hook name)
+            // Called when a player equips an item
             void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
             {
                 if (!player || !item)
                     return;
                 
-                // Force stat recalculation
-                ApplyUpgradeStats(player, item);
+                ApplyUpgradeEnchant(player, item);
             }
             
-            // Called when player logs in - apply all equipment stats (use correct hook name)
+            // Called when player logs in - apply enchants to all equipped items
             void OnPlayerLogin(Player* player) override
             {
                 if (!player)
                     return;
                 
-                // Apply upgrade stats to all equipped items immediately
-                // (AzerothCore applies items before this hook, so we can process them now)
-                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                // Wait a moment for item load to complete
+                player->GetScheduler().Schedule(Milliseconds(1000), [](TaskContext context)
                 {
-                    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                    if (item)
+                    Player* player = context.GetContextUnit()->ToPlayer();
+                    if (!player)
+                        return;
+                    
+                    // Apply upgrade enchants to all equipped items
+                    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                     {
-                        ApplyUpgradeStats(player, item);
+                        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                        if (item)
+                        {
+                            ApplyUpgradeEnchant(player, item);
+                        }
                     }
-                }
-                
-                // Force update stats
-                player->UpdateAllStats();
-                player->UpdateArmor();
-                player->UpdateAttackPowerAndDamage();
-                player->UpdateAttackPowerAndDamage(true);
-                player->UpdateMaxHealth();
-                player->UpdateMaxPower(POWER_MANA);
-                
-                LOG_DEBUG("scripts", "ItemUpgrade: Applied upgrade stats for player {} on login", player->GetGUID().GetCounter());
+                    
+                    LOG_DEBUG("scripts", "ItemUpgrade: Applied enchants to all equipment for player {} on login",
+                             player->GetGUID().GetCounter());
+                });
             }
             
         private:
-            static void ApplyUpgradeStats(Player* player, Item* item)
+            static void ApplyUpgradeEnchant(Player* player, Item* item)
             {
                 if (!player || !item)
                     return;
@@ -81,79 +99,86 @@ namespace DarkChaos
                 if (!mgr)
                     return;
                 
+                // Remove any existing upgrade enchant first
+                RemoveUpgradeEnchant(player, item);
+                
+                // Get upgrade state
                 ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
                 if (!state || state->upgrade_level == 0)
                     return;  // No upgrade
                 
-                // Get the stat multiplier
-                float multiplier = state->stat_multiplier;
-                if (multiplier <= 1.0f)
-                    return;  // No stat bonus
-                
-                // Log the intended stat application
-                // Note: Actual stat modification is disabled to prevent crashes
-                // This requires a custom item stat hook system to be implemented
-                LOG_DEBUG("scripts", "ItemUpgrade: Item {} has {:.2f}x stat multiplier (upgrade level {})", 
-                         item_guid, multiplier, state->upgrade_level);
-            }
-            
-            static void ApplyMultiplierToItemStats(Item* item, float multiplier)
-            {
-                if (!item || multiplier <= 1.0f)
-                    return;
-                
-                ItemTemplate const* proto = item->GetTemplate();
-                if (!proto)
-                    return;
-                
-                // WARNING: We cannot safely modify ItemTemplate const data
-                // This approach is fundamentally flawed for AzerothCore
-                // The proper way is to hook the stat calculation functions
-                // For now, we'll just log the intended multiplier
-                
-                LOG_DEBUG("scripts", "ItemUpgrade: Would apply {:.2f}x multiplier to item {} (template modification disabled)", 
-                         multiplier, item->GetGUID().GetCounter());
-                
-                // TODO: Implement proper stat scaling by hooking Player::_ApplyItemStats()
-                // or by modifying item stats in the item instance (not template)
-            }
-        };
-        
-        // =====================================================================
-        // Item Query Hook - Apply Upgrade Info to Item Queries
-        // =====================================================================
-        
-        class ItemUpgradeQueryHook : public ItemScript
-        {
-        public:
-            ItemUpgradeQueryHook() : ItemScript("ItemUpgradeQueryHook") {}
-            
-            // Called when item is created or query packet is sent
-            bool OnQuestAccept(Player* player, Item* item, Quest const* /*quest*/) override
-            {
-                // This is called when items are interacted with
-                // We can use it to ensure stats are up-to-date
-                if (player && item)
+                // Calculate enchant ID
+                uint32 enchant_id = GetUpgradeEnchantId(static_cast<uint8>(state->tier_id), 
+                                                        static_cast<uint8>(state->upgrade_level));
+                if (enchant_id == 0)
                 {
-                    uint32 item_guid = item->GetGUID().GetCounter();
-                    UpgradeManager* mgr = GetUpgradeManager();
-                    if (mgr)
+                    LOG_ERROR("scripts", "ItemUpgrade: Invalid enchant ID for tier {} level {}", 
+                             state->tier_id, state->upgrade_level);
+                    return;
+                }
+                
+                // Verify enchant exists in database
+                if (!VerifyEnchantExists(enchant_id))
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Enchant {} not found in dc_item_upgrade_enchants table", 
+                             enchant_id);
+                    return;
+                }
+                
+                // Apply enchant to TEMP_ENCHANTMENT_SLOT
+                item->SetEnchantment(TEMP_ENCHANTMENT_SLOT, enchant_id, 0, 0);
+                player->ApplyEnchantment(item, TEMP_ENCHANTMENT_SLOT, true);
+                
+                LOG_DEBUG("scripts", "ItemUpgrade: Applied enchant {} (tier {}, level {}) to item {} for player {}",
+                         enchant_id, state->tier_id, state->upgrade_level, item_guid, 
+                         player->GetGUID().GetCounter());
+            }
+            
+            static void RemoveUpgradeEnchant(Player* player, Item* item)
+            {
+                if (!player || !item)
+                    return;
+                
+                // Check if item has an upgrade enchant (IDs 80001-80599)
+                for (EnchantmentSlot slot = PERM_ENCHANTMENT_SLOT; slot < MAX_INSPECTED_ENCHANTMENT_SLOT; 
+                     slot = EnchantmentSlot(slot + 1))
+                {
+                    uint32 enchant_id = item->GetEnchantmentId(slot);
+                    if (enchant_id >= 80001 && enchant_id <= 80599)
                     {
-                        ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
-                        if (state && state->upgrade_level > 0)
-                        {
-                            // Ensure item has upgrade applied
-                            LOG_DEBUG("scripts", "ItemUpgrade: Item {} query with upgrade level {}", 
-                                     item_guid, state->upgrade_level);
-                        }
+                        player->ApplyEnchantment(item, slot, false);
+                        item->ClearEnchantment(slot);
+                        LOG_DEBUG("scripts", "ItemUpgrade: Removed enchant {} from item {}",
+                                 enchant_id, item->GetGUID().GetCounter());
                     }
                 }
-                return true;  // Allow quest accept
+            }
+            
+            static bool VerifyEnchantExists(uint32 enchant_id)
+            {
+                // Cache verified enchants to avoid repeated DB queries
+                static std::unordered_set<uint32> verified_enchants;
+                
+                if (verified_enchants.find(enchant_id) != verified_enchants.end())
+                    return true;
+                
+                // Check database
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT 1 FROM dc_item_upgrade_enchants WHERE enchant_id = {}", 
+                    enchant_id);
+                
+                if (result)
+                {
+                    verified_enchants.insert(enchant_id);
+                    return true;
+                }
+                
+                return false;
             }
         };
         
         // =====================================================================
-        // Global Hook: Force Stat Update on Upgrade
+        // Global Helper: Force Enchant Update After Upgrade
         // =====================================================================
         
         void ForcePlayerStatUpdate(Player* player)
@@ -161,39 +186,57 @@ namespace DarkChaos
             if (!player)
                 return;
             
-            // Remove all item stats
+            // Reapply enchants to all equipped items
             for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
             {
                 Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
                 if (item)
                 {
-                    player->_ApplyItemMods(item, slot, false);
+                    // Remove old enchant
+                    for (EnchantmentSlot enchSlot = PERM_ENCHANTMENT_SLOT; 
+                         enchSlot < MAX_INSPECTED_ENCHANTMENT_SLOT; 
+                         enchSlot = EnchantmentSlot(enchSlot + 1))
+                    {
+                        uint32 enchant_id = item->GetEnchantmentId(enchSlot);
+                        if (enchant_id >= 80001 && enchant_id <= 80599)
+                        {
+                            player->ApplyEnchantment(item, enchSlot, false);
+                            item->ClearEnchantment(enchSlot);
+                        }
+                    }
+                    
+                    // Reapply based on current upgrade state
+                    uint32 item_guid = item->GetGUID().GetCounter();
+                    UpgradeManager* mgr = GetUpgradeManager();
+                    if (mgr)
+                    {
+                        ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
+                        if (state && state->upgrade_level > 0)
+                        {
+                            uint32 enchant_id = GetUpgradeEnchantId(
+                                static_cast<uint8>(state->tier_id),
+                                static_cast<uint8>(state->upgrade_level));
+                            
+                            if (enchant_id > 0)
+                            {
+                                item->SetEnchantment(TEMP_ENCHANTMENT_SLOT, enchant_id, 0, 0);
+                                player->ApplyEnchantment(item, TEMP_ENCHANTMENT_SLOT, true);
+                            }
+                        }
+                    }
                 }
             }
             
-            // Reapply all item stats (will include upgraded stats)
-            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-            {
-                Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (item)
-                {
-                    player->_ApplyItemMods(item, slot, true);
-                }
-            }
-            
-            // Update all stat calculations
+            // Update all stats
             player->UpdateAllStats();
             player->UpdateArmor();
             player->UpdateAttackPowerAndDamage();
             player->UpdateAttackPowerAndDamage(true);
             player->UpdateMaxHealth();
             player->UpdateMaxPower(POWER_MANA);
-            player->UpdateMaxPower(POWER_RAGE);
-            player->UpdateMaxPower(POWER_ENERGY);
-            player->UpdateMaxPower(POWER_FOCUS);
-            player->UpdateMaxPower(POWER_RUNIC_POWER);
             
-            LOG_INFO("scripts", "ItemUpgrade: Forced stat update for player {}", player->GetGUID().GetCounter());
+            LOG_INFO("scripts", "ItemUpgrade: Forced enchant update for player {}", 
+                     player->GetGUID().GetCounter());
         }
         
         // =====================================================================
@@ -209,8 +252,7 @@ void AddSC_ItemUpgradeStatApplication()
     try
     {
         new DarkChaos::ItemUpgrade::ItemUpgradeStatHook();
-        new DarkChaos::ItemUpgrade::ItemUpgradeQueryHook();
-        LOG_INFO("scripts", "ItemUpgrade: Stat application hooks registered successfully");
+        LOG_INFO("scripts", "ItemUpgrade: Stat application hooks registered successfully (enchantment-based)");
     }
     catch (const std::exception& e)
     {

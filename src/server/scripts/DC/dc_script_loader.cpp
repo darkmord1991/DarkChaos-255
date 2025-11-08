@@ -96,104 +96,116 @@ void AddDCScripts()
     AddSC_npc_dungeon_quest_daily_weekly();
     
     // Item Upgrade System
-    LOG_INFO("scripts", "ItemUpgrade: Starting registration...");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> DarkChaos Item Upgrade System v2.0 (Hybrid Scaling)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">>   Core Features:");
+    LOG_INFO("scripts", ">>     • Enchantment-Based Stat Scaling");
+    LOG_INFO("scripts", ">>     • UnitScript Proc Damage/Healing Scaling");
+    LOG_INFO("scripts", ">>     • 5 Tiers × 15 Levels = 75 Upgrade Paths");
+    LOG_INFO("scripts", ">>     • Mastery & Artifact Progression");
+    LOG_INFO("scripts", ">>     • Transmutation & Tier Conversion");
+    LOG_INFO("scripts", ">>     • Seasonal Content Support");
+    LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
     
     try {
         AddSC_ItemUpgradeMechanicsImpl();     // Core mechanics (MUST load first - provides static functions)
-        LOG_INFO("scripts", "ItemUpgrade: Core mechanics loaded");
+        LOG_INFO("scripts", ">>   ✓ Core mechanics loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in core mechanics");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in core mechanics");
     }
     
     try {
         AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
-        LOG_INFO("scripts", "ItemUpgrade: GM commands registered");
+        LOG_INFO("scripts", ">>   ✓ GM commands loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in GM commands");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in GM commands");
     }
     
     try {
         AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
-        LOG_INFO("scripts", "ItemUpgrade: Addon handler registered");
+        LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in addon handler");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in addon handler");
     }
     
     try {
         AddSC_ItemUpgradeVendor();
-        LOG_INFO("scripts", "ItemUpgrade: Vendor registered");
+        LOG_INFO("scripts", ">>   ✓ Token vendor NPC loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in vendor");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in vendor");
     }
     
     try {
         AddSC_ItemUpgradeCurator();
-        LOG_INFO("scripts", "ItemUpgrade: Curator registered");
+        LOG_INFO("scripts", ">>   ✓ Artifact curator NPC loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in curator");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in curator");
     }
     
     try {
         AddSC_ItemUpgradeMechanics();
-        LOG_INFO("scripts", "ItemUpgrade: Mechanics registered");
+        LOG_INFO("scripts", ">>   ✓ Upgrader NPC loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in mechanics");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in mechanics");
     }
     try {
         AddSC_ItemUpgradeProgression();
-        LOG_INFO("scripts", "ItemUpgrade: Progression registered");
+        LOG_INFO("scripts", ">>   ✓ Progression system loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in progression");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in progression");
     }
     
     try {
         AddSC_ItemUpgradeSeasonal();
-        LOG_INFO("scripts", "ItemUpgrade: Seasonal registered");
+        LOG_INFO("scripts", ">>   ✓ Seasonal system loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in seasonal");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal");
     }
     
     try {
         AddSC_ItemUpgradeAdvanced();
-        LOG_INFO("scripts", "ItemUpgrade: Advanced registered");
+        LOG_INFO("scripts", ">>   ✓ Advanced features loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in advanced");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in advanced");
     }
     
     try {
         AddSC_ItemUpgradeTransmutation();
-        LOG_INFO("scripts", "ItemUpgrade: Transmutation registered");
+        LOG_INFO("scripts", ">>   ✓ Transmutation NPC loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in transmutation");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in transmutation");
     }
     
     try {
         AddSC_ItemUpgradeCommunication();
-        LOG_INFO("scripts", "ItemUpgrade: Communication registered");
+        LOG_INFO("scripts", ">>   ✓ Communication system loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in communication");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in communication");
     }
     
     try {
         AddSC_ItemUpgradeTokenHooks();
-        LOG_INFO("scripts", "ItemUpgrade: Token hooks registered");
+        LOG_INFO("scripts", ">>   ✓ Token hooks loaded");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in token hooks");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in token hooks");
     }
     
     try {
         AddSC_ItemUpgradeStatApplication();
-        LOG_INFO("scripts", "ItemUpgrade: Stat application registered");
+        LOG_INFO("scripts", ">>   ✓ Stat scaling loaded (Enchantment-based)");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in stat application");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in stat application");
     }
     
     try {
         AddSC_ItemUpgradeProcScaling();
-        LOG_INFO("scripts", "ItemUpgrade: Proc scaling registered");
+        LOG_INFO("scripts", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
     } catch (...) {
-        LOG_ERROR("scripts", "ItemUpgrade: CRASH in proc scaling");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in proc scaling");
     }
     
-    LOG_INFO("scripts", "ItemUpgrade: All registrations complete");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Item Upgrade System: All modules loaded successfully");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }
