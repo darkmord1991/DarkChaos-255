@@ -285,3 +285,10 @@ bool ItemUpgradeState::SaveToDatabase() const
 }
 
 // (Do not define a global GetUpgradeManager here; use DarkChaos::ItemUpgrade::GetUpgradeManager())
+
+// Registration function to ensure this file is linked
+void AddSC_ItemUpgradeMechanicsImpl()
+{
+    // This function exists solely to force the linker to include this compilation unit.
+    // The static functions (StatScalingCalculator, ItemLevelCalculator) are used by other modules.
+}

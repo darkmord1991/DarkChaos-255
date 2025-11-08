@@ -46,6 +46,7 @@ void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\D
 void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 void AddItemUpgradeGMCommandScript();  // GM admin commands - renamed from AddItemUpgradeCommandScript
+void AddSC_ItemUpgradeMechanicsImpl(); // Core mechanics implementation (must load FIRST)
 void AddSC_ItemUpgradeAddonHandler();  // Addon communication handler - renamed from AddSC_ItemUpgradeCommands
 // ItemUpgrade addon communication moved to Eluna: Custom/Eluna scripts/itemupgrade_communication.lua
 void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
@@ -96,6 +97,13 @@ void AddDCScripts()
     
     // Item Upgrade System
     LOG_INFO("scripts", "ItemUpgrade: Starting registration...");
+    
+    try {
+        AddSC_ItemUpgradeMechanicsImpl();     // Core mechanics (MUST load first - provides static functions)
+        LOG_INFO("scripts", "ItemUpgrade: Core mechanics loaded");
+    } catch (...) {
+        LOG_ERROR("scripts", "ItemUpgrade: CRASH in core mechanics");
+    }
     
     try {
         AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
