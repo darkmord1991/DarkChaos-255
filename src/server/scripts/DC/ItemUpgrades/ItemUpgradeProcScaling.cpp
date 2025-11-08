@@ -49,19 +49,27 @@ namespace DarkChaos
                 
                 LOG_INFO("scripts", "ItemUpgrade: Loading item proc spells from database...");
                 
-                // Load from database
-                QueryResult result = WorldDatabase.Query("SELECT spell_id FROM dc_item_proc_spells");
-                if (result)
+                try
                 {
-                    do {
-                        proc_spell_ids.insert((*result)[0].Get<uint32>());
-                    } while (result->NextRow());
-                    
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} item proc spells", proc_spell_ids.size());
+                    // Load from database
+                    QueryResult result = WorldDatabase.Query("SELECT spell_id FROM dc_item_proc_spells");
+                    if (result)
+                    {
+                        do {
+                            proc_spell_ids.insert((*result)[0].Get<uint32>());
+                        } while (result->NextRow());
+                        
+                        LOG_INFO("scripts", "ItemUpgrade: Loaded {} item proc spells from database", proc_spell_ids.size());
+                    }
+                    else
+                    {
+                        LOG_WARN("scripts", "ItemUpgrade: No proc spells found in database, using hardcoded list");
+                        LoadHardcodedProcSpells();
+                    }
                 }
-                else
+                catch (...)
                 {
-                    LOG_WARN("scripts", "ItemUpgrade: No proc spells found in database, using hardcoded list");
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to load proc spells from database (table missing?), using hardcoded list");
                     LoadHardcodedProcSpells();
                 }
                 
