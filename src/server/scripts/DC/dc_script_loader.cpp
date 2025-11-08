@@ -144,9 +144,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING - RE-ENABLE AFTER FINDING CRASH
-        // AddSC_ItemUpgradeMechanics();
-        LOG_INFO("scripts", ">>   ⚠ Upgrader NPC DISABLED (debugging)");
+        AddSC_ItemUpgradeMechanics();
+        LOG_INFO("scripts", ">>   ✓ Upgrader NPC loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics: {}", e.what());
     } catch (...) {
