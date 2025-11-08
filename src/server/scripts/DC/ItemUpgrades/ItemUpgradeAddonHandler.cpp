@@ -215,9 +215,6 @@ private:
             ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
                << ":" << upgradedIlvl << ":" << statMultiplier;
             
-            // Log what we're sending
-            sLog->outInfo(LOG_FILTER_SQL, "[ItemUpgrade ADDON RESPONSE] Sending: {}", ss.str());
-            
             SendAddonResponse(player, ss.str());
             return true;
         }
