@@ -152,27 +152,10 @@ namespace DarkChaos
                     }
                 }
                 
-                // Apply multiplier to spell power and all secondary stats
-                // These are in the Spells array but we want to scale the base stats
-                if (original_stats[item_guid].SpellPowerBonus > 0)
-                {
-                    mutable_proto->SpellPowerBonus = static_cast<int32>(original_stats[item_guid].SpellPowerBonus * multiplier);
-                }
-                
-                // Scale attack power bonus
-                if (original_stats[item_guid].AttackPowerBonus > 0)
-                {
-                    mutable_proto->AttackPowerBonus = static_cast<int32>(original_stats[item_guid].AttackPowerBonus * multiplier);
-                }
-                
-                // Scale ranged attack power bonus  
-                if (original_stats[item_guid].RangedAttackPowerBonus > 0)
-                {
-                    mutable_proto->RangedAttackPowerBonus = static_cast<int32>(original_stats[item_guid].RangedAttackPowerBonus * multiplier);
-                }
-                
-                // Note: Rating stats (Hit, Crit, Haste, etc.) are stored in ItemStat array
-                // and are already scaled above. No additional scaling needed.
+                // Note: Spell power, attack power, and other bonuses in WotLK are handled
+                // through the ItemStat array above (ITEM_MOD_SPELL_POWER, etc.)
+                // No separate SpellPowerBonus/AttackPowerBonus fields exist in AzerothCore
+                // All secondary stats are already scaled via the ItemStat loop
             }
         };
         
