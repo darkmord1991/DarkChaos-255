@@ -207,9 +207,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        // AddSC_ItemUpgradeProcScaling();
-        LOG_INFO("scripts", ">>   ⚠ Proc scaling DISABLED (debugging)");
+        AddSC_ItemUpgradeProcScaling();
+        LOG_INFO("scripts", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in proc scaling: {}", e.what());
     } catch (...) {
