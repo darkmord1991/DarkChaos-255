@@ -363,7 +363,7 @@ private:
                 "INSERT INTO dc_player_item_upgrades "
                 "(item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
                 " base_item_level, upgraded_item_level, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({}), {}) "
                 "ON DUPLICATE KEY UPDATE "
                 " upgrade_level = VALUES(upgrade_level),"
                 " tier_id = VALUES(tier_id),"

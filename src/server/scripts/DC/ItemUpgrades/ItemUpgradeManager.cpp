@@ -891,10 +891,10 @@ namespace DarkChaos
                 CharacterDatabase.Execute(
                     "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, "
                     "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
+                    "VALUES ({}, {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({}), {}) "
                     "ON DUPLICATE KEY UPDATE "
                     "upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
-                    "stat_multiplier = {}, last_upgraded_at = {}",
+                    "stat_multiplier = {}, last_upgraded_at = FROM_UNIXTIME({})",
                     state->item_guid, state->player_guid, static_cast<uint32>(state->tier_id),
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     state->essence_invested, state->stat_multiplier,
