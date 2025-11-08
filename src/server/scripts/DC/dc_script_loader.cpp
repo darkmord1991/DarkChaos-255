@@ -198,9 +198,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        // AddSC_ItemUpgradeStatApplication();
-        LOG_INFO("scripts", ">>   ⚠ Stat scaling DISABLED (debugging)");
+        AddSC_ItemUpgradeStatApplication();
+        LOG_INFO("scripts", ">>   ✓ Stat scaling loaded (Enchantment-based)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in stat application: {}", e.what());
     } catch (...) {
