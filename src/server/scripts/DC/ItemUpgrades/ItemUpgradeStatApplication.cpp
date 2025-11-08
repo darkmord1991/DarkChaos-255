@@ -133,7 +133,7 @@ namespace DarkChaos
                 // This is a hack but necessary for 3.3.5a
                 ItemTemplate* mutable_proto = const_cast<ItemTemplate*>(proto);
                 
-                // Apply multiplier to all stats
+                // Apply multiplier to all item stats (Strength, Agility, Stamina, Intellect, Spirit, etc.)
                 for (uint8 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
                 {
                     if (original_stats[item_guid].ItemStat[i].ItemStatType != 0)
@@ -149,7 +149,7 @@ namespace DarkChaos
                     mutable_proto->Armor = static_cast<uint32>(original_stats[item_guid].Armor * multiplier);
                 }
                 
-                // Apply multiplier to damage
+                // Apply multiplier to weapon damage (both min and max)
                 for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
                 {
                     if (original_stats[item_guid].Damage[i].DamageMin > 0.0f)
@@ -159,14 +159,27 @@ namespace DarkChaos
                     }
                 }
                 
-                // Apply multiplier to spell power
-                for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+                // Apply multiplier to spell power and all secondary stats
+                // These are in the Spells array but we want to scale the base stats
+                if (original_stats[item_guid].SpellPowerBonus > 0)
                 {
-                    if (original_stats[item_guid].Spells[i].SpellId > 0)
-                    {
-                        // Spell stats are handled by stat multiplier above
-                    }
+                    mutable_proto->SpellPowerBonus = static_cast<int32>(original_stats[item_guid].SpellPowerBonus * multiplier);
                 }
+                
+                // Scale attack power bonus
+                if (original_stats[item_guid].AttackPowerBonus > 0)
+                {
+                    mutable_proto->AttackPowerBonus = static_cast<int32>(original_stats[item_guid].AttackPowerBonus * multiplier);
+                }
+                
+                // Scale ranged attack power bonus  
+                if (original_stats[item_guid].RangedAttackPowerBonus > 0)
+                {
+                    mutable_proto->RangedAttackPowerBonus = static_cast<int32>(original_stats[item_guid].RangedAttackPowerBonus * multiplier);
+                }
+                
+                // Note: Rating stats (Hit, Crit, Haste, etc.) are stored in ItemStat array
+                // and are already scaled above. No additional scaling needed.
             }
         };
         

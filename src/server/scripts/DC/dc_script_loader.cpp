@@ -58,6 +58,7 @@ void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\Item
 void AddSC_ItemUpgradeCommunication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommunication.cpp
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
+void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -105,4 +106,5 @@ void AddDCScripts()
     AddSC_ItemUpgradeCommunication();
     AddSC_ItemUpgradeTokenHooks();
     AddSC_ItemUpgradeStatApplication();
+    AddSC_ItemUpgradeProcScaling();
 }
