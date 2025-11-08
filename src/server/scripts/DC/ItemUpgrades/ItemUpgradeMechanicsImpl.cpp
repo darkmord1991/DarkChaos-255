@@ -216,8 +216,8 @@ std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id)
 bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
 {
     QueryResult result = CharacterDatabase.Query(
-        "SELECT item_guid, player_guid, upgrade_level, essence_invested, tokens_invested, "
-        "base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season "
+        "SELECT item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
+        "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
         "FROM dc_player_item_upgrades WHERE item_guid = {}", item_guid);
     
     if (!result)
@@ -226,12 +226,12 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
     Field* fields = result->Fetch();
     item_guid = fields[0].Get<uint32>();
     player_guid = fields[1].Get<uint32>();
-    upgrade_level = fields[2].Get<uint8>();
-    essence_invested = fields[3].Get<uint32>();
+    tier_id = fields[2].Get<uint8>();
+    upgrade_level = fields[3].Get<uint8>();
     tokens_invested = fields[4].Get<uint32>();
-    base_item_level = fields[5].Get<uint16>();
-    upgraded_item_level = fields[6].Get<uint16>();
-    stat_multiplier = fields[7].Get<float>();
+    essence_invested = fields[5].Get<uint32>();
+    stat_multiplier = fields[6].Get<float>();
+    first_upgraded_at = fields[7].Get<time_t>();
     last_upgraded_at = fields[8].Get<time_t>();
     season = fields[9].Get<uint32>();
     

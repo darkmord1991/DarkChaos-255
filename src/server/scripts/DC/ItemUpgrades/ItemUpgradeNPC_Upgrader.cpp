@@ -408,7 +408,7 @@ private:
             "SELECT COUNT(DISTINCT item_guid), SUM(essence_invested), SUM(tokens_invested), "
             "AVG(stat_multiplier), "
             "SUM(CASE WHEN upgrade_level = 15 THEN 1 ELSE 0 END), "
-            "MAX(UNIX_TIMESTAMP(last_upgraded_at)) "
+            "MAX(last_upgraded_at) "
             "FROM dc_player_item_upgrades WHERE player_guid = {}", player_guid);
         
         if (result)
