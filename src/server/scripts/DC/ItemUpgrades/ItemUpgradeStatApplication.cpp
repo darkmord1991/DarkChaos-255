@@ -95,7 +95,7 @@ namespace DarkChaos
                 // Remove any existing upgrade enchant first
                 RemoveUpgradeEnchant(player, item);
                 
-                // Get upgrade state
+                // Get upgrade state from database
                 ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
                 if (!state || state->upgrade_level == 0)
                     return;  // No upgrade
@@ -113,18 +113,34 @@ namespace DarkChaos
                 // Verify enchant exists in database
                 if (!VerifyEnchantExists(enchant_id))
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Enchant {} not found in dc_item_upgrade_enchants table", 
-                             enchant_id);
+                    LOG_ERROR("scripts", "ItemUpgrade: Enchant {} not found in dc_item_upgrade_enchants table - "
+                             "tier {}, level {}. Skipping enchant application.", 
+                             enchant_id, state->tier_id, state->upgrade_level);
                     return;
                 }
+                
+                // Log before applying to help debug
+                LOG_INFO("scripts", "ItemUpgrade: Attempting to apply enchant {} to item {} (guid={}) for player {}. "
+                        "Tier={}, Level={}, CurrentMultiplier={}",
+                        enchant_id, item->GetEntry(), item_guid, player->GetGUID().GetCounter(),
+                        state->tier_id, state->upgrade_level, state->stat_multiplier);
                 
                 // Apply enchant to TEMP_ENCHANTMENT_SLOT
                 item->SetEnchantment(TEMP_ENCHANTMENT_SLOT, enchant_id, 0, 0);
                 player->ApplyEnchantment(item, TEMP_ENCHANTMENT_SLOT, true);
                 
-                LOG_DEBUG("scripts", "ItemUpgrade: Applied enchant {} (tier {}, level {}) to item {} for player {}",
-                         enchant_id, state->tier_id, state->upgrade_level, item_guid, 
-                         player->GetGUID().GetCounter());
+                // Verify enchant was actually applied
+                uint32 applied_enchant = item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT);
+                if (applied_enchant == enchant_id)
+                {
+                    LOG_DEBUG("scripts", "ItemUpgrade: Successfully applied enchant {} to item {}", 
+                             enchant_id, item_guid);
+                }
+                else
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Failed to apply enchant {}! Item has enchant {} instead",
+                             enchant_id, applied_enchant);
+                }
             }
             
             static void RemoveUpgradeEnchant(Player* player, Item* item)
