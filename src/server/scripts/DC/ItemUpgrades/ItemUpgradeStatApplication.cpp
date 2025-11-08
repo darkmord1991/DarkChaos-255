@@ -90,17 +90,11 @@ namespace DarkChaos
                 if (multiplier <= 1.0f)
                     return;  // No stat bonus
                 
-                // Remove old item stats
-                player->_ApplyItemMods(item, item->GetSlot(), false);
-                
-                // Apply upgraded stats by temporarily modifying item stats
-                ApplyMultiplierToItemStats(item, multiplier);
-                
-                // Apply new stats
-                player->_ApplyItemMods(item, item->GetSlot(), true);
-                
-                LOG_DEBUG("scripts", "ItemUpgrade: Applied {:.2f}x stat multiplier to item {} for player {}", 
-                         multiplier, item_guid, player->GetGUID().GetCounter());
+                // Log the intended stat application
+                // Note: Actual stat modification is disabled to prevent crashes
+                // This requires a custom item stat hook system to be implemented
+                LOG_DEBUG("scripts", "ItemUpgrade: Item {} has {:.2f}x stat multiplier (upgrade level {})", 
+                         item_guid, multiplier, state->upgrade_level);
             }
             
             static void ApplyMultiplierToItemStats(Item* item, float multiplier)
@@ -112,50 +106,16 @@ namespace DarkChaos
                 if (!proto)
                     return;
                 
-                // Store original stats if not already stored
-                uint32 item_guid = item->GetGUID().GetCounter();
-                static std::map<uint32, ItemTemplate> original_stats;
+                // WARNING: We cannot safely modify ItemTemplate const data
+                // This approach is fundamentally flawed for AzerothCore
+                // The proper way is to hook the stat calculation functions
+                // For now, we'll just log the intended multiplier
                 
-                if (original_stats.find(item_guid) == original_stats.end())
-                {
-                    // Store original template
-                    original_stats[item_guid] = *proto;
-                }
+                LOG_DEBUG("scripts", "ItemUpgrade: Would apply {:.2f}x multiplier to item {} (template modification disabled)", 
+                         multiplier, item->GetGUID().GetCounter());
                 
-                // Get mutable template (DANGEROUS: modifying const data!)
-                // This is a hack but necessary for 3.3.5a
-                ItemTemplate* mutable_proto = const_cast<ItemTemplate*>(proto);
-                
-                // Apply multiplier to all item stats (Strength, Agility, Stamina, Intellect, Spirit, etc.)
-                for (uint8 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
-                {
-                    if (original_stats[item_guid].ItemStat[i].ItemStatType != 0)
-                    {
-                        int32 original_value = original_stats[item_guid].ItemStat[i].ItemStatValue;
-                        mutable_proto->ItemStat[i].ItemStatValue = static_cast<int32>(original_value * multiplier);
-                    }
-                }
-                
-                // Apply multiplier to armor
-                if (original_stats[item_guid].Armor > 0)
-                {
-                    mutable_proto->Armor = static_cast<uint32>(original_stats[item_guid].Armor * multiplier);
-                }
-                
-                // Apply multiplier to weapon damage (both min and max)
-                for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
-                {
-                    if (original_stats[item_guid].Damage[i].DamageMin > 0.0f)
-                    {
-                        mutable_proto->Damage[i].DamageMin = original_stats[item_guid].Damage[i].DamageMin * multiplier;
-                        mutable_proto->Damage[i].DamageMax = original_stats[item_guid].Damage[i].DamageMax * multiplier;
-                    }
-                }
-                
-                // Note: Spell power, attack power, and other bonuses in WotLK are handled
-                // through the ItemStat array above (ITEM_MOD_SPELL_POWER, etc.)
-                // No separate SpellPowerBonus/AttackPowerBonus fields exist in AzerothCore
-                // All secondary stats are already scaled via the ItemStat loop
+                // TODO: Implement proper stat scaling by hooking Player::_ApplyItemStats()
+                // or by modifying item stats in the item instance (not template)
             }
         };
         
