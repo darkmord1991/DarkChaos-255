@@ -48,33 +48,26 @@ namespace DarkChaos
                 if (!player)
                     return;
                 
-                // Wait a moment for player to fully load
-                player->GetScheduler().Schedule(Seconds(2), [](TaskContext context)
+                // Apply upgrade stats to all equipped items immediately
+                // (AzerothCore applies items before this hook, so we can process them now)
+                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                 {
-                    Player* player = context.GetContextPlayer();
-                    if (!player)
-                        return;
-                    
-                    // Apply upgrade stats to all equipped items
-                    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                    if (item)
                     {
-                        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                        if (item)
-                        {
-                            ApplyUpgradeStats(player, item);
-                        }
+                        ApplyUpgradeStats(player, item);
                     }
-                    
-                    // Force update stats
-                    player->UpdateAllStats();
-                    player->UpdateArmor();
-                    player->UpdateAttackPowerAndDamage();
-                    player->UpdateAttackPowerAndDamage(true);
-                    player->UpdateMaxHealth();
-                    player->UpdateMaxPower(POWER_MANA);
-                    
-                    LOG_DEBUG("scripts", "ItemUpgrade: Applied upgrade stats for player {} on login", player->GetGUID().GetCounter());
-                });
+                }
+                
+                // Force update stats
+                player->UpdateAllStats();
+                player->UpdateArmor();
+                player->UpdateAttackPowerAndDamage();
+                player->UpdateAttackPowerAndDamage(true);
+                player->UpdateMaxHealth();
+                player->UpdateMaxPower(POWER_MANA);
+                
+                LOG_DEBUG("scripts", "ItemUpgrade: Applied upgrade stats for player {} on login", player->GetGUID().GetCounter());
             }
             
         private:
