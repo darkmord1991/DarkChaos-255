@@ -6,7 +6,7 @@
 -- ============================================================================
 -- Defines each upgrade track (HLBG, Heroic, Mythic, etc.)
 -- Contains progression rules, iLvl ranges, and costs
-
+drop table if exists dc_upgrade_tracks;
 CREATE TABLE IF NOT EXISTS dc_upgrade_tracks (
   track_id INT PRIMARY KEY AUTO_INCREMENT COMMENT 'Unique track identifier',
   track_name VARCHAR(100) NOT NULL COMMENT 'Display name: Heroic Dungeon, Mythic Raid, etc.',
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS dc_upgrade_tracks (
   description VARCHAR(255) COMMENT 'UI description for players',
   active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'Is this track currently available?',
   season INT NOT NULL DEFAULT 0 COMMENT '0 = permanent, else season number',
-  created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_date INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when created',
   
   UNIQUE KEY uk_track (source_content, difficulty, season),
   KEY k_active (active),
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS dc_item_upgrade_chains (
   -- Metadata
   season INT NOT NULL DEFAULT 0 COMMENT '0 = permanent item',
   description VARCHAR(255),
-  created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_date INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when created',
   
   FOREIGN KEY (track_id) REFERENCES dc_upgrade_tracks(track_id),
   UNIQUE KEY uk_chain (base_item_name, track_id, season),
@@ -100,30 +100,30 @@ CREATE TABLE IF NOT EXISTS dc_item_upgrade_chains (
 -- ============================================================================
 -- Tracks current upgrade level for each item in player inventory
 -- Enables checking "can this item be upgraded?" queries quickly
-
+drop table if exists dc_player_item_upgrades;
 CREATE TABLE IF NOT EXISTS dc_player_item_upgrades (
   upgrade_id INT PRIMARY KEY AUTO_INCREMENT,
-  character_guid INT NOT NULL COMMENT 'Character GUID (from characters table)',
+  item_guid INT UNIQUE NOT NULL COMMENT 'Unique item instance GUID',
+  player_guid INT NOT NULL COMMENT 'Character GUID (from characters table)',
   
   -- Item Tracking
-  item_guid INT UNIQUE NOT NULL COMMENT 'Unique item instance GUID',
   base_item_name VARCHAR(100) NOT NULL,
   
-  -- Current State
-  current_ilvl INT NOT NULL COMMENT 'Current item level',
-  max_possible_ilvl INT NOT NULL COMMENT 'Max iLvl for this track/player combo',
-  current_upgrade_level TINYINT NOT NULL DEFAULT 0 COMMENT '0-5 usually',
+  -- Upgrade State
+  tier_id TINYINT NOT NULL DEFAULT 1,
+  upgrade_level TINYINT NOT NULL DEFAULT 0 COMMENT '0-15 upgrade level',
+  tokens_invested INT NOT NULL DEFAULT 0,
+  essence_invested INT NOT NULL DEFAULT 0,
+  stat_multiplier FLOAT NOT NULL DEFAULT 1.0,
   
   -- Timing
-  first_upgraded TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_upgraded TIMESTAMP,
+  first_upgraded_at INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when first upgraded',
+  last_upgraded_at INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when last upgraded',
   
   -- Metadata
-  track_id INT NOT NULL,
   season INT NOT NULL DEFAULT 0,
   
-  FOREIGN KEY (track_id) REFERENCES dc_upgrade_tracks(track_id),
-  KEY k_character (character_guid),
+  KEY k_player (player_guid),
   KEY k_item_guid (item_guid),
   KEY k_season (season)
 ) ENGINE=INNODB DEFAULT CHARSET=utf8mb4 COMMENT='Player item upgrade state';
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS dc_player_currencies (
   week_reset_date DATE COMMENT 'When weekly cap resets',
   
   -- Metadata
-  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_updated INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when last updated',
   season INT NOT NULL DEFAULT 0,
   
   KEY k_guid (character_guid),
@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS dc_upgrade_log (
   flightstones_paid INT NOT NULL,
   
   -- Timing
-  upgrade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  upgrade_date INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when upgrade occurred',
   
   -- Analytics
   upgrade_level TINYINT COMMENT '0-5',
@@ -380,7 +380,7 @@ DELIMITER ;
 CREATE TABLE IF NOT EXISTS dc_item_upgrade_version (
   version_id INT PRIMARY KEY AUTO_INCREMENT,
   schema_version VARCHAR(20),
-  implemented_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  implemented_date INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when implemented',
   notes TEXT
 ) ENGINE=INNODB;
 

@@ -242,18 +242,17 @@ bool ItemUpgradeState::SaveToDatabase() const
 {
     // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
     CharacterDatabase.Execute(
-        "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, upgrade_level, essence_invested, tokens_invested, "
-        "base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season) "
+        "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, essence_invested, tokens_invested, "
+        "stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
         "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
         "ON DUPLICATE KEY UPDATE "
         "upgrade_level = VALUES(upgrade_level), "
         "essence_invested = VALUES(essence_invested), "
         "tokens_invested = VALUES(tokens_invested), "
-        "upgraded_item_level = VALUES(upgraded_item_level), "
         "stat_multiplier = VALUES(stat_multiplier), "
         "last_upgraded_at = VALUES(last_upgraded_at)",
-        item_guid, player_guid, static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
-        base_item_level, upgraded_item_level, stat_multiplier, last_upgraded_at, season);
+        item_guid, player_guid, static_cast<uint32>(tier_id), static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
+        stat_multiplier, first_upgraded_at, last_upgraded_at, season);
     
     return true;
 }
