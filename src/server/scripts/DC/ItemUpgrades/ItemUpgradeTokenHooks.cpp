@@ -374,11 +374,13 @@ namespace DarkChaos
         // Registration Functions
         // =====================================================================
         
-        void AddSC_ItemUpgradeTokenHooks()
-        {
-            new PlayerTokenHooks();
-            new CreatureTokenHooks();
-            LOG_INFO("scripts", "ItemUpgrade: Token system hooks registered successfully");
-        }
-    }
+    } // namespace ItemUpgrade
+} // namespace DarkChaos
+
+// Registration function must be in global namespace for dc_script_loader.cpp
+void AddSC_ItemUpgradeTokenHooks()
+{
+    new DarkChaos::ItemUpgrade::PlayerTokenHooks();
+    new DarkChaos::ItemUpgrade::CreatureTokenHooks();
+    LOG_INFO("scripts", "ItemUpgrade: Token system hooks registered successfully");
 }

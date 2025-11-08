@@ -234,15 +234,17 @@ namespace DarkChaos
         // Registration & Initialization
         // =====================================================================
         
-        void AddSC_ItemUpgradeProcScaling()
-        {
-            // Build the spell->item mapping
-            BuildSpellToItemMapping();
-            
-            // Register hooks
-            new ItemProcDamageHook();
-            
-            LOG_INFO("scripts", "ItemUpgrade: Proc scaling infrastructure registered (tracking only - requires core hooks for direct scaling)");
-        }
-    }
+    } // namespace ItemUpgrade
+} // namespace DarkChaos
+
+// Registration function must be in global namespace for dc_script_loader.cpp
+void AddSC_ItemUpgradeProcScaling()
+{
+    // Build the spell->item mapping
+    DarkChaos::ItemUpgrade::BuildSpellToItemMapping();
+    
+    // Register hooks
+    new DarkChaos::ItemUpgrade::ItemProcDamageHook();
+    
+    LOG_INFO("scripts", "ItemUpgrade: Proc scaling infrastructure registered (tracking only - requires core hooks for direct scaling)");
 }

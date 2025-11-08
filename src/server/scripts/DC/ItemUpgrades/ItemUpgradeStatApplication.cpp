@@ -240,11 +240,13 @@ namespace DarkChaos
         // Registration
         // =====================================================================
         
-        void AddSC_ItemUpgradeStatApplication()
-        {
-            new ItemUpgradeStatHook();
-            new ItemUpgradeQueryHook();
-            LOG_INFO("scripts", "ItemUpgrade: Stat application hooks registered successfully");
-        }
-    }
+    } // namespace ItemUpgrade
+} // namespace DarkChaos
+
+// Registration function must be in global namespace for dc_script_loader.cpp
+void AddSC_ItemUpgradeStatApplication()
+{
+    new DarkChaos::ItemUpgrade::ItemUpgradeStatHook();
+    new DarkChaos::ItemUpgrade::ItemUpgradeQueryHook();
+    LOG_INFO("scripts", "ItemUpgrade: Stat application hooks registered successfully");
 }
