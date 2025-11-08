@@ -254,6 +254,7 @@ private:
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
+            std::string baseItemName = item->GetTemplate()->Name1;
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
@@ -361,22 +362,18 @@ private:
             // Update item state (include all non-nullable columns)
             CharacterDatabase.Execute(
                 "INSERT INTO dc_player_item_upgrades "
-                "(item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
-                " base_item_level, upgraded_item_level, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({}), {}) "
+                "(item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
+                "stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
+                "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
                 "ON DUPLICATE KEY UPDATE "
                 " upgrade_level = VALUES(upgrade_level),"
                 " tier_id = VALUES(tier_id),"
                 " tokens_invested = tokens_invested + VALUES(tokens_invested),"
                 " essence_invested = essence_invested + VALUES(essence_invested),"
-                " base_item_level = VALUES(base_item_level),"
-                " upgraded_item_level = VALUES(upgraded_item_level),"
                 " stat_multiplier = VALUES(stat_multiplier),"
-                " last_upgraded_at = VALUES(last_upgraded_at),"
-                " season = VALUES(season),"
-                " first_upgraded_at = IF(first_upgraded_at = 0, VALUES(first_upgraded_at), first_upgraded_at)",
-                itemGUID, playerGuid, tier, targetLevel, tokensNeeded, essenceNeeded,
-                baseItemLevel, upgradedItemLevel, statMultiplier, now, now, season
+                " last_upgraded_at = {}",
+                itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
+                1.0f, now, now, season, now
             );
 
             // Send success response via SYSTEM chat
