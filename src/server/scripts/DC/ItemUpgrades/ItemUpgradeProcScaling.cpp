@@ -49,29 +49,8 @@ namespace DarkChaos
                 
                 LOG_INFO("scripts", "ItemUpgrade: Loading item proc spells from database...");
                 
-                try
-                {
-                    // Load from database
-                    QueryResult result = WorldDatabase.Query("SELECT spell_id FROM dc_item_proc_spells");
-                    if (result)
-                    {
-                        do {
-                            proc_spell_ids.insert((*result)[0].Get<uint32>());
-                        } while (result->NextRow());
-                        
-                        LOG_INFO("scripts", "ItemUpgrade: Loaded {} item proc spells from database", proc_spell_ids.size());
-                    }
-                    else
-                    {
-                        LOG_WARN("scripts", "ItemUpgrade: No proc spells found in database, using hardcoded list");
-                        LoadHardcodedProcSpells();
-                    }
-                }
-                catch (...)
-                {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to load proc spells from database (table missing?), using hardcoded list");
-                    LoadHardcodedProcSpells();
-                }
+                // Always use hardcoded list for now (database might not be initialized yet)
+                LoadHardcodedProcSpells();
                 
                 initialized = true;
             }
@@ -282,17 +261,23 @@ void AddSC_ItemUpgradeProcScaling()
 {
     try
     {
-        // Initialize proc spell database
+        // Initialize proc spell database (uses hardcoded list during startup)
         DarkChaos::ItemUpgrade::ProcSpellDatabase::Initialize();
         
         // Register hooks
         new DarkChaos::ItemUpgrade::ItemUpgradeProcDamageHook();
         new DarkChaos::ItemUpgrade::ItemProcEquipmentHook();
         
-        LOG_INFO("scripts", "ItemUpgrade: Proc scaling hooks registered successfully (UnitScript-based)");
+        LOG_INFO("scripts", "ItemUpgrade: Proc scaling hooks registered successfully");
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("scripts", "ItemUpgrade: Failed to register proc scaling hooks: {}", e.what());
+        LOG_ERROR("scripts", "ItemUpgrade: Exception in proc scaling: {}", e.what());
+        throw;
+    }
+    catch (...)
+    {
+        LOG_ERROR("scripts", "ItemUpgrade: Unknown error in proc scaling");
+        throw;
     }
 }
