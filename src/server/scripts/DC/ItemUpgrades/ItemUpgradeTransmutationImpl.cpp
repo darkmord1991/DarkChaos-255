@@ -565,10 +565,229 @@ namespace DarkChaos
         };
 
         // =====================================================================
-        // Singleton Implementation
+        // Tier Conversion Manager Implementation (Consolidated)
+        // =====================================================================
+
+        class TierConversionManagerImpl : public TierConversionManager
+        {
+        private:
+            struct TierConversionConfig
+            {
+                float downgrade_success_base_rate;
+                float upgrade_success_base_rate;
+                uint32 downgrade_cost_multiplier;
+                uint32 upgrade_cost_multiplier;
+                uint32 tier_difficulty_modifier;
+                bool allow_cross_quality_conversion;
+                uint32 max_tier_difference;
+
+                TierConversionConfig() :
+                    downgrade_success_base_rate(0.95f), upgrade_success_base_rate(0.70f),
+                    downgrade_cost_multiplier(50), upgrade_cost_multiplier(200),
+                    tier_difficulty_modifier(25), allow_cross_quality_conversion(false),
+                    max_tier_difference(2) {}
+            } config;
+
+        public:
+            bool CalculateDowngradeCost(uint32 item_guid, uint8 target_tier,
+                                      uint32& out_essence, uint32& out_tokens) override
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
+
+                if (!state || state->tier_id <= target_tier)
+                    return false;
+
+                uint8 tier_difference = state->tier_id - target_tier;
+                uint8 upgrade_level = state->upgrade_level;
+
+                uint32 base_cost = config.downgrade_cost_multiplier * tier_difference * (upgrade_level + 1);
+                out_essence = base_cost * (state->tier_id + 1);
+                out_tokens = base_cost / 2;
+
+                return true;
+            }
+
+            bool CalculateUpgradeCost(uint32 item_guid, uint8 target_tier,
+                                    uint32& out_essence, uint32& out_tokens) override
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
+
+                if (!state || state->tier_id >= target_tier)
+                    return false;
+
+                uint8 tier_difference = target_tier - state->tier_id;
+                uint8 upgrade_level = state->upgrade_level;
+
+                uint32 base_cost = config.upgrade_cost_multiplier * std::pow(2, tier_difference - 1) * (upgrade_level + 1);
+                out_essence = base_cost * (target_tier + 1) * 2;
+                out_tokens = base_cost * target_tier;
+
+                return true;
+            }
+
+            bool ConvertItemTier(uint32 player_guid, uint32 item_guid, uint8 target_tier) override
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
+
+                if (!state)
+                    return false;
+
+                std::string error_message;
+                if (!CanConvertTier(item_guid, target_tier, error_message))
+                    return false;
+
+                bool is_upgrade = (target_tier > state->tier_id);
+                uint32 essence_cost, token_cost;
+
+                if (is_upgrade)
+                    CalculateUpgradeCost(item_guid, target_tier, essence_cost, token_cost);
+                else
+                    CalculateDowngradeCost(item_guid, target_tier, essence_cost, token_cost);
+
+                uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
+                uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+
+                if (current_essence < essence_cost || current_tokens < token_cost)
+                    return false;
+
+                float success_rate = GetConversionSuccessRate(state->tier_id, target_tier, state->upgrade_level);
+                float roll = frand(0.0f, 1.0f);
+                bool success = (roll <= success_rate);
+
+                try
+                {
+                    mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, 1);
+                    mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, 1);
+
+                    uint8 original_tier = state->tier_id;
+                    if (success)
+                    {
+                        state->tier_id = target_tier;
+
+                        if (is_upgrade)
+                        {
+                            float level_multiplier = 0.7f;
+                            state->upgrade_level = static_cast<uint8>(state->upgrade_level * level_multiplier);
+                        }
+                        else
+                        {
+                            uint8 tier_difference = std::abs(state->tier_id - target_tier);
+                            uint8 level_bonus = tier_difference * 2;
+                            state->upgrade_level = std::min(static_cast<uint8>(MAX_UPGRADE_LEVEL),
+                                                          static_cast<uint8>(state->upgrade_level + level_bonus));
+                        }
+
+                        float max_mult = (target_tier == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                        state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
+                        mgr->SaveItemUpgrade(item_guid);
+
+                        LOG_INFO("scripts", "ItemUpgrade: Successfully converted item {} from tier {} to tier {} for player {}",
+                                item_guid, original_tier, target_tier, player_guid);
+                    }
+                    else
+                    {
+                        if (state->upgrade_level > 0)
+                        {
+                            uint8 level_loss = std::max(static_cast<uint8>(1), static_cast<uint8>(state->upgrade_level / 4));
+                            state->upgrade_level = std::max(static_cast<uint8>(0),
+                                                          static_cast<uint8>(state->upgrade_level - level_loss));
+
+                            float max_mult = (state->tier_id == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                            state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
+                            mgr->SaveItemUpgrade(item_guid);
+
+                            LOG_INFO("scripts", "ItemUpgrade: Tier conversion failed for item {} - lost {} upgrade levels",
+                                    item_guid, level_loss);
+                        }
+                    }
+
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_tier_conversion_log "
+                        "(player_guid, item_guid, from_tier, to_tier, upgrade_level, success, cost_essence, cost_tokens, timestamp) "
+                        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, UNIX_TIMESTAMP())",
+                        player_guid, item_guid, original_tier, target_tier, state->upgrade_level,
+                        success ? 1 : 0, essence_cost, token_cost);
+
+                    return success;
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("scripts", "ItemUpgrade: Tier conversion failed for player {}: {}", player_guid, e.what());
+                    return false;
+                }
+            }
+
+            float GetConversionSuccessRate(uint8 from_tier, uint8 to_tier, uint8 upgrade_level) override
+            {
+                if (from_tier == to_tier)
+                    return 1.0f;
+
+                bool is_upgrade = (to_tier > from_tier);
+                uint8 tier_difference = std::abs(to_tier - from_tier);
+
+                float base_rate = is_upgrade ? config.upgrade_success_base_rate : config.downgrade_success_base_rate;
+                float tier_penalty = tier_difference * (config.tier_difficulty_modifier / 100.0f);
+                float level_bonus = upgrade_level * 0.02f;
+
+                float final_rate = base_rate - tier_penalty + level_bonus;
+                return std::max(0.1f, std::min(1.0f, final_rate));
+            }
+
+            bool CanConvertTier(uint32 item_guid, uint8 target_tier, std::string& error_message) override
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                ItemUpgradeState* state = mgr->GetItemUpgradeState(item_guid);
+
+                if (!state)
+                {
+                    error_message = "Item not found in upgrade system.";
+                    return false;
+                }
+
+                if (state->tier_id == target_tier)
+                {
+                    error_message = "Item is already at target tier.";
+                    return false;
+                }
+
+                uint8 tier_difference = std::abs(state->tier_id - target_tier);
+                if (tier_difference > config.max_tier_difference)
+                {
+                    error_message = "Tier difference too large.";
+                    return false;
+                }
+
+                if (!config.allow_cross_quality_conversion)
+                {
+                    bool from_high_quality = (state->tier_id >= TIER_RAID);
+                    bool to_high_quality = (target_tier >= TIER_RAID);
+
+                    if (from_high_quality != to_high_quality)
+                    {
+                        error_message = "Cannot convert across quality boundaries.";
+                        return false;
+                    }
+                }
+
+                if (state->upgrade_level < 3)
+                {
+                    error_message = "Item must be upgraded at least 3 levels before tier conversion.";
+                    return false;
+                }
+
+                return true;
+            }
+        };
+
+        // =====================================================================
+        // Singleton Implementations
         // =====================================================================
 
         static TransmutationManagerImpl* _transmutation_manager = nullptr;
+        static TierConversionManagerImpl* _tier_conversion_manager = nullptr;
 
         TransmutationManager* GetTransmutationManager()
         {
@@ -576,6 +795,14 @@ namespace DarkChaos
                 _transmutation_manager = new TransmutationManagerImpl();
 
             return _transmutation_manager;
+        }
+
+        TierConversionManager* GetTierConversionManager()
+        {
+            if (!_tier_conversion_manager)
+                _tier_conversion_manager = new TierConversionManagerImpl();
+
+            return _tier_conversion_manager;
         }
 
     } // namespace ItemUpgrade

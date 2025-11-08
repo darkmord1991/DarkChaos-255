@@ -1,18 +1,15 @@
 /*
- * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
+ * DarkChaos Item Upgrade System - GM Commands
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This file implements GM administrative commands for the item upgrade system.
+ * Commands: .upgrade token (add/remove/set), .upgrade status, .upgrade list
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
- * more details.
+ * RENAMED FROM: ItemUpgradeCommand.cpp
+ * REASON: Better clarity - distinguishes from addon handler commands
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Author: DarkChaos Development Team
+ * Date: November 5, 2025
+ * Updated: November 8, 2025 (Renamed for better organization)
  */
 
 #include "CommandScript.h"
@@ -25,10 +22,10 @@
 using Acore::ChatCommands::ChatCommandBuilder;
 using Acore::ChatCommands::Console;
 
-class ItemUpgradeCommand : public CommandScript
+class ItemUpgradeGMCommand : public CommandScript
 {
 public:
-    ItemUpgradeCommand() : CommandScript("ItemUpgradeCommand") { }
+    ItemUpgradeGMCommand() : CommandScript("ItemUpgradeGMCommand") { }
 
     [[nodiscard]] std::vector<Acore::ChatCommands::ChatCommandBuilder> GetCommands() const override
     {
@@ -376,7 +373,13 @@ private:
     }
 };
 
+void AddItemUpgradeGMCommandScript()
+{
+    new ItemUpgradeGMCommand();
+}
+
+// Legacy function name for backwards compatibility
 void AddItemUpgradeCommandScript()
 {
-    new ItemUpgradeCommand();
+    AddItemUpgradeGMCommandScript();
 }

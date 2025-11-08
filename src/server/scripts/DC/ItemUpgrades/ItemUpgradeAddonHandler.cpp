@@ -11,6 +11,20 @@
 #include <limits>
 #include "SharedDefines.h"
 
+/*
+ * DarkChaos Item Upgrade System - Addon Communication Handler
+ *
+ * This file handles communication between the client addon and server.
+ * Commands: .dcupgrade (init/query/upgrade/inventory)
+ *
+ * RENAMED FROM: ItemUpgradeCommands.cpp
+ * REASON: Better clarity - distinguishes from GM admin commands
+ *
+ * Author: DarkChaos Development Team
+ * Date: November 5, 2025
+ * Updated: November 8, 2025 (Renamed for better organization)
+ */
+
 using Acore::ChatCommands::ChatCommandBuilder;
 using Acore::ChatCommands::Console;
 
@@ -377,7 +391,13 @@ private:
     }
 };
 
-void AddSC_ItemUpgradeCommands()
+void AddSC_ItemUpgradeAddonHandler()
 {
     new ItemUpgradeAddonCommands();
+}
+
+// Legacy function name for backwards compatibility
+void AddSC_ItemUpgradeCommands()
+{
+    AddSC_ItemUpgradeAddonHandler();
 }

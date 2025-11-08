@@ -45,8 +45,8 @@ void AddSC_DungeonQuestPhasing(); // location: scripts\DC\DungeonQuests\DungeonQ
 void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\DungeonQuestMasterFollower.cpp
 void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
-void AddItemUpgradeCommandScript(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommand.cpp
-void AddSC_ItemUpgradeCommands(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommands.cpp
+void AddItemUpgradeGMCommandScript();  // GM admin commands - renamed from AddItemUpgradeCommandScript
+void AddSC_ItemUpgradeAddonHandler();  // Addon communication handler - renamed from AddSC_ItemUpgradeCommands
 // ItemUpgrade addon communication moved to Eluna: Custom/Eluna scripts/itemupgrade_communication.lua
 void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
@@ -93,9 +93,10 @@ void AddDCScripts()
     AddSC_DungeonQuestMasterFollower();
     AddSC_npc_dungeon_quest_master();
     AddSC_npc_dungeon_quest_daily_weekly();
-    AddItemUpgradeCommandScript();
-    AddSC_ItemUpgradeCommands();
-    // ItemUpgrade addon communication moved to Eluna script
+    
+    // Item Upgrade System
+    AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
+    AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
     AddSC_ItemUpgradeVendor();
     AddSC_ItemUpgradeCurator();
     AddSC_ItemUpgradeMechanics();

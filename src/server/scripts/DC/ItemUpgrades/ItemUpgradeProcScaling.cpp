@@ -33,9 +33,14 @@ namespace DarkChaos
         // =====================================================================
         
         // Map: spell_id -> item_entry (for known item proc spells)
+        // THREAD SAFETY: This map is populated once during initialization and only read afterwards.
+        //                All access is on the world thread (single-threaded), so no mutex required.
         static std::map<uint32, uint32> spell_to_item_map;
         
         // Cache item upgrade multipliers for equipped items
+        // THREAD SAFETY: Each player has their own cache entry. All player operations occur on
+        //                the world thread (single-threaded), so no mutex required. If AzerothCore
+        //                adds multi-threaded player processing in the future, this will need mutexes.
         struct PlayerItemCache
         {
             std::map<uint32, float> item_multipliers; // item_guid -> multiplier
@@ -189,76 +194,11 @@ namespace DarkChaos
         }
         
         // =====================================================================
-        // Spell Hook: Scale Proc Damage/Healing
+        // Spell Hook: Scale Proc Damage/Healing (Removed - SpellSC not available)
         // =====================================================================
         
-        class ItemProcScalingHook : public SpellSC
-        {
-        public:
-            ItemProcScalingHook() : SpellSC("ItemProcScalingHook") {}
-            
-            // Called before spell damage is calculated
-            void OnBeforeSpellHit(Spell* spell, SpellMissInfo missInfo) override
-            {
-                if (missInfo != SPELL_MISS_NONE)
-                    return;
-                
-                if (!spell || !spell->GetCaster())
-                    return;
-                
-                Player* player = spell->GetCaster()->ToPlayer();
-                if (!player)
-                    return;
-                
-                SpellInfo const* spellInfo = spell->GetSpellInfo();
-                if (!spellInfo)
-                    return;
-                
-                uint32 spell_id = spellInfo->Id;
-                
-                // Check if this spell is an item proc
-                auto item_it = spell_to_item_map.find(spell_id);
-                if (item_it == spell_to_item_map.end())
-                    return; // Not a tracked proc spell
-                
-                uint32 item_entry = item_it->second;
-                
-                // Get the upgrade multiplier for this item
-                float multiplier = GetItemProcMultiplier(player, item_entry);
-                
-                if (multiplier <= 1.0f)
-                    return; // No upgrade or base level
-                
-                // Scale the spell's damage/healing
-                // This is applied in OnSpellHitTarget
-                spell->SetCustomCritChance(0); // We'll handle this separately if needed
-            }
-            
-            // Called when spell hits a target
-            void OnSpellHitTarget(Unit* caster, Unit* target, SpellInfo const* spellInfo) override
-            {
-                if (!caster || !target || !spellInfo)
-                    return;
-                
-                Player* player = caster->ToPlayer();
-                if (!player)
-                    return;
-                
-                // Check if this is a proc spell
-                auto item_it = spell_to_item_map.find(spellInfo->Id);
-                if (item_it == spell_to_item_map.end())
-                    return;
-                
-                uint32 item_entry = item_it->second;
-                float multiplier = GetItemProcMultiplier(player, item_entry);
-                
-                if (multiplier > 1.0f)
-                {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Proc spell {} from item {} scaled by {:.2f}x for player {}", 
-                             spellInfo->Id, item_entry, multiplier, player->GetGUID().GetCounter());
-                }
-            }
-        };
+        // Note: SpellSC is not available in AzerothCore
+        // Proc scaling is handled via PlayerScript hooks below
         
         // =====================================================================
         // Alternative: Damage/Healing Modifier Hook
@@ -345,9 +285,6 @@ namespace DarkChaos
             
             // Register hooks
             new ItemProcDamageHook();
-            // Note: SpellSC may not be available in AzerothCore
-            // If not, remove ItemProcScalingHook registration
-            // new ItemProcScalingHook();
             
             LOG_INFO("scripts", "ItemUpgrade: Proc scaling system registered successfully");
         }
