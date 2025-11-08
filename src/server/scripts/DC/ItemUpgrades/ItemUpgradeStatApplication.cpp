@@ -66,26 +66,19 @@ namespace DarkChaos
                 if (!player)
                     return;
                 
-                // Wait a moment for item load to complete
-                player->GetScheduler().Schedule(Milliseconds(1000), [](TaskContext context)
+                // Apply upgrade enchants to all equipped items immediately
+                // AzerothCore loads items before OnPlayerLogin, so they're ready
+                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                 {
-                    Player* player = context.GetContextUnit()->ToPlayer();
-                    if (!player)
-                        return;
-                    
-                    // Apply upgrade enchants to all equipped items
-                    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                    if (item)
                     {
-                        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                        if (item)
-                        {
-                            ApplyUpgradeEnchant(player, item);
-                        }
+                        ApplyUpgradeEnchant(player, item);
                     }
-                    
-                    LOG_DEBUG("scripts", "ItemUpgrade: Applied enchants to all equipment for player {} on login",
-                             player->GetGUID().GetCounter());
-                });
+                }
+                
+                LOG_DEBUG("scripts", "ItemUpgrade: Applied enchants to all equipment for player {} on login",
+                         player->GetGUID().GetCounter());
             }
             
         private:
