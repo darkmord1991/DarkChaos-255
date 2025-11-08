@@ -353,12 +353,10 @@ private:
                 player->DestroyItemCount(essenceId, essenceNeeded, true);
 
             // Compute upgraded stats for persistence
-            uint16 upgradedItemLevel = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
-                static_cast<uint16>(baseItemLevel), static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                 static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
 
-            uint32 now = static_cast<uint32>(std::time(nullptr));
+            uint64 now = static_cast<uint64>(std::time(nullptr));
             uint32 season = 1; // TODO: make configurable
 
             // Update item state (include all non-nullable columns)
@@ -375,7 +373,7 @@ private:
                 " stat_multiplier = VALUES(stat_multiplier),"
                 " last_upgraded_at = {}",
                 itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
-                statMultiplier, static_cast<uint32>(now), static_cast<uint32>(now), season, static_cast<uint32>(now)
+                statMultiplier, now, now, season, now
             );
 
             // Send success response via SYSTEM chat
