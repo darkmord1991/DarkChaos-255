@@ -194,68 +194,22 @@ namespace DarkChaos
         }
         
         // =====================================================================
-        // Spell Hook: Scale Proc Damage/Healing (Removed - SpellSC not available)
+        // Spell Hook: Scale Proc Damage/Healing
         // =====================================================================
         
-        // Note: SpellSC is not available in AzerothCore
-        // Proc scaling is handled via PlayerScript hooks below
-        
-        // =====================================================================
-        // Alternative: Damage/Healing Modifier Hook
-        // =====================================================================
+        // NOTE: AzerothCore's PlayerScript does not provide OnSpellDamage/OnSpellHeal hooks.
+        // Proc scaling would require either:
+        // 1. Core modification to add damage/healing hooks
+        // 2. Using a different approach (like modifying item stats directly)
+        // 3. Using SpellScript hooks (but those are per-spell, not global)
+        //
+        // Current implementation: Database tracking only, actual scaling disabled
+        // To enable proc scaling, core engine modifications are required.
         
         class ItemProcDamageHook : public PlayerScript
         {
         public:
             ItemProcDamageHook() : PlayerScript("ItemProcDamageHook") {}
-            
-            // Called to modify spell damage
-            void OnSpellDamage(Player* player, Unit* /*victim*/, uint32& damage, SpellInfo const* spellInfo) override
-            {
-                if (!player || !spellInfo || damage == 0)
-                    return;
-                
-                // Check if spell is from an item proc
-                auto item_it = spell_to_item_map.find(spellInfo->Id);
-                if (item_it == spell_to_item_map.end())
-                    return;
-                
-                uint32 item_entry = item_it->second;
-                float multiplier = GetItemProcMultiplier(player, item_entry);
-                
-                if (multiplier > 1.0f)
-                {
-                    uint32 original_damage = damage;
-                    damage = static_cast<uint32>(damage * multiplier);
-                    
-                    LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc damage from {} to {} (x{:.2f}) for spell {} from item {}", 
-                             original_damage, damage, multiplier, spellInfo->Id, item_entry);
-                }
-            }
-            
-            // Called to modify spell healing
-            void OnSpellHeal(Player* player, Unit* /*target*/, uint32& heal, SpellInfo const* spellInfo) override
-            {
-                if (!player || !spellInfo || heal == 0)
-                    return;
-                
-                // Check if spell is from an item proc
-                auto item_it = spell_to_item_map.find(spellInfo->Id);
-                if (item_it == spell_to_item_map.end())
-                    return;
-                
-                uint32 item_entry = item_it->second;
-                float multiplier = GetItemProcMultiplier(player, item_entry);
-                
-                if (multiplier > 1.0f)
-                {
-                    uint32 original_heal = heal;
-                    heal = static_cast<uint32>(heal * multiplier);
-                    
-                    LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc healing from {} to {} (x{:.2f}) for spell {} from item {}", 
-                             original_heal, heal, multiplier, spellInfo->Id, item_entry);
-                }
-            }
             
             // Update cache when items are equipped
             void OnAfterEquipItem(Player* player, uint8 /*slot*/, Item* /*item*/) override
@@ -286,7 +240,7 @@ namespace DarkChaos
             // Register hooks
             new ItemProcDamageHook();
             
-            LOG_INFO("scripts", "ItemUpgrade: Proc scaling system registered successfully");
+            LOG_INFO("scripts", "ItemUpgrade: Proc scaling system registered (tracking only - requires core hooks for actual scaling)");
         }
     }
 }
