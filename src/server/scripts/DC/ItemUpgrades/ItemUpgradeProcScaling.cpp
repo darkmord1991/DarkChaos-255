@@ -100,25 +100,24 @@ namespace DarkChaos
             spell_to_item_map[45522] = 33831;
             
             // Illustration of the Dragon Soul
-                spell_to_item_map[60486] = 40432;
-                
-                // Dying Curse
-                spell_to_item_map[60494] = 40255;
-                
-                // Forge Ember
-                spell_to_item_map[60479] = 37660;
-                
-                // Extract of Necromantic Power
-                spell_to_item_map[60488] = 40373;
-                
-                // Grim Toll
-                spell_to_item_map[60437] = 40256;
-                
-                // Mirror of Truth
-                spell_to_item_map[60065] = 40684;
-                
-                LOG_INFO("scripts", "ItemUpgrade: Loaded {} fallback proc mappings", spell_to_item_map.size());
-            }
+            spell_to_item_map[60486] = 40432;
+            
+            // Dying Curse
+            spell_to_item_map[60494] = 40255;
+            
+            // Forge Ember
+            spell_to_item_map[60479] = 37660;
+            
+            // Extract of Necromantic Power
+            spell_to_item_map[60488] = 40373;
+            
+            // Grim Toll
+            spell_to_item_map[60437] = 40256;
+            
+            // Mirror of Truth
+            spell_to_item_map[60065] = 40684;
+            
+            LOG_INFO("scripts", "ItemUpgrade: Loaded {} fallback proc mappings", spell_to_item_map.size());
         }
         
         // =====================================================================
