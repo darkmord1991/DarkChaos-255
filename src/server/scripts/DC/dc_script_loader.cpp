@@ -180,9 +180,8 @@ void AddDCScripts()
     }
     
     try {
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        // AddSC_ItemUpgradeCommunication();
-        LOG_INFO("scripts", ">>   ⚠ Communication system DISABLED (debugging)");
+        AddSC_ItemUpgradeCommunication();
+        LOG_INFO("scripts", ">>   ✓ Communication system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in communication: {}", e.what());
     } catch (...) {
