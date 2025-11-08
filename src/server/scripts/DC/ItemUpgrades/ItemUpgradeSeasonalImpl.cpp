@@ -50,7 +50,7 @@ public:
             // Reset all item upgrades
             CharacterDatabase.Execute(
                 "UPDATE dc_player_item_upgrades SET upgrade_level = 0, "
-                "stat_multiplier = 1.0, upgraded_item_level = base_item_level "
+                "stat_multiplier = 1.0 "
                 "WHERE player_guid = {}",
                 player_guid);
         }

@@ -165,7 +165,7 @@ private:
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
             QueryResult result = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier_id, base_item_level, upgraded_item_level, stat_multiplier "
+                "SELECT upgrade_level, tier_id, stat_multiplier "
                 "FROM dc_player_item_upgrades WHERE item_guid = {}",
                 itemGUID
             );
@@ -181,12 +181,11 @@ private:
                 Field* fields = result->Fetch();
                 upgradeLevel = fields[0].Get<uint32>();
                 tier = fields[1].Get<uint32>();
+                // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
+                // storedBaseIlvl remains baseItemLevel from template
+                // upgradedIlvl will be calculated below
                 if (!fields[2].IsNull())
-                    storedBaseIlvl = fields[2].Get<uint16>();
-                if (!fields[3].IsNull())
-                    upgradedIlvl = fields[3].Get<uint16>();
-                if (!fields[4].IsNull())
-                    statMultiplier = fields[4].Get<float>();
+                    statMultiplier = fields[2].Get<float>();
             }
             else
             {

@@ -86,8 +86,8 @@ public:
         // Reset item
         CharacterDatabase.Execute(
             "UPDATE dc_player_item_upgrades "
-            "SET upgrade_level = 0, current_stat_multiplier = 1.0, "
-            "upgraded_item_level = base_item_level, essence_invested = 0, tokens_invested = 0 "
+            "SET upgrade_level = 0, stat_multiplier = 1.0, "
+            "essence_invested = 0, tokens_invested = 0 "
             "WHERE player_guid = {} AND item_guid = {}",
             player_guid, item_guid);
         
@@ -424,8 +424,8 @@ public:
         // Get upgrade statistics
         result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT u.player_guid), SUM(u.upgrade_level), "
-            "COUNT(DISTINCT u.item_guid), AVG(u.current_stat_multiplier), "
-            "AVG(u.upgraded_item_level - u.base_item_level), "
+            "COUNT(DISTINCT u.item_guid), AVG(u.stat_multiplier), "
+            "AVG(u.tier_id), "
             "SUM(u.essence_invested), SUM(u.tokens_invested) "
             "FROM dc_player_item_upgrades u "
             "INNER JOIN guild_member gm ON gm.guid = u.player_guid "
