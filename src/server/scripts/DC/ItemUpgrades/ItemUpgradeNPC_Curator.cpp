@@ -27,25 +27,32 @@ public:
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         // Get player's token balances and artifact discovery count
-        auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-        
         uint32 upgradeTokens = 0;
         uint32 artifactEssence = 0;
         
-        if (mgr)
+        try
         {
-            upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
-            artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+            auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+            if (mgr)
+            {
+                upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
+                artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+            }
+            
+            // Also query from database to verify
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+                player->GetGUID().GetCounter());
+            
+            if (result)
+            {
+                artifactEssence = result->Fetch()[0].Get<uint32>();
+            }
         }
-        
-        // Also query from database to verify
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
-            player->GetGUID().GetCounter());
-        
-        if (result)
+        catch (...)
         {
-            artifactEssence = result->Fetch()[0].Get<uint32>();
+            // Database not set up yet - use defaults
+            LOG_WARN("scripts", "ItemUpgrade: Curator NPC failed to query database (tables missing?)");
         }
         
         // Clear any previous menu
@@ -78,16 +85,25 @@ public:
         {
             case GOSSIP_ACTION_INFO_DEF + 1: // Artifact collection
             {
-                // Query discovered artifacts
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT COUNT(*) FROM dc_player_artifact_discoveries WHERE player_guid = {}", 
-                    player->GetGUID().GetCounter());
-                
-                uint32 discoveredCount = result ? result->Fetch()[0].Get<uint32>() : 0;
-                
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "You have discovered " + std::to_string(discoveredCount) + " artifacts so far.", 
-                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                try
+                {
+                    // Query discovered artifacts
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_player_artifact_discoveries WHERE player_guid = {}", 
+                        player->GetGUID().GetCounter());
+                    
+                    uint32 discoveredCount = result ? result->Fetch()[0].Get<uint32>() : 0;
+                    
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                        "You have discovered " + std::to_string(discoveredCount) + " artifacts so far.", 
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                }
+                catch (...)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                        "Database not configured yet. Import SQL files first.", 
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                }
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
                 break;
@@ -115,16 +131,25 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 4: // Statistics
             {
-                // Query database for artifact essence
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
-                    player->GetGUID().GetCounter());
-                
-                uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
-                
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Total Artifact Essence: " + std::to_string(essence), 
-                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+                try
+                {
+                    // Query database for artifact essence
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+                        player->GetGUID().GetCounter());
+                    
+                    uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
+                    
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                        "Total Artifact Essence: " + std::to_string(essence), 
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+                }
+                catch (...)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                        "Database not configured yet. Import SQL files first.", 
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+                }
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
                 break;
