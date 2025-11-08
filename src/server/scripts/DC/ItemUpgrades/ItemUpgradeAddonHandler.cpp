@@ -257,6 +257,9 @@ private:
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
             std::string baseItemName = item->GetTemplate()->Name1;
+            
+            // Escape item name to prevent SQL injection and handle apostrophes
+            baseItemName = CharacterDatabase.EscapeString(baseItemName);
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
