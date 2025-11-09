@@ -317,13 +317,12 @@ private:
                 continue;
 
             ItemTemplate const* proto = item->GetTemplate();
-            // Simple tier calculation based on item level ranges
-            uint32 ilvl = proto->ItemLevel;
+            // Get tier from database mapping
             uint32 currentTier = 1;
-            if (ilvl >= 60) currentTier = 2;
-            if (ilvl >= 100) currentTier = 3;
-            if (ilvl >= 150) currentTier = 4;
-            if (ilvl >= 200) currentTier = 5;
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                currentTier = mgr->GetItemTier(item->GetEntry());
+            else
+                currentTier = 1; // fallback if manager not available
 
             if (currentTier < 5)
             {

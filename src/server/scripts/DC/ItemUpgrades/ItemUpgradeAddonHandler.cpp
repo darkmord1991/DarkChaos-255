@@ -194,12 +194,11 @@ private:
             }
             else
             {
-                // Calculate tier based on item level
-                if (baseItemLevel >= 450) tier = 5;
-                else if (baseItemLevel >= 400) tier = 4;
-                else if (baseItemLevel >= 350) tier = 3;
-                else if (baseItemLevel >= 300) tier = 2;
-                else tier = 1;
+                // Get tier from database mapping instead of item level ranges
+                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                    tier = mgr->GetItemTier(item->GetEntry());
+                else
+                    tier = 1; // fallback if manager not available
 
                 storedBaseIlvl = baseItemLevel;
                 upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
@@ -293,11 +292,11 @@ private:
                 }
                 else
                 {
-                    if (baseItemLevel >= 450) tier = 5;
-                    else if (baseItemLevel >= 400) tier = 4;
-                    else if (baseItemLevel >= 350) tier = 3;
-                    else if (baseItemLevel >= 300) tier = 2;
-                    else tier = 1;
+                    // Get tier from database mapping instead of item level ranges
+                    if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                        tier = mgr->GetItemTier(item->GetEntry());
+                    else
+                        tier = 1; // fallback if manager not available
 
                     storedBaseIlvl = baseItemLevel;
                     upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
@@ -375,11 +374,11 @@ private:
             }
             else
             {
-                if (baseItemLevel >= 450) tier = 5;
-                else if (baseItemLevel >= 400) tier = 4;
-                else if (baseItemLevel >= 350) tier = 3;
-                else if (baseItemLevel >= 300) tier = 2;
-                else tier = 1;
+                // Get tier from database mapping instead of item level ranges
+                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                    tier = mgr->GetItemTier(item->GetEntry());
+                else
+                    tier = 1; // fallback if manager not available
             }
 
             if (targetLevel <= currentLevel)
