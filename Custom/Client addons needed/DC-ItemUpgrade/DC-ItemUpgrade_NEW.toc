@@ -1,9 +1,0 @@
-## Interface: 30300
-## Title: DC-ItemUpgrade
-## Author: DarkChaos Development Team
-## Version: 2.0.0
-## Notes: Professional retail-inspired item upgrade interface for WoW 3.3.5a
-## SavedVariables: 
-
-DarkChaos_ItemUpgrade_COMPLETE.lua
-DarkChaos_ItemUpgrade_NEW.xml

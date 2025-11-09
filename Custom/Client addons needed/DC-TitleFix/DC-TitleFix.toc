@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: DC-Title Fix
+## Notes: Fixes player title picker error for WoW 3.3.5a
+## Author: DarkChaos
+## Version: 1.0
+## LoadFirst: 1
+
+DC-TitleFix.lua
