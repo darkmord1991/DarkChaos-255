@@ -58,6 +58,7 @@ void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgra
 void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
+void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -282,6 +283,15 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in proc scaling: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in proc scaling");
+    }
+
+    try {
+        AddSC_ItemUpgradeStatApplication();
+        LOG_INFO("scripts", ">>   ✓ Stat application loaded (enchantment-based)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in stat application: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in stat application");
     }
 
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
