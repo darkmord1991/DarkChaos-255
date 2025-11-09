@@ -1,6 +1,6 @@
 /*
  * DarkChaos Item Upgrade - Upgrade Progression System (Phase 4B)
- * 
+ *
  * This header defines the progression tracking system including:
  * - Tier-based progression management
  * - Level caps and constraints
@@ -8,7 +8,7 @@
  * - Soft/hard caps on weekly essence spending
  * - Prestige system for tracking achievements
  * - Player progression statistics
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */

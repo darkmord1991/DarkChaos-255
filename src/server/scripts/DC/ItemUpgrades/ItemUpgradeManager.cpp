@@ -1,9 +1,9 @@
 /*
  * DarkChaos Item Upgrade System - C++ Implementation
- * 
+ *
  * Core implementation of the item upgrade manager.
  * Handles upgrade logic, token economy, and state persistence.
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */
@@ -49,7 +49,7 @@ namespace DarkChaos
         // =====================================================================
         // Upgrade Manager Implementation
         // =====================================================================
-        
+
         class UpgradeManagerImpl : public UpgradeManager
         {
         private:
@@ -251,7 +251,7 @@ namespace DarkChaos
                         uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
                         if (essence < essence_cost)
                         {
-                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient essence (need {}, have {})", 
+                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient essence (need {}, have {})",
                                      player_guid, essence_cost, essence);
                             return false;
                         }
@@ -262,7 +262,7 @@ namespace DarkChaos
                         uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state->season);
                         if (tokens < token_cost)
                         {
-                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})", 
+                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})",
                                      player_guid, token_cost, tokens);
                             return false;
                         }
@@ -370,7 +370,7 @@ namespace DarkChaos
                         "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + {}",
                         player_guid, mastery_points, state->season, mastery_points);
 
-                    LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points", 
+                    LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points",
                             player_guid, item_guid, next_level, mastery_points);
 
                     return true;
@@ -588,7 +588,7 @@ namespace DarkChaos
                 return state->stat_multiplier;
             }
 
-            uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level) 
+            uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level)
             {
                 if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
                     return 0;
@@ -674,7 +674,7 @@ namespace DarkChaos
 
                 uint8 tier = state->tier_id;
                 uint8 max_level = GetTierMaxLevel(tier);
-                
+
                 // Calculate stat multiplier
                 float multiplier = 1.0f;
                 if (state->upgrade_level > 0)
@@ -682,7 +682,7 @@ namespace DarkChaos
                     multiplier = StatScalingCalculator::GetFinalMultiplier(state->upgrade_level, tier);
                 }
                 float bonus_percent = (multiplier - 1.0f) * 100.0f;
-                
+
                 // Build display using mechanics helpers
                 std::ostringstream oss;
                 oss << "|cffffd700===== Item Upgrade Status =====|r\n";
@@ -725,7 +725,7 @@ namespace DarkChaos
                 // Ensure the item belongs to the player
                 if (state->player_guid != player_guid)
                 {
-                    LOG_WARN("scripts", "ItemUpgrade: Item {} belongs to player {}, not {}", 
+                    LOG_WARN("scripts", "ItemUpgrade: Item {} belongs to player {}, not {}",
                              item_guid, state->player_guid, player_guid);
                     return false;
                 }

@@ -1,12 +1,12 @@
 /*
 * Phase 4A: Item Upgrade Mechanics Implementation
-* 
+*
 * This file implements the core item upgrade mechanics:
 * - Cost calculations with escalation
 * - Stat scaling based on tier and level
 * - Item level calculations
 * - UI formatting for displays
-* 
+*
 * Date: November 4, 2025
 */
 
@@ -48,7 +48,7 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
 {
     if (current_level >= 15)
         return 0; // Already maxed
-    
+
     // Base costs per tier
     static const float tier_costs[] = {
         10.0f,    // Tier 1: Common
@@ -57,13 +57,13 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
         100.0f,   // Tier 4: Epic
         200.0f    // Tier 5: Legendary
     };
-    
+
     if (tier_id < 1 || tier_id > 5)
         return 0;
-    
+
     float base_cost = tier_costs[tier_id - 1];
     float escalated_cost = base_cost * std::pow(1.1f, static_cast<float>(current_level));
-    
+
     return static_cast<uint32>(std::ceil(escalated_cost));
 }
 
@@ -71,7 +71,7 @@ uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
 {
     if (current_level >= 15)
         return 0; // Already maxed
-    
+
     // Token costs are roughly 50% of essence costs
     static const float tier_costs[] = {
         5.0f,     // Tier 1: Common
@@ -80,13 +80,13 @@ uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
         25.0f,    // Tier 4: Epic
         50.0f     // Tier 5: Legendary
     };
-    
+
     if (tier_id < 1 || tier_id > 5)
         return 0;
-    
+
     float base_cost = tier_costs[tier_id - 1];
     float escalated_cost = base_cost * std::pow(1.1f, static_cast<float>(current_level));
-    
+
     return static_cast<uint32>(std::ceil(escalated_cost));
 }
 
@@ -138,10 +138,10 @@ float StatScalingCalculator::GetTierMultiplier(uint8 tier_id)
         1.15f,    // Tier 4: Epic (enhances scaling)
         1.25f     // Tier 5: Legendary (maximum scaling)
     };
-    
+
     if (tier_id < 1 || tier_id > 5)
         return 1.0f;
-    
+
     return tier_multipliers[tier_id - 1];
 }
 
@@ -149,11 +149,11 @@ float StatScalingCalculator::GetFinalMultiplier(uint8 upgrade_level, uint8 tier_
 {
     float base_multiplier = GetStatMultiplier(upgrade_level);
     float tier_multiplier = GetTierMultiplier(tier_id);
-    
+
     // Combined formula: (base - 1.0) * tier_mult + 1.0
     // This preserves 1.0 baseline while applying tier adjustments
     float final_multiplier = (base_multiplier - 1.0f) * tier_multiplier + 1.0f;
-    
+
     return final_multiplier;
 }
 
@@ -161,7 +161,7 @@ std::string StatScalingCalculator::GetStatBonusDisplay(uint8 upgrade_level, uint
 {
     float multiplier = GetFinalMultiplier(upgrade_level, tier_id);
     float bonus_percent = (multiplier - 1.0f) * 100.0f;
-    
+
     std::ostringstream oss;
     oss << "|cff00ff00+" << static_cast<int>(std::round(bonus_percent)) << "%|r";
     return oss.str();
@@ -179,13 +179,13 @@ uint16 ItemLevelCalculator::GetItemLevelBonus(uint8 upgrade_level, uint8 tier_id
         2.0f,     // Tier 4: Epic
         2.5f      // Tier 5: Legendary
     };
-    
+
     if (tier_id < 1 || tier_id > 5)
         return 0;
-    
+
     float bonus_per_level = tier_ilvl_per_level[tier_id - 1];
     float total_bonus = upgrade_level * bonus_per_level;
-    
+
     return static_cast<uint16>(std::ceil(total_bonus));
 }
 
@@ -199,13 +199,13 @@ std::string ItemLevelCalculator::GetItemLevelDisplay(uint16 base_ilvl, uint16 cu
 {
     std::ostringstream oss;
     oss << current_ilvl;
-    
+
     if (current_ilvl > base_ilvl)
     {
         uint16 bonus = current_ilvl - base_ilvl;
         oss << "|cff00ff00 +" << static_cast<int>(bonus) << "|r";
     }
-    
+
     return oss.str();
 }
 
@@ -223,7 +223,7 @@ std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id)
 
     ss << "|cff00ff00Upgrade Level: " << static_cast<int>(state.upgrade_level) << "/15|r\n";
     ss << "|cffffffff Item Level: " << state.base_item_level << " -> " << upgraded_ilvl << "|r\n";
-    ss << "|cffffff00Stat Bonus: " << std::fixed << std::setprecision(1) 
+    ss << "|cffffff00Stat Bonus: " << std::fixed << std::setprecision(1)
        << (current_mult - 1.0f) * 100 << "%|r\n";
     ss << "|cffccccccInvested: " << state.tokens_invested << " Tokens, "
        << state.essence_invested << " Essence|r\n";
@@ -241,10 +241,10 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
         "SELECT item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
         "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
         "FROM {} WHERE item_guid = {}", ITEM_UPGRADES_TABLE, item_guid);
-    
+
     if (!result)
         return false;
-    
+
     Field* fields = result->Fetch();
     this->item_guid = fields[0].Get<uint32>();
     this->player_guid = fields[1].Get<uint32>();
@@ -257,7 +257,7 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
     this->first_upgraded_at = fields[8].Get<time_t>();
     this->last_upgraded_at = fields[9].Get<time_t>();
     this->season = fields[10].Get<uint32>();
-    
+
     return true;
 }
 
@@ -282,7 +282,7 @@ bool ItemUpgradeState::SaveToDatabase() const
         ITEM_UPGRADES_TABLE,
         item_guid, player_guid, baseName, static_cast<uint32>(tier_id), static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
         stat_multiplier, static_cast<uint32>(first_upgraded_at), static_cast<uint32>(last_upgraded_at), season);
-    
+
     return true;
 }
 

@@ -1,10 +1,10 @@
 /*
  * DarkChaos Item Upgrade - Enhanced NPC UI Helpers
- * 
+ *
  * This header provides utility functions for creating beautiful,
  * informative gossip menus with progress bars, transaction history,
  * and professional formatting.
- * 
+ *
  * Phase 3C.3 Enhancement
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
@@ -27,7 +27,7 @@ namespace DarkChaos
             // =====================================================================
             // COLOR CODES FOR WoW CHAT
             // =====================================================================
-            
+
             static constexpr const char* COLOR_TITLE     = "|cff99ccff";  // Cyan (titles)
             static constexpr const char* COLOR_POSITIVE  = "|cff00ff00";  // Green (positive)
             static constexpr const char* COLOR_NEGATIVE  = "|cffff0000";  // Red (negative)
@@ -35,11 +35,11 @@ namespace DarkChaos
             static constexpr const char* COLOR_GOLD      = "|cffd0ad00";  // Gold (currency)
             static constexpr const char* COLOR_WARNING   = "|cffff8000";  // Orange (warning)
             static constexpr const char* COLOR_RESET     = "|r";
-            
+
             // =====================================================================
             // PROGRESS BAR VISUALIZATION
             // =====================================================================
-            
+
             /**
              * Creates a visual progress bar for displaying token progress
              * @param current Current token amount
@@ -50,27 +50,27 @@ namespace DarkChaos
             inline std::string CreateProgressBar(uint32 current, uint32 maximum, uint32 barLength = 20)
             {
                 if (maximum == 0) return "[ERROR: Zero maximum]";
-                
+
                 float percentage = (float)current / (float)maximum;
                 uint32 filledBars = (uint32)(barLength * percentage);
                 uint32 emptyBars = barLength - filledBars;
-                
+
                 std::ostringstream ss;
                 ss << "[";
-                
+
                 // Filled portion
                 for (uint32 i = 0; i < filledBars; ++i)
                     ss << COLOR_POSITIVE << "█" << COLOR_RESET;
-                
+
                 // Empty portion
                 for (uint32 i = 0; i < emptyBars; ++i)
                     ss << COLOR_NEGATIVE << "░" << COLOR_RESET;
-                
+
                 ss << "] " << std::setw(3) << (int)(percentage * 100) << "%";
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates a weekly progress display
              * @param earned Tokens earned this week
@@ -85,7 +85,7 @@ namespace DarkChaos
                 ss << CreateProgressBar(earned, cap);
                 return ss.str();
             }
-            
+
             /**
              * Formats a currency amount with thousands separator
              * @param amount Currency amount
@@ -96,17 +96,17 @@ namespace DarkChaos
                 std::ostringstream ss;
                 std::string numStr = std::to_string(amount);
                 int numDigits = numStr.length();
-                
+
                 for (int i = 0; i < numDigits; ++i)
                 {
                     if (i > 0 && (numDigits - i) % 3 == 0)
                         ss << ",";
                     ss << numStr[i];
                 }
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates a fancy header for gossip menus
              * @param title Title text
@@ -121,7 +121,7 @@ namespace DarkChaos
                 for (uint32 i = 0; i < width; ++i)
                     ss << "═";
                 ss << "╗\n";
-                
+
                 int padding = (width - (int)title.length()) / 2;
                 ss << "║";
                 for (int i = 0; i < padding; ++i)
@@ -132,15 +132,15 @@ namespace DarkChaos
                     for (int i = 0; i < fill; ++i)
                         ss << " ";
                 ss << "║\n";
-                
+
                 ss << "╚";
                 for (uint32 i = 0; i < width; ++i)
                     ss << "═";
                 ss << "╝" << COLOR_RESET;
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates a stat row for display
              * @param label Label text
@@ -152,15 +152,15 @@ namespace DarkChaos
             {
                 std::ostringstream ss;
                 int spacingNeeded = width - label.length() - value.length() - 2;
-                
+
                 ss << COLOR_NEUTRAL << label;
                 for (int i = 0; i < spacingNeeded; ++i)
                     ss << " ";
                 ss << value << COLOR_RESET;
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates reward tier indicator
              * @param amount Token amount
@@ -170,7 +170,7 @@ namespace DarkChaos
             inline std::string CreateTierIndicator(uint32 amount, uint32 cap)
             {
                 float percentage = (float)amount / (float)cap;
-                
+
                 if (percentage >= 1.0f)
                     return COLOR_GOLD + std::string("★ CAPPED") + COLOR_RESET;
                 else if (percentage >= 0.8f)
@@ -182,11 +182,11 @@ namespace DarkChaos
                 else
                     return COLOR_NEUTRAL + std::string("○ Not Started") + COLOR_RESET;
             }
-            
+
             // =====================================================================
             // TRANSACTION HISTORY FORMATTING
             // =====================================================================
-            
+
             /**
              * Formats event type name for display
              * @param eventType Event type (quest, creature, pvp, achievement, battleground)
@@ -209,7 +209,7 @@ namespace DarkChaos
                 else
                     return COLOR_NEUTRAL + eventType + COLOR_RESET;
             }
-            
+
             /**
              * Formats a time difference as readable string
              * @param secondsAgo Seconds since event
@@ -218,7 +218,7 @@ namespace DarkChaos
             inline std::string FormatTimeDifference(time_t secondsAgo)
             {
                 std::ostringstream ss;
-                
+
                 if (secondsAgo < 60)
                     ss << secondsAgo << "s ago";
                 else if (secondsAgo < 3600)
@@ -227,10 +227,10 @@ namespace DarkChaos
                     ss << (secondsAgo / 3600) << "h ago";
                 else
                     ss << (secondsAgo / 86400) << "d ago";
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates a currency description
              * @param isUpgradeToken True for upgrade token, false for essence
@@ -239,7 +239,7 @@ namespace DarkChaos
             inline std::string CreateCurrencyDescription(bool isUpgradeToken)
             {
                 std::ostringstream ss;
-                
+
                 if (isUpgradeToken)
                 {
                     ss << COLOR_POSITIVE << "Upgrade Tokens" << COLOR_RESET << "\n";
@@ -254,10 +254,10 @@ namespace DarkChaos
                     ss << "  Weekly Limit: " << COLOR_POSITIVE << "Unlimited" << COLOR_RESET << "\n";
                     ss << "  Earned from: Achievements, Raid Bosses\n";
                 }
-                
+
                 return ss.str();
             }
-            
+
             /**
              * Creates a price display for item costs
              * @param tokenCost Token cost
@@ -272,10 +272,10 @@ namespace DarkChaos
                     ss << "  " << COLOR_POSITIVE << "Tokens: " << FormatCurrency(tokenCost) << COLOR_RESET << "\n";
                 if (essenceCost > 0)
                     ss << "  " << COLOR_GOLD << "Essence: " << FormatCurrency(essenceCost) << COLOR_RESET;
-                
+
                 return ss.str();
             }
-            
+
         } // namespace UI
     } // namespace ItemUpgrade
 } // namespace DarkChaos

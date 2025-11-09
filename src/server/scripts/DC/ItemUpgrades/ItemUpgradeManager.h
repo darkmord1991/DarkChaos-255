@@ -1,9 +1,9 @@
 /*
  * DarkChaos Item Upgrade System - C++ Interface
- * 
+ *
  * This header defines the core upgrade system interface for the item upgrade mechanics.
  * Supports 5-tier heirloom progression with 2-token economy (Upgrade Tokens + Artifact Essence).
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */
@@ -22,7 +22,7 @@ namespace DarkChaos
         // =====================================================================
         // Constants
         // =====================================================================
-        
+
         enum UpgradeTier : uint8
         {
             TIER_LEVELING = 1,      // T1: Quests, 1-60
@@ -54,7 +54,7 @@ namespace DarkChaos
         // =====================================================================
         // Upgrade Cost Structure
         // =====================================================================
-        
+
         struct UpgradeCost
         {
             uint8 tier_id;
@@ -65,7 +65,7 @@ namespace DarkChaos
             float stat_increase_percent;    // Stat multiplier increase
             uint32 season;
 
-            UpgradeCost() : tier_id(0), upgrade_level(0), token_cost(0), 
+            UpgradeCost() : tier_id(0), upgrade_level(0), token_cost(0),
                            essence_cost(0), ilvl_increase(0), stat_increase_percent(0.0f), season(1) {}
 
             UpgradeCost(uint8 t, uint8 l, uint32 tc, uint32 ec, uint16 il, float sp, uint32 s)
@@ -76,7 +76,7 @@ namespace DarkChaos
         // =====================================================================
         // Player Item Upgrade State
         // =====================================================================
-        
+
         struct ItemUpgradeState
         {
             uint32 item_guid;                    // Item GUID from item_instance
@@ -129,7 +129,7 @@ namespace DarkChaos
         // =====================================================================
         // Chaos Artifact Definition
         // =====================================================================
-        
+
         struct ChaosArtifact
         {
             uint32 artifact_id;             // Artifact ID
@@ -150,7 +150,7 @@ namespace DarkChaos
         // =====================================================================
         // Upgrade Manager Interface
         // =====================================================================
-        
+
         class UpgradeManager
         {
         public:
@@ -163,7 +163,7 @@ namespace DarkChaos
             virtual uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season = 1) = 0;
             // Check if an item can be upgraded for a player
             virtual bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) = 0;
-            
+
             // Item upgrade state functions
             virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
             virtual bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) = 0;
@@ -195,14 +195,14 @@ namespace DarkChaos
         // =====================================================================
         // Singleton accessor
         // =====================================================================
-        
+
         // Singleton accessor (implementation provides GetUpgradeManager)
         UpgradeManager* GetUpgradeManager();
-        
+
         // =====================================================================
         // Stat Application Helper (defined in ItemUpgradeStatApplication.cpp)
         // =====================================================================
-        
+
         // Force update all player stats with upgraded item stats
         // Call this after performing an upgrade to ensure stats are applied
         void ForcePlayerStatUpdate(class Player* player);

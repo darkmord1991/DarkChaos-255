@@ -1,6 +1,6 @@
 /*
  * DarkChaos Item Upgrade - Item Upgrade Mechanics (Phase 4A)
- * 
+ *
  * This header defines the core item upgrade mechanics including:
  * - Item upgrade interface and state management
  * - Cost calculations for upgrades
@@ -8,7 +8,7 @@
  * - Item level recalculation
  * - Database persistence layer
  * - UI helpers for displaying upgrade information
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */
@@ -121,7 +121,7 @@ namespace DarkChaos
 
                 ss << color_essence << "Essence: " << player_essence << " / " << essence_cost << "|r\n";
                 ss << color_tokens << "Tokens: " << player_tokens << " / " << token_cost << "|r\n";
-                
+
                 if (!can_afford_all)
                     ss << "|cffff0000Insufficient resources|r";
 

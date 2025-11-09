@@ -1,12 +1,12 @@
 /*
  * DarkChaos Item Upgrade - Advanced Features Implementation (Phase 4D)
- * 
+ *
  * Implements:
  * - Respec system (reset upgrades)
  * - Spec-based loadouts
  * - Achievement system
  * - Guild progression tracking
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 5, 2025
  */
@@ -41,15 +41,15 @@ public:
     {
         if (!config.allow_full_respec)
             return false;
-        
+
         // Check cooldown
         if (GetRespecCooldown(player_guid) > 0)
             return false;
-        
+
         // Check daily limit
         if (GetRespecCountToday(player_guid) >= config.daily_respec_limit)
             return false;
-        
+
         return true;
     }
 
@@ -60,21 +60,21 @@ public:
             "SELECT upgrade_level, essence_invested, tokens_invested "
             "FROM {} WHERE player_guid = {} AND item_guid = {}",
             ITEM_UPGRADES_TABLE, player_guid, item_guid);
-        
+
         if (!result)
             return false;
-        
+
         Field* fields = result->Fetch();
         uint8 current_level = fields[0].Get<uint8>();
         uint32 essence_invested = fields[1].Get<uint32>();
         uint32 tokens_invested = fields[2].Get<uint32>();
-        
+
         // Calculate refund
         if (config.refund_on_respec)
         {
             uint32 essence_refund = (essence_invested * config.refund_percent) / 100;
             uint32 tokens_refund = (tokens_invested * config.refund_percent) / 100;
-            
+
             // Add currency back to player
             CharacterDatabase.Execute(
                 "UPDATE dc_player_upgrade_tokens "
@@ -82,7 +82,7 @@ public:
                 "WHERE player_guid = {}",
                 essence_refund, tokens_refund, player_guid);
         }
-        
+
         // Reset item
         CharacterDatabase.Execute(
             "UPDATE {} "
@@ -90,7 +90,7 @@ public:
             "essence_invested = 0, tokens_invested = 0 "
             "WHERE player_guid = {} AND item_guid = {}",
             ITEM_UPGRADES_TABLE, player_guid, item_guid);
-        
+
         // Record respec
         CharacterDatabase.Execute(
             "INSERT INTO dc_respec_history "
@@ -99,7 +99,7 @@ public:
             player_guid, item_guid, current_level,
             (essence_invested * config.refund_percent) / 100,
             (tokens_invested * config.refund_percent) / 100);
-        
+
         return true;
     }
 
@@ -107,29 +107,29 @@ public:
     {
         if (!CanRespec(player_guid))
             return false;
-        
+
         // Get all upgraded items
         QueryResult result = CharacterDatabase.Query(
             "SELECT item_guid, essence_invested, tokens_invested "
             "FROM {} WHERE player_guid = {} AND upgrade_level > 0",
             ITEM_UPGRADES_TABLE, player_guid);
-        
+
         if (!result)
             return false;
-        
+
         uint32 total_essence = 0;
         uint32 total_tokens = 0;
-        
+
         do
         {
             Field* fields = result->Fetch();
             uint32 item_guid = fields[0].Get<uint32>();
             total_essence += fields[1].Get<uint32>();
             total_tokens += fields[2].Get<uint32>();
-            
+
             RespecItem(player_guid, item_guid);
         } while (result->NextRow());
-        
+
         // Record full respec
         CharacterDatabase.Execute(
             "INSERT INTO dc_respec_log "
@@ -138,7 +138,7 @@ public:
             player_guid,
             (total_essence * config.refund_percent) / 100,
             (total_tokens * config.refund_percent) / 100);
-        
+
         return true;
     }
 
@@ -148,17 +148,17 @@ public:
             "SELECT timestamp FROM dc_respec_log "
             "WHERE player_guid = {} ORDER BY timestamp DESC LIMIT 1",
             player_guid);
-        
+
         if (!result)
             return 0;
-        
+
         time_t last_respec = result->Fetch()[0].Get<uint64>();
         time_t now = time(nullptr);
         time_t cooldown = 3600;  // 1 hour cooldown
-        
+
         if (now - last_respec < cooldown)
             return cooldown - (now - last_respec);
-        
+
         return 0;
     }
 
@@ -170,12 +170,12 @@ public:
         timeinfo->tm_min = 0;
         timeinfo->tm_sec = 0;
         time_t day_start = mktime(timeinfo);
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT COUNT(*) FROM dc_respec_log "
             "WHERE player_guid = {} AND timestamp >= {}",
             player_guid, day_start);
-        
+
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 
@@ -214,7 +214,7 @@ public:
     {
         // Load from database or define hardcoded
         UpgradeAchievement ach;
-        
+
         // First Blood
         ach.achievement_id = 1;
         ach.name = "First Blood";
@@ -225,7 +225,7 @@ public:
         ach.unlock_type = "UPGRADE_COUNT";
         ach.unlock_requirement = 1;
         achievements.push_back(ach);
-        
+
         // Dedicated Upgrader
         ach.achievement_id = 2;
         ach.name = "Dedicated Upgrader";
@@ -235,7 +235,7 @@ public:
         ach.unlock_type = "UPGRADE_COUNT";
         ach.unlock_requirement = 100;
         achievements.push_back(ach);
-        
+
         // Maxed Out
         ach.achievement_id = 3;
         ach.name = "Maxed Out";
@@ -245,7 +245,7 @@ public:
         ach.unlock_type = "MAX_LEVEL";
         ach.unlock_requirement = 15;
         achievements.push_back(ach);
-        
+
         // Legendary Ascension
         ach.achievement_id = 4;
         ach.name = "Legendary Ascension";
@@ -268,7 +268,7 @@ public:
             "SELECT 1 FROM dc_player_achievements "
             "WHERE player_guid = {} AND achievement_id = {}",
             player_guid, achievement_id);
-        
+
         return result != nullptr;
     }
 
@@ -276,7 +276,7 @@ public:
     {
         if (PlayerHasAchievement(player_guid, achievement_id))
             return;
-        
+
         // Find achievement
         UpgradeAchievement* ach = nullptr;
         for (auto& a : achievements)
@@ -287,17 +287,17 @@ public:
                 break;
             }
         }
-        
+
         if (!ach)
             return;
-        
+
         // Award achievement
         CharacterDatabase.Execute(
             "INSERT INTO dc_player_achievements "
             "(player_guid, achievement_id, earned_timestamp) "
             "VALUES ({}, {}, UNIX_TIMESTAMP())",
             player_guid, achievement_id);
-        
+
         // Award rewards
         if (ach->reward_prestige_points > 0)
         {
@@ -308,7 +308,7 @@ public:
                 "WHERE player_guid = {}",
                 ach->reward_prestige_points, ach->reward_prestige_points, player_guid);
         }
-        
+
         if (ach->reward_tokens > 0)
         {
             CharacterDatabase.Execute(
@@ -321,14 +321,14 @@ public:
     std::vector<UpgradeAchievement> GetPlayerAchievements(uint32 player_guid) override
     {
         std::vector<UpgradeAchievement> player_achievements;
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT achievement_id FROM dc_player_achievements WHERE player_guid = {}",
             player_guid);
-        
+
         if (!result)
             return player_achievements;
-        
+
         do
         {
             uint32 ach_id = result->Fetch()[0].Get<uint32>();
@@ -341,7 +341,7 @@ public:
                 }
             }
         } while (result->NextRow());
-        
+
         return player_achievements;
     }
 
@@ -357,10 +357,10 @@ public:
                 break;
             }
         }
-        
+
         if (!ach)
             return 0;
-        
+
         if (ach->unlock_type == "UPGRADE_COUNT")
         {
             QueryResult result = CharacterDatabase.Query(
@@ -375,7 +375,7 @@ public:
                 ITEM_UPGRADES_TABLE, player_guid);
             return result ? result->Fetch()[0].Get<uint32>() : 0;
         }
-        
+
         return 0;
     }
 
@@ -390,7 +390,7 @@ public:
         {
             if (PlayerHasAchievement(player_guid, ach.achievement_id))
                 continue;
-            
+
             uint32 progress = GetAchievementProgress(player_guid, ach.achievement_id);
             if (progress >= ach.unlock_requirement)
             {
@@ -411,16 +411,16 @@ public:
     {
         GuildUpgradeStats stats;
         stats.guild_id = guild_id;
-        
+
         // Get guild members
         QueryResult result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT gm.guid) "
             "FROM guild_member gm WHERE gm.guildid = {}",
             guild_id);
-        
+
         if (result)
             stats.total_members = result->Fetch()[0].Get<uint32>();
-        
+
         // Get upgrade statistics
         result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT u.player_guid), SUM(u.upgrade_level), "
@@ -431,7 +431,7 @@ public:
             "INNER JOIN guild_member gm ON gm.guid = u.player_guid "
             "WHERE gm.guildid = {}",
             ITEM_UPGRADES_TABLE, guild_id);
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
@@ -442,16 +442,16 @@ public:
             stats.total_essence_invested = fields[5].Get<uint32>();
             stats.total_tokens_invested = fields[6].Get<uint32>();
         }
-        
+
         stats.last_updated = time(nullptr);
-        
+
         return stats;
     }
 
     void UpdateGuildStats(uint32 guild_id) override
     {
         GuildUpgradeStats stats = GetGuildStats(guild_id);
-        
+
         CharacterDatabase.Execute(
             "REPLACE INTO dc_guild_upgrade_stats "
             "(guild_id, total_members, members_with_upgrades, total_guild_upgrades, "
@@ -467,7 +467,7 @@ public:
     std::vector<GuildUpgradeStats> GetGuildLeaderboard(uint32 limit = 10) override
     {
         std::vector<GuildUpgradeStats> leaderboard;
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT guild_id, total_members, members_with_upgrades, total_guild_upgrades, "
             "total_items_upgraded, average_ilvl_increase, total_essence_invested, "
@@ -476,10 +476,10 @@ public:
             "ORDER BY total_guild_upgrades DESC "
             "LIMIT {}",
             limit);
-        
+
         if (!result)
             return leaderboard;
-        
+
         do
         {
             GuildUpgradeStats stats;
@@ -493,20 +493,20 @@ public:
             stats.total_essence_invested = fields[6].Get<uint32>();
             stats.total_tokens_invested = fields[7].Get<uint32>();
             stats.last_updated = fields[8].Get<uint64>();
-            
+
             leaderboard.push_back(stats);
         } while (result->NextRow());
-        
+
         return leaderboard;
     }
 
     void AwardGuildBonuses(uint32 guild_id) override
     {
         uint8 tier = GetGuildTier(guild_id);
-        
+
         // Award bonus tokens to all guild members based on tier
         uint32 bonus_tokens = tier * 10;  // 10 tokens per tier
-        
+
         CharacterDatabase.Execute(
             "UPDATE dc_player_upgrade_tokens t "
             "INNER JOIN guild_member gm ON gm.guid = t.player_guid "
@@ -518,7 +518,7 @@ public:
     uint8 GetGuildTier(uint32 guild_id) override
     {
         GuildUpgradeStats stats = GetGuildStats(guild_id);
-        
+
         // Calculate tier based on total upgrades
         if (stats.total_guild_upgrades >= 10000) return 5;
         if (stats.total_guild_upgrades >= 5000) return 4;
@@ -546,12 +546,12 @@ public:
             { "achievements", HandleAchievementsCommand, SEC_PLAYER, Console::No },
             { "guild",        HandleGuildStatsCommand,   SEC_PLAYER, Console::No },
         };
-        
+
         static ChatCommandTable commandTable =
         {
             { "upgradeadv", upgradeAdvancedCommandTable },
         };
-        
+
         return commandTable;
     }
 
@@ -560,15 +560,15 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         RespecManagerImpl respecMgr;
-        
+
         if (!*args)
         {
             // Show respec info
             uint32 cooldown = respecMgr.GetRespecCooldown(player->GetGUID().GetCounter());
             uint32 count_today = respecMgr.GetRespecCountToday(player->GetGUID().GetCounter());
-            
+
             handler->PSendSysMessage("|cffffd700===== Respec Information =====|r");
             handler->PSendSysMessage("|cff00ff00Respecs Today:|r %u / %u",
                 count_today, respecMgr.GetConfig().daily_respec_limit);
@@ -578,7 +578,7 @@ public:
             handler->PSendSysMessage("Usage: .upgradeadv respec <all|item_guid>");
             return true;
         }
-        
+
         std::string arg = args;
         if (arg == "all")
         {
@@ -587,7 +587,7 @@ public:
                 handler->PSendSysMessage("|cffff0000Cannot respec: daily limit reached or on cooldown.|r");
                 return false;
             }
-            
+
             if (respecMgr.RespecAll(player->GetGUID().GetCounter()))
             {
                 handler->PSendSysMessage("|cff00ff00Successfully reset all upgrades!|r");
@@ -611,7 +611,7 @@ public:
                 handler->PSendSysMessage("|cffff0000Respec failed. Item not found or not upgraded.|r");
             }
         }
-        
+
         return true;
     }
 
@@ -620,35 +620,35 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         AchievementManagerImpl achMgr;
         auto player_achievements = achMgr.GetPlayerAchievements(player->GetGUID().GetCounter());
-        
+
         handler->PSendSysMessage("|cffffd700===== Your Upgrade Achievements =====|r");
         handler->PSendSysMessage("Earned: %u achievements", static_cast<uint32>(player_achievements.size()));
         handler->PSendSysMessage("");
-        
+
         for (const auto& ach : player_achievements)
         {
             handler->PSendSysMessage("|cff00ff00%s|r - %s (Reward: %u prestige, %u tokens)",
                 ach.name.c_str(), ach.description.c_str(),
                 ach.reward_prestige_points, ach.reward_tokens);
         }
-        
+
         handler->PSendSysMessage("");
         handler->PSendSysMessage("|cffffd700Available Achievements:|r");
-        
+
         auto all_achievements = achMgr.GetAllAchievements();
         for (const auto& ach : all_achievements)
         {
             if (achMgr.PlayerHasAchievement(player->GetGUID().GetCounter(), ach.achievement_id))
                 continue;
-            
+
             uint32 progress = achMgr.GetAchievementProgress(player->GetGUID().GetCounter(), ach.achievement_id);
             handler->PSendSysMessage("|cffaaaaaa%s|r - %u / %u",
                 ach.name.c_str(), progress, ach.unlock_requirement);
         }
-        
+
         return true;
     }
 
@@ -657,17 +657,17 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         Guild* guild = player->GetGuild();
         if (!guild)
         {
             handler->PSendSysMessage("You are not in a guild.");
             return false;
         }
-        
+
         GuildProgressionManagerImpl guildMgr;
         GuildUpgradeStats stats = guildMgr.GetGuildStats(guild->GetId());
-        
+
         handler->PSendSysMessage("|cffffd700===== Guild Upgrade Statistics =====|r");
         handler->PSendSysMessage("|cff00ff00Guild:|r %s", guild->GetName().c_str());
         handler->PSendSysMessage("|cff00ff00Total Members:|r %u", stats.total_members);
@@ -678,7 +678,7 @@ public:
         handler->PSendSysMessage("|cff00ff00Total Essence Invested:|r %u", stats.total_essence_invested);
         handler->PSendSysMessage("|cff00ff00Total Tokens Invested:|r %u", stats.total_tokens_invested);
         handler->PSendSysMessage("|cff00ff00Guild Tier:|r %u", guildMgr.GetGuildTier(guild->GetId()));
-        
+
         return true;
     }
 };

@@ -98,9 +98,9 @@ private:
         if (mgr)
         {
             mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount);
-            handler->PSendSysMessage("Added %u %s to player %s", amount, 
+            handler->PSendSysMessage("Added %u %s to player %s", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
-            
+
             // Send notification to player
             ChatHandler playerHandler(target->GetSession());
             playerHandler.PSendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
@@ -216,7 +216,7 @@ private:
             else if (amount < current)
                 mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount);
 
-            handler->PSendSysMessage("Set %s to %u for player %s", 
+            handler->PSendSysMessage("Set %s to %u for player %s",
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", amount, target->GetName().c_str());
         }
         else
@@ -280,7 +280,7 @@ private:
         handler->PSendSysMessage("=== Upgrade Token Status ===");
         handler->PSendSysMessage("This is a placeholder. Full implementation coming in Phase 3B.");
         handler->SendSysMessage("Equipped Items:");
-        
+
         uint32 count = 0;
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
@@ -308,7 +308,7 @@ private:
         }
 
         handler->PSendSysMessage("=== Available Upgrades ===");
-        
+
         uint32 upgradeCount = 0;
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
@@ -324,10 +324,10 @@ private:
             if (ilvl >= 100) currentTier = 3;
             if (ilvl >= 150) currentTier = 4;
             if (ilvl >= 200) currentTier = 5;
-            
+
             if (currentTier < 5)
             {
-                handler->PSendSysMessage("  [Slot %u] %s (Tier %u -> Tier %u, iLvL: %u)", 
+                handler->PSendSysMessage("  [Slot %u] %s (Tier %u -> Tier %u, iLvL: %u)",
                     slot, proto->Name1, currentTier, currentTier + 1, ilvl);
                 upgradeCount++;
             }

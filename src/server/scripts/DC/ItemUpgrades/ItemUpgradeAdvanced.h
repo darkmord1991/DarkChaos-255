@@ -1,6 +1,6 @@
 /*
  * DarkChaos Item Upgrade - Advanced Features (Phase 4D)
- * 
+ *
  * This header defines advanced features including:
  * - Cross-spec optimization and loadouts
  * - Transmog integration
@@ -8,7 +8,7 @@
  * - Item trading with upgrade preservation
  * - Respec costs and mechanics
  * - Guild progression tracking
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */

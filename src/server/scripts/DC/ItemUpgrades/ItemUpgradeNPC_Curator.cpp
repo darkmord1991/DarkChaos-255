@@ -1,9 +1,9 @@
 /*
  * DarkChaos Item Upgrade - Artifact Curator NPC
- * 
+ *
  * This file implements the Chaos Artifact Curator NPC (ID: 190002)
  * who manages artifact collection, discovery, and cosmetic display
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */
@@ -29,7 +29,7 @@ public:
         // Get player's token balances and artifact discovery count
         uint32 upgradeTokens = 0;
         uint32 artifactEssence = 0;
-        
+
         try
         {
             auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
@@ -38,12 +38,12 @@ public:
                 upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
                 artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
             }
-            
+
             // Also query from database to verify
             QueryResult result = CharacterDatabase.Query(
-                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'",
                 player->GetGUID().GetCounter());
-            
+
             if (result)
             {
                 artifactEssence = result->Fetch()[0].Get<uint32>();
@@ -54,24 +54,24 @@ public:
             // Database not set up yet - use defaults
             LOG_WARN("scripts", "ItemUpgrade: Curator NPC failed to query database (tables missing?)");
         }
-        
+
         // Clear any previous menu
         ClearGossipMenuFor(player);
-        
+
         // Build greeting text
         std::ostringstream greetingText;
         greetingText << "Greetings, " << player->GetName() << ".\n\n";
         greetingText << "I am the Artifact Curator. I preserve knowledge of ancient artifacts and can help you unlock their power.\n\n";
         greetingText << "|cff00ff00Upgrade Tokens:|r " << DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens) << "\n";
         greetingText << "|cffff9900Artifact Essence:|r " << DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence);
-        
+
         // Add menu options
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff99ccffArtifact Collection|r - View my artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffff00Discovery Info|r - Learn about artifacts", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff66ff66Cosmetics|r - Apply artifact cosmetics", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffStatistics|r - View collection stats", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffHelp|r - System Information", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
-        
+
         player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
         return true;
     }
@@ -80,7 +80,7 @@ public:
     {
         (void)sender;
         ClearGossipMenuFor(player);
-        
+
         switch (action)
         {
             case GOSSIP_ACTION_INFO_DEF + 1: // Artifact collection
@@ -89,19 +89,19 @@ public:
                 {
                     // Query discovered artifacts
                     QueryResult result = CharacterDatabase.Query(
-                        "SELECT COUNT(*) FROM dc_player_artifact_discoveries WHERE player_guid = {}", 
+                        "SELECT COUNT(*) FROM dc_player_artifact_discoveries WHERE player_guid = {}",
                         player->GetGUID().GetCounter());
-                    
+
                     uint32 discoveredCount = result ? result->Fetch()[0].Get<uint32>() : 0;
-                    
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                        "You have discovered " + std::to_string(discoveredCount) + " artifacts so far.", 
+
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "You have discovered " + std::to_string(discoveredCount) + " artifacts so far.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 }
                 catch (...)
                 {
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                        "Database not configured yet. Import SQL files first.", 
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "Database not configured yet. Import SQL files first.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 }
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
@@ -110,11 +110,11 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 2: // Discovery info
             {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Artifacts are discovered by completing achievements.", 
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Artifacts are discovered by completing achievements.",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Each achievement grants 50 Artifact Essence.", 
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Each achievement grants 50 Artifact Essence.",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
@@ -122,8 +122,8 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 3: // Cosmetics
             {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Cosmetic features are coming in Phase 4B!", 
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Cosmetic features are coming in Phase 4B!",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
@@ -135,19 +135,19 @@ public:
                 {
                     // Query database for artifact essence
                     QueryResult result = CharacterDatabase.Query(
-                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'", 
+                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'",
                         player->GetGUID().GetCounter());
-                    
+
                     uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
-                    
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                        "Total Artifact Essence: " + std::to_string(essence), 
+
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "Total Artifact Essence: " + std::to_string(essence),
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 }
                 catch (...)
                 {
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                        "Database not configured yet. Import SQL files first.", 
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "Database not configured yet. Import SQL files first.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 }
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
@@ -156,11 +156,11 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 5: // Help
             {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Complete achievements to discover artifacts and earn essence.", 
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Complete achievements to discover artifacts and earn essence.",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                    "Use essence to unlock artifact cosmetics (Phase 4B).", 
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Use essence to unlock artifact cosmetics (Phase 4B).",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());

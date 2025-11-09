@@ -1,13 +1,13 @@
 /*
  * DarkChaos Item Upgrade - Seasonal Reset & Balance (Phase 4C)
- * 
+ *
  * This header defines the seasonal system including:
  * - Seasonal data tracking and isolation
  * - Season transitions and reset mechanics
  * - Dynamic balance adjustments
  * - Progression history tracking
  * - Season-specific leaderboards
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
  */

@@ -1,6 +1,6 @@
 /*
  * DarkChaos Item Upgrade - Progression System Implementation (Phase 4B)
- * 
+ *
  * Implements:
  * - Tier progression management
  * - Level caps and tier unlocking
@@ -8,7 +8,7 @@
  * - Artifact Mastery system (renamed from "Prestige" to avoid conflict with DarkChaos Prestige System)
  * - Player progression tracking
  * - Test set command for class-specific gear
- * 
+ *
  * Author: DarkChaos Development Team
  * Date: November 5, 2025
  */
@@ -43,17 +43,17 @@ public:
         auto it = mastery_cache.find(player_guid);
         if (it != mastery_cache.end())
             return &it->second;
-        
+
         // Load from database
         QueryResult result = CharacterDatabase.Query(
             "SELECT total_mastery_points, mastery_rank, mastery_points_this_rank, "
             "items_fully_upgraded, total_upgrades_applied, last_upgrade_timestamp "
             "FROM dc_player_artifact_mastery WHERE player_guid = {}",
             player_guid);
-        
+
         PlayerArtifactMasteryInfo info;
         info.player_guid = player_guid;
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
@@ -64,10 +64,10 @@ public:
             info.total_upgrades_applied = fields[4].Get<uint32>();
             info.last_upgrade_timestamp = fields[5].Get<uint64>();
         }
-        
+
         info.mastery_title = info.GetMasteryTitle();
         mastery_cache[player_guid] = info;
-        
+
         return &mastery_cache[player_guid];
     }
 
@@ -76,27 +76,27 @@ public:
         PlayerArtifactMasteryInfo* info = GetMasteryInfo(player_guid);
         if (!info)
             return;
-        
+
         info->total_mastery_points += points;
         info->mastery_points_this_rank += points;
-        
+
         // Check for rank up (1000 points per rank)
         const uint32 POINTS_PER_RANK = 1000;
         while (info->mastery_points_this_rank >= POINTS_PER_RANK)
         {
             info->mastery_rank++;
             info->mastery_points_this_rank -= POINTS_PER_RANK;
-            
+
             // Notify player of rank up
             NotifyMasteryRankUp(player_guid, info->mastery_rank);
-            
+
             // Check for automatic tier unlocks
             CheckTierUnlocks(player_guid, info->mastery_rank);
         }
-        
+
         info->mastery_title = info->GetMasteryTitle();
         SaveMasteryInfo(*info);
-        
+
         // Update cache
         mastery_cache[player_guid] = *info;
     }
@@ -106,18 +106,18 @@ public:
         PlayerArtifactMasteryInfo* info = GetMasteryInfo(player_guid);
         if (!info)
             return;
-        
+
         info->items_fully_upgraded++;
         info->total_upgrades_applied++;
         info->last_upgrade_timestamp = time(nullptr);
-        
+
         SaveMasteryInfo(*info);
     }
 
     std::vector<PlayerArtifactMasteryInfo> GetMasteryLeaderboard(uint32 limit = 10) override
     {
         std::vector<PlayerArtifactMasteryInfo> leaderboard;
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT player_guid, total_mastery_points, mastery_rank, mastery_points_this_rank, "
             "items_fully_upgraded, total_upgrades_applied, last_upgrade_timestamp "
@@ -125,10 +125,10 @@ public:
             "ORDER BY total_mastery_points DESC "
             "LIMIT {}",
             limit);
-        
+
         if (!result)
             return leaderboard;
-        
+
         do
         {
             Field* fields = result->Fetch();
@@ -141,10 +141,10 @@ public:
             info.total_upgrades_applied = fields[5].Get<uint32>();
             info.last_upgrade_timestamp = fields[6].Get<uint64>();
             info.mastery_title = info.GetMasteryTitle();
-            
+
             leaderboard.push_back(info);
         } while (result->NextRow());
-        
+
         return leaderboard;
     }
 
@@ -156,7 +156,7 @@ public:
             "  SELECT total_mastery_points FROM dc_player_artifact_mastery WHERE player_guid = {}"
             ")",
             player_guid);
-        
+
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 
@@ -179,7 +179,7 @@ private:
         QueryResult result = CharacterDatabase.Query(
             "SELECT mastery_rank FROM dc_player_artifact_mastery WHERE player_guid = {}",
             player_guid);
-        
+
         // Would normally get player session and send message
         // For now, just log to database
         CharacterDatabase.Execute(
@@ -197,7 +197,7 @@ private:
             QueryResult checkResult = CharacterDatabase.Query(
                 "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = 4",
                 player_guid);
-            
+
             if (!checkResult)
             {
                 // Unlock the tier
@@ -205,7 +205,7 @@ private:
                     "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
                     "VALUES ({}, 4, UNIX_TIMESTAMP())",
                     player_guid);
-                
+
                 // Log the event
                 CharacterDatabase.Execute(
                     "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
@@ -213,7 +213,7 @@ private:
                     player_guid);
             }
         }
-        
+
         // Unlock Artifact tier at rank 10
         if (mastery_rank >= 10)
         {
@@ -221,7 +221,7 @@ private:
             QueryResult checkResult = CharacterDatabase.Query(
                 "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = 5",
                 player_guid);
-            
+
             if (!checkResult)
             {
                 // Unlock the tier
@@ -229,7 +229,7 @@ private:
                     "INSERT IGNORE INTO dc_player_tier_unlocks (player_guid, tier_id, unlocked_timestamp) "
                     "VALUES ({}, 5, UNIX_TIMESTAMP())",
                     player_guid);
-                
+
                 // Log the event
                 CharacterDatabase.Execute(
                     "INSERT INTO dc_artifact_mastery_events (player_guid, event_type, tier_unlocked, timestamp) "
@@ -263,10 +263,10 @@ public:
         QueryResult result = CharacterDatabase.Query(
             "SELECT max_level FROM dc_player_tier_caps WHERE player_guid = {} AND tier_id = {}",
             player_guid, tier_id);
-        
+
         if (result)
             return result->Fetch()[0].Get<uint8>();
-        
+
         // Default caps based on tier
         TierProgressionManager tierMgr;
         return tierMgr.GetMaxUpgradeLevel(tier_id);
@@ -285,21 +285,21 @@ public:
         // Tiers 1-3 are always unlocked
         if (tier_id <= 3)
             return true;
-        
+
         // Check if manually unlocked by GM
         QueryResult result = CharacterDatabase.Query(
             "SELECT 1 FROM dc_player_tier_unlocks WHERE player_guid = {} AND tier_id = {}",
             player_guid, tier_id);
-        
+
         if (result)
             return true;
-        
+
         // Check mastery requirements for automatic unlocks
         ArtifactMasteryManagerImpl masteryMgr;
         PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player_guid);
         if (!info)
             return false;
-        
+
         // Tier unlock requirements based on mastery rank
         switch (tier_id)
         {
@@ -340,11 +340,11 @@ public:
     {
         if (!config.enable_weekly_caps)
             return false;
-        
+
         uint32 spent = GetWeeklySpending(player_guid, currency);
         uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
             config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
-        
+
         return spent >= hard_cap;
     }
 
@@ -352,11 +352,11 @@ public:
     {
         if (!config.enable_weekly_caps)
             return 999999;  // Effectively unlimited
-        
+
         uint32 spent = GetWeeklySpending(player_guid, currency);
         uint32 hard_cap = (currency == CURRENCY_ARTIFACT_ESSENCE) ?
             config.hardcap_weekly_essence : config.hardcap_weekly_tokens;
-        
+
         return (spent < hard_cap) ? (hard_cap - spent) : 0;
     }
 
@@ -370,13 +370,13 @@ public:
         timeinfo->tm_sec = 0;
         timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
         time_t week_start = mktime(timeinfo);
-        
+
         std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = {}",
             column, player_guid, week_start);
-        
+
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 };
@@ -423,12 +423,12 @@ public:
             { "tiercap",    HandleTierCapCommand,       SEC_GAMEMASTER, Console::No },
             { "testset",    HandleTestSetCommand,       SEC_GAMEMASTER, Console::No },
         };
-        
+
         static ChatCommandTable commandTable =
         {
             { "upgradeprog", upgradeProgressionCommandTable },
         };
-        
+
         return commandTable;
     }
 
@@ -437,28 +437,28 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         ArtifactMasteryManagerImpl masteryMgr;
         PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player->GetGUID().GetCounter());
-        
+
         if (!info)
         {
             handler->PSendSysMessage("Unable to load artifact mastery information.");
             return false;
         }
-        
+
         handler->PSendSysMessage("|cffffd700===== Your Artifact Mastery Status =====|r");
-        handler->PSendSysMessage("|cff00ff00Mastery Rank:|r %u (%s)", 
+        handler->PSendSysMessage("|cff00ff00Mastery Rank:|r %u (%s)",
             info->mastery_rank, info->mastery_title.c_str());
         handler->PSendSysMessage("|cff00ff00Total Mastery Points:|r %u", info->total_mastery_points);
-        handler->PSendSysMessage("|cff00ff00Progress to Next Rank:|r %u%% (%u/1000)", 
+        handler->PSendSysMessage("|cff00ff00Progress to Next Rank:|r %u%% (%u/1000)",
             info->GetProgressToNextRank(), info->mastery_points_this_rank);
         handler->PSendSysMessage("|cff00ff00Fully Upgraded Items:|r %u", info->items_fully_upgraded);
         handler->PSendSysMessage("|cff00ff00Total Upgrades Applied:|r %u", info->total_upgrades_applied);
-        
+
         uint32 leaderboard_rank = masteryMgr.GetPlayerMasteryRank(player->GetGUID().GetCounter());
         handler->PSendSysMessage("|cff00ff00Leaderboard Rank:|r #%u", leaderboard_rank);
-        
+
         return true;
     }
 
@@ -470,27 +470,27 @@ public:
             handler->PSendSysMessage("No player selected.");
             return false;
         }
-        
+
         if (!*args)
         {
             handler->PSendSysMessage("Usage: .upgradeprog unlocktier <tier_id>");
             return false;
         }
-        
+
         uint8 tier_id = atoi(args);
         if (tier_id < 1 || tier_id > 5)
         {
             handler->PSendSysMessage("Invalid tier ID. Use 1-5.");
             return false;
         }
-        
+
         LevelCapManagerImpl capMgr;
         capMgr.UnlockTier(target->GetGUID().GetCounter(), tier_id);
-        
+
         TierProgressionManager tierMgr;
         handler->PSendSysMessage("Unlocked %s tier for %s.",
             tierMgr.GetTierName(tier_id).c_str(), target->GetName().c_str());
-        
+
         return true;
     }
 
@@ -499,19 +499,19 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         CostScalingManagerImpl scalingMgr;
-        
+
         uint32 essence_spent = scalingMgr.GetWeeklySpending(
             player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
         uint32 tokens_spent = scalingMgr.GetWeeklySpending(
             player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
-        
+
         uint32 essence_remaining = scalingMgr.GetWeeklyRemainingBudget(
             player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
         uint32 tokens_remaining = scalingMgr.GetWeeklyRemainingBudget(
             player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
-        
+
         handler->PSendSysMessage("|cffffd700===== Weekly Spending Caps =====|r");
         handler->PSendSysMessage("|cff00ff00Essence Spent This Week:|r %u / %u (Soft Cap)",
             essence_spent, scalingMgr.GetConfig().softcap_weekly_essence);
@@ -521,7 +521,7 @@ public:
             tokens_spent, scalingMgr.GetConfig().softcap_weekly_tokens);
         handler->PSendSysMessage("|cff00ff00Tokens Remaining:|r %u (Hard Cap: %u)",
             tokens_remaining, scalingMgr.GetConfig().hardcap_weekly_tokens);
-        
+
         return true;
     }
 
@@ -532,32 +532,32 @@ public:
             handler->PSendSysMessage("Usage: .upgradeprog tiercap <tier_id> <max_level>");
             return false;
         }
-        
+
         char* tier_str = strtok((char*)args, " ");
         char* level_str = strtok(nullptr, " ");
-        
+
         if (!tier_str || !level_str)
         {
             handler->PSendSysMessage("Usage: .upgradeprog tiercap <tier_id> <max_level>");
             return false;
         }
-        
+
         uint8 tier_id = atoi(tier_str);
         uint8 max_level = atoi(level_str);
-        
+
         Player* target = handler->getSelectedPlayer();
         if (!target)
         {
             handler->PSendSysMessage("No player selected.");
             return false;
         }
-        
+
         LevelCapManagerImpl capMgr;
         capMgr.SetPlayerTierCap(target->GetGUID().GetCounter(), tier_id, max_level);
-        
+
         handler->PSendSysMessage("Set tier %u max level to %u for %s.",
             tier_id, max_level, target->GetName().c_str());
-        
+
         return true;
     }
 
@@ -566,18 +566,18 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         uint8 playerClass = player->getClass();
         auto it = TEST_GEAR_SETS.find(playerClass);
-        
+
         if (it == TEST_GEAR_SETS.end())
         {
             handler->PSendSysMessage("No test gear set configured for your class.");
             return false;
         }
-        
+
         const ClassGearSet& gearSet = it->second;
-        
+
         // Grant test items
         uint32 items_added = 0;
         for (uint32 itemId : gearSet.item_ids)
@@ -594,13 +594,13 @@ public:
                 }
             }
         }
-        
+
         // Grant currency
         const uint32 ESSENCE_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 100998);
         const uint32 TOKEN_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 100999);
         const uint32 TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
         const uint32 TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
-        
+
         // Grant essence
         ItemPosCountVec essenceDest;
         InventoryResult essenceMsg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, essenceDest, ESSENCE_ID, TEST_ESSENCE_AMOUNT);
@@ -612,7 +612,7 @@ public:
                 player->SendNewItem(essence, TEST_ESSENCE_AMOUNT, true, false);
             }
         }
-        
+
         // Grant tokens
         ItemPosCountVec tokenDest;
         InventoryResult tokenMsg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, tokenDest, TOKEN_ID, TEST_TOKEN_AMOUNT);
@@ -624,7 +624,7 @@ public:
                 player->SendNewItem(tokens, TEST_TOKEN_AMOUNT, true, false);
             }
         }
-        
+
         handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
         handler->PSendSysMessage("|cff00ff00Class:|r %s", player->GetName().c_str());
         handler->PSendSysMessage("|cff00ff00Gear Set:|r %s", gearSet.description.c_str());
@@ -632,7 +632,7 @@ public:
         handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r %u", TEST_ESSENCE_AMOUNT);
         handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", TEST_TOKEN_AMOUNT);
         handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
-        
+
         return true;
     }
 };

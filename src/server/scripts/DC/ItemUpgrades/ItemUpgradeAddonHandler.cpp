@@ -73,7 +73,7 @@ private:
         std::string argStr = args ? args : "";
         std::string::size_type spacePos = argStr.find(' ');
         std::string subcommand = spacePos != std::string::npos ? argStr.substr(0, spacePos) : argStr;
-        
+
         if (subcommand.empty())
         {
             SendAddonResponse(player, "DCUPGRADE_ERROR:No command specified");
@@ -142,7 +142,7 @@ private:
             std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
             std::istringstream iss(remainingArgs);
             uint32 extBag, extSlot;
-            
+
             if (!(iss >> extBag >> extSlot))
             {
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
@@ -187,7 +187,7 @@ private:
                 // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
                 // storedBaseIlvl remains baseItemLevel from template
                 // upgradedIlvl will be calculated below
-                
+
                 // ALWAYS recalculate statMultiplier based on level and tier (don't trust database value)
                 statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                     static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
@@ -217,7 +217,7 @@ private:
             ss << std::setprecision(3);
             ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
                << ":" << upgradedIlvl << ":" << statMultiplier;
-            
+
             SendAddonResponse(player, ss.str());
             return true;
         }
@@ -287,7 +287,7 @@ private:
                     Field* fields = result->Fetch();
                     upgradeLevel = fields[0].Get<uint32>();
                     tier = fields[1].Get<uint32>();
-                    
+
                     statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                         static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
                 }
@@ -315,7 +315,7 @@ private:
                 ss << std::setprecision(3);
                 ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
                    << ":" << upgradedIlvl << ":" << statMultiplier;
-                
+
                 SendAddonResponse(player, ss.str());
             }
 
@@ -326,7 +326,7 @@ private:
             std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
             std::istringstream iss(remainingArgs);
             uint32 extBag, extSlot, targetLevel;
-            
+
             if (!(iss >> extBag >> extSlot >> targetLevel))
             {
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid parameters");
