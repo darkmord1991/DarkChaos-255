@@ -58,44 +58,114 @@ void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgra
 void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 void AddSC_ItemUpgradeCommunication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommunication.cpp
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
-void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
 {
+    // Core AC Scripts
     AddSC_ac_guard_npc();
     AddSC_flighthelper_test();
-    AddSC_npc_thrall_hinterlandbg();
-    AddSC_hinterlandbg_Varian_wrynn();
-    AddSC_hlbg_commandscript();
     AddSC_dc_login_announce();
     AddSC_ac_quest_npc_800009();
     AddSC_aio_bridge();
     AddSC_flightmasters();
-    AddSC_hl_scoreboard();
-    AddSC_hlbg_addon();
-    AddSC_npc_hinterlands_battlemaster();
-    // AddSC_hl_stats_aio(); // Not needed - provides HandleHLBGStatsUI implementation only
-    AddSC_ac_hotspots();
     AddSC_ac_aoeloot();
     AddSC_heirloom_scaling_255();
     AddBattleForGilneasScripts();
-    // GPS broadcaster removed - Using Eluna instead
     AddSC_cs_gps_test();
-    AddSC_dc_prestige_system();
-    AddSC_dc_prestige_spells();
-    AddSC_spell_challenge_mode_auras();
-    AddSC_dc_challenge_modes();
-    AddSC_dc_achievements();
-    AddSC_DungeonQuestSystem();
-    AddSC_DungeonQuestPhasing();
-    AddSC_DungeonQuestMasterFollower();
-    AddSC_npc_dungeon_quest_master();
-    AddSC_npc_dungeon_quest_daily_weekly();
-    
-    // Item Upgrade System
+
+    // Hinterland BG System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Hinterland Battleground System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_npc_thrall_hinterlandbg();
+        AddSC_hinterlandbg_Varian_wrynn();
+        AddSC_hlbg_commandscript();
+        AddSC_hl_scoreboard();
+        AddSC_hlbg_addon();
+        AddSC_npc_hinterlands_battlemaster();
+        LOG_INFO("scripts", ">>   ✓ Hinterland BG NPCs and commands loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hinterland BG: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Hinterland BG");
+    }
+
+    // Challenge Mode System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Challenge Mode System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_challenge_modes();
+        AddSC_spell_challenge_mode_auras();
+        LOG_INFO("scripts", ">>   ✓ Challenge modes and auras loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Challenge Mode: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Challenge Mode");
+    }
+
+    // Prestige System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Prestige System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_prestige_system();
+        AddSC_dc_prestige_spells();
+        LOG_INFO("scripts", ">>   ✓ Prestige mechanics and spells loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Prestige System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Prestige System");
+    }
+
+    // Dungeon Quest System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Dungeon Quest System v3.0 (Enhanced UX + AC Standards)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_DungeonQuestSystem();
+        AddSC_DungeonQuestPhasing();
+        AddSC_DungeonQuestMasterFollower();
+        AddSC_npc_dungeon_quest_master();
+        AddSC_npc_dungeon_quest_daily_weekly();
+        LOG_INFO("scripts", ">>   ✓ Dungeon quest mechanics and NPCs loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Quest System");
+    }
+
+    // Hotspots System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Hotspots System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_ac_hotspots();
+        LOG_INFO("scripts", ">>   ✓ Hotspots detection and markers loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hotspots System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Hotspots System");
+    }
+
+    // Custom Achievements System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Custom Achievements System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_achievements();
+        LOG_INFO("scripts", ">>   ✓ Custom achievements loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Custom Achievements: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Custom Achievements");
+    }
+
+    // Item Upgrade System (Loaded Last)
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> DarkChaos Item Upgrade System v2.0 (Hybrid Scaling)");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -107,7 +177,7 @@ void AddDCScripts()
     LOG_INFO("scripts", ">>     • Transmutation & Tier Conversion");
     LOG_INFO("scripts", ">>     • Seasonal Content Support");
     LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
-    
+
     try {
         AddSC_ItemUpgradeMechanicsImpl();     // Core mechanics (MUST load first - provides static functions)
         LOG_INFO("scripts", ">>   ✓ Core mechanics loaded");
@@ -116,7 +186,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in core mechanics");
     }
-    
+
     try {
         AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
         LOG_INFO("scripts", ">>   ✓ GM commands loaded");
@@ -125,7 +195,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in GM commands");
     }
-    
+
     try {
         AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
         LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
@@ -134,7 +204,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in addon handler");
     }
-    
+
     try {
         AddSC_ItemUpgradeVendor();
         LOG_INFO("scripts", ">>   ✓ Token vendor NPC loaded");
@@ -143,7 +213,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in vendor");
     }
-    
+
     try {
         AddSC_ItemUpgradeCurator();
         LOG_INFO("scripts", ">>   ✓ Artifact curator NPC loaded");
@@ -152,7 +222,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in curator");
     }
-    
+
     try {
         AddSC_ItemUpgradeMechanics();
         LOG_INFO("scripts", ">>   ✓ Upgrader NPC loaded");
@@ -169,7 +239,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in progression");
     }
-    
+
     try {
         AddSC_ItemUpgradeSeasonal();
         LOG_INFO("scripts", ">>   ✓ Seasonal system loaded");
@@ -178,7 +248,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal");
     }
-    
+
     try {
         AddSC_ItemUpgradeAdvanced();
         LOG_INFO("scripts", ">>   ✓ Advanced features loaded");
@@ -187,7 +257,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in advanced");
     }
-    
+
     try {
         AddSC_ItemUpgradeTransmutation();
         LOG_INFO("scripts", ">>   ✓ Transmutation NPC loaded");
@@ -196,7 +266,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in transmutation");
     }
-    
+
     try {
         AddSC_ItemUpgradeCommunication();
         LOG_INFO("scripts", ">>   ✓ Communication system loaded");
@@ -205,7 +275,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in communication");
     }
-    
+
     try {
         AddSC_ItemUpgradeTokenHooks();
         LOG_INFO("scripts", ">>   ✓ Token hooks loaded");
@@ -214,16 +284,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in token hooks");
     }
-    
-    try {
-        AddSC_ItemUpgradeStatApplication();
-        LOG_INFO("scripts", ">>   ✓ Stat scaling loaded (Enchantment-based)");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in stat application: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in stat application");
-    }
-    
+
     try {
         AddSC_ItemUpgradeProcScaling();
         LOG_INFO("scripts", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
@@ -232,7 +293,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in proc scaling");
     }
-    
+
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Item Upgrade System: All modules loaded successfully");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");

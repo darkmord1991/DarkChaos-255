@@ -1714,19 +1714,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_enchants
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_enchants` (
-  `enchant_id` int unsigned NOT NULL,
-  `tier_id` tinyint unsigned NOT NULL,
-  `upgrade_level` tinyint unsigned NOT NULL,
-  `stat_multiplier` float NOT NULL,
-  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`enchant_id`),
-  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
 -- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_stage
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stage` (
   `tier_id` tinyint unsigned NOT NULL,
@@ -1740,6 +1727,19 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stage` (
   `item_subclass` tinyint unsigned DEFAULT NULL,
   PRIMARY KEY (`tier_id`,`item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Staging rows loaded from tier dumps for validation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_clones
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_clones` (
+  `base_item_id` int unsigned NOT NULL COMMENT 'Base item entry ID',
+  `clone_item_id` int unsigned NOT NULL COMMENT 'Upgraded clone item entry ID',
+  `tier_id` tinyint unsigned NOT NULL COMMENT '1=Leveling, 2=Heroic, 3=Raid, 4=Mythic, 5=Artifact',
+  `upgrade_level` tinyint unsigned NOT NULL COMMENT '0-15, 0=base, 15=max',
+  PRIMARY KEY (`base_item_id`,`tier_id`,`upgrade_level`),
+  KEY `idx_clone` (`clone_item_id`),
+  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade clone mappings - maps base items to their upgraded clone versions';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
