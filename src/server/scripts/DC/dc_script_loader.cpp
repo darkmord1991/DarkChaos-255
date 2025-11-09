@@ -56,7 +56,6 @@ void AddSC_ItemUpgradeProgression(); // location: scripts\DC\ItemUpgrades\ItemUp
 void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
 void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
 void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
-void AddSC_ItemUpgradeCommunication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeCommunication.cpp
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 
@@ -265,15 +264,6 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in transmutation: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in transmutation");
-    }
-
-    try {
-        AddSC_ItemUpgradeCommunication();
-        LOG_INFO("scripts", ">>   ✓ Communication system loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in communication: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in communication");
     }
 
     try {

@@ -16,7 +16,7 @@
  * DarkChaos Item Upgrade System - Addon Communication Handler
  *
  * This file handles communication between the client addon and server.
- * Commands: .dcupgrade (init/query/upgrade/inventory)
+ * Commands: .dcupgrade (init/query/upgrade/batch)
  *
  * RENAMED FROM: ItemUpgradeCommands.cpp
  * REASON: Better clarity - distinguishes from GM admin commands
@@ -222,7 +222,105 @@ private:
             return true;
         }
 
-        // PERFORM: Perform upgrade
+        // BATCH: Handle multiple queries in one command
+        else if (subcommand == "batch")
+        {
+            std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
+            if (remainingArgs.empty())
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:No batch data provided");
+                return true;
+            }
+
+            // Parse batch format: "bag1:slot1 bag2:slot2 bag3:slot3 ..."
+            std::istringstream iss(remainingArgs);
+            std::string pair;
+            std::vector<std::pair<uint32, uint32>> batchQueries;
+
+            while (iss >> pair)
+            {
+                std::string::size_type colonPos = pair.find(':');
+                if (colonPos == std::string::npos)
+                    continue;
+
+                uint32 extBag = std::stoul(pair.substr(0, colonPos));
+                uint32 extSlot = std::stoul(pair.substr(colonPos + 1));
+
+                uint8 bag = 0;
+                uint8 slot = 0;
+                if (TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+                {
+                    batchQueries.emplace_back(bag, slot);
+                }
+            }
+
+            if (batchQueries.empty())
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:No valid batch queries");
+                return true;
+            }
+
+            // Process each query in the batch
+            for (const auto& [bag, slot] : batchQueries)
+            {
+                Item* item = player->GetItemByPos(bag, slot);
+                if (!item)
+                    continue;
+
+                uint32 itemGUID = item->GetGUID().GetCounter();
+                uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
+
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT upgrade_level, tier_id, stat_multiplier "
+                    "FROM {} WHERE item_guid = {}",
+                    ITEM_UPGRADES_TABLE, itemGUID
+                );
+
+                uint32 upgradeLevel = 0;
+                uint32 tier = 1;
+                uint16 storedBaseIlvl = baseItemLevel;
+                uint16 upgradedIlvl = baseItemLevel;
+                float statMultiplier = 1.0f;
+
+                if (result)
+                {
+                    Field* fields = result->Fetch();
+                    upgradeLevel = fields[0].Get<uint32>();
+                    tier = fields[1].Get<uint32>();
+                    
+                    statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                        static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                }
+                else
+                {
+                    if (baseItemLevel >= 450) tier = 5;
+                    else if (baseItemLevel >= 400) tier = 4;
+                    else if (baseItemLevel >= 350) tier = 3;
+                    else if (baseItemLevel >= 300) tier = 2;
+                    else tier = 1;
+
+                    storedBaseIlvl = baseItemLevel;
+                    upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                        storedBaseIlvl, static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                    statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                        static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                }
+
+                if (upgradedIlvl < storedBaseIlvl)
+                    upgradedIlvl = storedBaseIlvl;
+
+                // Send individual response for each item in batch
+                std::ostringstream ss;
+                ss.setf(std::ios::fixed);
+                ss << std::setprecision(3);
+                ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
+                   << ":" << upgradedIlvl << ":" << statMultiplier;
+                
+                SendAddonResponse(player, ss.str());
+            }
+
+            return true;
+        }
         else if (subcommand == "perform")
         {
             std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";

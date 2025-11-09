@@ -54,11 +54,11 @@ namespace DarkChaos
         {
         private:
             // Cache maps for fast lookup
-            std::map<uint8, UpgradeCost> upgrade_costs;           // tier_id+level -> cost
-            std::map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
-            std::map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
-            std::map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
-            std::map<uint32, ItemUpgradeState> item_states;       // item_guid -> state
+            std::unordered_map<uint8, UpgradeCost> upgrade_costs;           // tier_id+level -> cost
+            std::unordered_map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
+            std::unordered_map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
+            std::unordered_map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
+            std::unordered_map<uint32, ItemUpgradeState> item_states;       // item_guid -> state
 
             void EnsureStateMetadata(ItemUpgradeState& state, uint32 owner_hint = 0)
             {
