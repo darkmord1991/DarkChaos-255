@@ -31,27 +31,6 @@ using Acore::ChatCommands::Console;
 using DarkChaos::ItemUpgrade::ITEM_UPGRADES_TABLE;
 using DarkChaos::ItemUpgrade::ITEM_UPGRADE_LOG_TABLE;
 
-namespace
-{
-    // fmt treats braces as control characters; double them before formatting dynamic strings.
-    void EscapeFmtBraces(std::string& text)
-    {
-        size_t pos = 0;
-        while ((pos = text.find('{', pos)) != std::string::npos)
-        {
-            text.insert(pos, "{");
-            pos += 2;
-        }
-
-        pos = 0;
-        while ((pos = text.find('}', pos)) != std::string::npos)
-        {
-            text.insert(pos, "}");
-            pos += 2;
-        }
-    }
-}
-
 class ItemUpgradeAddonCommands : public CommandScript
 {
 public:
@@ -280,11 +259,7 @@ private:
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
-            std::string baseItemName = item->GetTemplate()->Name1;
-
-            // Escape item name to prevent SQL injection and handle apostrophes
-            CharacterDatabase.EscapeString(baseItemName);
-            EscapeFmtBraces(baseItemName);
+            std::string baseItemNameRaw = item->GetTemplate()->Name1;
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
@@ -398,23 +373,33 @@ private:
             uint64 now = static_cast<uint64>(std::time(nullptr));
             uint32 season = 1; // TODO: make configurable
 
-            // Update item state (include all non-nullable columns)
-            CharacterDatabase.Execute(
-                "INSERT INTO {} "
-                "(item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
-                "stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
-                "ON DUPLICATE KEY UPDATE "
-                " upgrade_level = VALUES(upgrade_level),"
-                " tier_id = VALUES(tier_id),"
-                " tokens_invested = tokens_invested + VALUES(tokens_invested),"
-                " essence_invested = essence_invested + VALUES(essence_invested),"
-                " stat_multiplier = VALUES(stat_multiplier),"
-                " last_upgraded_at = {}",
-                ITEM_UPGRADES_TABLE,
-                itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
-                statMultiplier, now, now, season, now
-            );
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+            {
+                DarkChaos::ItemUpgrade::ItemUpgradeState* state = mgr->GetItemUpgradeState(itemGUID);
+                if (state)
+                {
+                    if (state->player_guid == 0)
+                        state->player_guid = playerGuid;
+                    if (state->item_guid == 0)
+                        state->item_guid = itemGUID;
+                    state->player_guid = playerGuid;
+                    state->item_entry = item->GetEntry();
+                    state->base_item_name = baseItemNameRaw;
+                    state->tier_id = static_cast<uint8>(tier);
+                    state->upgrade_level = static_cast<uint8>(targetLevel);
+                    state->tokens_invested += tokensNeeded;
+                    state->essence_invested += essenceNeeded;
+                    state->stat_multiplier = statMultiplier;
+                    state->base_item_level = static_cast<uint16>(baseItemLevel);
+                    state->upgraded_item_level = newIlvl;
+                    if (state->first_upgraded_at == 0)
+                        state->first_upgraded_at = static_cast<time_t>(now);
+                    state->last_upgraded_at = static_cast<time_t>(now);
+                    state->season = season;
+
+                    mgr->SaveItemUpgrade(itemGUID);
+                }
+            }
 
             CharacterDatabase.Execute(
                 "INSERT INTO {} (player_guid, item_guid, item_id, upgrade_from, upgrade_to, essence_cost, token_cost, "
@@ -427,6 +412,8 @@ private:
                 static_cast<double>(oldStatMultiplier), static_cast<double>(statMultiplier),
                 static_cast<uint32>(now), season
             );
+
+            DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
 
             // Send success response via SYSTEM chat
             std::ostringstream successMsg;

@@ -345,6 +345,9 @@ namespace DarkChaos
                         static_cast<double>(old_multiplier), static_cast<double>(new_multiplier),
                         log_timestamp, state->season);
 
+                    if (Player* onlinePlayer = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid)))
+                        ForcePlayerStatUpdate(onlinePlayer);
+
                     // Award artifact mastery points for Phase 4B progression system
                     uint32 mastery_points = 0;
                     switch (tier)
