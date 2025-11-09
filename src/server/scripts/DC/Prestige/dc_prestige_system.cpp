@@ -109,14 +109,21 @@ public:
         if (!player)
             return 0;
 
+        uint32 guid = player->GetGUID().GetCounter();
+        auto it = prestigeCache.find(guid);
+        if (it != prestigeCache.end())
+            return it->second;
+
         // Query from database
-        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        uint32 level = 0;
         if (result)
         {
             Field* fields = result->Fetch();
-            return fields[0].Get<uint32>();
+            level = fields[0].Get<uint32>();
         }
-        return 0;
+        prestigeCache[guid] = level;
+        return level;
     }
 
     void SetPrestigeLevel(Player* player, uint32 level)
@@ -124,8 +131,10 @@ public:
         if (!player)
             return;
 
+        uint32 guid = player->GetGUID().GetCounter();
         CharacterDatabase.Execute("REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())", 
-            player->GetGUID().GetCounter(), level, level);
+            guid, level, level);
+        prestigeCache[guid] = level;
     }
 
     bool CanPrestige(Player* player)
@@ -530,6 +539,7 @@ private:
     bool grantStarterGear;
     bool announcePrestige;
     std::unordered_map<uint32, std::vector<PrestigeReward>> prestigeRewards;
+    std::unordered_map<uint32, uint32> prestigeCache;
 
     void LoadPrestigeRewards()
     {

@@ -19,6 +19,7 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
+#include "DC/Prestige/dc_prestige_api.h"
 #include "AchievementMgr.h"
 #include "Map.h"
 #include "Battleground.h"
@@ -239,20 +240,8 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== PRESTIGE ACHIEVEMENTS DEBUG ===|r");
         
         // Check prestige level and grant achievements
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
-            player->GetGUID().GetCounter()
-        );
-        
-        if (!result)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: No prestige data found in database");
-            return;
-        }
-            
-        Field* fields = result->Fetch();
-        uint32 prestigeLevel = fields[0].Get<uint32>();
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found prestige level in DB: {}", prestigeLevel);
+        uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
+        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found prestige level: {}", prestigeLevel);
         
         // Grant all prestige achievements up to current level
         for (uint32 i = 1; i <= prestigeLevel && i <= 10; ++i)
