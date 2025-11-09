@@ -327,7 +327,7 @@ private:
             if (currentTier < 5)
             {
                 handler->PSendSysMessage("  [Slot %u] %s (Tier %u -> Tier %u, iLvL: %u)",
-                    slot, proto->Name1, currentTier, currentTier + 1, ilvl);
+                    slot, proto->Name1, currentTier, currentTier + 1, proto->ItemLevel);
                 upgradeCount++;
             }
         }
