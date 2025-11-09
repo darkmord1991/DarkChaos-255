@@ -73,6 +73,13 @@ namespace DarkChaos
                     Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
                     if (item)
                     {
+                        // Items can exist before ownership is fully wired; skip until owner is ready
+                        if (!item->GetOwner())
+                        {
+                            LOG_TRACE("scripts", "ItemUpgrade: Skipping item {} in slot {} during login; owner not yet available",
+                                      item->GetEntry(), slot);
+                            continue;
+                        }
                         ApplyUpgradeEnchant(player, item);
                     }
                 }
@@ -91,6 +98,20 @@ namespace DarkChaos
                 UpgradeManager* mgr = GetUpgradeManager();
                 if (!mgr)
                     return;
+
+                Player* owner = item->GetOwner();
+                if (!owner)
+                {
+                    LOG_TRACE("scripts", "ItemUpgrade: Skipping enchant application for item {} (guid={}); no owner yet",
+                              item->GetEntry(), item_guid);
+                    return;
+                }
+                if (owner != player)
+                {
+                    LOG_WARN("scripts", "ItemUpgrade: Player {} attempted enchant application for item {} (guid={}) owned by {}. Skipping.",
+                             player->GetGUID().GetCounter(), item->GetEntry(), item_guid, owner->GetGUID().GetCounter());
+                    return;
+                }
                 
                 // Remove any existing upgrade enchant first
                 RemoveUpgradeEnchant(player, item);
@@ -148,6 +169,14 @@ namespace DarkChaos
                 if (!player || !item)
                     return;
                 
+                Player* owner = item->GetOwner();
+                if (owner && owner != player)
+                {
+                    LOG_WARN("scripts", "ItemUpgrade: Player {} attempted to remove enchant from item {} (guid={}) owned by {}. Skipping.",
+                             player->GetGUID().GetCounter(), item->GetEntry(), item->GetGUID().GetCounter(), owner->GetGUID().GetCounter());
+                    return;
+                }
+
                 // Check if item has an upgrade enchant (IDs 80001-80599)
                 for (EnchantmentSlot slot = PERM_ENCHANTMENT_SLOT; slot < MAX_INSPECTED_ENCHANTMENT_SLOT; 
                      slot = EnchantmentSlot(slot + 1))
@@ -201,6 +230,12 @@ namespace DarkChaos
                 Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
                 if (item)
                 {
+                    if (!item->GetOwner())
+                    {
+                        LOG_TRACE("scripts", "ItemUpgrade: Skipping item {} in slot {} during stat update; owner not yet available",
+                                  item->GetEntry(), slot);
+                        continue;
+                    }
                     // Remove old enchant
                     for (EnchantmentSlot enchSlot = PERM_ENCHANTMENT_SLOT; 
                          enchSlot < MAX_INSPECTED_ENCHANTMENT_SLOT; 
