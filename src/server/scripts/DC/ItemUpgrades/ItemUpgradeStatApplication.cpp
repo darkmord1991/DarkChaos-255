@@ -25,25 +25,21 @@ namespace DarkChaos
             if (!player)
                 return;
 
-            // Method 1: Update equipment stats by equipment change
-            // This triggers the stat recalculation through equipment change hooks
-            player->UpdateStats(STAT_STRENGTH);
-            player->UpdateStats(STAT_AGILITY);
-            player->UpdateStats(STAT_STAMINA);
-            player->UpdateStats(STAT_INTELLECT);
-            player->UpdateStats(STAT_SPIRIT);
+            // Method 1: Update all stats
+            // This triggers the stat recalculation for all primary and derived stats
+            player->UpdateAllStats();
 
-            // Method 2: Recalculate all stats and bonuses
-            // This ensures all derived stats are updated
-            player->RecalculateAllStats();
+            // Method 2: Apply all stat bonuses
+            // This ensures all bonuses from items, auras, etc. are recalculated
+            player->_ApplyAllStatBonuses();
 
-            // Method 3: Update creature data if applicable
+            // Method 3: Update all ratings
+            // Ensures combat ratings are recalculated
+            player->UpdateAllRatings();
+
+            // Method 4: Update creature data if applicable
             // Ensures client gets updated unit data
             player->UpdateObjectVisibility();
-
-            // Method 4: Send stat update to client
-            // Force client to refresh stat display
-            player->SetCanModifyStats(true);
 
             // Method 5: Trigger item stat update for all equipped items
             // This ensures the item upgrade changes are reflected
