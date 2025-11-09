@@ -19,6 +19,27 @@
 #include "StringFormat.h"
 #include <cmath>
 
+namespace
+{
+    // Ensure literal braces survive fmt formatting when inserting dynamic strings.
+    void EscapeFmtBraces(std::string& text)
+    {
+        size_t pos = 0;
+        while ((pos = text.find('{', pos)) != std::string::npos)
+        {
+            text.insert(pos, "{");
+            pos += 2;
+        }
+
+        pos = 0;
+        while ((pos = text.find('}', pos)) != std::string::npos)
+        {
+            text.insert(pos, "}");
+            pos += 2;
+        }
+    }
+}
+
 using namespace DarkChaos::ItemUpgrade;
 
 // ========== UpgradeCostCalculator Implementation ==========
@@ -244,8 +265,7 @@ bool ItemUpgradeState::SaveToDatabase() const
 {
     std::string baseName = base_item_name;
     CharacterDatabase.EscapeString(baseName);
-    Acore::String::Replace(baseName, "{", "{{");
-    Acore::String::Replace(baseName, "}", "}}");
+    EscapeFmtBraces(baseName);
 
     // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
     CharacterDatabase.Execute(

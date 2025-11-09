@@ -21,6 +21,27 @@
 #include "StringFormat.h"
 #include <sstream>
 
+namespace
+{
+    // fmt uses braces as control characters; double them inside dynamic strings before formatting.
+    void EscapeFmtBraces(std::string& text)
+    {
+        size_t pos = 0;
+        while ((pos = text.find('{', pos)) != std::string::npos)
+        {
+            text.insert(pos, "{");
+            pos += 2;
+        }
+
+        pos = 0;
+        while ((pos = text.find('}', pos)) != std::string::npos)
+        {
+            text.insert(pos, "}");
+            pos += 2;
+        }
+    }
+}
+
 namespace DarkChaos
 {
     namespace ItemUpgrade
@@ -918,8 +939,7 @@ namespace DarkChaos
 
                 std::string baseName = state->base_item_name;
                 CharacterDatabase.EscapeString(baseName);
-                Acore::String::Replace(baseName, "{", "{{");
-                Acore::String::Replace(baseName, "}", "}}");
+                EscapeFmtBraces(baseName);
 
                 CharacterDatabase.Execute(
                     "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
