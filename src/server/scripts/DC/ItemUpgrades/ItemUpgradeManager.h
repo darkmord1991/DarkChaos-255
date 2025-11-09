@@ -49,6 +49,7 @@ namespace DarkChaos
 
         // Centralize backing table name so SQL stays consistent with the deployed schema
         inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";
+        inline constexpr const char* ITEM_UPGRADE_LOG_TABLE = "dc_item_upgrade_log";
 
         // =====================================================================
         // Upgrade Cost Structure
@@ -80,6 +81,7 @@ namespace DarkChaos
         {
             uint32 item_guid;                    // Item GUID from item_instance
             uint32 player_guid;                  // Player GUID
+            uint32 item_entry;                   // Item template entry id
             std::string base_item_name;          // Cached display name
             uint8 tier_id;                       // Item tier id (1-5)
             uint8 upgrade_level;                 // Current upgrade level (0 = base, 1-15 = upgraded)
@@ -92,7 +94,7 @@ namespace DarkChaos
             time_t last_upgraded_at;             // When this item was last upgraded
             uint32 season;                       // Season this upgrade belongs to
 
-            ItemUpgradeState() : item_guid(0), player_guid(0), base_item_name(), tier_id(0), upgrade_level(0),
+            ItemUpgradeState() : item_guid(0), player_guid(0), item_entry(0), base_item_name(), tier_id(0), upgrade_level(0),
                                  essence_invested(0), tokens_invested(0),
                                  base_item_level(0), upgraded_item_level(0),
                                  stat_multiplier(1.0f),

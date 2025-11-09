@@ -88,6 +88,9 @@ namespace DarkChaos
 
                         uint32 itemEntry = infoFields[1].Get<uint32>();
 
+                        if (state.item_entry == 0)
+                            state.item_entry = itemEntry;
+
                         if (needsTier)
                         {
                             uint8 mappedTier = GetItemTier(itemEntry);
@@ -96,10 +99,12 @@ namespace DarkChaos
                             state.tier_id = mappedTier;
                         }
 
-                        if (needsBase || needsName)
+                            if (needsBase || needsName)
                         {
                             if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
                             {
+                                    if (state.item_entry == 0)
+                                        state.item_entry = itemTemplate->ItemId;
                                 if (needsBase)
                                     state.base_item_level = itemTemplate->ItemLevel;
                                 if (needsName && !itemTemplate->Name1.empty())
@@ -115,6 +120,8 @@ namespace DarkChaos
                     {
                         if (Item* ownedItem = owner->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(state.item_guid)))
                         {
+                            if (state.item_entry == 0)
+                                state.item_entry = ownedItem->GetEntry();
                             if (state.tier_id == 0 || state.tier_id == TIER_INVALID)
                             {
                                 uint8 mappedTier = GetItemTier(ownedItem->GetEntry());
@@ -204,6 +211,23 @@ namespace DarkChaos
 
                     EnsureStateMetadata(*state, player_guid);
 
+                    uint8 old_level = state->upgrade_level;
+                    float old_multiplier = state->stat_multiplier;
+                    uint16 base_ilvl = state->base_item_level;
+                    uint16 old_ilvl = base_ilvl;
+                    if (old_level > 0)
+                    {
+                        old_ilvl = base_ilvl;
+                        for (uint8 level = 1; level <= old_level; ++level)
+                            old_ilvl += GetIlvlIncrease(state->tier_id, level);
+                    }
+                    else if (state->upgraded_item_level > 0)
+                    {
+                        old_ilvl = state->upgraded_item_level;
+                    }
+
+                    uint32 item_entry = state->item_entry;
+
                     uint8 tier = state->tier_id;
                     uint8 max_level = GetTierMaxLevel(tier);
                     if (state->upgrade_level >= max_level)
@@ -290,6 +314,36 @@ namespace DarkChaos
 
                     // Save to database
                     SaveItemUpgrade(item_guid);
+
+                    if (item_entry == 0)
+                    {
+                        QueryResult itemEntryResult = CharacterDatabase.Query(
+                            "SELECT itemEntry FROM item_instance WHERE guid = {}", item_guid);
+                        if (itemEntryResult)
+                            item_entry = itemEntryResult->Fetch()[0].Get<uint32>();
+                    }
+
+                    uint16 new_ilvl = state->upgraded_item_level;
+                    if (new_ilvl == 0 && state->base_item_level != 0)
+                    {
+                        new_ilvl = state->base_item_level;
+                        for (uint8 level = 1; level <= state->upgrade_level; ++level)
+                            new_ilvl += GetIlvlIncrease(state->tier_id, level);
+                    }
+
+                    float new_multiplier = state->stat_multiplier;
+                    uint32 log_timestamp = static_cast<uint32>(state->last_upgraded_at);
+
+                    CharacterDatabase.Execute(
+                        "INSERT INTO {} (player_guid, item_guid, item_id, upgrade_from, upgrade_to, essence_cost, token_cost, "
+                        "base_ilvl, old_ilvl, new_ilvl, old_stat_multiplier, new_stat_multiplier, timestamp, season_id) "
+                        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {:.6f}, {:.6f}, {}, {})",
+                        ITEM_UPGRADE_LOG_TABLE,
+                        state->player_guid, state->item_guid, item_entry,
+                        static_cast<uint32>(old_level), static_cast<uint32>(state->upgrade_level),
+                        essence_cost, token_cost, base_ilvl, old_ilvl, new_ilvl,
+                        static_cast<double>(old_multiplier), static_cast<double>(new_multiplier),
+                        log_timestamp, state->season);
 
                     // Award artifact mastery points for Phase 4B progression system
                     uint32 mastery_points = 0;

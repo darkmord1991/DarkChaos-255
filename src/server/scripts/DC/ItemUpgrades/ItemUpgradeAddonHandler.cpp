@@ -28,6 +28,29 @@
 
 using Acore::ChatCommands::ChatCommandBuilder;
 using Acore::ChatCommands::Console;
+using DarkChaos::ItemUpgrade::ITEM_UPGRADES_TABLE;
+using DarkChaos::ItemUpgrade::ITEM_UPGRADE_LOG_TABLE;
+
+namespace
+{
+    // fmt treats braces as control characters; double them before formatting dynamic strings.
+    void EscapeFmtBraces(std::string& text)
+    {
+        size_t pos = 0;
+        while ((pos = text.find('{', pos)) != std::string::npos)
+        {
+            text.insert(pos, "{");
+            pos += 2;
+        }
+
+        pos = 0;
+        while ((pos = text.find('}', pos)) != std::string::npos)
+        {
+            text.insert(pos, "}");
+            pos += 2;
+        }
+    }
+}
 
 class ItemUpgradeAddonCommands : public CommandScript
 {
@@ -261,6 +284,7 @@ private:
 
             // Escape item name to prevent SQL injection and handle apostrophes
             CharacterDatabase.EscapeString(baseItemName);
+            EscapeFmtBraces(baseItemName);
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
@@ -297,6 +321,13 @@ private:
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Target level must exceed current level");
                 return true;
             }
+
+            float oldStatMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                static_cast<uint8>(currentLevel), static_cast<uint8>(tier));
+            uint16 oldIlvl = baseItemLevel;
+            if (currentLevel > 0)
+                oldIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                    baseItemLevel, static_cast<uint8>(currentLevel), static_cast<uint8>(tier));
 
             uint32 nextLevel = currentLevel + 1;
             QueryResult costResult = WorldDatabase.Query(
@@ -359,6 +390,10 @@ private:
             // Compute upgraded stats for persistence
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                 static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+            uint16 newIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                baseItemLevel, static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+            if (targetLevel == 0)
+                newIlvl = baseItemLevel;
 
             uint64 now = static_cast<uint64>(std::time(nullptr));
             uint32 season = 1; // TODO: make configurable
@@ -379,6 +414,18 @@ private:
                 ITEM_UPGRADES_TABLE,
                 itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
                 statMultiplier, now, now, season, now
+            );
+
+            CharacterDatabase.Execute(
+                "INSERT INTO {} (player_guid, item_guid, item_id, upgrade_from, upgrade_to, essence_cost, token_cost, "
+                "base_ilvl, old_ilvl, new_ilvl, old_stat_multiplier, new_stat_multiplier, timestamp, season_id) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {:.6f}, {:.6f}, {}, {})",
+                ITEM_UPGRADE_LOG_TABLE,
+                playerGuid, itemGUID, item->GetEntry(),
+                currentLevel, targetLevel, essenceNeeded, tokensNeeded,
+                baseItemLevel, oldIlvl, newIlvl,
+                static_cast<double>(oldStatMultiplier), static_cast<double>(statMultiplier),
+                static_cast<uint32>(now), season
             );
 
             // Send success response via SYSTEM chat

@@ -21,6 +21,8 @@
 #include <sstream>
 #include <iomanip>
 
+using DarkChaos::ItemUpgrade::ITEM_UPGRADES_TABLE;
+
 class ItemUpgradeNPC_Upgrader : public CreatureScript
 {
 public:
