@@ -47,6 +47,9 @@ namespace DarkChaos
         static const float STAT_MULTIPLIER_MAX_REGULAR = 1.5f;
         static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.75f;
 
+        // Centralize backing table name so SQL stays consistent with the deployed schema
+        inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";
+
         // =====================================================================
         // Upgrade Cost Structure
         // =====================================================================

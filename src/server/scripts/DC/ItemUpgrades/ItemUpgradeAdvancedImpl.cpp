@@ -58,8 +58,8 @@ public:
         // Get current upgrade level
         QueryResult result = CharacterDatabase.Query(
             "SELECT upgrade_level, essence_invested, tokens_invested "
-            "FROM dc_player_item_upgrades WHERE player_guid = {} AND item_guid = {}",
-            player_guid, item_guid);
+            "FROM {} WHERE player_guid = {} AND item_guid = {}",
+            ITEM_UPGRADES_TABLE, player_guid, item_guid);
         
         if (!result)
             return false;
@@ -85,11 +85,11 @@ public:
         
         // Reset item
         CharacterDatabase.Execute(
-            "UPDATE dc_player_item_upgrades "
+            "UPDATE {} "
             "SET upgrade_level = 0, stat_multiplier = 1.0, "
             "essence_invested = 0, tokens_invested = 0 "
             "WHERE player_guid = {} AND item_guid = {}",
-            player_guid, item_guid);
+            ITEM_UPGRADES_TABLE, player_guid, item_guid);
         
         // Record respec
         CharacterDatabase.Execute(
@@ -111,8 +111,8 @@ public:
         // Get all upgraded items
         QueryResult result = CharacterDatabase.Query(
             "SELECT item_guid, essence_invested, tokens_invested "
-            "FROM dc_player_item_upgrades WHERE player_guid = {} AND upgrade_level > 0",
-            player_guid);
+            "FROM {} WHERE player_guid = {} AND upgrade_level > 0",
+            ITEM_UPGRADES_TABLE, player_guid);
         
         if (!result)
             return false;
@@ -371,8 +371,8 @@ public:
         else if (ach->unlock_type == "MAX_LEVEL")
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_player_item_upgrades WHERE player_guid = {} AND upgrade_level = 15",
-                player_guid);
+                "SELECT COUNT(*) FROM {} WHERE player_guid = {} AND upgrade_level = 15",
+                ITEM_UPGRADES_TABLE, player_guid);
             return result ? result->Fetch()[0].Get<uint32>() : 0;
         }
         
@@ -427,10 +427,10 @@ public:
             "COUNT(DISTINCT u.item_guid), AVG(u.stat_multiplier), "
             "AVG(u.tier_id), "
             "SUM(u.essence_invested), SUM(u.tokens_invested) "
-            "FROM dc_player_item_upgrades u "
+            "FROM {} u "
             "INNER JOIN guild_member gm ON gm.guid = u.player_guid "
             "WHERE gm.guildid = {}",
-            guild_id);
+            ITEM_UPGRADES_TABLE, guild_id);
         
         if (result)
         {

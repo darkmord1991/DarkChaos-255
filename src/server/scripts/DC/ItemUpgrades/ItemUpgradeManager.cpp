@@ -447,8 +447,8 @@ namespace DarkChaos
                 QueryResult result = CharacterDatabase.Query(
                     "SELECT item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
                     "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
-                    "FROM dc_player_item_upgrades WHERE item_guid = {}",
-                    item_guid);
+                    "FROM {} WHERE item_guid = {}",
+                    ITEM_UPGRADES_TABLE, item_guid);
                 if (!result)
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
@@ -726,8 +726,8 @@ namespace DarkChaos
                 {
                     // Query for the highest tier among player's upgraded items
                     QueryResult result = CharacterDatabase.Query(
-                        "SELECT MAX(tier_id) FROM dc_player_item_upgrades WHERE player_guid = {}",
-                        player_guid);
+                        "SELECT MAX(tier_id) FROM {} WHERE player_guid = {}",
+                        ITEM_UPGRADES_TABLE, player_guid);
 
                     if (result && result->GetRowCount() > 0)
                     {
@@ -942,12 +942,13 @@ namespace DarkChaos
                 EscapeFmtBraces(baseName);
 
                 CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
+                    "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
                     "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                    "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}) "
+                    "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
                     "ON DUPLICATE KEY UPDATE "
                     "base_item_name = VALUES(base_item_name), upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
                     "stat_multiplier = {}, last_upgraded_at = {}",
+                    ITEM_UPGRADES_TABLE,
                     state->item_guid, state->player_guid, baseName,
                     static_cast<uint32>(state->tier_id), static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     state->essence_invested, state->stat_multiplier,

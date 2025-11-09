@@ -240,7 +240,7 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
     QueryResult result = CharacterDatabase.Query(
         "SELECT item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
         "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
-        "FROM dc_player_item_upgrades WHERE item_guid = {}", item_guid);
+        "FROM {} WHERE item_guid = {}", ITEM_UPGRADES_TABLE, item_guid);
     
     if (!result)
         return false;
@@ -269,9 +269,9 @@ bool ItemUpgradeState::SaveToDatabase() const
 
     // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
     CharacterDatabase.Execute(
-        "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, base_item_name, tier_id, upgrade_level, essence_invested, tokens_invested, "
+        "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, essence_invested, tokens_invested, "
         "stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-        "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}) "
+        "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
         "ON DUPLICATE KEY UPDATE "
         "base_item_name = VALUES(base_item_name), "
         "upgrade_level = VALUES(upgrade_level), "
@@ -279,6 +279,7 @@ bool ItemUpgradeState::SaveToDatabase() const
         "tokens_invested = VALUES(tokens_invested), "
         "stat_multiplier = VALUES(stat_multiplier), "
         "last_upgraded_at = VALUES(last_upgraded_at)",
+        ITEM_UPGRADES_TABLE,
         item_guid, player_guid, baseName, static_cast<uint32>(tier_id), static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
         stat_multiplier, static_cast<uint32>(first_upgraded_at), static_cast<uint32>(last_upgraded_at), season);
     

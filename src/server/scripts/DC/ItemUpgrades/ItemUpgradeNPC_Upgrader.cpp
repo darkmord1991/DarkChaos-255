@@ -409,7 +409,7 @@ private:
             "AVG(stat_multiplier), "
             "SUM(CASE WHEN upgrade_level = 15 THEN 1 ELSE 0 END), "
             "MAX(last_upgraded_at) "
-            "FROM dc_player_item_upgrades WHERE player_guid = {}", player_guid);
+            "FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
         
         if (result)
         {

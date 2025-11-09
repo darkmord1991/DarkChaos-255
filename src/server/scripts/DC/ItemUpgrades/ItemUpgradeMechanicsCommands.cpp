@@ -14,6 +14,7 @@
 #include "Chat.h"
 #include "Player.h"
 #include "ItemUpgradeMechanics.h"
+#include "ItemUpgradeManager.h"
 #include <sstream>
 #include <iomanip>
 
@@ -240,7 +241,7 @@ public:
         
         // Count items to reset
         QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_player_item_upgrades WHERE player_guid = {}", player_guid);
+            "SELECT COUNT(*) FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
         
         uint32 count = 0;
         if (result)
@@ -260,7 +261,7 @@ public:
         // For safety, require second confirmation
         // In a real implementation, would use player session flag
         
-        CharacterDatabase.Execute("DELETE FROM dc_player_item_upgrades WHERE player_guid = {}", player_guid);
+    CharacterDatabase.Execute("DELETE FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
         
         handler->PSendSysMessage("|cff00ff00Successfully reset %u items for %s|r", 
             count, target->GetName().c_str());

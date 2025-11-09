@@ -49,10 +49,10 @@ public:
         {
             // Reset all item upgrades
             CharacterDatabase.Execute(
-                "UPDATE dc_player_item_upgrades SET upgrade_level = 0, "
+                "UPDATE {} SET upgrade_level = 0, "
                 "stat_multiplier = 1.0 "
                 "WHERE player_guid = {}",
-                player_guid);
+                ITEM_UPGRADES_TABLE, player_guid);
         }
         
         // Calculate carryover currencies
@@ -96,7 +96,7 @@ public:
     {
         // Get all players with upgrade data
         QueryResult result = CharacterDatabase.Query(
-            "SELECT DISTINCT player_guid FROM dc_player_item_upgrades");
+            "SELECT DISTINCT player_guid FROM {}", ITEM_UPGRADES_TABLE);
         
         if (!result)
             return;

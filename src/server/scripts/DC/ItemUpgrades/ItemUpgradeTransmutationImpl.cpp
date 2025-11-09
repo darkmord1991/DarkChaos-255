@@ -250,8 +250,8 @@ namespace DarkChaos
                 for (const auto& [item_guid, min_level] : recipe.input_upgrades)
                 {
                     QueryResult upgrade_result = CharacterDatabase.Query(
-                        "SELECT upgrade_level FROM dc_player_item_upgrades "
-                        "WHERE item_guid = {} AND player_guid = {}", item_guid, player_guid);
+                        "SELECT upgrade_level FROM {} "
+                        "WHERE item_guid = {} AND player_guid = {}", ITEM_UPGRADES_TABLE, item_guid, player_guid);
 
                     if (!upgrade_result || upgrade_result->Fetch()[0].Get<uint8>() < min_level)
                     {

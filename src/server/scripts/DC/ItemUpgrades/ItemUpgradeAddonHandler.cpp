@@ -5,6 +5,7 @@
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include "ItemUpgradeMechanics.h"
+#include "ItemUpgradeManager.h"
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -166,8 +167,8 @@ private:
 
             QueryResult result = CharacterDatabase.Query(
                 "SELECT upgrade_level, tier_id, stat_multiplier "
-                "FROM dc_player_item_upgrades WHERE item_guid = {}",
-                itemGUID
+                "FROM {} WHERE item_guid = {}",
+                ITEM_UPGRADES_TABLE, itemGUID
             );
 
             uint32 upgradeLevel = 0;
@@ -263,8 +264,8 @@ private:
 
             // Get current upgrade state
             QueryResult stateResult = CharacterDatabase.Query(
-                "SELECT upgrade_level, tier_id FROM dc_player_item_upgrades WHERE item_guid = {}",
-                itemGUID
+                "SELECT upgrade_level, tier_id FROM {} WHERE item_guid = {}",
+                ITEM_UPGRADES_TABLE, itemGUID
             );
 
             uint32 currentLevel = 0;
@@ -364,7 +365,7 @@ private:
 
             // Update item state (include all non-nullable columns)
             CharacterDatabase.Execute(
-                "INSERT INTO dc_player_item_upgrades "
+                "INSERT INTO {} "
                 "(item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
                 "stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
                 "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
@@ -375,6 +376,7 @@ private:
                 " essence_invested = essence_invested + VALUES(essence_invested),"
                 " stat_multiplier = VALUES(stat_multiplier),"
                 " last_upgraded_at = {}",
+                ITEM_UPGRADES_TABLE,
                 itemGUID, playerGuid, baseItemName, tier, targetLevel, tokensNeeded, essenceNeeded,
                 statMultiplier, now, now, season, now
             );
