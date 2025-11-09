@@ -362,6 +362,42 @@ private:
             if (essenceNeeded > 0)
                 player->DestroyItemCount(essenceId, essenceNeeded, true);
 
+            // Determine base entry
+            uint32 currentEntry = item->GetEntry();
+            uint32 baseEntry = currentEntry;
+            if (currentLevel > 0)
+            {
+                QueryResult baseResult = WorldDatabase.Query("SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
+                if (baseResult)
+                    baseEntry = (*baseResult)[0].Get<uint32>();
+            }
+
+            // Get clone entry for target level
+            QueryResult cloneResult = WorldDatabase.Query("SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}", baseEntry, tier, targetLevel);
+            if (!cloneResult)
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Clone item not found");
+                return true;
+            }
+            uint32 cloneEntry = (*cloneResult)[0].Get<uint32>();
+
+            // Replace item with clone
+            player->DestroyItem(bag, slot, true);
+            ItemPosCountVec dest;
+            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, cloneEntry, 1);
+            if (msg != EQUIP_ERR_OK)
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Cannot store upgraded item");
+                return true;
+            }
+            Item* newItem = player->StoreNewItem(dest, cloneEntry, true);
+            if (!newItem)
+            {
+                SendAddonResponse(player, "DCUPGRADE_ERROR:Failed to create upgraded item");
+                return true;
+            }
+            uint32 newItemGUID = newItem->GetGUID().GetCounter();
+
             // Compute upgraded stats for persistence
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                 static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
@@ -375,15 +411,14 @@ private:
 
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
             {
-                DarkChaos::ItemUpgrade::ItemUpgradeState* state = mgr->GetItemUpgradeState(itemGUID);
+                DarkChaos::ItemUpgrade::ItemUpgradeState* state = mgr->GetItemUpgradeState(newItemGUID);
+                if (!state)
+                    state = mgr->CreateItemUpgradeState(newItemGUID);
                 if (state)
                 {
-                    if (state->player_guid == 0)
-                        state->player_guid = playerGuid;
-                    if (state->item_guid == 0)
-                        state->item_guid = itemGUID;
                     state->player_guid = playerGuid;
-                    state->item_entry = item->GetEntry();
+                    state->item_guid = newItemGUID;
+                    state->item_entry = cloneEntry;
                     state->base_item_name = baseItemNameRaw;
                     state->tier_id = static_cast<uint8>(tier);
                     state->upgrade_level = static_cast<uint8>(targetLevel);
@@ -397,7 +432,7 @@ private:
                     state->last_upgraded_at = static_cast<time_t>(now);
                     state->season = season;
 
-                    mgr->SaveItemUpgrade(itemGUID);
+                    mgr->SaveItemUpgrade(newItemGUID);
                 }
             }
 
@@ -406,18 +441,16 @@ private:
                 "base_ilvl, old_ilvl, new_ilvl, old_stat_multiplier, new_stat_multiplier, timestamp, season_id) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {:.6f}, {:.6f}, {}, {})",
                 ITEM_UPGRADE_LOG_TABLE,
-                playerGuid, itemGUID, item->GetEntry(),
+                playerGuid, newItemGUID, cloneEntry,
                 currentLevel, targetLevel, essenceNeeded, tokensNeeded,
                 baseItemLevel, oldIlvl, newIlvl,
                 static_cast<double>(oldStatMultiplier), static_cast<double>(statMultiplier),
                 static_cast<uint32>(now), season
             );
 
-            DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
-
             // Send success response via SYSTEM chat
             std::ostringstream successMsg;
-            successMsg << "DCUPGRADE_SUCCESS:" << itemGUID << ":" << targetLevel;
+            successMsg << "DCUPGRADE_SUCCESS:" << newItemGUID << ":" << targetLevel;
             SendAddonResponse(player, successMsg.str());
 
             return true;
