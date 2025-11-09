@@ -412,8 +412,6 @@ private:
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
             {
                 DarkChaos::ItemUpgrade::ItemUpgradeState* state = mgr->GetItemUpgradeState(newItemGUID);
-                if (!state)
-                    state = mgr->CreateItemUpgradeState(newItemGUID);
                 if (state)
                 {
                     state->player_guid = playerGuid;
