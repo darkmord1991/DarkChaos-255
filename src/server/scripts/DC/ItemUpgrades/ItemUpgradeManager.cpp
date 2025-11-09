@@ -739,10 +739,31 @@ namespace DarkChaos
 
             uint8 GetItemTier(uint32 item_id) override
             {
+                // First check explicit database mapping
                 auto it = item_to_tier.find(item_id);
                 if (it != item_to_tier.end())
                     return it->second;
 
+                // Fallback: Get item template and determine tier by item level
+                ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id);
+                if (itemTemplate)
+                {
+                    uint16 itemLevel = itemTemplate->ItemLevel;
+
+                    // Determine tier based on item level ranges (general item id check)
+                    if (itemLevel < 213)
+                        return TIER_LEVELING;      // T1: < 213 ilevel
+                    else if (itemLevel < 355)
+                        return TIER_HEROIC;       // T2: 213-354 ilevel
+                    else if (itemLevel < 370)
+                        return TIER_RAID;         // T3: 355-369 ilevel
+                    else if (itemLevel < 385)
+                        return TIER_MYTHIC;       // T4: 370-384 ilevel
+                    else
+                        return TIER_ARTIFACT;     // T5: >= 385 ilevel
+                }
+
+                // If item template not found, return invalid
                 return TIER_INVALID;
             }
 
