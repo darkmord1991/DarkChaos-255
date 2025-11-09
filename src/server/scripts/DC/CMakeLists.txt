@@ -86,6 +86,7 @@ set(SCRIPTS_DC_ItemUpgrade_Phase3
     ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
     ItemUpgrades/ItemUpgradeNPC_Curator.cpp
     ItemUpgrades/ItemUpgradeTokenHooks.cpp
+    ItemUpgrades/ItemUpgradeGMCommands.cpp
 )
 
 # Phase 4A: Item Upgrade Mechanics
@@ -94,6 +95,8 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
     ItemUpgrades/ItemUpgradeNPC_Upgrader.cpp
     ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
+    ItemUpgrades/ItemUpgradeStatApplication.cpp
+    ItemUpgrades/ItemUpgradeProcScaling.cpp
 )
 
 # Phase 4B: Progression System (Artifact Mastery)
@@ -114,6 +117,7 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4D
 # Phase 4E: Client Communication
 set(SCRIPTS_DC_ItemUpgrade_Phase4E
     ItemUpgrades/ItemUpgradeCommunication.cpp
+    ItemUpgrades/ItemUpgradeAddonHandler.cpp
 )
 
 # Phase 4F: Transmutation System
