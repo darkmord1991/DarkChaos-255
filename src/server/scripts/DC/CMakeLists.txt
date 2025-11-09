@@ -93,7 +93,6 @@ set(SCRIPTS_DC_ItemUpgrade_Phase3
 set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeManager.cpp
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
-    ItemUpgrades/ItemUpgradeNPC_Upgrader.cpp
     ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
     ItemUpgrades/ItemUpgradeStatApplication.cpp
     ItemUpgrades/ItemUpgradeProcScaling.cpp

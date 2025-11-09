@@ -51,7 +51,6 @@ void AddSC_ItemUpgradeAddonHandler();  // Addon communication handler - renamed 
 // ItemUpgrade addon communication moved to Eluna: Custom/Eluna scripts/itemupgrade_communication.lua
 void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeMechanics(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Upgrader.cpp
 void AddSC_ItemUpgradeProgression(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProgressionImpl.cpp
 void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
 void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
@@ -223,14 +222,6 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in curator");
     }
 
-    try {
-        AddSC_ItemUpgradeMechanics();
-        LOG_INFO("scripts", ">>   ✓ Upgrader NPC loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in mechanics");
-    }
     try {
         AddSC_ItemUpgradeProgression();
         LOG_INFO("scripts", ">>   ✓ Progression system loaded");

@@ -480,13 +480,39 @@ private:
 
             // Replace item with clone
             player->DestroyItem(bag, slot, true);
+
+            // Check if the original item was equipped
+            bool wasEquipped = (bag == INVENTORY_SLOT_BAG_0 && slot <= EQUIPMENT_SLOT_TABARD);
+
             ItemPosCountVec dest;
-            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, cloneEntry, 1);
-            if (msg != EQUIP_ERR_OK)
+            uint8 msg;
+
+            if (wasEquipped)
             {
-                SendAddonResponse(player, "DCUPGRADE_ERROR:Cannot store upgraded item");
-                return true;
+                // Try to place the upgraded item in the same equipment slot
+                msg = player->CanStoreNewItem(INVENTORY_SLOT_BAG_0, slot, dest, cloneEntry, 1);
+                if (msg != EQUIP_ERR_OK)
+                {
+                    // Cannot equip in same slot, try to find any equipment slot
+                    msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, cloneEntry, 1);
+                    if (msg != EQUIP_ERR_OK)
+                    {
+                        SendAddonResponse(player, "DCUPGRADE_ERROR:Cannot store upgraded item");
+                        return true;
+                    }
+                }
             }
+            else
+            {
+                // Item was in inventory, store upgraded version in inventory
+                msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, cloneEntry, 1);
+                if (msg != EQUIP_ERR_OK)
+                {
+                    SendAddonResponse(player, "DCUPGRADE_ERROR:Cannot store upgraded item");
+                    return true;
+                }
+            }
+
             Item* newItem = player->StoreNewItem(dest, cloneEntry, true);
             if (!newItem)
             {
