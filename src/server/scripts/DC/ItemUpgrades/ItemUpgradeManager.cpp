@@ -18,6 +18,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
+#include "StringFormat.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -49,6 +50,7 @@ namespace DarkChaos
                 bool needsOwner = state.player_guid == 0;
                 bool needsTier = state.tier_id == 0 || state.tier_id == TIER_INVALID;
                 bool needsBase = state.base_item_level == 0;
+                bool needsName = state.base_item_name.empty();
 
                 if (needsOwner || needsTier || needsBase)
                 {
@@ -73,15 +75,20 @@ namespace DarkChaos
                             state.tier_id = mappedTier;
                         }
 
-                        if (needsBase)
+                        if (needsBase || needsName)
                         {
                             if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
-                                state.base_item_level = itemTemplate->ItemLevel;
+                            {
+                                if (needsBase)
+                                    state.base_item_level = itemTemplate->ItemLevel;
+                                if (needsName && !itemTemplate->Name1.empty())
+                                    state.base_item_name = itemTemplate->Name1;
+                            }
                         }
                     }
                 }
 
-                if ((state.tier_id == 0 || state.tier_id == TIER_INVALID || state.base_item_level == 0) && state.player_guid != 0)
+                if ((state.tier_id == 0 || state.tier_id == TIER_INVALID || state.base_item_level == 0 || state.base_item_name.empty()) && state.player_guid != 0)
                 {
                     if (Player* owner = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(state.player_guid)))
                     {
@@ -95,10 +102,15 @@ namespace DarkChaos
                                 state.tier_id = mappedTier;
                             }
 
-                            if (state.base_item_level == 0)
+                            if (state.base_item_level == 0 || state.base_item_name.empty())
                             {
                                 if (const ItemTemplate* itemTemplate = ownedItem->GetTemplate())
-                                    state.base_item_level = itemTemplate->ItemLevel;
+                                {
+                                    if (state.base_item_level == 0)
+                                        state.base_item_level = itemTemplate->ItemLevel;
+                                    if (state.base_item_name.empty() && !itemTemplate->Name1.empty())
+                                        state.base_item_name = itemTemplate->Name1;
+                                }
                             }
                         }
                     }
@@ -106,6 +118,9 @@ namespace DarkChaos
 
                 if (state.tier_id == 0 || state.tier_id == TIER_INVALID)
                     state.tier_id = TIER_LEVELING;
+
+                if (state.base_item_name.empty())
+                    state.base_item_name = "Unknown Item";
 
                 if (state.base_item_level != 0)
                 {
@@ -409,7 +424,7 @@ namespace DarkChaos
 
                 // Load from database
                 QueryResult result = CharacterDatabase.Query(
-                    "SELECT item_guid, player_guid, tier_id, upgrade_level, tokens_invested, essence_invested, "
+                    "SELECT item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
                     "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
                     "FROM dc_player_item_upgrades WHERE item_guid = {}",
                     item_guid);
@@ -431,14 +446,15 @@ namespace DarkChaos
                 Field* fields = result->Fetch();
                 state.item_guid = fields[0].Get<uint32>();
                 state.player_guid = fields[1].Get<uint32>();
-                state.tier_id = fields[2].Get<uint8>();
-                state.upgrade_level = fields[3].Get<uint8>();
-                state.tokens_invested = fields[4].Get<uint32>();
-                state.essence_invested = fields[5].Get<uint32>();
-                state.stat_multiplier = fields[6].Get<float>();
-                state.first_upgraded_at = fields[7].Get<time_t>();
-                state.last_upgraded_at = fields[8].Get<time_t>();
-                state.season = fields[9].Get<uint32>();
+                state.base_item_name = fields[2].Get<std::string>();
+                state.tier_id = fields[3].Get<uint8>();
+                state.upgrade_level = fields[4].Get<uint8>();
+                state.tokens_invested = fields[5].Get<uint32>();
+                state.essence_invested = fields[6].Get<uint32>();
+                state.stat_multiplier = fields[7].Get<float>();
+                state.first_upgraded_at = fields[8].Get<time_t>();
+                state.last_upgraded_at = fields[9].Get<time_t>();
+                state.season = fields[10].Get<uint32>();
 
                 EnsureStateMetadata(state, state.player_guid);
 
@@ -897,15 +913,23 @@ namespace DarkChaos
                 if (!state)
                     return;
 
+                if (state->base_item_name.empty())
+                    EnsureStateMetadata(*state, state->player_guid);
+
+                std::string baseName = state->base_item_name;
+                CharacterDatabase.EscapeString(baseName);
+                Acore::String::Replace(baseName, "{", "{{");
+                Acore::String::Replace(baseName, "}", "}}");
+
                 CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, tier_id, upgrade_level, "
+                    "INSERT INTO dc_player_item_upgrades (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
                     "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
+                    "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}) "
                     "ON DUPLICATE KEY UPDATE "
-                    "upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
+                    "base_item_name = VALUES(base_item_name), upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
                     "stat_multiplier = {}, last_upgraded_at = {}",
-                    state->item_guid, state->player_guid, static_cast<uint32>(state->tier_id),
-                    static_cast<uint32>(state->upgrade_level), state->tokens_invested,
+                    state->item_guid, state->player_guid, baseName,
+                    static_cast<uint32>(state->tier_id), static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     state->essence_invested, state->stat_multiplier,
                     static_cast<uint32>(state->first_upgraded_at), static_cast<uint32>(state->last_upgraded_at), state->season,
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,

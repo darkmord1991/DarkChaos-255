@@ -13,6 +13,7 @@
 #include "Define.h"
 #include <map>
 #include <memory>
+#include <string>
 
 namespace DarkChaos
 {
@@ -76,6 +77,7 @@ namespace DarkChaos
         {
             uint32 item_guid;                    // Item GUID from item_instance
             uint32 player_guid;                  // Player GUID
+            std::string base_item_name;          // Cached display name
             uint8 tier_id;                       // Item tier id (1-5)
             uint8 upgrade_level;                 // Current upgrade level (0 = base, 1-15 = upgraded)
             uint32 essence_invested;             // Total essence invested
@@ -87,7 +89,7 @@ namespace DarkChaos
             time_t last_upgraded_at;             // When this item was last upgraded
             uint32 season;                       // Season this upgrade belongs to
 
-            ItemUpgradeState() : item_guid(0), player_guid(0), tier_id(0), upgrade_level(0),
+            ItemUpgradeState() : item_guid(0), player_guid(0), base_item_name(), tier_id(0), upgrade_level(0),
                                  essence_invested(0), tokens_invested(0),
                                  base_item_level(0), upgraded_item_level(0),
                                  stat_multiplier(1.0f),
