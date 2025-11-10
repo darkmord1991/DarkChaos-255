@@ -70,7 +70,7 @@ bool FlightPathHelper::CalculateAndQueue(Position const& dest, std::deque<Positi
         return false;
 
     outQueue.clear();
-    constexpr float minDistSq = WAYPOINT_MIN_DISTANCE_SQ;
+    constexpr float minDistSq = Pathfinding::WAYPOINT_MIN_DISTANCE_SQ;
     for (auto const& p : tmp)
     {
         float dx = owner->GetPositionX() - p.GetPositionX();
