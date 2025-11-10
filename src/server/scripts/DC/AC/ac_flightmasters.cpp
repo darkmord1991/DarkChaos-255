@@ -1890,13 +1890,6 @@ public:
 
 } // namespace DC_AC_Flight
 
-void AddSC_flightmasters()
-{
-    DC_AC_Flight::RegisterScripts();
-    // Also register the GM debug player script (class is defined in the DC_AC_Flight namespace)
-    new DC_AC_Flight::AC_Flightmaster_DebugCommands();
-}
-
 // Define per-node config defaults (runtime-initialized)
 const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
     std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
@@ -1907,6 +1900,13 @@ const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flig
         v[kIndex_acfm15] = { 2u, 6.0f };
     return v;
 }();
+
+void AddSC_flightmasters()
+{
+    DC_AC_Flight::RegisterScripts();
+    // Also register the GM debug player script (class is defined in the DC_AC_Flight namespace)
+    new DC_AC_Flight::AC_Flightmaster_DebugCommands();
+}
 
 // debug commands are instantiated in AddSC_flightmasters()
 
