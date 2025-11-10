@@ -118,6 +118,12 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     bool _started = false;           // whether the flight has started
     FlightRouteMode _routeMode = ROUTE_TOUR; // current route mode
 
+    // Per-node override configuration
+    struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
+
+    // Default per-node config: only acfm57 needs more aggressive handling so far
+    static const std::vector<NodeConfig> kPerNodeConfigDefaults;
+
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
 
     void SetData(uint32 id, uint32 value) override
@@ -1101,10 +1107,6 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     static constexpr uint32 kMicroNudgeRateLimitMs = 10000u; // default 10s
     // Number of failures on a node before escalation (force bypass/smart-path)
     static constexpr uint8 kFailEscalationThreshold = 3;
-    // Per-node override configuration
-    struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
-    // Default per-node config: only acfm57 needs more aggressive handling so far
-    static const std::vector<NodeConfig> kPerNodeConfigDefaults;
     // Per-instance copy of per-node config so we can tune active taxis at runtime
     std::vector<NodeConfig> _perNodeConfig;
     // Per-node persistent failure counters
