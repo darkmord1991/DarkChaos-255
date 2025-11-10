@@ -30,7 +30,7 @@ bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Posi
         
         // Increase clearance over steep terrain or obstacles
         if (p.z > groundZ + 10.0f)
-            clearance = MAX_FLIGHT_CLEARANCE;
+            clearance = Pathfinding::MAX_FLIGHT_CLEARANCE;
         
         out.emplace_back(p.x, p.y, groundZ + clearance, 0.0f);
     }

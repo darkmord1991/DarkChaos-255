@@ -121,7 +121,7 @@ class ac_gryphon_taxi_800011AI : public VehicleAI
 
     // Default per-node config: only acfm57 needs more aggressive handling so far
     inline static const std::vector<NodeConfig> kPerNodeConfigDefaults = [](){
-        std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+        std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { Recovery::FAIL_ESCALATION_THRESHOLD, 0.0f });
         if (kIndex_acfm57 < kPathLength)
             v[kIndex_acfm57] = { 2u, 12.0f };
         // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
