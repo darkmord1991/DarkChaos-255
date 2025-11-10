@@ -178,9 +178,9 @@ namespace DungeonQuestHelper
     {
         ClearGossipMenuFor(player);
 
-        uint32 totalQuests = DungeonQuestHelper::GetTotalQuestCompletions(player);
-        uint32 dailyQuests = DungeonQuestHelper::GetDailyQuestCompletions(player);
-        uint32 weeklyQuests = DungeonQuestHelper::GetWeeklyQuestCompletions(player);
+        uint32 totalQuests = GetTotalQuestCompletions(player);
+        uint32 dailyQuests = GetDailyQuestCompletions(player);
+        uint32 weeklyQuests = GetWeeklyQuestCompletions(player);
 
         std::ostringstream stats;
         stats << "Your Dungeon Quest Statistics:\n\n";

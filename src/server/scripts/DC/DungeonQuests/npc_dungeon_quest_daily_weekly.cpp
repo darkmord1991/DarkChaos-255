@@ -104,18 +104,10 @@ private:
     void ResetWeeklyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}", 
             player->GetGUID().GetCounter(), questId
         );
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to reset weekly quest for GUID {} (quest: {})",
-                player->GetGUID().ToString(), questId);
-            return;
-        }
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A weekly dungeon quest is now available!");

@@ -196,18 +196,11 @@ public:
         if (!player)
             return;
 
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_progress (guid, dungeon_id, quest_id, completion_count, last_update) "
             "VALUES ({}, {}, {}, 1, NOW()) "
             "ON DUPLICATE KEY UPDATE completion_count = completion_count + 1, last_update = NOW()",
             player->GetGUID().GetCounter(), dungeonId, questId);
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to update dungeon progress for GUID {} (dungeon: {}, quest: {})",
-                player->GetGUID().ToString(), dungeonId, questId);
-        }
     }
 
     // Log quest completion
