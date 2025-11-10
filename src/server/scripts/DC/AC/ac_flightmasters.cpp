@@ -462,7 +462,9 @@ public:
         _routeMode = ROUTE_TOUR;
         
         me->DespawnOrUnsummon(1000ms);
-    }    void UpdateAI(uint32 diff) override
+    }
+
+    void UpdateAI(uint32 diff) override
     {
         // Drive scheduled tasks
         _scheduler.Update(diff);
