@@ -771,7 +771,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (!finalPos)
                     {
                         // Emergency landing if final position invalid
-                        EmergencyLanding::TeleportToRouteDestination(me, GetCachedPassenger(), _routeMode);
+                        auto destination = EmergencyLandingSystem::GetRouteDestination(_routeMode);
+                        Position safePos = destination.value_or(
+                            EmergencyLandingSystem::FindNearestSafeLanding(
+                                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ()));
+                        
+                        me->NearTeleportTo(safePos.GetPositionX(), safePos.GetPositionY(), 
+                                         safePos.GetPositionZ(), safePos.GetOrientation());
+                        if (Player* p = GetCachedPassenger())
+                            p->NearTeleportTo(safePos.GetPositionX(), safePos.GetPositionY(), 
+                                            safePos.GetPositionZ(), safePos.GetOrientation());
                         DismountAndDespawn();
                         return;
                     }
@@ -882,7 +891,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (!destPos)
                 {
                     // Emergency landing if destination invalid
-                    EmergencyLanding::TeleportToRouteDestination(me, GetCachedPassenger(), _routeMode);
+                    auto dest = EmergencyLandingSystem::GetRouteDestination(_routeMode);
+                    if (dest)
+                    {
+                        me->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                        if (Player* p = GetCachedPassenger())
+                            p->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                    }
                     DismountAndDespawn();
                     return;
                 }
@@ -960,7 +975,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!pos)
         {
             // Emergency landing if waypoint invalid
-            EmergencyLanding::TeleportToRouteDestination(me, GetCachedPassenger(), _routeMode);
+            auto dest = EmergencyLandingSystem::GetRouteDestination(_routeMode);
+            if (dest)
+            {
+                me->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                if (Player* p = GetCachedPassenger())
+                    p->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+            }
             DismountAndDespawn();
             return;
         }
@@ -1112,7 +1133,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!destPos)
         {
             // Emergency landing if waypoint invalid
-            EmergencyLanding::TeleportToRouteDestination(me, GetCachedPassenger(), _routeMode);
+            auto dest = EmergencyLandingSystem::GetRouteDestination(_routeMode);
+            if (dest)
+            {
+                me->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                if (Player* p = GetCachedPassenger())
+                    p->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+            }
             DismountAndDespawn();
             return;
         }
@@ -1540,7 +1567,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     if (!fallbackPos)
                     {
                         // Ultimate fallback - emergency landing
-                        EmergencyLanding::TeleportToRouteDestination(me, GetCachedPassenger(), _routeMode);
+                        auto dest = EmergencyLandingSystem::GetRouteDestination(_routeMode);
+                        if (dest)
+                        {
+                            me->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                            if (Player* p = GetCachedPassenger())
+                                p->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                        }
                         DismountAndDespawn();
                         return;
                     }

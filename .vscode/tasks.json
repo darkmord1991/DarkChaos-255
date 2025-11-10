@@ -64,15 +64,15 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"apps/git_tools/sync-and-build.ps1",
+				"apps/git_tools/ssh-sync-and-build.ps1",
 				"-RemoteUser",
 				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
+				"-RemoteHost",
+				"${input:remoteHost}",
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-PrivateKeyPath",
+				"${input:sshKeyPath}"
 			],
 			"group": {
 				"kind": "build",
@@ -222,15 +222,15 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"apps/git_tools/sync-and-build.ps1",
+				"apps/git_tools/ssh-sync-and-build.ps1",
 				"-RemoteUser",
 				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
+				"-RemoteHost",
+				"${input:remoteHost}",
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-PrivateKeyPath",
+				"${input:sshKeyPath}"
 			],
 			"isBackground": false,
 			"problemMatcher": [
@@ -254,15 +254,15 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"apps/git_tools/sync-and-build.ps1",
+				"apps/git_tools/ssh-sync-and-build.ps1",
 				"-RemoteUser",
 				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
+				"-RemoteHost",
+				"${input:remoteHost}",
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-PrivateKeyPath",
+				"${input:sshKeyPath}"
 			],
 			"isBackground": false,
 			"problemMatcher": [
@@ -286,15 +286,15 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"apps/git_tools/sync-and-build.ps1",
+				"apps/git_tools/ssh-sync-and-build.ps1",
 				"-RemoteUser",
 				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
+				"-RemoteHost",
+				"${input:remoteHost}",
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-PrivateKeyPath",
+				"${input:sshKeyPath}"
 			],
 			"isBackground": false,
 			"problemMatcher": [
@@ -318,15 +318,15 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"apps/git_tools/sync-and-build.ps1",
+				"apps/git_tools/ssh-sync-and-build.ps1",
 				"-RemoteUser",
 				"${input:remoteUser}",
-				"-RemotePassword",
-				"${input:remotePassword}",
+				"-RemoteHost",
+				"${input:remoteHost}",
 				"-RemoteRepoPath",
 				"${input:remoteRepoPath}",
-				"-HostKey",
-				"${input:remoteHostKey}"
+				"-PrivateKeyPath",
+				"${input:sshKeyPath}"
 			],
 			"isBackground": false,
 			"group": "build"
@@ -357,10 +357,10 @@
 			"default": "wowcore"
 		},
 		{
-			"id": "remotePassword",
+			"id": "remoteHost",
 			"type": "promptString",
-			"description": "SSH password for remote build host",
-			"password": true
+			"description": "IP address or hostname of remote build host",
+			"default": "192.168.178.45"
 		},
 		{
 			"id": "remoteRepoPath",
@@ -369,10 +369,10 @@
 			"default": "/home/wowcore"
 		},
 		{
-			"id": "remoteHostKey",
+			"id": "sshKeyPath",
 			"type": "promptString",
-			"description": "Optional SSH host key fingerprint to pin (leave blank to skip)",
-			"default": ""
+			"description": "Path to SSH private key file",
+			"default": "C:\\Users\\flori\\.ssh\\id_ed25519"
 		}
 	]
 }
