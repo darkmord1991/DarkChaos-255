@@ -171,7 +171,7 @@ public:
             return it->second;
 
         // Query from database - guid is uint32 so SQL injection is not possible
-        QueryResult result = WorldDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
         uint32 level = 0;
         if (result)
         {
