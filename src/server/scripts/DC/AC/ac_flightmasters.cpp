@@ -92,6 +92,9 @@ enum GossipAction : uint32
 
 // Data and helpers moved to ac_flightmasters_data.h
 
+// Per-node override configuration
+struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
+
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
 class ac_gryphon_taxi_800011AI : public VehicleAI
 {
@@ -117,9 +120,6 @@ class ac_gryphon_taxi_800011AI : public VehicleAI
     bool _isLanding = false;         // whether the gryphon is currently landing
     bool _started = false;           // whether the flight has started
     FlightRouteMode _routeMode = ROUTE_TOUR; // current route mode
-
-    // Per-node override configuration
-    struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
 
     // Default per-node config: only acfm57 needs more aggressive handling so far
     static const std::vector<NodeConfig> kPerNodeConfigDefaults;
@@ -1854,7 +1854,7 @@ public:
             }
             // Update global defaults vector (affects subsequent flights / instances reading defaults)
             // We intentionally allow small race here; it's a tuning helper, not a strict API.
-            const_cast<ac_gryphon_taxi_800011AI::NodeConfig&>(ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
+            const_cast<NodeConfig&>(ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node {}: escalation={} extraZ={:.1f} (applies to new flights/instances).", idx, esc, extraZ);
             // Also update any active taxi instances near the player (apply instantly)
             uint32 updated = 0;
@@ -1891,8 +1891,8 @@ public:
 } // namespace DC_AC_Flight
 
 // Define per-node config defaults (runtime-initialized)
-const std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
-    std::vector<DC_AC_Flight::ac_gryphon_taxi_800011AI::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+const std::vector<DC_AC_Flight::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
+    std::vector<DC_AC_Flight::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
     if (kIndex_acfm57 < kPathLength)
         v[kIndex_acfm57] = { 2u, 12.0f };
     // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
