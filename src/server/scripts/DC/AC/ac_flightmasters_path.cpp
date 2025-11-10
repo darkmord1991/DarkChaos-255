@@ -46,7 +46,7 @@ bool FlightPathHelper::CalculateSmartPathForObject(WorldObject const* source, Po
     std::unique_ptr<PathGenerator> pathGen = std::make_unique<PathGenerator>(source);
     pathGen->SetUseStraightPath(false);
     pathGen->SetUseRaycast(true);
-    pathGen->SetPathLengthLimit(PATH_LENGTH_LIMIT);
+    pathGen->SetPathLengthLimit(Pathfinding::PATH_LENGTH_LIMIT);
 
     bool success = pathGen->CalculatePath(dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), true);
     if (!success)
