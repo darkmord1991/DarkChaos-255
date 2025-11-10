@@ -15,6 +15,7 @@
 #include "WorldSession.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
+#include "Log.h"
 
 class npc_dungeon_quest_daily_weekly : public PlayerScript
 {
@@ -91,7 +92,18 @@ private:
     void ResetDailyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-    CharacterDatabase.Execute("UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}", player->GetGUID().GetCounter(), questId);
+        bool success = CharacterDatabase.Execute(
+            "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}", 
+            player->GetGUID().GetCounter(), questId
+        );
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to reset daily quest for GUID {} (quest: {})",
+                player->GetGUID().ToString(), questId);
+            return;
+        }
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A daily dungeon quest is now available!");
@@ -100,7 +112,18 @@ private:
     void ResetWeeklyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-    CharacterDatabase.Execute("UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}", player->GetGUID().GetCounter(), questId);
+        bool success = CharacterDatabase.Execute(
+            "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}", 
+            player->GetGUID().GetCounter(), questId
+        );
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to reset weekly quest for GUID {} (quest: {})",
+                player->GetGUID().ToString(), questId);
+            return;
+        }
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A weekly dungeon quest is now available!");
@@ -109,7 +132,17 @@ private:
     void SaveQuestProgress(Player* player)
     {
         // Update last activity timestamp in player_dungeon_completion_stats
-    CharacterDatabase.Execute("UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}", uint32(time(nullptr)), player->GetGUID().GetCounter());
+        bool success = CharacterDatabase.Execute(
+            "UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}", 
+            uint32(time(nullptr)), player->GetGUID().GetCounter()
+        );
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to save quest progress for GUID {}",
+                player->GetGUID().ToString());
+        }
     }
 };
 

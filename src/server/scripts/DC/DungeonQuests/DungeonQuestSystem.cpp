@@ -23,23 +23,9 @@
 #include "World.h"
 #include "AchievementMgr.h"
 #include "Log.h"
+#include "DungeonQuestConstants.h"
 
-// Quest ID ranges
-constexpr uint32 QUEST_DAILY_MIN = 700101;
-constexpr uint32 QUEST_DAILY_MAX = 700150;  // UPDATED v4.0
-constexpr uint32 QUEST_WEEKLY_MIN = 700201;
-constexpr uint32 QUEST_WEEKLY_MAX = 700224; // UPDATED v4.0
-constexpr uint32 QUEST_DUNGEON_MIN = 700701;
-constexpr uint32 QUEST_DUNGEON_MAX = 700999;
-
-// Difficulty enumeration v4.0
-enum QuestDifficulty
-{
-    DIFFICULTY_NORMAL = 0,
-    DIFFICULTY_HEROIC = 1,
-    DIFFICULTY_MYTHIC = 2,
-    DIFFICULTY_MYTHIC_PLUS = 3
-};
+using namespace DungeonQuest;
 
 // Database helper functions
 class DungeonQuestDB
@@ -91,11 +77,8 @@ public:
         if (result)
         {
             Field* fields = result->Fetch();
-            std::string diff = fields[0].Get<std::string>();
-            
-            if (diff == "Heroic") return DIFFICULTY_HEROIC;
-            if (diff == "Mythic") return DIFFICULTY_MYTHIC;
-            if (diff == "Mythic+") return DIFFICULTY_MYTHIC_PLUS;
+            uint8 difficulty = fields[0].Get<uint8>();
+            return static_cast<QuestDifficulty>(difficulty);
         }
         
         return DIFFICULTY_NORMAL;
@@ -106,7 +89,7 @@ public:
     {
         QueryResult result = WorldDatabase.Query(
             "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
-            static_cast<uint32>(difficulty) + 1
+            static_cast<uint32>(difficulty)
         );
         
         if (result)
@@ -122,7 +105,7 @@ public:
     {
         QueryResult result = WorldDatabase.Query(
             "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
-            static_cast<uint32>(difficulty) + 1
+            static_cast<uint32>(difficulty)
         );
         
         if (result)
@@ -194,7 +177,7 @@ public:
         }
         
         // Update completion tracking
-        CharacterDatabase.Execute(
+        bool success = CharacterDatabase.Execute(
             "INSERT INTO dc_character_difficulty_completions "
             "(guid, dungeon_id, difficulty, total_completions, last_completion_date) "
             "VALUES ({}, {}, '{}', 1, NOW()) "
@@ -205,6 +188,13 @@ public:
             dungeonId,
             difficultyStr
         );
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest", 
+                "Failed to track difficulty completion for GUID {} (dungeon: {}, difficulty: {})",
+                player->GetGUID().ToString(), dungeonId, difficultyStr);
+        }
     }
 
     // Update dungeon progress
@@ -213,11 +203,18 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        bool success = CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_progress (guid, dungeon_id, quest_id, completion_count, last_update) "
             "VALUES ({}, {}, {}, 1, NOW()) "
             "ON DUPLICATE KEY UPDATE completion_count = completion_count + 1, last_update = NOW()",
             player->GetGUID().GetCounter(), dungeonId, questId);
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to update dungeon progress for GUID {} (dungeon: {}, quest: {})",
+                player->GetGUID().ToString(), dungeonId, questId);
+        }
     }
 
     // Log quest completion
@@ -226,10 +223,17 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        bool success = CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_quests_completed (guid, quest_id, completion_time) "
             "VALUES ({}, {}, NOW())",
             player->GetGUID().GetCounter(), questId);
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to log quest completion for GUID {} (quest: {})",
+                player->GetGUID().ToString(), questId);
+        }
     }
 
     // Update statistics
@@ -238,11 +242,18 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        bool success = CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_statistics (guid, stat_name, stat_value, last_update) "
             "VALUES ({}, '{}', {}, NOW()) "
             "ON DUPLICATE KEY UPDATE stat_value = stat_value + {}, last_update = NOW()",
             player->GetGUID().GetCounter(), stat_name, value, value);
+        
+        if (!success)
+        {
+            LOG_ERROR("scripts.dungeonquest",
+                "Failed to update statistics for GUID {} (stat: {}, value: {})",
+                player->GetGUID().ToString(), stat_name, value);
+        }
     }
 
     // Get statistic value

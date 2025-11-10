@@ -35,6 +35,68 @@ namespace
     };
 }
 
+// Global configuration map - replaces 240 lines of duplicate switch statements
+const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSettingConfigs = 
+{
+    { SETTING_HARDCORE, {
+        SETTING_HARDCORE,
+        "Hardcore",
+        "Character dies permanently on any death",
+        1 << SETTING_HARDCORE,
+        SPELL_AURA_HARDCORE
+    }},
+    { SETTING_SEMI_HARDCORE, {
+        SETTING_SEMI_HARDCORE,
+        "Semi-Hardcore",
+        "Character loses XP and items on death",
+        1 << SETTING_SEMI_HARDCORE,
+        SPELL_AURA_SEMI_HARDCORE
+    }},
+    { SETTING_SELF_CRAFTED, {
+        SETTING_SELF_CRAFTED,
+        "Self-Crafted",
+        "Can only use items you craft yourself",
+        1 << SETTING_SELF_CRAFTED,
+        SPELL_AURA_SELF_CRAFTED
+    }},
+    { SETTING_ITEM_QUALITY_LEVEL, {
+        SETTING_ITEM_QUALITY_LEVEL,
+        "Item Quality Restricted",
+        "Limited to white and green items only",
+        1 << SETTING_ITEM_QUALITY_LEVEL,
+        SPELL_AURA_ITEM_QUALITY
+    }},
+    { SETTING_SLOW_XP_GAIN, {
+        SETTING_SLOW_XP_GAIN,
+        "Slow XP Gain",
+        "Experience gain reduced by 50%",
+        1 << SETTING_SLOW_XP_GAIN,
+        SPELL_AURA_SLOW_XP
+    }},
+    { SETTING_VERY_SLOW_XP_GAIN, {
+        SETTING_VERY_SLOW_XP_GAIN,
+        "Very Slow XP Gain",
+        "Experience gain reduced by 75%",
+        1 << SETTING_VERY_SLOW_XP_GAIN,
+        SPELL_AURA_VERY_SLOW_XP
+    }},
+    { SETTING_QUEST_XP_ONLY, {
+        SETTING_QUEST_XP_ONLY,
+        "Quest XP Only",
+        "Can only gain experience from quests",
+        1 << SETTING_QUEST_XP_ONLY,
+        SPELL_AURA_QUEST_XP_ONLY
+    }},
+    { SETTING_IRON_MAN, {
+        SETTING_IRON_MAN,
+        "Iron Man",
+        "No deaths, no auction house, no player trading",
+        1 << SETTING_IRON_MAN,
+        SPELL_AURA_IRON_MAN
+    }}
+};
+
+
 ChallengeModes* ChallengeModes::instance()
 {
     static ChallengeModes instance;
@@ -216,29 +278,6 @@ uint32 ChallengeModes::getItemRewardAmount(ChallengeModeSettings setting) const
     }
 }
 
-namespace
-{
-    struct ChallengeAuraDefinition
-    {
-        ChallengeModeSettings setting;
-        uint32 spellId;
-    };
-
-    constexpr std::array<ChallengeAuraDefinition, 8> ChallengeAuraTable =
-    {
-        ChallengeAuraDefinition{SETTING_HARDCORE, 800020},
-        ChallengeAuraDefinition{SETTING_SEMI_HARDCORE, 800021},
-        ChallengeAuraDefinition{SETTING_SELF_CRAFTED, 800022},
-        ChallengeAuraDefinition{SETTING_ITEM_QUALITY_LEVEL, 800023},
-        ChallengeAuraDefinition{SETTING_SLOW_XP_GAIN, 800024},
-        ChallengeAuraDefinition{SETTING_VERY_SLOW_XP_GAIN, 800025},
-        ChallengeAuraDefinition{SETTING_QUEST_XP_ONLY, 800026},
-        ChallengeAuraDefinition{SETTING_IRON_MAN, 800027}
-    };
-
-    constexpr uint32 ChallengeCombinationSpellId = 800028;
-}
-
 void ChallengeModes::RefreshChallengeAuras(Player* player)
 {
     if (!player)
@@ -246,30 +285,30 @@ void ChallengeModes::RefreshChallengeAuras(Player* player)
 
     size_t activeModeCount = 0;
 
-    for (auto const& entry : ChallengeAuraTable)
+    for (auto const& [setting, config] : g_ChallengeSettingConfigs)
     {
-        bool shouldHaveAura = challengeEnabledForPlayer(entry.setting, player);
+        bool shouldHaveAura = challengeEnabledForPlayer(setting, player);
 
         if (shouldHaveAura)
         {
             ++activeModeCount;
-            if (!player->HasAura(entry.spellId))
-                player->CastSpell(player, entry.spellId, true);
+            if (!player->HasAura(config.auraId))
+                player->CastSpell(player, config.auraId, true);
         }
-        else if (player->HasAura(entry.spellId))
+        else if (player->HasAura(config.auraId))
         {
-            player->RemoveAura(entry.spellId);
+            player->RemoveAura(config.auraId);
         }
     }
 
     if (activeModeCount > 1)
     {
-        if (!player->HasAura(ChallengeCombinationSpellId))
-            player->CastSpell(player, ChallengeCombinationSpellId, true);
+        if (!player->HasAura(SPELL_AURA_COMBINATION))
+            player->CastSpell(player, SPELL_AURA_COMBINATION, true);
     }
-    else if (player->HasAura(ChallengeCombinationSpellId))
+    else if (player->HasAura(SPELL_AURA_COMBINATION))
     {
-        player->RemoveAura(ChallengeCombinationSpellId);
+        player->RemoveAura(SPELL_AURA_COMBINATION);
     }
 }
 
@@ -399,18 +438,8 @@ std::string GetChallengeExplanation(ChallengeModeSettings setting)
 
 std::string GetChallengeTitle(ChallengeModeSettings setting)
 {
-    switch(setting)
-    {
-        case SETTING_HARDCORE:           return "Hardcore";
-        case SETTING_SEMI_HARDCORE:      return "Semi-Hardcore";
-        case SETTING_SELF_CRAFTED:       return "Self-Crafted";
-        case SETTING_ITEM_QUALITY_LEVEL: return "Item Quality Restriction";
-        case SETTING_SLOW_XP_GAIN:       return "Slow XP Gain";
-        case SETTING_VERY_SLOW_XP_GAIN:  return "Very Slow XP Gain";
-        case SETTING_QUEST_XP_ONLY:      return "Quest XP Only";
-        case SETTING_IRON_MAN:           return "Iron Man";
-        default:                         return "Unknown";
-    }
+    auto it = g_ChallengeSettingConfigs.find(setting);
+    return it != g_ChallengeSettingConfigs.end() ? it->second.name : "Unknown";
 }
 
 // ==============================================

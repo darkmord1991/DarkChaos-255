@@ -19,126 +19,214 @@
 #include "DatabaseEnv.h"
 #include "QueryResult.h"
 #include "DungeonQuestConstants.h"
+#include "Log.h"
+#include <unordered_set>
+#include <unordered_map>
+#include <chrono>
 
 namespace DungeonQuestHelpers {
 
 using namespace DungeonQuest;
 
 // =====================================================================
-// STATISTICS QUERY FUNCTIONS
+// STATISTICS CACHING SYSTEM (30-second TTL)
+// =====================================================================
+
+struct PlayerStatsCache
+{
+    uint32 totalQuests;
+    uint32 dailyQuests;
+    uint32 weeklyQuests;
+    uint32 dungeonQuests;
+    uint32 heroicQuests;
+    uint32 mythicQuests;
+    uint32 mythicPlusQuests;
+    std::chrono::steady_clock::time_point timestamp;
+};
+
+// Global cache map (GUID -> cached stats)
+static std::unordered_map<uint64, PlayerStatsCache> g_PlayerStatsCache;
+constexpr uint32 CACHE_TTL_SECONDS = 30;
+
+/**
+ * Get cached statistics or fetch from database if expired
+ * PERFORMANCE: Reduces database queries from 7 per gossip to 1 per 30 seconds
+ */
+inline PlayerStatsCache GetCachedPlayerStats(Player* player)
+{
+    if (!player)
+        return PlayerStatsCache{};
+
+    uint64 guid = player->GetGUID().GetCounter();
+    auto now = std::chrono::steady_clock::now();
+
+    // Check if cache exists and is still valid
+    auto it = g_PlayerStatsCache.find(guid);
+    if (it != g_PlayerStatsCache.end())
+    {
+        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.timestamp).count();
+        if (age < CACHE_TTL_SECONDS)
+        {
+            LOG_DEBUG("scripts.dungeonquest", "Using cached stats for GUID {} (age: {}s)", guid, age);
+            return it->second;
+        }
+    }
+
+    // Cache miss or expired - fetch from database
+    LOG_DEBUG("scripts.dungeonquest", "Fetching fresh stats for GUID {}", guid);
+    
+    PlayerStatsCache cache{};
+    cache.timestamp = now;
+
+    // Single aggregated query
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT "
+        "total_quests_completed, "
+        "daily_quests_completed, "
+        "weekly_quests_completed, "
+        "dungeon_quests_completed, "
+        "heroic_quests_completed, "
+        "mythic_quests_completed, "
+        "mythic_plus_quests_completed "
+        "FROM dc_character_statistics WHERE guid = ?",
+        guid
+    );
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        cache.totalQuests = fields[0].Get<uint32>();
+        cache.dailyQuests = fields[1].Get<uint32>();
+        cache.weeklyQuests = fields[2].Get<uint32>();
+        cache.dungeonQuests = fields[3].Get<uint32>();
+        cache.heroicQuests = fields[4].Get<uint32>();
+        cache.mythicQuests = fields[5].Get<uint32>();
+        cache.mythicPlusQuests = fields[6].Get<uint32>();
+    }
+
+    // Update cache
+    g_PlayerStatsCache[guid] = cache;
+    
+    return cache;
+}
+
+/**
+ * Invalidate cache for a player (call after quest completion)
+ */
+inline void InvalidatePlayerStatsCache(Player* player)
+{
+    if (!player)
+        return;
+        
+    uint64 guid = player->GetGUID().GetCounter();
+    g_PlayerStatsCache.erase(guid);
+    
+    LOG_DEBUG("scripts.dungeonquest", "Invalidated stats cache for GUID {}", guid);
+}
+
+// =====================================================================
+// STATISTICS QUERY FUNCTIONS (now use cache)
 // =====================================================================
 
 /**
  * Get total number of quests completed by player
- * Queries: dc_character_statistics.total_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetTotalQuestCompletions(Player* player)
 {
-    if (!player)
-        return 0;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT total_quests_completed FROM dc_character_statistics WHERE guid = {}",
-        player->GetGUID().GetCounter()
-    );
-
-    return result ? (*result)[0].Get<uint32>() : 0;
+    return GetCachedPlayerStats(player).totalQuests;
 }
 
 /**
  * Get number of daily quests completed by player
- * Queries: dc_character_statistics.daily_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetDailyQuestCompletions(Player* player)
 {
-    if (!player)
-        return 0;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT daily_quests_completed FROM dc_character_statistics WHERE guid = {}",
-        player->GetGUID().GetCounter()
-    );
-
-    return result ? (*result)[0].Get<uint32>() : 0;
+    return GetCachedPlayerStats(player).dailyQuests;
 }
 
 /**
  * Get number of weekly quests completed by player
- * Queries: dc_character_statistics.weekly_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetWeeklyQuestCompletions(Player* player)
 {
-    if (!player)
-        return 0;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT weekly_quests_completed FROM dc_character_statistics WHERE guid = {}",
-        player->GetGUID().GetCounter()
-    );
-
-    return result ? (*result)[0].Get<uint32>() : 0;
+    return GetCachedPlayerStats(player).weeklyQuests;
 }
 
 /**
  * Get number of dungeon quests completed by player
- * Queries: dc_character_statistics.dungeon_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetDungeonQuestCompletions(Player* player)
 {
-    if (!player)
-        return 0;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT dungeon_quests_completed FROM dc_character_statistics WHERE guid = {}",
-        player->GetGUID().GetCounter()
-    );
-
-    return result ? (*result)[0].Get<uint32>() : 0;
+    return GetCachedPlayerStats(player).dungeonQuests;
 }
 
 /**
  * Get specific statistic value by field name
- * Generic query for any dc_character_statistics field
+ * SECURITY: Uses whitelist validation to prevent SQL injection
  */
 inline uint32 GetStatisticValue(Player* player, const std::string& statName)
 {
     if (!player || statName.empty())
         return 0;
 
-    // Note: statName must be a valid column name in dc_character_statistics
-    // This uses string formatting which is safe for internal column names
-    std::string query = "SELECT " + statName + " FROM dc_character_statistics WHERE guid = " + 
-                        std::to_string(player->GetGUID().GetCounter());
+    // Whitelist of valid column names (prevents SQL injection)
+    static const std::unordered_set<std::string> validStats = {
+        "total_quests_completed",
+        "daily_quests_completed",
+        "weekly_quests_completed",
+        "dungeon_quests_completed",
+        "heroic_quests_completed",
+        "mythic_quests_completed",
+        "mythic_plus_quests_completed"
+    };
 
-    QueryResult result = CharacterDatabase.Query(query);
+    // Validate column name against whitelist
+    if (validStats.find(statName) == validStats.end())
+    {
+        LOG_ERROR("scripts.dungeonquest", 
+            "GetStatisticValue: Invalid stat name '{}' requested by player {}", 
+            statName, player->GetGUID().ToString());
+        return 0;
+    }
+
+    // Safe: statName validated against whitelist, GUID is numeric
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT " + statName + " FROM dc_character_statistics WHERE guid = ?",
+        player->GetGUID().GetCounter()
+    );
+    
     return result ? (*result)[0].Get<uint32>() : 0;
 }
 
 /**
  * Get number of Heroic quests completed by player (v4.0)
- * Queries: dc_character_statistics.heroic_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetHeroicQuestCompletions(Player* player)
 {
-    return GetStatisticValue(player, "heroic_quests_completed");
+    return GetCachedPlayerStats(player).heroicQuests;
 }
 
 /**
  * Get number of Mythic quests completed by player (v4.0)
- * Queries: dc_character_statistics.mythic_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetMythicQuestCompletions(Player* player)
 {
-    return GetStatisticValue(player, "mythic_quests_completed");
+    return GetCachedPlayerStats(player).mythicQuests;
 }
 
 /**
  * Get number of Mythic+ quests completed by player (v4.0)
- * Queries: dc_character_statistics.mythic_plus_quests_completed
+ * Uses cache to minimize database queries
  */
 inline uint32 GetMythicPlusQuestCompletions(Player* player)
 {
-    return GetStatisticValue(player, "mythic_plus_quests_completed");
+    return GetCachedPlayerStats(player).mythicPlusQuests;
 }
 
 // =====================================================================
@@ -248,23 +336,30 @@ inline uint32 GetDifficultyCompletionCount(Player* player, uint32 dungeonId, Que
 
 /**
  * Format quest statistics for display in gossip menu
+ * OPTIMIZED: Uses cached stats (1 query per 30 seconds instead of 7 per gossip)
  */
 inline std::string FormatQuestStatistics(Player* player)
 {
-    std::ostringstream stats;
-    stats << "Your Dungeon Quest Statistics:\n\n";
-    stats << "Total Quests: " << GetTotalQuestCompletions(player) << "\n";
-    stats << "Daily Quests: " << GetDailyQuestCompletions(player) << "\n";
-    stats << "Weekly Quests: " << GetWeeklyQuestCompletions(player) << "\n";
-    stats << "Dungeon Quests: " << GetDungeonQuestCompletions(player) << "\n\n";
+    if (!player)
+        return "Error: Invalid player";
+
+    // Get cached stats (will auto-fetch if expired)
+    PlayerStatsCache stats = GetCachedPlayerStats(player);
+
+    std::ostringstream output;
+    output << "Your Dungeon Quest Statistics:\n\n";
+    output << "Total Quests: " << stats.totalQuests << "\n";
+    output << "Daily Quests: " << stats.dailyQuests << "\n";
+    output << "Weekly Quests: " << stats.weeklyQuests << "\n";
+    output << "Dungeon Quests: " << stats.dungeonQuests << "\n\n";
     
     // v4.0: Difficulty breakdown
-    stats << "Difficulty Breakdown:\n";
-    stats << "- Heroic: " << GetHeroicQuestCompletions(player) << "\n";
-    stats << "- Mythic: " << GetMythicQuestCompletions(player) << "\n";
-    stats << "- Mythic+: " << GetMythicPlusQuestCompletions(player) << "\n";
+    output << "Difficulty Breakdown:\n";
+    output << "- Heroic: " << stats.heroicQuests << "\n";
+    output << "- Mythic: " << stats.mythicQuests << "\n";
+    output << "- Mythic+: " << stats.mythicPlusQuests << "\n";
     
-    return stats.str();
+    return output.str();
 }
 
 /**

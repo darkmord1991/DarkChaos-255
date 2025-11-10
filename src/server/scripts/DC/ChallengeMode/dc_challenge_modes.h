@@ -36,6 +36,31 @@ enum AllowedProfessions
     BEAST_TRAINING = 5149
 };
 
+enum ChallengeAuraSpells : uint32
+{
+    SPELL_AURA_HARDCORE          = 800020,
+    SPELL_AURA_SEMI_HARDCORE     = 800021,
+    SPELL_AURA_SELF_CRAFTED      = 800022,
+    SPELL_AURA_ITEM_QUALITY      = 800023,
+    SPELL_AURA_SLOW_XP           = 800024,
+    SPELL_AURA_VERY_SLOW_XP      = 800025,
+    SPELL_AURA_QUEST_XP_ONLY     = 800026,
+    SPELL_AURA_IRON_MAN          = 800027,
+    SPELL_AURA_COMBINATION       = 800028
+};
+
+// Configuration structure for challenge mode settings
+struct ChallengeSettingConfig
+{
+    ChallengeModeSettings setting;
+    std::string name;
+    std::string description;
+    uint32 bitFlag;
+    uint32 auraId;
+};
+
+// Global config map - eliminates 240 lines of duplicate switch statements
+extern const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSettingConfigs;
 
 
 class ChallengeModes

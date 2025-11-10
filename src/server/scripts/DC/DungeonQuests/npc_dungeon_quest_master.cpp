@@ -48,36 +48,15 @@
 #include "DatabaseEnv.h"
 #include "ScriptedGossip.h"
 #include "QuestDef.h"
+#include "DungeonQuestConstants.h"
+#include "DungeonQuestHelpers.h"
+
+using namespace DungeonQuest;
+using namespace DungeonQuestHelpers;
 
 // =====================================================================
-// CONSTANTS
+// GOSSIP MENU ACTIONS (kept for backward compatibility)
 // =====================================================================
-
-// NPC Entry Ranges
-#define NPC_DUNGEON_QUEST_MASTER_START 700000
-#define NPC_DUNGEON_QUEST_MASTER_END   700052
-
-// Quest Ranges (Updated v4.0)
-#define QUEST_DAILY_START              700101
-#define QUEST_DAILY_END                700150  // v4.0: Updated from 700104
-#define QUEST_WEEKLY_START             700201
-#define QUEST_WEEKLY_END               700224  // v4.0: Updated from 700204
-#define QUEST_DUNGEON_START            700701
-#define QUEST_DUNGEON_END              708999  // v4.0: Updated from 700999
-
-// Token Item IDs
-#define ITEM_DUNGEON_EXPLORER_TOKEN    700001
-#define ITEM_EXPANSION_SPECIALIST_TOKEN 700002
-#define ITEM_LEGENDARY_DUNGEON_TOKEN   700003
-#define ITEM_CHALLENGE_MASTER_TOKEN    700004
-#define ITEM_SPEED_RUNNER_TOKEN        700005
-
-// Achievement IDs (from DBC)
-#define ACHIEVEMENT_DUNGEON_NOVICE     40001
-#define ACHIEVEMENT_DUNGEON_EXPLORER   40002
-#define ACHIEVEMENT_LEGENDARY_DUNGEON  40003
-
-// Gossip Menu Actions
 enum GossipActions
 {
     GOSSIP_ACTION_SHOW_DAILY_QUESTS   = 1000,
@@ -90,53 +69,11 @@ enum GossipActions
 };
 
 // =====================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (using DungeonQuestHelpers.h shared functions)
 // =====================================================================
 
 namespace DungeonQuestHelper
 {
-    // Get total quest completions for player
-    uint32 GetTotalQuestCompletions(Player* player)
-    {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {}", 
-            player->GetGUID().GetCounter()
-        );
-        
-        if (result)
-            return (*result)[0].Get<uint32>();
-        
-        return 0;
-    }
-
-    // Get daily quest completions for player (by quest id range)
-    uint32 GetDailyQuestCompletions(Player* player)
-    {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {} AND quest_id BETWEEN {} AND {}",
-            player->GetGUID().GetCounter(), QUEST_DAILY_START, QUEST_DAILY_END
-        );
-
-        if (result)
-            return (*result)[0].Get<uint32>();
-
-        return 0;
-    }
-
-    // Get weekly quest completions for player (by quest id range)
-    uint32 GetWeeklyQuestCompletions(Player* player)
-    {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {} AND quest_id BETWEEN {} AND {}",
-            player->GetGUID().GetCounter(), QUEST_WEEKLY_START, QUEST_WEEKLY_END
-        );
-
-        if (result)
-            return (*result)[0].Get<uint32>();
-
-        return 0;
-    }
-
     // Forward declarations for helper functions used by OnGossipSelect/OnGossipHello
     void ShowFilteredQuests(Player* player, Creature* creature, uint32 rangeStart, uint32 rangeEnd, const std::string& category);
     void ShowRewardsInfo(Player* player, Creature* creature);
@@ -167,15 +104,15 @@ namespace DungeonQuestHelper
         switch (action)
         {
             case GOSSIP_ACTION_SHOW_DAILY_QUESTS:
-                ShowFilteredQuests(player, creature, QUEST_DAILY_START, QUEST_DAILY_END, "Daily Quests");
+                ShowFilteredQuests(player, creature, QUEST_DAILY_MIN, QUEST_DAILY_MAX, "Daily Quests");
                 break;
 
             case GOSSIP_ACTION_SHOW_WEEKLY_QUESTS:
-                ShowFilteredQuests(player, creature, QUEST_WEEKLY_START, QUEST_WEEKLY_END, "Weekly Quests");
+                ShowFilteredQuests(player, creature, QUEST_WEEKLY_MIN, QUEST_WEEKLY_MAX, "Weekly Quests");
                 break;
 
             case GOSSIP_ACTION_SHOW_DUNGEON_QUESTS:
-                ShowFilteredQuests(player, creature, QUEST_DUNGEON_START, QUEST_DUNGEON_END, "Dungeon Quests");
+                ShowFilteredQuests(player, creature, QUEST_DUNGEON_MIN, QUEST_DUNGEON_MAX, "Dungeon Quests");
                 break;
 
             case GOSSIP_ACTION_SHOW_ALL_QUESTS:
