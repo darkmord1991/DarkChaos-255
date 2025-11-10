@@ -54,8 +54,8 @@ public:
                               kPath[kIndex_acfm35].GetPositionZ(), kPath[kIndex_acfm35].GetOrientation());
             
             case ROUTE_L25_TO_60:      // Camp to L60 zone
-            case ROUTE_L40_TO_60:      // L40 to L60 zone
-            case ROUTE_L60_SCENIC:     // L60 scenic route
+            case ROUTE_L40_SCENIC:     // L40 to L60 zone
+            case ROUTE_L0_TO_57:       // L60 scenic route
                 return Position(kPath[kIndex_acfm57].GetPositionX(), kPath[kIndex_acfm57].GetPositionY(),
                               kPath[kIndex_acfm57].GetPositionZ(), kPath[kIndex_acfm57].GetOrientation());
             
