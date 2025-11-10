@@ -93,7 +93,7 @@ enum GossipAction : uint32
 // Data and helpers moved to ac_flightmasters_data.h
 
 // Gryphon vehicle AI that follows the above path with the boarded player in seat 0
-struct ac_gryphon_taxi_800011AI : public VehicleAI
+class ac_gryphon_taxi_800011AI : public VehicleAI
 {
     enum : uint32 { POINT_TAKEOFF = 9000, POINT_LAND_FINAL = 9001 };
     
@@ -124,6 +124,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Default per-node config: only acfm57 needs more aggressive handling so far
     static const std::vector<NodeConfig> kPerNodeConfigDefaults;
 
+public:
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
 
     void SetData(uint32 id, uint32 value) override
