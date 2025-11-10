@@ -69,18 +69,11 @@ uint32 ChallengeModeDatabase::GetActiveModesForPlayer(ObjectGuid guid)
 // Update active modes in database
 void ChallengeModeDatabase::UpdateActiveModes(ObjectGuid guid, uint32 activeModes)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "INSERT INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES (?, ?, NOW()) "
         "ON DUPLICATE KEY UPDATE active_modes = ?, activated_at = NOW()",
         guid.GetCounter(), activeModes, activeModes
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to update active modes for GUID {} (modes: {})", 
-            guid.ToString(), activeModes);
-    }
 }
 
 // Log a challenge mode event
