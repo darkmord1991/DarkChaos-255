@@ -1630,7 +1630,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     if (!taxi->GetVehicleKit())
     {
         ChatHandler(player->GetSession()).PSendSysMessage("[Flight] The summoned gryphon has no VehicleId. Please set creature_template.VehicleId for entry {} and ScriptName=ac_gryphon_taxi_800011.", static_cast<uint32>(taxi->GetEntry()));
-    taxi->DespawnOrUnsummon(1000ms);
+        taxi->DespawnOrUnsummon(1000ms);
         return false;
     }
     player->EnterVehicle(taxi, -1);
