@@ -54,7 +54,7 @@ CREATE TABLE dc_item_upgrade_stage (
 -- NOTE: Update the file path below to match your system
 -- ───────────────────────────────────────────────────────────────────────────────
 -- OPTION A: If files are in secure_file_priv directory (recommended)
-LOAD DATA LOCAL INFILE 'C:/Users/flori/Desktop/WoW Server/Azeroth Fork/DarkChaos-255/Custom/Custom feature SQLs/worlddb/ItemUpgrades/T1.txt'
+LOAD DATA LOCAL INFILE 'K:\Dark-Chaos\DarkChaos-255\Custom\Custom feature SQLs\worlddb\ItemUpgrades/T1.txt'
 INTO TABLE dc_item_upgrade_stage
 FIELDS TERMINATED BY ';'
 LINES TERMINATED BY '\n'
@@ -74,7 +74,7 @@ SET tier_id        = 1,
 -- STEP 3: Load Tier 2 items from T2.txt
 -- NOTE: Update the file path below to match your system
 -- ───────────────────────────────────────────────────────────────────────────────
-LOAD DATA LOCAL INFILE 'C:/Users/flori/Desktop/WoW Server/Azeroth Fork/DarkChaos-255/Custom/Custom feature SQLs/worlddb/ItemUpgrades/T2.txt'
+LOAD DATA LOCAL INFILE 'K:\Dark-Chaos\DarkChaos-255\Custom\Custom feature SQLs\worlddb\ItemUpgrades/T2.txt'
 INTO TABLE dc_item_upgrade_stage
 FIELDS TERMINATED BY ';'
 LINES TERMINATED BY '\n'
@@ -221,7 +221,7 @@ GROUP BY tier_id;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- STEP 8: Cleanup staging table (optional: comment out to retain for auditing)
 -- ───────────────────────────────────────────────────────────────────────────────
-DROP TABLE IF EXISTS dc_item_upgrade_stage;
+
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IMPORT COMPLETE

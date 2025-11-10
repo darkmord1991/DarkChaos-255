@@ -183,7 +183,15 @@ private:
             {
                 Field* fields = result->Fetch();
                 upgradeLevel = fields[0].Get<uint32>();
-                tier = fields[1].Get<uint32>();
+                // NOTE: Don't trust stored tier - recalculate it based on current item level
+                // tier = fields[1].Get<uint32>();  // DISABLED - calculate instead
+                
+                // Get tier from database mapping instead of item level ranges
+                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                    tier = mgr->GetItemTier(item->GetEntry());
+                else
+                    tier = 1; // fallback if manager not available
+                
                 // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
                 // storedBaseIlvl remains baseItemLevel from template
                 // upgradedIlvl will be calculated below
@@ -370,7 +378,14 @@ private:
             if (stateResult)
             {
                 currentLevel = (*stateResult)[0].Get<uint32>();
-                tier = (*stateResult)[1].Get<uint32>();
+                // NOTE: Don't trust stored tier - recalculate it based on current item level
+                // tier = (*stateResult)[1].Get<uint32>();  // DISABLED - calculate instead
+                
+                // Get tier from database mapping instead of item level ranges
+                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                    tier = mgr->GetItemTier(item->GetEntry());
+                else
+                    tier = 1; // fallback if manager not available
             }
             else
             {

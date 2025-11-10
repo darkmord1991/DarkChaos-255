@@ -136,6 +136,11 @@
                                 <Anchor point="TOPLEFT" relativeKey="$parent.ItemName" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
                             </Anchors>
                         </FontString>
+                        <FontString parentKey="UpgradeProgress" inherits="GameFontHighlight" hidden="true">
+                            <Size x="340" y="0"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.ItemLevelSummary" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
+                            </Anchors>
                         </FontString>
                     </Layer>
                 </Layers>
@@ -144,7 +149,7 @@
                     <Frame parentKey="ProgressBar" hidden="true">
                         <Size x="340" y="12"/>
                         <Anchors>
-                            <Anchor point="TOPLEFT" relativeKey="$parent.UpgradeProgress" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
+                            <Anchor point="TOPLEFT" x="0" y="-250"/>
                         </Anchors>
                         <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                             <EdgeSize>

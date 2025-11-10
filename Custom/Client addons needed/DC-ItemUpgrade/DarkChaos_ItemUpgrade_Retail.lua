@@ -49,7 +49,11 @@ function DarkChaos_ItemUpgrade_UpdateProgressBar(currentLevel, maxLevel, tier)
 		-- Fully upgraded
 		fill:SetWidth(334); -- Full width
 		local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
-		fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
+		if type(fill.SetColorTexture) == "function" then
+			fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
+		else
+			fill:SetVertexColor(tierColor.r, tierColor.g, tierColor.b, 1);
+		end
 		text:SetText("MAX");
 		text:SetTextColor(1, 1, 0); -- Gold for max
 		progressBar:Show();
@@ -61,7 +65,11 @@ function DarkChaos_ItemUpgrade_UpdateProgressBar(currentLevel, maxLevel, tier)
 
 		-- Color based on tier
 		local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
-		fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
+		if type(fill.SetColorTexture) == "function" then
+			fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
+		else
+			fill:SetVertexColor(tierColor.r, tierColor.g, tierColor.b, 1);
+		end
 
 		-- Text showing percentage
 		local percent = math.floor(progress * 100);
@@ -1974,6 +1982,7 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	local serverSlot = GetServerSlotFromClient(bag, slot);
 	local texture = GetItemTextureForLocation(bag, slot, link);
  	local locationKey = BuildLocationKey(serverBag, serverSlot);
+	local cached = DC.itemUpgradeCache and DC.itemLocationCache and DC.itemLocationCache[locationKey] and DC.itemUpgradeCache[DC.itemLocationCache[locationKey]];
 
 	-- Use pooled object for current item
 	local pooledItem = DC.GetPooledItemState();
@@ -2515,6 +2524,11 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 		if matchedCurrent then
 			DC.Debug(string.format("QUERY received: guid=%s cur=%s tier=%s base=%s upgraded=%s mult=%s",
 				tostring(guid), tostring(currentLevel), tostring(tier), tostring(baseIlvl), upgradedIlvl or "n/a", statMult or "n/a"));
+			-- Recalculate target level based on current and max upgrade values
+			local currentUpgrade = DC.currentItem.currentUpgrade or 0;
+			local maxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
+			DC.targetUpgradeLevel = math.min(math.max(currentUpgrade + 1, 1), maxUpgrade);
+			DC.Debug("Target level recalculated to: " .. tostring(DC.targetUpgradeLevel) .. " (current=" .. currentUpgrade .. ", max=" .. maxUpgrade .. ")");
 			DarkChaos_ItemUpgrade_UpdateUI();
 		end
 
@@ -2669,7 +2683,11 @@ function DarkChaos_ItemUpgrade_PlayCelebration()
 		DC.celebrationFlash:SetAllPoints(UIParent);
 		DC.celebrationFlash.texture = DC.celebrationFlash:CreateTexture(nil, "BACKGROUND");
 		DC.celebrationFlash.texture:SetAllPoints(DC.celebrationFlash);
-		DC.celebrationFlash.texture:SetColorTexture(1, 1, 0.8, 0); -- Soft yellow
+		if type(DC.celebrationFlash.texture.SetColorTexture) == "function" then
+			DC.celebrationFlash.texture:SetColorTexture(1, 1, 0.8, 0); -- Soft yellow
+		else
+			DC.celebrationFlash.texture:SetVertexColor(1, 1, 0.8, 0);
+		end
 		DC.celebrationFlash:Hide();
 	end
 
@@ -2731,7 +2749,11 @@ function DarkChaos_ItemUpgrade_PlayCelebration()
 			particle:SetSize(4, 4);
 			particle.texture = particle:CreateTexture(nil, "OVERLAY");
 			particle.texture:SetAllPoints(particle);
-			particle.texture:SetColorTexture(1, 0.8, 0, 1); -- Gold particles
+			if type(particle.texture.SetColorTexture) == "function" then
+				particle.texture:SetColorTexture(1, 0.8, 0, 1); -- Gold particles
+			else
+				particle.texture:SetVertexColor(1, 0.8, 0, 1);
+			end
 			particle:Hide();
 			DC.celebrationParticles[i] = particle;
 		end
