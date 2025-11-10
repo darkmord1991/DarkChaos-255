@@ -209,17 +209,10 @@ public:
         if (!player)
             return;
 
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_quests_completed (guid, quest_id, completion_time) "
             "VALUES ({}, {}, NOW())",
             player->GetGUID().GetCounter(), questId);
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to log quest completion for GUID {} (quest: {})",
-                player->GetGUID().ToString(), questId);
-        }
     }
 
     // Update statistics
@@ -228,18 +221,11 @@ public:
         if (!player)
             return;
 
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_dungeon_statistics (guid, stat_name, stat_value, last_update) "
             "VALUES ({}, '{}', {}, NOW()) "
             "ON DUPLICATE KEY UPDATE stat_value = stat_value + {}, last_update = NOW()",
             player->GetGUID().GetCounter(), stat_name, value, value);
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to update statistics for GUID {} (stat: {}, value: {})",
-                player->GetGUID().ToString(), stat_name, value);
-        }
     }
 
     // Get statistic value
