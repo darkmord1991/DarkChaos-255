@@ -5,23 +5,6 @@
 namespace DC_AC_Flight
 {
 
-// Forward declare enum from main file
-enum FlightRouteMode : uint32
-{
-    ROUTE_TOUR          = 0,
-    ROUTE_L40_DIRECT    = 1,
-    ROUTE_L0_TO_57      = 2,
-    ROUTE_RETURN        = 3,
-    ROUTE_L25_TO_40     = 4,
-    ROUTE_L25_TO_60     = 5,
-    ROUTE_L40_RETURN25  = 6,
-    ROUTE_L40_SCENIC    = 7,
-    ROUTE_L60_RETURN40  = 8,
-    ROUTE_L60_RETURN19  = 9,
-    ROUTE_L60_RETURN0   = 10,
-    ROUTE_L40_RETURN0   = 11
-};
-
 // Helper: compute 2D distance
 static float Distance2D(float x1, float y1, float x2, float y2)
 {
