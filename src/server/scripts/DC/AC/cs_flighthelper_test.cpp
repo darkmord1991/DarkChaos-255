@@ -50,7 +50,7 @@ public:
 
         Position dest(x, y, z, 0.0f);
         std::vector<Position> path;
-        if (DC_AC_Flight::FlightPathHelper::CalculateSmartPathForObject(player, dest, path) && !path.empty())
+        if (FlightPathHelper::CalculateSmartPathForObject(player, dest, path) && !path.empty())
         {
             handler->PSendSysMessage("FlightHelper: path found with {} points.", (uint32)path.size());
             for (auto const& p : path)
