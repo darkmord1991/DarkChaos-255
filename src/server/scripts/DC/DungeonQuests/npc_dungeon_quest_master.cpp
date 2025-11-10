@@ -299,7 +299,7 @@ public:
 
         // creature is unused here; keep parameter for API compatibility
         (void)creature;
-        if (quest->GetQuestId() >= QUEST_DAILY_START && quest->GetQuestId() <= QUEST_WEEKLY_END)
+        if (quest->GetQuestId() >= QUEST_DAILY_MIN && quest->GetQuestId() <= QUEST_WEEKLY_MAX)
         {
             // Optional: Custom messaging for dungeon quests
             ChatHandler(player->GetSession()).SendNotification("Quest accepted! Complete all objectives to receive rewards.");
@@ -340,7 +340,7 @@ public:
     uint32 questId = quest->GetQuestId();
 
         // Check if this is a dungeon quest
-        if (questId < QUEST_DUNGEON_START || questId > QUEST_DUNGEON_END)
+        if (questId < QUEST_DUNGEON_MIN || questId > QUEST_DUNGEON_MAX)
             return false;
 
         // =====================================================================
@@ -351,7 +351,7 @@ public:
     uint32 tokenCount = 1;
 
         // Daily quests
-        if (questId >= QUEST_DAILY_START && questId <= QUEST_DAILY_END)
+        if (questId >= QUEST_DAILY_MIN && questId <= QUEST_DAILY_MAX)
         {
             tokenItemId = ITEM_DUNGEON_EXPLORER_TOKEN;
             tokenCount = 1;
@@ -360,7 +360,7 @@ public:
             // (Placeholder kept for future prepared statement integration)
         }
         // Weekly quests
-        else if (questId >= QUEST_WEEKLY_START && questId <= QUEST_WEEKLY_END)
+        else if (questId >= QUEST_WEEKLY_MIN && questId <= QUEST_WEEKLY_MAX)
         {
             tokenItemId = ITEM_EXPANSION_SPECIALIST_TOKEN;
             tokenCount = 1;
