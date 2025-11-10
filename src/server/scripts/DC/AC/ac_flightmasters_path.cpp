@@ -5,9 +5,6 @@
 #include "Chat.h"
 #include <numeric>
 
-// Flight path helper implementations
-#include "ac_flightmasters_path.h" // Ensure namespace Pathfinding declarations are available
-
 namespace DC_AC_Flight {
 namespace Pathfinding {
 
