@@ -116,17 +116,10 @@ private:
     void SaveQuestProgress(Player* player)
     {
         // Update last activity timestamp in player_dungeon_completion_stats
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}", 
             uint32(time(nullptr)), player->GetGUID().GetCounter()
         );
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to save quest progress for GUID {}",
-                player->GetGUID().ToString());
-        }
     }
 };
 
