@@ -1100,6 +1100,7 @@ public:
     // Public getters for debug commands
     uint8 GetCurrentIndex() const { return _index; }
     std::vector<uint8> const& GetNodeFailCount() const { return _nodeFailCount; }
+    static std::vector<NodeConfig> const& GetPerNodeConfigDefaults() { return kPerNodeConfigDefaults; }
 
 public:
     TaskScheduler _scheduler;
@@ -1876,7 +1877,7 @@ public:
             }
             // Update global defaults vector (affects subsequent flights / instances reading defaults)
             // We intentionally allow small race here; it's a tuning helper, not a strict API.
-            const_cast<NodeConfig&>(ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults[idx]) = { static_cast<uint8>(esc), extraZ };
+            const_cast<NodeConfig&>(ac_gryphon_taxi_800011AI::GetPerNodeConfigDefaults()[idx]) = { static_cast<uint8>(esc), extraZ };
             ChatHandler(player->GetSession()).PSendSysMessage("[Flight Debug] Set node {}: escalation={} extraZ={:.1f} (applies to new flights/instances).", idx, esc, extraZ);
             // Also update any active taxi instances near the player (apply instantly)
             uint32 updated = 0;
