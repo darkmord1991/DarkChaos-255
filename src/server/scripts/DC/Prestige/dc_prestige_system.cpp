@@ -37,6 +37,19 @@ enum PrestigeConfig
     MAX_PRESTIGE_LEVEL = 10,
     REQUIRED_LEVEL = 255,
     STAT_BONUS_PER_PRESTIGE = 1,  // 1% per prestige level
+    DEBUG_MODE = 0,  // Set to 1 to enable debug messages (GM only)
+};
+
+// Prestige spell lookup table (O(1) access)
+constexpr uint32 PRESTIGE_SPELLS[MAX_PRESTIGE_LEVEL] = {
+    800010, 800011, 800012, 800013, 800014,
+    800015, 800016, 800017, 800018, 800019
+};
+
+// Prestige title lookup table (O(1) access)
+constexpr uint32 PRESTIGE_TITLES[MAX_PRESTIGE_LEVEL] = {
+    178, 179, 180, 181, 182,
+    183, 184, 185, 186, 187
 };
 
 enum PrestigeSpells
@@ -95,6 +108,48 @@ public:
         grantStarterGear = sConfigMgr->GetOption<bool>("Prestige.GrantStarterGear", false);
         announcePrestige = sConfigMgr->GetOption<bool>("Prestige.AnnounceWorld", true);
         
+        // Config validation with error logging
+        bool configValid = true;
+        
+        if (maxPrestigeLevel == 0 || maxPrestigeLevel > MAX_PRESTIGE_LEVEL)
+        {
+            LOG_ERROR("scripts", "Prestige: Invalid MaxLevel ({}). Must be 1-{}. Using default {}.",
+                maxPrestigeLevel, MAX_PRESTIGE_LEVEL, MAX_PRESTIGE_LEVEL);
+            maxPrestigeLevel = MAX_PRESTIGE_LEVEL;
+            configValid = false;
+        }
+        
+        if (requireLevel == 0 || requireLevel > 255)
+        {
+            LOG_ERROR("scripts", "Prestige: Invalid RequiredLevel ({}). Must be 1-255. Using default {}.",
+                requireLevel, REQUIRED_LEVEL);
+            requireLevel = REQUIRED_LEVEL;
+            configValid = false;
+        }
+        
+        if (resetLevel == 0 || resetLevel >= requireLevel)
+        {
+            LOG_ERROR("scripts", "Prestige: Invalid ResetLevel ({}). Must be 1-{} (less than RequiredLevel). Using default 1.",
+                resetLevel, requireLevel - 1);
+            resetLevel = 1;
+            configValid = false;
+        }
+        
+        if (statBonusPercent == 0 || statBonusPercent > 100)
+        {
+            LOG_WARN("scripts", "Prestige: StatBonusPercent ({}) is outside recommended range 1-100. Proceeding anyway.",
+                statBonusPercent);
+        }
+        
+        if (configValid)
+        {
+            LOG_INFO("scripts", "Prestige: Configuration loaded successfully");
+        }
+        else
+        {
+            LOG_WARN("scripts", "Prestige: Configuration loaded with errors (see above). Some values were reset to defaults.");
+        }
+        
         // Load prestige rewards
         LoadPrestigeRewards();
     }
@@ -114,8 +169,8 @@ public:
         if (it != prestigeCache.end())
             return it->second;
 
-        // Query from database
-        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        // Query from database - guid is uint32 so SQL injection is not possible
+        QueryResult result = WorldDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
         uint32 level = 0;
         if (result)
         {
@@ -132,9 +187,22 @@ public:
             return;
 
         uint32 guid = player->GetGUID().GetCounter();
-        CharacterDatabase.Execute("REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())", 
+        
+        // All parameters are uint32 so SQL injection is not possible with StringFormat
+        CharacterDatabase.Execute(
+            "REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())", 
             guid, level, level);
+        
         prestigeCache[guid] = level;
+    }
+    
+    void ClearPrestigeCache(ObjectGuid guid)
+    {
+        auto it = prestigeCache.find(guid.GetCounter());
+        if (it != prestigeCache.end())
+        {
+            prestigeCache.erase(it);
+        }
     }
 
     bool CanPrestige(Player* player)
@@ -155,173 +223,107 @@ public:
     void PerformPrestige(Player* player)
     {
         if (!CanPrestige(player))
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: CanPrestige failed in PerformPrestige");
             return;
-        }
-
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Starting prestige process...");
 
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
-
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Current prestige: {}, New prestige: {}", currentPrestige, newPrestige);
 
         // Save current state for logging
         std::string playerName = player->GetName();
         uint32 oldLevel = player->GetLevel();
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing old buffs...");
+        LOG_INFO("scripts", "Prestige: Player {} (GUID: {}) starting prestige {} -> {}", 
+            playerName, player->GetGUID().ToString(), currentPrestige, newPrestige);
+
         // Remove old prestige buffs
         RemovePrestigeBuffs(player);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Setting level to {}...", resetLevel);
         // Reset level
         player->SetLevel(resetLevel);
         
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Clearing player flags for XP bar display...");
-        // Ensure player is alive and not in ghost state (prevents XP bar from showing)
-        if (player->isDead())
-        {
-            player->ResurrectPlayer(1.0f);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player was dead, resurrecting...");
-        }
+        // Clear player flags using helper function
+        ClearPrestigePlayerFlags(player);
         
-        // Clear ghost flag if set
-        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed GHOST flag");
-        }
-        
-        // Ensure player is not flagged as out of bounds
-        if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
-        }
-        
-        // CRITICAL: Clear NO_XP_GAIN flag - allows player to gain experience after prestige
-        if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed NO_XP_GAIN flag - player can now gain XP");
-        }
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling InitStatsForLevel...");
+        // Initialize stats for new level
         player->InitStatsForLevel(true);
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling UpdateSkillsForLevel...");
         player->UpdateSkillsForLevel();
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling UpdateAllStats...");
         player->UpdateAllStats();
 
         // Handle gear
         if (!keepGear)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing gear...");
             RemoveAllGear(player);
             if (grantStarterGear)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting starter gear...");
                 GrantStarterGear(player);
-            }
         }
 
         // Handle gold
         if (!keepGold)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removing gold...");
             player->SetMoney(0);
-        }
 
         // Handle professions
         if (!keepProfessions)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Resetting professions...");
             ResetProfessions(player);
-        }
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Setting prestige level...");
         // Update prestige level
         SetPrestigeLevel(player, newPrestige);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting title...");
         // Grant title
         GrantPrestigeTitle(player, newPrestige);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Granting rewards...");
         // Grant prestige rewards
         GrantPrestigeRewards(player, newPrestige);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Updating achievements...");
         // Update achievements/statistics
         UpdatePrestigeAchievements(player, newPrestige);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving to database...");
-        // Save player first before applying buffs
-        player->SaveToDB(false, false);
-
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Applying prestige buffs...");
-        // Apply new prestige buffs (after save to ensure level is updated)
+        // Apply new prestige buffs
         ApplyPrestigeBuffs(player);
         
-        // Force update player to ensure buffs stick
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Updating player stats...");
+        // Force update player stats and restore health/mana
         player->UpdateAllStats();
         player->SetFullHealth();
         if (player->getPowerType() == POWER_MANA)
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
         
-        // CRITICAL FIX for XP bar: Force the client to update experience display
-        // The XP bar won't show if the client doesn't know about the level/XP reset
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Forcing XP bar refresh...");
-    // Reset experience to 0 and update value to ensure client syncs
-    // Use ObjectMgr to get XP for level (Player doesn't expose GetXPForLevel)
-    uint32 newXpForLevel = sObjectMgr->GetXPForLevel(resetLevel);
-    player->SetUInt32Value(PLAYER_XP, 0);
-    player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
+        // Reset experience to 0 for new level
+        uint32 newXpForLevel = sObjectMgr->GetXPForLevel(resetLevel);
+        player->SetUInt32Value(PLAYER_XP, 0);
+        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
         
-        // Send player data update to client so it rebuilds the XP bar UI with new level
-        player->SendInitialPacketsBeforeAddToMap();
-        
-        // Save again after applying buffs
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Saving after buffs...");
+        // Save player (single save instead of two)
         player->SaveToDB(false, false);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Announcing prestige...");
-        // Announce
+        // Announce to world
         if (announcePrestige)
         {
-            std::string announcement = Acore::StringFormat("|cFFFFD700[Prestige]|r Player {} has achieved Prestige Level {}!", playerName, newPrestige);
+            std::string announcement = Acore::StringFormat(
+                "|cFFFFD700[Prestige]|r Player {} has achieved Prestige Level {}!", 
+                playerName, newPrestige);
             sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, announcement);
         }
 
         // Notify player
         ChatHandler(player->GetSession()).PSendSysMessage("Congratulations! You have reached Prestige Level {}!", newPrestige);
         ChatHandler(player->GetSession()).PSendSysMessage("You now have {}% bonus to all stats!", newPrestige * statBonusPercent);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000You will be teleported to your hearthstone location in 5 seconds...|r");
 
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Logging to database...");
-        // Log to database with error checking
+        // Log to database
         try
         {
             CharacterDatabase.Execute(
                 "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
                 player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
             );
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Database log successful");
         }
         catch (...)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Database log failed (non-fatal)");
+            LOG_ERROR("scripts", "Prestige: Failed to log prestige for player {} (GUID: {})", 
+                playerName, player->GetGUID().ToString());
         }
         
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: PerformPrestige completed!");
+        LOG_INFO("scripts", "Prestige: Player {} completed prestige to level {}", playerName, newPrestige);
         
         // Teleport to starting location
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000Teleporting to your starting location...|r");
         TeleportToStartingLocation(player);
     }
 
@@ -347,9 +349,6 @@ public:
             y = fields[2].Get<float>();
             z = fields[3].Get<float>();
             o = fields[4].Get<float>();
-            
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found starting location for race {} class {} in playercreateinfo table", 
-                player->getRace(), player->getClass());
         }
         else
         {
@@ -367,13 +366,12 @@ public:
                 y = fields[2].Get<float>();
                 z = fields[3].Get<float>();
                 o = fields[4].Get<float>();
-                
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using fallback location for race {} from playercreateinfo table", 
-                    player->getRace());
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: No entry found in playercreateinfo table for race {}|r", player->getRace());
+                LOG_WARN("scripts", "Prestige: No playercreateinfo entry found for race {}, using hardcoded fallback", 
+                    player->getRace());
+                    
                 // Fallback to hardcoded defaults
                 switch (player->getRace())
                 {
@@ -405,16 +403,17 @@ public:
                         mapId = 530; x = -4149.21f; y = -12345.6f; z = 36.05f;
                         break;
                     default:
-                        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Unknown race for prestige teleport!|r");
+                        LOG_ERROR("scripts", "Prestige: Unknown race {} for teleport fallback", player->getRace());
+                        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Unable to determine starting location.|r");
                         return;
                 }
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Using hardcoded fallback location");
             }
         }
 
         // Teleport player
         player->TeleportTo(mapId, x, y, z, o);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Teleported to your starting location!|r");
+        LOG_INFO("scripts", "Prestige: Teleported player {} to starting location (Map: {}, {:.2f}, {:.2f}, {:.2f})", 
+            player->GetName(), mapId, x, y, z);
     }
 
     void ApplyPrestigeBuffs(Player* player)
@@ -425,47 +424,33 @@ public:
         uint32 prestigeLevel = GetPrestigeLevel(player);
         if (prestigeLevel == 0)
             return;
-
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Applying prestige bonuses for level {}", prestigeLevel);
         
-        // Apply visual aura for display purposes
         uint32 spellId = GetPrestigeSpell(prestigeLevel);
-        if (spellId)
+        if (!spellId)
+            return;
+            
+        // Validate spell exists in DBC
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to cast prestige spell ID: {}", spellId);
-            
-            // Check if spell exists in DBC
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-            if (!spellInfo)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Prestige spell {} not found in spell DBC!|r", spellId);
-                return;
-            }
-            
-            // Remove any existing prestige buffs first
-            RemovePrestigeBuffs(player);
-            
-            // Cast with TRIGGERED_CAST_DIRECTLY and TRIGGERED_IGNORE_GCD to ensure the aura sticks
-            // Use CastSpell with proper triggered flags for permanent passive auras
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Casting prestige spell {}", spellId);
-            // CastSpell overload accepts TriggerCastFlags; use that instead of CastSpellExtraArgs which
-            // may not be available in this AzerothCore version.
-            player->CastSpell(player, spellId, TriggerCastFlags(TRIGGERED_CAST_DIRECTLY | TRIGGERED_IGNORE_GCD));
-            
-            // Verify the aura was applied
-            if (player->HasAura(spellId))
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige buff aura applied! (Spell ID: {})|r", spellId);
-            }
-            else
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000WARNING: Aura may not have been applied!|r");
-            }
+            LOG_ERROR("scripts", "Prestige: Spell {} not found in DBC for prestige level {}", spellId, prestigeLevel);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Prestige spell not found!|r");
+            return;
         }
         
-        // Apply stat bonuses via visual aura
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Prestige bonuses applied ({}% bonus per level)", 
-            PrestigeSystem::instance()->GetStatBonusPercent());
+        // Remove any existing prestige buffs first
+        RemovePrestigeBuffs(player);
+        
+        // Cast prestige aura with triggered flags to ensure it sticks
+        player->CastSpell(player, spellId, TriggerCastFlags(TRIGGERED_CAST_DIRECTLY | TRIGGERED_IGNORE_GCD));
+        
+        // Verify aura application
+        if (!player->HasAura(spellId))
+        {
+            LOG_WARN("scripts", "Prestige: Aura {} may not have applied to player {}", spellId, player->GetName());
+        }
+        
+        LOG_INFO("scripts", "Prestige: Applied prestige buff (spell {}) to player {}", spellId, player->GetName());
     }
 
     void RemovePrestigeBuffs(Player* player)
@@ -482,27 +467,54 @@ public:
 
     uint32 GetPrestigeSpell(uint32 prestigeLevel)
     {
-        switch (prestigeLevel)
-        {
-            case 1:  return SPELL_PRESTIGE_BONUS_1;
-            case 2:  return SPELL_PRESTIGE_BONUS_2;
-            case 3:  return SPELL_PRESTIGE_BONUS_3;
-            case 4:  return SPELL_PRESTIGE_BONUS_4;
-            case 5:  return SPELL_PRESTIGE_BONUS_5;
-            case 6:  return SPELL_PRESTIGE_BONUS_6;
-            case 7:  return SPELL_PRESTIGE_BONUS_7;
-            case 8:  return SPELL_PRESTIGE_BONUS_8;
-            case 9:  return SPELL_PRESTIGE_BONUS_9;
-            case 10: return SPELL_PRESTIGE_BONUS_10;
-            default: return 0;
-        }
+        if (prestigeLevel == 0 || prestigeLevel > MAX_PRESTIGE_LEVEL)
+            return 0;
+        return PRESTIGE_SPELLS[prestigeLevel - 1]; // Array index is 0-based
     }
 
     uint32 GetPrestigeTitle(uint32 prestigeLevel)
     {
-        if (prestigeLevel == 0 || prestigeLevel > 10)
+        if (prestigeLevel == 0 || prestigeLevel > MAX_PRESTIGE_LEVEL)
             return 0;
-        return TITLE_PRESTIGE_1 + (prestigeLevel - 1);
+        return PRESTIGE_TITLES[prestigeLevel - 1]; // Array index is 0-based
+    }
+    
+    // Helper: Clear player flags that prevent XP gain or cause display issues
+    void ClearPrestigePlayerFlags(Player* player)
+    {
+        if (!player)
+            return;
+            
+        // Resurrect if dead
+        if (player->isDead())
+        {
+            player->ResurrectPlayer(1.0f);
+            if (DEBUG_MODE)
+                LOG_DEBUG("scripts", "Prestige: Player {} was dead, resurrecting", player->GetName());
+        }
+        
+        // Clear flags that prevent XP bar from showing or XP gain
+        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
+            if (DEBUG_MODE)
+                LOG_DEBUG("scripts", "Prestige: Removed GHOST flag from {}", player->GetName());
+        }
+        
+        if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
+            if (DEBUG_MODE)
+                LOG_DEBUG("scripts", "Prestige: Removed OUT_OF_BOUNDS flag from {}", player->GetName());
+        }
+        
+        // CRITICAL: Clear NO_XP_GAIN flag - allows player to gain experience
+        if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
+        {
+            player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
+            if (DEBUG_MODE)
+                LOG_DEBUG("scripts", "Prestige: Removed NO_XP_GAIN flag from {}", player->GetName());
+        }
     }
 
     void UpdatePrestigeAchievements(Player* player, uint32 prestigeLevel)
@@ -681,74 +693,31 @@ private:
 // PlayerScript for applying prestige bonuses on login
 class PrestigePlayerScript : public PlayerScript
 {
+private:
+    // Throttle aura checking to once per 30 seconds instead of every frame
+    std::unordered_map<uint32, uint32> lastAuraCheckTime;
+    
 public:
     PrestigePlayerScript() : PlayerScript("PrestigePlayerScript") { }
 
     void OnPlayerLogin(Player* player) override
     {
         if (!PrestigeSystem::instance()->IsEnabled())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG PRESTIGE LOGIN: System disabled");
             return;
-        }
 
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== PRESTIGE SYSTEM LOGIN DEBUG ===|r");
-
-        // Clear player flags that might prevent XP bar display
-        if (player->isDead())
-        {
-            player->ResurrectPlayer(1.0f);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player was dead on login, resurrecting...");
-        }
-        
-        // Clear ghost flag if set (prevents XP bar from showing)
-        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed GHOST flag");
-        }
-        
-        // Ensure player is not flagged as out of bounds
-        if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed OUT_OF_BOUNDS flag");
-        }
-        
-        // CRITICAL: Clear NO_XP_GAIN flag on login - allows prestige player to gain experience
-        if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Removed NO_XP_GAIN flag - player can now gain XP");
-        }
+        // Clear player flags that might prevent XP gain or cause display issues
+        PrestigeSystem::instance()->ClearPrestigePlayerFlags(player);
 
         // Apply prestige buffs on login
         uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player prestige level from DB: {}", prestigeLevel);
         
         if (prestigeLevel > 0)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Calling ApplyPrestigeBuffs for level {}", prestigeLevel);
             PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
-            
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Reapplying prestige achievements on login...");
-            // Reapply achievements on login in case they were lost (especially in GM mode)
-            PrestigeSystem::instance()->UpdatePrestigeAchievements(player, prestigeLevel);
-        }
-        else
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: No prestige level, skipping buff application");
-        }
 
-        // Notify player of their prestige level
-        if (prestigeLevel > 0)
-        {
+            // Notify player of their prestige level
             ChatHandler(player->GetSession()).PSendSysMessage("Welcome back! You are Prestige Level {} with {}% bonus stats.",
                 prestigeLevel, prestigeLevel * PrestigeSystem::instance()->GetStatBonusPercent());
-        }
-        else
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: You are not yet prestige");
         }
 
         // Check if player can prestige
@@ -757,12 +726,26 @@ public:
             uint32 currentPrestige = PrestigeSystem::instance()->GetPrestigeLevel(player);
             if (currentPrestige < PrestigeSystem::instance()->GetMaxPrestigeLevel())
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached level {}! Type .prestige to ascend to the next prestige level!|r",
-                    currentPrestige + 1);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached the required level! Type .prestige confirm to ascend!|r");
             }
         }
+    }
+    
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!PrestigeSystem::instance()->IsEnabled())
+            return;
+
+        // Clear cached prestige level to prevent memory leak
+        PrestigeSystem::instance()->ClearPrestigeCache(player->GetGUID());
         
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== END PRESTIGE LOGIN DEBUG ===|r");
+        // Clean up throttle map
+        uint32 guid = player->GetGUID().GetCounter();
+        auto it = lastAuraCheckTime.find(guid);
+        if (it != lastAuraCheckTime.end())
+        {
+            lastAuraCheckTime.erase(it);
+        }
     }
 
     void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
@@ -774,16 +757,29 @@ public:
         if (prestigeLevel == 0)
             return;
 
+        // Throttle aura check to once per 30 seconds (30000ms)
+        uint32 guid = player->GetGUID().GetCounter();
+        uint32 currentTime = GameTime::GetGameTimeMS().count();
+        
+        auto it = lastAuraCheckTime.find(guid);
+        if (it != lastAuraCheckTime.end())
+        {
+            if (currentTime - it->second < 30000)
+                return; // Too soon, skip this check
+        }
+        
+        lastAuraCheckTime[guid] = currentTime;
+
         // Check if prestige aura is missing and reapply it
-        // This ensures the buff persists even if something removes it
         uint32 spellId = PrestigeSystem::instance()->GetPrestigeSpell(prestigeLevel);
         if (spellId && !player->HasAura(spellId))
         {
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
             if (spellInfo)
             {
-                // Reapply silently
                 player->AddAura(spellId, player);
+                LOG_INFO("scripts", "Prestige: Reapplied missing prestige aura {} to player {}", 
+                    spellId, player->GetName());
             }
         }
     }
@@ -1008,6 +1004,55 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         PrestigeSystem::instance()->LoadConfig();
+    }
+    
+    void OnStartup() override
+    {
+        // Validate that all prestige spells exist in DBC
+        LOG_INFO("scripts", "Prestige: Validating prestige spells in DBC...");
+        bool allSpellsValid = true;
+        
+        for (uint32 i = 1; i <= MAX_PRESTIGE_LEVEL; ++i)
+        {
+            uint32 spellId = PrestigeSystem::instance()->GetPrestigeSpell(i);
+            if (!sSpellMgr->GetSpellInfo(spellId))
+            {
+                LOG_ERROR("scripts", "Prestige: CRITICAL - Spell {} for prestige level {} not found in DBC!", spellId, i);
+                allSpellsValid = false;
+            }
+        }
+        
+        if (allSpellsValid)
+        {
+            LOG_INFO("scripts", "Prestige: All {} prestige spells validated successfully", MAX_PRESTIGE_LEVEL);
+        }
+        else
+        {
+            LOG_ERROR("scripts", "Prestige: CRITICAL - Some prestige spells are missing! System may not work correctly.");
+        }
+        
+        // Validate that all prestige titles exist in DBC
+        LOG_INFO("scripts", "Prestige: Validating prestige titles in DBC...");
+        bool allTitlesValid = true;
+        
+        for (uint32 i = 1; i <= MAX_PRESTIGE_LEVEL; ++i)
+        {
+            uint32 titleId = PrestigeSystem::instance()->GetPrestigeTitle(i);
+            if (!sCharTitlesStore.LookupEntry(titleId))
+            {
+                LOG_ERROR("scripts", "Prestige: CRITICAL - Title {} for prestige level {} not found in DBC!", titleId, i);
+                allTitlesValid = false;
+            }
+        }
+        
+        if (allTitlesValid)
+        {
+            LOG_INFO("scripts", "Prestige: All {} prestige titles validated successfully", MAX_PRESTIGE_LEVEL);
+        }
+        else
+        {
+            LOG_ERROR("scripts", "Prestige: CRITICAL - Some prestige titles are missing! Players may not receive titles.");
+        }
     }
 };
 

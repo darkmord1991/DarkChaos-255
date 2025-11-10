@@ -1357,17 +1357,6 @@ Prestige.Rewards = ""
 #
 Prestige.AnnounceWorld = 1
 
-#
-#    Prestige.AchievementBase
-#        Description: Base achievement ID for prestige milestones
-#                     System will grant achievement (Base + PrestigeLevel)
-#                     Example: Base 10000 → Prestige 1 = Achievement 10001
-#                     Set to 0 to disable achievement integration.
-#        Default:     10000
-#        Range:       0 - 65535
-#
-Prestige.AchievementBase = 10000
-
 # -------------------------------------------------------------------------
 # Title System (Requires DBC editing)
 # -------------------------------------------------------------------------
@@ -1387,52 +1376,6 @@ Prestige.AchievementBase = 10000
 #        Alternative: Use existing title IDs from the game if you
 #                     prefer not to modify client files.
 #
-
-# -------------------------------------------------------------------------
-# Advanced Options
-# -------------------------------------------------------------------------
-
-#
-#    Prestige.AllowMultiplePrestigePerDay
-#        Description: Allow players to prestige multiple times in one day
-#                     When disabled, players can only prestige once per 24h.
-#        Default:     1 (Enabled - no daily limit)
-#                     0 (Disabled - 1 prestige per day max)
-#
-Prestige.AllowMultiplePrestigePerDay = 1
-
-#
-#    Prestige.ConfirmationRequired
-#        Description: Require players to confirm prestige with .prestige confirm
-#                     Prevents accidental prestige resets.
-#        Default:     1 (Enabled - requires confirmation)
-#                     0 (Disabled - instant prestige with .prestige reset)
-#
-Prestige.ConfirmationRequired = 1
-
-#
-#    Prestige.ResetMounts
-#        Description: Remove all mounts from player on prestige
-#        Default:     0 (Disabled - keep mounts)
-#                     1 (Enabled - remove mounts)
-#
-Prestige.ResetMounts = 0
-
-#
-#    Prestige.ResetReputation
-#        Description: Reset all faction reputations to neutral
-#        Default:     0 (Disabled - keep reputation)
-#                     1 (Enabled - reset reputation)
-#
-Prestige.ResetReputation = 0
-
-#
-#    Prestige.ResetAchievements
-#        Description: Remove all achievements (except prestige achievements)
-#        Default:     0 (Disabled - keep achievements)
-#                     1 (Enabled - reset achievements)
-#
-Prestige.ResetAchievements = 0
 
 
 ###########################################################################
@@ -1473,6 +1416,113 @@ ChallengeMode.Enable = 1
 #        Note:        Must exist in gameobject_template
 #
 ChallengeMode.ShrineEntry = 190010
+
+# -------------------------------------------------------------------------
+# Alt-Friendly XP Bonus System
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.AltBonus.Enable
+#        Description: Grant XP bonus based on max-level characters on account
+#                     Encourages alt play and rewards account progression.
+#                     Visual buff spells IDs: 800030-800034 (5%-25% in 5% increments)
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no alt bonus)
+#
+Prestige.AltBonus.Enable = 1
+
+#
+#    Prestige.AltBonus.MaxLevel
+#        Description: Level considered "max level" for bonus calculation
+#                     Characters at or above this level count toward bonus.
+#        Default:     255
+#        Range:       1 - 255
+#
+Prestige.AltBonus.MaxLevel = 255
+
+#
+#    Prestige.AltBonus.PercentPerChar
+#        Description: XP bonus percentage per max-level character
+#                     Example: 5 means 5% bonus per max-level char
+#        Default:     5
+#        Range:       1 - 25
+#
+Prestige.AltBonus.PercentPerChar = 5
+
+#
+#    Prestige.AltBonus.MaxCharacters
+#        Description: Maximum characters counted for bonus calculation
+#                     Example: 5 means max 25% bonus (5 chars × 5%)
+#        Default:     5
+#        Range:       1 - 10
+#
+Prestige.AltBonus.MaxCharacters = 5
+
+# -------------------------------------------------------------------------
+# Prestige Challenges System (Optional Hard Modes)
+# -------------------------------------------------------------------------
+
+#
+#    Prestige.Challenges.Enable
+#        Description: Enable optional prestige challenges
+#                     Players can opt-in to hard mode challenges for rewards.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no challenges available)
+#
+Prestige.Challenges.Enable = 1
+
+#
+#    Prestige.Challenges.Iron.Enable
+#        Description: Enable "Iron Prestige" challenge
+#                     Requirement: Reach level 255 without dying
+#                     Rewards: Special title, +2% permanent stat bonus
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+Prestige.Challenges.Iron.Enable = 1
+
+#
+#    Prestige.Challenges.Speed.Enable
+#        Description: Enable "Speed Prestige" challenge
+#                     Requirement: Reach level 255 in <100 hours played
+#                     Rewards: Special title, +2% permanent stat bonus
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+Prestige.Challenges.Speed.Enable = 1
+
+#
+#    Prestige.Challenges.Speed.TimeLimit
+#        Description: Time limit for Speed Prestige challenge (in seconds)
+#                     Default: 360000 (100 hours)
+#                     Range:   36000 - 720000 (10h - 200h)
+#
+Prestige.Challenges.Speed.TimeLimit = 360000
+
+#
+#    Prestige.Challenges.Solo.Enable
+#        Description: Enable "Solo Prestige" challenge
+#                     Requirement: Reach level 255 without joining a group
+#                     Rewards: Special title, +2% permanent stat bonus
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+Prestige.Challenges.Solo.Enable = 1
+
+#
+#    Prestige Challenge Title IDs (Reference)
+#        Description: Custom titles for completed challenges
+#                     Must be added to CharTitles.dbc client-side
+#        
+#        Title ID 188: "Iron %s" (No deaths)
+#        Title ID 189: "Swift %s" (Speed run)
+#        Title ID 190: "Lone Wolf %s" (Solo leveling)
+#
+#        Stat bonuses from challenges stack with prestige bonuses:
+#        - Prestige 10 = +10% stats (base system)
+#        - All 3 challenges = +6% stats (2% each)
+#        - Total possible = +16% stats
+#
 
 # -------------------------------------------------------------------------
 # Hardcore Mode Settings
@@ -2998,6 +3048,143 @@ Hardcore.AchievementReward = ""
 #        Default:     "" (empty - no talent rewards)
 #
 Hardcore.TalentRewards = ""
+
+
+###########################################################################
+#
+#    SECTION 7: MAP EXTENSION SYSTEM (GPS TRACKING)
+#
+#    Provides real-time GPS coordinate tracking for players in custom zones
+#    via AIO (Addon I/O) integration. Automatically sends player position,
+#    orientation, speed, combat status, and other enhanced data to client
+#    addons for custom minimap/world map features.
+#
+#    Features:
+#    - Automatic GPS updates with configurable throttling
+#    - Zone change detection for immediate position updates
+#    - DBC-based map bounds (supports all custom zones automatically)
+#    - Enhanced payload with orientation, speed, combat status, etc.
+#    - Performance-optimized with per-player tracking
+#    - Configurable per-map enable/disable
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Master Configuration
+# -------------------------------------------------------------------------
+
+#
+#    MapExtension.Enable
+#        Description: Master toggle for the GPS tracking system
+#                     When disabled, no GPS updates are sent to clients.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no GPS functionality)
+#
+MapExtension.Enable = 1
+
+#
+#    MapExtension.UpdateInterval
+#        Description: Time in milliseconds between automatic GPS updates
+#                     Lower values = more frequent updates = higher server load
+#                     Minimum: 500ms, Maximum: 10000ms (10 seconds)
+#        Default:     2000 (2 seconds)
+#        Range:       500 - 10000
+#
+MapExtension.UpdateInterval = 2000
+
+#
+#    MapExtension.EnabledMaps
+#        Description: Comma-separated list of map IDs where GPS tracking is active
+#                     Only players in these maps will receive GPS updates.
+#                     
+#                     Common map IDs:
+#                       0   = Eastern Kingdoms
+#                       1   = Kalimdor
+#                       530 = Outland (Burning Crusade)
+#                       571 = Northrend (Wrath of the Lich King)
+#                       37  = Azshara Crater (custom)
+#        Default:     "0,1,530,571,37" (all continents + custom zones)
+#
+MapExtension.EnabledMaps = "0,1,530,571,37"
+
+#
+#    MapExtension.LogLevel
+#        Description: Logging verbosity for GPS system
+#                     0 = None (silent, only critical errors)
+#                     1 = Errors only
+#                     2 = Warnings and errors
+#                     3 = Debug (verbose logging for troubleshooting)
+#        Default:     0 (Silent)
+#        Range:       0 - 3
+#
+MapExtension.LogLevel = 0
+
+# -------------------------------------------------------------------------
+# GPS Payload Information
+# -------------------------------------------------------------------------
+#
+# The GPS system sends the following data to client addons:
+#
+#   mapId       - Current map ID
+#   zoneId      - Current zone ID
+#   areaId      - Current area ID
+#   x, y, z     - World coordinates
+#   nx, ny      - Normalized coordinates (0-1 range for minimap positioning)
+#   o           - Orientation (radians)
+#   speed       - Current movement speed
+#   combat      - Combat status (0=false, 1=true)
+#   mounted     - Mounted status (0=false, 1=true)
+#   dead        - Death status (0=alive, 1=dead)
+#   areaLevel   - Recommended area level from DBC
+#   hasCoords   - Whether normalized coords are available (0=false, 1=true)
+#
+# Example JSON payload:
+#   {"mapId":37,"zoneId":268,"areaId":268,"x":-123.45,"y":456.78,"z":12.34,
+#    "nx":0.523,"ny":0.789,"o":3.14,"speed":7.0,"combat":0,"mounted":1,
+#    "dead":0,"areaLevel":60,"hasCoords":1}
+#
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# Advanced Configuration
+# -------------------------------------------------------------------------
+
+#
+#    MapExtension.ZoneChangeImmediate
+#        Description: Send immediate GPS update when player changes zones
+#                     When enabled, zone transitions trigger instant updates
+#                     regardless of UpdateInterval timer.
+#        Default:     1 (Enabled - instant zone change updates)
+#                     0 (Disabled - zone changes use normal update interval)
+#        Note:        This is hardcoded to enabled in the current implementation
+#
+#MapExtension.ZoneChangeImmediate = 1
+
+#
+#    MapExtension.RequireAIO
+#        Description: Only send GPS updates if AIO (Addon I/O) is compiled
+#                     When HAS_AIO is not defined, system will log error on startup.
+#        Default:     1 (Enabled - requires AIO)
+#        Note:        This is a compile-time check, not runtime config
+#
+#MapExtension.RequireAIO = 1
+
+# -------------------------------------------------------------------------
+# Integration with Hotspots System
+# -------------------------------------------------------------------------
+#
+# The MapExtension system uses the same DBC-derived map bounds as the
+# Hotspots system. This ensures consistency and eliminates duplicate
+# hardcoded map bounds.
+#
+# When server starts:
+# 1. Hotspots system calls BuildMapBoundsFromDBC()
+# 2. MapExtension reuses the same sMapBounds data
+# 3. All custom zones in WorldMapArea.dbc are automatically supported
+#
+# No manual configuration needed for new custom zones!
+#
+# -------------------------------------------------------------------------
 
 #
 #    Hardcore.TitleRewards

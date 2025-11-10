@@ -5,6 +5,9 @@
  * DarkChaos-255 Prestige Spell Scripts
  *
  * Applies configurable stat bonuses for prestige levels (800010-800019).
+ * 
+ * SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE automatically handles all stats including armor,
+ * so no manual HandleStatModifier() calls are needed.
  */
 
 #include "Config.h"
@@ -14,6 +17,9 @@
 
 namespace
 {
+    // Cache the stat bonus percentage to avoid reading config on every aura calculation
+    uint32 g_CachedStatBonusPercent = 0;
+    
     // Shared aura handler that rescales the base amount using the configured bonus.
     template<uint8 PrestigeLevel>
     class PrestigeBonusAuraScript : public AuraScript
@@ -23,35 +29,12 @@ namespace
         void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& canBeRecalculated)
         {
             canBeRecalculated = true; // allow config reloads to update active auras
-            uint32 bonusPerLevel = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
-            amount = static_cast<int32>(PrestigeLevel * bonusPerLevel);
-        }
-
-        void AdjustArmor(AuraEffect const* aurEff, bool apply)
-        {
-            Unit* target = GetTarget();
-            if (!target || !aurEff)
-                return;
-
-            float bonusPct = static_cast<float>(aurEff->GetAmount());
-            target->HandleStatModifier(UNIT_MOD_ARMOR, TOTAL_PCT, bonusPct, apply);
-        }
-
-        void HandleArmorApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
-        {
-            AdjustArmor(aurEff, true);
-        }
-
-        void HandleArmorRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
-        {
-            AdjustArmor(aurEff, false);
+            amount = static_cast<int32>(PrestigeLevel * g_CachedStatBonusPercent);
         }
 
         void Register() override
         {
             DoEffectCalcAmount += AuraEffectCalcAmountFn(PrestigeBonusAuraScript::CalculateAmount, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE);
-            OnEffectApply += AuraEffectApplyFn(PrestigeBonusAuraScript::HandleArmorApply, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
-            OnEffectRemove += AuraEffectRemoveFn(PrestigeBonusAuraScript::HandleArmorRemove, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, AURA_EFFECT_HANDLE_REAL);
         }
     };
 
@@ -64,6 +47,30 @@ namespace
         AuraScript* GetAuraScript() const override
         {
             return new PrestigeBonusAuraScript<PrestigeLevel>();
+        }
+    };
+    
+    // WorldScript to cache config value on startup and config reload
+    class PrestigeSpellConfigScript : public WorldScript
+    {
+    public:
+        PrestigeSpellConfigScript() : WorldScript("PrestigeSpellConfigScript") { }
+        
+        void OnStartup() override
+        {
+            CacheConfig();
+        }
+        
+        void OnAfterConfigLoad(bool /*reload*/) override
+        {
+            CacheConfig();
+        }
+        
+    private:
+        void CacheConfig()
+        {
+            g_CachedStatBonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
+            LOG_INFO("scripts", "Prestige Spells: Cached StatBonusPercent = {}%", g_CachedStatBonusPercent);
         }
     };
 }
@@ -80,4 +87,5 @@ void AddSC_dc_prestige_spells()
     new PrestigeBonusSpellLoader<8>("spell_prestige_bonus_8");
     new PrestigeBonusSpellLoader<9>("spell_prestige_bonus_9");
     new PrestigeBonusSpellLoader<10>("spell_prestige_bonus_10");
+    new PrestigeSpellConfigScript();
 }

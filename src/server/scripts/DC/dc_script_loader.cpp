@@ -30,13 +30,18 @@ void AddSC_hlbg_addon(); // location: scripts\DC\HinterlandBG\hlbg_addon.cpp
 void AddSC_npc_hinterlands_battlemaster(); // location: scripts\DC\HinterlandBG\npc_hinterlands_battlemaster.cpp
 // HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
 void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
+void AddSC_spell_hotspot_buff_800001(); // location: scripts\DC\Hotspot\spell_hotspot_buff_800001.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
 void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 // GPS broadcaster removed - Using Eluna instead (Custom/Eluna scripts/DC_MapGPS.lua)
 void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
+void AddSC_PlayerScript_MapExtension(); // location: scripts\DC\MapExtension\PlayerScript_MapExtension.cpp
 void AddSC_dc_prestige_system(); // location: scripts\DC\dc_prestige_system.cpp
 void AddSC_dc_prestige_spells(); // location: scripts\DC\dc_prestige_spells.cpp
+void AddSC_dc_prestige_alt_bonus(); // location: scripts\DC\Prestige\dc_prestige_alt_bonus.cpp
+void AddSC_dc_prestige_challenges(); // location: scripts\DC\Prestige\dc_prestige_challenges.cpp
+void AddSC_spell_prestige_alt_bonus_aura(); // location: scripts\DC\Prestige\spell_prestige_alt_bonus_aura.cpp
 void AddSC_dc_challenge_modes(); // location: scripts\DC\dc_challenge_modes_customized.cpp
 void AddSC_spell_challenge_mode_auras(); // location: scripts\DC\ChallengeMode\spell_challenge_mode_auras.cpp
 void AddSC_dc_achievements(); // location: scripts\DC\Achievements\dc_achievements.cpp
@@ -74,6 +79,7 @@ void AddDCScripts()
     AddSC_heirloom_scaling_255();
     AddBattleForGilneasScripts();
     AddSC_cs_gps_test();
+    AddSC_PlayerScript_MapExtension();
 
     // Hinterland BG System
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -114,7 +120,10 @@ void AddDCScripts()
     try {
         AddSC_dc_prestige_system();
         AddSC_dc_prestige_spells();
-        LOG_INFO("scripts", ">>   ✓ Prestige mechanics and spells loaded");
+        AddSC_dc_prestige_alt_bonus();
+        AddSC_dc_prestige_challenges();
+        AddSC_spell_prestige_alt_bonus_aura();
+        LOG_INFO("scripts", ">>   ✓ Prestige mechanics, spells, alt bonus, challenges, and visual buffs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Prestige System: {}", e.what());
     } catch (...) {
@@ -144,7 +153,8 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_ac_hotspots();
-        LOG_INFO("scripts", ">>   ✓ Hotspots detection and markers loaded");
+        AddSC_spell_hotspot_buff_800001();
+        LOG_INFO("scripts", ">>   ✓ Hotspots detection, markers, and spell buffs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hotspots System: {}", e.what());
     } catch (...) {

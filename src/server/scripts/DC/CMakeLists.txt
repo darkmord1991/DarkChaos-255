@@ -4,6 +4,9 @@
 set(SCRIPTS_DC_Prestige
     Prestige/dc_prestige_system.cpp
     Prestige/dc_prestige_spells.cpp
+    Prestige/dc_prestige_alt_bonus.cpp
+    Prestige/dc_prestige_challenges.cpp
+    Prestige/spell_prestige_alt_bonus_aura.cpp
 )
 
 # Challenge Mode scripts
