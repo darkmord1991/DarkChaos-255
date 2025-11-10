@@ -23,11 +23,11 @@ namespace
     constexpr uint32 MAX_XP_BONUS_PERCENT = XP_BONUS_PER_MAX_CHAR * MAX_BONUS_CHARACTERS; // 25%
     
     // Visual buff spell IDs (must match DBC entries and spell_prestige_alt_bonus_aura.cpp)
-    constexpr uint32 SPELL_ALT_BONUS_5  = 800020;  // 5% bonus visual
-    constexpr uint32 SPELL_ALT_BONUS_10 = 800021;  // 10% bonus visual
-    constexpr uint32 SPELL_ALT_BONUS_15 = 800022;  // 15% bonus visual
-    constexpr uint32 SPELL_ALT_BONUS_20 = 800023;  // 20% bonus visual
-    constexpr uint32 SPELL_ALT_BONUS_25 = 800024;  // 25% bonus visual
+    constexpr uint32 SPELL_ALT_BONUS_5  = 800030;  // 5% bonus visual
+    constexpr uint32 SPELL_ALT_BONUS_10 = 800031;  // 10% bonus visual
+    constexpr uint32 SPELL_ALT_BONUS_15 = 800032;  // 15% bonus visual
+    constexpr uint32 SPELL_ALT_BONUS_20 = 800033;  // 20% bonus visual
+    constexpr uint32 SPELL_ALT_BONUS_25 = 800034;  // 25% bonus visual
     
     // Cache for account max level character counts
     std::unordered_map<uint32, uint32> g_AccountMaxLevelCache;

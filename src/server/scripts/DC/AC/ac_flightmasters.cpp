@@ -43,28 +43,28 @@ enum : uint32
 };
 
 // Route selection for the flight
-enum FlightRouteMode : uint32
-{
-    // Camp (acfm0) starts
-    ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> acfm15
-    ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> acfm35
-    ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> acfm57
-
-    // Level 25+ starts
-    ROUTE_RETURN        = 3,  // Level 25+ to Camp: acfm15 -> ... -> acfm0
-    ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: acfm19 -> ... -> acfm35
-    ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: acfm19 -> ... -> acfm57
-
-    // Level 40+ starts
-    ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: acfm35 -> ... -> acfm19
-    ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: acfm40 -> ... -> acfm57
-
-    // Level 60+ starts
-    ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
-    ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
-    ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: acfm57 -> ... -> acfm0
-    ,ROUTE_L40_RETURN0  = 11  // Level 40+ to Camp: acfm35 -> ... -> acfm0
-};
+// enum FlightRouteMode : uint32
+// {
+//     // Camp (acfm0) starts
+//     ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> acfm15
+//     ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> acfm35
+//     ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> acfm57
+//
+//     // Level 25+ starts
+//     ROUTE_RETURN        = 3,  // Level 25+ to Camp: acfm15 -> ... -> acfm0
+//     ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: acfm19 -> ... -> acfm35
+//     ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: acfm19 -> ... -> acfm57
+//
+//     // Level 40+ starts
+//     ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: acfm35 -> ... -> acfm19
+//     ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: acfm40 -> ... -> acfm57
+//
+//     // Level 60+ starts
+//     ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
+//     ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
+//     ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: acfm57 -> ... -> acfm0
+//     ,ROUTE_L40_RETURN0  = 11  // Level 40+ to Camp: acfm35 -> ... -> acfm0
+// };
 
 // Gossip action IDs for readability
 enum GossipAction : uint32
@@ -113,6 +113,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     uint8 _index = 0;                // current waypoint index
     uint32 _currentPointId = 0;      // current MovePoint id
 
+    // Additional flight state variables
+    bool _isLanding = false;         // whether the gryphon is currently landing
+    bool _started = false;           // whether the flight has started
+    FlightRouteMode _routeMode = ROUTE_TOUR; // current route mode
+
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
 
     void SetData(uint32 id, uint32 value) override
@@ -124,6 +129,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // === NEW: Create route strategy ===
         FlightRouteMode mode = static_cast<FlightRouteMode>(value);
         _currentRoute = FlightRouteFactory::CreateRoute(mode);
+        _routeMode = mode; // Store the route mode
         
         if (!_currentRoute)
         {
@@ -231,6 +237,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (me->IsInWorld())
                 {
                     _stateMachine.TransitionTo(FlightState::Flying, FlightEvent::StartFlight);
+                    _started = true; // Flight has started
                     MoveToIndexWithSmartPath(_index);
                 }
             });
@@ -239,6 +246,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         {
             // Start directly
             _stateMachine.TransitionTo(FlightState::Flying, FlightEvent::StartFlight);
+            _started = true; // Flight has started
             MoveToIndexWithSmartPath(_index);
         }
     }
@@ -259,6 +267,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             me->SetDisableGravity(false);
             me->SetCanFly(false);
             _isLanding = false;
+            _started = false; // Flight has ended
             DismountAndDespawn();
             return;
         }
@@ -433,10 +442,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->SetHover(false);
         me->SetDisableGravity(false);
         me->SetCanFly(false);
-    me->DespawnOrUnsummon(1000ms);
-    }
-
-    void UpdateAI(uint32 diff) override
+        
+        // Reset flight state variables
+        _isLanding = false;
+        _started = false;
+        _routeMode = ROUTE_TOUR;
+        
+        me->DespawnOrUnsummon(1000ms);
+    }    void UpdateAI(uint32 diff) override
     {
         // Drive scheduled tasks
         _scheduler.Update(diff);

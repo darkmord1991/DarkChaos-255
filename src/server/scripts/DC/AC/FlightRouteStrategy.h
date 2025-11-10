@@ -20,7 +20,28 @@ namespace DC_AC_Flight
 {
 
 // Forward declarations
-enum FlightRouteMode : uint32;
+enum FlightRouteMode : uint32
+{
+    // Camp (acfm0) starts
+    ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> acfm15
+    ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> acfm35
+    ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> acfm57
+
+    // Level 25+ starts
+    ROUTE_RETURN        = 3,  // Level 25+ to Camp: acfm15 -> ... -> acfm0
+    ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: acfm19 -> ... -> acfm35
+    ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: acfm19 -> ... -> acfm57
+
+    // Level 40+ starts
+    ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: acfm35 -> ... -> acfm19
+    ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: acfm40 -> ... -> acfm57
+
+    // Level 60+ starts
+    ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
+    ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
+    ROUTE_L60_RETURN0   = 10, // Level 60+ to Camp: acfm57 -> ... -> acfm0
+    ROUTE_L40_RETURN0   = 11  // Level 40+ to Camp: acfm35 -> ... -> acfm0
+};
 
 // ============================================================================
 // IFlightRoute - Strategy Interface
