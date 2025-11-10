@@ -110,18 +110,63 @@ public:
     bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override {
         // Close the gossip menu
         CloseGossipMenuFor(player);
+        
         // Validate the selected action (POI index)
         // Guard against malformed client packets by ensuring the index is valid.
-        if (action < sizeof(ac_guard_pois)/sizeof(ACGuardPOI)) {
-            const ACGuardPOI& poi = ac_guard_pois[action];
-            // Optional: brief confirmation before teleport (include area prefix)
-            const std::string poiPrefix = "Ashzara Crater - ";
-            // Use the chat handler to show a short confirmation message to the
-            // player. This is intentionally terse and user-facing.
-            ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poiPrefix + std::string(poi.name));
-            // Direct teleport to the POI
-            player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
+        if (action >= sizeof(ac_guard_pois)/sizeof(ACGuardPOI)) {
+            ChatHandler(player->GetSession()).SendSysMessage("Invalid destination selected.");
+            return true;
         }
+        
+        // === SAFETY CHECKS ===
+        // Prevent teleportation in unsafe conditions
+        
+        // 1. Combat check - cannot teleport while in combat
+        if (player->IsInCombat()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while in combat.");
+            return true;
+        }
+        
+        // 2. Mount check - cannot teleport while mounted
+        if (player->IsMounted()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You must dismount before teleporting.");
+            return true;
+        }
+        
+        // 3. Vehicle check - cannot teleport while in a vehicle
+        if (player->GetVehicle()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while in a vehicle.");
+            return true;
+        }
+        
+        // 4. Instance check - cannot teleport from inside an instance (optional, can be removed if desired)
+        if (player->GetMap() && player->GetMap()->IsDungeon()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport from inside an instance.");
+            return true;
+        }
+        
+        // 5. Dead check - cannot teleport while dead (ghost form)
+        if (!player->IsAlive()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while dead.");
+            return true;
+        }
+        
+        // 6. Falling check - cannot teleport while falling
+        if (player->IsFalling()) {
+            ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while falling.");
+            return true;
+        }
+        
+        // All safety checks passed - proceed with teleport
+        const ACGuardPOI& poi = ac_guard_pois[action];
+        const std::string poiPrefix = "Ashzara Crater - ";
+        
+        // Brief confirmation message before teleport
+        ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poiPrefix + std::string(poi.name));
+        
+        // Execute teleport
+        player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
+        
         return true;
     }
 };
