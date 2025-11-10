@@ -473,6 +473,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // Proximity-based waypoint arrival fallback in case MovementInform is skipped
         if (_awaitingArrival)
         {
+            Player* passenger = GetCachedPassenger();
             _sinceMoveMs += diff;
             _hopElapsedMs += diff; // watchdog for per-hop timeouts
             if (_sinceMoveMs > Timeout::PROXIMITY_CHECK_DEBOUNCE_MS)

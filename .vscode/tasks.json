@@ -60,7 +60,7 @@
 				"-o",
 				"UserKnownHostsFile=NUL",
 				"${input:remoteUser}@${input:remoteHost}",
-				"bash /home/wowcore/updateWoWshort.sh"
+				"bash /home/wowcore/UpdateWoWshort.sh"
 			],
 			"group": {
 				"kind": "build",
