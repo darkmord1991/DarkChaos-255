@@ -1,8 +1,6 @@
 #include "ac_flightmasters_data.h"
 #include "Position.h"
 
-namespace DC_AC_Flight
-{
 Position const kPath[] = {
     { 137.1860f, 954.9300f, 327.5140f, 0.327798f },
     { 269.8730f, 827.0230f, 289.0940f, 5.185540f },
@@ -91,5 +89,3 @@ std::string NodeLabel(uint8 idx)
         return std::string("acfm57");
     return std::string("acfm?");
 }
-
-} // namespace DC_AC_Flight
