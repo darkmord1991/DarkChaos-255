@@ -6,6 +6,9 @@
 // -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "Chat.h"
+#include "HinterlandBGConstants.h"
+
+using namespace HinterlandBGConstants;
 
 void OutdoorPvPHL::UpdateStateMachine(uint32 diff)
 {
@@ -293,16 +296,7 @@ void OutdoorPvPHL::ForceFinishBattle(TeamId winner)
 
 const char* OutdoorPvPHL::GetAffixName(AffixType affix) const
 {
-    switch (affix)
-    {
-        case AFFIX_SUNLIGHT: return "Sunlight";
-        case AFFIX_CLEAR_SKIES: return "Clear Skies";
-        case AFFIX_GENTLE_BREEZE: return "Gentle Breeze";
-        case AFFIX_STORM: return "Storm";
-        case AFFIX_HEAVY_RAIN: return "Heavy Rain";
-        case AFFIX_FOG: return "Fog";
-        default: return "None";
-    }
+    return HinterlandBGConstants::GetAffixName(static_cast<uint8>(affix));
 }
 
 void OutdoorPvPHL::BroadcastToZone(const char* format, ...)

@@ -9,22 +9,16 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "Chat.h"
+#include "HinterlandBGConstants.h"
 #include <algorithm>
 #include <string>
+
+using namespace HinterlandBGConstants;
 
 // Return a short code for affix to show via worldstate or announcements
 static const char* HL_AffixName(OutdoorPvPHL::AffixType a)
 {
-    switch (a)
-    {
-        case OutdoorPvPHL::AFFIX_SUNLIGHT: return "Sunlight";
-        case OutdoorPvPHL::AFFIX_CLEAR_SKIES: return "Clear Skies";
-        case OutdoorPvPHL::AFFIX_GENTLE_BREEZE: return "Gentle Breeze";
-        case OutdoorPvPHL::AFFIX_STORM: return "Storm";
-        case OutdoorPvPHL::AFFIX_HEAVY_RAIN: return "Heavy Rain";
-        case OutdoorPvPHL::AFFIX_FOG: return "Fog";
-        default: return "None";
-    }
+    return GetAffixName(static_cast<uint8>(a));
 }
 
 // Emit affix worldstate for clients/addons to display a label
@@ -61,8 +55,7 @@ void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
             float  wint  = _affixWeatherIntensity[_activeAffix];
             if (wtype)
             {
-                static const char* WN[] = { "Clear", "Rain", "Snow", "Sandstorm", "Storm", "Thunders", "BlackRain" };
-                const char* wname = (wtype < (sizeof(WN)/sizeof(WN[0]))) ? WN[wtype] : "Weather";
+                const char* wname = GetExtendedWeatherName(wtype);
                 uint32 ipct = uint32(std::max(0.f, std::min(1.f, wint)) * 100.f + 0.5f);
                 payload += "|WEATHER|";
                 payload += wname;

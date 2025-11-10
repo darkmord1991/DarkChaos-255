@@ -155,9 +155,23 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     // Weather info at the moment of result
     uint32 weather = GetAffixWeatherType(aff);
     float wint = GetAffixWeatherIntensity(aff);
-    CharacterDatabase.Execute(
-        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
-        zone, mapId, _season, winnerTid, a, h, reason, aff, weather, wint, dur);
+    
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_WINNER_HISTORY);
+    stmt->SetData(0, zone);
+    stmt->SetData(1, mapId);
+    stmt->SetData(2, _season);
+    stmt->SetData(3, winnerTid);
+    stmt->SetData(4, a);
+    stmt->SetData(5, h);
+    stmt->SetData(6, std::string(reason));
+    stmt->SetData(7, aff);
+    stmt->SetData(8, weather);
+    stmt->SetData(9, wint);
+    stmt->SetData(10, dur);
+    if (!CharacterDatabase.Execute(stmt))
+    {
+        LOG_ERROR("outdoorpvp.hl", "[HL] Failed to record winner in history - Alliance: {}, Horde: {}", a, h);
+    }
 }
 
 // Record manual reset in history table
@@ -174,9 +188,24 @@ void OutdoorPvPHL::_recordManualReset()
     uint32 weather = GetAffixWeatherType(aff);
     float wint = GetAffixWeatherIntensity(aff);
     
-    CharacterDatabase.Execute(
-        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
-        zone, mapId, _season, 2, a, h, "manual", aff, weather, wint, dur);
-        
-    LOG_INFO("outdoorpvp.hl", "[HL] Manual reset recorded in history - Alliance: {}, Horde: {}, Affix: {}", a, h, aff);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_WINNER_HISTORY);
+    stmt->SetData(0, zone);
+    stmt->SetData(1, mapId);
+    stmt->SetData(2, _season);
+    stmt->SetData(3, static_cast<uint8>(2)); // winner_tid = 2 (draw/neutral)
+    stmt->SetData(4, a);
+    stmt->SetData(5, h);
+    stmt->SetData(6, std::string("manual"));
+    stmt->SetData(7, aff);
+    stmt->SetData(8, weather);
+    stmt->SetData(9, wint);
+    stmt->SetData(10, dur);
+    if (!CharacterDatabase.Execute(stmt))
+    {
+        LOG_ERROR("outdoorpvp.hl", "[HL] Failed to record manual reset in history");
+    }
+    else
+    {
+        LOG_INFO("outdoorpvp.hl", "[HL] Manual reset recorded in history - Alliance: {}, Horde: {}, Affix: {}", a, h, aff);
+    }
 }
