@@ -51,21 +51,16 @@
 		{
 			"label": "AzerothCore: Sync changed + Build",
 			"type": "shell",
-			"command": "powershell",
+			"command": "ssh",
 			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"apps/git_tools/ssh-sync-and-build.ps1",
-				"-RemoteUser",
-				"${input:remoteUser}",
-				"-RemoteHost",
-				"${input:remoteHost}",
-				"-RemoteRepoPath",
-				"${input:remoteRepoPath}",
-				"-PrivateKeyPath",
-				"${input:sshKeyPath}"
+				"-i",
+				"${input:sshKeyPath}",
+				"-o",
+				"StrictHostKeyChecking=no",
+				"-o",
+				"UserKnownHostsFile=NUL",
+				"${input:remoteUser}@${input:remoteHost}",
+				"bash /home/wowcore/updateWoWshort.sh"
 			],
 			"group": {
 				"kind": "build",
