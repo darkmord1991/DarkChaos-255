@@ -1888,7 +1888,6 @@ public:
     }
 };  // End of AC_Flightmaster_DebugCommands class
 
-namespace DC_AC_Flight {
 // Define per-node config defaults (runtime-initialized)
 const std::vector<NodeConfig> ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
     std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
@@ -1899,7 +1898,6 @@ const std::vector<NodeConfig> ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults =
         v[kIndex_acfm15] = { 2u, 6.0f };
     return v;
 }();
-} // namespace DC_AC_Flight
 
 void AddSC_flightmasters()
 {
