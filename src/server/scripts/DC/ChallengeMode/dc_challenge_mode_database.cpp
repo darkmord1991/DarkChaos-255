@@ -140,16 +140,10 @@ void ChallengeModeDatabase::LogEvent(
 // Record hardcore death
 void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, const std::string& killerName)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET hardcore_deaths = hardcore_deaths + 1, last_hardcore_death = NOW() WHERE guid = ?",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to record hardcore death for GUID {}", guid.ToString());
-    }
     
     uint32 activeModes = GetActiveModesForPlayer(guid);
     std::string details = "Hardcore death - killed by " + killerName;
@@ -159,16 +153,10 @@ void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player,
 // Lock character (hardcore death)
 void ChallengeModeDatabase::LockCharacter(ObjectGuid guid)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET character_locked = 1, locked_at = NOW() WHERE guid = ?",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to lock character for GUID {}", guid.ToString());
-    }
     
     uint32 activeModes = GetActiveModesForPlayer(guid);
     LogEvent(guid, EVENT_LOCK, activeModes, activeModes, "Character locked due to hardcore death");
@@ -177,16 +165,10 @@ void ChallengeModeDatabase::LockCharacter(ObjectGuid guid)
 // Unlock character (admin)
 void ChallengeModeDatabase::UnlockCharacter(ObjectGuid guid)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET character_locked = 0, locked_at = NULL WHERE guid = ?",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to unlock character for GUID {}", guid.ToString());
-    }
     
     uint32 activeModes = GetActiveModesForPlayer(guid);
     LogEvent(guid, EVENT_UNLOCK, activeModes, activeModes, "Character unlocked by administrator");
@@ -212,31 +194,19 @@ bool ChallengeModeDatabase::IsCharacterLocked(ObjectGuid guid)
 // Increment activation counter
 void ChallengeModeDatabase::IncrementActivations(ObjectGuid guid)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET total_activations = total_activations + 1 WHERE guid = ?",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment activations for GUID {}", guid.ToString());
-    }
 }
 
 // Increment deactivation counter
 void ChallengeModeDatabase::IncrementDeactivations(ObjectGuid guid)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET total_deactivations = total_deactivations + 1 WHERE guid = ?",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment deactivations for GUID {}", guid.ToString());
-    }
 }
 
 // Update mode statistics
@@ -246,10 +216,9 @@ void ChallengeModeDatabase::UpdateModeStats(
     const std::string& modeName,
     bool isActivating)
 {
-    bool success = false;
     if (isActivating)
     {
-        success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_challenge_mode_stats (guid, mode_id, mode_name, times_activated, first_activated, last_activated, currently_active) "
             "VALUES (?, ?, ?, 1, NOW(), NOW(), 1) "
             "ON DUPLICATE KEY UPDATE times_activated = times_activated + 1, last_activated = NOW(), currently_active = 1",
@@ -258,153 +227,91 @@ void ChallengeModeDatabase::UpdateModeStats(
     }
     else
     {
-        success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "UPDATE dc_character_challenge_mode_stats SET currently_active = 0, last_deactivated = NOW() "
             "WHERE guid = ? AND mode_id = ?",
             guid.GetCounter(), modeId
         );
-    }
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to update mode stats for GUID {} (mode: {}, activating: {})", 
-            guid.ToString(), modeId, isActivating);
     }
 }
 
 // Record playtime for mode
 void ChallengeModeDatabase::RecordPlaytime(ObjectGuid guid, uint8 modeId, uint32 seconds)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET total_playtime_seconds = total_playtime_seconds + ? "
         "WHERE guid = ? AND mode_id = ?",
         seconds, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to record playtime for GUID {} (mode: {}, seconds: {})", 
-            guid.ToString(), modeId, seconds);
-    }
 }
 
 // Update max level for mode
 void ChallengeModeDatabase::UpdateMaxLevel(ObjectGuid guid, uint8 modeId, uint8 level)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET max_level_reached = GREATEST(max_level_reached, ?) "
         "WHERE guid = ? AND mode_id = ?",
         level, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to update max level for GUID {} (mode: {}, level: {})", 
-            guid.ToString(), modeId, level);
-    }
 }
 
 // Increment kill counter for mode
 void ChallengeModeDatabase::IncrementKills(ObjectGuid guid, uint8 modeId, uint32 count)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET total_kills = total_kills + ? "
         "WHERE guid = ? AND mode_id = ?",
         count, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment kills for GUID {} (mode: {}, count: {})", 
-            guid.ToString(), modeId, count);
-    }
 }
 
 // Increment death counter for mode
 void ChallengeModeDatabase::IncrementDeaths(ObjectGuid guid, uint8 modeId, uint32 count)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET total_deaths = total_deaths + ? "
         "WHERE guid = ? AND mode_id = ?",
         count, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment deaths for GUID {} (mode: {}, count: {})", 
-            guid.ToString(), modeId, count);
-    }
 }
 
 // Increment quest completion for mode
 void ChallengeModeDatabase::IncrementQuests(ObjectGuid guid, uint8 modeId, uint32 count)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET quests_completed = quests_completed + ? "
         "WHERE guid = ? AND mode_id = ?",
         count, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment quests for GUID {} (mode: {}, count: {})", 
-            guid.ToString(), modeId, count);
-    }
 }
 
 // Increment dungeon completion for mode
 void ChallengeModeDatabase::IncrementDungeons(ObjectGuid guid, uint8 modeId, uint32 count)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET dungeons_completed = dungeons_completed + ? "
         "WHERE guid = ? AND mode_id = ?",
         count, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment dungeons for GUID {} (mode: {}, count: {})", 
-            guid.ToString(), modeId, count);
-    }
 }
 
 // Increment PvP kills for mode
 void ChallengeModeDatabase::IncrementPvPKills(ObjectGuid guid, uint8 modeId, uint32 count)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_mode_stats SET pvp_kills = pvp_kills + ? "
         "WHERE guid = ? AND mode_id = ?",
         count, guid.GetCounter(), modeId
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to increment PvP kills for GUID {} (mode: {}, count: {})", 
-            guid.ToString(), modeId, count);
-    }
 }
 
 // Initialize tracking for a player
 void ChallengeModeDatabase::InitializeTracking(ObjectGuid guid)
 {
-    bool success = CharacterDatabase.Execute(
+    CharacterDatabase.Execute(
         "INSERT IGNORE INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES (?, 0, NOW())",
         guid.GetCounter()
     );
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to initialize tracking for GUID {}", guid.ToString());
-    }
 }
 
 // Sync active modes from player_settings to tracking table
