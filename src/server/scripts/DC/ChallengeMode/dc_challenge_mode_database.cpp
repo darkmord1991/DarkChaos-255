@@ -99,12 +99,11 @@ void ChallengeModeDatabase::LogEvent(
     }
     
     // Build and execute SQL with proper parameterization
-    bool success = false;
     if (player)
     {
         if (killerEntry > 0)
         {
-            success = CharacterDatabase.Execute(
+            CharacterDatabase.Execute(
                 "INSERT INTO dc_character_challenge_mode_log "
                 "(guid, event_type, modes_before, modes_after, event_details, character_level, map_id, zone_id, "
                 "position_x, position_y, position_z, killer_entry, killer_name) VALUES "
@@ -117,7 +116,7 @@ void ChallengeModeDatabase::LogEvent(
         }
         else
         {
-            success = CharacterDatabase.Execute(
+            CharacterDatabase.Execute(
                 "INSERT INTO dc_character_challenge_mode_log "
                 "(guid, event_type, modes_before, modes_after, event_details, character_level, map_id, zone_id, "
                 "position_x, position_y, position_z) VALUES "
@@ -130,18 +129,11 @@ void ChallengeModeDatabase::LogEvent(
     }
     else
     {
-        success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_challenge_mode_log (guid, event_type, modes_before, modes_after, event_details) "
             "VALUES (?, ?, ?, ?, ?)",
             guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, details
         );
-    }
-    
-    if (!success)
-    {
-        LOG_ERROR("scripts.challengemode.database", 
-            "Failed to log event {} for GUID {} (modes: {} -> {})", 
-            eventTypeStr, guid.ToString(), modesBefore, modesAfter);
     }
 }
 
