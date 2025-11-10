@@ -48,7 +48,6 @@ public:
                               kPath[0].GetPositionZ(), kPath[0].GetOrientation());
             
             case ROUTE_L25_TO_40:      // Camp to L40 zone
-            case ROUTE_L40_SCENIC:     // L40 scenic route
             case ROUTE_L40_DIRECT:     // Direct to L40
                 return Position(kPath[kIndex_acfm35].GetPositionX(), kPath[kIndex_acfm35].GetPositionY(),
                               kPath[kIndex_acfm35].GetPositionZ(), kPath[kIndex_acfm35].GetOrientation());
