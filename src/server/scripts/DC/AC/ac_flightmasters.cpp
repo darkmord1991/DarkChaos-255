@@ -1889,8 +1889,8 @@ public:
 };
 
 // Define per-node config defaults (runtime-initialized)
-const std::vector<DC_AC_Flight::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
-    std::vector<DC_AC_Flight::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+const std::vector<NodeConfig> ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
+    std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
     if (kIndex_acfm57 < kPathLength)
         v[kIndex_acfm57] = { 2u, 12.0f };
     // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
