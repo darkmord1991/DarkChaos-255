@@ -13,7 +13,7 @@ bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Posi
     std::unique_ptr<PathGenerator> pathGen = std::make_unique<PathGenerator>(_owner);
     pathGen->SetUseStraightPath(false);
     pathGen->SetUseRaycast(true);
-    pathGen->SetPathLengthLimit(PATH_LENGTH_LIMIT);
+    pathGen->SetPathLengthLimit(Helper::PATH_LENGTH_LIMIT);
 
     bool success = pathGen->CalculatePath(dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), true);
     if (!success)
