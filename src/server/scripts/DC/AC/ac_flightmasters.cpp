@@ -1602,6 +1602,16 @@ public:
                     _isLanding = false;
                     DismountAndDespawn();
                 });
+            }
+        }
+        else
+        {
+            // If finalPos is missing, fail-safe by dismounting to avoid hanging flights
+            Player* missingFinalPlayer = GetCachedPassenger();
+            if (missingFinalPlayer && missingFinalPlayer->IsGameMaster())
+                ChatHandler(missingFinalPlayer->GetSession()).SendSysMessage("[Flight Debug] Missing final position. Dismounting to avoid hang.");
+            _awaitingArrival = false;
+            DismountAndDespawn();
         }
     }
 };
