@@ -53,20 +53,7 @@
 
 using namespace DungeonQuest;
 using namespace DungeonQuestHelpers;
-
-// =====================================================================
-// GOSSIP MENU ACTIONS (kept for backward compatibility)
-// =====================================================================
-enum GossipActions
-{
-    GOSSIP_ACTION_SHOW_DAILY_QUESTS   = 1000,
-    GOSSIP_ACTION_SHOW_WEEKLY_QUESTS  = 1001,
-    GOSSIP_ACTION_SHOW_DUNGEON_QUESTS = 1002,
-    GOSSIP_ACTION_SHOW_ALL_QUESTS     = 1003,
-    GOSSIP_ACTION_SHOW_REWARDS_INFO   = 1004,
-    GOSSIP_ACTION_SHOW_MY_STATS       = 1005,
-    GOSSIP_ACTION_BACK_TO_MAIN        = 1006,
-};
+using namespace DungeonQuest;
 
 // =====================================================================
 // HELPER FUNCTIONS (using DungeonQuestHelpers.h shared functions)

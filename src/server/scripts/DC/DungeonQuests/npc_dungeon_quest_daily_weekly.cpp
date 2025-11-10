@@ -92,18 +92,10 @@ private:
     void ResetDailyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}", 
             player->GetGUID().GetCounter(), questId
         );
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest",
-                "Failed to reset daily quest for GUID {} (quest: {})",
-                player->GetGUID().ToString(), questId);
-            return;
-        }
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A daily dungeon quest is now available!");

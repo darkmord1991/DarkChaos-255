@@ -177,7 +177,7 @@ public:
         }
         
         // Update completion tracking
-        bool success = CharacterDatabase.Execute(
+        CharacterDatabase.Execute(
             "INSERT INTO dc_character_difficulty_completions "
             "(guid, dungeon_id, difficulty, total_completions, last_completion_date) "
             "VALUES ({}, {}, '{}', 1, NOW()) "
@@ -188,13 +188,6 @@ public:
             dungeonId,
             difficultyStr
         );
-        
-        if (!success)
-        {
-            LOG_ERROR("scripts.dungeonquest", 
-                "Failed to track difficulty completion for GUID {} (dungeon: {}, difficulty: {})",
-                player->GetGUID().ToString(), dungeonId, difficultyStr);
-        }
     }
 
     // Update dungeon progress
