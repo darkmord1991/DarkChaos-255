@@ -168,10 +168,7 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     stmt->SetData(8, weather);
     stmt->SetData(9, wint);
     stmt->SetData(10, dur);
-    if (!CharacterDatabase.Execute(stmt))
-    {
-        LOG_ERROR("outdoorpvp.hl", "[HL] Failed to record winner in history - Alliance: {}, Horde: {}", a, h);
-    }
+    CharacterDatabase.Execute(stmt);
 }
 
 // Record manual reset in history table
@@ -200,12 +197,6 @@ void OutdoorPvPHL::_recordManualReset()
     stmt->SetData(8, weather);
     stmt->SetData(9, wint);
     stmt->SetData(10, dur);
-    if (!CharacterDatabase.Execute(stmt))
-    {
-        LOG_ERROR("outdoorpvp.hl", "[HL] Failed to record manual reset in history");
-    }
-    else
-    {
-        LOG_INFO("outdoorpvp.hl", "[HL] Manual reset recorded in history - Alliance: {}, Horde: {}, Affix: {}", a, h, aff);
-    }
+    CharacterDatabase.Execute(stmt);
+    LOG_INFO("outdoorpvp.hl", "[HL] Manual reset recorded in history - Alliance: {}, Horde: {}, Affix: {}", a, h, aff);
 }

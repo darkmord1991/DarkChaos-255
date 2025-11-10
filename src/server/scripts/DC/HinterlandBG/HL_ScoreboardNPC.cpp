@@ -16,6 +16,9 @@
 #include <algorithm>
 #include <cmath>
 
+// Expose constants at file scope to allow usage inside classes (avoid in-class using namespace)
+using namespace HinterlandBGConstants;
+
 // Use centralized utility function
 namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
 
@@ -28,8 +31,6 @@ class npc_hl_scoreboard : public CreatureScript
 {
 public:
     npc_hl_scoreboard() : CreatureScript("npc_hl_scoreboard") {}
-
-    using namespace HinterlandBGConstants;
 
     // Use centralized constants for backwards compatibility
     static const char* AffixName(uint8 a)
@@ -51,7 +52,7 @@ public:
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_HLBG_HISTORY_PAGE);
         stmt->SetData(0, limit);
         stmt->SetData(1, offset);
-        QueryResult res = CharacterDatabase.Query(stmt);
+        PreparedQueryResult res = CharacterDatabase.Query(stmt);
         if (res)
         {
             do

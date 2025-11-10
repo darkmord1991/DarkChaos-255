@@ -20,6 +20,7 @@
 #include "Chat.h"
 #include "World.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "ObjectAccessor.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"

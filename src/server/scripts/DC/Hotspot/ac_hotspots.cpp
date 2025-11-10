@@ -101,8 +101,69 @@ static HotspotsConfig sHotspotsConfig;
 // These are approximate and can be improved later with DBC-driven values.
 static std::unordered_map<uint32, std::array<float,4>> sMapBounds;
 
-// Forward declaration of Hotspot so helper prototypes can reference it before the full definition.
-struct Hotspot;
+// Hotspot data structure (defined here so it can be used by functions below)
+struct Hotspot
+{
+    uint32 id;
+    uint32 mapId;
+    uint32 zoneId;
+    float x;
+    float y;
+    float z;
+    time_t spawnTime;
+    time_t expireTime;
+    ObjectGuid gameObjectGuid;  // Visual marker GameObject
+
+    bool IsActive() const
+    {
+        return GameTime::GetGameTime().count() < expireTime;
+    }
+
+    bool IsPlayerInRange(Player* player) const
+    {
+        if (!player)
+            return false;
+        
+        if (player->GetMapId() != mapId)
+            return false;
+
+        // Use squared-distance comparison to avoid costly sqrt() calls
+        float dx = player->GetPositionX() - x;
+        float dy = player->GetPositionY() - y;
+        float dz = player->GetPositionZ() - z;
+        float dist2 = dx*dx + dy*dy + dz*dz;
+
+        return dist2 <= (sHotspotsConfig.radius * sHotspotsConfig.radius);
+    }
+
+    bool IsPlayerNearby(Player* player) const
+    {
+        if (!player || player->GetMapId() != mapId)
+            return false;
+
+        // squared-distance check (3D)
+        float dx = player->GetPositionX() - x;
+        float dy = player->GetPositionY() - y;
+        float dz = player->GetPositionZ() - z;
+        float dist2 = dx*dx + dy*dy + dz*dz;
+
+        return dist2 <= (sHotspotsConfig.announceRadius * sHotspotsConfig.announceRadius);
+    }
+};
+
+// Active hotspots currently spawned on the server
+static std::vector<Hotspot> sActiveHotspots;
+static uint32 sNextHotspotId = 1;
+
+// Anti-camping tracking: GUID -> {hotspotId, entryTime, lastXPGain}
+struct PlayerHotspotTracking
+{
+    uint32 hotspotId;
+    time_t entryTime;
+    time_t lastXPGain;
+};
+static std::unordered_map<ObjectGuid, PlayerHotspotTracking> sPlayerHotspotTracking;
+
 // Forward declaration for EscapeBraces used by logging in helpers defined earlier
 static std::string EscapeBraces(std::string const& s);
 
@@ -189,13 +250,6 @@ static void BuildMapBoundsFromDBC()
 // Database: Save hotspot to database
 static void SaveHotspotToDB(Hotspot const& hotspot)
 {
-    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_CUSTOM);
-    if (!stmt)
-    {
-        LOG_ERROR("scripts", "SaveHotspotToDB: Failed to get prepared statement");
-        return;
-    }
-    
     // Use REPLACE INTO to handle both insert and update
     std::string query = Acore::StringFormat(
         "REPLACE INTO dc_hotspots_active (id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid) "
@@ -240,7 +294,7 @@ static void LoadHotspotsFromDB()
         uint64 goGuid = fields[8].Get<uint64>();
         if (goGuid != 0)
         {
-            hotspot.gameObjectGuid = ObjectGuid::Create<HighGuid::GameObject>(hotspot.mapId, 0, goGuid);
+            hotspot.gameObjectGuid = ObjectGuid::Create<HighGuid::GameObject>(0, goGuid);
         }
         
         // Skip expired hotspots
@@ -612,59 +666,6 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
     return false;
 }
 
-// Forward declaration of BuildHotspotAddonPayload - implementation placed after Hotspot struct
-static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds);
-
-// Hotspot data structure
-struct Hotspot
-{
-    uint32 id;
-    uint32 mapId;
-    uint32 zoneId;
-    float x;
-    float y;
-    float z;
-    time_t spawnTime;
-    time_t expireTime;
-    ObjectGuid gameObjectGuid;  // Visual marker GameObject
-
-    bool IsActive() const
-    {
-        return GameTime::GetGameTime().count() < expireTime;
-    }
-
-    bool IsPlayerInRange(Player* player) const
-    {
-        if (!player)
-            return false;
-        
-        if (player->GetMapId() != mapId)
-            return false;
-
-        // Use squared-distance comparison to avoid costly sqrt() calls
-        float dx = player->GetPositionX() - x;
-        float dy = player->GetPositionY() - y;
-        float dz = player->GetPositionZ() - z;
-        float dist2 = dx*dx + dy*dy + dz*dz;
-
-        return dist2 <= (sHotspotsConfig.radius * sHotspotsConfig.radius);
-    }
-
-    bool IsPlayerNearby(Player* player) const
-    {
-        if (!player || player->GetMapId() != mapId)
-            return false;
-
-        // squared-distance check (3D)
-        float dx = player->GetPositionX() - x;
-        float dy = player->GetPositionY() - y;
-        float dz = player->GetPositionZ() - z;
-        float dist2 = dx*dx + dy*dy + dz*dz;
-
-        return dist2 <= (sHotspotsConfig.announceRadius * sHotspotsConfig.announceRadius);
-    }
-};
-
 // Build a standardized addon payload string for a hotspot. Includes optional texture field if configured.
 static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds)
 {
@@ -723,24 +724,12 @@ static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durati
 }
 
 
-// Global hotspots storage
-static std::vector<Hotspot> sActiveHotspots;
-static uint32 sNextHotspotId = 1;
 static time_t sLastSpawnCheck = 0;
 // Per-player apply retries: when a buff cast does not result in an aura, retry a few times
 static std::unordered_map<ObjectGuid, int> sBuffApplyRetries;
 // Per-player hotspot expiry map: GUID -> expireTime (time_t). This acts as a server-side
 // persistent flag indicating the player is considered 'in a hotspot' until expireTime.
 static std::unordered_map<ObjectGuid, time_t> sPlayerHotspotExpiry;
-
-// Anti-camping tracking: GUID -> {hotspotId, entryTime, lastXPGain}
-struct PlayerHotspotTracking
-{
-    uint32 hotspotId;
-    time_t entryTime;
-    time_t lastXPGain;
-};
-static std::unordered_map<ObjectGuid, PlayerHotspotTracking> sPlayerHotspotTracking;
 
 // Public accessor functions for other scripts to query hotspot state
 uint32 GetHotspotXPBonusPercentage()

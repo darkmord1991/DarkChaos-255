@@ -17,7 +17,6 @@
 #include "Config.h"
 #include "GameTime.h"
 #include "Map.h"
-#include "AreaTableEntry.h"
 #include "DBCStores.h"
 #include "MapExtensionConstants.h"
 #include <unordered_map>
@@ -249,6 +248,8 @@ static void SendGPSUpdate(Player* player, bool isZoneChange = false)
                 msgType, player->GetName(), player->GetGUID().ToString(),
                 mapId, player->GetZoneId(), payload.size());
         }
+#else
+        (void)isZoneChange; // Suppress unused parameter warning when HAS_AIO is not defined
 #endif
     }
     catch (std::exception const& e)
@@ -274,7 +275,7 @@ public:
     PlayerScript_MapExtension() : PlayerScript("PlayerScript_MapExtension") { }
     
     // Initialize player tracking on login
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!sMapExtensionEnabled)
             return;
@@ -296,7 +297,7 @@ public:
     }
     
     // Clean up tracking on logout
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         ObjectGuid guid = player->GetGUID();
         sPlayerGPSTracking.erase(guid);
@@ -309,7 +310,7 @@ public:
     }
     
     // Automatic GPS updates with throttling
-    void OnUpdate(Player* player, uint32 diff) override
+    void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
         if (!sMapExtensionEnabled)
             return;
@@ -331,7 +332,7 @@ public:
     }
     
     // Immediate GPS update on zone change
-    void OnUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {
         if (!sMapExtensionEnabled)
             return;
@@ -395,7 +396,7 @@ public:
             sGPSUpdateIntervalMS, sEnabledMaps.size());
     }
     
-    void OnConfigLoad(bool /*reload*/) override
+    void OnAfterConfigLoad(bool /*reload*/) override
     {
         LoadMapExtensionConfig();
         

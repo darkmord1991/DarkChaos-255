@@ -108,7 +108,7 @@ namespace HLBGAddon
     }
 
     // Build TSV string for history rows (id\tseason\tseasonName\tts\twinner\taffix\treason) with lines joined by "||" for safe transport
-    static std::string BuildHistoryTsv(QueryResult& rs)
+    static std::string BuildHistoryTsv(PreparedQueryResult& rs)
     {
         std::ostringstream ss;
         bool first = true;
@@ -315,7 +315,7 @@ namespace HLBGAddon
         stmt->SetData(index++, per);
         stmt->SetData(index++, offset);
         
-        QueryResult rs = CharacterDatabase.Query(stmt);
+        PreparedQueryResult rs = CharacterDatabase.Query(stmt);
         if (!rs)
         {
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_HISTORY_TSV] ");
@@ -366,8 +366,7 @@ namespace HLBGAddon
         else
         {
             LOG_ERROR("hlbg", "Failed to query basic winner counts for season {}", season);
-        }
-        
+    }
         QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history" + whereAnd("duration_seconds > 0"));
         if (r2)
         {
@@ -446,7 +445,6 @@ namespace HLBGAddon
         else
         {
             LOG_ERROR("hlbg", "Failed to query affix splits for season {}", season);
-        }
         }
 
         // Exact per-weather splits from DB (season-filtered)

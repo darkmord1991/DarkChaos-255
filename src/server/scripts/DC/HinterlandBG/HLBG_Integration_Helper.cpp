@@ -15,10 +15,8 @@ public:
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_BATTLE_START);
 		stmt->SetData(0, affixId);
 		stmt->SetData(1, instanceId);
-		if (!CharacterDatabase.Execute(stmt))
-		{
-			LOG_ERROR("hlbg", "Failed to insert battle start for instance {} with affix {}", instanceId, affixId);
-		}
+		// Execute prepared statement (CharacterDatabase::Execute returns void)
+		CharacterDatabase.Execute(stmt);
 		BroadcastBattleStart(affixId);
 		LOG_INFO("hlbg", "Hinterland BG started - Instance: {}, Affix: {}", instanceId, affixId);
 	}
@@ -31,10 +29,8 @@ public:
 		stmt->SetData(2, allianceResources);
 		stmt->SetData(3, hordeResources);
 		stmt->SetData(4, instanceId);
-		if (!CharacterDatabase.Execute(stmt))
-		{
-			LOG_ERROR("hlbg", "Failed to update battle end for instance {}", instanceId);
-		}
+		// Execute prepared statement
+		CharacterDatabase.Execute(stmt);
 
 		uint32 alliancePlayers = GetPlayerCountInBG(instanceId, ALLIANCE);
 		uint32 hordePlayers = GetPlayerCountInBG(instanceId, HORDE);
@@ -43,10 +39,7 @@ public:
 		stmt2->SetData(0, alliancePlayers);
 		stmt2->SetData(1, hordePlayers);
 		stmt2->SetData(2, instanceId);
-		if (!CharacterDatabase.Execute(stmt2))
-		{
-			LOG_ERROR("hlbg", "Failed to update player counts for instance {}", instanceId);
-		}
+		CharacterDatabase.Execute(stmt2);
 
 		HLBGAIOHandlers::UpdateBattleResults(winner, duration, affixId, allianceResources, hordeResources, alliancePlayers, hordePlayers);
 		UpdatePlayerStatistics(instanceId, winner);
@@ -92,10 +85,7 @@ public:
 		stmt->SetData(0, playerGuid);
 		stmt->SetData(1, playerName);
 		stmt->SetData(2, faction);
-		if (!CharacterDatabase.Execute(stmt))
-		{
-			LOG_ERROR("hlbg", "Failed to update player stats for player {} entering BG", playerName);
-		}
+		CharacterDatabase.Execute(stmt);
 
 		SendBattleStatusToPlayer(player, instanceId);
 	}
@@ -110,23 +100,14 @@ public:
 
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_PLAYER_KILLS);
 		stmt->SetData(0, killerGuid);
-		if (!CharacterDatabase.Execute(stmt))
-		{
-			LOG_ERROR("hlbg", "Failed to update kills for player GUID {}", killerGuid);
-		}
+		CharacterDatabase.Execute(stmt);
 
 		CharacterDatabasePreparedStatement* stmt2 = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_PLAYER_DEATHS);
 		stmt2->SetData(0, victimGuid);
-		if (!CharacterDatabase.Execute(stmt2))
-		{
-			LOG_ERROR("hlbg", "Failed to update deaths for player GUID {}", victimGuid);
-		}
+		CharacterDatabase.Execute(stmt2);
 
 		CharacterDatabasePreparedStatement* stmt3 = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_STATISTICS_KILLS);
-		if (!CharacterDatabase.Execute(stmt3))
-		{
-			LOG_ERROR("hlbg", "Failed to update global kill/death statistics");
-		}
+		CharacterDatabase.Execute(stmt3);
 		// instanceId not used in this integration shim; mark explicitly to avoid warnings
 		(void)instanceId;
 	}
@@ -140,10 +121,7 @@ public:
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_PLAYER_RESOURCES);
 		stmt->SetData(0, resourceAmount);
 		stmt->SetData(1, playerGuid);
-		if (!CharacterDatabase.Execute(stmt))
-		{
-			LOG_ERROR("hlbg", "Failed to update resources for player GUID {}", playerGuid);
-		}
+		CharacterDatabase.Execute(stmt);
 		// instanceId not used here in this shim; avoid unused-parameter warning
 		(void)instanceId;
 	}
@@ -171,33 +149,24 @@ private:
 		{
 			CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_ALLIANCE_WINS);
 			stmt->SetData(0, instanceId);
-			if (!CharacterDatabase.Execute(stmt))
-			{
-				LOG_ERROR("hlbg", "Failed to update Alliance wins for instance {}", instanceId);
-			}
+			CharacterDatabase.Execute(stmt);
 		}
 		else if (winner == "Horde")
 		{
 			CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_HORDE_WINS);
 			stmt->SetData(0, instanceId);
-			if (!CharacterDatabase.Execute(stmt))
-			{
-				LOG_ERROR("hlbg", "Failed to update Horde wins for instance {}", instanceId);
-			}
+			CharacterDatabase.Execute(stmt);
 		}
 
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_HLBG_PARTICIPANT_COUNT);
 		stmt->SetData(0, instanceId);
-		QueryResult result = CharacterDatabase.Query(stmt);
+		PreparedQueryResult result = CharacterDatabase.Query(stmt);
 		if (result)
 		{
 			uint32 participantCount = result->Fetch()[0].Get<uint32>();
 			CharacterDatabasePreparedStatement* stmt2 = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_TOTAL_PARTICIPANTS);
 			stmt2->SetData(0, participantCount);
-			if (!CharacterDatabase.Execute(stmt2))
-			{
-				LOG_ERROR("hlbg", "Failed to update total participants count");
-			}
+			CharacterDatabase.Execute(stmt2);
 		}
 		else
 		{

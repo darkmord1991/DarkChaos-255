@@ -15,11 +15,12 @@
 namespace
 {
     // Alt Bonus Aura Spell IDs (must match DBC entries)
-    constexpr uint32 SPELL_ALT_BONUS_5  = 800020;  // 5% bonus (1 max-level char)
-    constexpr uint32 SPELL_ALT_BONUS_10 = 800021;  // 10% bonus (2 max-level chars)
-    constexpr uint32 SPELL_ALT_BONUS_15 = 800022;  // 15% bonus (3 max-level chars)
-    constexpr uint32 SPELL_ALT_BONUS_20 = 800023;  // 20% bonus (4 max-level chars)
-    constexpr uint32 SPELL_ALT_BONUS_25 = 800024;  // 25% bonus (5+ max-level chars)
+    // Note: These spell IDs are used by the system but not directly referenced in this aura script
+    // constexpr uint32 SPELL_ALT_BONUS_5  = 800020;  // 5% bonus (1 max-level char)
+    // constexpr uint32 SPELL_ALT_BONUS_10 = 800021;  // 10% bonus (2 max-level chars)
+    // constexpr uint32 SPELL_ALT_BONUS_15 = 800022;  // 15% bonus (3 max-level chars)
+    // constexpr uint32 SPELL_ALT_BONUS_20 = 800023;  // 20% bonus (4 max-level chars)
+    // constexpr uint32 SPELL_ALT_BONUS_25 = 800024;  // 25% bonus (5+ max-level chars)
     
     // Base aura script for all alt bonus spells
     template<uint8 BonusPercent>

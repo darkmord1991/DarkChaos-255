@@ -20,7 +20,7 @@ namespace
     // Configuration
     constexpr uint32 XP_BONUS_PER_MAX_CHAR = 5;  // 5% per character
     constexpr uint32 MAX_BONUS_CHARACTERS = 5;    // Max 5 characters = 25% bonus
-    constexpr uint32 MAX_XP_BONUS_PERCENT = XP_BONUS_PER_MAX_CHAR * MAX_BONUS_CHARACTERS; // 25%
+    // constexpr uint32 MAX_XP_BONUS_PERCENT = XP_BONUS_PER_MAX_CHAR * MAX_BONUS_CHARACTERS; // 25%
     
     // Visual buff spell IDs (must match DBC entries and spell_prestige_alt_bonus_aura.cpp)
     constexpr uint32 SPELL_ALT_BONUS_5  = 800030;  // 5% bonus visual
@@ -202,7 +202,7 @@ namespace
     public:
         PrestigeAltBonusPlayerScript() : PlayerScript("PrestigeAltBonusPlayerScript") { }
         
-        void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+        void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
@@ -215,7 +215,7 @@ namespace
             }
         }
         
-        void OnLogin(Player* player) override
+        void OnPlayerLogin(Player* player) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
@@ -238,7 +238,7 @@ namespace
             }
         }
         
-        void OnLevelChanged(Player* player, uint8 /*oldLevel*/) override
+        void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
@@ -276,19 +276,19 @@ namespace
     public:
         PrestigeAltBonusCommandScript() : CommandScript("PrestigeAltBonusCommandScript") { }
         
-        ChatCommandTable GetCommands() const override
+        Acore::ChatCommands::ChatCommandTable GetCommands() const override
         {
-            static ChatCommandTable altBonusCommandTable =
+            static Acore::ChatCommands::ChatCommandTable altBonusCommandTable =
             {
-                { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Console::No },
+                { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Acore::ChatCommands::Console::No },
             };
             
-            static ChatCommandTable prestigeCommandTable =
+            static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
                 { "altbonus", altBonusCommandTable },
             };
             
-            static ChatCommandTable commandTable =
+            static Acore::ChatCommands::ChatCommandTable commandTable =
             {
                 { "prestige", prestigeCommandTable },
             };

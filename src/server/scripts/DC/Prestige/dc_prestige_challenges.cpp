@@ -170,7 +170,7 @@ namespace
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenges (guid, prestige_level, challenge_type, active, completed, start_time, start_playtime, death_count, group_count) "
                 "VALUES ({}, {}, {}, 1, 0, {}, {}, 0, 0)",
-                guid, prestigeLevel, challengeType, currentTime, currentPlayTime
+                guid, prestigeLevel, static_cast<uint32>(challengeType), currentTime, currentPlayTime
             );
             
             // Add to cache
@@ -188,7 +188,7 @@ namespace
             g_ActiveChallenges[guid].push_back(progress);
             
             LOG_INFO("scripts", "Prestige Challenges: Player {} started challenge {} for prestige {}",
-                player->GetName(), challengeType, prestigeLevel);
+                player->GetName(), static_cast<uint32>(challengeType), prestigeLevel);
             
             return true;
         }
@@ -204,7 +204,7 @@ namespace
             CharacterDatabase.Execute(
                 "UPDATE dc_prestige_challenges SET active = 0, completed = 0 "
                 "WHERE guid = {} AND challenge_type = {} AND active = 1",
-                guid, challengeType
+                guid, static_cast<uint32>(challengeType)
             );
             
             // Remove from cache
@@ -227,7 +227,7 @@ namespace
             );
             
             LOG_INFO("scripts", "Prestige Challenges: Player {} failed challenge {} - {}",
-                player->GetName(), challengeType, reason);
+                player->GetName(), static_cast<uint32>(challengeType), reason);
         }
         
         void CompleteChallenge(Player* player, PrestigeChallenge challengeType)
@@ -241,7 +241,7 @@ namespace
             CharacterDatabase.Execute(
                 "UPDATE dc_prestige_challenges SET active = 0, completed = 1, completion_time = UNIX_TIMESTAMP() "
                 "WHERE guid = {} AND challenge_type = {} AND active = 1",
-                guid, challengeType
+                guid, static_cast<uint32>(challengeType)
             );
             
             // Remove from active cache
@@ -266,7 +266,7 @@ namespace
             );
             
             LOG_INFO("scripts", "Prestige Challenges: Player {} completed challenge {}",
-                player->GetName(), challengeType);
+                player->GetName(), static_cast<uint32>(challengeType));
         }
         
         void OnDeath(Player* player)
@@ -410,8 +410,9 @@ namespace
                 if (titleInfo)
                 {
                     player->SetTitle(titleInfo);
+                    char const* titleName = player->getGender() == GENDER_MALE ? titleInfo->nameMale[sWorld->GetDefaultDbcLocale()] : titleInfo->nameFemale[sWorld->GetDefaultDbcLocale()];
                     ChatHandler(player->GetSession()).PSendSysMessage(
-                        "|cFFFFD700You have earned the title: {}|r", titleInfo->NameLang[0]);
+                        "|cFFFFD700You have earned the title: {}|r", titleName);
                 }
             }
             
@@ -419,7 +420,7 @@ namespace
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, granted_time) "
                 "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
-                player->GetGUID().GetCounter(), challengeType, statBonus
+                player->GetGUID().GetCounter(), static_cast<uint32>(challengeType), statBonus
             );
             
             ChatHandler(player->GetSession()).PSendSysMessage(
@@ -458,7 +459,7 @@ namespace
     public:
         PrestigeChallengePlayerScript() : PlayerScript("PrestigeChallengePlayerScript") { }
         
-        void OnLogin(Player* player) override
+        void OnPlayerLogin(Player* player) override
         {
             if (!PrestigeChallengeSystem::instance()->IsEnabled())
                 return;
@@ -480,17 +481,17 @@ namespace
             PrestigeChallengeSystem::instance()->OnDeath(player);
         }
         
-        void OnPVPKill(Player* killer, Player* victim) override
+        void OnPlayerPVPKill(Player* /*killer*/, Player* victim) override
         {
             PrestigeChallengeSystem::instance()->OnDeath(victim);
         }
         
-        void OnPlayerJoinedGroup(Player* player, Group* /*group*/) override
+        void OnPlayerJoinedGroup(Player* player, Group* /*group*/)
         {
             PrestigeChallengeSystem::instance()->OnJoinGroup(player);
         }
         
-        void OnLevelChanged(Player* player, uint8 /*oldLevel*/) override
+        void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
         {
             // Check if challenges are completed when reaching max level
             PrestigeChallengeSystem::instance()->CheckChallengeCompletion(player);
@@ -518,21 +519,21 @@ namespace
     public:
         PrestigeChallengeCommandScript() : CommandScript("PrestigeChallengeCommandScript") { }
         
-        ChatCommandTable GetCommands() const override
+        Acore::ChatCommands::ChatCommandTable GetCommands() const override
         {
-            static ChatCommandTable challengeCommandTable =
+            static Acore::ChatCommands::ChatCommandTable challengeCommandTable =
             {
-                { "start",  HandleChallengeStartCommand,  SEC_PLAYER, Console::No },
-                { "status", HandleChallengeStatusCommand, SEC_PLAYER, Console::No },
-                { "list",   HandleChallengeListCommand,   SEC_PLAYER, Console::No },
+                { "start",  HandleChallengeStartCommand,  SEC_PLAYER, Acore::ChatCommands::Console::No },
+                { "status", HandleChallengeStatusCommand, SEC_PLAYER, Acore::ChatCommands::Console::No },
+                { "list",   HandleChallengeListCommand,   SEC_PLAYER, Acore::ChatCommands::Console::No },
             };
             
-            static ChatCommandTable prestigeCommandTable =
+            static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
                 { "challenge", challengeCommandTable },
             };
             
-            static ChatCommandTable commandTable =
+            static Acore::ChatCommands::ChatCommandTable commandTable =
             {
                 { "prestige", prestigeCommandTable },
             };

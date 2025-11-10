@@ -67,6 +67,9 @@ constexpr uint32 ACHIEVEMENT_DAILY_CHAMPION     = 13503;  // 50 daily quests
 constexpr uint32 ACHIEVEMENT_DAILY_LEGEND       = 13504;  // 100 daily quests
 constexpr uint32 ACHIEVEMENT_WEEKLY_DEDICATION  = 13505;  // 10 weekly quests
 constexpr uint32 ACHIEVEMENT_WEEKLY_DEVOTION    = 13506;  // 25 weekly quests
+// Additional dungeon progression achievements
+constexpr uint32 ACHIEVEMENT_DUNGEON_EXPLORER   = 13510;  // 10 dungeon quests completed
+constexpr uint32 ACHIEVEMENT_LEGENDARY_DUNGEON  = 13511;  // 50 dungeon quests completed
 
 // =====================================================================
 // TOKEN ITEM IDS
