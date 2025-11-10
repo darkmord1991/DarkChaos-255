@@ -596,8 +596,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                                 if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
                                 {
                                     _pathfindingRetries++;
-                                    if (p && p->IsGameMaster())
-                                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
+                                    if (passenger && passenger->IsGameMaster())
+                                        ChatHandler(passenger->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
                                     
                                     _awaitingArrival = false;
                                     _hopElapsedMs = 0;
@@ -607,8 +607,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                                 }
 
                                 // Hard fallback: snap to target node and continue the route
-                                if (p && p->IsGameMaster())
-                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                                if (passenger && passenger->IsGameMaster())
+                                    ChatHandler(passenger->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
                                 
                                 auto targetPos = FlightPathAccessor::GetSafePosition(_index);
                                 if (!targetPos)

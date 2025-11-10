@@ -29,6 +29,7 @@ enum class FlightState : uint8
     Flying,                // Normal waypoint-to-waypoint flight
     CustomPath,            // Following smart pathfinding intermediate points
     ArrivingAtWaypoint,    // Arrived at waypoint, planning next hop
+    Descending,            // Initiating descent to final destination
     Landing,               // Final landing sequence active
     Stuck,                 // No movement detected, recovery in progress
     EmergencyLanding,      // Forced landing due to failure
@@ -41,7 +42,8 @@ enum class FlightEvent : uint8
     ReachedWaypoint,       // MovementInform or proximity arrival
     BeginCustomPath,       // Starting smart pathfinding hop
     CompleteCustomPath,    // Finished all smart path hops
-    BeginLanding,          // Starting final landing sequence
+    ApproachingAnchor,     // Starting approach to final destination
+    StartLanding,          // Beginning final landing sequence
     LandingComplete,       // Touched ground
     StuckDetected,         // No movement for threshold time
     RecoverySucceeded,     // Stuck recovery worked
@@ -81,7 +83,8 @@ public:
     
     bool IsDescending() const 
     { 
-        return _currentState == FlightState::Landing || 
+        return _currentState == FlightState::Descending ||
+               _currentState == FlightState::Landing || 
                _currentState == FlightState::EmergencyLanding;
     }
     
@@ -123,6 +126,7 @@ public:
             case FlightState::Flying: return "Flying";
             case FlightState::CustomPath: return "CustomPath";
             case FlightState::ArrivingAtWaypoint: return "ArrivingAtWaypoint";
+            case FlightState::Descending: return "Descending";
             case FlightState::Landing: return "Landing";
             case FlightState::Stuck: return "Stuck";
             case FlightState::EmergencyLanding: return "EmergencyLanding";
@@ -139,7 +143,8 @@ public:
             case FlightEvent::ReachedWaypoint: return "ReachedWaypoint";
             case FlightEvent::BeginCustomPath: return "BeginCustomPath";
             case FlightEvent::CompleteCustomPath: return "CompleteCustomPath";
-            case FlightEvent::BeginLanding: return "BeginLanding";
+            case FlightEvent::ApproachingAnchor: return "ApproachingAnchor";
+            case FlightEvent::StartLanding: return "StartLanding";
             case FlightEvent::LandingComplete: return "LandingComplete";
             case FlightEvent::StuckDetected: return "StuckDetected";
             case FlightEvent::RecoverySucceeded: return "RecoverySucceeded";
@@ -191,7 +196,11 @@ private:
             case FlightState::ArrivingAtWaypoint:
                 return (to == FlightState::Flying && trigger == FlightEvent::ReachedWaypoint) ||
                        (to == FlightState::CustomPath && trigger == FlightEvent::BeginCustomPath) ||
+                       (to == FlightState::Descending && trigger == FlightEvent::ApproachingAnchor) ||
                        (to == FlightState::Landing && trigger == FlightEvent::BeginLanding);
+                
+            case FlightState::Descending:
+                return (to == FlightState::Landing && trigger == FlightEvent::StartLanding);
                 
             case FlightState::Landing:
                 return (to == FlightState::Despawning && trigger == FlightEvent::LandingComplete) ||
