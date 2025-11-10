@@ -213,11 +213,11 @@ namespace DungeonQuestHelper
     // Get quest type name
     std::string GetQuestTypeName(uint32 questId)
     {
-        if (IsQuestInRange(questId, QUEST_DAILY_START, QUEST_DAILY_END))
+        if (IsQuestInRange(questId, QUEST_DAILY_MIN, QUEST_DAILY_MAX))
             return "Daily Quest";
-        else if (IsQuestInRange(questId, QUEST_WEEKLY_START, QUEST_WEEKLY_END))
+        else if (IsQuestInRange(questId, QUEST_WEEKLY_MIN, QUEST_WEEKLY_MAX))
             return "Weekly Quest";
-        else if (IsQuestInRange(questId, QUEST_DUNGEON_START, QUEST_DUNGEON_END))
+        else if (IsQuestInRange(questId, QUEST_DUNGEON_MIN, QUEST_DUNGEON_MAX))
             return "Dungeon Quest";
         return "Quest";
     }
