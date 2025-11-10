@@ -1594,12 +1594,12 @@ public:
                     float fz = fallbackPos->GetPositionZ();
                     me->UpdateGroundPositionZ(fx, fy, fz);
                     me->NearTeleportTo(fx, fy, fz + 0.5f, fallbackPos->GetOrientation());
-                me->SetHover(false);
-                me->SetDisableGravity(false);
-                me->SetCanFly(false);
-                _isLanding = false;
-                DismountAndDespawn();
-            });
+                    me->SetHover(false);
+                    me->SetDisableGravity(false);
+                    me->SetCanFly(false);
+                    _isLanding = false;
+                    DismountAndDespawn();
+                });
         }
     }
 };
