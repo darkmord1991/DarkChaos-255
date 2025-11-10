@@ -2,8 +2,8 @@
 #include "FlightConstants.h"
 #include <cmath>
 
-namespace DC_AC_Flight
-{
+namespace DC_AC_Flight {
+namespace RouteStrategy {
 
 // Helper: compute 2D distance
 static float Distance2D(float x1, float y1, float x2, float y2)
@@ -508,4 +508,5 @@ std::unique_ptr<IFlightRoute> FlightRouteFactory::CreateRoute(FlightRouteMode mo
     }
 }
 
+} // namespace RouteStrategy
 } // namespace DC_AC_Flight

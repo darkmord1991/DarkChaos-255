@@ -30,8 +30,6 @@
 #include <algorithm>
 #include <list>
 
-namespace DC_AC_Flight
-{
 // NPCs
 enum : uint32
 {
@@ -1886,13 +1884,11 @@ public:
             return;
         }
     }
-};  // Added semicolon after class definition
-
-} // namespace DC_AC_Flight
+};  // End of AC_Flightmaster_DebugCommands class
 
 // Define per-node config defaults (runtime-initialized)
-const std::vector<DC_AC_Flight::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
-    std::vector<DC_AC_Flight::NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+const std::vector<NodeConfig> ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = [](){
+    std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
     if (kIndex_acfm57 < kPathLength)
         v[kIndex_acfm57] = { 2u, 12.0f };
     // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
@@ -1903,9 +1899,9 @@ const std::vector<DC_AC_Flight::NodeConfig> DC_AC_Flight::ac_gryphon_taxi_800011
 
 void AddSC_flightmasters()
 {
-    DC_AC_Flight::RegisterScripts();
-    // Also register the GM debug player script (class is defined in the DC_AC_Flight namespace)
-    new DC_AC_Flight::AC_Flightmaster_DebugCommands();
+    RegisterScripts();
+    // Also register the GM debug player script
+    new AC_Flightmaster_DebugCommands();
 }
 
 // debug commands are instantiated in AddSC_flightmasters()

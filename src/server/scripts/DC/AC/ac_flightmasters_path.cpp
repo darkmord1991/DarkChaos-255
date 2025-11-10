@@ -5,9 +5,11 @@
 #include "Chat.h"
 #include <numeric>
 
-namespace DC_AC_Flight
-{
-using namespace DC_AC_Flight::Pathfinding;
+// Flight path helper implementations
+#include "ac_flightmasters_path.h" // Ensure namespace Pathfinding declarations are available
+
+namespace DC_AC_Flight {
+namespace Pathfinding {
 
 bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Position>& out)
 {
@@ -99,4 +101,5 @@ void FlightPathHelper::SmoothAndSetSpeed(float targetSpeed)
     _owner->SetSpeedRate(MOVE_RUN, avg);
 }
 
+} // namespace Pathfinding
 } // namespace DC_AC_Flight
