@@ -1089,7 +1089,7 @@ public:
         return _cachedPassenger.value_or(nullptr);
     }
 
-private:
+public:
     TaskScheduler _scheduler;
     uint32 _sinceMoveMs = 0; // time since last MovePoint for proximity fallback
     uint32 _hopElapsedMs = 0; // time since last hop started
