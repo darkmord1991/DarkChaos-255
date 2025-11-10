@@ -15,9 +15,6 @@
  * - Debug and safety limits
  */
 
-namespace DC_AC_Flight
-{
-
 // ============================================================================
 // DISTANCE THRESHOLDS (in yards)
 // ============================================================================
@@ -212,5 +209,3 @@ namespace Helper
     constexpr size_t SPEED_SMOOTH_WINDOW = 4;         // Number of speed samples for smoothing
     constexpr float PATH_LENGTH_LIMIT = 200.0f;       // Max PathGenerator search distance
 }
-
-} // namespace DC_AC_Flight

@@ -5,8 +5,6 @@
 #include "Chat.h"
 #include <numeric>
 
-namespace DC_AC_Flight {
-
 bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Position>& out)
 {
     if (!_owner)
@@ -96,5 +94,3 @@ void FlightPathHelper::SmoothAndSetSpeed(float targetSpeed)
     _owner->SetSpeedRate(MOVE_FLIGHT, avg);
     _owner->SetSpeedRate(MOVE_RUN, avg);
 }
-
-} // namespace DC_AC_Flight

@@ -14,9 +14,6 @@
  *   if (FlightPathAccessor::IsValidIndex(index)) { ... }
  */
 
-namespace DC_AC_Flight
-{
-
 class FlightPathAccessor
 {
 public:
@@ -173,5 +170,3 @@ public:
         return nearest;
     }
 };
-
-} // namespace DC_AC_Flight

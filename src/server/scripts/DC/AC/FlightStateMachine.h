@@ -19,9 +19,6 @@
  * - Despawning: Cleanup in progress
  */
 
-namespace DC_AC_Flight
-{
-
 enum class FlightState : uint8
 {
     Idle = 0,              // Gryphon spawned, waiting for SetData
@@ -222,5 +219,3 @@ private:
         }
     }
 };
-
-} // namespace DC_AC_Flight

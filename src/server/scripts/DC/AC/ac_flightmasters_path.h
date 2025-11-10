@@ -5,8 +5,6 @@
 class Creature;
 class WorldObject;
 
-namespace DC_AC_Flight
-{
 class FlightPathHelper
 {
 public:
@@ -25,6 +23,5 @@ private:
     std::deque<float> _speedHistory;
     static constexpr size_t kSpeedSmoothWindow = 4;
 };
-}
 
 

@@ -13,9 +13,6 @@
  * Fallback: Use nearest pre-defined safe landing spot.
  */
 
-namespace DC_AC_Flight
-{
-
 // Emergency landing spot data
 struct EmergencyLandingSpot
 {
@@ -223,5 +220,3 @@ inline bool EmergencyLandingSystem::IsNearSafeLanding(float x, float y, float z,
     }
     return false;
 }
-
-} // namespace DC_AC_Flight

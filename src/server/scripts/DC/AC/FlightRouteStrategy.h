@@ -16,9 +16,6 @@
  * - Special handling for sticky anchors
  */
 
-namespace DC_AC_Flight
-{
-
 // Forward declarations
 enum FlightRouteMode : uint32
 {
@@ -227,5 +224,3 @@ public:
     // Create appropriate route strategy based on mode
     static std::unique_ptr<IFlightRoute> CreateRoute(FlightRouteMode mode);
 };
-
-} // namespace DC_AC_Flight

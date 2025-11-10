@@ -30,8 +30,6 @@
 #include <algorithm>
 #include <list>
 
-using namespace DC_AC_Flight;
-
 // NPCs
 enum : uint32
 {
