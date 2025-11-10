@@ -1101,7 +1101,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
     // Number of failures on a node before escalation (force bypass/smart-path)
     static constexpr uint8 kFailEscalationThreshold = 3;
     // Per-node override configuration
-    struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };
+    struct NodeConfig { uint8 escalationThreshold; float nudgeExtraZ; };;
     // Default per-node config: only acfm57 needs more aggressive handling so far
     static const std::vector<NodeConfig> kPerNodeConfigDefaults;
     // Per-instance copy of per-node config so we can tune active taxis at runtime

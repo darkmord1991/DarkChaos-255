@@ -185,7 +185,7 @@ private:
             case FlightState::Flying:
                 return (to == FlightState::ArrivingAtWaypoint && trigger == FlightEvent::ReachedWaypoint) ||
                        (to == FlightState::CustomPath && trigger == FlightEvent::BeginCustomPath) ||
-                       (to == FlightState::Landing && trigger == FlightEvent::BeginLanding) ||
+                       (to == FlightState::Landing && trigger == FlightEvent::StartLanding) ||
                        (to == FlightState::Stuck && trigger == FlightEvent::StuckDetected);
                 
             case FlightState::CustomPath:
@@ -197,7 +197,7 @@ private:
                 return (to == FlightState::Flying && trigger == FlightEvent::ReachedWaypoint) ||
                        (to == FlightState::CustomPath && trigger == FlightEvent::BeginCustomPath) ||
                        (to == FlightState::Descending && trigger == FlightEvent::ApproachingAnchor) ||
-                       (to == FlightState::Landing && trigger == FlightEvent::BeginLanding);
+                       (to == FlightState::Landing && trigger == FlightEvent::StartLanding);
                 
             case FlightState::Descending:
                 return (to == FlightState::Landing && trigger == FlightEvent::StartLanding);
