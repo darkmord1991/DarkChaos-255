@@ -1886,7 +1886,7 @@ public:
             return;
         }
     }
-};
+};  // Added semicolon after class definition
 
 } // namespace DC_AC_Flight
 
