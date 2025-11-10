@@ -6,7 +6,6 @@
 #include <numeric>
 
 namespace DC_AC_Flight {
-namespace Pathfinding {
 
 bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Position>& out)
 {
@@ -98,5 +97,4 @@ void FlightPathHelper::SmoothAndSetSpeed(float targetSpeed)
     _owner->SetSpeedRate(MOVE_RUN, avg);
 }
 
-} // namespace Pathfinding
 } // namespace DC_AC_Flight
