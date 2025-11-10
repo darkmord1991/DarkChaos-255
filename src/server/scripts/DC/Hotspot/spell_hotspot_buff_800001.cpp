@@ -27,8 +27,7 @@ class spell_hotspot_buff_800001_aura : public AuraScript
         Player* player = GetTarget()->ToPlayer();
         if (player)
         {
-        LOG_INFO("scripts.spell", "Hotspot XP Buff (800001) applied to player {}",
-            player->GetName());
+            LOG_DEBUG("scripts.spell", "Hotspot XP Buff (800001) applied to player {}", player->GetName());
         }
     }
 
@@ -37,14 +36,19 @@ class spell_hotspot_buff_800001_aura : public AuraScript
         Player* player = GetTarget()->ToPlayer();
         if (player)
         {
-        LOG_INFO("scripts.spell", "Hotspot XP Buff (800001) removed from player {}",
-            player->GetName());
+            LOG_DEBUG("scripts.spell", "Hotspot XP Buff (800001) removed from player {}", player->GetName());
         }
     }
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_hotspot_buff_800001_aura::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_hotspot_buff_800001_aura::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_hotspot_buff_800001_aura::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_hotspot_buff_800001_aura::OnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
+
+// Registration function
+void AddSC_spell_hotspot_buff_800001()
+{
+    RegisterSpellScript(spell_hotspot_buff_800001_aura);
+}

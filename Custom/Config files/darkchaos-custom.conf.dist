@@ -510,6 +510,56 @@ Hotspots.GmBypassLimit = 1
 #
 Hotspots.AllowWorldwideSpawn = 1
 
+# -------------------------------------------------------------------------
+# Anti-Camping System
+# -------------------------------------------------------------------------
+
+#
+#    Hotspots.AntiCamping.Enabled
+#        Description: Enable diminishing returns for players camping in hotspots
+#                     Prevents players from staying in one hotspot indefinitely
+#                     by gradually reducing XP bonus over time.
+#                     
+#                     When enabled, players receive full bonus initially but the
+#                     bonus decreases based on time spent in the same hotspot.
+#                     Moving to a different hotspot resets the timer.
+#        Default:     1 (Enabled - anti-camping active)
+#                     0 (Disabled - unlimited camping allowed)
+#
+Hotspots.AntiCamping.Enabled = 1
+
+#
+#    Hotspots.AntiCamping.Interval
+#        Description: Time in seconds before diminishing returns kick in
+#                     After this duration in the same hotspot, bonus is reduced to next tier.
+#                     
+#                     Example with 600 seconds (10 minutes):
+#                       0-10 min:  100% bonus (Tier 0)
+#                       10-20 min:  75% bonus (Tier 1)
+#                       20-30 min:  50% bonus (Tier 2)
+#                       30+ min:    25% bonus (Tier 3)
+#        Default:     600 (10 minutes per tier)
+#        Range:       300 - 3600 (5 minutes to 1 hour)
+#
+Hotspots.AntiCamping.Interval = 600
+
+#
+#    Hotspots.AntiCamping.Tiers
+#        Description: Comma-separated multipliers for each diminishing returns tier
+#                     First value = full bonus (tier 0), subsequent values = reduced bonus
+#                     
+#                     Each tier lasts for AntiCamping.Interval seconds.
+#                     When a player reaches the last tier, they stay at that multiplier.
+#                     
+#                     Examples:
+#                       "1.0,0.75,0.50,0.25" (default: 100% → 75% → 50% → 25%)
+#                       "1.0,0.80,0.60,0.40,0.20" (5 tiers, gentler decline)
+#                       "1.0,0.50,0.25,0.10" (4 tiers, harsher penalties)
+#                       "1.0,1.0,0.75,0.50" (grace period: 2 tiers at 100%)
+#        Default:     "1.0,0.75,0.50,0.25"
+#
+Hotspots.AntiCamping.Tiers = "1.0,0.75,0.50,0.25"
+
 
 ###########################################################################
 #
