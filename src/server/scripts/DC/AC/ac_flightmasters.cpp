@@ -134,9 +134,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_currentRoute)
         {
             UpdatePassengerCache();
-            Player* p = GetCachedPassenger();
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).SendSysMessage("[Flight] Failed to create route.");
+            Player* routeFailPlayer = GetCachedPassenger();
+            if (routeFailPlayer && routeFailPlayer->IsGameMaster())
+                ChatHandler(routeFailPlayer->GetSession()).SendSysMessage("[Flight] Failed to create route.");
             return;
         }
         
@@ -144,9 +144,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_stateMachine.TransitionTo(FlightState::Preparing, FlightEvent::StartFlight))
         {
             UpdatePassengerCache();
-            Player* p = GetCachedPassenger();
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).SendSysMessage("[Flight] State transition failed.");
+            Player* stateFailPlayer = GetCachedPassenger();
+            if (stateFailPlayer && stateFailPlayer->IsGameMaster())
+                ChatHandler(stateFailPlayer->GetSession()).SendSysMessage("[Flight] State transition failed.");
             return;
         }
         
@@ -182,14 +182,14 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         me->GetMotionMaster()->Clear();
         
         // === NEW: Get starting index from route strategy ===
-        Player* p = GetCachedPassenger();
+        Player* startPlayer = GetCachedPassenger();
         _index = _currentRoute->GetStartIndex(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ());
         
         // === NEW: Validate with bounds checking ===
         if (!FlightPathAccessor::IsValidIndex(_index))
         {
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight] Invalid start index. Emergency landing to destination.");
+            if (startPlayer && startPlayer->IsGameMaster())
+                ChatHandler(startPlayer->GetSession()).PSendSysMessage("[Flight] Invalid start index. Emergency landing to destination.");
             
             // Use route destination so player arrives where they wanted to go
             auto destination = EmergencyLandingSystem::GetRouteDestination(_currentRoute->GetMode());
@@ -208,15 +208,15 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         uint8 bypassIdx = 0;
         if (_currentRoute->ShouldBypassAnchor(nextIdx, bypassIdx))
         {
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage(
+            if (startPlayer && startPlayer->IsGameMaster())
+                ChatHandler(startPlayer->GetSession()).PSendSysMessage(
                     "[Flight Debug] Bypassing sticky anchor {} -> {}.", NodeLabel(nextIdx), NodeLabel(bypassIdx));
             _index = bypassIdx;
         }
         
         // Debug output
-        if (p && p->IsGameMaster())
-            ChatHandler(p->GetSession()).PSendSysMessage(
+        if (startPlayer && startPlayer->IsGameMaster())
+            ChatHandler(startPlayer->GetSession()).PSendSysMessage(
                 "[Flight Debug] Starting {} from {}.", _currentRoute->GetName(), NodeLabel(_index));
         
         // Check if need takeoff
@@ -344,9 +344,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 return;
             if (_isLanding)
             {
-                Player* p = GetCachedPassenger();
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Early-exit landing fallback.");
+                Player* earlyExitPlayer = GetCachedPassenger();
+                if (earlyExitPlayer && earlyExitPlayer->IsGameMaster())
+                    ChatHandler(earlyExitPlayer->GetSession()).SendSysMessage("[Flight Debug] Early-exit landing fallback.");
                 float fx = me->GetPositionX();
                 float fy = me->GetPositionY();
                 float fz = me->GetPositionZ();
@@ -482,9 +482,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 if (!targetPos)
                 {
                     // Invalid index - trigger emergency landing to destination
-                    Player* p = GetCachedPassenger();
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight] Invalid path index {}. Emergency landing to destination.", _index);
+                    Player* invalidIndexPlayer = GetCachedPassenger();
+                    if (invalidIndexPlayer && invalidIndexPlayer->IsGameMaster())
+                        ChatHandler(invalidIndexPlayer->GetSession()).PSendSysMessage("[Flight] Invalid path index {}. Emergency landing to destination.", _index);
                     
                     auto destination = EmergencyLandingSystem::GetRouteDestination(_currentRoute->GetMode());
                     Position safeLand = destination.value_or(
@@ -546,9 +546,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             _hopElapsedMs > Timeout::ANCHOR19_SKIP_MS && 
                             !_stateMachine.IsDescending())
                     {
-                        Player* p = GetCachedPassenger();
-                        if (p && p->IsGameMaster())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
+                        Player* anchorSkipPlayer = GetCachedPassenger();
+                        if (anchorSkipPlayer && anchorSkipPlayer->IsGameMaster())
+                            ChatHandler(anchorSkipPlayer->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
                         _awaitingArrival = false;
                         _index = kIndex_acfm15;
                         MoveToIndex(_index);
@@ -588,9 +588,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             // Rate-limited micro-nudge: skip if we recently nudged this same node
                             if (_lastNudgeIdx == _index && _lastNudgeMs < Timeout::MICRO_NUDGE_RATE_LIMIT_MS)
                             {
-                                Player* p = GetCachedPassenger();
-                                if (p && p->IsGameMaster())
-                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping micro-nudge for {} (rate-limit).", NodeLabel(_index));
+                                Player* skipNudgePlayer = GetCachedPassenger();
+                                if (skipNudgePlayer && skipNudgePlayer->IsGameMaster())
+                                    ChatHandler(skipNudgePlayer->GetSession()).PSendSysMessage("[Flight Debug] Skipping micro-nudge for {} (rate-limit).", NodeLabel(_index));
 
                                 // Try smart pathfinding before hard fallback
                                 if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
@@ -667,16 +667,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             if (_index < _nodeFailCount.size() && _nodeFailCount[_index] >= nodeEscThresh)
                             {
                                 nudgez += Recovery::ESCALATED_NUDGE_HEIGHT;
-                                Player* p = GetCachedPassenger();
-                                if (p && p->IsGameMaster())
-                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased micro-nudge at {} (failcount={}).", NodeLabel(_index), static_cast<uint32>(_nodeFailCount[_index]));
+                                Player* escalationPlayer = GetCachedPassenger();
+                                if (escalationPlayer && escalationPlayer->IsGameMaster())
+                                    ChatHandler(escalationPlayer->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased micro-nudge at {} (failcount={}).", NodeLabel(_index), static_cast<uint32>(_nodeFailCount[_index]));
                             }
                             Position nudgePos(nudgex, nudgey, nudgez, 0.0f);
                             me->GetMotionMaster()->Clear();
                             me->GetMotionMaster()->MovePoint(_currentPointId, nudgePos);
-                            Player* p = GetCachedPassenger();
-                            if (p && p->IsGameMaster())
-                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Micro-nudge issued to help clear obstacle at {}.", NodeLabel(_index));
+                            Player* nudgePlayer = GetCachedPassenger();
+                            if (nudgePlayer && nudgePlayer->IsGameMaster())
+                                ChatHandler(nudgePlayer->GetSession()).PSendSysMessage("[Flight Debug] Micro-nudge issued to help clear obstacle at {}.", NodeLabel(_index));
                             _lastNudgeIdx = _index;
                             _lastNudgeMs = 0;
                             _hopElapsedMs = 0;
@@ -690,9 +690,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             if (_pathfindingRetries < 1 && !_useSmartPathfinding && !_movingToCustom)
                             {
                                 _pathfindingRetries++;
-                                Player* p = GetCachedPassenger();
-                                if (p && p->IsGameMaster())
-                                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
+                                Player* smartRecoveryPlayer = GetCachedPassenger();
+                                if (smartRecoveryPlayer && smartRecoveryPlayer->IsGameMaster())
+                                    ChatHandler(smartRecoveryPlayer->GetSession()).PSendSysMessage("[Flight Debug] Hop timeout at {}. Trying smart pathfinding recovery.", NodeLabel(_index));
                                 
                                 _awaitingArrival = false;
                                 _hopElapsedMs = 0;
@@ -702,9 +702,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             }
                             
                             // Hard fallback: snap to target node and continue the route
-                            Player* p = GetCachedPassenger();
-                            if (p && p->IsGameMaster())
-                                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
+                            Player* hardFallbackPlayer = GetCachedPassenger();
+                            if (hardFallbackPlayer && hardFallbackPlayer->IsGameMaster())
+                                ChatHandler(hardFallbackPlayer->GetSession()).PSendSysMessage("[Flight Debug] Final timeout at {}. Snapping to target to continue.", _movingToCustom ? std::string("corner"): NodeLabel(_index));
                             
                             auto targetPos = FlightPathAccessor::GetSafePosition(_index);
                             if (!targetPos)
@@ -763,9 +763,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     finalTimeout = 8000u;
                 if (_hopElapsedMs > finalTimeout)
                 {
-                    Player* p = GetCachedPassenger();
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at {}. Landing now.", NodeLabel(_index));
+                    Player* finalHopPlayer = GetCachedPassenger();
+                    if (finalHopPlayer && finalHopPlayer->IsGameMaster())
+                        ChatHandler(finalHopPlayer->GetSession()).PSendSysMessage("[Flight Debug] Final hop timeout at {}. Landing now.", NodeLabel(_index));
                     
                     auto finalPos = FlightPathAccessor::GetSafePosition(_index);
                     if (!finalPos)
@@ -803,9 +803,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                             (void)ctx;
                             if (!me->IsInWorld())
                                 return;
-                            Player* p = GetCachedPassenger();
-                            if (p && p->IsGameMaster())
-                                ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                            Player* landingFallbackPlayer = GetCachedPassenger();
+                            if (landingFallbackPlayer && landingFallbackPlayer->IsGameMaster())
+                                ChatHandler(landingFallbackPlayer->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
                             float gx = me->GetPositionX();
                             float gy = me->GetPositionY();
                             float gz = me->GetPositionZ();
@@ -854,9 +854,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             }
             if (_stuckMs >= Timeout::STUCK_DETECT_MS)
             {
-                Player* p = GetCachedPassenger();
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Attempting smart-path recovery to destination before fallback.");
+                Player* stuckRecoveryPlayer = GetCachedPassenger();
+                if (stuckRecoveryPlayer && stuckRecoveryPlayer->IsGameMaster())
+                    ChatHandler(stuckRecoveryPlayer->GetSession()).SendSysMessage("[Flight Debug] Stuck detected for 20s. Attempting smart-path recovery to destination before fallback.");
 
                 // Attempt smart path recovery to the current route's final destination
                 uint8 finalIdx = _index; // default to current
@@ -919,9 +919,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 }
 
                 // If smart path failed, fallback to previous behaviour: teleport back to start and dismount
-                Player* p = GetCachedPassenger();
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting to start and dismounting.");
+                Player* passenger = GetCachedPassenger();
+                if (passenger && passenger->IsGameMaster())
+                    ChatHandler(passenger->GetSession()).SendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting to start and dismounting.");
                 float sx = _flightStartPos.GetPositionX();
                 float sy = _flightStartPos.GetPositionY();
                 float sz = _flightStartPos.GetPositionZ();
@@ -998,11 +998,11 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         _sinceMoveMs = 0;
         _hopElapsedMs = 0;
         _hopRetries = 0;
-        if (Player* p = GetCachedPassenger())
+        if (Player* departPlayer = GetCachedPassenger())
         {
             if (_lastDepartIdx != idx)
-                if (p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
+                if (departPlayer->IsGameMaster())
+                    ChatHandler(departPlayer->GetSession()).PSendSysMessage("[Flight Debug] Departing to {} (idx {}).", NodeLabel(idx), (uint32)idx);
         }
         _lastDepartIdx = idx;
     }
@@ -1161,9 +1161,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= escThresh)
             {
                 rise.m_positionZ += Recovery::ARC_ESCALATION_HEIGHT;
-                Player* p = GetCachedPassenger();
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased elevation arc for {} due to repeated failures.", NodeLabel(idx));
+                Player* gmPlayer = GetCachedPassenger();
+                if (gmPlayer && gmPlayer->IsGameMaster())
+                    ChatHandler(gmPlayer->GetSession()).PSendSysMessage("[Flight Debug] Escalation: increased elevation arc for {} due to repeated failures.", NodeLabel(idx));
             }
 
             Position glide = destination;
@@ -1179,9 +1179,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             Position next = _smartPathQueue.front();
             _smartPathQueue.pop_front();
             MoveToCustom(next);
-            Player* p = GetCachedPassenger();
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Elevating arc to clear terrain for {}.", NodeLabel(idx));
+            Player* terrainArcPlayer = GetCachedPassenger();
+            if (terrainArcPlayer && terrainArcPlayer->IsGameMaster())
+                ChatHandler(terrainArcPlayer->GetSession()).PSendSysMessage("[Flight Debug] Elevating arc to clear terrain for {}.", NodeLabel(idx));
             return;
         }
 
@@ -1200,9 +1200,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             if (idx < _nodeFailCount.size() && _nodeFailCount[idx] >= escThreshSC)
             {
                 rise.m_positionZ += Recovery::OVERHEAD_ESCALATION_HEIGHT; // much higher overhead approach
-                Player* p = GetCachedPassenger();
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Escalation: stronger overhead approach for Startcamp due to repeated failures.");
+                Player* gmPlayerSC = GetCachedPassenger();
+                if (gmPlayerSC && gmPlayerSC->IsGameMaster())
+                    ChatHandler(gmPlayerSC->GetSession()).PSendSysMessage("[Flight Debug] Escalation: stronger overhead approach for Startcamp due to repeated failures.");
             }
 
             Position approach = destination;
@@ -1218,9 +1218,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
             Position next = _smartPathQueue.front();
             _smartPathQueue.pop_front();
             MoveToCustom(next);
-            Player* p = GetCachedPassenger();
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Overhead arc engaged for Startcamp landing.");
+            Player* startcampArcPlayer = GetCachedPassenger();
+            if (startcampArcPlayer && startcampArcPlayer->IsGameMaster())
+                ChatHandler(startcampArcPlayer->GetSession()).PSendSysMessage("[Flight Debug] Overhead arc engaged for Startcamp landing.");
             return;
         }
 
@@ -1251,16 +1251,16 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     constexpr float minDeviationSq = Distance::SINGLE_SMART_HOP_MIN * Distance::SINGLE_SMART_HOP_MIN;
                     if (d2 > minDeviationSq)
                     {
-                        Player* p = GetCachedPassenger();
-                        if (p && p->IsGameMaster())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Accepting single smart hop for {} (dx={:.1f}).", NodeLabel(idx), sqrtf(d2));
+                        Player* smartHopPlayer = GetCachedPassenger();
+                        if (smartHopPlayer && smartHopPlayer->IsGameMaster())
+                            ChatHandler(smartHopPlayer->GetSession()).PSendSysMessage("[Flight Debug] Accepting single smart hop for {} (dx={:.1f}).", NodeLabel(idx), sqrtf(d2));
                         // leave queue intact and process below
                     }
                     else
                     {
-                        Player* p = GetCachedPassenger();
-                        if (p && p->IsGameMaster())
-                            ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path reduced to single hop for {}. Falling back to scripted point.", NodeLabel(idx));
+                        Player* fallbackPlayer = GetCachedPassenger();
+                        if (fallbackPlayer && fallbackPlayer->IsGameMaster())
+                            ChatHandler(fallbackPlayer->GetSession()).PSendSysMessage("[Flight Debug] Smart path reduced to single hop for {}. Falling back to scripted point.", NodeLabel(idx));
                         _smartPathQueue.clear();
                     }
                 }
@@ -1271,9 +1271,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     _smartPathQueue.pop_front();
                     _useSmartPathfinding = true;
                     MoveToCustom(next);
-                    Player* p = GetCachedPassenger();
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via {} smart points", NodeLabel(idx), static_cast<uint32>(_smartPathQueue.size() + 1));
+                    Player* multiHopPlayer = GetCachedPassenger();
+                    if (multiHopPlayer && multiHopPlayer->IsGameMaster())
+                        ChatHandler(multiHopPlayer->GetSession()).PSendSysMessage("[Flight Debug] Using smart pathfinding to {} via {} smart points", NodeLabel(idx), static_cast<uint32>(_smartPathQueue.size() + 1));
                     return;
                 }
             }
@@ -1282,9 +1282,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         // Fallback to regular waypoint movement
         if (_useSmartPathfinding)
         {
-            Player* p = GetCachedPassenger();
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
+            Player* fallbackPathPlayer = GetCachedPassenger();
+            if (fallbackPathPlayer && fallbackPathPlayer->IsGameMaster())
+                ChatHandler(fallbackPathPlayer->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
         }
         _useSmartPathfinding = false;
         MoveToIndex(idx);
@@ -1295,7 +1295,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         if (!_awaitingArrival)
             return; // already handled
 
-        Player* p = GetCachedPassenger();
+        Player* handleArrivalPlayer = GetCachedPassenger();
 
         // Sanity guard: if Level 40+ → 60+ route somehow starts at the final node (acfm57)
         // while we are NOT near acfm57, reset to a proper starting anchor
@@ -1313,8 +1313,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 uint8 start = (pos40.value_or(999.0f) < Distance::START_NEARBY_THRESHOLD) 
                     ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
                 
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                if (handleArrivalPlayer && handleArrivalPlayer->IsGameMaster())
+                    ChatHandler(handleArrivalPlayer->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -1335,8 +1335,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 uint8 start = IsNearIndex(kIndex_acfm19, Distance::START_NEARBY_THRESHOLD) 
                     ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
                 
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                if (handleArrivalPlayer && handleArrivalPlayer->IsGameMaster())
+                    ChatHandler(handleArrivalPlayer->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _index = start;
                 MoveToIndex(_index);
@@ -1367,8 +1367,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 else
                     start = 0;
                     
-                if (p && p->IsGameMaster())
-                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
+                if (handleArrivalPlayer && handleArrivalPlayer->IsGameMaster())
+                    ChatHandler(handleArrivalPlayer->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 40 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
                 _awaitingArrival = false;
                 _l25to40ResetApplied = true;
                 _index = start;
@@ -1378,7 +1378,7 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
         }
 
         // === NEW: Use route strategy to determine next index ===
-        Player* p = GetCachedPassenger();
+        Player* routePlayer = GetCachedPassenger();
         
         // Get next index from route strategy
         uint8 finalIdx = 0;
@@ -1398,13 +1398,13 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // Throttle: skip if we recently bypassed this anchor
                 if (_lastBypassedAnchor == nextIdx && _bypassMs < Timeout::BYPASS_THROTTLE_MS)
                 {
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for {} (throttle).", NodeLabel(nextIdx));
+                    if (routePlayer && routePlayer->IsGameMaster())
+                        ChatHandler(routePlayer->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for {} (throttle).", NodeLabel(nextIdx));
                 }
                 else
                 {
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage(
+                    if (routePlayer && routePlayer->IsGameMaster())
+                        ChatHandler(routePlayer->GetSession()).PSendSysMessage(
                             "[Flight Debug] Route bypass: {} -> {}.", NodeLabel(nextIdx), NodeLabel(bypassIdx));
                     
                     nextIdx = bypassIdx;
@@ -1419,8 +1419,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 // Throttle repeated acfm35 remaps as well
                 if (_lastBypassedAnchor == kIndex_acfm35 && _bypassMs < Timeout::BYPASS_THROTTLE_MS)
                 {
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm35 (throttle).");
+                    if (routePlayer && routePlayer->IsGameMaster())
+                        ChatHandler(routePlayer->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm35 (throttle).");
                 }
                 else
                 {
@@ -1436,8 +1436,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
 
                     _lastBypassedAnchor = kIndex_acfm35;
                     _bypassMs = 0;
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).PSendSysMessage(
+                    if (routePlayer && routePlayer->IsGameMaster())
+                        ChatHandler(routePlayer->GetSession()).PSendSysMessage(
                             "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> {}.", NodeLabel(nextIdx));
                 }
             }
@@ -1459,8 +1459,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                 AdjustSpeedForTurn(angleDeg);
             }
             _index = nextIdx; // move to next index
-            if (p && p->IsGameMaster())
-                ChatHandler(p->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
+            if (routePlayer && routePlayer->IsGameMaster())
+                ChatHandler(routePlayer->GetSession()).PSendSysMessage(isProximity ? "[Flight Debug] Reached waypoint {} (proximity)." : "[Flight Debug] Reached waypoint {}.", NodeLabel(arrivedIdx));
             // Reset per-node failure counter on successful arrival
             if (arrivedIdx < _nodeFailCount.size())
                 _nodeFailCount[arrivedIdx] = 0;
@@ -1558,9 +1558,9 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                     (void)ctx;
                     if (!me->IsInWorld())
                         return;
-                    Player* p = GetCachedPassenger();
-                    if (p && p->IsGameMaster())
-                        ChatHandler(p->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
+                    Player* landingFallbackPlayer = GetCachedPassenger();
+                    if (landingFallbackPlayer && landingFallbackPlayer->IsGameMaster())
+                        ChatHandler(landingFallbackPlayer->GetSession()).SendSysMessage("[Flight Debug] Landing fallback triggered. Snapping to ground and dismounting safely.");
                     
                     // Snap the gryphon to ground at the final node before dismounting passengers
                     auto fallbackPos = FlightPathAccessor::GetSafePosition(_index);
@@ -1571,8 +1571,8 @@ struct ac_gryphon_taxi_800011AI : public VehicleAI
                         if (dest)
                         {
                             me->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
-                            if (Player* p = GetCachedPassenger())
-                                p->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
+                            if (Player* emergencyTeleportPlayer = GetCachedPassenger())
+                                emergencyTeleportPlayer->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
                         }
                         DismountAndDespawn();
                         return;

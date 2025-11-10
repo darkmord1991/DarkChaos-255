@@ -521,10 +521,10 @@ if ($localChanges) {
     # Optionally run remote build
     Write-Log "Starting remote build..." "INFO"
     $candidates = @()
+    # candidate: UpdateWoWshort.sh in user's home (prioritized)
+    $candidates += "/home/$RemoteUser/UpdateWoWshort.sh"
     # candidate: UpdateWoWshort.sh in repo root
     $candidates += "$RemoteRepoPath/UpdateWoWshort.sh"
-    # candidate: UpdateWoWshort.sh in user's home
-    $candidates += "/home/$RemoteUser/UpdateWoWshort.sh"
     # candidate: updateWoW.sh (common alternate) in user's home
     $candidates += "/home/$RemoteUser/updateWoW.sh"
     # candidate: UpdateWoW.sh in repo root
