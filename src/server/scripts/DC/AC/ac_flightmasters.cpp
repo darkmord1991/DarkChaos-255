@@ -120,7 +120,15 @@ class ac_gryphon_taxi_800011AI : public VehicleAI
     FlightRouteMode _routeMode = ROUTE_TOUR; // current route mode
 
     // Default per-node config: only acfm57 needs more aggressive handling so far
-    static const std::vector<NodeConfig> kPerNodeConfigDefaults;
+    inline static const std::vector<NodeConfig> kPerNodeConfigDefaults = [](){
+        std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
+        if (kIndex_acfm57 < kPathLength)
+            v[kIndex_acfm57] = { 2u, 12.0f };
+        // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
+        if (kIndex_acfm15 < kPathLength)
+            v[kIndex_acfm15] = { 2u, 6.0f };
+        return v;
+    }();
 
 public:
     ac_gryphon_taxi_800011AI(Creature* creature) : VehicleAI(creature) { }
@@ -1885,21 +1893,6 @@ public:
         }
     }
 };  // End of AC_Flightmaster_DebugCommands class
-
-// Define per-node config defaults (runtime-initialized)
-namespace {
-const std::vector<NodeConfig> InitializeNodeConfig() {
-    std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { kFailEscalationThreshold, 0.0f });
-    if (kIndex_acfm57 < kPathLength)
-        v[kIndex_acfm57] = { 2u, 12.0f };
-    // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
-    if (kIndex_acfm15 < kPathLength)
-        v[kIndex_acfm15] = { 2u, 6.0f };
-    return v;
-}
-} // namespace
-
-const std::vector<NodeConfig> ac_gryphon_taxi_800011AI::kPerNodeConfigDefaults = InitializeNodeConfig();
 
 void AddSC_flightmasters()
 {

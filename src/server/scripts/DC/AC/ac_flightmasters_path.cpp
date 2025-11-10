@@ -26,7 +26,7 @@ bool FlightPathHelper::CalculateSmartPath(Position const& dest, std::vector<Posi
         // Dynamic Z offset for flight altitude with terrain awareness
         float groundZ = p.z;
         _owner->UpdateGroundPositionZ(p.x, p.y, groundZ);
-        float clearance = MIN_FLIGHT_CLEARANCE;
+    float clearance = Pathfinding::MIN_FLIGHT_CLEARANCE;
         
         // Increase clearance over steep terrain or obstacles
         if (p.z > groundZ + 10.0f)
