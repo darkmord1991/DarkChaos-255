@@ -57,7 +57,7 @@ bool FlightPathHelper::CalculateSmartPathForObject(WorldObject const* source, Po
     for (auto const& p : points)
     {
         // Use legacy fixed offset for static helper (no terrain context available)
-        out.emplace_back(p.x, p.y, p.z + LEGACY_FIXED_OFFSET, 0.0f);
+        out.emplace_back(p.x, p.y, p.z + Pathfinding::LEGACY_FIXED_OFFSET, 0.0f);
     }
 
     return !out.empty();

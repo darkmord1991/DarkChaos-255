@@ -1096,6 +1096,10 @@ public:
     {
         return _cachedPassenger.value_or(nullptr);
     }
+    
+    // Public getters for debug commands
+    uint8 GetCurrentIndex() const { return _index; }
+    std::vector<uint8> const& GetNodeFailCount() const { return _nodeFailCount; }
 
 public:
     TaskScheduler _scheduler;
@@ -1841,12 +1845,12 @@ public:
                         if (!ai) // maybe another taxi; skip
                             continue;
                         ++found;
-                        oss << "Instance GUID=" << c->GetGUID().GetRawValue() << " idx=" << static_cast<uint32>(ai->_index) << " failcounts=[";
+                        oss << "Instance GUID=" << c->GetGUID().GetRawValue() << " idx=" << static_cast<uint32>(ai->GetCurrentIndex()) << " failcounts=[";
                         // print counts compactly
-                        for (size_t i = 0; i < ai->_nodeFailCount.size(); ++i)
+                        for (size_t i = 0; i < ai->GetNodeFailCount().size(); ++i)
                         {
                             if (i) oss << ',';
-                            oss << static_cast<uint32>(ai->_nodeFailCount[i]);
+                            oss << static_cast<uint32>(ai->GetNodeFailCount()[i]);
                         }
                         oss << "]\n";
                     }
