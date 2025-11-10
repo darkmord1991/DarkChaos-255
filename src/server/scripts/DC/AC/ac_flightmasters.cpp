@@ -1639,7 +1639,7 @@ static bool SummonTaxiAndStart(Player* player, Creature* creature, FlightRouteMo
     if (!player->GetVehicle())
     {
         ChatHandler(player->GetSession()).SendSysMessage("[Flight] Could not place you on the gryphon. Check VehicleId seat 0 in the database.");
-    taxi->DespawnOrUnsummon(1000ms);
+        taxi->DespawnOrUnsummon(1000ms);
         return false;
     }
     if (CreatureAI* ai = taxi->AI())
