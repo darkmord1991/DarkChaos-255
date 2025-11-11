@@ -223,13 +223,20 @@ private:
             uint32 currentEntry = item->GetEntry();
             uint32 baseEntry = currentEntry;
 
-            if (upgradeLevel > 0)
+            // Always check if current item is a clone (not just when upgradeLevel > 0)
+            if (QueryResult baseResult = WorldDatabase.Query(
+                    "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                    currentEntry))
             {
-                if (QueryResult baseResult = WorldDatabase.Query(
-                        "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                        currentEntry))
+                baseEntry = (*baseResult)[0].Get<uint32>();
+                uint32 detectedLevel = (*baseResult)[1].Get<uint32>();
+                
+                // If no database record exists, use the detected level from clone mapping
+                if (upgradeLevel == 0 && detectedLevel > 0)
                 {
-                    baseEntry = (*baseResult)[0].Get<uint32>();
+                    upgradeLevel = detectedLevel;
+                    statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                        static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
                 }
             }
 
