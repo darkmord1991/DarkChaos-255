@@ -9,8 +9,9 @@ Item.csv DBC extract. It produces:
     the cloned items.
 
 Clone rules:
-  * Tier 1 items receive 5 upgrade levels (6 stages including the base item).
-  * Tier 2 items receive 14 upgrade levels (15 stages including the base item).
+    * Tier 1 items receive 6 upgrade levels (7 stages including the base item).
+    * Tier 2 items receive 15 upgrade levels (16 stages including the base item).
+    * Item level 213+ automatically maps to Tier 2 (otherwise Tier 1).
   * Each upgrade level scales numeric stats by +3% per level relative to the base item.
   * Description is annotated with the upgrade level and base item id.
   * Clone entry ranges:
@@ -42,11 +43,13 @@ SQL_OUTPUT_PATH = REPO_ROOT / "Custom" / "Custom feature SQLs" / "worlddb" / "It
 
 T1_START_ID = 2_000_000
 T2_START_ID = 2_500_000
-T1_LEVELS = 5
-T2_LEVELS = 14
+T1_LEVELS = 6
+T2_LEVELS = 15
 LEVEL_INCREMENT = 0.03
+TIER2_ILVL_THRESHOLD = 213
 CSV_ID_MIN = T1_START_ID
 CSV_ID_MAX = 3_000_000  # upper bound to remove outdated clones on re-run
+NON_EQUIPPABLE_INVENTORY_TYPES = {0, 18}
 
 
 @dataclass
@@ -147,7 +150,7 @@ def load_item_template(schema_path: Path, sql_path: Path) -> ItemTemplateData:
     columns = extract_column_order(schema_path)
     rows: Dict[int, List[object]] = {}
     for row in iter_item_template_rows(sql_path):
-        entry = int(row[0])
+        entry = coerce_int(row[0])
         if len(row) != len(columns):
             raise ValueError(f"Column mismatch for entry {entry}: expected {len(columns)}, got {len(row)}")
         rows[entry] = row
@@ -238,8 +241,29 @@ def scale_float(value: object, scale: float) -> object:
     return round(scaled, 6)
 
 
+def coerce_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return default
+        try:
+            return int(stripped)
+        except ValueError:
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return default
+    return default
+
+
 def build_description(base_desc: str, base_entry: int, upgrade_level: int) -> str:
-    suffix = f" [Upgrade L{upgrade_level}]"
+    suffix = f" [Upgrade L{upgrade_level} • Base {base_entry}]"
     if not base_desc:
         return suffix.strip()
     max_len = 255
@@ -289,7 +313,6 @@ def generate_clones(item_template: ItemTemplateData,
     clones_csv: List[List[str]] = []
     mappings: List[CloneSpec] = []
     warnings: List[str] = []
-
     stat_value_cols = [name for name in item_template.columns if name.startswith("stat_value")]
     stat_value_idx = [idx[name] for name in stat_value_cols]
     float_cols = ["dmg_min1", "dmg_max1", "dmg_min2", "dmg_max2", "ArmorDamageModifier"]
@@ -303,65 +326,94 @@ def generate_clones(item_template: ItemTemplateData,
 
     description_idx = idx["description"]
     name_idx = idx["name"]
-
+    comment_idx = idx.get("comment")
+    item_level_idx = idx.get("ItemLevel")
     csv_fields = ["entry", "class", "subclass", "SoundOverrideSubclass", "Material", "displayid", "InventoryType", "sheath"]
     csv_idx = [idx[field] for field in csv_fields]
 
-    tier_specs = [
-        (1, tier1_entries, T1_START_ID, T1_LEVELS),
-        (2, tier2_entries, T2_START_ID, T2_LEVELS),
-    ]
+    tier_summary: Dict[int, Dict[str, int]] = {
+        1: {"bases": 0, "clones": 0, "missing": 0, "skipped": 0},
+        2: {"bases": 0, "clones": 0, "missing": 0, "skipped": 0},
+    }
 
-    tier_summary: Dict[int, Dict[str, int]] = {1: {"bases": 0, "clones": 0, "missing": 0},
-                                               2: {"bases": 0, "clones": 0, "missing": 0}}
+    combined_entries: List[int] = sorted({entry for entry in (tier1_entries + tier2_entries) if entry < T1_START_ID})
+    next_clone_entry = {1: T1_START_ID, 2: T2_START_ID}
 
-    for tier_id, source_entries, start_id, levels in tier_specs:
-        next_id = start_id
-        seen_base: set[int] = set()
-        for base_entry in source_entries:
-            if base_entry in seen_base:
-                continue
-            seen_base.add(base_entry)
-            base_row = item_template.get(base_entry)
-            if base_row is None:
-                warnings.append(f"Base item {base_entry} not found in item_template (tier {tier_id})")
-                tier_summary[tier_id]["missing"] += 1
-                continue
-            tier_summary[tier_id]["bases"] += 1
-            base_description = str(base_row[description_idx]) if base_row[description_idx] else ""
-            base_name = str(base_row[name_idx]) if base_row[name_idx] else ""
+    tier2_lookup = {entry for entry in tier2_entries if entry < T1_START_ID}
 
-            for level in range(1, levels + 1):
-                multiplier = 1.0 + LEVEL_INCREMENT * level
-                clone_row = list(base_row)
-                clone_row[idx["entry"]] = next_id
-                clone_row[idx["name"]] = base_name
-                clone_row[idx["description"]] = build_description(base_description, base_entry, level)
+    for base_entry in combined_entries:
+        base_row = item_template.get(base_entry)
+        if base_row is None:
+            tier_id = 2 if base_entry in tier2_lookup else 1
+            warnings.append(f"Base item {base_entry} not found in item_template (tier {tier_id})")
+            tier_summary[tier_id]["missing"] += 1
+            continue
 
-                for position in stat_value_idx:
-                    clone_row[position] = scale_int(base_row[position], multiplier)
+        base_item_level = coerce_int(base_row[item_level_idx]) if item_level_idx is not None else 0
+        tier_id = 2 if base_item_level >= TIER2_ILVL_THRESHOLD else 1
+        if base_entry in tier2_lookup:
+            tier_id = 2
 
-                for position in int_idx:
-                    clone_row[position] = scale_int(base_row[position], multiplier)
+        levels = T2_LEVELS if tier_id == 2 else T1_LEVELS
+        clone_entry = next_clone_entry[tier_id]
 
-                for position in float_idx:
-                    clone_row[position] = scale_float(base_row[position], multiplier)
+        inventory_type = coerce_int(base_row[idx["InventoryType"]])
+        item_class = coerce_int(base_row[idx["class"]])
+        if inventory_type in NON_EQUIPPABLE_INVENTORY_TYPES or inventory_type <= 0:
+            warnings.append(
+                f"Skipping base item {base_entry} ({base_row[idx['name']]}) due to inventory type {inventory_type}"
+            )
+            tier_summary[tier_id]["skipped"] += 1
+            continue
+        if item_class == 1:
+            warnings.append(
+                f"Skipping base item {base_entry} ({base_row[idx['name']]}) because it is a bag class ({item_class})"
+            )
+            tier_summary[tier_id]["skipped"] += 1
+            continue
 
-                clones_sql.append(clone_row)
+        tier_summary[tier_id]["bases"] += 1
+        base_description = str(base_row[description_idx]) if base_row[description_idx] else ""
+        base_name = str(base_row[name_idx]) if base_row[name_idx] else ""
+        base_comment = str(base_row[comment_idx]) if (comment_idx is not None and base_row[comment_idx]) else ""
 
-                csv_row = [str(clone_row[position]) for position in csv_idx]
-                clones_csv.append(csv_row)
+        for level in range(1, levels + 1):
+            multiplier = 1.0 + LEVEL_INCREMENT * level
+            clone_row = list(base_row)
+            clone_row[idx["entry"]] = clone_entry
+            clone_row[idx["name"]] = base_name
+            clone_row[idx["description"]] = build_description(base_description, base_entry, level)
 
-                mappings.append(CloneSpec(
-                    base_entry=base_entry,
-                    tier_id=tier_id,
-                    upgrade_level=level,
-                    clone_entry=next_id,
-                    multiplier=round(multiplier, 6),
-                ))
+            if comment_idx is not None:
+                comment_suffix = f"Upgrade clone of {base_entry} (tier {tier_id} level {level})"
+                clone_comment = comment_suffix if not base_comment else f"{base_comment} | {comment_suffix}"
+                clone_row[comment_idx] = clone_comment
 
-                next_id += 1
-                tier_summary[tier_id]["clones"] += 1
+            for position in stat_value_idx:
+                clone_row[position] = scale_int(base_row[position], multiplier)
+
+            for position in int_idx:
+                clone_row[position] = scale_int(base_row[position], multiplier)
+
+            for position in float_idx:
+                clone_row[position] = scale_float(base_row[position], multiplier)
+
+            clones_sql.append(clone_row)
+            csv_row = [str(clone_row[position]) for position in csv_idx]
+            clones_csv.append(csv_row)
+
+            mappings.append(CloneSpec(
+                base_entry=base_entry,
+                tier_id=tier_id,
+                upgrade_level=level,
+                clone_entry=clone_entry,
+                multiplier=round(multiplier, 6),
+            ))
+
+            clone_entry += 1
+            tier_summary[tier_id]["clones"] += 1
+
+        next_clone_entry[tier_id] = clone_entry
 
     return clones_sql, clones_csv, mappings, warnings, tier_summary
 
@@ -387,12 +439,12 @@ def build_templates_upgrade_rows(item_template: ItemTemplateData,
         base_row = item_template.rows.get(spec.base_entry)
         if base_row is None:
             continue
-        item_class = int(base_row[idx["class"]])
-        item_subclass = int(base_row[idx["subclass"]])
+        item_class = coerce_int(base_row[idx["class"]])
+        item_subclass = coerce_int(base_row[idx["subclass"]])
         armor_type = classify_armor_type(item_class, item_subclass)
-        item_slot = int(base_row[idx["InventoryType"]])
-        rarity = int(base_row[idx["Quality"]])
-        base_ilvl = int(base_row[idx["ItemLevel"]]) if base_row[idx["ItemLevel"]] else 0
+        item_slot = coerce_int(base_row[idx["InventoryType"]])
+        rarity = coerce_int(base_row[idx["Quality"]])
+        base_ilvl = coerce_int(base_row[idx["ItemLevel"]])
         upgraded_ilvl = int(round(base_ilvl * spec.multiplier)) if base_ilvl > 0 else 0
 
         rows.append([
@@ -566,7 +618,10 @@ def main() -> None:
         print(f"Omitted columns in SQL output: {', '.join(sorted(set(args.drop_columns)))}")
     for tier_id in sorted(tier_summary):
         summary = tier_summary[tier_id]
-        print(f"Tier {tier_id}: {summary['bases']} base items, {summary['clones']} clones, {summary['missing']} missing bases")
+        print(
+            f"Tier {tier_id}: {summary['bases']} base items, {summary['clones']} clones, "
+            f"{summary['missing']} missing bases, {summary['skipped']} skipped"
+        )
     if warnings:
         print("Warnings:")
         for message in warnings:
