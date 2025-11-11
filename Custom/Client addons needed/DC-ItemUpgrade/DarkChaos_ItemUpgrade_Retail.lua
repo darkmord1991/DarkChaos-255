@@ -33,6 +33,117 @@ DC.COST_COLORS = {
 	expensive = { r = 0.8, g = 0.2, b = 0.2 },  -- Red (expensive)
 };
 
+DC.STAT_PERCENT_PER_LEVEL = DC.STAT_PERCENT_PER_LEVEL or 2.5;
+
+local BASE_STAT_INCREMENT = 0.025; -- 2.5% per level baseline
+local TIER_STAT_MULTIPLIERS = { 0.9, 0.95, 1.0, 1.15, 1.25 };
+local TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 };
+
+local function ClampTier(tier)
+	tier = math.floor(tonumber(tier) or 1);
+	if tier < 1 then return 1; end
+	if tier > #TIER_STAT_MULTIPLIERS then return #TIER_STAT_MULTIPLIERS; end
+	return tier;
+end
+
+local function GetStatMultiplierForLevel(level, tier)
+	level = math.max(tonumber(level) or 0, 0);
+	local base = 1.0 + (BASE_STAT_INCREMENT * level);
+	local tierMult = TIER_STAT_MULTIPLIERS[ClampTier(tier)] or 1.0;
+	return ((base - 1.0) * tierMult) + 1.0;
+end
+
+local function GetStatBonusPercent(level, tier)
+	return (GetStatMultiplierForLevel(level, tier) - 1.0) * 100.0;
+end
+
+local function GetItemLevelBonus(level, tier)
+	level = math.max(tonumber(level) or 0, 0);
+	local perLevel = TIER_ILVL_PER_LEVEL[ClampTier(tier)] or 1.0;
+	return math.ceil(level * perLevel);
+end
+
+local function GetUpgradedItemLevel(baseLevel, level, tier)
+	baseLevel = tonumber(baseLevel) or 0;
+	return baseLevel + GetItemLevelBonus(level, tier);
+end
+
+local function CopyCloneEntries(source)
+	if not source then
+		return nil;
+	end
+	local copy = {};
+	for level, entry in pairs(source) do
+		copy[level] = entry;
+	end
+	return copy;
+end
+
+local function ParseCloneMap(mapString)
+	if not mapString or mapString == "" then
+		return nil;
+	end
+	local entries = {};
+	for pair in string.gmatch(mapString, "[^,;]+") do
+		local levelStr, entryStr = string.match(pair, "%s*(%d+)%-(%d+)%s*");
+		if levelStr and entryStr then
+			entries[tonumber(levelStr)] = tonumber(entryStr);
+		end
+	end
+	if next(entries) then
+		return entries;
+	end
+	return nil;
+end
+
+local function GetCloneEntryForLevel(item, level)
+	if not item then
+		return nil;
+	end
+	level = math.floor(math.max(tonumber(level) or 0, 0));
+	if item.cloneEntries and item.cloneEntries[level] then
+		return item.cloneEntries[level];
+	end
+	local currentUpgrade = item.currentUpgrade or 0;
+	if level == currentUpgrade then
+		return item.currentEntry or item.itemID;
+	end
+	if level == 0 then
+		return item.baseEntry or item.itemID;
+	end
+	return nil;
+end
+
+local function ResolveItemLevelFromClone(item, level, fallback)
+	local entry = GetCloneEntryForLevel(item, level);
+	if entry then
+		local infoLevel = select(4, GetItemInfo(entry));
+		if infoLevel then
+			return infoLevel;
+		end
+	end
+	return fallback;
+end
+
+local function ResolveBaseItemLevel(item)
+	if not item then
+		return 0;
+	end
+
+	local baseGuess = item.baseLevel or item.level or 0;
+	return ResolveItemLevelFromClone(item, 0, baseGuess);
+end
+
+local function ResolveUpgradeItemLevel(item, upgradeLevel, baseLevel)
+	if not item then
+		return 0;
+	end
+
+	baseLevel = baseLevel or ResolveBaseItemLevel(item);
+	local computed = GetUpgradedItemLevel(baseLevel, upgradeLevel, item.tier);
+	return ResolveItemLevelFromClone(item, upgradeLevel, computed);
+end
+
 --[[=====================================================
 	VISUAL PROGRESS INDICATORS
 =======================================================]]
@@ -44,39 +155,31 @@ function DarkChaos_ItemUpgrade_UpdateProgressBar(currentLevel, maxLevel, tier)
 	local progressBar = frame.ItemInfo.ProgressBar;
 	local fill = progressBar.Fill;
 	local text = progressBar.Text;
+	local inset = 6;
+	local fullWidth = math.max(0, (progressBar:GetWidth() or 0) - inset);
+	local cappedLevel = math.max(0, math.min(currentLevel or 0, maxLevel or 0));
+	local maxValue = math.max(maxLevel or 0, 1);
+	local fraction = cappedLevel / maxValue;
+	local barWidth = math.max(1, math.floor(fullWidth * fraction + 0.5));
+	fill:SetWidth(barWidth);
 
-	if currentLevel >= maxLevel then
-		-- Fully upgraded
-		fill:SetWidth(334); -- Full width
-		local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
-		if type(fill.SetColorTexture) == "function" then
-			fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
-		else
-			fill:SetVertexColor(tierColor.r, tierColor.g, tierColor.b, 1);
-		end
-		text:SetText("MAX");
-		text:SetTextColor(1, 1, 0); -- Gold for max
-		progressBar:Show();
+	local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
+	if type(fill.SetColorTexture) == "function" then
+		fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
 	else
-		-- Calculate progress
-		local progress = currentLevel / maxLevel;
-		local barWidth = 334 * progress; -- 334 is the full width minus borders
-		fill:SetWidth(math.max(1, barWidth));
-
-		-- Color based on tier
-		local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
-		if type(fill.SetColorTexture) == "function" then
-			fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
-		else
-			fill:SetVertexColor(tierColor.r, tierColor.g, tierColor.b, 1);
-		end
-
-		-- Text showing percentage
-		local percent = math.floor(progress * 100);
-		text:SetText(percent .. "%");
-		text:SetTextColor(1, 1, 1);
-		progressBar:Show();
+		fill:SetVertexColor(tierColor.r, tierColor.g, tierColor.b, 1);
 	end
+
+	local percent = math.floor(fraction * 100 + 0.5);
+	if cappedLevel >= maxValue then
+		text:SetText(string.format("%d / %d (MAX)", cappedLevel, maxValue));
+		text:SetTextColor(1, 0.82, 0);
+	else
+		text:SetText(string.format("%d / %d (%d%%)", cappedLevel, maxValue, percent));
+		text:SetTextColor(0.95, 0.95, 0.95);
+	end
+
+	progressBar:Show();
 end
 
 function DarkChaos_ItemUpgrade_UpdateTierIndicator(tier)
@@ -125,23 +228,33 @@ function DarkChaos_ItemUpgrade_UpdateCostIndicators()
 	if targetLevel <= currentLevel then return end
 
 	-- Calculate total cost for the upgrade
-	local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
+	local totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
+	if missingLevel then
+		return;
+	end
+
+	local totalTokens = (totals and totals.tokens) or 0;
 	local playerTokens = DC.playerTokens or 0;
-	local playerEssence = DC.playerEssence or 0;
 
 	-- Determine cost color based on affordability
 	local costColor;
-	if totals.tokens <= playerTokens and totals.essence <= playerEssence then
+	if totalTokens <= playerTokens then
 		costColor = DC.COST_COLORS.cheap; -- Can afford
-	elseif totals.tokens <= playerTokens * 2 and totals.essence <= playerEssence * 2 then
+	elseif totalTokens <= playerTokens * 2 then
 		costColor = DC.COST_COLORS.moderate; -- Can afford with some effort
 	else
 		costColor = DC.COST_COLORS.expensive; -- Expensive
 	end
 
-	-- Update cost display colors
-	if frame.CostFrame and frame.CostFrame.TokenCost then
-		frame.CostFrame.TokenCost:SetTextColor(costColor.r, costColor.g, costColor.b);
+	-- Highlight required tokens display
+	if frame.CostFrame and frame.CostFrame.RequiredValue then
+		frame.CostFrame.RequiredValue:SetTextColor(costColor.r, costColor.g, costColor.b);
+		if frame.CostFrame.RequiredIcon and frame.CostFrame.RequiredIcon.SetVertexColor then
+			frame.CostFrame.RequiredIcon:SetVertexColor(costColor.r, costColor.g, costColor.b);
+		end
+	end
+	if frame.CostFrame and frame.CostFrame.OwnedIcon and frame.CostFrame.OwnedIcon.SetVertexColor then
+		frame.CostFrame.OwnedIcon:SetVertexColor(0.9, 0.9, 0.9);
 	end
 end
 
@@ -210,13 +323,37 @@ function DarkChaos_ItemCompare_UpdateDisplay()
 	if not frame or not DC.compareItem then return end
 
 	local item = DC.compareItem;
-	local currentLevel = item.currentUpgrade or 0;
-	local targetLevel = DC.compareTargetLevel or currentLevel;
+	local currentUpgrade = item.currentUpgrade or 0;
+	local targetUpgrade = DC.compareTargetLevel or currentUpgrade;
 	local tier = item.tier or 1;
-	local maxLevel = item.maxUpgrade or DC.GetMaxUpgradeLevelForTier(tier);
-	local baseLevel = item.baseLevel or item.level or 0;
-	local ilvlStep = item.ilevelStep or DC.ILEVEL_PER_UPGRADE or 3;
-	local statStep = item.statPerLevel or DC.STAT_PERCENT_PER_LEVEL or 5;
+	local maxUpgrade = item.maxUpgrade or DC.GetMaxUpgradeLevelForTier(tier);
+	currentUpgrade = math.max(0, math.min(currentUpgrade, maxUpgrade));
+	targetUpgrade = math.max(0, math.min(targetUpgrade, maxUpgrade));
+	local observedLevel = item.upgradedLevel or item.level or 0;
+	local baseLevel = item.baseLevel;
+	if not baseLevel then
+		local deduction = GetItemLevelBonus(currentUpgrade, tier);
+		baseLevel = math.max(0, math.floor((observedLevel - deduction) + 0.5));
+	end
+	item.baseLevel = item.baseLevel or baseLevel;
+	local currentItemLevel = GetUpgradedItemLevel(baseLevel, currentUpgrade, tier);
+	local targetItemLevel = GetUpgradedItemLevel(baseLevel, targetUpgrade, tier);
+	local resolvedBase = ResolveItemLevelFromClone(item, 0, baseLevel);
+	if resolvedBase then
+		baseLevel = resolvedBase;
+	end
+	local resolvedCurrent = ResolveItemLevelFromClone(item, currentUpgrade, currentItemLevel);
+	if resolvedCurrent then
+		currentItemLevel = resolvedCurrent;
+	end
+	local resolvedTarget = ResolveItemLevelFromClone(item, targetUpgrade, targetItemLevel);
+	if resolvedTarget then
+		targetItemLevel = resolvedTarget;
+	end
+	local currentStatBonus = GetStatBonusPercent(currentUpgrade, tier);
+	local targetStatBonus = GetStatBonusPercent(targetUpgrade, tier);
+	local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
+	local targetMultiplier = GetStatMultiplierForLevel(targetUpgrade, tier);
 
 	-- Left panel: Current item
 	local leftPanel = frame.LeftPanel;
@@ -225,21 +362,19 @@ function DarkChaos_ItemCompare_UpdateDisplay()
 		leftPanel.ItemName:Show();
 	end
 	if leftPanel.ItemLevel then
-		local currentIlvl = baseLevel + (currentLevel * ilvlStep);
-		leftPanel.ItemLevel:SetText(string.format("Item Level: %d", currentIlvl));
+		leftPanel.ItemLevel:SetText(string.format("Item Level: %d", currentItemLevel));
 		leftPanel.ItemLevel:Show();
 	end
 	if leftPanel.UpgradeLevel then
-		leftPanel.UpgradeLevel:SetText(string.format("Upgrade Level: %d/%d", currentLevel, maxLevel));
+		leftPanel.UpgradeLevel:SetText(string.format("Upgrade Level: %d/%d", currentUpgrade, maxUpgrade));
 		leftPanel.UpgradeLevel:Show();
 	end
 	if leftPanel.StatsText then
-		local currentStatBonus = currentLevel * statStep;
 		local lines = {
-			string.format("Stat Bonus: +%d%%", currentStatBonus),
+			string.format("Total Bonus: +%.1f%%", currentStatBonus),
 		};
-		if currentLevel > 0 then
-			table.insert(lines, string.format("Effective Multiplier: x%.2f", 1.0 + (currentStatBonus / 100)));
+		if currentUpgrade > 0 then
+			table.insert(lines, string.format("Effective Multiplier: x%.3f", currentMultiplier));
 		else
 			table.insert(lines, "No upgrades applied");
 		end
@@ -254,39 +389,33 @@ function DarkChaos_ItemCompare_UpdateDisplay()
 		rightPanel.ItemName:Show();
 	end
 	if rightPanel.ItemLevel then
-		local targetIlvl = baseLevel + (targetLevel * ilvlStep);
-		local ilvlGain = targetIlvl - (baseLevel + (currentLevel * ilvlStep));
-		local gainText = ilvlGain > 0 and string.format(" |cff00ff00(+%d)|r", ilvlGain) or "";
-		rightPanel.ItemLevel:SetText(string.format("Item Level: %d%s", targetIlvl, gainText));
+		local ilevelGain = targetItemLevel - currentItemLevel;
+		local gainText = ilevelGain > 0 and string.format(" |cff00ff00(+%d)|r", ilevelGain) or "";
+		rightPanel.ItemLevel:SetText(string.format("Item Level: %d%s", targetItemLevel, gainText));
 		rightPanel.ItemLevel:Show();
 	end
 	if rightPanel.UpgradeLevel then
-		local levelGain = targetLevel - currentLevel;
+		local levelGain = targetUpgrade - currentUpgrade;
 		local gainText = levelGain > 0 and string.format(" |cff00ff00(+%d)|r", levelGain) or "";
-		rightPanel.UpgradeLevel:SetText(string.format("Upgrade Level: %d/%d%s", targetLevel, maxLevel, gainText));
+		rightPanel.UpgradeLevel:SetText(string.format("Upgrade Level: %d/%d%s", targetUpgrade, maxUpgrade, gainText));
 		rightPanel.UpgradeLevel:Show();
 	end
 	if rightPanel.StatsText then
-		local targetStatBonus = targetLevel * statStep;
-		local statGain = targetStatBonus - (currentLevel * statStep);
+		local statGain = targetStatBonus - currentStatBonus;
+		local multiplierGain = targetMultiplier - currentMultiplier;
 		local lines = {
-			string.format("Stat Bonus: +%d%% |cff00ff00(+%d%%)|r", targetStatBonus, statGain),
+			string.format("Total Bonus: +%.1f%% |cff00ff00(+%.1f%%)|r", targetStatBonus, statGain),
 		};
-		table.insert(lines, string.format("Effective Multiplier: x%.2f |cff00ff00(+%.2f)|r",
-			1.0 + (targetStatBonus / 100), statGain / 100));
+		table.insert(lines, string.format("Effective Multiplier: x%.3f |cff00ff00(+%.3f)|r",
+			targetMultiplier, multiplierGain));
 
 		-- Add cost information
-		if targetLevel > currentLevel then
-			local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
-			if totals.tokens > 0 or totals.essence > 0 then
+		if targetUpgrade > currentUpgrade then
+			local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentUpgrade, targetUpgrade);
+			if (totals.tokens or 0) > 0 then
 				table.insert(lines, "");
 				table.insert(lines, "Upgrade Cost:");
-				if totals.tokens > 0 then
-					table.insert(lines, string.format("  %d Upgrade Tokens", totals.tokens));
-				end
-				if totals.essence > 0 then
-					table.insert(lines, string.format("  %d Artifact Essence", totals.essence));
-				end
+				table.insert(lines, string.format("  %d Upgrade Tokens", totals.tokens));
 			end
 		end
 
@@ -398,7 +527,6 @@ DC.ITEM_QUALITY_COLORS = {
 
 -- Constants
 ICON_TOKEN = "|TInterface\\Icons\\INV_Misc_Coin_01:14|t";
-ICON_ESSENCE = "|TInterface\\Icons\\INV_Misc_Gem_Amethyst_01:14|t";
 
 --[[=====================================================
 	UPGRADE COSTS
@@ -463,22 +591,33 @@ end
 DarkChaos_ItemUpgrade_ComputeCostTotals = function(tier, currentLevel, targetLevel)
 	local totals = { tokens = 0, essence = 0 };
 	if not tier or not targetLevel or not currentLevel or targetLevel <= currentLevel then
-		return totals;
+		return totals, nil;
 	end
+
+	local missingLevel = nil;
 
 	for level = currentLevel + 1, targetLevel do
 		local cost = DarkChaos_ItemUpgrade_GetCost(tier, level);
 		if not cost then
+			missingLevel = level;
 			break;
 		end
 		totals.tokens = totals.tokens + (cost.tokens or 0);
 		totals.essence = totals.essence + (cost.essence or 0);
 	end
 
-	return totals;
+	return totals, missingLevel;
 end
 
-DarkChaos_ItemUpgrade_RequestCurrencies = function()
+local lastCurrencyRequestTime = 0;
+
+function DarkChaos_ItemUpgrade_RequestCurrencies(force)
+	local now = GetTime and GetTime() or 0;
+	if not force and now - (lastCurrencyRequestTime or 0) < 1 then
+		return; -- throttle spammy refreshes coming from multiple events
+	end
+
+	lastCurrencyRequestTime = now;
 	SendChatMessage(".dcupgrade init", "SAY");
 end
 
@@ -849,45 +988,22 @@ function DC.ProcessBatchQueries()
 	if #DC.batchQueryQueue == 0 then
 		return;
 	end
-	
-	-- Group queries by type
-	local queryGroups = {};
-	for _, query in ipairs(DC.batchQueryQueue) do
-		local queryType = query.type or "item";
-		if not queryGroups[queryType] then
-			queryGroups[queryType] = {};
-		end
-		table.insert(queryGroups[queryType], query);
+
+	DC.Debug(string.format("ProcessBatchQueries: flushing %d pending requests (inFlight=%s, queued=%d)",
+		#DC.batchQueryQueue,
+		tostring(DC.queryInFlight ~= nil),
+		#DC.queryQueueList));
+
+	-- Move pending requests into the sequential queue so responses can be tracked reliably.
+	for _, request in ipairs(DC.batchQueryQueue) do
+		table.insert(DC.queryQueueList, request);
 	end
-	
-	-- Process each group
-	for queryType, queries in pairs(queryGroups) do
-		if queryType == "item" and #queries > 1 then
-			-- Batch multiple item queries into one command
-			local bagSlots = {};
-			for _, query in ipairs(queries) do
-				if query.serverBag and query.serverSlot then
-					table.insert(bagSlots, string.format("%d:%d", query.serverBag, query.serverSlot));
-				end
-			end
-			
-			if #bagSlots > 0 then
-				local batchCommand = ".dcupgrade batch " .. table.concat(bagSlots, ",");
-				SendChatMessage(batchCommand, "SAY");
-				DC.Debug("Sent batch query for " .. #bagSlots .. " items");
-			end
-		else
-			-- Process individual queries
-			for _, query in ipairs(queries) do
-				if query.command then
-					SendChatMessage(query.command, "SAY");
-				end
-			end
-		end
-	end
-	
-	-- Clear the batch queue
+
 	DC.batchQueryQueue = {};
+
+	if not DC.queryInFlight then
+		DarkChaos_ItemUpgrade_StartNextQuery();
+	end
 end
 
 -- Optimized item scanning with caching
@@ -964,6 +1080,17 @@ function DC.CreateUpgradePreviewItemLink(baseItemLink, targetUpgradeLevel, tier)
 		return baseItemLink;
 	end
 	
+	if DC.currentItem then
+		local cloneEntry = GetCloneEntryForLevel(DC.currentItem, targetUpgradeLevel);
+		if cloneEntry then
+			local cloneLink = select(2, GetItemInfo(cloneEntry));
+			if cloneLink and cloneLink ~= "" then
+				return cloneLink;
+			end
+			return "item:" .. tostring(cloneEntry);
+		end
+	end
+
 	-- Parse the base item link
 	local itemString = baseItemLink:match("item:([^|]+)");
 	if not itemString then
@@ -979,10 +1106,21 @@ function DC.CreateUpgradePreviewItemLink(baseItemLink, targetUpgradeLevel, tier)
 		return baseItemLink; -- Not enough parts to modify
 	end
 	
-	-- Calculate upgraded item level
-	local baseItemLevel = DC.currentItem and DC.currentItem.baseLevel or 0;
-	local ilvlStep = DC.ILEVEL_PER_UPGRADE or 3;
-	local upgradedItemLevel = math.floor(baseItemLevel + (targetUpgradeLevel * ilvlStep));
+	-- Calculate upgraded item level using shared helpers
+	local currentItem = DC.currentItem;
+	local tierId = ClampTier(tier or (currentItem and currentItem.tier) or 1);
+	local baseItemLevel = 0;
+	if currentItem then
+		local observedLevel = currentItem.upgradedLevel or currentItem.level or 0;
+		local deduction = GetItemLevelBonus(currentItem.currentUpgrade or 0, tierId);
+		local derivedBase = currentItem.baseLevel or (observedLevel - deduction);
+		baseItemLevel = math.max(0, math.floor(derivedBase + 0.5));
+	else
+		baseItemLevel = tonumber(parts[8]) or 0;
+	end
+
+	local upgradedItemLevel = GetUpgradedItemLevel(baseItemLevel, targetUpgradeLevel, tierId);
+	upgradedItemLevel = math.floor(upgradedItemLevel + 0.5);
 	
 	-- Create new item string with upgraded item level
 	local newItemString = string.format("%s:%s:%s:%s:%s:%s:%s:%d:%s",
@@ -1007,9 +1145,7 @@ function DC.GetMaxUpgradeLevelForTier(tier)
 		DC.Debug("GetMaxUpgradeLevelForTier: tier=" .. tostring(tier) .. " returned fallback=" .. fallback);
 		return fallback;  -- fallback to global max
 	end
-	local result = DC.MAX_UPGRADE_LEVELS_BY_TIER[tier];
-	DC.Debug("GetMaxUpgradeLevelForTier: tier=" .. tostring(tier) .. " returned=" .. result);
-	return result;
+	return DC.MAX_UPGRADE_LEVELS_BY_TIER[tier];
 end
 
 -- Quality colors (Wrath palette)
@@ -1107,7 +1243,7 @@ local function GetItemTextureForLocation(bag, slot, link)
 	return nil;
 end
 
-local function DarkChaos_ItemUpgrade_StartNextQuery()
+function DarkChaos_ItemUpgrade_StartNextQuery()
 	local nextRequest = table.remove(DC.queryQueueList, 1);
 	if not nextRequest then
 		DC.queryInFlight = nil;
@@ -1118,7 +1254,7 @@ local function DarkChaos_ItemUpgrade_StartNextQuery()
 	SendChatMessage(nextRequest.command, "SAY");
 end
 
-local function DarkChaos_ItemUpgrade_CompleteQuery()
+function DarkChaos_ItemUpgrade_CompleteQuery()
 	local finished = DC.queryInFlight;
 	if finished then
 		DC.queryQueueMap[finished.key] = nil;
@@ -1306,10 +1442,36 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	item.maxUpgrade = data.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
 	DC.Debug("ApplyQueryData: data.maxUpgrade=" .. tostring(data.maxUpgrade) .. ", item.tier=" .. tostring(item.tier) .. ", final item.maxUpgrade=" .. tostring(item.maxUpgrade));
 	item.baseLevel = data.baseItemLevel or item.baseLevel or 0;
-	item.upgradedLevel = data.upgradedItemLevel or item.upgradedLevel or item.baseLevel;
-	item.level = item.upgradedLevel;
-	item.statMultiplier = data.statMultiplier or item.statMultiplier or 1.0;
+	local calculatedLevel = data.upgradedItemLevel or GetUpgradedItemLevel(item.baseLevel, item.currentUpgrade, item.tier);
+	item.upgradedLevel = calculatedLevel;
+	item.level = calculatedLevel;
+	item.statMultiplier = data.statMultiplier or GetStatMultiplierForLevel(item.currentUpgrade, item.tier);
 	item.guid = data.guid or item.guid;
+	if data.baseEntry then
+		item.baseEntry = data.baseEntry;
+	elseif not item.baseEntry then
+		item.baseEntry = item.itemID;
+	end
+	if data.currentEntry then
+		item.currentEntry = data.currentEntry;
+		item.itemID = data.currentEntry;
+	elseif not item.currentEntry then
+		item.currentEntry = item.itemID;
+	end
+	if data.cloneEntries then
+		item.cloneEntries = {};
+		for level, entry in pairs(data.cloneEntries) do
+			item.cloneEntries[level] = entry;
+		end
+	elseif not item.cloneEntries then
+		item.cloneEntries = {};
+	end
+	if item.baseEntry and not item.cloneEntries[0] then
+		item.cloneEntries[0] = item.baseEntry;
+	end
+	if item.currentEntry then
+		item.cloneEntries[item.currentUpgrade or 0] = item.currentEntry;
+	end
 	if data.serverBag then
 		item.serverBag = data.serverBag;
 	end
@@ -1322,19 +1484,31 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 
 	local baseLevel = item.baseLevel or 0;
 	local current = item.currentUpgrade or 0;
-	local upgraded = item.upgradedLevel or baseLevel;
-	local gain = upgraded - baseLevel;
-	if current > 0 and gain > 0 then
-		item.ilevelStep = gain / current;
-	elseif not item.ilevelStep then
-		item.ilevelStep = DC.ILEVEL_PER_UPGRADE or 3;
+	local currentLevel = GetUpgradedItemLevel(baseLevel, current, item.tier);
+	local nextLevel;
+	if current < (item.maxUpgrade or DC.MAX_UPGRADE_LEVEL or 15) then
+		nextLevel = GetUpgradedItemLevel(baseLevel, current + 1, item.tier);
 	end
-
-	if item.statMultiplier and current > 0 then
-		item.statPerLevel = ((item.statMultiplier - 1.0) * 100) / current;
-	elseif not item.statPerLevel then
-		item.statPerLevel = DC.STAT_PERCENT_PER_LEVEL or 5;
+	local currentCloneEntry = GetCloneEntryForLevel(item, current);
+	if currentCloneEntry then
+		local infoLevel = select(4, GetItemInfo(currentCloneEntry));
+		if infoLevel then
+			currentLevel = infoLevel;
+		end
 	end
+	if nextLevel then
+		local nextCloneEntry = GetCloneEntryForLevel(item, current + 1);
+		if nextCloneEntry then
+			local infoLevel = select(4, GetItemInfo(nextCloneEntry));
+			if infoLevel then
+				nextLevel = infoLevel;
+			end
+		end
+		item.ilevelStep = math.max(0, nextLevel - currentLevel);
+	else
+		item.ilevelStep = 0;
+	end
+	item.statPerLevel = GetStatBonusPercent(current + 1, item.tier) - GetStatBonusPercent(current, item.tier);
 
 	local maxUpgrade = item.maxUpgrade or DC.MAX_UPGRADE_LEVEL or 15;
 	if current >= maxUpgrade then
@@ -1466,9 +1640,6 @@ local function DarkChaos_ItemUpgrade_OnTooltipSetGuildBankItem(tooltip, tab, slo
 	end
 end
 
-local ICON_TOKEN = "|TInterface\\Icons\\INV_Misc_Coin_01:14:14:0:0|t";
-local ICON_ESSENCE = "|TInterface\\Icons\\INV_Misc_Gem_Pearl_05:14:14:0:0|t";
-
 local SCAN_TOOLTIP_NAME = "DarkChaos_ItemUpgradeScanTooltip";
 local scanTooltip = _G[SCAN_TOOLTIP_NAME];
 if not scanTooltip then
@@ -1543,6 +1714,316 @@ local function SetItemButtonQuality_335(button, quality)
 	end
 end
 
+local function RefreshCurrentItemMetadata(link)
+	if not (DC.currentItem and link) then
+		return;
+	end
+
+	if link ~= DC.currentItem.link then
+		DC.currentItem.link = link;
+		local name, _, quality, level = GetItemInfo(link);
+		if name then
+			DC.currentItem.name = name;
+		end
+		if quality then
+			DC.currentItem.quality = quality;
+		end
+		if level then
+			DC.currentItem.baseLevel = level;
+		end
+		local itemID = link:match("item:(%d+)");
+		if itemID then
+			DC.currentItem.itemID = tonumber(itemID) or DC.currentItem.itemID;
+		end
+	end
+end
+
+local function RoundStatValue(value)
+	if not value then
+		return 0;
+	end
+	if value >= 0 then
+		return math.floor(value + 0.5);
+	end
+	return math.ceil(value - 0.5);
+end
+
+local function EnsureHiddenTooltip()
+	if DC.hiddenTooltip then
+		return DC.hiddenTooltip;
+	end
+	local tooltip = CreateFrame("GameTooltip", "DarkChaosItemUpgradeHiddenTooltip", UIParent, "GameTooltipTemplate");
+	tooltip:SetOwner(UIParent, "ANCHOR_NONE");
+	tooltip:Hide();
+	DC.hiddenTooltip = tooltip;
+	return tooltip;
+end
+
+local function GetItemStatsSafe(link)
+	if not link or type(GetItemStats) ~= "function" then
+		return nil;
+	end
+	local stats = GetItemStats(link);
+	if stats and next(stats) then
+		return stats;
+	end
+	local tooltip = EnsureHiddenTooltip();
+	tooltip:SetOwner(UIParent, "ANCHOR_NONE");
+	tooltip:ClearLines();
+	tooltip:SetHyperlink(link);
+	tooltip:Hide();
+	stats = GetItemStats(link);
+	if stats and next(stats) then
+		return stats;
+	end
+	return nil;
+end
+
+local STAT_LABEL_OVERRIDES = {
+	ITEM_MOD_HEALTH_REGENERATION_SHORT = "Health per 5",
+	ITEM_MOD_MANA_REGENERATION_SHORT = "Mana per 5",
+};
+
+local STAT_ORDER = {
+	"ITEM_MOD_ARMOR_SHORT",
+	"ITEM_MOD_STAMINA_SHORT",
+	"ITEM_MOD_INTELLECT_SHORT",
+	"ITEM_MOD_SPIRIT_SHORT",
+	"ITEM_MOD_STRENGTH_SHORT",
+	"ITEM_MOD_AGILITY_SHORT",
+	"ITEM_MOD_ATTACK_POWER_SHORT",
+	"ITEM_MOD_RANGED_ATTACK_POWER_SHORT",
+	"ITEM_MOD_FERAL_ATTACK_POWER_SHORT",
+	"ITEM_MOD_SPELL_POWER_SHORT",
+	"ITEM_MOD_DAMAGE_PER_SECOND_SHORT",
+	"ITEM_MOD_CRIT_RATING_SHORT",
+	"ITEM_MOD_HIT_RATING_SHORT",
+	"ITEM_MOD_HASTE_RATING_SHORT",
+	"ITEM_MOD_EXPERTISE_RATING_SHORT",
+	"ITEM_MOD_ARMOR_PENETRATION_RATING_SHORT",
+	"ITEM_MOD_SPELL_PENETRATION_SHORT",
+	"ITEM_MOD_RESILIENCE_RATING_SHORT",
+	"ITEM_MOD_DEFENSE_SKILL_RATING_SHORT",
+	"ITEM_MOD_DODGE_RATING_SHORT",
+	"ITEM_MOD_PARRY_RATING_SHORT",
+	"ITEM_MOD_BLOCK_RATING_SHORT",
+	"ITEM_MOD_BLOCK_VALUE_SHORT",
+	"ITEM_MOD_HEALTH_REGENERATION_SHORT",
+	"ITEM_MOD_MANA_REGENERATION_SHORT",
+	"RESISTANCE1_NAME",
+	"RESISTANCE2_NAME",
+	"RESISTANCE3_NAME",
+	"RESISTANCE4_NAME",
+	"RESISTANCE5_NAME",
+	"RESISTANCE6_NAME",
+};
+
+local STAT_ORDER_INDEX = {};
+for index, key in ipairs(STAT_ORDER) do
+	STAT_ORDER_INDEX[key] = index;
+end
+
+local function ShouldSkipStatKey(statKey)
+	return statKey and statKey:find("^EMPTY_SOCKET");
+end
+
+local function ResolveStatLabel(statKey)
+	if STAT_LABEL_OVERRIDES[statKey] then
+		return STAT_LABEL_OVERRIDES[statKey];
+	end
+	if _G[statKey] and type(_G[statKey]) == "string" then
+		return _G[statKey];
+	end
+	if type(statKey) == "string" then
+		return statKey:gsub("_SHORT", ""):gsub("_", " ");
+	end
+	return statKey;
+end
+
+local function FormatNumberWithSeparators(value)
+	local sign = "";
+	if value and value < 0 then
+		sign = "-";
+		value = math.abs(value);
+	end
+	local number = math.floor((value or 0) + 0.5);
+	local str = tostring(number);
+	local len = #str;
+	if len <= 3 then
+		return sign .. str;
+	end
+	local chunks = {};
+	while len > 3 do
+		table.insert(chunks, 1, string.sub(str, len - 2, len));
+		str = string.sub(str, 1, len - 3);
+		len = #str;
+	end
+	table.insert(chunks, 1, str);
+	return sign .. table.concat(chunks, ",");
+end
+
+local function FormatNumericValue(value, showSign)
+	if value == nil then
+		return nil;
+	end
+	if math.abs(value) < 0.0005 then
+		value = 0;
+	end
+	local rounded = RoundStatValue(value);
+	local sign = "";
+	if showSign then
+		if rounded > 0 then
+			sign = "+";
+		elseif rounded < 0 then
+			sign = "-";
+		end
+	elseif rounded < 0 then
+		sign = "-";
+	end
+	local magnitude = FormatNumberWithSeparators(math.abs(rounded));
+	return sign .. magnitude;
+end
+
+local function FormatStatLine(label, value, diff)
+	if value == nil then
+		return nil;
+	end
+
+	local valueText = FormatNumericValue(value, true);
+	if not valueText then
+		return nil;
+	end
+
+	local bullet = "|cff71d5ff*|r";
+	local baseColor = "|cffffffff";
+	local line = string.format("%s %s%s %s|r", bullet, baseColor, valueText, label);
+
+	if diff and math.abs(diff) > 0.0005 then
+		local diffRounded = RoundStatValue(diff);
+		if diffRounded ~= 0 then
+			local diffColor = diffRounded > 0 and "|cff00ff00" or "|cffff4c4c";
+			local diffText = FormatNumericValue(diffRounded, true);
+			line = string.format("%s %s(%s)|r", line, diffColor, diffText or "0");
+		end
+	end
+
+	return line;
+end
+
+local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
+	if not item then
+		return nil;
+	end
+
+	local currentUpgrade = item.currentUpgrade or 0;
+	local tier = item.tier or 1;
+	local comparison;
+
+	local currentEntry = GetCloneEntryForLevel(item, currentUpgrade);
+	local targetEntry = GetCloneEntryForLevel(item, targetLevel);
+
+	if currentEntry and targetEntry then
+		GetItemInfo(currentEntry);
+		GetItemInfo(targetEntry);
+		local currentLink = item.link;
+		if not currentLink or not string.find(currentLink, "item:" .. currentEntry, 1, true) then
+			currentLink = "item:" .. tostring(currentEntry);
+		end
+		local previewLink = "item:" .. tostring(targetEntry);
+		local currentStats = GetItemStatsSafe(currentLink);
+		local previewStats = GetItemStatsSafe(previewLink);
+		if currentStats and previewStats then
+			local keys = {};
+			for statKey, value in pairs(currentStats) do
+				if value ~= 0 and not ShouldSkipStatKey(statKey) then
+					keys[statKey] = true;
+				end
+			end
+			for statKey, value in pairs(previewStats) do
+				if value ~= 0 and not ShouldSkipStatKey(statKey) then
+					keys[statKey] = true;
+				end
+			end
+
+			comparison = {};
+			for statKey in pairs(keys) do
+				local label = ResolveStatLabel(statKey);
+				if label then
+					local currentValue = currentStats[statKey] or 0;
+					local previewValue = previewStats[statKey] or 0;
+					local diff = previewValue - currentValue;
+					if math.abs(currentValue) > 0.0005 or math.abs(previewValue) > 0.0005 then
+						comparison[#comparison + 1] = {
+							key = statKey,
+							label = label,
+							current = currentValue,
+							preview = previewValue,
+							diff = diff,
+						};
+					end
+				end
+			end
+
+			if #comparison == 0 then
+				comparison = nil;
+			end
+		end
+	end
+
+	if not comparison then
+		if not item.link then
+			return nil;
+		end
+		local currentStats = GetItemStatsSafe(item.link);
+		if not currentStats or not next(currentStats) then
+			return nil;
+		end
+
+		local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
+		if currentMultiplier <= 0 then
+			currentMultiplier = 1;
+		end
+		local previewMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
+
+		comparison = {};
+		for statKey, value in pairs(currentStats) do
+			if value ~= 0 and not ShouldSkipStatKey(statKey) then
+				local label = ResolveStatLabel(statKey);
+				if label then
+					local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
+					local currentValue = RoundStatValue(baseValue * currentMultiplier);
+					local previewValue = RoundStatValue(baseValue * previewMultiplier);
+					local diff = previewValue - currentValue;
+					if currentValue ~= 0 or previewValue ~= 0 then
+						comparison[#comparison + 1] = {
+							key = statKey,
+							label = label,
+							current = currentValue,
+							preview = previewValue,
+							diff = diff,
+						};
+					end
+				end
+			end
+		end
+	end
+
+	if not comparison or #comparison == 0 then
+		return nil;
+	end
+
+	table.sort(comparison, function(a, b)
+		local aIndex = STAT_ORDER_INDEX[a.key] or 1000;
+		local bIndex = STAT_ORDER_INDEX[b.key] or 1000;
+		if aIndex == bIndex then
+			return a.label < b.label;
+		end
+		return aIndex < bIndex;
+	end);
+
+	return comparison;
+end
+
 function DarkChaos_ItemUpgrade_OnHide(self)
 	DC.PlaySound("igCharacterInfoClose");
 	DC.upgradeAnimationTime = 0;
@@ -1574,6 +2055,36 @@ function DarkChaos_ItemUpgrade_OnHide(self)
 	DC.pendingUpgrade = nil;
 end
 
+local function InvalidateCachedItemData()
+	DC.itemTooltipCache = {};
+	DC.itemScanCache = {};
+	DC.itemScanCacheTime = 0;
+end
+
+local function RefreshBrowserIfOpen()
+	if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
+		DarkChaos_ItemBrowser_Update();
+	end
+end
+
+local function RefreshCurrentSelectedItem()
+	if not DC.currentItem then
+		return;
+	end
+
+	local link = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
+	if not link then
+		DC.Debug("Selected item link missing; deferring refresh until data is available");
+		-- Item may be temporarily removed during upgrade swaps; keep state and retry on next event.
+		return;
+	end
+
+	RefreshCurrentItemMetadata(link);
+	DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, link);
+	DarkChaos_ItemUpgrade_RequestItemInfo();
+	DarkChaos_ItemUpgrade_UpdateUI();
+end
+
 function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 	if event == "PLAYER_LOGIN" then
 		self:UnregisterEvent("PLAYER_LOGIN");
@@ -1600,71 +2111,32 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 
 	if event == "BAG_UPDATE" then
 		local bagID = ...;
-		-- Clear tooltip cache when bags update to prevent stale data
-		DC.itemTooltipCache = {};
-		-- Clear item scan cache when bags change
-		DC.itemScanCache = {};
+		InvalidateCachedItemData();
 		if DC.currentItem and not DC.currentItem.isEquipped and bagID == DC.currentItem.bag then
-			local link = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
-			if not link or link ~= DC.currentItem.link then
-				DarkChaos_ItemUpgrade_ClearItem();
-			else
-				DC.currentItem.link = link;
-				DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, link);
-				DarkChaos_ItemUpgrade_RequestItemInfo();
-				DarkChaos_ItemUpgrade_UpdateUI();
-			end
+			RefreshCurrentSelectedItem();
 		end
-		if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
-			DarkChaos_ItemBrowser_Update();
-		end
+		RefreshBrowserIfOpen();
 		return;
 	end
 
 	if event == "PLAYER_EQUIPMENT_CHANGED" then
 		local slotID = ...;
-		-- Clear tooltip cache when equipment changes to prevent stale data
-		DC.itemTooltipCache = {};
-		-- Clear item scan cache when equipment changes
-		DC.itemScanCache = {};
+		InvalidateCachedItemData();
 		if DC.currentItem and DC.currentItem.isEquipped and slotID == DC.currentItem.slot then
-			local link = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
-			if not link then
-				DarkChaos_ItemUpgrade_ClearItem();
-			else
-				DC.currentItem.link = link;
-				DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, link);
-				DarkChaos_ItemUpgrade_RequestItemInfo();
-				DarkChaos_ItemUpgrade_UpdateUI();
-			end
+			RefreshCurrentSelectedItem();
 		end
-		if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
-			DarkChaos_ItemBrowser_Update();
-		end
+		RefreshBrowserIfOpen();
 		return;
 	end
 
 	if event == "UNIT_INVENTORY_CHANGED" then
 		local unit = ...;
 		if unit == "player" then
-			-- Clear tooltip cache when inventory changes to prevent stale data
-			DC.itemTooltipCache = {};
-			-- Clear item scan cache when inventory changes
-			DC.itemScanCache = {};
+			InvalidateCachedItemData();
 			if DC.currentItem and DC.currentItem.isEquipped then
-				local link = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
-				if not link then
-					DarkChaos_ItemUpgrade_ClearItem();
-				else
-					DC.currentItem.link = link;
-					DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, link);
-					DarkChaos_ItemUpgrade_RequestItemInfo();
-					DarkChaos_ItemUpgrade_UpdateUI();
-				end
+				RefreshCurrentSelectedItem();
 			end
-			if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
-				DarkChaos_ItemBrowser_Update();
-			end
+			RefreshBrowserIfOpen();
 		end
 		return;
 	end
@@ -1795,21 +2267,15 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 
 	local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentUpgrade, targetLevel);
 	local singleCost = DarkChaos_ItemUpgrade_GetCost(tier, targetLevel);
-	if (totals.tokens <= 0 and totals.essence <= 0) and not singleCost then
+	if (totals.tokens or 0) <= 0 and not singleCost then
 		print("|cffff0000Upgrade failed:|r Unable to determine the cost for the selected level.");
 		return;
 	end
 
-	local requiredTokens = singleCost and (singleCost.tokens or 0) or totals.tokens;
-	local requiredEssence = singleCost and (singleCost.essence or 0) or totals.essence;
+	local requiredTokens = singleCost and (singleCost.tokens or 0) or (totals.tokens or 0);
 
 	if (DC.playerTokens or 0) < requiredTokens then
 		print(string.format("|cffff0000Not enough Upgrade Tokens!|r Need %d but have %d.", requiredTokens, DC.playerTokens or 0));
-		return;
-	end
-
-	if (DC.playerEssence or 0) < requiredEssence then
-		print(string.format("|cffff0000Not enough Artifact Essence!|r Need %d but have %d.", requiredEssence, DC.playerEssence or 0));
 		return;
 	end
 
@@ -1828,32 +2294,19 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 		slot = DC.currentItem.slot,
 		serverSlot = serverSlot,
 		tier = tier,
-		cost = totals,
+		cost = {
+			tokens = totals.tokens or requiredTokens,
+		},
 	};
 	DC.Debug("Sending perform command: "..command);
 	local itemLabel = DC.currentItem.link or DC.currentItem.name or "item";
-	local projectedTokens = totals.tokens > 0 and totals.tokens or requiredTokens;
-	local projectedEssence = totals.essence > 0 and totals.essence or requiredEssence;
+	local projectedTokens = (totals.tokens or 0) > 0 and totals.tokens or requiredTokens;
 	print(string.format("|cff00ff00Upgrading %s to level %d/%d...|r", itemLabel, targetLevel, maxUpgrade));
-	if projectedTokens > 0 or projectedEssence > 0 then
-		local parts = {};
-		if projectedTokens > 0 then
-			table.insert(parts, string.format("%d Tokens", projectedTokens));
-		end
-		if projectedEssence > 0 then
-			table.insert(parts, string.format("%d Essence", projectedEssence));
-		end
-		print(string.format("|cff00ff00Projected total to reach level %d:|r %s", targetLevel, table.concat(parts, " and ")));
+	if projectedTokens > 0 then
+		print(string.format("|cff00ff00Projected total to reach level %d:|r %d Tokens", targetLevel, projectedTokens));
 	end
-	if singleCost and ((singleCost.tokens or 0) > 0 or (singleCost.essence or 0) > 0) then
-		local immediateParts = {};
-		if (singleCost.tokens or 0) > 0 then
-			table.insert(immediateParts, string.format("%d Tokens", singleCost.tokens));
-		end
-		if (singleCost.essence or 0) > 0 then
-			table.insert(immediateParts, string.format("%d Essence", singleCost.essence));
-		end
-		print(string.format("|cff00ff00Immediate cost for this step:|r %s", table.concat(immediateParts, " and ")));
+	if singleCost and (singleCost.tokens or 0) > 0 then
+		print(string.format("|cff00ff00Immediate cost for this step:|r %d Tokens", singleCost.tokens));
 	end
 	SendChatMessage(command, "SAY");
 end
@@ -1902,7 +2355,7 @@ function DarkChaos_ItemUpgrade_Dropdown_Initialize()
 		
 		-- Color red if can't afford
 		local cost = DarkChaos_ItemUpgrade_GetCost(DC.currentItem.tier, level);
-		if cost and (DC.playerTokens < cost.tokens or DC.playerEssence < cost.essence) then
+		if cost and DC.playerTokens < (cost.tokens or 0) then
 			info.colorCode = "|cffff3333";
 		else
 			info.colorCode = "|cffffffff";
@@ -2010,9 +2463,14 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.tier = 1;
 	pooledItem.currentUpgrade = 0;
 	pooledItem.maxUpgrade = DC.GetMaxUpgradeLevelForTier(1);  -- Default to tier 1, will be updated when data arrives
-	pooledItem.statMultiplier = 1.0;
-	pooledItem.ilevelStep = DC.ILEVEL_PER_UPGRADE or 3;
-	pooledItem.statPerLevel = DC.STAT_PERCENT_PER_LEVEL or 5;
+	pooledItem.statMultiplier = GetStatMultiplierForLevel(0, pooledItem.tier);
+	pooledItem.ilevelStep = GetItemLevelBonus(1, pooledItem.tier);
+	pooledItem.statPerLevel = GetStatBonusPercent(1, pooledItem.tier) - GetStatBonusPercent(0, pooledItem.tier);
+	pooledItem.baseEntry = itemID;
+	pooledItem.currentEntry = itemID;
+	pooledItem.cloneEntries = {
+		[0] = itemID,
+	};
 
 	-- Return old item to pool if it exists
 	if DC.currentItem then
@@ -2084,6 +2542,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		frame.ItemInfo.ItemName:Hide();
 		if frame.ItemInfo.ItemLevelSummary then frame.ItemInfo.ItemLevelSummary:Hide(); end
 		frame.ItemInfo.UpgradeProgress:Hide();
+		if frame.ItemInfo.ProgressBar then frame.ItemInfo.ProgressBar:Hide(); end
 		if frame.UpgradeSelector then frame.UpgradeSelector:Hide(); end
 		if dropdown then
 			dropdown:Hide();
@@ -2104,13 +2563,14 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		frame.LeftTooltip:Hide();
 		frame.RightTooltip:Hide();
 		if frame.Arrow then frame.Arrow:Hide(); end
-		if frame.CostFrame then frame.CostFrame:Hide(); end
+		if frame.CostFrame then frame.CostFrame:Show(); end
 		frame.ErrorText:Hide();
 		frame.MissingDescription:Show();
-		if frame.PlayerCurrencies then frame.PlayerCurrencies:Show(); end
+		if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
 		SetButtonEnabled(frame.UpgradeButton, false);
 		frame.UpgradeButton.Glow:Hide();
 		frame.UpgradeButton.disabledTooltip = nil;
+		DarkChaos_ItemUpgrade_UpdateCost();
 		return;
 	end
 
@@ -2118,12 +2578,35 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local currentUpgrade = item.currentUpgrade or 0;
 	local maxUpgrade = item.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
 	local tierName = DC.TIER_NAMES[item.tier] or string.format("Tier %d", item.tier or 0);
-	local ilvlStep = item.ilevelStep or DC.ILEVEL_PER_UPGRADE or 3;
-	local baseLevel = item.baseLevel or math.max(0, (item.level or 0) - (currentUpgrade * ilvlStep));
-	local currentLevel = item.upgradedLevel or item.level or (baseLevel + currentUpgrade * ilvlStep);
-	local maxPotential = baseLevel + (maxUpgrade * ilvlStep);
+	local baseLevel = ResolveBaseItemLevel(item);
+	item.baseLevel = baseLevel;
+
+	local currentLevel = ResolveUpgradeItemLevel(item, currentUpgrade, baseLevel);
+	local maxPotential = ResolveUpgradeItemLevel(item, maxUpgrade, baseLevel);
+
 	currentLevel = math.max(baseLevel, currentLevel);
 	maxPotential = math.max(baseLevel, maxPotential);
+
+	item.upgradedLevel = currentLevel;
+	item.statMultiplier = GetStatMultiplierForLevel(currentUpgrade, item.tier);
+
+	item.currentEntry = GetCloneEntryForLevel(item, currentUpgrade) or item.currentEntry;
+	if item.currentEntry then
+		item.cloneEntries = item.cloneEntries or {};
+		item.cloneEntries[currentUpgrade] = item.currentEntry;
+	end
+	if not item.baseEntry and item.cloneEntries and item.cloneEntries[0] then
+		item.baseEntry = item.cloneEntries[0];
+	end
+
+	if currentUpgrade < maxUpgrade then
+		local nextLevelValue = ResolveUpgradeItemLevel(item, currentUpgrade + 1, baseLevel);
+		item.ilevelStep = math.max(0, nextLevelValue - currentLevel);
+		item.statPerLevel = GetStatBonusPercent(currentUpgrade + 1, item.tier) - GetStatBonusPercent(currentUpgrade, item.tier);
+	else
+		item.ilevelStep = 0;
+		item.statPerLevel = 0;
+	end
 
 	-- Clamp target selection within valid range
 	local validTarget = math.min(math.max(DC.targetUpgradeLevel or (currentUpgrade + 1), currentUpgrade + 1), maxUpgrade);
@@ -2132,7 +2615,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	frame.ItemSlot.EmptyGlow:Hide();
 	frame.MissingDescription:Hide();
 	if frame.CurrentPanel then frame.CurrentPanel:Show(); end
-	if frame.PlayerCurrencies then frame.PlayerCurrencies:Show(); end
+	if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
 
 	local texture = item.texture or GetItemTextureForLocation(item.bag, item.slot, item.link);
 	if not texture and item.link then
@@ -2149,19 +2632,13 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	frame.ItemInfo.ItemName:SetTextColor(color.r, color.g, color.b);
 
 	if frame.ItemInfo.ItemLevelSummary then
-		frame.ItemInfo.ItemLevelSummary:Show();
-		frame.ItemInfo.ItemLevelSummary:SetText(string.format("%s %d/%d\nItem Level %d (%d-%d)",
-			tierName,
-			currentUpgrade,
-			maxUpgrade,
-			currentLevel,
-			baseLevel,
-			maxPotential
-		));
+		frame.ItemInfo.ItemLevelSummary:SetText("");
+		frame.ItemInfo.ItemLevelSummary:Hide();
 	end
-
-	frame.ItemInfo.UpgradeProgress:Show();
-	frame.ItemInfo.UpgradeProgress:SetText(string.format("Upgrade Level %d/%d", currentUpgrade, maxUpgrade));
+	if frame.ItemInfo.UpgradeProgress then
+		frame.ItemInfo.UpgradeProgress:SetText("");
+		frame.ItemInfo.UpgradeProgress:Hide();
+	end
 
 	-- Update progress bar
 	DarkChaos_ItemUpgrade_UpdateProgressBar(currentUpgrade, maxUpgrade, tier);
@@ -2174,41 +2651,71 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		UIDropDownMenu_SetButtonWidth(dropdown, 160);
 	end
 
-	local statStep = item.statPerLevel or DC.STAT_PERCENT_PER_LEVEL or 5;
-	local currentStatBonus = currentUpgrade * statStep;
+	local targetLevel = DC.targetUpgradeLevel or currentUpgrade;
+	local currentBonus = GetStatBonusPercent(currentUpgrade, item.tier);
+	local targetBonus = GetStatBonusPercent(targetLevel, item.tier);
+	local statGain = targetBonus - currentBonus;
+	local targetItemLevel = ResolveUpgradeItemLevel(item, targetLevel, baseLevel);
+	targetItemLevel = math.max(targetItemLevel, currentLevel);
+	local ilevelGain = targetItemLevel - currentLevel;
+	local statComparison = DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel);
+
 	if frame.CurrentPanel and frame.CurrentPanel.StatsText then
+		if frame.CurrentPanel.StatsText.SetSpacing then
+			frame.CurrentPanel.StatsText:SetSpacing(2);
+		end
+		local infoColor = "|cffb0b0ff";
 		local lines = {
-			item.isEquipped and "Location: Equipped" or "Location: Inventory",
-			string.format("Item Level: %d", currentLevel),
-			string.format("Upgrade Level: %d / %d", currentUpgrade, maxUpgrade),
+			string.format("%sStatus:|r %s", infoColor, item.isEquipped and "Equipped" or "Inventory"),
+			string.format("%sItem Level:|r %d", infoColor, currentLevel),
+			string.format("%sUpgrade Rank:|r %d / %d", infoColor, currentUpgrade, maxUpgrade),
 		};
-		if statStep > 0 then
-			table.insert(lines, string.format("Total Bonus: |cff00ff00+%.1f%%|r", currentStatBonus));
+		if currentBonus > 0 then
+			table.insert(lines, string.format("%sTotal Bonus:|r |cff00ff00+%.1f%%|r", infoColor, currentBonus));
+		end
+		if statComparison then
+			table.insert(lines, "");
+			table.insert(lines, "|cffe6cc80Current Attributes|r");
+			for _, entry in ipairs(statComparison) do
+				table.insert(lines, FormatStatLine(entry.label, entry.current));
+			end
 		end
 		frame.CurrentPanel.StatsText:SetText(table.concat(lines, "\n"));
 	end
-	if frame.CurrentPanel and frame.CurrentPanel.CurrencyHeader and frame.CurrentPanel.CurrencyDetail then
-		frame.CurrentPanel.CurrencyHeader:Show();
-		frame.CurrentPanel.CurrencyDetail:Show();
-		local tokens = DC.playerTokens or 0;
-		local essence = DC.playerEssence or 0;
-		frame.CurrentPanel.CurrencyDetail:SetText(string.format("%s %d\n%s %d", ICON_TOKEN, tokens, ICON_ESSENCE, essence));
-	end
-
-	local targetLevel = DC.targetUpgradeLevel or currentUpgrade;
-	local targetItemLevel = baseLevel + (targetLevel * ilvlStep);
-	local ilevelGain = targetItemLevel - currentLevel;
-	local targetStatBonus = targetLevel * statStep;
-	local statGain = targetStatBonus - (currentUpgrade * statStep);
-
 	if frame.UpgradePanel and frame.UpgradePanel.StatsText then
+		if frame.UpgradePanel.StatsText.SetSpacing then
+			frame.UpgradePanel.StatsText:SetSpacing(2);
+		end
+		local infoColor = "|cffb0b0ff";
+		local ilevelText;
+		if ilevelGain > 0 then
+			ilevelText = string.format("%sProjected Level:|r %d |cff00ff00(+%d)|r", infoColor, targetItemLevel, ilevelGain);
+		elseif ilevelGain < 0 then
+			ilevelText = string.format("%sProjected Level:|r %d |cffff4c4c(%d)|r", infoColor, targetItemLevel, ilevelGain);
+		else
+			ilevelText = string.format("%sProjected Level:|r %d", infoColor, targetItemLevel);
+		end
 		local upgradeLines = {
-			ilevelGain > 0 and string.format("Item Level: %d |cff00ff00(+%d)|r", targetItemLevel, ilevelGain) or string.format("Item Level: %d", targetItemLevel),
-			string.format("Upgrade Level: %d / %d", targetLevel, maxUpgrade),
+			ilevelText,
+			string.format("%sUpgrade Rank:|r %d / %d", infoColor, targetLevel, maxUpgrade),
 		};
-		if statStep > 0 then
-			local diffText = statGain > 0 and string.format(" |cff00ff00(+%.1f%%)|r", statGain) or "";
-			table.insert(upgradeLines, string.format("Total Bonus: |cff00ff00+%.1f%%%s|r", targetStatBonus, diffText));
+		if targetBonus > 0 then
+			local diffText;
+			if statGain > 0 then
+				diffText = string.format(" |cff00ff00(+%.1f%%)|r", statGain);
+			elseif statGain < 0 then
+				diffText = string.format(" |cffff4c4c(%.1f%%)|r", statGain);
+			else
+				diffText = "";
+			end
+			table.insert(upgradeLines, string.format("%sTotal Bonus:|r |cff00ff00+%.1f%%%s|r", infoColor, targetBonus, diffText));
+		end
+		if statComparison then
+			table.insert(upgradeLines, "");
+			table.insert(upgradeLines, "|cffe6cc80Preview Attributes|r");
+			for _, entry in ipairs(statComparison) do
+				table.insert(upgradeLines, FormatStatLine(entry.label, entry.preview, entry.diff));
+			end
 		end
 		frame.UpgradePanel.StatsText:SetText(table.concat(upgradeLines, "\n"));
 	end
@@ -2234,26 +2741,36 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		if frame.LeftTooltip then frame.LeftTooltip:Show(); end
 		if frame.RightTooltip then frame.RightTooltip:Show(); end
 		if frame.Arrow then frame.Arrow:Show(); end
-		if frame.CostFrame then frame.CostFrame:Hide(); end
 		frame.ErrorText:Hide();
 
-		local pendingTotals = DarkChaos_ItemUpgrade_ComputeCostTotals(item.tier, currentUpgrade, DC.targetUpgradeLevel);
-		local perLevelCost = DarkChaos_ItemUpgrade_GetCost(item.tier, DC.targetUpgradeLevel);
-		local requiredTokens = perLevelCost and (perLevelCost.tokens or 0) or pendingTotals.tokens;
-		local requiredEssence = perLevelCost and (perLevelCost.essence or 0) or pendingTotals.essence;
+		local pendingTotals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(item.tier, currentUpgrade, targetLevel);
+		local requiredTokens = pendingTotals.tokens or 0;
 		DarkChaos_ItemUpgrade_UpdateCost();
 
-		if (pendingTotals.tokens > 0 or pendingTotals.essence > 0) and (DC.playerTokens or 0) >= requiredTokens and (DC.playerEssence or 0) >= requiredEssence then
+		local hasCostData = (missingLevel == nil);
+		local hasEnoughCurrency = (DC.playerTokens or 0) >= requiredTokens;
+		local requiresCurrency = (pendingTotals.tokens or 0) > 0;
+
+		if hasCostData and (hasEnoughCurrency or not requiresCurrency) then
 			SetButtonEnabled(frame.UpgradeButton, true);
 			frame.UpgradeButton.Glow:Show();
 			frame.UpgradeButton.disabledTooltip = nil;
+			frame.ErrorText:Hide();
 		else
 			SetButtonEnabled(frame.UpgradeButton, false);
 			frame.UpgradeButton.Glow:Hide();
-			if pendingTotals.tokens > 0 or pendingTotals.essence > 0 then
-				frame.UpgradeButton.disabledTooltip = "Not enough currency.";
+			if not hasCostData then
+				frame.UpgradeButton.disabledTooltip = "Upgrade cost data is missing for this level.";
+				frame.ErrorText:SetText("Upgrade costs are not configured for the selected level.");
+				frame.ErrorText:Show();
+			elseif requiresCurrency then
+				frame.UpgradeButton.disabledTooltip = "Not enough upgrade tokens.";
+				frame.ErrorText:SetText("You need more upgrade tokens.");
+				frame.ErrorText:Show();
 			else
 				frame.UpgradeButton.disabledTooltip = "Cannot determine cost.";
+				frame.ErrorText:SetText("Unable to calculate upgrade cost.");
+				frame.ErrorText:Show();
 			end
 		end
 	else
@@ -2263,13 +2780,20 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			frame.UpgradePanel:Show();
 			if frame.UpgradePanel.StatsText then
 				local maxLines = {
-					string.format("Item Level: %d", currentLevel),
-					string.format("Upgrade Level: %d / %d", currentUpgrade, maxUpgrade),
+					string.format("|cffb0b0ffItem Level:|r %d", currentLevel),
+					string.format("|cffb0b0ffUpgrade Rank:|r %d / %d", currentUpgrade, maxUpgrade),
 				};
-				if statStep > 0 then
-					table.insert(maxLines, string.format("Total Bonus: |cff00ff00+%d%%|r", currentStatBonus));
+				if currentBonus > 0 then
+					table.insert(maxLines, string.format("|cffb0b0ffTotal Bonus:|r |cff00ff00+%.1f%%|r", currentBonus));
 				end
-				table.insert(maxLines, "Max level reached");
+				table.insert(maxLines, "|cff00ff00Max level reached|r");
+				if statComparison and #statComparison > 0 then
+					table.insert(maxLines, "");
+					table.insert(maxLines, "|cffe6cc80Attributes|r");
+					for _, entry in ipairs(statComparison) do
+						table.insert(maxLines, FormatStatLine(entry.label, entry.current));
+					end
+				end
 				frame.UpgradePanel.StatsText:SetText(table.concat(maxLines, "\n"));
 			end
 			if frame.UpgradePanel.CostHeader then frame.UpgradePanel.CostHeader:Hide(); end
@@ -2279,7 +2803,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		DarkChaos_ItemUpgrade_GenerateCurrentTooltip();
 		if frame.LeftTooltip then frame.LeftTooltip:Show(); end
 		if frame.RightTooltip then frame.RightTooltip:Hide(); end
-		if frame.CostFrame then frame.CostFrame:Hide(); end
+		if frame.CostFrame then frame.CostFrame:Show(); end
+		DarkChaos_ItemUpgrade_UpdateCost();
 		SetButtonEnabled(frame.UpgradeButton, false);
 		frame.UpgradeButton.Glow:Hide();
 		frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
@@ -2291,73 +2816,157 @@ end
 function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
 	local parent = DarkChaos_ItemUpgradeFrame;
 	if not parent then return end
-	if parent.PlayerCurrencies then
-		local tokens = DC.playerTokens or 0;
-		local tokenColor = "|cffffffff";
-		if DC.currentItem then
-			local currentUpgrade = DC.currentItem.currentUpgrade or 0;
-			local targetLevel = DC.targetUpgradeLevel or currentUpgrade;
-			local pendingTotals = DarkChaos_ItemUpgrade_ComputeCostTotals(DC.currentItem.tier, currentUpgrade, targetLevel);
-			local perLevelCost = DarkChaos_ItemUpgrade_GetCost(DC.currentItem.tier, targetLevel);
-			local requiredTokens = perLevelCost and (perLevelCost.tokens or 0) or pendingTotals.tokens;
-			if tokens < requiredTokens then tokenColor = "|cffff4c4c"; end
-		end
-		parent.PlayerCurrencies.TokenCount:SetText(string.format("%s%d|r", tokenColor, tokens));
-	end
+
+	local tokens = DC.playerTokens or 0;
+
 	local panel = parent.CurrentPanel;
-	if not panel or not panel.CurrencyHeader or not panel.CurrencyDetail then return end
-	if DC.currentItem then
-		panel.CurrencyHeader:Show();
-		panel.CurrencyDetail:Show();
-		panel.CurrencyDetail:SetText(string.format("%s %d", ICON_TOKEN, DC.playerTokens or 0));
-	else
-		panel.CurrencyHeader:Hide();
-		panel.CurrencyDetail:Hide();
+	if panel then
+		if panel.CurrencyHeader then
+			panel.CurrencyHeader:Hide();
+			panel.CurrencyHeader:SetText("");
+		end
+		if panel.CurrencyDetail then
+			panel.CurrencyDetail:Hide();
+			panel.CurrencyDetail:SetText("");
+		end
 	end
+
+	if parent.CostFrame then
+		if parent.CostFrame.OwnedValue then
+			parent.CostFrame.OwnedValue:SetText(string.format("Carried: %s", FormatNumberWithSeparators(tokens)));
+			parent.CostFrame.OwnedValue:SetTextColor(0.98, 0.9, 0.45);
+		end
+		if parent.CostFrame.OwnedIcon then
+			parent.CostFrame.OwnedIcon:SetVertexColor(0.95, 0.95, 0.95);
+			parent.CostFrame.OwnedIcon:Show();
+		end
+	end
+
+	local wallet = parent.PlayerCurrencies;
+	if wallet then
+		wallet:Hide();
+		if wallet.WalletLabel then
+			wallet.WalletLabel:SetText("");
+		end
+		if wallet.TokenCount then
+			wallet.TokenCount:SetText("");
+			wallet.TokenCount:Hide();
+		end
+		if wallet.TokenIcon then
+			wallet.TokenIcon:Hide();
+		end
+		if wallet.EssenceIcon then
+			wallet.EssenceIcon:Hide();
+		end
+		if wallet.EssenceCount then
+			wallet.EssenceCount:SetText("");
+			wallet.EssenceCount:Hide();
+		end
+	end
+
+	DarkChaos_ItemUpgrade_UpdateCostIndicators();
 end
 
 function DarkChaos_ItemUpgrade_UpdateCost()
 	local parent = DarkChaos_ItemUpgradeFrame;
-	if not parent then return end
-	if parent.CostFrame then
-		parent.CostFrame:Show();
+	if not parent or not parent.CostFrame then return end
+
+	local frame = parent.CostFrame;
+	frame:Show();
+
+	local statusText = frame.StatusText;
+	local requiredValue = frame.RequiredValue;
+	local ownedValue = frame.OwnedValue;
+	local requiredIcon = frame.RequiredIcon;
+	local ownedIcon = frame.OwnedIcon;
+
+	local function setStatus(text, r, g, b)
+		if not statusText then return; end
+		if text and text ~= "" then
+			statusText:SetText(text);
+			statusText:SetTextColor(r or 0.9, g or 0.9, b or 0.9);
+			statusText:Show();
+		else
+			statusText:SetText("");
+			statusText:Hide();
+		end
 	end
-	local panel = parent.UpgradePanel;
-	if not panel or not panel.CostHeader or not panel.CostDetail then return end
+
+	local function showValues(showRequired)
+		if requiredValue then
+			requiredValue:SetShown(showRequired);
+		end
+		if requiredIcon then
+			requiredIcon:SetShown(showRequired);
+		end
+		if ownedValue then
+			ownedValue:Show();
+		end
+		if ownedIcon then
+			ownedIcon:Show();
+		end
+	end
 
 	if not DC.currentItem then
-		if parent.CostFrame then parent.CostFrame:Hide(); end
-		panel.CostHeader:Hide();
-		panel.CostDetail:Hide();
+		showValues(false);
+		setStatus("Insert an item to view costs.", 0.8, 0.8, 0.8);
 		return;
 	end
 
 	local currentUpgrade = DC.currentItem.currentUpgrade or 0;
 	local targetLevel = DC.targetUpgradeLevel or currentUpgrade;
-	local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(DC.currentItem.tier, currentUpgrade, targetLevel);
-	local perLevelCost = DarkChaos_ItemUpgrade_GetCost(DC.currentItem.tier, targetLevel);
-	local immediateTokens = perLevelCost and (perLevelCost.tokens or 0) or 0;
-	
-	if targetLevel <= currentUpgrade or (totals.tokens == 0) then
-		if parent.CostFrame then parent.CostFrame:Hide(); end
-		panel.CostHeader:Show();
-		panel.CostDetail:Show();
-		panel.CostDetail:SetText("Unavailable");
-		panel.CostDetail:SetTextColor(1, 0.4, 0.4);
+	local totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(DC.currentItem.tier, currentUpgrade, targetLevel);
+
+	if targetLevel <= currentUpgrade then
+		local maxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
+		local atCap = currentUpgrade >= (maxUpgrade or currentUpgrade);
+		if atCap then
+			setStatus("Item is already at maximum rank.", 0.6, 1.0, 0.6);
+		else
+			setStatus("Select a higher upgrade level.", 1, 0.8, 0.2);
+		end
+		showValues(false);
 		return;
 	end
 
-	if parent.CostFrame then
-		parent.CostFrame:Show();
-		local playerTokens = DC.playerTokens or 0;
-		local tokenColor = (playerTokens >= immediateTokens) and "|cffffffff" or "|cffff4c4c";
-		parent.CostFrame.TokenCost:SetText(string.format("%s%d|r", tokenColor, immediateTokens));
+	if missingLevel then
+		showValues(false);
+		setStatus(string.format("Missing cost data for level %d.", missingLevel), 1, 0.4, 0.4);
+		return;
 	end
 
-	if panel.CostHeader and panel.CostDetail then
-		panel.CostHeader:Hide();
-		panel.CostDetail:Hide();
+	local requiredTokens = totals.tokens or 0;
+	local availableTokens = DC.playerTokens or 0;
+
+	if requiredTokens <= 0 then
+		showValues(false);
+		setStatus("No tokens required for this upgrade.", 0.6, 1.0, 0.6);
+		return;
 	end
+
+	showValues(true);
+
+	if requiredValue then
+		requiredValue:SetText(string.format("Required: %s", FormatNumberWithSeparators(requiredTokens)));
+	end
+	if requiredIcon then
+		requiredIcon:SetVertexColor(1, 1, 1);
+	end
+	if ownedValue then
+		ownedValue:SetText(string.format("Carried: %s", FormatNumberWithSeparators(availableTokens)));
+		ownedValue:SetTextColor(0.98, 0.9, 0.45);
+	end
+	if ownedIcon then
+		ownedIcon:SetVertexColor(0.95, 0.95, 0.95);
+	end
+
+	if availableTokens < requiredTokens then
+		setStatus("You need more upgrade tokens.", 1, 0.4, 0.4);
+	else
+		setStatus(nil);
+	end
+
+	DarkChaos_ItemUpgrade_UpdateCostIndicators();
 end
 
 --[[=====================================================
@@ -2399,7 +3008,8 @@ function DarkChaos_ItemUpgrade_GenerateTooltips()
 	end
 	
 	-- Create simulated item link with upgraded stats
-	local targetLevel = DC.targetUpgradeLevel or (DC.currentItem.currentUpgrade + 1);
+	local currentUpgrade = DC.currentItem.currentUpgrade or 0;
+	local targetLevel = DC.targetUpgradeLevel or (currentUpgrade + 1);
 	local tier = DC.currentItem.tier or 1;
 	local upgradedItemLink = DC.CreateUpgradePreviewItemLink(DC.currentItem.link, targetLevel, tier);
 	
@@ -2407,10 +3017,13 @@ function DarkChaos_ItemUpgrade_GenerateTooltips()
 	tooltip:SetHyperlink(upgradedItemLink);
 	
 	-- Add upgrade preview info
-	local levels = math.max(0, targetLevel - (DC.currentItem.currentUpgrade or 0));
-	local currentMultiplier = DC.currentItem.statMultiplier or 1.0;
-	local targetMultiplier = 1.0 + ((targetLevel or 0) * (DC.STAT_PERCENT_PER_LEVEL or 5) / 100);
-	local multiplierIncrease = ((targetMultiplier - currentMultiplier) / currentMultiplier) * 100;
+	local levels = math.max(0, targetLevel - currentUpgrade);
+	local currentMultiplier = DC.currentItem.statMultiplier or GetStatMultiplierForLevel(currentUpgrade, tier);
+	local targetMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
+	local currentBonus = GetStatBonusPercent(currentUpgrade, tier);
+	local targetBonus = GetStatBonusPercent(targetLevel, tier);
+	local bonusIncrease = targetBonus - currentBonus;
+	DC.currentItem.statMultiplier = currentMultiplier;
 	
 	tooltip:AddLine(" ");
 	tooltip:AddLine("Upgrade Preview:", 0.2, 1.0, 0.2);
@@ -2421,9 +3034,9 @@ function DarkChaos_ItemUpgrade_GenerateTooltips()
 	), 1, 1, 1);
 	
 	-- Show stat increases if applicable
-	if levels > 0 and multiplierIncrease > 0 then
-		tooltip:AddLine(string.format("All Stats: |cff00ff00+%.1f%%|r (from x%.2f to x%.2f)", 
-			multiplierIncrease, currentMultiplier, targetMultiplier), 1, 1, 1);
+	if levels > 0 and bonusIncrease > 0 then
+		tooltip:AddLine(string.format("All Stats: |cff00ff00+%.1f%%|r (from x%.3f to x%.3f)", 
+			bonusIncrease, currentMultiplier, targetMultiplier), 1, 1, 1);
 		tooltip:AddLine("|cff888888Includes:|r", 0.7, 0.7, 0.7);
 		tooltip:AddLine("|cff888888  • Primary Stats (Str/Agi/Sta/Int/Spi)|r", 0.7, 0.7, 0.7);
 		tooltip:AddLine("|cff888888  • Secondary Stats (Crit/Haste/Hit)|r", 0.7, 0.7, 0.7);
@@ -2460,22 +3073,28 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 		DC.playerTokens = tonumber(tokens) or 0;
 		DC.playerEssence = tonumber(essence) or 0;
 		DarkChaos_ItemUpgrade_UpdatePlayerCurrencies();
-		print(string.format("|cff00ff00You have %d Upgrade Tokens and %d Artifact Essence.|r", DC.playerTokens, DC.playerEssence));
+		print(string.format("|cff00ff00You have %d Upgrade Tokens.|r", DC.playerTokens));
 		DC.Debug("INIT received: tokens="..tostring(tokens).." essence="..tostring(essence));
 		DarkChaos_ItemUpgrade_UpdateUI();
 		return;
 	end
 	
 	-- DCUPGRADE_QUERY response (item upgrade info)
-	-- Format from server: "DCUPGRADE_QUERY:<item_guid>:<upgrade_level>:<tier>:<base_ilvl>[:<upgraded_ilvl>:<stat_multiplier>]"
+	-- Format from server (2025-11-11+):
+	--   "DCUPGRADE_QUERY:<item_guid>:<upgrade_level>:<tier>:<base_ilvl>:<upgraded_ilvl>:<stat_multiplier>:<base_entry>:<current_entry>:<clone_map>"
+	-- Legacy servers may omit the trailing clone metadata, so keep parsing flexible.
 	if string.find(message, "^DCUPGRADE_QUERY") then
 		DC.Debug("QUERY received raw message: " .. tostring(message));
-		local guidStr, currentLevel, tier, baseIlvl, upgradedIlvl, statMult = string.match(message, "DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+):([%d%.]+)");
+		local guidStr, currentLevel, tier, baseIlvl, upgradedIlvl, statMult, baseEntryStr, currentEntryStr, cloneMapStr =
+			string.match(message, "DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+):([%d%.]+):(%d+):(%d+):([^:]*)");
+		if not guidStr then
+			guidStr, currentLevel, tier, baseIlvl, upgradedIlvl, statMult = string.match(message, "DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+):([%d%.]+)");
+		end
 		if not guidStr then
 			guidStr, currentLevel, tier, baseIlvl = string.match(message, "DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+)");
-			DC.Debug("QUERY 6-field regex failed, trying 4-field fallback");
+			DC.Debug("QUERY extended regex failed, trying fallback format");
 		else
-			DC.Debug("QUERY 6-field regex matched! guidStr=" .. tostring(guidStr) .. " currentLevel=" .. tostring(currentLevel) .. " tier=" .. tostring(tier) .. " baseIlvl=" .. tostring(baseIlvl) .. " upgradedIlvl=" .. tostring(upgradedIlvl) .. " statMult=" .. tostring(statMult));
+			DC.Debug("QUERY matched! guidStr=" .. tostring(guidStr) .. " currentLevel=" .. tostring(currentLevel) .. " tier=" .. tostring(tier) .. " baseIlvl=" .. tostring(baseIlvl) .. " upgradedIlvl=" .. tostring(upgradedIlvl) .. " statMult=" .. tostring(statMult));
 		end
 
 		local guid = tonumber(guidStr) or 0;
@@ -2484,10 +3103,26 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 		local baseLevel = tonumber(baseIlvl) or 0;
 		local upgradedLevel = upgradedIlvl and tonumber(upgradedIlvl) or nil;
 		local statMultiplier = statMult and tonumber(statMult) or nil;
+		local baseEntry = baseEntryStr and tonumber(baseEntryStr) or nil;
+		local currentEntry = currentEntryStr and tonumber(currentEntryStr) or nil;
+		local cloneEntries = ParseCloneMap(cloneMapStr);
 
 		if not upgradedLevel then
-			local step = DC.ILEVEL_PER_UPGRADE or 3;
-			upgradedLevel = baseLevel + (current * step);
+			upgradedLevel = GetUpgradedItemLevel(baseLevel, current, tierId);
+		end
+		if not statMultiplier then
+			statMultiplier = GetStatMultiplierForLevel(current, tierId);
+		end
+
+		if baseEntry and cloneEntries then
+			cloneEntries[0] = cloneEntries[0] or baseEntry;
+		elseif baseEntry then
+			cloneEntries = cloneEntries or {};
+			cloneEntries[0] = baseEntry;
+		end
+		if currentEntry then
+			cloneEntries = cloneEntries or {};
+			cloneEntries[current] = currentEntry;
 		end
 
 		local data = {
@@ -2499,12 +3134,24 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			statMultiplier = statMultiplier,
 			maxUpgrade = DC.GetMaxUpgradeLevelForTier(tierId),
 			timestamp = GetTime and GetTime() or 0,
+			baseEntry = baseEntry,
+			currentEntry = currentEntry,
+			cloneEntries = CopyCloneEntries(cloneEntries),
 		};
 
-		if not data.statMultiplier and current > 0 then
-			local perLevel = DC.STAT_PERCENT_PER_LEVEL or 5;
-			data.statMultiplier = 1.0 + (perLevel * current) / 100;
-			DC.Debug("QUERY statMultiplier was nil, calculated fallback: " .. tostring(data.statMultiplier));
+		DC.Debug("QUERY statMultiplier finalized: " .. tostring(data.statMultiplier));
+		if data.baseEntry then
+			DC.Debug("QUERY baseEntry=" .. tostring(data.baseEntry));
+		end
+		if data.currentEntry then
+			DC.Debug("QUERY currentEntry=" .. tostring(data.currentEntry));
+		end
+		if data.cloneEntries then
+			local count = 0;
+			for level in pairs(data.cloneEntries) do
+				count = count + 1;
+			end
+			DC.Debug("QUERY cloneEntries count=" .. tostring(count));
 		end
 
 		DC.Debug("QUERY final data: guid=" .. tostring(data.guid) .. " current=" .. tostring(data.currentUpgrade) .. " tier=" .. tostring(data.tier) .. " baselvl=" .. tostring(data.baseItemLevel) .. " upgradedlvl=" .. tostring(data.upgradedItemLevel) .. " statmult=" .. tostring(data.statMultiplier));
@@ -2568,15 +3215,62 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			local oldLevel = DC.currentItem.currentUpgrade or 0;
 			local newUpgradeLevel = tonumber(newLevel) or oldLevel;
 			DC.currentItem.currentUpgrade = newUpgradeLevel;
-			local ilvlStep = DC.currentItem.ilevelStep or DC.ILEVEL_PER_UPGRADE or 3;
-			if DC.currentItem.baseLevel then
-				DC.currentItem.upgradedLevel = DC.currentItem.baseLevel + (DC.currentItem.currentUpgrade * ilvlStep);
-				DC.currentItem.level = DC.currentItem.upgradedLevel;
+			local tierId = DC.currentItem.tier or 1;
+			local baseLevel = DC.currentItem.baseLevel;
+			if not baseLevel then
+				local observedLevel = DC.currentItem.upgradedLevel or DC.currentItem.level or 0;
+				local deduction = GetItemLevelBonus(oldLevel, tierId);
+				baseLevel = math.max(0, math.floor((observedLevel - deduction) + 0.5));
+				DC.currentItem.baseLevel = baseLevel;
 			end
+			local newUpgrade = DC.currentItem.currentUpgrade;
+			local fallbackItemLevel = GetUpgradedItemLevel(baseLevel, newUpgrade, tierId);
+			local fallbackNextLevel;
+			if newUpgrade < (DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(tierId)) then
+				fallbackNextLevel = GetUpgradedItemLevel(baseLevel, newUpgrade + 1, tierId);
+			end
+			DC.currentItem.statMultiplier = GetStatMultiplierForLevel(newUpgrade, tierId);
+			DC.currentItem.statPerLevel = GetStatBonusPercent(newUpgrade + 1, tierId) - GetStatBonusPercent(newUpgrade, tierId);
 
 			local refreshedLink = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
 			if refreshedLink then
 				DC.currentItem.link = refreshedLink;
+				local newEntry = tonumber(string.match(refreshedLink, "item:(%d+)"));
+				if newEntry then
+					DC.currentItem.itemID = newEntry;
+					DC.currentItem.currentEntry = newEntry;
+					DC.currentItem.cloneEntries = DC.currentItem.cloneEntries or {};
+					DC.currentItem.cloneEntries[newUpgradeLevel] = newEntry;
+					if DC.currentItem.baseEntry then
+						DC.currentItem.cloneEntries[0] = DC.currentItem.cloneEntries[0] or DC.currentItem.baseEntry;
+					end
+				end
+			end
+			local resolvedItemLevel = fallbackItemLevel;
+			local currentCloneEntry = GetCloneEntryForLevel(DC.currentItem, newUpgrade);
+			if currentCloneEntry then
+				local infoLevel = select(4, GetItemInfo(currentCloneEntry));
+				if infoLevel then
+					resolvedItemLevel = infoLevel;
+				end
+			end
+			DC.currentItem.upgradedLevel = resolvedItemLevel;
+			DC.currentItem.level = resolvedItemLevel;
+			local resolvedNextLevel;
+			if fallbackNextLevel then
+				resolvedNextLevel = fallbackNextLevel;
+				local nextCloneEntry = GetCloneEntryForLevel(DC.currentItem, newUpgrade + 1);
+				if nextCloneEntry then
+					local infoLevel = select(4, GetItemInfo(nextCloneEntry));
+					if infoLevel then
+						resolvedNextLevel = infoLevel;
+					end
+				end
+			end
+			if resolvedNextLevel then
+				DC.currentItem.ilevelStep = math.max(0, resolvedNextLevel - resolvedItemLevel);
+			else
+				DC.currentItem.ilevelStep = 0;
 			end
 			DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, DC.currentItem.link);
 
@@ -2596,15 +3290,8 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			local itemLink = DC.currentItem.link or DC.currentItem.name or "item";
 			local maxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
 			print(string.format("|cff00ff00Item upgraded to level %d/%d:|r %s", DC.currentItem.currentUpgrade or 0, maxUpgrade, itemLink));
-			if totals.tokens > 0 or totals.essence > 0 then
-				local parts = {};
-				if totals.tokens > 0 then
-					table.insert(parts, string.format("%d Tokens", totals.tokens));
-				end
-				if totals.essence > 0 then
-					table.insert(parts, string.format("%d Essence", totals.essence));
-				end
-				print(string.format("|cff00ff00Spent:|r %s", table.concat(parts, " and ")));
+			if (totals.tokens or 0) > 0 then
+				print(string.format("|cff00ff00Spent:|r %d Tokens", totals.tokens));
 			end
 		end
 
@@ -2622,11 +3309,18 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 	-- Format from server: "DCUPGRADE_ERROR:<error_message>"
 	if string.find(message, "^DCUPGRADE_ERROR") then
 		local _, _, errorMsg = string.find(message, "DCUPGRADE_ERROR:(.+)");
-		print("|cffff0000Upgrade failed:|r " .. (errorMsg or "Unknown error"));
-		SetButtonEnabled(DarkChaos_ItemUpgradeFrame.UpgradeButton, true);
-		DC.pendingUpgrade = nil;
-		DC.Debug("ERROR received: "..tostring(errorMsg));
 		local request = DarkChaos_ItemUpgrade_CompleteQuery();
+		if request then
+			DC.Debug("Query error received: " .. tostring(errorMsg));
+			if errorMsg == "Item not found" and DC.currentItem then
+				DarkChaos_ItemUpgrade_RequestItemInfo();
+			end
+		else
+			print("|cffff0000Upgrade failed:|r " .. (errorMsg or "Unknown error"));
+			SetButtonEnabled(DarkChaos_ItemUpgradeFrame.UpgradeButton, true);
+			DC.pendingUpgrade = nil;
+		end
+		DC.Debug("ERROR received: "..tostring(errorMsg));
 		if request then
 			for _, context in ipairs(request.contexts or {}) do
 				if context.type == "tooltip" then

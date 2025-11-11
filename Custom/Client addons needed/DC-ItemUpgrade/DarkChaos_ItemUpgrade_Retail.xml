@@ -9,7 +9,7 @@
     </GameTooltip>
 
     <Frame name="DarkChaos_ItemUpgradeFrame" parent="UIParent" movable="true" enableMouse="true" hidden="true" toplevel="true">
-        <Size x="538" y="540"/>
+        <Size x="640" y="540"/>
         <Anchors>
             <Anchor point="CENTER"/>
         </Anchors>
@@ -27,19 +27,19 @@
 
         <Layers>
             <Layer level="BACKGROUND">
-                <Texture parentKey="HeaderBackground" file="Interface\ChatFrame\ChatFrameBackground">
+                <Texture parentKey="HeaderBackground" file="Interface\Buttons\WHITE8X8">
                     <Anchors>
-                        <Anchor point="TOPLEFT" x="10" y="-34"/>
-                        <Anchor point="BOTTOMRIGHT" x="-10" y="-148"/>
+                        <Anchor point="TOPLEFT" relativeKey="$parent.ItemInfo" x="-12" y="12"/>
+                        <Anchor point="BOTTOMRIGHT" relativeKey="$parent.ItemInfo" x="12" y="-12"/>
                     </Anchors>
-                    <Color r="0.12" g="0.12" b="0.18" a="0.9"/>
+                    <Color r="0.18" g="0.22" b="0.32" a="0.35"/>
                 </Texture>
-                <Texture parentKey="BodyBackground" file="Interface\ChatFrame\ChatFrameBackground">
+                <Texture parentKey="BodyBackground" file="Interface\Buttons\WHITE8X8">
                     <Anchors>
-                        <Anchor point="TOPLEFT" x="26" y="-160"/>
-                        <Anchor point="BOTTOMRIGHT" x="-26" y="84"/>
+                        <Anchor point="TOPLEFT" relativeKey="$parent.CurrentPanel" x="-14" y="14"/>
+                        <Anchor point="BOTTOMRIGHT" relativeKey="$parent.CostFrame" x="14" y="-14"/>
                     </Anchors>
-                    <Color r="0.07" g="0.07" b="0.11" a="0.9"/>
+                    <Color r="0.08" g="0.10" b="0.15" a="0.28"/>
                 </Texture>
             </Layer>
             <Layer level="ARTWORK">
@@ -112,9 +112,9 @@
             </Button>
 
             <Frame parentKey="ItemInfo">
-                <Size x="360" y="120"/>
+                <Size x="436" y="90"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="112" y="-72"/>
+                    <Anchor point="TOPLEFT" x="26" y="-170"/>
                 </Anchors>
                 <Layers>
                     <Layer level="ARTWORK">
@@ -125,19 +125,19 @@
                             <Color r="0.7" g="0.7" b="0.7"/>
                         </FontString>
                         <FontString parentKey="ItemName" inherits="GameFontNormalLarge" justifyH="LEFT" hidden="true">
-                            <Size x="340" y="0"/>
+                            <Size x="416" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="ItemLevelSummary" inherits="GameFontHighlight" hidden="true">
-                            <Size x="340" y="0"/>
+                            <Size x="416" y="0"/>
                             <Anchors>
-                                <Anchor point="TOPLEFT" relativeKey="$parent.ItemName" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.ProgressBar" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="UpgradeProgress" inherits="GameFontHighlight" hidden="true">
-                            <Size x="340" y="0"/>
+                            <Size x="416" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" relativeKey="$parent.ItemLevelSummary" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
                             </Anchors>
@@ -147,9 +147,10 @@
 
                 <Frames>
                     <Frame parentKey="ProgressBar" hidden="true">
-                        <Size x="340" y="12"/>
+                        <Size x="436" y="16"/>
                         <Anchors>
-                            <Anchor point="TOPLEFT" x="0" y="-250"/>
+                            <Anchor point="TOPLEFT" x="0" y="-12"/>
+                            <Anchor point="TOPRIGHT" x="0" y="-12"/>
                         </Anchors>
                         <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                             <EdgeSize>
@@ -198,32 +199,10 @@
                 </Frames>
             </Frame>
 
-            <Frame parentKey="UpgradeSelector" hidden="true">
-                <Size x="280" y="48"/>
-                <Anchors>
-                    <Anchor point="TOP" x="0" y="-152"/>
-                </Anchors>
-                <Layers>
-                    <Layer level="ARTWORK">
-                        <FontString parentKey="Label" inherits="GameFontHighlight" text="Upgrade to:" justifyH="CENTER">
-                            <Anchors>
-                                <Anchor point="TOP" x="0" y="0"/>
-                            </Anchors>
-                        </FontString>
-                    </Layer>
-                </Layers>
-            </Frame>
-
-            <Frame name="$parentDropdown" parentKey="Dropdown" inherits="UIDropDownMenuTemplate" hidden="true">
-                <Anchors>
-                    <Anchor point="TOP" relativeKey="$parent.UpgradeSelector" relativePoint="BOTTOM" x="-16" y="-4"/>
-                </Anchors>
-            </Frame>
-
             <Frame parentKey="CurrentPanel" hidden="true">
-                <Size x="240" y="280"/>
+                <Size x="210" y="300"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="26" y="-166"/>
+                    <Anchor point="TOPLEFT" x="26" y="-190"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -233,28 +212,28 @@
                         <AbsInset left="5" right="5" top="5" bottom="5"/>
                     </BackgroundInsets>
                 </Backdrop>
-                <BackdropColor r="0.09" g="0.09" b="0.13" a="0.95"/>
-                <BackdropBorderColor r="0.35" g="0.35" b="0.4" a="1"/>
+                <BackdropColor r="0.11" g="0.13" b="0.19" a="0.92"/>
+                <BackdropBorderColor r="0.26" g="0.32" b="0.42" a="0.9"/>
                 <Layers>
                     <Layer level="ARTWORK">
-                        <FontString parentKey="Header" inherits="GameFontHighlight" text="Current">
+                        <FontString parentKey="Header" inherits="GameFontHighlight" text="Current Item">
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-10"/>
                             </Anchors>
                         </FontString>
-                        <FontString parentKey="StatsText" inherits="GameFontHighlightSmall" justifyH="LEFT" maxLines="8">
-                            <Size x="216" y="0"/>
+                        <FontString parentKey="StatsText" inherits="GameFontHighlightSmall" justifyH="LEFT">
+                            <Size x="182" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-36"/>
                             </Anchors>
                         </FontString>
-                        <FontString parentKey="CurrencyHeader" inherits="GameFontNormalSmall" text="You Have:" hidden="true">
+                        <FontString parentKey="CurrencyHeader" inherits="GameFontNormalSmall" text="Resources:" hidden="true">
                             <Anchors>
                                 <Anchor point="BOTTOMLEFT" x="12" y="16"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="CurrencyDetail" inherits="GameFontHighlightSmall" hidden="true">
-                            <Size x="216" y="0"/>
+                            <Size x="182" y="0"/>
                             <Anchors>
                                 <Anchor point="LEFT" relativeKey="$parent.CurrencyHeader" relativePoint="RIGHT" x="6" y="0"/>
                             </Anchors>
@@ -264,9 +243,9 @@
             </Frame>
 
             <Frame parentKey="UpgradePanel" hidden="true">
-                <Size x="240" y="280"/>
+                <Size x="210" y="300"/>
                 <Anchors>
-                    <Anchor point="TOPRIGHT" x="-26" y="-166"/>
+                    <Anchor point="TOPLEFT" x="252" y="-190"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -276,17 +255,17 @@
                         <AbsInset left="5" right="5" top="5" bottom="5"/>
                     </BackgroundInsets>
                 </Backdrop>
-                <BackdropColor r="0.09" g="0.09" b="0.13" a="0.95"/>
-                <BackdropBorderColor r="0.35" g="0.35" b="0.4" a="1"/>
+                <BackdropColor r="0.11" g="0.13" b="0.19" a="0.92"/>
+                <BackdropBorderColor r="0.26" g="0.32" b="0.42" a="0.9"/>
                 <Layers>
                     <Layer level="ARTWORK">
-                        <FontString parentKey="Header" inherits="GameFontHighlight" text="Upgrade">
+                        <FontString parentKey="Header" inherits="GameFontHighlight" text="Upgrade Preview">
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-10"/>
                             </Anchors>
                         </FontString>
-                        <FontString parentKey="StatsText" inherits="GameFontHighlightSmall" justifyH="LEFT" maxLines="8">
-                            <Size x="216" y="0"/>
+                        <FontString parentKey="StatsText" inherits="GameFontHighlightSmall" justifyH="LEFT">
+                            <Size x="182" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-36"/>
                             </Anchors>
@@ -297,7 +276,7 @@
                             </Anchors>
                         </FontString>
                         <FontString parentKey="CostDetail" inherits="GameFontHighlightSmall" hidden="true">
-                            <Size x="216" y="0"/>
+                            <Size x="182" y="0"/>
                             <Anchors>
                                 <Anchor point="LEFT" relativeKey="$parent.CostHeader" relativePoint="RIGHT" x="6" y="0"/>
                             </Anchors>
@@ -347,38 +326,80 @@
             </Frame>
 
             <Frame parentKey="CostFrame" hidden="true">
-                <Size x="480" y="20"/>
+                <Size x="140" y="300"/>
                 <Anchors>
-                    <Anchor point="BOTTOM" x="0" y="50"/>
+                    <Anchor point="TOPLEFT" relativeKey="$parent.UpgradePanel" relativePoint="TOPRIGHT" x="16" y="0"/>
+                    <Anchor point="BOTTOMLEFT" relativeKey="$parent.UpgradePanel" relativePoint="BOTTOMRIGHT" x="16" y="0"/>
                 </Anchors>
                 <Layers>
-                    <Layer level="ARTWORK">
-                        <FontString parentKey="CostLabel" inherits="GameFontHighlightSmall" text="Cost:">
+                    <Layer level="BACKGROUND">
+                        <Texture parentKey="Background" file="Interface\Buttons\WHITE8X8">
                             <Anchors>
-                                <Anchor point="LEFT" x="26" y="0"/>
+                                <Anchor point="TOPLEFT" x="8" y="-6"/>
+                                <Anchor point="BOTTOMRIGHT" x="-8" y="8"/>
+                            </Anchors>
+                            <Color r="0.07" g="0.09" b="0.14" a="0.55"/>
+                        </Texture>
+                    </Layer>
+                    <Layer level="ARTWORK">
+                        <FontString parentKey="Title" inherits="GameFontHighlight" text="Upgrade Tokens">
+                            <Anchors>
+                                <Anchor point="TOPLEFT" x="20" y="-20"/>
                             </Anchors>
                         </FontString>
-                        <Texture parentKey="TokenIcon" file="Interface\Icons\INV_Misc_Coin_01">
-                            <Size x="14" y="14"/>
+                        <Texture parentKey="RequiredIcon" file="Interface\Icons\INV_Misc_Coin_01">
+                            <Size x="18" y="18"/>
                             <Anchors>
-                                <Anchor point="LEFT" relativeKey="$parent.CostLabel" relativePoint="RIGHT" x="6" y="2"/>
+                                <Anchor point="TOPLEFT" x="20" y="-52"/>
                             </Anchors>
                         </Texture>
-                        <FontString parentKey="TokenCost" inherits="GameFontHighlightSmall">
+                        <FontString parentKey="RequiredValue" inherits="GameFontHighlightLarge">
                             <Anchors>
-                                <Anchor point="LEFT" relativeKey="$parent.TokenIcon" relativePoint="RIGHT" x="4" y="0"/>
+                                <Anchor point="LEFT" relativeKey="$parent.RequiredIcon" relativePoint="RIGHT" x="8" y="0"/>
+                                <Anchor point="RIGHT" x="-12" y="0"/>
                             </Anchors>
+                            <JustifyH value="LEFT"/>
+                        </FontString>
+                        <Texture parentKey="OwnedIcon" file="Interface\Icons\INV_Misc_Coin_01">
+                            <Size x="18" y="18"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.RequiredIcon" relativePoint="BOTTOMLEFT" x="0" y="-16"/>
+                            </Anchors>
+                        </Texture>
+                        <FontString parentKey="OwnedValue" inherits="GameFontHighlightSmall">
+                            <Anchors>
+                                <Anchor point="LEFT" relativeKey="$parent.OwnedIcon" relativePoint="RIGHT" x="8" y="0"/>
+                                <Anchor point="RIGHT" x="-12" y="0"/>
+                            </Anchors>
+                            <JustifyH value="LEFT"/>
+                        </FontString>
+                        <FontString parentKey="StatusText" inherits="GameFontHighlightSmall" maxLines="2">
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.OwnedIcon" relativePoint="BOTTOMLEFT" x="0" y="-18"/>
+                                <Anchor point="RIGHT" x="-12" y="0"/>
+                            </Anchors>
+                            <JustifyH value="LEFT"/>
+                            <JustifyV value="TOP"/>
                         </FontString>
                     </Layer>
                 </Layers>
             </Frame>
 
             <Frame parentKey="PlayerCurrencies" hidden="true">
-                <Size x="480" y="20"/>
+                <Size x="280" y="20"/>
                 <Anchors>
-                    <Anchor point="BOTTOM" x="0" y="72"/>
+                    <Anchor point="BOTTOMLEFT" x="26" y="72"/>
                 </Anchors>
                 <Layers>
+                    <Layer level="BACKGROUND">
+                        <Texture parentKey="Background" file="Interface\Buttons\WHITE8X8">
+                            <Anchors>
+                                <Anchor point="TOPLEFT" x="16" y="2"/>
+                                <Anchor point="BOTTOMRIGHT" x="-16" y="-2"/>
+                            </Anchors>
+                            <Color r="0.07" g="0.09" b="0.14" a="0.3"/>
+                        </Texture>
+                    </Layer>
                     <Layer level="ARTWORK">
                         <FontString parentKey="WalletLabel" inherits="GameFontHighlightSmall" text="Carried:">
                             <Anchors>
@@ -394,6 +415,17 @@
                         <FontString parentKey="TokenCount" inherits="GameFontHighlightSmall">
                             <Anchors>
                                 <Anchor point="LEFT" relativeKey="$parent.TokenIcon" relativePoint="RIGHT" x="4" y="0"/>
+                            </Anchors>
+                        </FontString>
+                        <Texture parentKey="EssenceIcon" file="Interface\Icons\INV_Misc_Gem_Amethyst_01">
+                            <Size x="14" y="14"/>
+                            <Anchors>
+                                <Anchor point="LEFT" relativeKey="$parent.TokenCount" relativePoint="RIGHT" x="12" y="2"/>
+                            </Anchors>
+                        </Texture>
+                        <FontString parentKey="EssenceCount" inherits="GameFontHighlightSmall">
+                            <Anchors>
+                                <Anchor point="LEFT" relativeKey="$parent.EssenceIcon" relativePoint="RIGHT" x="4" y="0"/>
                             </Anchors>
                         </FontString>
                     </Layer>
