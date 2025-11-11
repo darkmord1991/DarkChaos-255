@@ -1665,6 +1665,24 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_npc_mapping` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_hotspots_active
+CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
+  `id` int unsigned NOT NULL COMMENT 'Unique hotspot ID',
+  `map_id` smallint unsigned NOT NULL COMMENT 'Map ID where hotspot is located',
+  `zone_id` smallint unsigned NOT NULL COMMENT 'Zone ID where hotspot is located',
+  `x` float NOT NULL COMMENT 'World X coordinate',
+  `y` float NOT NULL COMMENT 'World Y coordinate',
+  `z` float NOT NULL COMMENT 'World Z coordinate',
+  `spawn_time` bigint NOT NULL COMMENT 'Unix timestamp when hotspot was spawned',
+  `expire_time` bigint NOT NULL COMMENT 'Unix timestamp when hotspot expires',
+  `gameobject_guid` bigint DEFAULT NULL COMMENT 'GUID of the visual marker GameObject (if spawned)',
+  PRIMARY KEY (`id`),
+  KEY `idx_map_zone` (`map_id`,`zone_id`),
+  KEY `idx_expire` (`expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Active hotspots for XP bonus system';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_item_proc_spells
 CREATE TABLE IF NOT EXISTS `dc_item_proc_spells` (
   `spell_id` int unsigned NOT NULL,
@@ -1700,6 +1718,20 @@ CREATE TABLE IF NOT EXISTS `dc_item_templates_upgrade` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_clones
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_clones` (
+  `base_item_id` int unsigned NOT NULL,
+  `tier_id` tinyint unsigned NOT NULL,
+  `upgrade_level` tinyint unsigned NOT NULL,
+  `clone_item_id` int unsigned NOT NULL,
+  `stat_multiplier` float NOT NULL,
+  PRIMARY KEY (`base_item_id`,`upgrade_level`),
+  UNIQUE KEY `idx_clone_item` (`clone_item_id`),
+  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Generated item clone mapping';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_costs
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `cost_id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1710,7 +1742,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `gold_cost` int unsigned DEFAULT '0',
   PRIMARY KEY (`cost_id`),
   UNIQUE KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB AUTO_INCREMENT=226 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=152 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1727,19 +1759,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stage` (
   `item_subclass` tinyint unsigned DEFAULT NULL,
   PRIMARY KEY (`tier_id`,`item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Staging rows loaded from tier dumps for validation';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_clones
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_clones` (
-  `base_item_id` int unsigned NOT NULL COMMENT 'Base item entry ID',
-  `clone_item_id` int unsigned NOT NULL COMMENT 'Upgraded clone item entry ID',
-  `tier_id` tinyint unsigned NOT NULL COMMENT '1=Leveling, 2=Heroic, 3=Raid, 4=Mythic, 5=Artifact',
-  `upgrade_level` tinyint unsigned NOT NULL COMMENT '0-15, 0=base, 15=max',
-  PRIMARY KEY (`base_item_id`,`tier_id`,`upgrade_level`),
-  KEY `idx_clone` (`clone_item_id`),
-  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade clone mappings - maps base items to their upgraded clone versions';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1853,6 +1872,32 @@ CREATE TABLE IF NOT EXISTS `dc_synthesis_recipes` (
   KEY `idx_type` (`type`),
   KEY `idx_required_level` (`required_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Synthesis recipes for item transmutation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_upgrade_tracks
+CREATE TABLE IF NOT EXISTS `dc_upgrade_tracks` (
+  `track_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique track identifier',
+  `track_name` varchar(100) NOT NULL COMMENT 'Display name: Heroic Dungeon, Mythic Raid, etc.',
+  `source_content` varchar(50) NOT NULL COMMENT 'Content type: dungeon, raid, hlbg, mythic_plus',
+  `difficulty` varchar(50) NOT NULL COMMENT 'Difficulty: heroic, mythic, mythic+5, etc.',
+  `base_ilvl` int NOT NULL COMMENT 'Starting item level from this content',
+  `max_ilvl` int NOT NULL COMMENT 'Maximum item level after all upgrades',
+  `upgrade_steps` tinyint NOT NULL DEFAULT '5' COMMENT 'Number of upgrade stages (0-5 usually)',
+  `ilvl_per_step` tinyint NOT NULL DEFAULT '4' COMMENT 'Item level gain per step (+3 or +4)',
+  `token_cost_per_upgrade` int NOT NULL DEFAULT '10' COMMENT 'Upgrade tokens needed per step',
+  `flightstone_cost_base` int NOT NULL DEFAULT '50' COMMENT 'Base flightstone cost (scaled by slot)',
+  `required_player_level` int NOT NULL DEFAULT '80' COMMENT 'Minimum player level to use this track',
+  `required_item_level` int NOT NULL DEFAULT '200' COMMENT 'Minimum gear iLvl to access this track',
+  `description` varchar(255) DEFAULT NULL COMMENT 'UI description for players',
+  `active` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Is this track currently available?',
+  `season` int NOT NULL DEFAULT '0' COMMENT '0 = permanent, else season number',
+  `created_date` int unsigned DEFAULT '0' COMMENT 'Unix timestamp when created',
+  PRIMARY KEY (`track_id`),
+  UNIQUE KEY `uk_track` (`source_content`,`difficulty`,`season`),
+  KEY `k_active` (`active`),
+  KEY `k_season` (`season`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Upgrade track definitions';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

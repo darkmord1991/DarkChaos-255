@@ -1003,9 +1003,13 @@ end
 -- Helper function to get max upgrade level for a specific tier
 function DC.GetMaxUpgradeLevelForTier(tier)
 	if not tier or not DC.MAX_UPGRADE_LEVELS_BY_TIER[tier] then
-		return DC.MAX_UPGRADE_LEVEL or 15;  -- fallback to global max
+		local fallback = DC.MAX_UPGRADE_LEVEL or 15;
+		DC.Debug("GetMaxUpgradeLevelForTier: tier=" .. tostring(tier) .. " returned fallback=" .. fallback);
+		return fallback;  -- fallback to global max
 	end
-	return DC.MAX_UPGRADE_LEVELS_BY_TIER[tier];
+	local result = DC.MAX_UPGRADE_LEVELS_BY_TIER[tier];
+	DC.Debug("GetMaxUpgradeLevelForTier: tier=" .. tostring(tier) .. " returned=" .. result);
+	return result;
 end
 
 -- Quality colors (Wrath palette)
@@ -1028,7 +1032,8 @@ DC.TIER_NAMES = DC.TIER_NAMES or {
 };
 
 -- Maximum upgrade levels by tier (lower tiers have lower caps)
-DC.MAX_UPGRADE_LEVELS_BY_TIER = DC.MAX_UPGRADE_LEVELS_BY_TIER or {
+-- NOTE: Always reset to ensure correct values (don't use "or" which would preserve old saved data)
+DC.MAX_UPGRADE_LEVELS_BY_TIER = {
 	[1] = 6,   -- Veteran: 6 upgrades
 	[2] = 15,  -- Adventurer: 15 upgrades (full upgrades)
 	[3] = 0,   -- Champion: Not implemented yet
@@ -1299,6 +1304,7 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	item.tier = data.tier or item.tier or 1;
 	item.currentUpgrade = data.currentUpgrade or 0;
 	item.maxUpgrade = data.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
+	DC.Debug("ApplyQueryData: data.maxUpgrade=" .. tostring(data.maxUpgrade) .. ", item.tier=" .. tostring(item.tier) .. ", final item.maxUpgrade=" .. tostring(item.maxUpgrade));
 	item.baseLevel = data.baseItemLevel or item.baseLevel or 0;
 	item.upgradedLevel = data.upgradedItemLevel or item.upgradedLevel or item.baseLevel;
 	item.level = item.upgradedLevel;
@@ -2514,11 +2520,17 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 
 		local matchedCurrent = false;
 		if DC.currentItem then
+			DC.Debug("Query match check: request=" .. tostring(request ~= nil) .. ", currentItem.locationKey=" .. tostring(DC.currentItem.locationKey) .. ", request.key=" .. tostring(request and request.key) .. ", currentItem.guid=" .. tostring(DC.currentItem.guid) .. ", data.guid=" .. tostring(data.guid));
 			if (request and request.key == DC.currentItem.locationKey) or (DC.currentItem.guid and DC.currentItem.guid == data.guid) then
+				DC.Debug("MATCHED! Applying query data to current item");
 				DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
 				DC.itemLocationCache[DC.currentItem.locationKey or BuildLocationKey(data.serverBag or DC.currentItem.serverBag, data.serverSlot or DC.currentItem.serverSlot)] = data.guid;
 				matchedCurrent = true;
+			else
+				DC.Debug("NO MATCH - query data will be cached but not applied to current item");
 			end
+		else
+			DC.Debug("DC.currentItem is NIL - cannot match query response");
 		end
 
 		if matchedCurrent then
@@ -2527,6 +2539,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			-- Recalculate target level based on current and max upgrade values
 			local currentUpgrade = DC.currentItem.currentUpgrade or 0;
 			local maxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
+			DC.Debug("After ApplyQueryData - item.maxUpgrade=" .. tostring(DC.currentItem.maxUpgrade) .. ", item.tier=" .. tostring(DC.currentItem.tier) .. ", computed maxUpgrade=" .. tostring(maxUpgrade));
 			DC.targetUpgradeLevel = math.min(math.max(currentUpgrade + 1, 1), maxUpgrade);
 			DC.Debug("Target level recalculated to: " .. tostring(DC.targetUpgradeLevel) .. " (current=" .. currentUpgrade .. ", max=" .. maxUpgrade .. ")");
 			DarkChaos_ItemUpgrade_UpdateUI();
