@@ -885,6 +885,55 @@ function DC.CreateSettingsPanel()
 	return panel;
 end
 
+-- Character Frame Button Handlers (XML-defined button)
+function DC_ItemUpgrade_CharFrameButton_OnLoad(self)
+	self:RegisterForClicks("LeftButtonUp");
+end
+
+function DC_ItemUpgrade_CharFrameButton_OnClick(self)
+	if UnitAffectingCombat("player") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
+		return;
+	end
+	
+	local inInstance, instanceType = IsInInstance();
+	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+		return;
+	end
+	
+	if DarkChaos_ItemUpgradeFrame:IsShown() then
+		DarkChaos_ItemUpgradeFrame:Hide();
+	else
+		DarkChaos_ItemUpgradeFrame:Show();
+	end
+end
+
+-- Bag Frame Button Handlers (XML-defined button)
+function DC_ItemUpgrade_BagFrameButton_OnLoad(self)
+	self:RegisterForClicks("LeftButtonUp");
+	self:SetFrameStrata("MEDIUM");
+end
+
+function DC_ItemUpgrade_BagFrameButton_OnClick(self)
+	if UnitAffectingCombat("player") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
+		return;
+	end
+	
+	local inInstance, instanceType = IsInInstance();
+	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+		return;
+	end
+	
+	if DarkChaos_ItemUpgradeFrame:IsShown() then
+		DarkChaos_ItemUpgradeFrame:Hide();
+	else
+		DarkChaos_ItemUpgradeFrame:Show();
+	end
+end
+
 -- Memory pooling for ItemUpgradeState objects
 DC.itemStatePool = DC.itemStatePool or {};
 DC.itemStatePoolSize = DC.itemStatePoolSize or 0;
@@ -2094,6 +2143,15 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 		DarkChaos_ItemUpgrade_UpdateUI();
 		return;
 	end
+	
+	-- Auto-close on combat start
+	if event == "PLAYER_REGEN_DISABLED" then
+		if self:IsShown() then
+			self:Hide();
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff8800Item Upgrade window closed (entered combat).|r");
+		end
+		return;
+	end
 
 	if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_WHISPER" then
 		local message, sender = ...;
@@ -2164,10 +2222,10 @@ function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
 		end
 	end
 	
-	-- Button glow pulse
+	-- Button glow pulse (enhanced for better visibility)
 	if self.UpgradeButton and self.UpgradeButton:IsEnabled() and self.UpgradeButton.Glow:IsShown() then
 		DC.glowAnimationTime = (DC.glowAnimationTime or 0) + elapsed;
-		local alpha = 0.5 + math.sin(DC.glowAnimationTime * 2) * 0.3;
+		local alpha = 0.4 + math.sin(DC.glowAnimationTime * 3) * 0.35; -- Enhanced: wider range, faster pulse
 		self.UpgradeButton.Glow:SetAlpha(alpha);
 	end
 
@@ -2378,7 +2436,10 @@ function DarkChaos_ItemUpgrade_Dropdown_OnClick(self, level)
 	end
 
 	DC.targetUpgradeLevel = selectedLevel;
-	UIDropDownMenu_SetSelectedValue(DarkChaos_ItemUpgradeFrame.Dropdown, selectedLevel);
+	local dropdown = DarkChaos_ItemUpgradeFrame.DropdownContainer and DarkChaos_ItemUpgradeFrame.DropdownContainer.Dropdown or DarkChaos_ItemUpgradeFrame.Dropdown;
+	if dropdown then
+		UIDropDownMenu_SetSelectedValue(dropdown, selectedLevel);
+	end
 
 	-- Update tooltips and costs
 	DarkChaos_ItemUpgrade_UpdateUI();
@@ -2519,7 +2580,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then return end
 	if not (frame.ItemSlot and frame.ItemInfo and frame.PlayerCurrencies) then return end
-	local dropdown = frame.Dropdown;
+	local dropdown = frame.DropdownContainer and frame.DropdownContainer.Dropdown or frame.Dropdown;
 
 	-- Currency counts always stay in sync
 	DarkChaos_ItemUpgrade_UpdatePlayerCurrencies();
@@ -2662,19 +2723,20 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 
 	if frame.CurrentPanel and frame.CurrentPanel.StatsText then
 		if frame.CurrentPanel.StatsText.SetSpacing then
-			frame.CurrentPanel.StatsText:SetSpacing(2);
+			frame.CurrentPanel.StatsText:SetSpacing(4); -- Increased spacing to avoid stacking
 		end
 		local infoColor = "|cffb0b0ff";
 		local lines = {
 			string.format("%sStatus:|r %s", infoColor, item.isEquipped and "Equipped" or "Inventory"),
 			string.format("%sItem Level:|r %d", infoColor, currentLevel),
-			string.format("%sUpgrade Rank:|r %d / %d", infoColor, currentUpgrade, maxUpgrade),
+			-- string.format("%sUpgrade Rank:|r %d / %d", infoColor, currentUpgrade, maxUpgrade), -- Removed: shown in progress bar
 		};
 		if currentBonus > 0 then
 			table.insert(lines, string.format("%sTotal Bonus:|r |cff00ff00+%.1f%%|r", infoColor, currentBonus));
 		end
 		if statComparison then
-			table.insert(lines, "");
+			table.insert(lines, ""); -- Empty line for spacing
+			table.insert(lines, ""); -- Additional empty line for better separation
 			table.insert(lines, "|cffe6cc80Current Attributes|r");
 			for _, entry in ipairs(statComparison) do
 				table.insert(lines, FormatStatLine(entry.label, entry.current));
@@ -2684,7 +2746,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	end
 	if frame.UpgradePanel and frame.UpgradePanel.StatsText then
 		if frame.UpgradePanel.StatsText.SetSpacing then
-			frame.UpgradePanel.StatsText:SetSpacing(2);
+			frame.UpgradePanel.StatsText:SetSpacing(4); -- Increased spacing to avoid stacking
 		end
 		local infoColor = "|cffb0b0ff";
 		local ilevelText;
@@ -2697,7 +2759,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		end
 		local upgradeLines = {
 			ilevelText,
-			string.format("%sUpgrade Rank:|r %d / %d", infoColor, targetLevel, maxUpgrade),
+			-- string.format("%sUpgrade Rank:|r %d / %d", infoColor, targetLevel, maxUpgrade), -- Removed: shown in progress bar
 		};
 		if targetBonus > 0 then
 			local diffText;
@@ -2711,7 +2773,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			table.insert(upgradeLines, string.format("%sTotal Bonus:|r |cff00ff00+%.1f%%%s|r", infoColor, targetBonus, diffText));
 		end
 		if statComparison then
-			table.insert(upgradeLines, "");
+			table.insert(upgradeLines, ""); -- Empty line for spacing
+			table.insert(upgradeLines, ""); -- Additional empty line for better separation
 			table.insert(upgradeLines, "|cffe6cc80Preview Attributes|r");
 			for _, entry in ipairs(statComparison) do
 				table.insert(upgradeLines, FormatStatLine(entry.label, entry.preview, entry.diff));
@@ -2833,7 +2896,7 @@ function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
 
 	if parent.CostFrame then
 		if parent.CostFrame.OwnedValue then
-			parent.CostFrame.OwnedValue:SetText(string.format("Carried: %s", FormatNumberWithSeparators(tokens)));
+			parent.CostFrame.OwnedValue:SetText(FormatNumberWithSeparators(tokens));
 			parent.CostFrame.OwnedValue:SetTextColor(0.98, 0.9, 0.45);
 		end
 		if parent.CostFrame.OwnedIcon then
@@ -2893,17 +2956,38 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	end
 
 	local function showValues(showRequired)
+		local requiredLabel = frame.RequiredLabel;
+		local ownedLabel = frame.OwnedLabel;
+		
 		if requiredValue then
-			requiredValue:SetShown(showRequired);
+			if showRequired then
+				requiredValue:Show();
+			else
+				requiredValue:Hide();
+			end
 		end
 		if requiredIcon then
-			requiredIcon:SetShown(showRequired);
+			if showRequired then
+				requiredIcon:Show();
+			else
+				requiredIcon:Hide();
+			end
+		end
+		if requiredLabel then
+			if showRequired then
+				requiredLabel:Show();
+			else
+				requiredLabel:Hide();
+			end
 		end
 		if ownedValue then
 			ownedValue:Show();
 		end
 		if ownedIcon then
 			ownedIcon:Show();
+		end
+		if ownedLabel then
+			ownedLabel:Show();
 		end
 	end
 
@@ -2947,13 +3031,13 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	showValues(true);
 
 	if requiredValue then
-		requiredValue:SetText(string.format("Required: %s", FormatNumberWithSeparators(requiredTokens)));
+		requiredValue:SetText(FormatNumberWithSeparators(requiredTokens));
 	end
 	if requiredIcon then
 		requiredIcon:SetVertexColor(1, 1, 1);
 	end
 	if ownedValue then
-		ownedValue:SetText(string.format("Carried: %s", FormatNumberWithSeparators(availableTokens)));
+		ownedValue:SetText(FormatNumberWithSeparators(availableTokens));
 		ownedValue:SetTextColor(0.98, 0.9, 0.45);
 	end
 	if ownedIcon then
@@ -3658,6 +3742,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	self:RegisterEvent("BAG_UPDATE");
 	self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
 	self:RegisterEvent("UNIT_INVENTORY_CHANGED");
+	self:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Combat start event
 
 	self:SetMovable(true);
 	self:EnableMouse(true);
@@ -3673,7 +3758,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		self.portrait:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-REWARDS");
 	end
 
-	local dropdown = self.Dropdown;
+	local dropdown = self.DropdownContainer and self.DropdownContainer.Dropdown or self.Dropdown;
 	if dropdown then
 		UIDropDownMenu_SetWidth(dropdown, 150);
 		UIDropDownMenu_SetButtonWidth(dropdown, 160);
@@ -3745,6 +3830,18 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 			return;
 		end
 
+		-- Check restrictions before opening
+		if UnitAffectingCombat("player") then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
+			return;
+		end
+		
+		local inInstance, instanceType = IsInInstance();
+		if inInstance and (instanceType == "party" or instanceType == "raid") then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items inside an instance or raid!|r");
+			return;
+		end
+
 		if self:IsShown() then
 			self:Hide();
 		else
@@ -3787,8 +3884,9 @@ function DarkChaos_ItemUpgrade_OnShow(self)
 	DC.arrowAnimationTime = 0;
 	DC.glowAnimationTime = 0;
 
-	if self.Dropdown then
-		UIDropDownMenu_Initialize(self.Dropdown, DarkChaos_ItemUpgrade_Dropdown_Initialize);
+	local dropdown = self.DropdownContainer and self.DropdownContainer.Dropdown or self.Dropdown;
+	if dropdown then
+		UIDropDownMenu_Initialize(dropdown, DarkChaos_ItemUpgrade_Dropdown_Initialize);
 	end
 
 	DarkChaos_ItemUpgrade_RequestCurrencies();

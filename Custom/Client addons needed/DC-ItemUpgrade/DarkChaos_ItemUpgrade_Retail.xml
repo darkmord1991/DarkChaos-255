@@ -29,8 +29,8 @@
             <Layer level="BACKGROUND">
                 <Texture parentKey="HeaderBackground" file="Interface\Buttons\WHITE8X8">
                     <Anchors>
-                        <Anchor point="TOPLEFT" relativeKey="$parent.ItemInfo" x="-12" y="12"/>
-                        <Anchor point="BOTTOMRIGHT" relativeKey="$parent.ItemInfo" x="12" y="-12"/>
+                        <Anchor point="TOPLEFT" x="26" y="-40"/>
+                        <Anchor point="BOTTOMRIGHT" relativeKey="$parent.ItemInfo" x="12" y="-8"/>
                     </Anchors>
                     <Color r="0.18" g="0.22" b="0.32" a="0.35"/>
                 </Texture>
@@ -43,9 +43,9 @@
                 </Texture>
             </Layer>
             <Layer level="ARTWORK">
-                <FontString parentKey="TitleText" inherits="GameFontNormalLarge" text="Item Upgrade">
+                <FontString parentKey="TitleText" inherits="GameFontNormalLarge" text="Item Upgrade" justifyH="CENTER">
                     <Anchors>
-                        <Anchor point="TOPLEFT" x="80" y="-44"/>
+                        <Anchor point="TOP" x="0" y="-16"/>
                     </Anchors>
                 </FontString>
                 <FontString parentKey="MissingDescription" inherits="GameFontHighlight" justifyH="CENTER" text="Insert an item to begin upgrading.">
@@ -75,7 +75,7 @@
             <Button name="$parentItemSlot" parentKey="ItemSlot" inherits="ItemButtonTemplate">
                 <Size x="58" y="58"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="36" y="-70"/>
+                    <Anchor point="TOPLEFT" x="36" y="-42"/>
                 </Anchors>
                 <Layers>
                     <Layer level="OVERLAY">
@@ -112,22 +112,22 @@
             </Button>
 
             <Frame parentKey="ItemInfo">
-                <Size x="436" y="90"/>
+                <Size x="530" y="24"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="26" y="-170"/>
+                    <Anchor point="TOPLEFT" x="112" y="-50"/>
                 </Anchors>
                 <Layers>
                     <Layer level="ARTWORK">
                         <FontString parentKey="MissingItemText" inherits="GameFontHighlightMedium" text="Insert Item to Upgrade">
                             <Anchors>
-                                <Anchor point="TOPLEFT"/>
+                                <Anchor point="LEFT"/>
                             </Anchors>
                             <Color r="0.7" g="0.7" b="0.7"/>
                         </FontString>
                         <FontString parentKey="ItemName" inherits="GameFontNormalLarge" justifyH="LEFT" hidden="true">
-                            <Size x="416" y="0"/>
+                            <Size x="500" y="0"/>
                             <Anchors>
-                                <Anchor point="TOPLEFT"/>
+                                <Anchor point="LEFT"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="ItemLevelSummary" inherits="GameFontHighlight" hidden="true">
@@ -147,10 +147,10 @@
 
                 <Frames>
                     <Frame parentKey="ProgressBar" hidden="true">
-                        <Size x="436" y="16"/>
+                        <Size x="436" y="24"/>
                         <Anchors>
-                            <Anchor point="TOPLEFT" x="0" y="-12"/>
-                            <Anchor point="TOPRIGHT" x="0" y="-12"/>
+                            <Anchor point="TOPLEFT" relativeKey="$parent.parent.CurrentPanel" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
+                            <Anchor point="TOPRIGHT" relativeKey="$parent.parent.UpgradePanel" relativePoint="BOTTOMRIGHT" x="0" y="-4"/>
                         </Anchors>
                         <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                             <EdgeSize>
@@ -200,9 +200,9 @@
             </Frame>
 
             <Frame parentKey="CurrentPanel" hidden="true">
-                <Size x="210" y="300"/>
+                <Size x="240" y="380"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="26" y="-190"/>
+                    <Anchor point="TOPLEFT" x="26" y="-88"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -243,9 +243,9 @@
             </Frame>
 
             <Frame parentKey="UpgradePanel" hidden="true">
-                <Size x="210" y="300"/>
+                <Size x="240" y="380"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="252" y="-190"/>
+                    <Anchor point="TOPLEFT" x="282" y="-88"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -265,7 +265,7 @@
                             </Anchors>
                         </FontString>
                         <FontString parentKey="StatsText" inherits="GameFontHighlightSmall" justifyH="LEFT">
-                            <Size x="182" y="0"/>
+                            <Size x="212" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-36"/>
                             </Anchors>
@@ -347,35 +347,52 @@
                                 <Anchor point="TOPLEFT" x="20" y="-20"/>
                             </Anchors>
                         </FontString>
-                        <Texture parentKey="RequiredIcon" file="Interface\Icons\INV_Misc_Coin_01">
-                            <Size x="18" y="18"/>
+                        
+                        <FontString parentKey="RequiredLabel" inherits="GameFontHighlightSmall" text="Required:">
                             <Anchors>
-                                <Anchor point="TOPLEFT" x="20" y="-52"/>
+                                <Anchor point="TOPLEFT" x="18" y="-50"/>
                             </Anchors>
-                        </Texture>
-                        <FontString parentKey="RequiredValue" inherits="GameFontHighlightLarge">
+                        </FontString>
+                        <FontString parentKey="RequiredValue" inherits="GameFontHighlight">
+                            <Size x="90" y="24"/>
                             <Anchors>
-                                <Anchor point="LEFT" relativeKey="$parent.RequiredIcon" relativePoint="RIGHT" x="8" y="0"/>
-                                <Anchor point="RIGHT" x="-12" y="0"/>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.RequiredLabel" relativePoint="BOTTOMLEFT" x="0" y="-6"/>
                             </Anchors>
                             <JustifyH value="LEFT"/>
+                            <JustifyV value="TOP"/>
+                            <Color r="1" g="1" b="1"/>
+                        </FontString>
+                        <Texture parentKey="RequiredIcon" file="Interface\Icons\INV_Misc_Coin_01">
+                            <Size x="16" y="16"/>
+                            <Anchors>
+                                <Anchor point="LEFT" relativeKey="$parent.RequiredValue" relativePoint="RIGHT" x="6" y="-3"/>
+                            </Anchors>
+                        </Texture>
+                        
+                        <FontString parentKey="OwnedLabel" inherits="GameFontHighlightSmall" text="Carried:">
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.RequiredValue" relativePoint="BOTTOMLEFT" x="0" y="-18"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="OwnedValue" inherits="GameFontHighlight">
+                            <Size x="90" y="24"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.OwnedLabel" relativePoint="BOTTOMLEFT" x="0" y="-6"/>
+                            </Anchors>
+                            <JustifyH value="LEFT"/>
+                            <JustifyV value="TOP"/>
+                            <Color r="1" g="1" b="1"/>
                         </FontString>
                         <Texture parentKey="OwnedIcon" file="Interface\Icons\INV_Misc_Coin_01">
-                            <Size x="18" y="18"/>
+                            <Size x="16" y="16"/>
                             <Anchors>
-                                <Anchor point="TOPLEFT" relativeKey="$parent.RequiredIcon" relativePoint="BOTTOMLEFT" x="0" y="-16"/>
+                                <Anchor point="LEFT" relativeKey="$parent.OwnedValue" relativePoint="RIGHT" x="6" y="-3"/>
                             </Anchors>
                         </Texture>
-                        <FontString parentKey="OwnedValue" inherits="GameFontHighlightSmall">
-                            <Anchors>
-                                <Anchor point="LEFT" relativeKey="$parent.OwnedIcon" relativePoint="RIGHT" x="8" y="0"/>
-                                <Anchor point="RIGHT" x="-12" y="0"/>
-                            </Anchors>
-                            <JustifyH value="LEFT"/>
-                        </FontString>
+                        
                         <FontString parentKey="StatusText" inherits="GameFontHighlightSmall" maxLines="2">
                             <Anchors>
-                                <Anchor point="TOPLEFT" relativeKey="$parent.OwnedIcon" relativePoint="BOTTOMLEFT" x="0" y="-18"/>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.OwnedIcon" relativePoint="BOTTOMLEFT" x="0" y="-24"/>
                                 <Anchor point="RIGHT" x="-12" y="0"/>
                             </Anchors>
                             <JustifyH value="LEFT"/>
@@ -386,9 +403,9 @@
             </Frame>
 
             <Frame parentKey="PlayerCurrencies" hidden="true">
-                <Size x="280" y="20"/>
+                <Size x="1" y="1"/>
                 <Anchors>
-                    <Anchor point="BOTTOMLEFT" x="26" y="72"/>
+                    <Anchor point="BOTTOMLEFT" x="-1000" y="-1000"/>
                 </Anchors>
                 <Layers>
                     <Layer level="BACKGROUND">
@@ -488,6 +505,30 @@
                     </OnClick>
                 </Scripts>
             </Button>
+
+            <Frame parentKey="DropdownContainer">
+                <Size x="160" y="60"/>
+                <Anchors>
+                    <Anchor point="BOTTOMRIGHT" relativeKey="$parent.UpgradePanel" relativePoint="BOTTOMRIGHT" x="-30" y="38"/>
+                </Anchors>
+                <Layers>
+                    <Layer level="ARTWORK">
+                        <FontString parentKey="Label" inherits="GameFontNormal" text="Target Level:">
+                            <Anchors>
+                                <Anchor point="BOTTOM" relativeKey="$parent.Dropdown" relativePoint="TOP" x="16" y="4"/>
+                            </Anchors>
+                            <Color r="1" g="0.82" b="0"/>
+                        </FontString>
+                    </Layer>
+                </Layers>
+                <Frames>
+                    <Frame name="$parentDropdown" parentKey="Dropdown" inherits="UIDropDownMenuTemplate">
+                        <Anchors>
+                            <Anchor point="BOTTOM" x="0" y="0"/>
+                        </Anchors>
+                    </Frame>
+                </Frames>
+            </Frame>
 
             <Button name="$parentCompareButton" parentKey="CompareButton" inherits="UIPanelButtonTemplate" text="Compare">
                 <Size x="80" y="22"/>
@@ -804,5 +845,93 @@
             </OnHide>
         </Scripts>
     </Frame>
+
+    <!-- Character Frame Button -->
+    <Button name="DC_ItemUpgrade_CharFrameButton" parent="CharacterFrame" hidden="false">
+        <Size x="32" y="32"/>
+        <Anchors>
+            <Anchor point="TOPRIGHT" relativeTo="CharacterFrame" relativePoint="TOPRIGHT" x="0" y="-95"/>
+        </Anchors>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentIcon" file="Interface\LFGFrame\UI-LFG-ICON-REWARDS">
+                    <Size x="28" y="28"/>
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <Texture name="$parentBorder" file="Interface\Buttons\UI-Quickslot2">
+                    <Size x="64" y="64"/>
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </Texture>
+            </Layer>
+        </Layers>
+        <HighlightTexture file="Interface\Buttons\ButtonHilight-Square" alphaMode="ADD"/>
+        <Scripts>
+            <OnLoad>
+                DC_ItemUpgrade_CharFrameButton_OnLoad(self);
+            </OnLoad>
+            <OnClick>
+                DC_ItemUpgrade_CharFrameButton_OnClick(self);
+            </OnClick>
+            <OnEnter>
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
+                GameTooltip:SetText("Item Upgrade", 1, 1, 1);
+                GameTooltip:AddLine("Open the Item Upgrade interface", 0.8, 0.8, 0.8, true);
+                GameTooltip:Show();
+            </OnEnter>
+            <OnLeave>
+                GameTooltip:Hide();
+            </OnLeave>
+        </Scripts>
+    </Button>
+
+    <!-- Bag Frame Button -->
+    <Button name="DC_ItemUpgrade_BagFrameButton" parent="UIParent" hidden="false">
+        <Size x="36" y="36"/>
+        <Anchors>
+            <Anchor point="RIGHT" relativeTo="MainMenuBarBackpackButton" relativePoint="LEFT" x="-2" y="0"/>
+        </Anchors>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentIcon" file="Interface\LFGFrame\UI-LFG-ICON-REWARDS">
+                    <Size x="32" y="32"/>
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <Texture name="$parentBorder" file="Interface\Buttons\UI-Quickslot2">
+                    <Size x="64" y="64"/>
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </Texture>
+            </Layer>
+        </Layers>
+        <HighlightTexture file="Interface\Buttons\ButtonHilight-Square" alphaMode="ADD"/>
+        <Scripts>
+            <OnLoad>
+                DC_ItemUpgrade_BagFrameButton_OnLoad(self);
+            </OnLoad>
+            <OnClick>
+                DC_ItemUpgrade_BagFrameButton_OnClick(self);
+            </OnClick>
+            <OnEnter>
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
+                GameTooltip:SetText("Item Upgrade", 1, 1, 1);
+                GameTooltip:AddLine("Open the Item Upgrade interface", 0.8, 0.8, 0.8, true);
+                GameTooltip:Show();
+            </OnEnter>
+            <OnLeave>
+                GameTooltip:Hide();
+            </OnLeave>
+        </Scripts>
+    </Button>
 
 </Ui>
