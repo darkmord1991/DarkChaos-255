@@ -10,6 +10,8 @@
 #include <iomanip>
 #include <sstream>
 #include <limits>
+#include <map>
+#include <string>
 #include "SharedDefines.h"
 
 /*
@@ -218,12 +220,60 @@ private:
             if (upgradedIlvl < storedBaseIlvl)
                 upgradedIlvl = storedBaseIlvl;
 
-            // Send response via SYSTEM chat (now includes upgraded ilvl and stat multiplier)
+            uint32 currentEntry = item->GetEntry();
+            uint32 baseEntry = currentEntry;
+
+            if (upgradeLevel > 0)
+            {
+                if (QueryResult baseResult = WorldDatabase.Query(
+                        "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                        currentEntry))
+                {
+                    baseEntry = (*baseResult)[0].Get<uint32>();
+                }
+            }
+
+            std::map<uint32, uint32> cloneEntries;
+            cloneEntries[0] = baseEntry;
+
+            if (QueryResult cloneResult = WorldDatabase.Query(
+                    "SELECT upgrade_level, clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {}",
+                    baseEntry, tier))
+            {
+                do
+                {
+                    Field* cloneFields = cloneResult->Fetch();
+                    uint32 level = cloneFields[0].Get<uint32>();
+                    uint32 entry = cloneFields[1].Get<uint32>();
+                    cloneEntries[level] = entry;
+                }
+                while (cloneResult->NextRow());
+            }
+
+            cloneEntries[upgradeLevel] = currentEntry;
+
+            std::ostringstream mapStream;
+            bool firstPair = true;
+            for (const auto& pair : cloneEntries)
+            {
+                if (firstPair)
+                    firstPair = false;
+                else
+                    mapStream << ',';
+                mapStream << pair.first << '-' << pair.second;
+            }
+
+            std::string cloneMap = mapStream.str();
+            if (cloneMap.empty())
+                cloneMap = "0-" + std::to_string(baseEntry);
+
+            // Send response via SYSTEM chat (now includes upgraded ilvl, stat multiplier, and clone data)
             std::ostringstream ss;
             ss.setf(std::ios::fixed);
             ss << std::setprecision(3);
             ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
-               << ":" << upgradedIlvl << ":" << statMultiplier;
+               << ":" << upgradedIlvl << ":" << statMultiplier << ':' << baseEntry << ':' << currentEntry
+               << ':' << cloneMap;
 
             SendAddonResponse(player, ss.str());
             return true;
@@ -316,12 +366,60 @@ private:
                 if (upgradedIlvl < storedBaseIlvl)
                     upgradedIlvl = storedBaseIlvl;
 
-                // Send individual response for each item in batch
+                uint32 currentEntry = item->GetEntry();
+                uint32 baseEntry = currentEntry;
+
+                if (upgradeLevel > 0)
+                {
+                    if (QueryResult baseResult = WorldDatabase.Query(
+                            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                            currentEntry))
+                    {
+                        baseEntry = (*baseResult)[0].Get<uint32>();
+                    }
+                }
+
+                std::map<uint32, uint32> cloneEntries;
+                cloneEntries[0] = baseEntry;
+
+                if (QueryResult cloneResult = WorldDatabase.Query(
+                        "SELECT upgrade_level, clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {}",
+                        baseEntry, tier))
+                {
+                    do
+                    {
+                        Field* cloneFields = cloneResult->Fetch();
+                        uint32 level = cloneFields[0].Get<uint32>();
+                        uint32 entry = cloneFields[1].Get<uint32>();
+                        cloneEntries[level] = entry;
+                    }
+                    while (cloneResult->NextRow());
+                }
+
+                cloneEntries[upgradeLevel] = currentEntry;
+
+                std::ostringstream mapStream;
+                bool firstPair = true;
+                for (const auto& pair : cloneEntries)
+                {
+                    if (firstPair)
+                        firstPair = false;
+                    else
+                        mapStream << ',';
+                    mapStream << pair.first << '-' << pair.second;
+                }
+
+                std::string cloneMap = mapStream.str();
+                if (cloneMap.empty())
+                    cloneMap = "0-" + std::to_string(baseEntry);
+
+                // Send individual response for each item in batch (includes clone data)
                 std::ostringstream ss;
                 ss.setf(std::ios::fixed);
                 ss << std::setprecision(3);
                 ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << tier << ":" << storedBaseIlvl
-                   << ":" << upgradedIlvl << ":" << statMultiplier;
+                   << ":" << upgradedIlvl << ":" << statMultiplier << ':' << baseEntry << ':' << currentEntry
+                   << ':' << cloneMap;
 
                 SendAddonResponse(player, ss.str());
             }
