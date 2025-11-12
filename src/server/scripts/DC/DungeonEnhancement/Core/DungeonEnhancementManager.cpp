@@ -910,28 +910,6 @@ namespace DungeonEnhancement
                  "Weekly vault progress reset for season {}", season->seasonId);
     }
 
-    void DungeonEnhancementManager::ResetWeeklyVaultProgress(Player* player)
-    {
-        if (!player)
-            return;
-
-        SeasonData* season = GetCurrentSeason();
-        if (!season)
-            return;
-
-        // Reset specific player's vault progress
-        CharacterDatabase.Execute(
-            "UPDATE dc_mythic_vault_progress "
-            "SET completedDungeons = 0, slot1Claimed = 0, slot2Claimed = 0, slot3Claimed = 0, lastResetDate = NOW() "
-            "WHERE playerGUID = {} AND seasonId = {}",
-            player->GetGUID().GetCounter(), season->seasonId
-        );
-
-        LOG_DEBUG("dungeon.enhancement.vault",
-                  "Reset vault progress for player {} (GUID {})",
-                  player->GetName(), player->GetGUID().GetCounter());
-    }
-
     // ========================================================================
     // RATING & TOKEN REWARDS
     // ========================================================================
@@ -996,7 +974,7 @@ namespace DungeonEnhancement
                   player->GetName(), player->GetGUID().GetCounter(), newRating, rank);
     }
 
-    uint32 DungeonEnhancementManager::CalculateRatingGain(uint8 keystoneLevel, uint32 deathCount, uint32 timeTaken)
+    uint32 DungeonEnhancementManager::CalculateRatingGain(uint8 keystoneLevel, uint32 deathCount, [[maybe_unused]] uint32 timeTaken)
     {
         // Base rating formula: keystoneLevel * 10
         uint32 baseRating = keystoneLevel * 10;

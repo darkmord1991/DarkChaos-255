@@ -15,7 +15,7 @@
 #include "DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
 #include "MythicRunTracker.h"
-#include "MythicAffixFactory.h"
+#include "../Affixes/MythicAffixFactory.h"
 
 using namespace DungeonEnhancement;
 

@@ -9,6 +9,7 @@
  */
 
 #include "MythicAffixHandler.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "Player.h"
 #include "Map.h"
@@ -23,9 +24,13 @@ public:
     // ========================================================================
     // Apply Fortified buff on creature spawn
     // ========================================================================
-    void OnCreatureSpawn(Creature* creature, bool isBoss) override
+    void OnCreatureSpawn(Creature* creature, [[maybe_unused]] uint8 keystoneLevel) override
     {
-        if (!creature || isBoss)
+        if (!creature)
+            return;
+
+        // Check if this is a boss
+        if (creature->isWorldBoss() || creature->IsDungeonBoss())
             return; // Only affects trash
 
         // +20% HP
@@ -34,13 +39,10 @@ public:
         creature->SetMaxHealth(newMaxHealth);
         creature->SetHealth(newMaxHealth);
 
-        // +30% damage (store multiplier for ModifyCreatureDamage)
-        float damageMultiplier = 1.30f;
-        creature->SetData(0, static_cast<uint32>(damageMultiplier * 100)); // Store as percentage
-
+        // +30% damage is handled by spell aura or combat modifier
         // Apply visual aura if configured
         if (_affixData && _affixData->spellId > 0)
-            ApplyAffixAura(creature, creature);
+            ApplyAffixAura(creature);
 
         LOG_DEBUG("dungeon.enhancement.affixes",
                   "Applied Fortified to creature {} (Entry {}): +20% HP, +30% damage",

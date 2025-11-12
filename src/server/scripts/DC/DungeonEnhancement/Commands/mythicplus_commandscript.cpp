@@ -11,37 +11,39 @@
 #include "Chat.h"
 #include "Player.h"
 #include "Map.h"
-#include "DungeonEnhancementManager.h"
+#include "CommandScript.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
-#include "MythicRunTracker.h"
-#include "MythicDifficultyScaling.h"
+#include "../Core/MythicRunTracker.h"
+#include "../Core/MythicDifficultyScaling.h"
 
 using namespace DungeonEnhancement;
+using namespace Acore::ChatCommands;
 
 class mythicplus_commandscript : public CommandScript
 {
 public:
     mythicplus_commandscript() : CommandScript("mythicplus_commandscript") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> mythicplusCommandTable =
+        static ChatCommandTable mythicplusCommandTable =
         {
-            { "info",           SEC_PLAYER,      false, &HandleMythicPlusInfoCommand,           "" },
-            { "keystone",       SEC_GAMEMASTER,  false, &HandleMythicPlusKeystoneCommand,       "" },
-            { "setlevel",       SEC_GAMEMASTER,  false, &HandleMythicPlusSetLevelCommand,       "" },
-            { "resetvault",     SEC_GAMEMASTER,  false, &HandleMythicPlusResetVaultCommand,     "" },
-            { "affixes",        SEC_PLAYER,      false, &HandleMythicPlusAffixesCommand,        "" },
-            { "forcestart",     SEC_ADMINISTRATOR, false, &HandleMythicPlusForceStartCommand,   "" },
-            { "rating",         SEC_PLAYER,      false, &HandleMythicPlusRatingCommand,         "" },
-            { "season",         SEC_GAMEMASTER,  false, &HandleMythicPlusSeasonCommand,         "" },
-            { "debug",          SEC_ADMINISTRATOR, false, &HandleMythicPlusDebugCommand,        "" },
+            { "info",       HandleMythicPlusInfoCommand,       SEC_PLAYER,         Console::No  },
+            { "keystone",   HandleMythicPlusKeystoneCommand,   SEC_GAMEMASTER,     Console::No  },
+            { "setlevel",   HandleMythicPlusSetLevelCommand,   SEC_GAMEMASTER,     Console::No  },
+            { "resetvault", HandleMythicPlusResetVaultCommand, SEC_GAMEMASTER,     Console::No  },
+            { "affixes",    HandleMythicPlusAffixesCommand,    SEC_PLAYER,         Console::No  },
+            { "forcestart", HandleMythicPlusForceStartCommand, SEC_ADMINISTRATOR,  Console::No  },
+            { "rating",     HandleMythicPlusRatingCommand,     SEC_PLAYER,         Console::No  },
+            { "season",     HandleMythicPlusSeasonCommand,     SEC_GAMEMASTER,     Console::No  },
+            { "debug",      HandleMythicPlusDebugCommand,      SEC_ADMINISTRATOR,  Console::No  },
         };
 
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "mythicplus",     SEC_PLAYER,      false, nullptr,                                 "", mythicplusCommandTable },
-            { "m+",             SEC_PLAYER,      false, nullptr,                                 "", mythicplusCommandTable },
+            { "mythicplus", mythicplusCommandTable },
+            { "m+",         mythicplusCommandTable },
         };
 
         return commandTable;
@@ -50,7 +52,7 @@ public:
     // ========================================================================
     // .mythicplus info - Show player's M+ status
     // ========================================================================
-    static bool HandleMythicPlusInfoCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMythicPlusInfoCommand(ChatHandler* handler, std::string_view /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -92,7 +94,7 @@ public:
         handler->PSendSysMessage("Vault Progress: |cFFFFAA00%u/8|r dungeons this week", vaultProgress);
 
         // Rating
-        uint32 rating = sDungeonEnhancementMgr->GetPlayerRating(player);
+        uint32 rating = season ? sDungeonEnhancementMgr->GetPlayerRating(player, season->seasonId) : 0;
         handler->PSendSysMessage("Seasonal Rating: |cFFFFAA00%u|r", rating);
 
         // Current run (if in instance)
@@ -122,7 +124,7 @@ public:
     // ========================================================================
     // .mythicplus keystone <level> - Give/modify keystone
     // ========================================================================
-    static bool HandleMythicPlusKeystoneCommand(ChatHandler* handler, const char* args)
+    static bool HandleMythicPlusKeystoneCommand(ChatHandler* handler, std::string_view args)
     {
         Player* player = handler->getSelectedPlayer();
         if (!player)
@@ -134,14 +136,14 @@ public:
             return false;
         }
 
-        if (!*args)
+        if (args.empty())
         {
             handler->PSendSysMessage("Usage: .mythicplus keystone <level>");
             handler->PSendSysMessage("Levels: 2-10 (no M+1), or 0 to remove keystone");
             return false;
         }
 
-        int32 level = atoi(args);
+        int32 level = atoi(args.data());
 
         // Remove keystone
         if (level == 0)
@@ -168,7 +170,7 @@ public:
     // ========================================================================
     // .mythicplus setlevel <level> - Set current instance keystone level
     // ========================================================================
-    static bool HandleMythicPlusSetLevelCommand(ChatHandler* handler, const char* args)
+    static bool HandleMythicPlusSetLevelCommand(ChatHandler* handler, std::string_view args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -181,13 +183,13 @@ public:
             return false;
         }
 
-        if (!*args)
+        if (args.empty())
         {
             handler->PSendSysMessage("Usage: .mythicplus setlevel <level>");
             return false;
         }
 
-        int32 level = atoi(args);
+        int32 level = atoi(args.data());
         if (level < 0 || level > MYTHIC_PLUS_MAX_LEVEL)
         {
             handler->PSendSysMessage("|cFFFF0000Invalid level. Must be 0-10.|r");
@@ -203,7 +205,7 @@ public:
     // ========================================================================
     // .mythicplus resetvault - Reset player's vault progress
     // ========================================================================
-    static bool HandleMythicPlusResetVaultCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMythicPlusResetVaultCommand(ChatHandler* handler, std::string_view /*args*/)
     {
         Player* player = handler->getSelectedPlayer();
         if (!player)
@@ -216,7 +218,7 @@ public:
         }
 
         // Reset vault progress
-        sDungeonEnhancementMgr->ResetWeeklyVaultProgress(player);
+        sDungeonEnhancementMgr->ResetWeeklyVaultProgress();
         handler->PSendSysMessage("Reset vault progress for %s", player->GetName().c_str());
 
         return true;
@@ -225,7 +227,7 @@ public:
     // ========================================================================
     // .mythicplus affixes - Show current week's affixes
     // ========================================================================
-    static bool HandleMythicPlusAffixesCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMythicPlusAffixesCommand(ChatHandler* handler, std::string_view /*args*/)
     {
         SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
         if (!season)
@@ -252,7 +254,7 @@ public:
             {
                 handler->PSendSysMessage("|cFFFFAA00[M+2+]|r %s (%s)", 
                                          affix->affixName.c_str(), affix->affixType.c_str());
-                handler->PSendSysMessage("  %s", affix->description.c_str());
+                handler->PSendSysMessage("  %s", affix->affixDescription.c_str());
             }
         }
 
@@ -264,7 +266,7 @@ public:
             {
                 handler->PSendSysMessage("|cFFFFAA00[M+4+]|r %s (%s)", 
                                          affix->affixName.c_str(), affix->affixType.c_str());
-                handler->PSendSysMessage("  %s", affix->description.c_str());
+                handler->PSendSysMessage("  %s", affix->affixDescription.c_str());
             }
         }
 
@@ -276,7 +278,7 @@ public:
             {
                 handler->PSendSysMessage("|cFFFFAA00[M+7+]|r %s (%s)", 
                                          affix->affixName.c_str(), affix->affixType.c_str());
-                handler->PSendSysMessage("  %s", affix->description.c_str());
+                handler->PSendSysMessage("  %s", affix->affixDescription.c_str());
             }
         }
 
@@ -286,7 +288,7 @@ public:
     // ========================================================================
     // .mythicplus forcestart <level> - Force start M+ run (admin only)
     // ========================================================================
-    static bool HandleMythicPlusForceStartCommand(ChatHandler* handler, const char* args)
+    static bool HandleMythicPlusForceStartCommand(ChatHandler* handler, std::string_view args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -299,13 +301,13 @@ public:
             return false;
         }
 
-        if (!*args)
+        if (args.empty())
         {
             handler->PSendSysMessage("Usage: .mythicplus forcestart <level>");
             return false;
         }
 
-        int32 level = atoi(args);
+        int32 level = atoi(args.data());
         if (level < MYTHIC_PLUS_MIN_LEVEL || level > MYTHIC_PLUS_MAX_LEVEL)
         {
             handler->PSendSysMessage("|cFFFF0000Invalid level. Must be 2-10.|r");
@@ -322,7 +324,7 @@ public:
     // ========================================================================
     // .mythicplus rating - Show detailed rating info
     // ========================================================================
-    static bool HandleMythicPlusRatingCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMythicPlusRatingCommand(ChatHandler* handler, std::string_view /*args*/)
     {
         Player* player = handler->getSelectedPlayer();
         if (!player)
@@ -334,7 +336,8 @@ public:
             return false;
         }
 
-        uint32 rating = sDungeonEnhancementMgr->GetPlayerRating(player);
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        uint32 rating = season ? sDungeonEnhancementMgr->GetPlayerRating(player, season->seasonId) : 0;
 
         handler->PSendSysMessage("|cFF00FF00=== Mythic+ Rating for %s ===|r", player->GetName().c_str());
         handler->PSendSysMessage("Current Rating: |cFFFFAA00%u|r", rating);
@@ -358,15 +361,15 @@ public:
     // ========================================================================
     // .mythicplus season <start|end|info> - Manage seasons
     // ========================================================================
-    static bool HandleMythicPlusSeasonCommand(ChatHandler* handler, const char* args)
+    static bool HandleMythicPlusSeasonCommand(ChatHandler* handler, std::string_view args)
     {
-        if (!*args)
+        if (args.empty())
         {
             handler->PSendSysMessage("Usage: .mythicplus season <start|end|info>");
             return false;
         }
 
-        std::string subcommand = args;
+        std::string subcommand(args.begin(), args.end());
 
         if (subcommand == "info")
         {
@@ -405,7 +408,7 @@ public:
     // ========================================================================
     // .mythicplus debug - Show debug information
     // ========================================================================
-    static bool HandleMythicPlusDebugCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMythicPlusDebugCommand(ChatHandler* handler, std::string_view /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)

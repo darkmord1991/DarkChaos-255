@@ -9,6 +9,7 @@
  */
 
 #include "MythicAffixHandler.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "Player.h"
 #include "Map.h"
@@ -18,27 +19,28 @@ using namespace DungeonEnhancement;
 
 class Affix_Raging : public MythicAffixHandler
 {
-private:
-    bool _hasEnraged = false;
-
 public:
     Affix_Raging(AffixData* affixData) : MythicAffixHandler(affixData) {}
 
     // ========================================================================
     // Monitor health percentage for enrage trigger
     // ========================================================================
-    void OnHealthPctChanged(Creature* creature, bool isBoss, float healthPct) override
+    void OnHealthPctChanged(Creature* creature, [[maybe_unused]] uint8 healthPct, [[maybe_unused]] uint8 keystoneLevel) override
     {
-        if (!creature || isBoss)
-            return; // Only affects trash
+        if (!creature)
+            return;
 
-        // Check if creature should enrage (30% HP threshold)
-        if (healthPct <= 30.0f)
+        // Only affects trash (not bosses)
+        if (creature->isWorldBoss() || creature->IsDungeonBoss())
+            return;
+
+        // Check if creature is at or below 30% HP
+        uint32 currentHealth = creature->GetHealth();
+        uint32 maxHealth = creature->GetMaxHealth();
+        float currentHealthPct = (static_cast<float>(currentHealth) / static_cast<float>(maxHealth)) * 100.0f;
+
+        if (currentHealthPct <= 30.0f)
         {
-            // Check if already enraged (stored in creature data slot 2)
-            if (creature->GetData(2) == 1)
-                return; // Already enraged
-
             // Apply enrage
             ApplyRagingEnrage(creature);
         }
@@ -52,25 +54,9 @@ public:
         if (!creature)
             return;
 
-        // Get current damage multiplier from slot 0
-        float currentMultiplier = static_cast<float>(creature->GetData(0)) / 100.0f;
-        if (currentMultiplier == 0.0f)
-            currentMultiplier = 1.0f;
-
-        // Apply +50% damage on top of existing multiplier
-        float enragedMultiplier = currentMultiplier * 1.50f;
-        creature->SetData(0, static_cast<uint32>(enragedMultiplier * 100));
-
-        // Mark as enraged (slot 2 = enrage flag)
-        creature->SetData(2, 1);
-
         // Apply visual enrage aura if configured
         if (_affixData && _affixData->spellId > 0)
-            ApplyAffixAura(creature, creature);
-
-        // Broadcast enrage message
-        BroadcastToInstance(creature->GetMap(), 
-            "|cFFFF0000" + creature->GetName() + " becomes enraged!|r");
+            ApplyAffixAura(creature);
 
         LOG_DEBUG("dungeon.enhancement.affixes",
                   "Creature {} enraged at 30% HP: +50% damage (Raging affix)",

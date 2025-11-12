@@ -117,8 +117,29 @@ namespace DungeonEnhancement
     };
 
     // ========================================================================
-    // TITLE IDS (600-609 range)
+    // SPELL IDS (Custom affix spells)
     // ========================================================================
+    enum SpellIds : uint32
+    {
+        SPELL_BOLSTERING         = 800010,  // Bolstering affix spell
+        SPELL_NECROTIC_WOUND     = 800011,  // Necrotic Wound affix spell
+        SPELL_GRIEVOUS_WOUND     = 800012   // Grievous Wound affix spell
+    };
+
+    // ========================================================================
+    // AFFIX IDS (Mythic+ affixes)
+    // ========================================================================
+    enum AffixIds : uint32
+    {
+        AFFIX_TYRANNICAL    = 1,  // Boss affix (+40% HP, +15% damage)
+        AFFIX_FORTIFIED     = 2,  // Trash affix (+20% HP, +30% damage)
+        AFFIX_BOLSTERING    = 3,  // Trash affix (20% HP/damage stacking)
+        AFFIX_RAGING        = 4,  // Trash affix (+50% damage at 30% HP)
+        AFFIX_SANGUINE      = 5,  // Trash affix (blood pools on death)
+        AFFIX_NECROTIC      = 6,  // Debuff affix (stacking melee damage)
+        AFFIX_VOLCANIC      = 7,  // Environmental affix (volcanic plumes)
+        AFFIX_GRIEVOUS      = 8   // Debuff affix (DoT below 90% HP)
+    };
     enum TitleIds : uint32
     {
         TITLE_S1_KEYSTONE_MASTER = 600,  // "S1 Keystone Master"

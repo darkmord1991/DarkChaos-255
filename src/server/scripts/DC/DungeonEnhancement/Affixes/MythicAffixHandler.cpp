@@ -8,7 +8,7 @@
  */
 
 #include "MythicAffixHandler.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "Player.h"
 #include "SpellInfo.h"
@@ -62,7 +62,7 @@ namespace DungeonEnhancement
 
     std::string MythicAffixHandler::GetAffixDescription() const
     {
-        return _affixData ? _affixData->description : "";
+        return _affixData ? _affixData->affixDescription : "";
     }
 
     std::string MythicAffixHandler::GetAffixType() const
@@ -131,14 +131,16 @@ namespace DungeonEnhancement
         if (!creature)
             return creatures;
 
-        Trinity::AllCreaturesOfEntryInRange check(creature, 0, range);
-        Trinity::CreatureListSearcher<Trinity::AllCreaturesOfEntryInRange> searcher(creature, creatures, check);
-        Cell::VisitGridObjects(creature, searcher, range);
+        // Get all creatures within range using native AzerothCore API
+        std::list<Creature*> nearbyCreatures;
+        creature->GetCreatureListWithEntryInGrid(nearbyCreatures, 0, range);
 
         // Filter to only friendly creatures
-        creatures.remove_if([creature](Creature* c) {
-            return !creature->IsFriendlyTo(c);
-        });
+        for (Creature* c : nearbyCreatures)
+        {
+            if (c && creature->IsFriendlyTo(c))
+                creatures.push_back(c);
+        }
 
         return creatures;
     }
@@ -150,19 +152,23 @@ namespace DungeonEnhancement
         if (!creature)
             return players;
 
-        Trinity::AnyPlayerInObjectRangeCheck check(creature, range);
-        Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(creature, players, check);
-        Cell::VisitWorldObjects(creature, searcher, range);
+        // Get players within range from the creature's map
+        Map* map = creature->GetMap();
+        if (!map)
+            return players;
 
-        // Filter to only enemy players
-        players.remove_if([creature](Player* p) {
-            return !creature->IsHostileTo(p);
-        });
+        // Search all players on the map within range
+        for (auto& player : map->GetPlayers())
+        {
+            Player* p = player.GetSource();
+            if (p && creature->GetDistance(p) <= range && creature->IsHostileTo(p))
+                players.push_back(p);
+        }
 
         return players;
     }
 
-    void MythicAffixHandler::BroadcastToInstance(Creature* creature, const std::string& message, uint32 color) const
+    void MythicAffixHandler::BroadcastToInstance(Creature* creature, const std::string& message, [[maybe_unused]] uint32 color) const
     {
         if (!creature)
             return;

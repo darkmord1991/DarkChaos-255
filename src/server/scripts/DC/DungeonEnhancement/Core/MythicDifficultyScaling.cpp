@@ -14,6 +14,7 @@
 #include "Unit.h"
 #include "Player.h"
 #include "InstanceScript.h"
+#include "MapMgr.h"
 #include "Log.h"
 
 namespace DungeonEnhancement
@@ -41,9 +42,9 @@ namespace DungeonEnhancement
         creature->SetMaxHealth(newMaxHealth);
         creature->SetHealth(newMaxHealth);
         
-        // Store damage multiplier in creature's data for combat hooks
-        // Note: Actual damage modification happens in ModifyCreatureDamage()
-        creature->SetData(0, static_cast<uint32>(damageMultiplier * 100.0f));  // Store as percentage
+        // Store damage multiplier for OnDamage hook (stored as 100x value in POWER_ENERGY)
+        uint32 multiplierData = static_cast<uint32>(damageMultiplier * 100.0f);
+        creature->SetPower(POWER_ENERGY, multiplierData);
         
         // Apply affix-based scaling if in M+ dungeon
         if (keystoneLevel >= MYTHIC_PLUS_MIN_LEVEL)
@@ -56,7 +57,7 @@ namespace DungeonEnhancement
                  creature->GetEntry(), mapId, keystoneLevel, hpMultiplier, damageMultiplier);
     }
     
-    float MythicDifficultyScaling::CalculateHPMultiplier(uint16 mapId, uint8 keystoneLevel, bool isBoss)
+    float MythicDifficultyScaling::CalculateHPMultiplier(uint16 mapId, uint8 keystoneLevel, [[maybe_unused]] bool isBoss)
     {
         // Base multiplier from dungeon config
         float multiplier = sDungeonEnhancementMgr->GetDungeonScalingMultiplier(mapId, keystoneLevel, true);
@@ -65,7 +66,7 @@ namespace DungeonEnhancement
         return multiplier;
     }
     
-    float MythicDifficultyScaling::CalculateDamageMultiplier(uint16 mapId, uint8 keystoneLevel, bool isBoss)
+    float MythicDifficultyScaling::CalculateDamageMultiplier(uint16 mapId, uint8 keystoneLevel, [[maybe_unused]] bool isBoss)
     {
         // Base multiplier from dungeon config
         float multiplier = sDungeonEnhancementMgr->GetDungeonScalingMultiplier(mapId, keystoneLevel, false);
@@ -117,12 +118,11 @@ namespace DungeonEnhancement
             // Apply affix damage modifier
             if (affix->damageModifierPercent > 0.0f)
             {
-                // Store additional damage modifier in creature's data
-                uint32 currentModifier = creature->GetData(0);
-                float currentMultiplier = currentModifier / 100.0f;
-                float affixMultiplier = 1.0f + (affix->damageModifierPercent / 100.0f);
-                float combinedMultiplier = currentMultiplier * affixMultiplier;
-                creature->SetData(0, static_cast<uint32>(combinedMultiplier * 100.0f));
+                // Damage modification is handled through affix scripts, not stored in creature data
+                // Creature::SetData/GetData doesn't exist in AzerothCore
+                LOG_INFO(LogCategory::AFFIXES, 
+                         "Affix '%s' damage modifier (%.1f%%) handled by affix mechanics for creature %u", 
+                         affix->affixName.c_str(), affix->damageModifierPercent, creature->GetEntry());
             }
             
             // Apply spell/aura if defined
@@ -154,8 +154,9 @@ namespace DungeonEnhancement
         if (!victim->ToPlayer())
             return;
         
-        // Get stored damage multiplier from creature data
-        uint32 multiplierData = creature->GetData(0);
+        // Get stored damage multiplier from creature power (using POWER_ENERGY as storage)
+        // Multiplier is stored as 100x the value (e.g., 150 means 1.5x)
+        uint32 multiplierData = creature->GetPower(POWER_ENERGY);
         if (multiplierData == 0)
             return;  // No scaling applied
         
@@ -176,8 +177,8 @@ namespace DungeonEnhancement
         if (!creature)
             return false;
         
-        // Check if creature has scaling data set
-        return creature->GetData(0) > 0;
+        // Check if creature has scaling data set (stored in POWER_ENERGY)
+        return creature->GetPower(POWER_ENERGY) > 0;
     }
     
     // ========================================================================
@@ -194,7 +195,11 @@ namespace DungeonEnhancement
         if (!map || !map->IsDungeon())
             return 0;
         
-        InstanceScript* instance = map->GetInstanceScript();
+        InstanceMap* instanceMap = map->ToInstanceMap();
+        if (!instanceMap)
+            return 0;
+        
+        InstanceScript* instance = instanceMap->GetInstanceData();
         if (!instance)
             return 0;
         
@@ -208,7 +213,11 @@ namespace DungeonEnhancement
         if (!map || !map->IsDungeon())
             return;
         
-        InstanceScript* instance = map->GetInstanceScript();
+        InstanceMap* instanceMap = map->ToInstanceMap();
+        if (!instanceMap)
+            return;
+        
+        InstanceScript* instance = instanceMap->GetInstanceData();
         if (!instance)
             return;
         

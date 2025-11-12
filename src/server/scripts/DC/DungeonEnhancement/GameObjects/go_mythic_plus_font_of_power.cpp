@@ -19,7 +19,7 @@
 #include "../Core/DungeonEnhancementConstants.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicRunTracker.h"
-#include "MythicAffixFactory.h"
+#include "../Affixes/MythicAffixFactory.h"
 
 using namespace DungeonEnhancement;
 

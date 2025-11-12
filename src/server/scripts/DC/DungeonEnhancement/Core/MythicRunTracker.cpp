@@ -14,7 +14,7 @@
 #include "Map.h"
 #include "InstanceScript.h"
 #include "WorldSession.h"
-#include "MythicAffixFactory.h"
+#include "../Affixes/MythicAffixFactory.h"
 #include "Chat.h"
 #include "Log.h"
 
@@ -62,7 +62,7 @@ namespace DungeonEnhancement
         runData.timerLimitSeconds = GetTimerLimit(mapId);
         runData.requiredBosses = config->bossCount;
         runData.keystoneOwnerGUID = keystoneOwner->GetGUID();
-        runData.keystoneItemEntry = ITEM_MYTHIC_PLUS_KEYSTONE_BASE + keystoneLevel;
+        runData.keystoneItemEntry = ITEM_KEYSTONE_BASE + keystoneLevel;
         
         // Add group members as participants
         Group* group = keystoneOwner->GetGroup();

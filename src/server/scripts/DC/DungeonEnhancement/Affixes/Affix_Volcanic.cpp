@@ -9,6 +9,7 @@
  */
 
 #include "MythicAffixHandler.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "Player.h"
 #include "Map.h"
@@ -21,43 +22,21 @@ using namespace DungeonEnhancement;
 
 class Affix_Volcanic : public MythicAffixHandler
 {
-private:
-    uint32 _lastTickTime = 0;
-    const uint32 VOLCANIC_TICK_INTERVAL = 5000; // 5 seconds between plume spawns
-
 public:
     Affix_Volcanic(AffixData* affixData) : MythicAffixHandler(affixData) {}
 
     // ========================================================================
-    // Periodic tick: Spawn volcanic plumes every 5 seconds
+    // Periodic tick: Spawn volcanic plumes for ranged players
     // ========================================================================
-    void OnPeriodicTick(Map* map) override
+    void OnPeriodicTick(Player* player, [[maybe_unused]] uint8 keystoneLevel) override
     {
-        if (!map)
+        if (!player || !player->IsAlive())
             return;
 
-        uint32 currentTime = GameTime::GetGameTimeMS();
-        if (currentTime - _lastTickTime < VOLCANIC_TICK_INTERVAL)
-            return;
-
-        _lastTickTime = currentTime;
-
-        // Get all players in the instance
-        Map::PlayerList const& players = map->GetPlayers();
-        if (players.isEmpty())
-            return;
-
-        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        // Check if player is ranged (>8 yards from all enemies)
+        if (IsPlayerRanged(player))
         {
-            Player* player = itr->GetSource();
-            if (!player || !player->IsAlive())
-                continue;
-
-            // Check if player is ranged (>8 yards from all enemies)
-            if (IsPlayerRanged(player))
-            {
-                SpawnVolcanicPlume(player);
-            }
+            SpawnVolcanicPlume(player);
         }
     }
 
@@ -88,8 +67,6 @@ public:
         if (!map)
             return;
 
-        Position plumePos = player->GetPosition();
-
         // Spawn visual GameObject (lava geyser) and apply damage
         // Note: This requires a custom GameObject with spell cast on interact/proximity
         // For now, we'll just apply direct damage
@@ -98,7 +75,7 @@ public:
         uint32 damage = static_cast<uint32>(player->GetMaxHealth() * 0.50f);
         
         // Apply damage with fire school
-        player->DealDamage(player, damage, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
+        Unit::DealDamage(player, player, damage, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
         
         // Visual effect spell (if configured)
         if (_affixData && _affixData->spellId > 0)
@@ -107,9 +84,6 @@ public:
         LOG_DEBUG("dungeon.enhancement.affixes",
                   "Volcanic plume spawned beneath player {} (dealt {} fire damage)",
                   player->GetName(), damage);
-
-        // Send warning message
-        player->SendDirectMessage("|cFFFF0000Volcanic plume erupts beneath you!|r");
     }
 };
 

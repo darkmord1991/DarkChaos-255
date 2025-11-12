@@ -9,6 +9,7 @@
  */
 
 #include "MythicAffixHandler.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "Player.h"
 #include "Map.h"
@@ -28,14 +29,10 @@ public:
     // ========================================================================
     // Apply Necrotic stacks on player damage (from melee attacks)
     // ========================================================================
-    void OnPlayerDamaged(Player* player, Creature* attacker, uint32& damage) override
+    void OnPlayerDamaged(Player* player, [[maybe_unused]] Unit* attacker, [[maybe_unused]] uint32& damage, [[maybe_unused]] uint8 keystoneLevel) override
     {
-        if (!player || !attacker)
+        if (!player)
             return;
-
-        // Only apply from melee attacks (not spells)
-        // This check would require accessing the damage source type
-        // For simplicity, we apply from all damage sources for now
 
         // Apply or stack Necrotic debuff
         ApplyNecroticStack(player);

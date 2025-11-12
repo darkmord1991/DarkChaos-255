@@ -42,7 +42,7 @@ namespace DungeonEnhancement
          * @param creature The spawned creature
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnCreatureSpawn(Creature* creature, uint8 keystoneLevel) { }
+        virtual void OnCreatureSpawn([[maybe_unused]] Creature* creature, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called when a creature dies in a Mythic+ dungeon
@@ -51,7 +51,7 @@ namespace DungeonEnhancement
          * @param killer The unit that killed the creature
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnCreatureDeath(Creature* creature, Unit* killer, uint8 keystoneLevel) { }
+        virtual void OnCreatureDeath([[maybe_unused]] Creature* creature, [[maybe_unused]] Unit* killer, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called when a creature deals damage in a Mythic+ dungeon
@@ -61,7 +61,7 @@ namespace DungeonEnhancement
          * @param damage Reference to damage amount (modify this)
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnDamageDealt(Creature* attacker, Unit* victim, uint32& damage, uint8 keystoneLevel) { }
+        virtual void OnDamageDealt([[maybe_unused]] Creature* attacker, [[maybe_unused]] Unit* victim, [[maybe_unused]] uint32& damage, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called when a player takes damage in a Mythic+ dungeon
@@ -71,7 +71,7 @@ namespace DungeonEnhancement
          * @param damage Reference to damage amount (modify this)
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnPlayerDamaged(Player* victim, Unit* attacker, uint32& damage, uint8 keystoneLevel) { }
+        virtual void OnPlayerDamaged([[maybe_unused]] Player* victim, [[maybe_unused]] Unit* attacker, [[maybe_unused]] uint32& damage, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called periodically (every 1 second) for environmental affixes
@@ -79,7 +79,7 @@ namespace DungeonEnhancement
          * @param player The player to affect
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnPeriodicTick(Player* player, uint8 keystoneLevel) { }
+        virtual void OnPeriodicTick([[maybe_unused]] Player* player, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called when a creature enters combat
@@ -87,7 +87,7 @@ namespace DungeonEnhancement
          * @param creature The creature entering combat
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnEnterCombat(Creature* creature, uint8 keystoneLevel) { }
+        virtual void OnEnterCombat([[maybe_unused]] Creature* creature, [[maybe_unused]] uint8 keystoneLevel) { }
 
         /**
          * Called when a creature's health percentage changes
@@ -96,7 +96,7 @@ namespace DungeonEnhancement
          * @param healthPct Current health percentage
          * @param keystoneLevel The active keystone level
          */
-        virtual void OnHealthPctChanged(Creature* creature, uint8 healthPct, uint8 keystoneLevel) { }
+        virtual void OnHealthPctChanged([[maybe_unused]] Creature* creature, [[maybe_unused]] uint8 healthPct, [[maybe_unused]] uint8 keystoneLevel) { }
 
         // ====================================================================
         // HELPER METHODS (Available to all derived classes)

@@ -11,7 +11,7 @@
 #define MYTHIC_AFFIX_FACTORY_H
 
 #include "MythicAffixHandler.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include <unordered_map>
 #include <functional>
 #include <memory>
@@ -83,16 +83,15 @@ namespace DungeonEnhancement
             std::vector<MythicAffixHandler*> handlers;
 
             // Get current active affixes from manager
-            std::vector<uint32> activeAffixIds = 
+            std::vector<AffixData*> activeAffixes = 
                 sDungeonEnhancementMgr->GetCurrentActiveAffixes(keystoneLevel);
 
-            for (uint32 affixId : activeAffixIds)
+            for (AffixData* affixData : activeAffixes)
             {
-                AffixData* affixData = sDungeonEnhancementMgr->GetAffixById(affixId);
                 if (!affixData)
                     continue;
 
-                MythicAffixHandler* handler = CreateHandler(affixId, affixData);
+                MythicAffixHandler* handler = CreateHandler(affixData->affixId, affixData);
                 if (handler)
                     handlers.push_back(handler);
             }
@@ -155,75 +154,75 @@ namespace DungeonEnhancement
         /**
          * Call OnCreatureSpawn for all active handlers
          */
-        void OnCreatureSpawn(uint32 instanceId, Creature* creature, bool isBoss)
+        void OnCreatureSpawn(uint32 instanceId, Creature* creature, [[maybe_unused]] bool isBoss, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
             {
-                if (handler->ShouldAffectCreature(creature, isBoss))
-                    handler->OnCreatureSpawn(creature, isBoss);
+                if (handler->ShouldAffectCreature(creature))
+                    handler->OnCreatureSpawn(creature, keystoneLevel);
             }
         }
 
         /**
          * Call OnCreatureDeath for all active handlers
          */
-        void OnCreatureDeath(uint32 instanceId, Creature* creature, bool isBoss)
+        void OnCreatureDeath(uint32 instanceId, Creature* creature, Unit* killer, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
             {
-                if (handler->ShouldAffectCreature(creature, isBoss))
-                    handler->OnCreatureDeath(creature, isBoss);
+                if (handler->ShouldAffectCreature(creature))
+                    handler->OnCreatureDeath(creature, killer, keystoneLevel);
             }
         }
 
         /**
          * Call OnDamageDealt for all active handlers
          */
-        void OnDamageDealt(uint32 instanceId, Creature* attacker, Unit* victim, uint32& damage)
+        void OnDamageDealt(uint32 instanceId, Creature* attacker, Unit* victim, uint32& damage, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
-                handler->OnDamageDealt(attacker, victim, damage);
+                handler->OnDamageDealt(attacker, victim, damage, keystoneLevel);
         }
 
         /**
          * Call OnPlayerDamaged for all active handlers
          */
-        void OnPlayerDamaged(uint32 instanceId, Player* player, Creature* attacker, uint32& damage)
+        void OnPlayerDamaged(uint32 instanceId, Player* player, Unit* attacker, uint32& damage, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
-                handler->OnPlayerDamaged(player, attacker, damage);
+                handler->OnPlayerDamaged(player, attacker, damage, keystoneLevel);
         }
 
         /**
          * Call OnPeriodicTick for all active handlers
          */
-        void OnPeriodicTick(uint32 instanceId, Map* map)
+        void OnPeriodicTick(uint32 instanceId, Player* player, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
-                handler->OnPeriodicTick(map);
+                handler->OnPeriodicTick(player, keystoneLevel);
         }
 
         /**
          * Call OnEnterCombat for all active handlers
          */
-        void OnEnterCombat(uint32 instanceId, Creature* creature, bool isBoss)
+        void OnEnterCombat(uint32 instanceId, Creature* creature, [[maybe_unused]] bool isBoss, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
             {
-                if (handler->ShouldAffectCreature(creature, isBoss))
-                    handler->OnEnterCombat(creature, isBoss);
+                if (handler->ShouldAffectCreature(creature))
+                    handler->OnEnterCombat(creature, keystoneLevel);
             }
         }
 
         /**
          * Call OnHealthPctChanged for all active handlers
          */
-        void OnHealthPctChanged(uint32 instanceId, Creature* creature, bool isBoss, float healthPct)
+        void OnHealthPctChanged(uint32 instanceId, Creature* creature, uint8 healthPct, uint8 keystoneLevel)
         {
             for (MythicAffixHandler* handler : GetInstanceHandlers(instanceId))
             {
-                if (handler->ShouldAffectCreature(creature, isBoss))
-                    handler->OnHealthPctChanged(creature, isBoss, healthPct);
+                if (handler->ShouldAffectCreature(creature))
+                    handler->OnHealthPctChanged(creature, healthPct, keystoneLevel);
             }
         }
 

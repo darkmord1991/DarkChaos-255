@@ -9,7 +9,7 @@
  */
 
 #include "MythicAffixHandler.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "Creature.h"
 #include "SpellInfo.h"
 #include "Log.h"
@@ -24,10 +24,13 @@ namespace DungeonEnhancement
     public:
         Affix_Bolstering(AffixData* data) : MythicAffixHandler(data) { }
 
-        void OnCreatureDeath(Creature* creature, Unit* killer, uint8 keystoneLevel) override
+        void OnCreatureDeath(Creature* creature, [[maybe_unused]] Unit* killer, [[maybe_unused]] uint8 keystoneLevel) override
         {
             // Only trigger on trash deaths
-            if (!creature || IsBoss(creature))
+            if (!creature)
+                return;
+            
+            if (IsBoss(creature))
                 return;
 
             // Get nearby friendly trash mobs (within 30 yards)
@@ -69,21 +72,11 @@ namespace DungeonEnhancement
             uint32 healthIncrease = newMaxHealth - currentMaxHealth;
             creature->SetHealth(currentHealth + healthIncrease);
 
-            // Increase damage by 20%
-            uint32 currentMultiplier = creature->GetData(0);
-            float currentDamageMultiplier = (currentMultiplier > 0) ? (currentMultiplier / 100.0f) : 1.0f;
-            float bolsteringMultiplier = currentDamageMultiplier * 1.20f;
-            creature->SetData(0, static_cast<uint32>(bolsteringMultiplier * 100.0f));
-
             // Apply visual buff aura (stacking)
             if (SPELL_BOLSTERING_BUFF > 0)
             {
                 creature->AddAura(SPELL_BOLSTERING_BUFF, creature);
             }
-
-            // Optional: Store bolstering stack count for visual feedback
-            uint32 stackCount = creature->GetData(1);  // Using data slot 1 for stack count
-            creature->SetData(1, stackCount + 1);
         }
     };
 

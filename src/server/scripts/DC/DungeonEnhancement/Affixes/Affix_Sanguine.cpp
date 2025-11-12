@@ -27,16 +27,18 @@ public:
     // ========================================================================
     // Spawn blood pool on trash death
     // ========================================================================
-    void OnCreatureDeath(Creature* creature, bool isBoss) override
+    void OnCreatureDeath(Creature* creature, [[maybe_unused]] Unit* killer, [[maybe_unused]] uint8 keystoneLevel) override
     {
-        if (!creature || isBoss)
-            return; // Only affects trash
+        if (!creature)
+            return;
+
+        // Only affects trash (not bosses)
+        if (creature->isWorldBoss() || creature->IsDungeonBoss())
+            return;
 
         Map* map = creature->GetMap();
         if (!map)
             return;
-
-        Position deathPos = creature->GetPosition();
 
         // Spawn blood pool at death location (30 second duration)
         // Note: This requires a custom creature template with periodic aura effects
@@ -58,9 +60,8 @@ public:
         }
         */
 
-        // Broadcast pool spawn message
-        BroadcastToInstance(map, 
-            "|cFFFF0000A pool of blood forms on the ground!|r");
+        LOG_DEBUG("dungeon.enhancement.affixes",
+                  "Blood pool spawned at death location");
     }
 };
 
