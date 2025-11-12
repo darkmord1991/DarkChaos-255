@@ -227,6 +227,12 @@ namespace DungeonEnhancement
         bool UpgradePlayerKeystone(Player* player, uint8 newLevel);
         bool DowngradePlayerKeystone(Player* player);
         
+    // ====================================================================
+    // PLAYER PREFERENCES
+    // ====================================================================
+    uint8 GetPlayerPreferredMythicLevel(Player* player);
+    void SetPlayerPreferredMythicLevel(Player* player, uint8 level);
+        
         // ====================================================================
         // VAULT SYSTEM
         // ====================================================================

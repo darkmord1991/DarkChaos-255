@@ -16,6 +16,7 @@
 #include "Config.h"
 #include "Item.h"
 #include "Group.h"
+#include "Chat.h"
 #include <cstdarg>
 #include <ctime>
 
@@ -776,6 +777,47 @@ namespace DungeonEnhancement
             return false;  // Can't downgrade below M+2
         
         return GivePlayerKeystone(player, currentLevel - 1);
+    }
+
+    uint8 DungeonEnhancementManager::GetPlayerPreferredMythicLevel(Player* player)
+    {
+        if (!player)
+            return MYTHIC_PLUS_MIN_LEVEL;
+
+        PlayerSetting setting = player->GetPlayerSetting(PlayerSettings::SOURCE, PlayerSettings::MYTHIC_PLUS_LEVEL_INDEX);
+        uint32 storedLevel = setting.value;
+
+        if (storedLevel < MYTHIC_PLUS_MIN_LEVEL || storedLevel > MYTHIC_PLUS_MAX_LEVEL)
+        {
+            storedLevel = MYTHIC_PLUS_MIN_LEVEL;
+            player->UpdatePlayerSetting(PlayerSettings::SOURCE, PlayerSettings::MYTHIC_PLUS_LEVEL_INDEX, storedLevel);
+        }
+
+        return static_cast<uint8>(storedLevel);
+    }
+
+    void DungeonEnhancementManager::SetPlayerPreferredMythicLevel(Player* player, uint8 level)
+    {
+        if (!player)
+            return;
+
+        if (level < MYTHIC_PLUS_MIN_LEVEL)
+            level = MYTHIC_PLUS_MIN_LEVEL;
+        else if (level > MYTHIC_PLUS_MAX_LEVEL)
+            level = MYTHIC_PLUS_MAX_LEVEL;
+
+        uint8 current = GetPlayerPreferredMythicLevel(player);
+        if (current == level)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("Mythic+ preference remains at Mythic+%u.", static_cast<uint32>(level));
+            return;
+        }
+
+        player->UpdatePlayerSetting(PlayerSettings::SOURCE, PlayerSettings::MYTHIC_PLUS_LEVEL_INDEX, level);
+
+        ChatHandler(player->GetSession()).PSendSysMessage("Mythic+ preference saved: Mythic+%u.", static_cast<uint32>(level));
+        LogInfo(LogCategory::MYTHIC_PLUS, "Player %s set Mythic+ preference to M+%u",
+                player->GetName().c_str(), static_cast<uint32>(level));
     }
 
     // ========================================================================

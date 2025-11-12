@@ -50,9 +50,57 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include <string>
 #include <zlib.h>
 
 #include "Corpse.h"
+
+namespace
+{
+    std::string GetDungeonDifficultyLabel(Difficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case DUNGEON_DIFFICULTY_NORMAL:
+                return "5 Player";
+            case DUNGEON_DIFFICULTY_HEROIC:
+                return "5 Player (Heroic)";
+            case DUNGEON_DIFFICULTY_EPIC:
+                return "5 Player (Epic)";
+            case DUNGEON_DIFFICULTY_MYTHIC:
+                return "5 Player (Mythic)";
+            case DUNGEON_DIFFICULTY_MYTHIC_PLUS:
+                return "5 Player (Mythic+)";
+            default:
+                break;
+        }
+
+        return "Unknown";
+    }
+
+    std::string GetRaidDifficultyLabel(Difficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case RAID_DIFFICULTY_10MAN_NORMAL:
+                return "10 Player";
+            case RAID_DIFFICULTY_25MAN_NORMAL:
+                return "25 Player";
+            case RAID_DIFFICULTY_10MAN_HEROIC:
+                return "10 Player (Heroic)";
+            case RAID_DIFFICULTY_25MAN_HEROIC:
+                return "25 Player (Heroic)";
+            case RAID_DIFFICULTY_10MAN_MYTHIC:
+                return "10 Player (Mythic)";
+            case RAID_DIFFICULTY_25MAN_MYTHIC:
+                return "25 Player (Mythic)";
+            default:
+                break;
+        }
+
+        return "Unknown";
+    }
+}
 
 void WorldSession::HandleRepopRequestOpcode(WorldPacket& recv_data)
 {
@@ -1262,7 +1310,9 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
     if (mode >= MAX_DUNGEON_DIFFICULTY)
         return;
 
-    if (Difficulty(mode) == _player->GetDungeonDifficulty())
+    Difficulty const difficulty = Difficulty(mode);
+
+    if (difficulty == _player->GetDungeonDifficulty())
         return;
 
     Group* group = _player->GetGroup();
@@ -1290,7 +1340,16 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
             }
 
             group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, _player);
-            group->SetDungeonDifficulty(Difficulty(mode));
+            group->SetDungeonDifficulty(difficulty);
+
+            if (difficulty >= DUNGEON_DIFFICULTY_EPIC)
+            {
+                std::string const difficultyLabel = GetDungeonDifficultyLabel(difficulty);
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                    if (Player* member = itr->GetSource())
+                        if (WorldSession* session = member->GetSession())
+                            ChatHandler(session).PSendSysMessage("Dungeon Difficulty set to %s.", difficultyLabel.c_str());
+            }
         }
     }
     else
@@ -1301,7 +1360,10 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
             return;
         }
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
-        _player->SetDungeonDifficulty(Difficulty(mode));
+        _player->SetDungeonDifficulty(difficulty);
+
+        if (difficulty >= DUNGEON_DIFFICULTY_EPIC)
+            ChatHandler(this).PSendSysMessage("Dungeon Difficulty set to %s.", GetDungeonDifficultyLabel(difficulty).c_str());
     }
 }
 
@@ -1315,7 +1377,9 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
     if (mode >= MAX_RAID_DIFFICULTY)
         return;
 
-    if (Difficulty(mode) == _player->GetRaidDifficulty())
+    Difficulty const difficulty = Difficulty(mode);
+
+    if (difficulty == _player->GetRaidDifficulty())
         return;
 
     Group* group = _player->GetGroup();
@@ -1370,7 +1434,7 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
 
                     if (!groupGuy->IsAlive() || groupGuy->IsInCombat() || groupGuy->GetVictim() || groupGuy->m_mover != groupGuy || groupGuy->IsNonMeleeSpellCast(true) || (!groupGuy->GetMotionMaster()->empty() && groupGuy->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
                             || !groupGuy->movespline->Finalized() || !groupGuy->GetMap()->ToInstanceMap() || !groupGuy->GetMap()->ToInstanceMap()->GetInstanceScript() || groupGuy->GetMap()->ToInstanceMap()->GetInstanceScript()->IsEncounterInProgress()
-                            || !groupGuy->Satisfy(sObjectMgr->GetAccessRequirement(groupGuy->GetMap()->GetId(), Difficulty(mode)), groupGuy->GetMap()->GetId(), false))
+                            || !groupGuy->Satisfy(sObjectMgr->GetAccessRequirement(groupGuy->GetMap()->GetId(), difficulty), groupGuy->GetMap()->GetId(), false))
                     {
                         _player->SendRaidDifficulty(group != nullptr);
                         return;
@@ -1442,14 +1506,23 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
 
             if (!anyoneInside) // pussywizard: don't reset if changing ICC/RS difficulty while inside
                 group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, true, _player);
-            group->SetRaidDifficulty(Difficulty(mode));
+            group->SetRaidDifficulty(difficulty);
             group->SetDifficultyChangePrevention(DIFFICULTY_PREVENTION_CHANGE_RECENTLY_CHANGED);
 
             for (std::map<Player*, Position>::iterator itr = playerTeleport.begin(); itr != playerTeleport.end(); ++itr)
             {
-                itr->first->SetRaidDifficulty(Difficulty(mode)); // needed for teleport not to fail
+                itr->first->SetRaidDifficulty(difficulty); // needed for teleport not to fail
                 if (!itr->first->TeleportTo(*(foundMaps.begin()), itr->second.GetPositionX(), itr->second.GetPositionY(), itr->second.GetPositionZ(), itr->second.GetOrientation()))
                     itr->first->GetSession()->KickPlayer("HandleSetRaidDifficultyOpcode 2");
+            }
+
+            if (difficulty >= RAID_DIFFICULTY_10MAN_MYTHIC)
+            {
+                std::string const difficultyLabel = GetRaidDifficultyLabel(difficulty);
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                    if (Player* member = itr->GetSource())
+                        if (WorldSession* session = member->GetSession())
+                            ChatHandler(session).PSendSysMessage("Raid Difficulty set to %s.", difficultyLabel.c_str());
             }
         }
     }
@@ -1461,7 +1534,10 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
             return;
         }
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, true);
-        _player->SetRaidDifficulty(Difficulty(mode));
+        _player->SetRaidDifficulty(difficulty);
+
+        if (difficulty >= RAID_DIFFICULTY_10MAN_MYTHIC)
+            ChatHandler(this).PSendSysMessage("Raid Difficulty set to %s.", GetRaidDifficultyLabel(difficulty).c_str());
     }
 }
 

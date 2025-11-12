@@ -43,6 +43,10 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Wrath of the Lich King Dungeons", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_WOTLK_DUNGEONS);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Burning Crusade Dungeons", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_TBC_DUNGEONS);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Classic Dungeons", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLASSIC_DUNGEONS);
+    uint8 preferredLevel = sDungeonEnhancementMgr->GetPlayerPreferredMythicLevel(player);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+             "Set Preferred Mythic+ Level (Current: M+" + std::to_string(preferredLevel) + ")",
+             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SET_MYTHIC_LEVEL_MENU);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "View Current Affixes", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VIEW_AFFIXES);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "About Mythic+ System", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_ABOUT_SYSTEM);
 
@@ -53,6 +57,13 @@ public:
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
+
+        if (action >= GOSSIP_ACTION_SET_MYTHIC_LEVEL_BASE && action < GOSSIP_ACTION_SET_MYTHIC_LEVEL_BASE + 100)
+        {
+            uint8 level = static_cast<uint8>(action - GOSSIP_ACTION_SET_MYTHIC_LEVEL_BASE);
+            HandleSetPreferredMythicLevel(player, creature, level);
+            return true;
+        }
 
         switch (action)
         {
@@ -69,6 +80,10 @@ public:
 
             case GOSSIP_ACTION_CLASSIC_DUNGEONS:
                 ShowClassicDungeons(player, creature);
+                break;
+
+            case GOSSIP_ACTION_SET_MYTHIC_LEVEL_MENU:
+                ShowMythicPlusLevelMenu(player, creature);
                 break;
 
             // ========================================
@@ -164,6 +179,39 @@ private:
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "<- Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BACK);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowMythicPlusLevelMenu(Player* player, Creature* creature)
+    {
+        if (!player)
+            return;
+
+        player->PlayerTalkClass->ClearMenus();
+
+        uint8 currentLevel = sDungeonEnhancementMgr->GetPlayerPreferredMythicLevel(player);
+
+        for (uint8 level = MYTHIC_PLUS_MIN_LEVEL; level <= MYTHIC_PLUS_MAX_LEVEL; ++level)
+        {
+            std::string label = "Set preference to Mythic+" + std::to_string(level);
+            if (level == currentLevel)
+                label += " (current)";
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, label,
+                             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SET_MYTHIC_LEVEL_BASE + level);
+        }
+
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "<- Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BACK);
+
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void HandleSetPreferredMythicLevel(Player* player, Creature* creature, uint8 level)
+    {
+        if (!player)
+            return;
+
+        sDungeonEnhancementMgr->SetPlayerPreferredMythicLevel(player, level);
+        ShowMythicPlusLevelMenu(player, creature);
     }
 
     // ========================================================================

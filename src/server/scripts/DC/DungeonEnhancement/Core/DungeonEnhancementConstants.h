@@ -212,6 +212,11 @@ namespace DungeonEnhancement
         GOSSIP_ACTION_FONT_VIEW_AFFIXES       = GOSSIP_ACTION_BASE + 601, // 10601
         GOSSIP_ACTION_ACTIVATE_KEYSTONE       = GOSSIP_ACTION_BASE + 600, // 10600 (alias)
         GOSSIP_ACTION_FONT_INFO               = GOSSIP_ACTION_BASE + 602, // 10602 (info display)
+        
+        // Player preference actions
+        GOSSIP_ACTION_SET_MYTHIC_LEVEL_MENU   = GOSSIP_ACTION_BASE + 650, // 10650 (open preference menu)
+        GOSSIP_ACTION_SET_MYTHIC_LEVEL_BASE   = GOSSIP_ACTION_BASE + 660, // 10660 (base offset for level entries)
+
         GOSSIP_ACTION_INFO                    = GOSSIP_ACTION_BASE + 999, // 10999 (generic info)
         GOSSIP_ACTION_BACK                    = GOSSIP_ACTION_BASE + 998  // 10998 (back button)
     };
@@ -316,6 +321,15 @@ namespace DungeonEnhancement
         constexpr const char* KEYSTONE_START_LEVEL    = "MythicPlus.Keystone.StartLevel";
         constexpr const char* KEYSTONE_MAX_LEVEL      = "MythicPlus.Keystone.MaxLevel";
         constexpr const char* VAULT_ENABLED           = "MythicPlus.Vault.Enabled";
+    }
+
+    // ========================================================================
+    // PLAYER SETTINGS STORAGE
+    // ========================================================================
+    namespace PlayerSettings
+    {
+        constexpr const char* SOURCE                  = "mod-dungeon-enhancement";
+        constexpr uint32 MYTHIC_PLUS_LEVEL_INDEX      = 0;
     }
 
     // ========================================================================
