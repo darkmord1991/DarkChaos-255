@@ -18,7 +18,7 @@
 using namespace DungeonEnhancement;
 
 // Necrotic debuff spell ID (would need to be created in spell_dbc)
-#define NECROTIC_DEBUFF_SPELL_ID 800020
+#define NECROTIC_DEBUFF_SPELL_ID 800011
 
 class Affix_Necrotic : public MythicAffixHandler
 {

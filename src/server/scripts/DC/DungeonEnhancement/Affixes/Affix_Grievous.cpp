@@ -17,7 +17,7 @@
 using namespace DungeonEnhancement;
 
 // Grievous Wound debuff spell ID (would need to be created in spell_dbc)
-#define GRIEVOUS_WOUND_SPELL_ID 800030
+#define GRIEVOUS_WOUND_SPELL_ID 800012
 
 class Affix_Grievous : public MythicAffixHandler
 {

@@ -1811,9 +1811,9 @@ void RegisterScripts()
 class AC_Flightmaster_DebugCommands : public PlayerScript
 {
 public:
-    AC_Flightmaster_DebugCommands() : PlayerScript("AC_Flightmaster_DebugCommands", { PLAYERHOOK_ON_CHAT }) {}
+    AC_Flightmaster_DebugCommands() : PlayerScript("AC_Flightmaster_DebugCommands", { PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE }) {}
 
-    void OnPlayerChat(Player* player, uint32 /*type*/, uint32 /*lang*/, std::string& msg) override
+    void OnPlayerBeforeSendChatMessage(Player* player, uint32& /*type*/, uint32& /*lang*/, std::string& msg) override
     {
         if (!player || !player->IsGameMaster())
             return;
