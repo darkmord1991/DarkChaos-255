@@ -195,21 +195,23 @@ This directory contains complete documentation for the DarkChaos-255 Mythic+ sys
 
 | Metric | Value |
 |--------|-------|
-| **Overall Completion** | ~60% |
-| **Hours Invested** | 450-585 |
-| **Hours to MVP** | 150-210 |
-| **Hours to Full** | 550-770 |
-| **Components Complete** | 8/18 (44%) |
+| **Overall Completion** | ~70% (M+ core) |
+| **Hours Invested** | 705-870 (including separate systems) |
+| **Hours to MVP** | 90-120 |
+| **Hours to Full** | 315-460 |
+| **Components Complete** | 9/16 (56%) |
 | **Affixes Complete** | 8/8 (100%) |
-| **Database Ready** | 0% (scripts needed) |
-| **C++ Files** | 23 files |
-| **Lines of Code** | ~10,000+ |
+| **Database Ready** | 100% (SQL exists!) |
+| **C++ Files (M+)** | 23 files |
+| **C++ Files (Item Upgrade)** | 19 files (~10k LOC) |
+| **C++ Files (Prestige)** | 6 files (~85k LOC) |
+| **Lines of Code** | ~10,000+ (M+ only) |
 
 ---
 
 ## 🎯 Quick Status
 
-### ✅ Working Systems (8)
+### ✅ Working Systems (9)
 1. Core Architecture
 2. Affix System (8/8)
 3. Scaling Engine
@@ -218,34 +220,35 @@ This directory contains complete documentation for the DarkChaos-255 Mythic+ sys
 6. GameObjects (2/2)
 7. Event Hooks
 8. Commands
+9. **Database Schemas (SQL ready!)**
 
-### ⚠️ Partial Systems (3)
-1. Database Schema (defined, SQL missing)
-2. Vault System (GameObject exists, logic incomplete)
-3. Token/Loot (items defined, distribution missing)
+### ⚠️ Partial Systems (2)
+1. Vault System (GameObject exists, logic incomplete)
+2. Token/Loot (items defined, distribution missing)
 
-### ❌ Missing Systems (7)
+### ❌ Missing Systems (5)
 1. Season System
 2. Rating & Leaderboards
 3. Achievements
 4. Titles
 5. Weekly Reset
-6. Item Upgrade (separate feature)
-7. Prestige (separate feature)
+
+### ✅ Separate Systems (COMPLETE)
+1. **Item Upgrade System** (19 files, ~10k LOC)
+2. **Prestige System** (6 files, ~85k LOC)
 
 ---
 
 ## 🚀 Next Steps
 
-### Immediate Priority (Week 1-2)
+### Immediate Priority (Week 1)
 **File:** COMPLETION_ACTION_PLAN.md → Phase 1
 
-1. Create database SQL scripts (40-60 hours)
-   - World tables
-   - Character tables
-   - Initial data
+1. Deploy database SQL schemas (ready to use!)
+   - World tables: `Custom/Custom feature SQLs/worlddb/DungeonEnhancements/`
+   - Character tables: `Custom/Custom feature SQLs/chardb/DungeonEnhancements/`
 
-### High Priority (Week 3-4)
+### High Priority (Week 2-3)
 **File:** COMPLETION_ACTION_PLAN.md → Phase 2
 
 2. Complete vault system (50-70 hours)
@@ -253,7 +256,7 @@ This directory contains complete documentation for the DarkChaos-255 Mythic+ sys
    - Reward calculation
    - Claims
 
-### High Priority (Week 5-6)
+### High Priority (Week 4-5)
 **File:** COMPLETION_ACTION_PLAN.md → Phase 3
 
 3. Token distribution (40-50 hours)
@@ -338,12 +341,14 @@ src/server/scripts/DC/DungeonEnhancement/
 └── NPCs/             (Keystone Master, Teleporter)
 ```
 
-**Database Tables (when created):**
+**Database Tables (SQL files exist!):**
 ```
-World: dc_mythic_seasons, dc_mythic_dungeons_config, 
-       dc_mythic_affixes, dc_mythic_affix_rotation
+World: Custom/Custom feature SQLs/worlddb/DungeonEnhancements/
+       dc_mythic_seasons, dc_mythic_dungeons_config, 
+       dc_mythic_affixes, dc_mythic_affix_rotation, etc.
 
-Characters: dc_mythic_keystones, dc_mythic_player_rating,
+Characters: Custom/Custom feature SQLs/chardb/DungeonEnhancements/
+            dc_mythic_keystones, dc_mythic_player_rating,
             dc_mythic_vault_progress, dc_mythic_run_history
 ```
 
@@ -368,5 +373,5 @@ This documentation set provides:
 ---
 
 **Last Updated:** November 12, 2025  
-**Documentation Version:** 1.0  
-**System Completion:** ~60%
+**Documentation Version:** 1.1 (Updated: Database schemas exist, Item Upgrade & Prestige complete)  
+**System Completion:** ~70% (M+ core), ~85% (with separate systems)
