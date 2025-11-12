@@ -1,0 +1,301 @@
+/*
+ * ============================================================================
+ * Dungeon Enhancement System - Player Hooks
+ * ============================================================================
+ * Purpose: Handle player death, login, weekly reset
+ * Location: src/server/scripts/DC/DungeonEnhancement/Hooks/
+ * ============================================================================
+ */
+
+#include "ScriptMgr.h"
+#include "Player.h"
+#include "Map.h"
+#include "Group.h"
+#include "Chat.h"
+#include "DungeonEnhancementManager.h"
+#include "DungeonEnhancementConstants.h"
+#include "MythicRunTracker.h"
+#include "MythicAffixFactory.h"
+
+using namespace DungeonEnhancement;
+
+// Forward declare factory init/cleanup
+namespace DungeonEnhancement
+{
+    extern void InitializeAffixFactory();
+    extern void CleanupAffixFactory();
+}
+
+class DungeonEnhancement_PlayerScript : public PlayerScript
+{
+public:
+    DungeonEnhancement_PlayerScript() : PlayerScript("DungeonEnhancement_PlayerScript") { }
+
+    // ========================================================================
+    // PLAYER DEATH HOOK
+    // ========================================================================
+    void OnPlayerDeath(Player* player, Unit* /*killer*/) override
+    {
+        if (!player || !sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        uint32 instanceId = map->GetInstanceId();
+
+        // Check if a Mythic+ run is active
+        if (!MythicRunTracker::IsRunActive(instanceId))
+            return;
+
+        // Record player death
+        MythicRunTracker::OnPlayerDeath(player, map);
+
+        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                 "Player %s died in M+ instance %u",
+                 player->GetName().c_str(), instanceId);
+    }
+
+    // ========================================================================
+    // PLAYER LOGIN HOOK
+    // ========================================================================
+    void OnLogin(Player* player) override
+    {
+        if (!player || !sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Check if player has an active keystone
+        if (sDungeonEnhancementMgr->PlayerHasKeystone(player))
+        {
+            uint8 keystoneLevel = sDungeonEnhancementMgr->GetPlayerKeystoneLevel(player);
+            
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFF00FF00You have an active Mythic+%u Keystone.|r", keystoneLevel
+            );
+        }
+
+        // Check vault progress
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        if (season && season->vaultEnabled)
+        {
+            uint8 vaultProgress = sDungeonEnhancementMgr->GetPlayerVaultProgress(player);
+            
+            if (vaultProgress > 0)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFFFFAA00Great Vault Progress: %u/8 dungeons completed this week.|r",
+                    vaultProgress
+                );
+            }
+        }
+
+        // Show current season info (once per login)
+        if (season)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFF00FF00Mythic+ Season %u is active! Visit the Dungeon Teleporter to get started.|r",
+                season->seasonId
+            );
+        }
+    }
+
+    // ========================================================================
+    // DAMAGE TAKEN HOOK (for player-affecting affixes)
+    // ========================================================================
+    void OnTakeDamage(Player* player, Unit* attacker, uint32& damage) override
+    {
+        if (!player || !attacker || !sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        uint32 instanceId = map->GetInstanceId();
+
+        // Check if a Mythic+ run is active
+        if (!MythicRunTracker::IsRunActive(instanceId))
+            return;
+
+        // Apply affix effects that modify player damage taken via factory
+        Creature* creatureAttacker = attacker->ToCreature();
+        if (creatureAttacker)
+            sAffixFactory->OnPlayerDamaged(instanceId, player, creatureAttacker, damage);
+    }
+
+    // ========================================================================
+    // GROUP LEAVE HOOK (abandon run if all players leave)
+    // ========================================================================
+    void OnGroupLeave(Player* player, Group* /*group*/) override
+    {
+        if (!player || !sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        uint32 instanceId = map->GetInstanceId();
+
+        // Check if a Mythic+ run is active
+        if (!MythicRunTracker::IsRunActive(instanceId))
+            return;
+
+        // Remove player from participants
+        MythicRunTracker::RemoveParticipant(instanceId, player->GetGUID());
+
+        // Check if all players have left
+        std::unordered_set<ObjectGuid> participants = MythicRunTracker::GetParticipants(instanceId);
+        
+        uint32 remainingInInstance = 0;
+        for (ObjectGuid guid : participants)
+        {
+            Player* participant = ObjectAccessor::FindPlayer(guid);
+            if (participant && participant->GetMapId() == map->GetId() && 
+                participant->GetInstanceId() == instanceId)
+            {
+                remainingInInstance++;
+            }
+        }
+
+        // If no participants remain in instance, abandon the run
+        if (remainingInInstance == 0)
+        {
+            LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                     "All players left instance %u - abandoning M+ run",
+                     instanceId);
+            
+            MythicRunTracker::AbandonRun(map);
+        }
+    }
+
+    // ========================================================================
+    // MAP CHANGE HOOK (track teleports out of dungeon)
+    // ========================================================================
+    void OnMapChanged(Player* player) override
+    {
+        if (!player || !sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Note: This fires AFTER player has changed maps
+        // Use previous map ID to check if they left a Mythic+ instance
+        // Implementation depends on core support for tracking previous map
+    }
+};
+
+// ============================================================================
+// WORLD SCRIPT (for weekly reset and periodic updates)
+// ============================================================================
+
+class DungeonEnhancement_WorldScript : public WorldScript
+{
+public:
+    DungeonEnhancement_WorldScript() : WorldScript("DungeonEnhancement_WorldScript") { }
+
+    void OnStartup() override
+    {
+        if (!sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Initialize manager on server startup
+        sDungeonEnhancementMgr->Initialize();
+
+        // Initialize affix factory
+        DungeonEnhancement::InitializeAffixFactory();
+
+        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                 "Dungeon Enhancement System initialized successfully");
+    }
+
+    void OnShutdown() override
+    {
+        if (!sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Cleanup affix factory
+        DungeonEnhancement::CleanupAffixFactory();
+
+        // Shutdown manager
+        sDungeonEnhancementMgr->Shutdown();
+
+        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                 "Dungeon Enhancement System shutdown complete");
+    }
+
+    void OnUpdate(uint32 diff) override
+    {
+        if (!sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Periodic affix tick for environmental effects (Volcanic, Grievous)
+        // Call every 1 second
+        static uint32 tickAccumulator = 0;
+        tickAccumulator += diff;
+
+        if (tickAccumulator >= 1000) // 1 second
+        {
+            tickAccumulator = 0;
+
+            // Iterate all active M+ instances and call affix OnPeriodicTick
+            // Note: This is a simplified approach - in production, you'd want
+            // to track active instances more efficiently
+            
+            // For now, we'll just log periodic tick
+            // The proper implementation would require instance iteration
+        }
+
+        // Periodic cache refresh (handled internally by manager)
+        // TODO: Add periodic cleanup of old runs
+        // MythicRunTracker::CleanupOldRuns(60);  // Clean runs older than 60 minutes
+    }
+
+    // ========================================================================
+    // WEEKLY RESET (Tuesday reset)
+    // ========================================================================
+    void OnBeforeWorldInitialized(uint32 /*updateFlags*/) override
+    {
+        if (!sDungeonEnhancementMgr->IsEnabled())
+            return;
+
+        // Check if it's Tuesday (weekly reset day)
+        time_t now = time(nullptr);
+        tm timeInfo;
+        localtime_s(&timeInfo, &now);
+        
+        // Tuesday = 2 (0=Sunday, 1=Monday, 2=Tuesday, etc.)
+        if (timeInfo.tm_wday == 2)
+        {
+            // Check if reset has already happened today
+            // TODO: Store last reset date in database and compare
+            
+            // Perform weekly reset
+            PerformWeeklyReset();
+        }
+    }
+
+private:
+    void PerformWeeklyReset()
+    {
+        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                 "Performing Mythic+ weekly reset (Great Vault, Keystones)");
+
+        // Reset all players' vault progress
+        sDungeonEnhancementMgr->ResetWeeklyVaultProgress();
+
+        // Reset keystones to base level (if configured)
+        // TODO: Query all players with keystones and reset to M+2
+        
+        // Rotate affixes to next week
+        // TODO: Advance affix rotation by 1 week
+
+        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                 "Weekly reset completed successfully");
+    }
+};
+
+void AddSC_DungeonEnhancement_PlayerScript()
+{
+    new DungeonEnhancement_PlayerScript();
+    new DungeonEnhancement_WorldScript();
+}

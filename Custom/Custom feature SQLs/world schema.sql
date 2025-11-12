@@ -1799,16 +1799,24 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_inputs` (
 -- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_synthesis_recipes
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_recipes` (
   `recipe_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `recipe_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `input_item_1` int unsigned DEFAULT NULL,
-  `input_count_1` int unsigned DEFAULT '1',
-  `input_item_2` int unsigned DEFAULT NULL,
-  `input_count_2` int unsigned DEFAULT '1',
-  `output_item` int unsigned NOT NULL,
-  `output_count` int unsigned DEFAULT '1',
-  `is_active` tinyint(1) DEFAULT '1',
-  PRIMARY KEY (`recipe_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `required_level` int unsigned DEFAULT '0',
+  `input_essence` int unsigned DEFAULT '0',
+  `input_tokens` int unsigned DEFAULT '0',
+  `output_item_id` int unsigned NOT NULL,
+  `output_quantity` int unsigned DEFAULT '1',
+  `success_rate_base` decimal(5,2) DEFAULT '100.00' COMMENT 'Base success rate as percentage (0-100)',
+  `cooldown_seconds` int unsigned DEFAULT '0',
+  `required_tier` tinyint unsigned DEFAULT '0',
+  `required_upgrade_level` tinyint unsigned DEFAULT '0',
+  `catalyst_item_id` int unsigned DEFAULT '0' COMMENT 'Optional item to boost success rate',
+  `catalyst_quantity` int unsigned DEFAULT '0',
+  `active` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`recipe_id`),
+  KEY `idx_active` (`active`),
+  KEY `idx_required_level` (`required_level`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Synthesis recipes for combining items/materials into new items. Catalysts are optional boosters.';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
