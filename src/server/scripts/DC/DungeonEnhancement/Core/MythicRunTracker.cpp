@@ -91,15 +91,15 @@ namespace DungeonEnhancement
         _activeRuns[instanceId] = runData;
         
         // Broadcast start message
-        std::string startMsg = sDungeonEnhancementMgr->GetColoredMessage(
-            Colors::MYTHIC_PLUS, 
-            "Mythic+ Run Started! M+%u - %s. Timer: %u minutes. Death Limit: %u",
-            keystoneLevel,
-            config->dungeonName.c_str(),
-            runData.timerLimitSeconds / 60,
-            MAX_DEATHS_BEFORE_PENALTY
-        );
-        BroadcastToParticipants(instanceId, startMsg, Colors::MYTHIC_PLUS);
+        char msgBuf[512];
+        snprintf(msgBuf, sizeof(msgBuf),
+                 "Mythic+ Run Started! M+%u - %s. Timer: %u minutes. Death Limit: %u",
+                 keystoneLevel,
+                 config->dungeonName.c_str(),
+                 runData.timerLimitSeconds / 60,
+                 MAX_DEATHS_BEFORE_PENALTY);
+        std::string startMsg = sDungeonEnhancementMgr->GetColoredMessage(msgBuf, Colors::MYTHIC_PLUS);
+        BroadcastToParticipants(instanceId, startMsg, 0);
         
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Started M+%u run for map %u (Instance %u). Participants: %zu",
@@ -133,15 +133,15 @@ namespace DungeonEnhancement
             uint32 minutes = elapsedTime / 60;
             uint32 seconds = elapsedTime % 60;
             
-            std::string completeMsg = sDungeonEnhancementMgr->GetColoredMessage(
-                Colors::SUCCESS,
-                "Run Completed! Time: %um %us | Deaths: %u/%u | Keystone: %s%d",
-                minutes, seconds,
-                runData->totalDeaths, MAX_DEATHS_BEFORE_PENALTY,
-                (upgradeLevel > 0 ? "+" : (upgradeLevel < 0 ? "" : "")),
-                upgradeLevel
-            );
-            BroadcastToParticipants(instanceId, completeMsg, Colors::SUCCESS);
+            char msgBuf2[512];
+            snprintf(msgBuf2, sizeof(msgBuf2),
+                     "Run Completed! Time: %um %us | Deaths: %u/%u | Keystone: %s%d",
+                     minutes, seconds,
+                     runData->totalDeaths, MAX_DEATHS_BEFORE_PENALTY,
+                     (upgradeLevel > 0 ? "+" : (upgradeLevel < 0 ? "" : "")),
+                     upgradeLevel);
+            std::string completeMsg = sDungeonEnhancementMgr->GetColoredMessage(msgBuf2, Colors::SUCCESS);
+            BroadcastToParticipants(instanceId, completeMsg, 0);
             
             LOG_INFO(LogCategory::MYTHIC_PLUS, 
                      "Run completed for instance %u. Time: %um %us, Deaths: %u, Upgrade: %d",
@@ -175,10 +175,10 @@ namespace DungeonEnhancement
         
         // Broadcast abandonment message
         std::string abandonMsg = sDungeonEnhancementMgr->GetColoredMessage(
-            Colors::ERROR,
-            "Run Abandoned. Keystone destroyed."
+            "Run Abandoned. Keystone destroyed.",
+            Colors::ERROR
         );
-        BroadcastToParticipants(instanceId, abandonMsg, Colors::ERROR);
+        BroadcastToParticipants(instanceId, abandonMsg, 0);
         
         // Destroy keystone
         Player* keystoneOwner = GetPlayerByGUID(runData->keystoneOwnerGUID);
@@ -234,15 +234,15 @@ namespace DungeonEnhancement
                           ? (MAX_DEATHS_BEFORE_PENALTY - runData->totalDeaths) 
                           : 0;
         
-        std::string deathMsg = sDungeonEnhancementMgr->GetColoredMessage(
-            Colors::WARNING,
-            "%s died. Deaths: %u/%u (Remaining: %u)",
-            player->GetName().c_str(),
-            runData->totalDeaths,
-            MAX_DEATHS_BEFORE_PENALTY,
-            remaining
-        );
-        BroadcastToParticipants(instanceId, deathMsg, Colors::WARNING);
+        char msgBuf3[512];
+        snprintf(msgBuf3, sizeof(msgBuf3),
+                 "%s died. Deaths: %u/%u (Remaining: %u)",
+                 player->GetName().c_str(),
+                 runData->totalDeaths,
+                 MAX_DEATHS_BEFORE_PENALTY,
+                 remaining);
+        std::string deathMsg = sDungeonEnhancementMgr->GetColoredMessage(msgBuf3, Colors::WARNING);
+        BroadcastToParticipants(instanceId, deathMsg, 0);
         
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Player %s died in instance %u. Total deaths: %u (penalty at %u)",
@@ -297,13 +297,13 @@ namespace DungeonEnhancement
         runData->bossesKilled++;
         
         // Broadcast boss kill notification
-        std::string bossMsg = sDungeonEnhancementMgr->GetColoredMessage(
-            Colors::SUCCESS,
-            "Boss Defeated! Progress: %u/%u",
-            runData->bossesKilled,
-            runData->requiredBosses
-        );
-        BroadcastToParticipants(instanceId, bossMsg, Colors::SUCCESS);
+        char msgBuf4[512];
+        snprintf(msgBuf4, sizeof(msgBuf4),
+                 "Boss Defeated! Progress: %u/%u",
+                 runData->bossesKilled,
+                 runData->requiredBosses);
+        std::string bossMsg = sDungeonEnhancementMgr->GetColoredMessage(msgBuf4, Colors::SUCCESS);
+        BroadcastToParticipants(instanceId, bossMsg, 0);
         
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Boss %u killed in instance %u. Progress: %u/%u",
@@ -418,8 +418,9 @@ namespace DungeonEnhancement
             if (!player)
                 continue;
             
-            // Award dungeon tokens
-            sDungeonEnhancementMgr->AwardDungeonTokens(player, runData->mapId, runData->keystoneLevel, deathPenalty);
+            // Calculate and award dungeon tokens
+            uint16 tokenAmount = sDungeonEnhancementMgr->GetDungeonTokenReward(runData->mapId, runData->keystoneLevel, deathPenalty > 0);
+            sDungeonEnhancementMgr->AwardDungeonTokens(player, tokenAmount);
             
             // Update vault progress
             sDungeonEnhancementMgr->IncrementPlayerVaultProgress(player, runData->keystoneLevel);
@@ -427,13 +428,14 @@ namespace DungeonEnhancement
             // Update rating
             uint32 completionTime = static_cast<uint32>(runData->endTime - runData->startTime);
             uint32 ratingGain = sDungeonEnhancementMgr->CalculateRatingGain(runData->keystoneLevel, runData->totalDeaths, completionTime);
-            uint32 currentRating = sDungeonEnhancementMgr->GetPlayerRating(player);
-            sDungeonEnhancementMgr->UpdatePlayerRating(player, 0, currentRating + ratingGain);
             
             // Save run to history
             SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
             if (season)
             {
+                uint32 currentRating = sDungeonEnhancementMgr->GetPlayerRating(player, season->seasonId);
+                sDungeonEnhancementMgr->UpdatePlayerRating(player, season->seasonId, currentRating + ratingGain);
+                
                 uint16 tokensAwarded = sDungeonEnhancementMgr->GetDungeonTokenReward(runData->mapId, runData->keystoneLevel, deathPenalty);
                 
                 CharacterDatabase.Execute(
@@ -456,10 +458,9 @@ namespace DungeonEnhancement
         {
             if (upgradeLevel > 0)
             {
-                for (int8 i = 0; i < upgradeLevel; i++)
-                {
-                    sDungeonEnhancementMgr->UpgradePlayerKeystone(keystoneOwner);
-                }
+                uint8 currentLevel = sDungeonEnhancementMgr->GetPlayerKeystoneLevel(keystoneOwner);
+                uint8 newLevel = currentLevel + upgradeLevel;
+                sDungeonEnhancementMgr->UpgradePlayerKeystone(keystoneOwner, newLevel);
             }
             else if (upgradeLevel < 0)
             {
@@ -485,13 +486,13 @@ namespace DungeonEnhancement
             return;
         
         // Broadcast failure message
-        std::string failMsg = sDungeonEnhancementMgr->GetColoredMessage(
-            Colors::ERROR,
-            "Run Failed! Death limit reached (%u/%u). Keystone destroyed.",
-            runData->totalDeaths,
-            MAX_DEATHS_BEFORE_PENALTY
-        );
-        BroadcastToParticipants(instanceId, failMsg, Colors::ERROR);
+        char msgBuf5[512];
+        snprintf(msgBuf5, sizeof(msgBuf5),
+                 "Run Failed! Death limit reached (%u/%u). Keystone destroyed.",
+                 runData->totalDeaths,
+                 MAX_DEATHS_BEFORE_PENALTY);
+        std::string failMsg = sDungeonEnhancementMgr->GetColoredMessage(msgBuf5, Colors::ERROR);
+        BroadcastToParticipants(instanceId, failMsg, 0);
         
         // Award tokens with 50% penalty
         AwardCompletionRewards(map, -1);

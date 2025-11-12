@@ -15,10 +15,10 @@
 #include "InstanceScript.h"
 #include "ScriptedGossip.h"
 #include "GameObject.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicRunTracker.h"
+#include "../Core/MythicDifficultyScaling.h"
+#include "../Core/MythicRunTracker.h"
 #include "../Affixes/MythicAffixFactory.h"
 
 using namespace DungeonEnhancement;
@@ -86,7 +86,7 @@ public:
                          "|cFF00FF00Font of Power|r - Activate Mythic+ Run", 
                          GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
         
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                          "Your Keystone: |cFFFFAA00Mythic+" + std::to_string(keystoneLevel) + "|r", 
@@ -99,12 +99,12 @@ public:
                              GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
         }
 
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
 
         // Show current affixes
         ShowAffixes(player, keystoneLevel);
 
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
 
         // Activate button
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
@@ -222,7 +222,6 @@ private:
         MythicRunTracker::StartRun(map, keystoneLevel, player);
 
         // Initialize affix handlers for this instance
-        uint32 instanceId = map->GetInstanceId();
         sAffixFactory->InitializeInstanceHandlers(instanceId, keystoneLevel);
 
         // Apply scaling to all creatures in dungeon
@@ -255,8 +254,6 @@ private:
 
         // Iterate all creatures in the map and apply scaling
         Map::PlayerList const& players = map->GetPlayers();
-        if (players.isEmpty())
-            return;
 
         // Apply scaling to all creatures
         // Note: This is a simplified version. In production, use proper creature iteration

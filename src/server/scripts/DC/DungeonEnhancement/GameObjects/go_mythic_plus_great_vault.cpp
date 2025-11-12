@@ -12,7 +12,7 @@
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "GameObject.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
 
 using namespace DungeonEnhancement;
@@ -51,7 +51,7 @@ public:
                          "Completed Dungeons This Week: " + std::to_string(completedDungeons), 
                          GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VAULT_INFO);
         
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VAULT_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VAULT_INFO);
 
         // Slot 1: Requires 1 dungeon
         ShowVaultSlot(player, 1, VAULT_SLOT_1_REQUIREMENT, completedDungeons);
@@ -62,7 +62,7 @@ public:
         // Slot 3: Requires 8 dungeons
         ShowVaultSlot(player, 3, VAULT_SLOT_3_REQUIREMENT, completedDungeons);
 
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VAULT_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_DOT, "----------------------------------------", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_VAULT_INFO);
 
         // Info option
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "How does the Great Vault work?", 

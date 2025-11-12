@@ -11,7 +11,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
 
 using namespace DungeonEnhancement;

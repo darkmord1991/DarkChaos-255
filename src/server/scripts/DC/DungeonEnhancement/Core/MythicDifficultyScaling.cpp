@@ -199,13 +199,14 @@ namespace DungeonEnhancement
         if (!instanceMap)
             return 0;
         
-        InstanceScript* instance = instanceMap->GetInstanceData();
-        if (!instance)
-            return 0;
+        // In AzerothCore, instance data is stored via InstanceScript
+        // We store keystone level in the instance's data map
+        if (instanceMap->GetInstanceScript())
+        {
+            return static_cast<uint8>(instanceMap->GetInstanceScript()->GetData(1000));
+        }
         
-        // Retrieve keystone level from instance data
-        // Note: This assumes instance script stores keystone level in DATA_KEYSTONE_LEVEL
-        return static_cast<uint8>(instance->GetData(1000));  // Custom data index for keystone level
+        return 0;
     }
     
     void MythicDifficultyScaling::SetMapKeystoneLevel(Map* map, uint8 keystoneLevel)
@@ -217,12 +218,11 @@ namespace DungeonEnhancement
         if (!instanceMap)
             return;
         
-        InstanceScript* instance = instanceMap->GetInstanceData();
-        if (!instance)
-            return;
-        
-        // Store keystone level in instance data
-        instance->SetData(1000, keystoneLevel);  // Custom data index for keystone level
+        // In AzerothCore, store keystone level via InstanceScript
+        if (instanceMap->GetInstanceScript())
+        {
+            instanceMap->GetInstanceScript()->SetData(1000, keystoneLevel);
+        }
         
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Set keystone level M+%u for map %u (Instance ID: %u)", 

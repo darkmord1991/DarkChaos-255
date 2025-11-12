@@ -169,6 +169,12 @@ namespace DungeonEnhancement
         GOSSIP_ACTION_KEYSTONE_REQUEST        = GOSSIP_ACTION_BASE + 400, // 10400
         GOSSIP_ACTION_KEYSTONE_INFO           = GOSSIP_ACTION_BASE + 401, // 10401
         GOSSIP_ACTION_KEYSTONE_DESTROY        = GOSSIP_ACTION_BASE + 402, // 10402
+        GOSSIP_ACTION_REQUEST_KEYSTONE        = GOSSIP_ACTION_BASE + 400, // 10400 (alias)
+        GOSSIP_ACTION_DESTROY_KEYSTONE        = GOSSIP_ACTION_BASE + 402, // 10402 (alias)
+        GOSSIP_ACTION_INFO_KEYSTONE           = GOSSIP_ACTION_BASE + 401, // 10401 (alias)
+        GOSSIP_ACTION_VIEW_AFFIXES            = GOSSIP_ACTION_BASE + 403, // 10403 (view current week's affixes)
+        GOSSIP_ACTION_VIEW_RATING             = GOSSIP_ACTION_BASE + 404, // 10404 (view player rating)
+        GOSSIP_ACTION_CONFIRM_DESTROY         = GOSSIP_ACTION_BASE + 405, // 10405 (confirm keystone destroy)
         
         // Great Vault Actions
         GOSSIP_ACTION_VAULT_OPEN              = GOSSIP_ACTION_BASE + 500, // 10500
@@ -176,10 +182,20 @@ namespace DungeonEnhancement
         GOSSIP_ACTION_VAULT_CLAIM_SLOT2       = GOSSIP_ACTION_BASE + 502, // 10502
         GOSSIP_ACTION_VAULT_CLAIM_SLOT3       = GOSSIP_ACTION_BASE + 503, // 10503
         GOSSIP_ACTION_VAULT_CHOOSE_TOKENS     = GOSSIP_ACTION_BASE + 510, // 10510
+        GOSSIP_ACTION_CLAIM_SLOT_1            = GOSSIP_ACTION_BASE + 501, // 10501 (alias)
+        GOSSIP_ACTION_CLAIM_SLOT_2            = GOSSIP_ACTION_BASE + 502, // 10502 (alias)
+        GOSSIP_ACTION_CLAIM_SLOT_3            = GOSSIP_ACTION_BASE + 503, // 10503 (alias)
+        GOSSIP_ACTION_CLAIM_GEAR_BASE         = GOSSIP_ACTION_BASE + 520, // 10520
+        GOSSIP_ACTION_CLAIM_TOKENS_BASE       = GOSSIP_ACTION_BASE + 530, // 10530
+        GOSSIP_ACTION_VAULT_INFO              = GOSSIP_ACTION_BASE + 550, // 10550 (info display)
         
         // Font of Power Actions
         GOSSIP_ACTION_FONT_ACTIVATE_KEYSTONE  = GOSSIP_ACTION_BASE + 600, // 10600
-        GOSSIP_ACTION_FONT_VIEW_AFFIXES       = GOSSIP_ACTION_BASE + 601  // 10601
+        GOSSIP_ACTION_FONT_VIEW_AFFIXES       = GOSSIP_ACTION_BASE + 601, // 10601
+        GOSSIP_ACTION_ACTIVATE_KEYSTONE       = GOSSIP_ACTION_BASE + 600, // 10600 (alias)
+        GOSSIP_ACTION_FONT_INFO               = GOSSIP_ACTION_BASE + 602, // 10602 (info display)
+        GOSSIP_ACTION_INFO                    = GOSSIP_ACTION_BASE + 999, // 10999 (generic info)
+        GOSSIP_ACTION_BACK                    = GOSSIP_ACTION_BASE + 998  // 10998 (back button)
     };
 
     // ========================================================================
@@ -221,6 +237,13 @@ namespace DungeonEnhancement
     constexpr uint8 UPGRADE_PLUS1_MAX_DEATHS = 10;  // 6-10 deaths = +1 level
     constexpr uint8 UPGRADE_SAME_MAX_DEATHS  = 14;  // 11-14 deaths = same level
     // 15+ deaths = keystone destroyed (no upgrade)
+    
+    // Death tier constants (for upgrade calculation)
+    constexpr uint8 DEATH_TIER_1_MAX = 5;      // 0-5 deaths
+    constexpr int8 DEATH_TIER_1_UPGRADE = 2;   // +2 levels
+    constexpr uint8 DEATH_TIER_2_MAX = 10;     // 6-10 deaths
+    constexpr int8 DEATH_TIER_2_UPGRADE = 1;   // +1 level
+    constexpr int8 DEATH_TIER_3_UPGRADE = 0;   // 11-14 deaths (same level)
 
     // ========================================================================
     // VAULT CONFIGURATION
@@ -228,6 +251,11 @@ namespace DungeonEnhancement
     constexpr uint8 VAULT_SLOT1_REQUIRED_DUNGEONS = 1;  // Complete 1 M+ dungeon
     constexpr uint8 VAULT_SLOT2_REQUIRED_DUNGEONS = 4;  // Complete 4 M+ dungeons
     constexpr uint8 VAULT_SLOT3_REQUIRED_DUNGEONS = 8;  // Complete 8 M+ dungeons (all seasonal)
+    
+    // Vault slot requirement aliases (alternative naming)
+    constexpr uint8 VAULT_SLOT_1_REQUIREMENT = VAULT_SLOT1_REQUIRED_DUNGEONS;
+    constexpr uint8 VAULT_SLOT_2_REQUIREMENT = VAULT_SLOT2_REQUIRED_DUNGEONS;
+    constexpr uint8 VAULT_SLOT_3_REQUIREMENT = VAULT_SLOT3_REQUIRED_DUNGEONS;
 
     // ========================================================================
     // SEASON CONFIGURATION
@@ -295,6 +323,10 @@ namespace DungeonEnhancement
         constexpr const char* YELLOW     = "|cffffff00";  // Info messages
         constexpr const char* BLUE       = "|cff0080ff";  // Mythic+ tier color
         constexpr const char* PURPLE     = "|cffa335ee";  // Epic/special items
+        constexpr const char* MYTHIC_PLUS= "|cff0080ff";  // Mythic+ messages (cyan)
+        constexpr const char* SUCCESS    = "|cff00ff00";  // Success (green)
+        constexpr const char* WARNING    = "|cffff9900";  // Warning (orange)
+        constexpr const char* ERROR      = "|cffff0000";  // Error (red)
         constexpr const char* END        = "|r";          // End color tag
     }
 

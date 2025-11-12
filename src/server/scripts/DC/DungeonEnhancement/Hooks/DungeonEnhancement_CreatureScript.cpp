@@ -12,11 +12,11 @@
 #include "Player.h"
 #include "Map.h"
 #include "InstanceScript.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicRunTracker.h"
-#include "MythicAffixFactory.h"
+#include "../Core/MythicDifficultyScaling.h"
+#include "../Core/MythicRunTracker.h"
+#include "../Affixes/MythicAffixFactory.h"
 
 using namespace DungeonEnhancement;
 
@@ -28,7 +28,7 @@ public:
     // ========================================================================
     // CREATURE SPAWN HOOK
     // ========================================================================
-    void OnCreatureCreate(Creature* creature) override
+    void OnCreatureCreate(Creature* creature)
     {
         if (!creature || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -63,13 +63,13 @@ public:
         MythicDifficultyScaling::ApplyScaling(creature, mapId, keystoneLevel, isBoss);
 
         // Apply affix effects on spawn via factory
-        sAffixFactory->OnCreatureSpawn(instanceId, creature, isBoss);
+        sAffixFactory->OnCreatureSpawn(instanceId, creature, isBoss, keystoneLevel);
     }
 
     // ========================================================================
     // CREATURE DEATH HOOK
     // ========================================================================
-    void OnCreatureKill(Creature* creature, Unit* killer) override
+    void OnCreatureKill(Creature* creature, Unit* killer)
     {
         if (!creature || !killer || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -100,13 +100,13 @@ public:
         }
 
         // Apply affix death effects via factory
-        sAffixFactory->OnCreatureDeath(instanceId, creature, isBoss);
+        sAffixFactory->OnCreatureDeath(instanceId, creature, killer, runData->keystoneLevel);
     }
 
     // ========================================================================
     // DAMAGE MODIFICATION HOOK
     // ========================================================================
-    void ModifyCreatureDamage(Creature* creature, Unit* victim, uint32& damage) override
+    void ModifyCreatureDamage(Creature* creature, Unit* victim, uint32& damage)
     {
         if (!creature || !victim || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -131,7 +131,7 @@ public:
     // ========================================================================
     // COMBAT HOOKS
     // ========================================================================
-    void OnCreatureEnterCombat(Creature* creature, Unit* target) override
+    void OnCreatureEnterCombat(Creature* creature, Unit* target)
     {
         if (!creature || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -157,7 +157,7 @@ public:
     // ========================================================================
     // HEALTH CHANGE HOOK (for Raging affix)
     // ========================================================================
-    void OnCreatureHealthChange(Creature* creature, uint32 /*oldHealth*/, uint32 newHealth) override
+    void OnCreatureHealthChange(Creature* creature, uint32 /*oldHealth*/, uint32 newHealth)
     {
         if (!creature || !sDungeonEnhancementMgr->IsEnabled())
             return;

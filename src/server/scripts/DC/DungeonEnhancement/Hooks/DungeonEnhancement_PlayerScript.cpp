@@ -12,9 +12,9 @@
 #include "Map.h"
 #include "Group.h"
 #include "Chat.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
-#include "MythicRunTracker.h"
+#include "../Core/MythicRunTracker.h"
 #include "../Affixes/MythicAffixFactory.h"
 
 using namespace DungeonEnhancement;
@@ -34,7 +34,7 @@ public:
     // ========================================================================
     // PLAYER DEATH HOOK
     // ========================================================================
-    void OnPlayerDeath(Player* player, Unit* /*killer*/) override
+    void OnPlayerDeath(Player* player, Unit* /*killer*/)
     {
         if (!player || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -60,7 +60,7 @@ public:
     // ========================================================================
     // PLAYER LOGIN HOOK
     // ========================================================================
-    void OnLogin(Player* player) override
+    void OnLogin(Player* player)
     {
         if (!player || !sDungeonEnhancementMgr->IsEnabled())
             return;
