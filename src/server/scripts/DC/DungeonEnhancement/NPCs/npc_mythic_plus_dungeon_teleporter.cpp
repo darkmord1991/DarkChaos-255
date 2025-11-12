@@ -11,7 +11,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "DungeonEnhancementManager.h"
+#include "../Core/DungeonEnhancementManager.h"
 #include "../Core/DungeonEnhancementConstants.h"
 
 using namespace DungeonEnhancement;
@@ -242,7 +242,7 @@ private:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFAA00[M+2+]|r %s - %s",
-                    affix->affixName.c_str(), affix->description.c_str()
+                    affix->affixName.c_str(), affix->affixDescription.c_str()
                 );
             }
         }
@@ -255,7 +255,7 @@ private:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFAA00[M+4+]|r %s - %s",
-                    affix->affixName.c_str(), affix->description.c_str()
+                    affix->affixName.c_str(), affix->affixDescription.c_str()
                 );
             }
         }
@@ -268,7 +268,7 @@ private:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFAA00[M+7+]|r %s - %s",
-                    affix->affixName.c_str(), affix->description.c_str()
+                    affix->affixName.c_str(), affix->affixDescription.c_str()
                 );
             }
         }

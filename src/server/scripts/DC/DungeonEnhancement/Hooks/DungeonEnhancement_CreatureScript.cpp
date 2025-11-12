@@ -121,11 +121,15 @@ public:
         if (!MythicRunTracker::IsRunActive(instanceId))
             return;
 
+        MythicRunData* runData = MythicRunTracker::GetRunData(instanceId);
+        if (!runData)
+            return;
+
         // Apply scaling damage modifier
         MythicDifficultyScaling::ModifyCreatureDamage(creature, victim, damage);
 
         // Apply affix damage modifiers via factory
-        sAffixFactory->OnDamageDealt(instanceId, creature, victim, damage);
+        sAffixFactory->OnDamageDealt(instanceId, creature, victim, damage, runData->keystoneLevel);
     }
 
     // ========================================================================
@@ -146,12 +150,16 @@ public:
         if (!MythicRunTracker::IsRunActive(instanceId))
             return;
 
+        MythicRunData* runData = MythicRunTracker::GetRunData(instanceId);
+        if (!runData)
+            return;
+
         // Determine if boss
         bool isBoss = (creature->GetCreatureTemplate()->rank == CREATURE_ELITE_WORLDBOSS ||
                        creature->GetCreatureTemplate()->rank == CREATURE_ELITE_RARE);
 
         // Notify affixes about combat start via factory
-        sAffixFactory->OnEnterCombat(instanceId, creature, isBoss);
+        sAffixFactory->OnEnterCombat(instanceId, creature, isBoss, runData->keystoneLevel);
     }
 
     // ========================================================================

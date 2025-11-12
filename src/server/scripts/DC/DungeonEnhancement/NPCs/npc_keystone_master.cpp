@@ -94,10 +94,6 @@ public:
                 HandleViewRating(player, creature);
                 break;
 
-            case GOSSIP_ACTION_KEYSTONE_INFO:
-                HandleKeystoneHowTo(player, creature);
-                break;
-
             case GOSSIP_ACTION_CONFIRM_DESTROY:
                 ConfirmDestroyKeystone(player, creature);
                 break;
@@ -132,8 +128,10 @@ private:
             return;
         }
 
-        // Check bag space
-        if (player->GetFreeInventorySlots() == 0)
+        // Check bag space - try to find a slot for the keystone
+        ItemPosCountVec dest;
+        uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, ITEM_KEYSTONE_BASE, 1);
+        if (msg != EQUIP_ERR_OK)
         {
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFF0000Your bags are full. Make space and try again.|r"
@@ -213,10 +211,10 @@ private:
             "|cFF00FF00=== Your Mythic+ Keystone ===|r"
         );
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "Level: |cFFFFAA00Mythic+%u|r", keystoneLevel
+            "Level: |cFFFFAA00Mythic+%u|r", static_cast<uint32>(keystoneLevel)
         );
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "Max Level: |cFFFFAA00Mythic+%u|r", MYTHIC_PLUS_MAX_LEVEL
+            "Max Level: |cFFFFAA00Mythic+%u|r", static_cast<uint32>(MYTHIC_PLUS_MAX_LEVEL)
         );
         ChatHandler(player->GetSession()).PSendSysMessage(" ");
         ChatHandler(player->GetSession()).PSendSysMessage(
@@ -278,7 +276,7 @@ private:
                     affix->affixName.c_str(), affix->affixType.c_str()
                 );
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "  %s", affix->description.c_str()
+                    "  %s", affix->affixDescription.c_str()
                 );
             }
         }
@@ -294,7 +292,7 @@ private:
                     affix->affixName.c_str(), affix->affixType.c_str()
                 );
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "  %s", affix->description.c_str()
+                    "  %s", affix->affixDescription.c_str()
                 );
             }
         }
@@ -310,7 +308,7 @@ private:
                     affix->affixName.c_str(), affix->affixType.c_str()
                 );
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "  %s", affix->description.c_str()
+                    "  %s", affix->affixDescription.c_str()
                 );
             }
         }
@@ -334,7 +332,7 @@ private:
             return;
         }
 
-        uint32 rating = sDungeonEnhancementMgr->GetPlayerRating(player);
+        uint32 rating = sDungeonEnhancementMgr->GetPlayerRating(player, season->seasonId);
 
         ChatHandler(player->GetSession()).PSendSysMessage(
             "|cFF00FF00=== Your Mythic+ Rating (Season %u) ===|r", season->seasonId

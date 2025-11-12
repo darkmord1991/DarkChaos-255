@@ -103,7 +103,7 @@ public:
     // ========================================================================
     // DAMAGE TAKEN HOOK (for player-affecting affixes)
     // ========================================================================
-    void OnTakeDamage(Player* player, Unit* attacker, uint32& damage) override
+    void OnTakeDamage(Player* player, Unit* attacker, uint32& damage)
     {
         if (!player || !attacker || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -118,16 +118,20 @@ public:
         if (!MythicRunTracker::IsRunActive(instanceId))
             return;
 
+        MythicRunData* runData = MythicRunTracker::GetRunData(instanceId);
+        if (!runData)
+            return;
+
         // Apply affix effects that modify player damage taken via factory
         Creature* creatureAttacker = attacker->ToCreature();
         if (creatureAttacker)
-            sAffixFactory->OnPlayerDamaged(instanceId, player, creatureAttacker, damage);
+            sAffixFactory->OnPlayerDamaged(instanceId, player, creatureAttacker, damage, runData->keystoneLevel);
     }
 
     // ========================================================================
     // GROUP LEAVE HOOK (abandon run if all players leave)
     // ========================================================================
-    void OnGroupLeave(Player* player, Group* /*group*/) override
+    void OnGroupLeave(Player* player, Group* /*group*/)
     {
         if (!player || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -173,7 +177,7 @@ public:
     // ========================================================================
     // MAP CHANGE HOOK (track teleports out of dungeon)
     // ========================================================================
-    void OnMapChanged(Player* player) override
+    void OnMapChanged(Player* player)
     {
         if (!player || !sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -253,7 +257,7 @@ public:
     // ========================================================================
     // WEEKLY RESET (Tuesday reset)
     // ========================================================================
-    void OnBeforeWorldInitialized(uint32 /*updateFlags*/) override
+    void OnBeforeWorldInitialized() override
     {
         if (!sDungeonEnhancementMgr->IsEnabled())
             return;
@@ -261,7 +265,7 @@ public:
         // Check if it's Tuesday (weekly reset day)
         time_t now = time(nullptr);
         tm timeInfo;
-        localtime_s(&timeInfo, &now);
+        localtime_r(&now, &timeInfo);
         
         // Tuesday = 2 (0=Sunday, 1=Monday, 2=Tuesday, etc.)
         if (timeInfo.tm_wday == 2)
