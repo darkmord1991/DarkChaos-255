@@ -269,8 +269,8 @@ enum Difficulty : uint8
     DUNGEON_DIFFICULTY_NORMAL      = 0,
     DUNGEON_DIFFICULTY_HEROIC      = 1,
     DUNGEON_DIFFICULTY_EPIC        = 2,
-    DUNGEON_DIFFICULTY_MYTHIC      = 3,
-    DUNGEON_DIFFICULTY_MYTHIC_PLUS = 4,
+    DUNGEON_DIFFICULTY_MYTHIC      = 4,
+    DUNGEON_DIFFICULTY_MYTHIC_PLUS = 5,
 
     RAID_DIFFICULTY_10MAN_NORMAL   = 0,
     RAID_DIFFICULTY_25MAN_NORMAL   = 1,
@@ -282,9 +282,9 @@ enum Difficulty : uint8
 
 #define RAID_DIFFICULTY_MASK_25MAN 1    // 25-man difficulties use odd indices (1, 3, 5), share the low bit
 
-#define MAX_DUNGEON_DIFFICULTY     5
+#define MAX_DUNGEON_DIFFICULTY     6
 #define MAX_RAID_DIFFICULTY        6
-#define MAX_DIFFICULTY             6
+#define MAX_DIFFICULTY             4
 
 enum SpawnMask
 {
