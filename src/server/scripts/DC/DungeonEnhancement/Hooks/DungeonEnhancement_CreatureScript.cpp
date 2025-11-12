@@ -13,7 +13,7 @@
 #include "Map.h"
 #include "InstanceScript.h"
 #include "DungeonEnhancementManager.h"
-#include "DungeonEnhancementConstants.h"
+#include "../Core/DungeonEnhancementConstants.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicRunTracker.h"
 #include "MythicAffixFactory.h"

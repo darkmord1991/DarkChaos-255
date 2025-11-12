@@ -8,7 +8,7 @@
  */
 
 #include "MythicAffixFactory.h"
-#include "DungeonEnhancementConstants.h"
+#include "../Core/DungeonEnhancementConstants.h"
 
 // Forward declare all affix factory functions
 namespace DungeonEnhancement

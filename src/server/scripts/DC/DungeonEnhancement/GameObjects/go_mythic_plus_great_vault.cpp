@@ -13,7 +13,7 @@
 #include "ScriptedGossip.h"
 #include "GameObject.h"
 #include "DungeonEnhancementManager.h"
-#include "DungeonEnhancementConstants.h"
+#include "../Core/DungeonEnhancementConstants.h"
 
 using namespace DungeonEnhancement;
 

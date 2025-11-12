@@ -11,7 +11,7 @@
 #define MYTHIC_AFFIX_HANDLER_H
 
 #include "Common.h"
-#include "DungeonEnhancementConstants.h"
+#include "../Core/DungeonEnhancementConstants.h"
 #include "Unit.h"
 #include "Creature.h"
 #include "Player.h"

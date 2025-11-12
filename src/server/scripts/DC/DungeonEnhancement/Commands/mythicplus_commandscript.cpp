@@ -12,7 +12,7 @@
 #include "Player.h"
 #include "Map.h"
 #include "DungeonEnhancementManager.h"
-#include "DungeonEnhancementConstants.h"
+#include "../Core/DungeonEnhancementConstants.h"
 #include "MythicRunTracker.h"
 #include "MythicDifficultyScaling.h"
 
