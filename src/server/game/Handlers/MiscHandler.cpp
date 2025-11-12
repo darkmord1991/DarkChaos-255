@@ -1379,6 +1379,8 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
 
     Difficulty const difficulty = Difficulty(mode);
 
+    LOG_DEBUG("network", "MSG_SET_RAID_DIFFICULTY received value {} (mapped difficulty {})", mode, static_cast<uint32>(difficulty));
+
     if (difficulty == _player->GetRaidDifficulty())
         return;
 
