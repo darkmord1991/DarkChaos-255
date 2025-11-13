@@ -544,14 +544,14 @@ namespace DungeonEnhancement
                         // Award title if applicable
                         if (rewardTitle > 0)
                         {
-                            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_TITLE);
-                            stmt->SetData(0, participantGUID.GetCounter());
-                            stmt->SetData(1, rewardTitle);
-                            CharacterDatabase.Execute(stmt);
-                            
-                            ChatHandler(player->GetSession()).PSendSysMessage(
-                                "|cFF00FF00Achievement Unlocked! You earned a new title!|r"
-                            );
+                            CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(rewardTitle);
+                            if (titleEntry)
+                            {
+                                player->SetTitle(titleEntry);
+                                ChatHandler(player->GetSession()).PSendSysMessage(
+                                    "|cFF00FF00Achievement Unlocked! You earned a new title!|r"
+                                );
+                            }
                         }
                         else
                         {
