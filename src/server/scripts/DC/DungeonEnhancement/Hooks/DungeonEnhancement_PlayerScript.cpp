@@ -291,7 +291,7 @@ private:
         // Degrade all keystones by 1 level (minimum M+2)
         CharacterDatabase.Execute(
             "UPDATE dc_mythic_keystones SET keystoneLevel = GREATEST(keystoneLevel - 1, {}) WHERE keystoneLevel > {}",
-            MYTHIC_PLUS_MIN_LEVEL, MYTHIC_PLUS_MIN_LEVEL
+            static_cast<uint8>(MYTHIC_PLUS_MIN_LEVEL), static_cast<uint8>(MYTHIC_PLUS_MIN_LEVEL)
         );
         LOG_INFO(LogCategory::MYTHIC_PLUS, "Keystone degradation completed");
 

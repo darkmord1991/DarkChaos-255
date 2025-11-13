@@ -135,7 +135,7 @@ public:
     // ========================================================================
     // COMBAT HOOKS
     // ========================================================================
-    void OnCreatureEnterCombat(Creature* creature, Unit* target)
+    void OnCreatureEnterCombat(Creature* creature, [[maybe_unused]] Unit* target)
     {
         if (!creature || !sDungeonEnhancementMgr->IsEnabled())
             return;

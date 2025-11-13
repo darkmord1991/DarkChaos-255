@@ -72,7 +72,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, GameObject* go, [[maybe_unused]] uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
 
@@ -357,7 +357,7 @@ private:
     // INFO DISPLAY
     // ========================================================================
 
-    void ShowVaultInfo(Player* player, GameObject* go)
+    void ShowVaultInfo(Player* player, [[maybe_unused]] GameObject* go)
     {
         CloseGossipMenuFor(player);
 

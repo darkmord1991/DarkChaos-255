@@ -685,7 +685,7 @@ namespace DungeonEnhancement
     // HELPER FUNCTIONS
     // ========================================================================
     
-    void MythicRunTracker::BroadcastToParticipants(uint32 instanceId, const std::string& message, uint32 color)
+    void MythicRunTracker::BroadcastToParticipants(uint32 instanceId, const std::string& message, [[maybe_unused]] uint32 color)
     {
         MythicRunData* runData = GetRunData(instanceId);
         if (!runData)

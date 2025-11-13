@@ -119,7 +119,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, GameObject* go, [[maybe_unused]] uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
 
@@ -150,7 +150,7 @@ private:
     // KEYSTONE ACTIVATION
     // ========================================================================
 
-    void HandleActivateKeystone(Player* player, GameObject* go)
+    void HandleActivateKeystone(Player* player, [[maybe_unused]] GameObject* go)
     {
         CloseGossipMenuFor(player);
 
@@ -323,7 +323,7 @@ private:
     // INFO DISPLAY
     // ========================================================================
 
-    void ShowFontInfo(Player* player, GameObject* go)
+    void ShowFontInfo(Player* player, [[maybe_unused]] GameObject* go)
     {
         CloseGossipMenuFor(player);
 

@@ -54,7 +54,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, [[maybe_unused]] uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
 
@@ -252,7 +252,7 @@ private:
     // INFO MENUS
     // ========================================================================
 
-    void ShowCurrentAffixes(Player* player, Creature* creature)
+    void ShowCurrentAffixes(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -326,7 +326,7 @@ private:
         );
     }
 
-    void ShowAboutSystem(Player* player, Creature* creature)
+    void ShowAboutSystem(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 

@@ -68,7 +68,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, [[maybe_unused]] uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
 
@@ -115,7 +115,7 @@ private:
     // KEYSTONE MANAGEMENT
     // ========================================================================
 
-    void HandleRequestKeystone(Player* player, Creature* creature)
+    void HandleRequestKeystone(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -166,7 +166,7 @@ private:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    void ConfirmDestroyKeystone(Player* player, Creature* creature)
+    void ConfirmDestroyKeystone(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -193,7 +193,7 @@ private:
                  player->GetName().c_str(), keystoneLevel);
     }
 
-    void HandleKeystoneInfo(Player* player, Creature* creature)
+    void HandleKeystoneInfo(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -238,7 +238,7 @@ private:
     // INFO DISPLAYS
     // ========================================================================
 
-    void HandleViewAffixes(Player* player, Creature* creature)
+    void HandleViewAffixes(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -319,7 +319,7 @@ private:
         );
     }
 
-    void HandleViewRating(Player* player, Creature* creature)
+    void HandleViewRating(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
@@ -364,7 +364,7 @@ private:
         );
     }
 
-    void HandleKeystoneHowTo(Player* player, Creature* creature)
+    void HandleKeystoneHowTo(Player* player, [[maybe_unused]] Creature* creature)
     {
         CloseGossipMenuFor(player);
 
