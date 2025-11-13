@@ -25,7 +25,7 @@ public:
             return;
 
         Difficulty difficulty = map->GetDifficulty();
-        uint8 baseLevel = creature->getLevel();
+        uint8 baseLevel = creature->GetLevel();
 
         // Don't scale creatures that are already max level
         if (baseLevel >= 80)
