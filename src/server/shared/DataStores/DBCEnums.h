@@ -285,6 +285,7 @@ enum Difficulty : uint8
 #define MAX_DUNGEON_DIFFICULTY     6
 #define MAX_RAID_DIFFICULTY        6
 #define MAX_DIFFICULTY             4
+#define MAX_SPELL_DIFFICULTY       MAX_DIFFICULTY
 
 enum SpawnMask
 {
