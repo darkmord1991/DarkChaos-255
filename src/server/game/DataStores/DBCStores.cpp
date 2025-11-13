@@ -776,40 +776,91 @@ MapDifficulty const* GetDownscaledMapDifficultyData(uint32 mapId, Difficulty& di
     if (!mapEntry)
         return nullptr;
 
-    auto tryFallback = [&](Difficulty fallback, bool keepRequested) -> MapDifficulty const*
+    auto tryFallback = [&](Difficulty fallback) -> MapDifficulty const*
     {
         MapDifficulty const* diff = GetMapDifficultyData(mapId, fallback);
-        if (diff && !keepRequested)
-            difficulty = fallback;
+        if (diff)
+            difficulty = fallback;  // ALWAYS update difficulty for spawning to work
         return diff;
     };
 
     if (mapEntry->IsDungeon())
     {
+        // Mythic+ cascades: Mythic+ -> Mythic -> Heroic -> Normal
         if (requested == DUNGEON_DIFFICULTY_MYTHIC_PLUS)
         {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_MYTHIC, true))
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_MYTHIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
                 return diff;
         }
 
-        if (requested == DUNGEON_DIFFICULTY_MYTHIC || requested == DUNGEON_DIFFICULTY_MYTHIC_PLUS)
+        // Mythic cascades: Mythic -> Heroic -> Normal
+        if (requested == DUNGEON_DIFFICULTY_MYTHIC)
         {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC, true))
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
+                return diff;
+        }
+
+        // Heroic cascades: Heroic -> Normal
+        if (requested == DUNGEON_DIFFICULTY_HEROIC)
+        {
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
+                return diff;
+        }
+
+        // Epic cascades: Epic -> Heroic -> Normal
+        if (requested == DUNGEON_DIFFICULTY_EPIC)
+        {
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
                 return diff;
         }
     }
     else if (mapEntry->IsRaid())
     {
+        // 25-man Mythic cascades: 25M Mythic -> 25M Heroic -> 25M Normal -> 10M Heroic -> 10M Normal
         if (requested == RAID_DIFFICULTY_25MAN_MYTHIC)
         {
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_HEROIC, true))
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_NORMAL))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
                 return diff;
         }
 
-        if (requested == RAID_DIFFICULTY_10MAN_MYTHIC || requested == RAID_DIFFICULTY_25MAN_MYTHIC)
+        // 10-man Mythic cascades: 10M Mythic -> 10M Heroic -> 10M Normal
+        if (requested == RAID_DIFFICULTY_10MAN_MYTHIC)
         {
-            Difficulty heroicFallback = Difficulty(requested - 2);
-            if (MapDifficulty const* diff = tryFallback(heroicFallback, true))
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
+                return diff;
+        }
+
+        // 25-man Heroic cascades: 25M Heroic -> 25M Normal -> 10M Heroic -> 10M Normal
+        if (requested == RAID_DIFFICULTY_25MAN_HEROIC)
+        {
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_NORMAL))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
+                return diff;
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
+                return diff;
+        }
+
+        // 10-man Heroic cascades: 10M Heroic -> 10M Normal
+        if (requested == RAID_DIFFICULTY_10MAN_HEROIC)
+        {
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
                 return diff;
         }
     }
