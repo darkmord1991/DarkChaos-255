@@ -112,13 +112,17 @@ namespace DarkChaos
         }
 
         // Log token transaction to database
-        static void LogTokenTransaction(uint32 player_guid, const char* event_type,
+        static void LogTokenTransaction(uint32 player_guid, const char* transaction_type,
                                        const char* reason, int32 token_change, int32 essence_change)
         {
+            // Determine currency type based on what changed
+            const char* currency_type = (essence_change != 0) ? "artifact_essence" : "upgrade_token";
+            uint32 amount = (essence_change != 0) ? std::abs(essence_change) : std::abs(token_change);
+            
             CharacterDatabase.Execute(
-                "INSERT INTO dc_token_transaction_log (player_guid, event_type, token_change, essence_change, reason, timestamp) "
-                "VALUES ({}, '{}', {}, {}, '{}', NOW())",
-                player_guid, event_type, token_change, essence_change, reason);
+                "INSERT INTO dc_token_transaction_log (player_guid, currency_type, amount, transaction_type, reason) "
+                "VALUES ({}, '{}', {}, '{}', '{}')",
+                player_guid, currency_type, amount, transaction_type, reason);
         }
 
         // Check if player is at weekly token cap
@@ -175,7 +179,7 @@ namespace DarkChaos
                 // Log transaction
                 std::ostringstream reason;
                 reason << "PvP Kill: " << victim->GetName();
-                LogTokenTransaction(killer->GetGUID().GetCounter(), "PvP", reason.str().c_str(), reward, 0);
+                LogTokenTransaction(killer->GetGUID().GetCounter(), "reward", reason.str().c_str(), reward, 0);
 
                 // Send notification
                     ChatHandler(killer->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (PvP Kill)", reward);
@@ -214,7 +218,7 @@ namespace DarkChaos
                 // Log transaction
                 std::ostringstream reason;
                 reason << "Quest: " << quest->GetTitle();
-                LogTokenTransaction(player->GetGUID().GetCounter(), "Quest", reason.str().c_str(), reward, 0);
+                LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), reward, 0);
 
                 // Send notification
                 ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (Quest Complete: %s)", reward, quest->GetTitle().c_str());
@@ -258,7 +262,7 @@ namespace DarkChaos
                 // Log transaction
                 std::ostringstream reason;
                 reason << "Achievement: " << achName;
-                LogTokenTransaction(player->GetGUID().GetCounter(), "Achievement", reason.str().c_str(), 0, essence_reward);
+                LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), 0, essence_reward);
 
                 // Send notification
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achName.c_str());
@@ -354,7 +358,7 @@ namespace DarkChaos
                     mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
 
                 // Log transaction
-                LogTokenTransaction(player->GetGUID().GetCounter(), "Creature", reward_reason.str().c_str(),
+                LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reward_reason.str().c_str(),
                                    token_reward, essence_reward);
 
                 // Send notification
