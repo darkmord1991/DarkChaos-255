@@ -112,15 +112,12 @@ public:
             creature->SetMaxHealth(newMaxHealth);
             creature->SetHealth(newMaxHealth);
             
-            // Scale damage (approximately)
-            float baseDamageMin = creature->GetCreatureTemplate()->mindmg;
-            float baseDamageMax = creature->GetCreatureTemplate()->maxdmg;
-            creature->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, baseDamageMin * scaleFactor);
-            creature->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, baseDamageMax * scaleFactor);
-            
             // Scale armor (approximately)
             uint32 baseArmor = creature->GetCreatureTemplate()->armor;
-            creature->SetArmor(uint32(baseArmor * scaleFactor));
+            if (baseArmor > 0)
+            {
+                creature->SetArmor(uint32(baseArmor * scaleFactor));
+            }
         }
     }
 };

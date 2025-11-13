@@ -51,8 +51,6 @@ namespace
                 return "10-Man Mythic";
             case RAID_DIFFICULTY_25MAN_MYTHIC:
                 return "25-Man Mythic";
-            case RAID_DIFFICULTY_RAID_MYTHIC:
-                return "Raid Mythic";
             default:
                 return "Unknown";
         }
