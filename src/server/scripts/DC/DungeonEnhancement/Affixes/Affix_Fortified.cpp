@@ -51,7 +51,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateFortifiedHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Fortified(data);
-}
+    MythicAffixHandler* CreateFortifiedHandler(AffixData* data)
+    {
+        return new Affix_Fortified(data);
+    }
+} // namespace DungeonEnhancement

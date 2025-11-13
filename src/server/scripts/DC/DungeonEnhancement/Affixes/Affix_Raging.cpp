@@ -65,7 +65,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateRagingHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Raging(data);
-}
+    MythicAffixHandler* CreateRagingHandler(AffixData* data)
+    {
+        return new Affix_Raging(data);
+    }
+} // namespace DungeonEnhancement

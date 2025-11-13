@@ -83,7 +83,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateNecroticHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Necrotic(data);
-}
+    MythicAffixHandler* CreateNecroticHandler(AffixData* data)
+    {
+        return new Affix_Necrotic(data);
+    }
+} // namespace DungeonEnhancement

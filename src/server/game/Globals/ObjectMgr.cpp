@@ -2277,10 +2277,16 @@ void ObjectMgr::LoadCreatures()
     // Build single time for check spawnmask
     std::map<uint32, uint32> spawnMasks;
     for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-        if (sMapStore.LookupEntry(i))
-            for (int k = 0; k < MAX_DIFFICULTY; ++k)
-                if (GetMapDifficultyData(i, Difficulty(k)))
-                    spawnMasks[i] |= (1 << k);
+    {
+        if (!sMapStore.LookupEntry(i))
+            continue;
+
+        for (uint8 k = 0; k < MAX_DUNGEON_DIFFICULTY; ++k)
+        {
+            if (GetMapDifficultyData(i, Difficulty(k)))
+                spawnMasks[i] |= (1 << k);
+        }
+    }
 
     _creatureDataStore.rehash(result->GetRowCount());
     uint32 count = 0;
@@ -2644,10 +2650,16 @@ void ObjectMgr::LoadGameobjects()
     // build single time for check spawnmask
     std::map<uint32, uint32> spawnMasks;
     for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-        if (sMapStore.LookupEntry(i))
-            for (int k = 0; k < MAX_DIFFICULTY; ++k)
-                if (GetMapDifficultyData(i, Difficulty(k)))
-                    spawnMasks[i] |= (1 << k);
+    {
+        if (!sMapStore.LookupEntry(i))
+            continue;
+
+        for (uint8 k = 0; k < MAX_DUNGEON_DIFFICULTY; ++k)
+        {
+            if (GetMapDifficultyData(i, Difficulty(k)))
+                spawnMasks[i] |= (1 << k);
+        }
+    }
 
     _gameObjectDataStore.rehash(result->GetRowCount());
     do

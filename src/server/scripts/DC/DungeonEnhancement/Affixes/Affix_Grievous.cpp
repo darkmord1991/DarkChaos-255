@@ -109,7 +109,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateGrievousHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Grievous(data);
-}
+    MythicAffixHandler* CreateGrievousHandler(AffixData* data)
+    {
+        return new Affix_Grievous(data);
+    }
+} // namespace DungeonEnhancement

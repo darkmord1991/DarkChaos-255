@@ -66,7 +66,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateSanguineHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Sanguine(data);
-}
+    MythicAffixHandler* CreateSanguineHandler(AffixData* data)
+    {
+        return new Affix_Sanguine(data);
+    }
+} // namespace DungeonEnhancement

@@ -88,7 +88,10 @@ public:
 };
 
 // Factory function
-MythicAffixHandler* CreateVolcanicHandler(AffixData* data)
+namespace DungeonEnhancement
 {
-    return new Affix_Volcanic(data);
-}
+    MythicAffixHandler* CreateVolcanicHandler(AffixData* data)
+    {
+        return new Affix_Volcanic(data);
+    }
+} // namespace DungeonEnhancement
