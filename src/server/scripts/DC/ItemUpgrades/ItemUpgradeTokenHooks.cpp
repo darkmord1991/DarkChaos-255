@@ -242,18 +242,18 @@ namespace DarkChaos
                     return;  // Already claimed
                 }
 
-                // Award essence
-                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
-
-                // Mark as claimed
-                CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovered_at, season) "
-                    "VALUES ({}, {}, NOW(), 1)",
-                    player->GetGUID().GetCounter(), achievement->ID);
-
                 // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
                 uint8 loc = player->GetSession() ? player->GetSession()->GetSessionDbcLocale() : 0;
-                const char* achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
+                std::string achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
+
+                // Award essence
+                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+
+                // Mark as claimed (using 'event' as discovery_type for achievements)
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
+                    "VALUES ({}, {}, 'event', NOW())",
+                    player->GetGUID().GetCounter(), achievement->ID);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -261,10 +261,10 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "Achievement", reason.str().c_str(), 0, essence_reward);
 
                 // Send notification
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achName);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achName.c_str());
 
-        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
-            player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);
+                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
+                    player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);
             }
         };
 

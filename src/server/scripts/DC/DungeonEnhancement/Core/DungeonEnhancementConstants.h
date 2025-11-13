@@ -28,10 +28,10 @@ namespace DungeonEnhancement
     // ========================================================================
     enum NPCIds : uint32
     {
-        NPC_MYTHIC_PLUS_DUNGEON_TELEPORTER = 190003,  // Mythic+ dungeon teleporter
-        NPC_MYTHIC_RAID_TELEPORTER         = 190004,  // Mythic raid teleporter
-        NPC_MYTHIC_TOKEN_VENDOR            = 190005,  // Token vendor NPC
-        NPC_KEYSTONE_MASTER                = 190006   // Keystone acquisition NPC
+        NPC_MYTHIC_PLUS_DUNGEON_TELEPORTER = 190020,  // Mythic+ dungeon teleporter
+        NPC_MYTHIC_RAID_TELEPORTER         = 190021,  // Mythic raid teleporter
+        NPC_MYTHIC_TOKEN_VENDOR            = 190022,  // Token vendor NPC
+        NPC_KEYSTONE_MASTER                = 190023   // Keystone acquisition NPC
     };
 
     // ========================================================================

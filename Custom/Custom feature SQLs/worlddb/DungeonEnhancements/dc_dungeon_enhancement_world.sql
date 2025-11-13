@@ -21,22 +21,25 @@ drop table if exists `dc_mythic_gameobjects`;
 -- Purpose: Season definitions and configuration
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS `dc_mythic_seasons` (
-    `seasonId` INT UNSIGNED NOT NULL,
-    `seasonName` VARCHAR(100) NOT NULL,
-    `startDate` DATETIME NOT NULL,
-    `endDate` DATETIME DEFAULT NULL,
-    `isActive` TINYINT(1) NOT NULL DEFAULT 1,
-    `maxKeystoneLevel` TINYINT UNSIGNED NOT NULL DEFAULT 10,
-    `vaultEnabled` TINYINT(1) NOT NULL DEFAULT 1,
-    PRIMARY KEY (`seasonId`),
-    INDEX `idx_active` (`isActive`)
+    `season_id` INT UNSIGNED NOT NULL,
+    `season_name` VARCHAR(100) NOT NULL,
+    `season_short_name` VARCHAR(50) NOT NULL,
+    `start_timestamp` INT UNSIGNED NOT NULL COMMENT 'Unix timestamp',
+    `end_timestamp` INT UNSIGNED DEFAULT NULL COMMENT 'Unix timestamp',
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `max_keystone_level` TINYINT UNSIGNED NOT NULL DEFAULT 10,
+    `vault_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+    `affix_rotation_weeks` TINYINT UNSIGNED NOT NULL DEFAULT 12,
+    PRIMARY KEY (`season_id`),
+    INDEX `idx_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Mythic+ season definitions';
 
 -- Pre-populate Season 1
-INSERT INTO `dc_mythic_seasons` (`seasonId`, `seasonName`, `startDate`, `endDate`, `isActive`, `maxKeystoneLevel`, `vaultEnabled`) VALUES
-(1, 'Season 1: The Beginning', '2025-01-01 00:00:00', NULL, 1, 10, 1)
-ON DUPLICATE KEY UPDATE seasonName=VALUES(seasonName);
+-- 2025-01-01 00:00:00 = Unix timestamp 1735689600
+INSERT INTO `dc_mythic_seasons` (`season_id`, `season_name`, `season_short_name`, `start_timestamp`, `end_timestamp`, `is_active`, `max_keystone_level`, `vault_enabled`, `affix_rotation_weeks`) VALUES
+(1, 'Season 1: The Beginning', 'S1', 1735689600, NULL, 1, 10, 1, 12)
+ON DUPLICATE KEY UPDATE season_name=VALUES(season_name), season_short_name=VALUES(season_short_name);
 
 -- ============================================================================
 -- Table: dc_mythic_dungeons_config
@@ -299,14 +302,14 @@ COMMENT='NPC spawn locations for M+ system';
 -- Pre-populate NPC spawns (template - adjust coordinates as needed)
 INSERT INTO `dc_mythic_npc_spawns` (`npcEntry`, `npcName`, `mapId`, `zoneId`, `posX`, `posY`, `posZ`, `orientation`) VALUES
 -- Stormwind
-(190003, 'Dungeon Teleporter', 0, 1519, -8833.0, 628.0, 94.0, 3.14),
-(190004, 'Keystone Master', 0, 1519, -8831.0, 628.0, 94.0, 3.14),
+(190020, 'Dungeon Teleporter', 0, 1519, -8833.0, 628.0, 94.0, 3.14),
+(190023, 'Keystone Master', 0, 1519, -8831.0, 628.0, 94.0, 3.14),
 -- Orgrimmar
-(190003, 'Dungeon Teleporter', 1, 1637, 1573.0, -4439.0, 16.0, 1.57),
-(190004, 'Keystone Master', 1, 1637, 1575.0, -4439.0, 16.0, 1.57),
+(190020, 'Dungeon Teleporter', 1, 1637, 1573.0, -4439.0, 16.0, 1.57),
+(190023, 'Keystone Master', 1, 1637, 1575.0, -4439.0, 16.0, 1.57),
 -- Dalaran
-(190003, 'Dungeon Teleporter', 571, 4395, 5809.0, 588.0, 660.0, 0.0),
-(190004, 'Keystone Master', 571, 4395, 5811.0, 588.0, 660.0, 0.0);
+(190020, 'Dungeon Teleporter', 571, 4395, 5809.0, 588.0, 660.0, 0.0),
+(190023, 'Keystone Master', 571, 4395, 5811.0, 588.0, 660.0, 0.0);
 
 -- ============================================================================
 -- Table: dc_mythic_gameobjects
@@ -345,3 +348,92 @@ INSERT INTO `dc_mythic_gameobjects` (`goEntry`, `goName`, `mapId`, `zoneId`, `po
 -- ============================================================================
 -- END OF WORLD DATABASE SCHEMA
 -- ============================================================================
+
+-- ============================================================================
+-- NPC CREATURE TEMPLATES
+-- ============================================================================
+DELETE FROM `creature_template` WHERE `entry` IN (190020, 190021, 190022, 190023);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+-- Mythic+ Dungeon Teleporter (190020)
+(190020, 0, 0, 0, 0, 0, 'Mythic+ Dungeon Teleporter', 'Portal Keeper', 'Directions', 0, 80, 80, 2, 35, 1, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_mythic_plus_dungeon_teleporter', 12340),
+
+-- Mythic Raid Teleporter (190021)
+(190021, 0, 0, 0, 0, 0, 'Mythic Raid Teleporter', 'Portal Keeper', 'Directions', 0, 80, 80, 2, 35, 1, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, '', 12340),
+
+-- Mythic Token Vendor (190022)
+(190022, 0, 0, 0, 0, 0, 'Token Vendor', 'Dungeon Rewards', 'Buy', 0, 80, 80, 2, 35, 129, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, '', 12340),
+
+-- Keystone Master (190023)
+(190023, 0, 0, 0, 0, 0, 'Keystone Master', 'Mythic+ Coordinator', 'Interact', 0, 80, 80, 2, 35, 1, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_keystone_master', 12340);
+
+-- NPC Model Assignments (separate table)
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (190020, 190021, 190022, 190023);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(190020, 0, 26789, 1, 1, 12340),  -- Portal Keeper model
+(190021, 0, 26789, 1, 1, 12340),  -- Portal Keeper model
+(190022, 0, 28213, 1, 1, 12340),  -- Vendor model
+(190023, 0, 28776, 1, 1, 12340);  -- Coordinator model
+
+-- ============================================================================
+-- GAMEOBJECT TEMPLATES
+-- ============================================================================
+DELETE FROM `gameobject_template` WHERE `entry` BETWEEN 700000 AND 700099;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
+-- Great Vault (700000)
+(700000, 10, 9293, 'Great Vault', 'questinteract', '', '', 2, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_great_vault', 12340),
+
+-- Font of Power - Utgarde Pinnacle (700001)
+(700001, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Halls of Lightning (700002)
+(700002, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Gundrak (700003)
+(700003, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Halls of Stone (700004)
+(700004, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Blood Furnace (700005)
+(700005, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Slave Pens (700006)
+(700006, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Gnomeregan (700007)
+(700007, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340),
+
+-- Font of Power - Blackrock Depths (700008)
+(700008, 10, 8111, 'Font of Power', 'questinteract', 'Activating', '', 1.5, 0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 'go_mythic_plus_font_of_power', 12340);
+
+-- ============================================================================
+-- KEYSTONE ITEM TEMPLATES
+-- ============================================================================
+DELETE FROM `item_template` WHERE `entry` BETWEEN 100000 AND 100010;
+INSERT INTO `item_template` (`entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `RequiredSkill`, `RequiredSkillRank`, `requiredspell`, `requiredhonorrank`, `RequiredCityRank`, `RequiredReputationFaction`, `RequiredReputationRank`, `maxcount`, `stackable`, `ContainerSlots`, `stat_type1`, `stat_value1`, `stat_type2`, `stat_value2`, `stat_type3`, `stat_value3`, `stat_type4`, `stat_value4`, `stat_type5`, `stat_value5`, `stat_type6`, `stat_value6`, `stat_type7`, `stat_value7`, `stat_type8`, `stat_value8`, `stat_type9`, `stat_value9`, `stat_type10`, `stat_value10`, `ScalingStatDistribution`, `ScalingStatValue`, `dmg_min1`, `dmg_max1`, `dmg_type1`, `dmg_min2`, `dmg_max2`, `dmg_type2`, `armor`, `holy_res`, `fire_res`, `nature_res`, `frost_res`, `shadow_res`, `arcane_res`, `delay`, `ammo_type`, `RangedModRange`, `spellid_1`, `spelltrigger_1`, `spellcharges_1`, `spellppmRate_1`, `spellcooldown_1`, `spellcategory_1`, `spellcategorycooldown_1`, `spellid_2`, `spelltrigger_2`, `spellcharges_2`, `spellppmRate_2`, `spellcooldown_2`, `spellcategory_2`, `spellcategorycooldown_2`, `spellid_3`, `spelltrigger_3`, `spellcharges_3`, `spellppmRate_3`, `spellcooldown_3`, `spellcategory_3`, `spellcategorycooldown_3`, `spellid_4`, `spelltrigger_4`, `spellcharges_4`, `spellppmRate_4`, `spellcooldown_4`, `spellcategory_4`, `spellcategorycooldown_4`, `spellid_5`, `spelltrigger_5`, `spellcharges_5`, `spellppmRate_5`, `spellcooldown_5`, `spellcategory_5`, `spellcategorycooldown_5`, `bonding`, `description`, `PageText`, `LanguageID`, `PageMaterial`, `startquest`, `lockid`, `Material`, `sheath`, `RandomProperty`, `RandomSuffix`, `block`, `itemset`, `MaxDurability`, `area`, `Map`, `BagFamily`, `TotemCategory`, `socketColor_1`, `socketContent_1`, `socketColor_2`, `socketContent_2`, `socketColor_3`, `socketContent_3`, `socketBonus`, `GemProperties`, `RequiredDisenchantSkill`, `ArmorDamageModifier`, `duration`, `ItemLimitCategory`, `HolidayId`, `ScriptName`, `DisenchantID`, `FoodType`, `minMoneyLoot`, `maxMoneyLoot`, `flagsCustom`, `VerifiedBuild`) VALUES
+-- Mythic+2 Keystone (100000)
+(100000, 12, 0, -1, 'Mythic Keystone +2', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+2 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+3 Keystone (100001)
+(100001, 12, 0, -1, 'Mythic Keystone +3', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+3 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+4 Keystone (100002)
+(100002, 12, 0, -1, 'Mythic Keystone +4', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+4 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+5 Keystone (100003)
+(100003, 12, 0, -1, 'Mythic Keystone +5', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+5 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+6 Keystone (100004)
+(100004, 12, 0, -1, 'Mythic Keystone +6', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+6 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+7 Keystone (100005)
+(100005, 12, 0, -1, 'Mythic Keystone +7', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+7 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+8 Keystone (100006)
+(100006, 12, 0, -1, 'Mythic Keystone +8', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+8 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+9 Keystone (100009)
+(100007, 12, 0, -1, 'Mythic Keystone +9', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+9 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340),
+
+-- Mythic+10 Keystone (100008)
+(100008, 12, 0, -1, 'Mythic Keystone +10', 35717, 4, 134217728, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 1000, 0, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 0, -1, 0, -1, 1, 'A Mythic Keystone infused with power. Activates Mythic+10 difficulty with modifiers.', 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 12340);
