@@ -463,9 +463,9 @@ void LoadDBCStores(const std::string& dataPath)
     {
         SpellDifficultyEntry newEntry;
 
-        memset(newEntry.SpellID, 0, 4 * sizeof(uint32));
+        memset(newEntry.SpellID, 0, MAX_SPELL_DIFFICULTY * sizeof(uint32));
 
-        for (uint8 x = 0; x < MAX_DIFFICULTY; ++x)
+        for (uint8 x = 0; x < MAX_SPELL_DIFFICULTY; ++x)
         {
             if (spellDiff->SpellID[x] <= 0 || !sSpellStore.LookupEntry(spellDiff->SpellID[x]))
             {
@@ -481,7 +481,7 @@ void LoadDBCStores(const std::string& dataPath)
         if (newEntry.SpellID[0] <= 0 || newEntry.SpellID[1] <= 0) // id0-1 must be always set!
             continue;
 
-        for (uint8 x = 0; x < MAX_DIFFICULTY; ++x)
+        for (uint8 x = 0; x < MAX_SPELL_DIFFICULTY; ++x)
             if (newEntry.SpellID[x])
                 sSpellMgr->SetSpellDifficultyId(uint32(newEntry.SpellID[x]), spellDiff->ID);
     }
@@ -766,28 +766,71 @@ MapDifficulty const* GetMapDifficultyData(uint32 mapId, Difficulty difficulty)
 
 MapDifficulty const* GetDownscaledMapDifficultyData(uint32 mapId, Difficulty& difficulty)
 {
-    uint32 tmpDiff = difficulty;
+    Difficulty requested = difficulty;
 
-    MapDifficulty const* mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff));
-    if (!mapDiff)
+    MapDifficulty const* mapDiff = GetMapDifficultyData(mapId, requested);
+    if (mapDiff)
+        return mapDiff;
+
+    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+    if (!mapEntry)
+        return nullptr;
+
+    auto tryFallback = [&](Difficulty fallback, bool keepRequested) -> MapDifficulty const*
     {
-        if (tmpDiff > RAID_DIFFICULTY_25MAN_NORMAL) // heroic, downscale to normal
-            tmpDiff -= 2;
-        else
-            tmpDiff -= 1;   // any non-normal mode for raids like tbc (only one mode)
+        MapDifficulty const* diff = GetMapDifficultyData(mapId, fallback);
+        if (diff && !keepRequested)
+            difficulty = fallback;
+        return diff;
+    };
 
-        // pull new data
-        mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff)); // we are 10 normal or 25 normal
-        if (!mapDiff)
+    if (mapEntry->IsDungeon())
+    {
+        if (requested == DUNGEON_DIFFICULTY_MYTHIC_PLUS)
         {
-            tmpDiff -= 1;
-            mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff)); // 10 normal
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_MYTHIC, true))
+                return diff;
+        }
+
+        if (requested == DUNGEON_DIFFICULTY_MYTHIC || requested == DUNGEON_DIFFICULTY_MYTHIC_PLUS)
+        {
+            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC, true))
+                return diff;
+        }
+    }
+    else if (mapEntry->IsRaid())
+    {
+        if (requested == RAID_DIFFICULTY_25MAN_MYTHIC)
+        {
+            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_HEROIC, true))
+                return diff;
+        }
+
+        if (requested == RAID_DIFFICULTY_10MAN_MYTHIC || requested == RAID_DIFFICULTY_25MAN_MYTHIC)
+        {
+            Difficulty heroicFallback = Difficulty(requested - 2);
+            if (MapDifficulty const* diff = tryFallback(heroicFallback, true))
+                return diff;
         }
     }
 
-    difficulty = Difficulty(tmpDiff);
+    uint8 tmpDiff = static_cast<uint8>(requested);
+    while (tmpDiff)
+    {
+        if (tmpDiff > RAID_DIFFICULTY_25MAN_NORMAL)
+            tmpDiff = static_cast<uint8>(tmpDiff - 2);
+        else
+            --tmpDiff;
 
-    return mapDiff;
+        mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff));
+        if (mapDiff)
+        {
+            difficulty = Difficulty(tmpDiff);
+            return mapDiff;
+        }
+    }
+
+    return nullptr;
 }
 
 PvPDifficultyEntry const* GetBattlegroundBracketByLevel(uint32 mapid, uint32 level)

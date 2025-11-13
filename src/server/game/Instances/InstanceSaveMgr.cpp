@@ -821,7 +821,7 @@ void InstanceSaveMgr::CopyBinds(ObjectGuid from, ObjectGuid to, Player* toPlr)
     if (from == to)
         return;
 
-    for (uint8 d = 0; d < MAX_DIFFICULTY; ++d)
+    for (uint8 d = 0; d < MAX_RAID_DIFFICULTY; ++d)
     {
         BoundInstancesMap const& bi = PlayerGetBoundInstances(from, Difficulty(d));
         for (BoundInstancesMap::const_iterator itr = bi.begin(); itr != bi.end(); ++itr)

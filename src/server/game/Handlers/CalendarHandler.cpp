@@ -100,7 +100,7 @@ void WorldSession::HandleCalendarGetCalendar(WorldPacket& /*recvData*/)
 
     ByteBuffer dataBuffer;
     uint32 boundCounter = 0;
-    for (uint8 i = 0; i < MAX_DIFFICULTY; ++i)
+    for (uint8 i = 0; i < MAX_RAID_DIFFICULTY; ++i)
     {
         BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(_player->GetGUID(), Difficulty(i));
         for (BoundInstancesMap::const_iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end(); ++itr)
