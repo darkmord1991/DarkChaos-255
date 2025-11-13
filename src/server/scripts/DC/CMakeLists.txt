@@ -171,6 +171,10 @@ set(SCRIPTS_DC_DungeonEnhancement
     
     # Commands
     DungeonEnhancement/Commands/mythicplus_commandscript.cpp
+
+    # Difficulty utilities
+    DungeonEnhancements/DifficultyLevelScaling.cpp
+    DungeonEnhancements/Commands/difficulty_commandscript.cpp
 )
 
 set(SCRIPTS_DC_ItemUpgrade
