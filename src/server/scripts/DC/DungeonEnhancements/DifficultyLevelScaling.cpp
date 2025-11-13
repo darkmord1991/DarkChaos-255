@@ -32,40 +32,70 @@ public:
             return;
 
         uint8 newLevel = baseLevel;
+        bool isRaid = map->IsRaid();
 
-        switch (difficulty)
+        if (isRaid)
         {
-            case DUNGEON_DIFFICULTY_NORMAL:
-                // Keep base level for Normal
-                newLevel = baseLevel;
-                break;
+            // Raid difficulty handling
+            switch (difficulty)
+            {
+                case RAID_DIFFICULTY_10MAN_NORMAL:
+                case RAID_DIFFICULTY_25MAN_NORMAL:
+                    // 10/25N: Keep base level for raids
+                    newLevel = baseLevel;
+                    break;
 
-            case DUNGEON_DIFFICULTY_HEROIC:
-                // Heroic: scale to 80 or boost by 5 levels
-                newLevel = std::max<uint8>(baseLevel + 5, 80);
-                break;
+                case RAID_DIFFICULTY_10MAN_HEROIC:
+                case RAID_DIFFICULTY_25MAN_HEROIC:
+                    // 10/25H: Scale to 80 or boost by 3 levels
+                    newLevel = std::max<uint8>(baseLevel + 3, 80);
+                    break;
 
-            case RAID_DIFFICULTY_10MAN_NORMAL:
-            case RAID_DIFFICULTY_25MAN_NORMAL:
-                // 10/25N: Keep base level for raids
-                newLevel = baseLevel;
-                break;
-
-            case RAID_DIFFICULTY_10MAN_HEROIC:
-            case RAID_DIFFICULTY_25MAN_HEROIC:
-                // 10/25H: Scale to 80 or boost by 3 levels
-                newLevel = std::max<uint8>(baseLevel + 3, 80);
-                break;
-
-            // Custom Mythic difficulties (bits 16 and 32)
-            // These would be defined in your custom difficulty system
-            default:
-                // For Mythic/Mythic+, force level 80
-                if (difficulty >= 16) // Custom Mythic difficulty IDs
-                {
+                case RAID_DIFFICULTY_10MAN_MYTHIC:
+                case RAID_DIFFICULTY_25MAN_MYTHIC:
+                    // Mythic raids: Force level 80
                     newLevel = 80;
-                }
-                break;
+                    break;
+
+                default:
+                    newLevel = baseLevel;
+                    break;
+            }
+        }
+        else
+        {
+            // Dungeon difficulty handling
+            switch (difficulty)
+            {
+                case DUNGEON_DIFFICULTY_NORMAL:
+                    // Keep base level for Normal
+                    newLevel = baseLevel;
+                    break;
+
+                case DUNGEON_DIFFICULTY_HEROIC:
+                    // Heroic: scale to 80 or boost by 5 levels
+                    newLevel = std::max<uint8>(baseLevel + 5, 80);
+                    break;
+
+                case DUNGEON_DIFFICULTY_EPIC:
+                case DUNGEON_DIFFICULTY_MYTHIC:
+                    // Mythic: Force level 80
+                    newLevel = 80;
+                    break;
+
+                case DUNGEON_DIFFICULTY_MYTHIC_PLUS:
+                    // Mythic+: Force level 80
+                    newLevel = 80;
+                    break;
+
+                default:
+                    // For any other difficulty, force level 80
+                    if (difficulty >= 4)
+                    {
+                        newLevel = 80;
+                    }
+                    break;
+            }
         }
 
         if (newLevel != baseLevel)
