@@ -494,7 +494,7 @@ uint32 SpellMgr::GetSpellIdForDifficulty(uint32 spellId, Unit const* caster) con
     if (!caster || !caster->GetMap() || (!caster->GetMap()->IsDungeon() && !caster->GetMap()->IsBattleground()))
         return spellId;
 
-    Difficulty mapDifficulty = caster->GetMap()->GetSpawnMode();
+    Difficulty mapDifficulty = Difficulty(caster->GetMap()->GetSpawnMode());
     uint32 mode = uint32(mapDifficulty);
     if (mode >= MAX_SPELL_DIFFICULTY)
     {
