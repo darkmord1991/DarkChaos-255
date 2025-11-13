@@ -13,6 +13,8 @@
 #include "Map.h"
 #include "CommandScript.h"
 
+using namespace Acore::ChatCommands;
+
 // Forward declarations for difficulty labels
 namespace
 {
@@ -111,13 +113,11 @@ public:
         {
             handler->PSendSysMessage("Type: |cFF0088FFRaid|r");
             handler->PSendSysMessage("Difficulty: |cFFFFAA00%s|r", GetRaidDifficultyLabel(difficulty).c_str());
-            handler->PSendSysMessage("Size: |cFFFFAA00%u players|r", map->GetMaxPlayers());
         }
         else
         {
             handler->PSendSysMessage("Type: |cFF0088FFDungeon|r");
             handler->PSendSysMessage("Difficulty: |cFFFFAA00%s|r", GetDungeonDifficultyLabel(difficulty).c_str());
-            handler->PSendSysMessage("Size: |cFFFFAA00%u players|r", map->GetMaxPlayers());
         }
 
         // Additional info for non-standard difficulties

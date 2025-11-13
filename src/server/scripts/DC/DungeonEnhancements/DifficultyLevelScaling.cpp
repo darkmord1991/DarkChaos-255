@@ -112,12 +112,6 @@ public:
             creature->SetMaxHealth(newMaxHealth);
             creature->SetHealth(newMaxHealth);
             
-            // Scale armor (approximately)
-            uint32 baseArmor = creature->GetCreatureTemplate()->armor;
-            if (baseArmor > 0)
-            {
-                creature->SetArmor(uint32(baseArmor * scaleFactor));
-            }
         }
     }
 };
@@ -128,7 +122,7 @@ class MythicDungeonLevelScaling : public AllMapScript
 public:
     MythicDungeonLevelScaling() : AllMapScript("MythicDungeonLevelScaling") {}
 
-    void OnPlayerEnterMap(Map* map, Player* player) override
+    void OnPlayerEnterMap(Map* map, Player* player)
     {
         if (!map->IsDungeon())
             return;
