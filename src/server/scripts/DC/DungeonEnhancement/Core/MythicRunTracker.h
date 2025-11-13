@@ -236,6 +236,12 @@ namespace DungeonEnhancement
          */
         static void HandleRunFailure(Map* map);
         
+        /**
+         * Check and award achievements based on run completion
+         * @param runData The run data
+         */
+        static void CheckAndAwardAchievements(MythicRunData* runData);
+        
         // ====================================================================
         // GROUP UTILITIES
         // ====================================================================

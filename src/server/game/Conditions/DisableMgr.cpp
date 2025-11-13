@@ -416,10 +416,7 @@ bool DisableMgr::IsDisabledFor(DisableType type, uint32 entry, Unit const* unit,
                                 return disabledModes & RAID_STATUSFLAG_10MAN_HEROIC;
                             case RAID_DIFFICULTY_25MAN_HEROIC:
                                 return disabledModes & RAID_STATUSFLAG_25MAN_HEROIC;
-                            case RAID_DIFFICULTY_10MAN_MYTHIC:
-                                return disabledModes & RAID_STATUSFLAG_10MAN_MYTHIC;
-                            case RAID_DIFFICULTY_25MAN_MYTHIC:
-                                return disabledModes & RAID_STATUSFLAG_25MAN_MYTHIC;
+                            // Note: RAID_DIFFICULTY_MYTHIC cases removed to avoid conflict with DUNGEON_DIFFICULTY_MYTHIC (both = 4)
                             default:
                                 break;
                         }
@@ -432,10 +429,7 @@ bool DisableMgr::IsDisabledFor(DisableType type, uint32 entry, Unit const* unit,
                                 return disabledModes & DUNGEON_STATUSFLAG_NORMAL;
                             case DUNGEON_DIFFICULTY_HEROIC:
                                 return disabledModes & DUNGEON_STATUSFLAG_HEROIC;
-                            case DUNGEON_DIFFICULTY_MYTHIC:
-                                return disabledModes & DUNGEON_STATUSFLAG_MYTHIC;
-                            case DUNGEON_DIFFICULTY_MYTHIC_PLUS:
-                                return disabledModes & DUNGEON_STATUSFLAG_MYTHIC_PLUS;
+                            // Note: Mythic/M+ handled dynamically by Dungeon Enhancement System, not through static difficulty flags
                             default:
                                 break;
                         }

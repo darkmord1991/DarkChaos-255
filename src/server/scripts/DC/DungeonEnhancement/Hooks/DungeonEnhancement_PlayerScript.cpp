@@ -282,16 +282,30 @@ private:
     void PerformWeeklyReset()
     {
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
-                 "Performing Mythic+ weekly reset (Great Vault, Keystones)");
+                 "Performing Mythic+ weekly reset (Great Vault, Keystones, Affixes)");
 
         // Reset all players' vault progress
         sDungeonEnhancementMgr->ResetWeeklyVaultProgress();
+        LOG_INFO(LogCategory::MYTHIC_PLUS, "Vault progress reset completed");
 
-        // Reset keystones to base level (if configured)
-        // TODO: Query all players with keystones and reset to M+2
-        
-        // Rotate affixes to next week
-        // TODO: Advance affix rotation by 1 week
+        // Degrade all keystones by 1 level (minimum M+2)
+        CharacterDatabase.Execute(
+            "UPDATE dc_mythic_keystones SET keystoneLevel = GREATEST(keystoneLevel - 1, {}) WHERE keystoneLevel > {}",
+            MYTHIC_PLUS_MIN_LEVEL, MYTHIC_PLUS_MIN_LEVEL
+        );
+        LOG_INFO(LogCategory::MYTHIC_PLUS, "Keystone degradation completed");
+
+        // Advance affix rotation by 1 week
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        if (season && season->isActive)
+        {
+            // Rotate to next week's affixes (12-week cycle)
+            CharacterDatabase.Execute(
+                "UPDATE dc_mythic_affix_rotation SET weekNumber = ((weekNumber % 12) + 1) WHERE seasonId = {}",
+                season->seasonId
+            );
+            LOG_INFO(LogCategory::MYTHIC_PLUS, "Affix rotation advanced for Season {}", season->seasonId);
+        }
 
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Weekly reset completed successfully");

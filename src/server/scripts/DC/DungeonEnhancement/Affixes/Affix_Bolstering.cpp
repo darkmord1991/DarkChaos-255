@@ -17,7 +17,7 @@
 namespace DungeonEnhancement
 {
     // Custom spell ID for Bolstering buff (configure in database)
-    const uint32 SPELL_BOLSTERING_BUFF = 800010;  // Custom spell - +20% HP/damage stacking aura
+    const uint32 SPELL_BOLSTERING_BUFF = 800020;  // Custom spell - +20% HP/damage stacking aura
 
     class Affix_Bolstering : public MythicAffixHandler
     {

@@ -98,6 +98,18 @@ public:
                 OnGossipHello(player, go);
                 break;
 
+            case GOSSIP_ACTION_CLAIM_GEAR_BASE + 1:
+            case GOSSIP_ACTION_CLAIM_GEAR_BASE + 2:
+            case GOSSIP_ACTION_CLAIM_GEAR_BASE + 3:
+                HandleClaimGear(player, go, action - GOSSIP_ACTION_CLAIM_GEAR_BASE);
+                break;
+
+            case GOSSIP_ACTION_CLAIM_TOKENS_BASE + 1:
+            case GOSSIP_ACTION_CLAIM_TOKENS_BASE + 2:
+            case GOSSIP_ACTION_CLAIM_TOKENS_BASE + 3:
+                HandleClaimTokens(player, go, action - GOSSIP_ACTION_CLAIM_TOKENS_BASE);
+                break;
+
             default:
                 CloseGossipMenuFor(player);
                 break;
@@ -214,9 +226,7 @@ private:
 
     uint32 GetVaultTokenReward(uint8 slotNumber, Player* player)
     {
-        // Get highest M+ level completed this week
-        // TODO: Query from dc_mythic_run_history for current week
-        uint8 highestLevel = 5;  // Placeholder - should query database
+        uint8 highestLevel = GetHighestKeystoneThisWeek(player);
 
         // Determine tier
         uint8 tier = 1;  // Tier 1: M+2-4
@@ -258,6 +268,89 @@ private:
         }
 
         return 0;
+    }
+
+    uint8 GetHighestKeystoneThisWeek(Player* player)
+    {
+        // Query highest keystone level from dc_mythic_run_history this week
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        if (!season)
+            return 2;
+
+        uint32 weekStart = time(nullptr) - (7 * 24 * 60 * 60);  // Last 7 days
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT MAX(keystoneLevel) FROM dc_mythic_run_history "
+            "WHERE playerGUID = {} AND seasonId = {} AND completionTime >= {}",
+            player->GetGUID().GetCounter(), season->seasonId, weekStart
+        );
+
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            return fields[0].Get<uint8>();
+        }
+
+        return 2;  // Default to M+2
+    }
+
+    void HandleClaimGear(Player* player, GameObject* go, uint8 slotNumber)
+    {
+        CloseGossipMenuFor(player);
+
+        uint8 highestLevel = GetHighestKeystoneThisWeek(player);
+        uint32 itemLevel = 200 + (highestLevel * 5);  // Base iLvl 200, +5 per M+ level
+
+        // Create gear based on player's class and spec
+        // For simplicity, we'll give Mythic+ tokens instead which can be traded for gear
+        uint16 tokenAmount = GetVaultTokenReward(slotNumber, player);
+        
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cFF00FF00You would receive item level %u gear (Slot %u)|r",
+            itemLevel, slotNumber
+        );
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cFFFFFF00This feature will award high-level gear items in a future update.|r"
+        );
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cFFFFFF00For now, claim the %u Mythic+ Tokens instead.|r",
+            tokenAmount
+        );
+
+        // Re-open claim menu
+        HandleClaimSlot(player, go, slotNumber);
+    }
+
+    void HandleClaimTokens(Player* player, GameObject* go, uint8 slotNumber)
+    {
+        CloseGossipMenuFor(player);
+
+        uint16 tokenAmount = GetVaultTokenReward(slotNumber, player);
+
+        // Award tokens
+        sDungeonEnhancementMgr->AwardDungeonTokens(player, tokenAmount);
+
+        // Mark slot as claimed
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        if (!season)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000No active season.|r");
+            return;
+        }
+
+        std::string slotColumn = "slot" + std::to_string(slotNumber) + "Claimed";
+        CharacterDatabase.Execute(
+            "UPDATE dc_mythic_vault_progress SET {} = 1 WHERE playerGUID = {} AND seasonId = {}",
+            slotColumn, player->GetGUID().GetCounter(), season->seasonId
+        );
+
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cFF00FF00You claimed %u Mythic+ Tokens from Vault Slot %u!|r",
+            tokenAmount, slotNumber
+        );
+
+        // Reopen vault menu
+        OnGossipHello(player, go);
     }
 
     // ========================================================================

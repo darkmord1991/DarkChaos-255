@@ -469,9 +469,104 @@ namespace DungeonEnhancement
             // upgradeLevel == 0: no change to keystone
         }
         
+        // Check and award achievements
+        CheckAndAwardAchievements(runData);
+        
         LOG_INFO(LogCategory::MYTHIC_PLUS, 
                  "Awarded completion rewards for instance %u. Upgrade: %d, Participants: %zu",
                  instanceId, upgradeLevel, runData->participantGUIDs.size());
+    }
+    
+    void MythicRunTracker::CheckAndAwardAchievements(MythicRunData* runData)
+    {
+        if (!runData)
+            return;
+
+        SeasonData* season = sDungeonEnhancementMgr->GetCurrentSeason();
+        if (!season)
+            return;
+
+        // Query all achievements from database
+        QueryResult result = WorldDatabase.Query("SELECT achievementId, requirementValue, rewardTitle FROM dc_mythic_achievement_defs WHERE seasonId = {} OR seasonId = 0", season->seasonId);
+        
+        if (!result)
+            return;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 achievementId = fields[0].Get<uint32>();
+            uint32 requirementValue = fields[1].Get<uint32>();
+            uint32 rewardTitle = fields[2].Get<uint32>();
+
+            // Check achievement criteria
+            bool achieved = false;
+            
+            // Keystone level achievements (60001-60003)
+            if (achievementId >= 60001 && achievementId <= 60003)
+            {
+                if (runData->keystoneLevel >= requirementValue && runData->totalDeaths == 0)
+                    achieved = true;
+            }
+            // Death count achievements (60004-60006)
+            else if (achievementId >= 60004 && achievementId <= 60006)
+            {
+                if (runData->keystoneLevel >= 5 && runData->totalDeaths <= requirementValue)
+                    achieved = true;
+            }
+            // Speed run achievements (60007-60009) - would need timer thresholds
+            // Skip for now since we don't have timer data
+            
+            // Award achievement to all participants
+            if (achieved)
+            {
+                for (ObjectGuid participantGUID : runData->participantGUIDs)
+                {
+                    Player* player = GetPlayerByGUID(participantGUID);
+                    if (!player)
+                        continue;
+
+                    // Check if player already has this achievement
+                    QueryResult checkResult = CharacterDatabase.Query(
+                        "SELECT completionDate FROM dc_mythic_achievement_progress WHERE playerGUID = {} AND achievementId = {}",
+                        participantGUID.GetCounter(), achievementId
+                    );
+
+                    if (!checkResult)
+                    {
+                        // Award achievement
+                        CharacterDatabase.Execute(
+                            "INSERT INTO dc_mythic_achievement_progress (playerGUID, achievementId, progress, completed, completionDate) "
+                            "VALUES ({}, {}, 100, 1, UNIX_TIMESTAMP())",
+                            participantGUID.GetCounter(), achievementId
+                        );
+
+                        // Award title if applicable
+                        if (rewardTitle > 0)
+                        {
+                            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_TITLE);
+                            stmt->SetData(0, participantGUID.GetCounter());
+                            stmt->SetData(1, rewardTitle);
+                            CharacterDatabase.Execute(stmt);
+                            
+                            ChatHandler(player->GetSession()).PSendSysMessage(
+                                "|cFF00FF00Achievement Unlocked! You earned a new title!|r"
+                            );
+                        }
+                        else
+                        {
+                            ChatHandler(player->GetSession()).PSendSysMessage(
+                                "|cFF00FF00Achievement Unlocked! (ID: %u)|r", achievementId
+                            );
+                        }
+
+                        LOG_INFO(LogCategory::MYTHIC_PLUS, 
+                                 "Player %s earned achievement %u",
+                                 player->GetName().c_str(), achievementId);
+                    }
+                }
+            }
+        } while (result->NextRow());
     }
     
     void MythicRunTracker::HandleRunFailure(Map* map)
