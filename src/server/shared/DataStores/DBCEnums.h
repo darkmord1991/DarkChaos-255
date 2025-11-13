@@ -276,14 +276,14 @@ enum Difficulty : uint8
     RAID_DIFFICULTY_25MAN_NORMAL   = 1,
     RAID_DIFFICULTY_10MAN_HEROIC   = 2,
     RAID_DIFFICULTY_25MAN_HEROIC   = 3,
-    RAID_DIFFICULTY_10MAN_MYTHIC   = 4,
-    RAID_DIFFICULTY_25MAN_MYTHIC   = 5,
+    RAID_DIFFICULTY_10MAN_MYTHIC   = 6,
+    RAID_DIFFICULTY_25MAN_MYTHIC   = 7,
 };
 
 #define RAID_DIFFICULTY_MASK_25MAN 1    // 25-man difficulties use odd indices (1, 3, 5), share the low bit
 
 #define MAX_DUNGEON_DIFFICULTY     6
-#define MAX_RAID_DIFFICULTY        6
+#define MAX_RAID_DIFFICULTY        8
 #define MAX_DIFFICULTY             4
 #define MAX_SPELL_DIFFICULTY       MAX_DIFFICULTY
 
