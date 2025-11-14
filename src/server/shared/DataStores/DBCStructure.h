@@ -1772,7 +1772,7 @@ struct SpellCategoryEntry
 struct SpellDifficultyEntry
 {
     uint32     ID;                                          // 0
-    int32      SpellID[MAX_SPELL_DIFFICULTY];               // 1-4 instance modes: 10N, 25N, 10H, 25H or Normal/Heroic if only 1-2 is set, if 3-4 is 0 then Mode-2
+    int32      SpellID[MAX_DIFFICULTY];                     // 1-4 instance modes: 10N, 25N, 10H, 25H or Normal/Heroic if only 1-2 is set, if 3-4 is 0 then Mode-2
 };
 
 struct SpellFocusObjectEntry
