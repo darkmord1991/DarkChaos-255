@@ -63,6 +63,7 @@ void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\Item
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
+void AddMythicPlusScripts(); // location: scripts\DC\MythicPlus\mythic_plus_loader.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -297,5 +298,19 @@ void AddDCScripts()
 
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Item Upgrade System: All modules loaded successfully");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // Mythic+ Dungeon System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Mythic+ Dungeon Scaling System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddMythicPlusScripts();
+        LOG_INFO("scripts", ">>   ✓ Mythic+ dungeon scaling and keystone system loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Mythic+ System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Mythic+ System");
+    }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }
