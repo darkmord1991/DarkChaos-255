@@ -7,7 +7,6 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ObjectMgr.h"
-#include "DungeonQuestConstants.h"
 #include <cmath>
 
 MythicDifficultyScaling* MythicDifficultyScaling::instance()
