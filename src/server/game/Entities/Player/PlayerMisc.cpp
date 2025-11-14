@@ -269,7 +269,7 @@ void Player::ResetInstances(ObjectGuid guid, uint8 method, bool isRaid)
             Player* p = ObjectAccessor::FindConnectedPlayer(guid);
             if (!p)
                 break;
-            for (uint8 d = 0; d < MAX_RAID_DIFFICULTY; ++d)
+            for (uint8 d = 0; d < MAX_DIFFICULTY; ++d)
             {
                 std::vector<InstanceSave*> toUnbind;
                 BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(p->GetGUID(), Difficulty(d));
@@ -297,7 +297,7 @@ void Player::ResetInstances(ObjectGuid guid, uint8 method, bool isRaid)
         case INSTANCE_RESET_GROUP_LEAVE:
         {
             Player* p = ObjectAccessor::FindConnectedPlayer(guid);
-            for (uint8 d = 0; d < MAX_RAID_DIFFICULTY; ++d)
+            for (uint8 d = 0; d < MAX_DIFFICULTY; ++d)
             {
                 std::vector<InstanceSave*> toUnbind;
                 BoundInstancesMap const& m_boundInstances = sInstanceSaveMgr->PlayerGetBoundInstances(guid, Difficulty(d));

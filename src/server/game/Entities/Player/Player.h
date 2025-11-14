@@ -1077,27 +1077,6 @@ public:
     explicit Player(WorldSession* session);
     ~Player() override;
 
-    // DCRXP dedupe helpers: compare last sent payload and update last payload/time
-    bool IsDuplicateDCRXPPayload(const std::string& payload, uint32 windowSec = 2) const
-    {
-        if (m_lastDCRXPPayload.empty())
-            return false;
-        time_t now = time(nullptr);
-        if (uint32(now) - m_lastDCRXPPayloadTime <= windowSec && m_lastDCRXPPayload == payload)
-            return true;
-        return false;
-    }
-
-    void UpdateLastDCRXPPayload(const std::string& payload)
-    {
-        m_lastDCRXPPayload = payload;
-        m_lastDCRXPPayloadTime = uint32(time(nullptr));
-    }
-
-    // Accessors for debug/inspection
-    std::string const& GetLastDCRXPPayload() const { return m_lastDCRXPPayload; }
-    uint32 GetLastDCRXPPayloadTime() const { return m_lastDCRXPPayloadTime; }
-
     void CleanupsBeforeDelete(bool finalCleanup = true) override;
 
     void AddToWorld() override;
@@ -1195,10 +1174,6 @@ public:
     void SetPvPDeath(bool on) { if (on) m_ExtraFlags |= PLAYER_EXTRA_PVP_DEATH; else m_ExtraFlags &= ~PLAYER_EXTRA_PVP_DEATH; }
 
     void GiveXP(uint32 xp, Unit* victim, float group_rate = 1.0f, bool isLFGReward = false);
-    // Admin/utility: force-give XP even if PLAYER_FLAGS_NO_XP_GAIN is set.
-    // This temporarily clears the flag, performs the GiveXP logic, and restores the flag.
-    // Use only for admin-forced grants; normal game logic should continue to call GiveXP().
-    void GiveXPForce(uint32 xp, Unit* victim, float group_rate = 1.0f, bool isLFGReward = false);
     void GiveLevel(uint8 level);
 
     void InitStatsForLevel(bool reapplyMods = false);
@@ -2898,11 +2873,6 @@ protected:
 
     uint32 m_zoneUpdateId;
     uint32 m_zoneUpdateTimer;
-    // timestamp of last DCRXP addon send (seconds since epoch) to throttle updates
-    uint32 m_lastDCRXPSendTime;
-    // last DCRXP payload and timestamp used for quick server-side dedupe
-    std::string m_lastDCRXPPayload;
-    uint32 m_lastDCRXPPayloadTime;
     uint32 m_areaUpdateId;
 
     uint32 m_deathTimer;

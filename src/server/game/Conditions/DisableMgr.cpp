@@ -191,19 +191,11 @@ bool DisableMgr::HandleDisableType(DisableType type, uint32 entry, uint8 flags, 
             break;
         case MAP_INSTANCE:
         case MAP_RAID:
-            if ((flags & DUNGEON_STATUSFLAG_HEROIC) && !GetMapDifficultyData(entry, DUNGEON_DIFFICULTY_HEROIC))
+            if (flags & DUNGEON_STATUSFLAG_HEROIC && !GetMapDifficultyData(entry, DUNGEON_DIFFICULTY_HEROIC))
                 isFlagInvalid = true;
-            if ((flags & DUNGEON_STATUSFLAG_MYTHIC) && !GetMapDifficultyData(entry, DUNGEON_DIFFICULTY_MYTHIC))
+            else if (flags & RAID_STATUSFLAG_10MAN_HEROIC && !GetMapDifficultyData(entry, RAID_DIFFICULTY_10MAN_HEROIC))
                 isFlagInvalid = true;
-            if ((flags & DUNGEON_STATUSFLAG_MYTHIC_PLUS) && !GetMapDifficultyData(entry, DUNGEON_DIFFICULTY_MYTHIC_PLUS))
-                isFlagInvalid = true;
-            if ((flags & RAID_STATUSFLAG_10MAN_HEROIC) && !GetMapDifficultyData(entry, RAID_DIFFICULTY_10MAN_HEROIC))
-                isFlagInvalid = true;
-            if ((flags & RAID_STATUSFLAG_25MAN_HEROIC) && !GetMapDifficultyData(entry, RAID_DIFFICULTY_25MAN_HEROIC))
-                isFlagInvalid = true;
-            if ((flags & RAID_STATUSFLAG_10MAN_MYTHIC) && !GetMapDifficultyData(entry, RAID_DIFFICULTY_10MAN_MYTHIC))
-                isFlagInvalid = true;
-            if ((flags & RAID_STATUSFLAG_25MAN_MYTHIC) && !GetMapDifficultyData(entry, RAID_DIFFICULTY_25MAN_MYTHIC))
+            else if (flags & RAID_STATUSFLAG_25MAN_HEROIC && !GetMapDifficultyData(entry, RAID_DIFFICULTY_25MAN_HEROIC))
                 isFlagInvalid = true;
             break;
         case MAP_BATTLEGROUND:
@@ -404,35 +396,16 @@ bool DisableMgr::IsDisabledFor(DisableType type, uint32 entry, Unit const* unit,
                     uint8 disabledModes = itr->second.flags;
                     Difficulty targetDifficulty = player->GetDifficulty(mapEntry->IsRaid());
                     GetDownscaledMapDifficultyData(entry, targetDifficulty);
-                    if (mapEntry->IsRaid())
+                    switch (targetDifficulty)
                     {
-                        switch (targetDifficulty)
-                        {
-                            case RAID_DIFFICULTY_10MAN_NORMAL:
-                                return disabledModes & RAID_STATUSFLAG_10MAN_NORMAL;
-                            case RAID_DIFFICULTY_25MAN_NORMAL:
-                                return disabledModes & RAID_STATUSFLAG_25MAN_NORMAL;
-                            case RAID_DIFFICULTY_10MAN_HEROIC:
-                                return disabledModes & RAID_STATUSFLAG_10MAN_HEROIC;
-                            case RAID_DIFFICULTY_25MAN_HEROIC:
-                                return disabledModes & RAID_STATUSFLAG_25MAN_HEROIC;
-                            // Note: RAID_DIFFICULTY_MYTHIC cases removed to avoid conflict with DUNGEON_DIFFICULTY_MYTHIC (both = 4)
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        switch (targetDifficulty)
-                        {
-                            case DUNGEON_DIFFICULTY_NORMAL:
-                                return disabledModes & DUNGEON_STATUSFLAG_NORMAL;
-                            case DUNGEON_DIFFICULTY_HEROIC:
-                                return disabledModes & DUNGEON_STATUSFLAG_HEROIC;
-                            // Note: Mythic/M+ handled dynamically by Dungeon Enhancement System, not through static difficulty flags
-                            default:
-                                break;
-                        }
+                        case DUNGEON_DIFFICULTY_NORMAL:
+                            return disabledModes & DUNGEON_STATUSFLAG_NORMAL;
+                        case DUNGEON_DIFFICULTY_HEROIC:
+                            return disabledModes & DUNGEON_STATUSFLAG_HEROIC;
+                        case RAID_DIFFICULTY_10MAN_HEROIC:
+                            return disabledModes & RAID_STATUSFLAG_10MAN_HEROIC;
+                        case RAID_DIFFICULTY_25MAN_HEROIC:
+                            return disabledModes & RAID_STATUSFLAG_25MAN_HEROIC;
                     }
                 }
                 else if (mapEntry->map_type == MAP_COMMON)

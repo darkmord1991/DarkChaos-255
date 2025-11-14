@@ -463,9 +463,9 @@ void LoadDBCStores(const std::string& dataPath)
     {
         SpellDifficultyEntry newEntry;
 
-        memset(newEntry.SpellID, 0, MAX_SPELL_DIFFICULTY * sizeof(uint32));
+        memset(newEntry.SpellID, 0, 4 * sizeof(uint32));
 
-        for (uint8 x = 0; x < MAX_SPELL_DIFFICULTY; ++x)
+        for (uint8 x = 0; x < MAX_DIFFICULTY; ++x)
         {
             if (spellDiff->SpellID[x] <= 0 || !sSpellStore.LookupEntry(spellDiff->SpellID[x]))
             {
@@ -481,7 +481,7 @@ void LoadDBCStores(const std::string& dataPath)
         if (newEntry.SpellID[0] <= 0 || newEntry.SpellID[1] <= 0) // id0-1 must be always set!
             continue;
 
-        for (uint8 x = 0; x < MAX_SPELL_DIFFICULTY; ++x)
+        for (uint8 x = 0; x < MAX_DIFFICULTY; ++x)
             if (newEntry.SpellID[x])
                 sSpellMgr->SetSpellDifficultyId(uint32(newEntry.SpellID[x]), spellDiff->ID);
     }
@@ -766,122 +766,28 @@ MapDifficulty const* GetMapDifficultyData(uint32 mapId, Difficulty difficulty)
 
 MapDifficulty const* GetDownscaledMapDifficultyData(uint32 mapId, Difficulty& difficulty)
 {
-    Difficulty requested = difficulty;
+    uint32 tmpDiff = difficulty;
 
-    MapDifficulty const* mapDiff = GetMapDifficultyData(mapId, requested);
-    if (mapDiff)
-        return mapDiff;
-
-    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-    if (!mapEntry)
-        return nullptr;
-
-    auto tryFallback = [&](Difficulty fallback) -> MapDifficulty const*
+    MapDifficulty const* mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff));
+    if (!mapDiff)
     {
-        MapDifficulty const* diff = GetMapDifficultyData(mapId, fallback);
-        if (diff)
-            difficulty = fallback;  // ALWAYS update difficulty for spawning to work
-        return diff;
-    };
-
-    if (mapEntry->IsDungeon())
-    {
-        // Mythic+ cascades: Mythic+ -> Mythic -> Heroic -> Normal
-        if (requested == DUNGEON_DIFFICULTY_MYTHIC_PLUS)
-        {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_MYTHIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
-                return diff;
-        }
-
-        // Mythic cascades: Mythic -> Heroic -> Normal
-        if (requested == DUNGEON_DIFFICULTY_MYTHIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
-                return diff;
-        }
-
-        // Heroic cascades: Heroic -> Normal
-        if (requested == DUNGEON_DIFFICULTY_HEROIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
-                return diff;
-        }
-
-        // Epic cascades: Epic -> Heroic -> Normal
-        if (requested == DUNGEON_DIFFICULTY_EPIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(DUNGEON_DIFFICULTY_NORMAL))
-                return diff;
-        }
-    }
-    else if (mapEntry->IsRaid())
-    {
-        // 25-man Mythic cascades: 25M Mythic -> 25M Heroic -> 25M Normal -> 10M Heroic -> 10M Normal
-        if (requested == RAID_DIFFICULTY_25MAN_MYTHIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_NORMAL))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
-                return diff;
-        }
-
-        // 10-man Mythic cascades: 10M Mythic -> 10M Heroic -> 10M Normal
-        if (requested == RAID_DIFFICULTY_10MAN_MYTHIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
-                return diff;
-        }
-
-        // 25-man Heroic cascades: 25M Heroic -> 25M Normal -> 10M Heroic -> 10M Normal
-        if (requested == RAID_DIFFICULTY_25MAN_HEROIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_25MAN_NORMAL))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_HEROIC))
-                return diff;
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
-                return diff;
-        }
-
-        // 10-man Heroic cascades: 10M Heroic -> 10M Normal
-        if (requested == RAID_DIFFICULTY_10MAN_HEROIC)
-        {
-            if (MapDifficulty const* diff = tryFallback(RAID_DIFFICULTY_10MAN_NORMAL))
-                return diff;
-        }
-    }
-
-    uint8 tmpDiff = static_cast<uint8>(requested);
-    while (tmpDiff)
-    {
-        if (tmpDiff > RAID_DIFFICULTY_25MAN_NORMAL)
-            tmpDiff = static_cast<uint8>(tmpDiff - 2);
+        if (tmpDiff > RAID_DIFFICULTY_25MAN_NORMAL) // heroic, downscale to normal
+            tmpDiff -= 2;
         else
-            --tmpDiff;
+            tmpDiff -= 1;   // any non-normal mode for raids like tbc (only one mode)
 
-        mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff));
-        if (mapDiff)
+        // pull new data
+        mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff)); // we are 10 normal or 25 normal
+        if (!mapDiff)
         {
-            difficulty = Difficulty(tmpDiff);
-            return mapDiff;
+            tmpDiff -= 1;
+            mapDiff = GetMapDifficultyData(mapId, Difficulty(tmpDiff)); // 10 normal
         }
     }
 
-    return nullptr;
+    difficulty = Difficulty(tmpDiff);
+
+    return mapDiff;
 }
 
 PvPDifficultyEntry const* GetBattlegroundBracketByLevel(uint32 mapid, uint32 level)

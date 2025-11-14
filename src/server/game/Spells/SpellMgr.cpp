@@ -494,30 +494,11 @@ uint32 SpellMgr::GetSpellIdForDifficulty(uint32 spellId, Unit const* caster) con
     if (!caster || !caster->GetMap() || (!caster->GetMap()->IsDungeon() && !caster->GetMap()->IsBattleground()))
         return spellId;
 
-    Difficulty mapDifficulty = Difficulty(caster->GetMap()->GetSpawnMode());
-    uint32 mode = uint32(mapDifficulty);
-    if (mode >= MAX_SPELL_DIFFICULTY)
+    uint32 mode = uint32(caster->GetMap()->GetSpawnMode());
+    if (mode >= MAX_DIFFICULTY)
     {
-        Difficulty fallback = mapDifficulty;
-        switch (mapDifficulty)
-        {
-            case DUNGEON_DIFFICULTY_MYTHIC_PLUS:
-            case DUNGEON_DIFFICULTY_MYTHIC:
-                fallback = DUNGEON_DIFFICULTY_HEROIC;
-                break;
-            case RAID_DIFFICULTY_10MAN_MYTHIC:
-                fallback = RAID_DIFFICULTY_10MAN_HEROIC;
-                break;
-            case RAID_DIFFICULTY_25MAN_MYTHIC:
-                fallback = RAID_DIFFICULTY_25MAN_HEROIC;
-                break;
-            default:
-                fallback = Difficulty(MAX_SPELL_DIFFICULTY - 1);
-                break;
-        }
-
-        LOG_DEBUG("spells.aura", "SpellMgr::GetSpellIdForDifficulty: remapping unsupported difficulty {} to {} for spell {}", uint32(mapDifficulty), uint32(fallback), spellId);
-        mode = uint32(fallback);
+        LOG_ERROR("spells", "SpellMgr::GetSpellIdForDifficulty: Incorrect Difficulty for spell {}.", spellId);
+        return spellId; //return source spell
     }
 
     uint32 difficultyId = GetSpellDifficultyId(spellId);

@@ -47,7 +47,7 @@ typedef std::unordered_map<uint32 /*mapId*/, InstancePlayerBind > BoundInstances
 
 struct BoundInstancesMapWrapper
 {
-    BoundInstancesMap m[MAX_RAID_DIFFICULTY];
+    BoundInstancesMap m[MAX_DIFFICULTY];
 };
 
 typedef std::unordered_map<ObjectGuid /*guid*/, BoundInstancesMapWrapper* > PlayerBindStorage;
