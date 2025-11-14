@@ -7,6 +7,7 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ObjectMgr.h"
+#include "DungeonQuestConstants.h"
 #include <cmath>
 
 MythicDifficultyScaling* MythicDifficultyScaling::instance()
@@ -138,6 +139,8 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
     float hpMult = 1.0f;
     float damageMult = 1.0f;
     
+    uint32 keystoneLevel = 0;
+
     switch (difficulty)
     {
         case DIFFICULTY_NORMAL:
@@ -161,7 +164,7 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
             damageMult = profile->mythicDamageMult;
             
             // Check for Mythic+ keystone
-            uint32 keystoneLevel = GetKeystoneLevel(map);
+            keystoneLevel = GetKeystoneLevel(map);
             if (keystoneLevel > 0)
             {
                 float mplusHpMult = 1.0f;
@@ -268,21 +271,10 @@ void MythicDifficultyScaling::ApplyMultipliers(Creature* creature, float hpMult,
     }
 }
 
-uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* map)
+uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* /*map*/)
 {
-    if (!map)
-        return 0;
-    
-    // TODO: Implement keystone tracking in InstanceScript
-    // For now, check instance data for stored keystone level
-    
-    InstanceScript* instance = map->GetInstanceScript();
-    if (!instance)
-        return 0;
-    
-    // Placeholder: Retrieve keystone level from instance data
-    // This will be set when keystone is activated via Font of Power
-    return instance->GetData(DATA_KEYSTONE_LEVEL); // Need to define DATA_KEYSTONE_LEVEL
+    // Keystone tracking is not implemented yet: Mythic+ scaling disabled.
+    return 0;
 }
 
 void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult)
