@@ -63,15 +63,6 @@ void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\Item
 void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
-void AddSC_mythicplus_commandscript(); // location: scripts\DC\DungeonEnhancement\Commands\mythicplus_commandscript.cpp
-void AddSC_difficulty_level_scaling(); // location: scripts\DC\DungeonEnhancements\DifficultyLevelScaling.cpp
-void AddSC_difficulty_commandscript(); // location: scripts\DC\DungeonEnhancements\Commands\difficulty_commandscript.cpp
-void AddSC_DungeonEnhancement_CreatureScript(); // location: scripts\DC\DungeonEnhancement\Hooks\DungeonEnhancement_CreatureScript.cpp
-void AddSC_DungeonEnhancement_PlayerScript(); // location: scripts\DC\DungeonEnhancement\Hooks\DungeonEnhancement_PlayerScript.cpp
-void AddSC_npc_mythic_plus_dungeon_teleporter(); // location: scripts\DC\DungeonEnhancement\NPCs\npc_mythic_plus_dungeon_teleporter.cpp
-void AddSC_npc_keystone_master(); // location: scripts\DC\DungeonEnhancement\NPCs\npc_keystone_master.cpp
-void AddSC_go_mythic_plus_great_vault(); // location: scripts\DC\DungeonEnhancement\GameObjects\go_mythic_plus_great_vault.cpp
-void AddSC_go_mythic_plus_font_of_power(); // location: scripts\DC\DungeonEnhancement\GameObjects\go_mythic_plus_font_of_power.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -181,27 +172,6 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Custom Achievements: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Custom Achievements");
-    }
-
-    // Dungeon Enhancement System (Mythic & Mythic+)
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Dungeon Enhancement System (Mythic & Mythic+)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    try {
-        AddSC_difficulty_level_scaling();
-        AddSC_difficulty_commandscript();
-        AddSC_DungeonEnhancement_CreatureScript();
-        AddSC_DungeonEnhancement_PlayerScript();
-        AddSC_npc_mythic_plus_dungeon_teleporter();
-        AddSC_npc_keystone_master();
-        AddSC_go_mythic_plus_great_vault();
-        AddSC_go_mythic_plus_font_of_power();
-        AddSC_mythicplus_commandscript();
-        LOG_INFO("scripts", ">>   ✓ Dungeon Enhancement hooks, NPCs, commands, and scaling loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Enhancement: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Enhancement module");
     }
 
     // Item Upgrade System (Loaded Last)

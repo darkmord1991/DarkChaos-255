@@ -217,7 +217,6 @@ namespace DarkChaos
         // System registration helpers
         bool RegisterItemUpgradeSystem();
         bool RegisterHLBGSystem();
-        bool RegisterMythicPlusSystem();
 
         // Season utilities
         std::string FormatSeasonTimeRemaining(time_t seconds);

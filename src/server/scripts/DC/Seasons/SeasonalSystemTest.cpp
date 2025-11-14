@@ -246,7 +246,6 @@ namespace DarkChaos
             std::cout << "Registering game systems...\n";
             RegisterItemUpgradeSystem();
             // HLBG::RegisterHLBGWithSeasonalSystem(); // Disabled - functions not accessible
-            RegisterMythicPlusSystem();
 
             // Display registered systems
             auto systems = manager->GetRegisteredSystems();

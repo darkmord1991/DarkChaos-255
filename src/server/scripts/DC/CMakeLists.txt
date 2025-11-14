@@ -138,45 +138,6 @@ set(SCRIPTS_DC_SeasonalSystem
     Seasons/HLBGSeasonalParticipant.cpp
 )
 
-# DC Dungeon Enhancement System (Mythic+)
-set(SCRIPTS_DC_DungeonEnhancement
-    # Core systems
-    DungeonEnhancement/Core/DungeonEnhancementManager.cpp
-    DungeonEnhancement/Core/MythicDifficultyScaling.cpp
-    DungeonEnhancement/Core/MythicRunTracker.cpp
-    
-    # Affix implementations
-    DungeonEnhancement/Affixes/MythicAffixHandler.cpp
-    DungeonEnhancement/Affixes/MythicAffixFactoryInit.cpp
-    DungeonEnhancement/Affixes/Affix_Tyrannical.cpp
-    DungeonEnhancement/Affixes/Affix_Fortified.cpp
-    DungeonEnhancement/Affixes/Affix_Bolstering.cpp
-    DungeonEnhancement/Affixes/Affix_Raging.cpp
-    DungeonEnhancement/Affixes/Affix_Sanguine.cpp
-    DungeonEnhancement/Affixes/Affix_Necrotic.cpp
-    DungeonEnhancement/Affixes/Affix_Volcanic.cpp
-    DungeonEnhancement/Affixes/Affix_Grievous.cpp
-    
-    # Hook integration
-    DungeonEnhancement/Hooks/DungeonEnhancement_CreatureScript.cpp
-    DungeonEnhancement/Hooks/DungeonEnhancement_PlayerScript.cpp
-    
-    # NPCs
-    DungeonEnhancement/NPCs/npc_mythic_plus_dungeon_teleporter.cpp
-    DungeonEnhancement/NPCs/npc_keystone_master.cpp
-    
-    # GameObjects
-    DungeonEnhancement/GameObjects/go_mythic_plus_great_vault.cpp
-    DungeonEnhancement/GameObjects/go_mythic_plus_font_of_power.cpp
-    
-    # Commands
-    DungeonEnhancement/Commands/mythicplus_commandscript.cpp
-    DungeonEnhancement/Commands/difficulty_commandscript.cpp
-    
-    # Difficulty utilities
-    DungeonEnhancement/Core/DifficultyLevelScaling.cpp
-)
-
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}

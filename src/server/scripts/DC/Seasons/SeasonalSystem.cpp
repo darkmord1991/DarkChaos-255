@@ -515,18 +515,6 @@ namespace DarkChaos
             return GetSeasonalManager()->RegisterSystem(reg);
         }
 
-        bool RegisterMythicPlusSystem()
-        {
-            SystemRegistration reg;
-            reg.system_name = "mythic_plus";
-            reg.system_version = "1.0";
-            reg.priority = 80;
-
-            // TODO: Implement callbacks for Mythic+ system integration
-
-            return GetSeasonalManager()->RegisterSystem(reg);
-        }
-
         // =====================================================================
         // Utility Functions
         // =====================================================================
