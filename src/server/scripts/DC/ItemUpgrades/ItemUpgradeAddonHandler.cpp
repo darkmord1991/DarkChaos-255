@@ -67,6 +67,13 @@ private:
         if (!player)
             return false;
 
+        // Check if system is enabled
+        if (!sConfigMgr->GetOption<bool>("ItemUpgrade.Enable", true))
+        {
+            SendAddonResponse(player, "DCUPGRADE_ERROR:System disabled");
+            return true;
+        }
+
         // Get currency item IDs from config
     uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 109998); // updated default per configuration note
     uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 100999);
