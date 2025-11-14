@@ -7,6 +7,8 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ObjectMgr.h"
+#include "DC/DungeonQuests/DungeonQuestConstants.h"
+#include <string>
 #include <cmath>
 
 MythicDifficultyScaling* MythicDifficultyScaling::instance()
@@ -22,8 +24,11 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
     _dungeonProfiles.clear();
     
     QueryResult result = WorldDatabase.Query("SELECT map_id, name, heroic_enabled, mythic_enabled, "
-                                             "base_health_mult, base_damage_mult, death_budget, wipe_budget, "
-                                             "loot_ilvl, token_reward FROM dc_dungeon_mythic_profile");
+                                             "base_health_mult, base_damage_mult, "
+                                             "heroic_level_normal, heroic_level_elite, heroic_level_boss, "
+                                             "mythic_level_normal, mythic_level_elite, mythic_level_boss, "
+                                             "death_budget, wipe_budget, loot_ilvl, token_reward "
+                                             "FROM dc_dungeon_mythic_profile");
     
     if (!result)
     {
@@ -43,38 +48,47 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
         profile.mythicEnabled = fields[3].Get<bool>();
         profile.baseHealthMult = fields[4].Get<float>();
         profile.baseDamageMult = fields[5].Get<float>();
-        profile.deathBudget = fields[6].Get<uint8>();
-        profile.wipeBudget = fields[7].Get<uint8>();
-        profile.lootItemLevel = fields[8].Get<uint32>();
-        profile.tokenReward = fields[9].Get<uint32>();
+        profile.heroicLevelNormal = fields[6].Get<uint8>();
+        profile.heroicLevelElite = fields[7].Get<uint8>();
+        profile.heroicLevelBoss = fields[8].Get<uint8>();
+        profile.mythicLevelNormal = fields[9].Get<uint8>();
+        profile.mythicLevelElite = fields[10].Get<uint8>();
+        profile.mythicLevelBoss = fields[11].Get<uint8>();
+        profile.deathBudget = fields[12].Get<uint8>();
+        profile.wipeBudget = fields[13].Get<uint8>();
+        profile.lootItemLevel = fields[14].Get<uint32>();
+        profile.tokenReward = fields[15].Get<uint32>();
         
         // Determine expansion from map ID
         profile.expansion = GetExpansionForMap(profile.mapId);
         
-        // Set multipliers based on expansion (Option A with differentiated levels)
+        // Set multipliers based on expansion and database values
         if (profile.expansion == EXPANSION_VANILLA)
         {
             // Vanilla: Heroic at 60-62, Mythic at 80-82
             profile.heroicHealthMult = 1.15f;
             profile.heroicDamageMult = 1.10f;
-            profile.mythicHealthMult = 3.0f;
-            profile.mythicDamageMult = 2.0f;
+            // Use database multipliers for Mythic (base_health_mult/base_damage_mult)
+            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 3.0f;
+            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 2.0f;
         }
         else if (profile.expansion == EXPANSION_TBC)
         {
             // TBC: Heroic at 70, Mythic at 80-82
             profile.heroicHealthMult = 1.15f;
             profile.heroicDamageMult = 1.10f;
-            profile.mythicHealthMult = 3.0f;
-            profile.mythicDamageMult = 2.0f;
+            // Use database multipliers for Mythic
+            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 3.0f;
+            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 2.0f;
         }
         else // EXPANSION_WOTLK
         {
             // WotLK: Keep existing scaling, modest Mythic boost
             profile.heroicHealthMult = 1.15f;
             profile.heroicDamageMult = 1.10f;
-            profile.mythicHealthMult = 1.8f;
-            profile.mythicDamageMult = 1.8f;
+            // Use database multipliers for Mythic
+            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 1.35f;
+            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 1.20f;
         }
         
         _dungeonProfiles[profile.mapId] = profile;
@@ -131,8 +145,12 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
     
     // Calculate appropriate level
     uint8 newLevel = CalculateCreatureLevel(creature, map, profile);
-    if (newLevel > 0)
+    if (newLevel > 0 && newLevel != creature->GetLevel())
+    {
         creature->SetLevel(newLevel);
+        // Recalculate stats for new level
+        creature->UpdateAllStats();
+    }
     
     // Determine multipliers based on difficulty
     float hpMult = 1.0f;
@@ -142,11 +160,11 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
 
     switch (difficulty)
     {
-        case DIFFICULTY_NORMAL:
+        case DUNGEON_DIFFICULTY_NORMAL:
             // No additional scaling for Normal
             break;
             
-        case DIFFICULTY_HEROIC:
+        case DUNGEON_DIFFICULTY_HEROIC:
             if (!profile->heroicEnabled)
                 break;
             
@@ -154,8 +172,7 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
             damageMult = profile->heroicDamageMult;
             break;
             
-        case DIFFICULTY_10_N: // Using this as Mythic (difficulty 3/Epic in some cores)
-        case DIFFICULTY_25_N:
+        case DUNGEON_DIFFICULTY_EPIC:
             if (!profile->mythicEnabled)
                 break;
             
@@ -180,10 +197,16 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
     }
     
     // Apply multipliers
-    ApplyMultipliers(creature, hpMult, damageMult);
+    if (hpMult > 1.0f || damageMult > 1.0f)
+    {
+        ApplyMultipliers(creature, hpMult, damageMult);
+        // Force update to apply changes immediately
+        creature->UpdateAllStats();
+    }
     
-    LOG_DEBUG("mythic.scaling", "Scaled creature {} (entry {}) on map {} to level {} with {}x HP, {}x Damage",
-              creature->GetName(), creature->GetEntry(), map->GetId(), newLevel, hpMult, damageMult);
+    LOG_INFO("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
+              creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), newLevel, 
+              hpMult, creature->GetCreateHealth(), creature->GetMaxHealth(), damageMult);
 }
 
 uint8 MythicDifficultyScaling::CalculateCreatureLevel(Creature* creature, Map* map, DungeonProfile* profile)
@@ -193,51 +216,47 @@ uint8 MythicDifficultyScaling::CalculateCreatureLevel(Creature* creature, Map* m
     
     Difficulty difficulty = map->GetDifficulty();
     uint32 rank = creature->GetCreatureTemplate()->rank;
+    uint8 originalLevel = creature->GetLevel();
     
     // Determine if creature is boss, elite, or normal
     bool isBoss = (rank == CREATURE_ELITE_WORLDBOSS || rank == CREATURE_ELITE_RAREELITE);
     bool isElite = (rank == CREATURE_ELITE_ELITE);
     
-    uint8 newLevel = 0;
+    uint8 newLevel = originalLevel; // Default: keep original level
     
     switch (difficulty)
     {
-        case DIFFICULTY_NORMAL:
-            // Normal: Keep original levels
-            if (profile->expansion == EXPANSION_VANILLA)
-                newLevel = isBoss ? 62 : (isElite ? 61 : 60);
-            else if (profile->expansion == EXPANSION_TBC)
-                newLevel = 70;
-            else // WotLK
-                newLevel = 80;
+        case DUNGEON_DIFFICULTY_NORMAL:
+            // Normal: Always keep original creature levels
+            newLevel = originalLevel;
             break;
             
-        case DIFFICULTY_HEROIC:
-            // Heroic: Differentiated levels for Vanilla, same level for TBC/WotLK
-            if (profile->expansion == EXPANSION_VANILLA)
-            {
-                // Vanilla Heroic: 60/61/62 (Option A with differentiated levels)
-                newLevel = isBoss ? 62 : (isElite ? 61 : 60);
-            }
-            else if (profile->expansion == EXPANSION_TBC)
-            {
-                // TBC Heroic: Stay at 70
-                newLevel = 70;
-            }
-            else // WotLK
-            {
-                // WotLK Heroic: Stay at 80
-                newLevel = 80;
-            }
+        case DUNGEON_DIFFICULTY_HEROIC:
+            // Heroic: Use database configured levels (0 = keep original)
+            if (isBoss && profile->heroicLevelBoss > 0)
+                newLevel = profile->heroicLevelBoss;
+            else if (isElite && profile->heroicLevelElite > 0)
+                newLevel = profile->heroicLevelElite;
+            else if (profile->heroicLevelNormal > 0)
+                newLevel = profile->heroicLevelNormal;
+            else
+                newLevel = originalLevel; // Keep original if configured as 0
             break;
             
-        case DIFFICULTY_10_N: // Mythic
-        case DIFFICULTY_25_N:
-            // Mythic: All content scales to 80-82
-            newLevel = isBoss ? 82 : (isElite ? 81 : 80);
+        case DUNGEON_DIFFICULTY_EPIC:
+            // Mythic: Use database configured levels (0 = keep original)
+            if (isBoss && profile->mythicLevelBoss > 0)
+                newLevel = profile->mythicLevelBoss;
+            else if (isElite && profile->mythicLevelElite > 0)
+                newLevel = profile->mythicLevelElite;
+            else if (profile->mythicLevelNormal > 0)
+                newLevel = profile->mythicLevelNormal;
+            else
+                newLevel = originalLevel; // Keep original if configured as 0
             break;
             
         default:
+            newLevel = originalLevel;
             break;
     }
     

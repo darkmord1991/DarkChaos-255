@@ -13,6 +13,7 @@
 #include "WorldSession.h"
 #include "Map.h"
 #include "Log.h"
+#include "DC/DungeonQuests/DungeonQuestConstants.h"
 
 // Gossip menu actions
 enum DifficultyGossipActions
@@ -23,20 +24,7 @@ enum DifficultyGossipActions
     GOSSIP_ACTION_INFO    = 4
 };
 
-// Gossip menu icons
-enum GossipIcons
-{
-    GOSSIP_ICON_CHAT      = 0,
-    GOSSIP_ICON_VENDOR    = 1,
-    GOSSIP_ICON_TAXI      = 2,
-    GOSSIP_ICON_TRAINER   = 3,
-    GOSSIP_ICON_INTERACT  = 4,
-    GOSSIP_ICON_MONEY_BAG = 5,
-    GOSSIP_ICON_TALK      = 6,
-    GOSSIP_ICON_TABARD    = 7,
-    GOSSIP_ICON_BATTLE    = 8,
-    GOSSIP_ICON_DOT       = 9
-};
+using namespace DungeonQuest;
 
 // Level and item level requirements
 struct DifficultyRequirements
@@ -46,7 +34,7 @@ struct DifficultyRequirements
 };
 
 // Get requirements based on expansion
-DifficultyRequirements GetDifficultyRequirements(uint8 expansion, Difficulty difficulty)
+DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficulty)
 {
     DifficultyRequirements req;
     
@@ -181,7 +169,7 @@ public:
         // Mythic difficulty
         if (profile->mythicEnabled)
         {
-            DifficultyRequirements mythicReq = GetDifficultyRequirements(expansion, DIFFICULTY_10_N);
+            DifficultyRequirements mythicReq = GetDifficultyRequirements(expansion, DIFFICULTY_MYTHIC);
             uint32 playerItemLevel = player->GetAverageItemLevel();
             
             if (player->GetLevel() >= mythicReq.minLevel && playerItemLevel >= mythicReq.minItemLevel)
@@ -224,35 +212,34 @@ public:
             case GOSSIP_ACTION_INFO:
             {
                 // Show detailed difficulty information
-                std::string info = "=== " + profile->name + " ===\n\n";
-                
-                info += "|cFFFFFFFFNormal:|r Base difficulty\n";
+                ChatHandler handler(player->GetSession());
+                handler.PSendSysMessage("=== %s ===", profile->name.c_str());
+                handler.PSendSysMessage(" ");
+                handler.PSendSysMessage("Normal: Base difficulty");
                 
                 if (profile->heroicEnabled)
                 {
-                    info += "|cFF0070FFHeroic:|r\n";
-                    info += "  • +15% HP and +10% Damage\n";
+                    handler.PSendSysMessage("Heroic:");
+                    handler.PSendSysMessage("  - +15%% HP and +10%% Damage");
                     if (profile->expansion == EXPANSION_VANILLA)
-                        info += "  • Creature levels: 60-62\n";
+                        handler.PSendSysMessage("  - Creature levels: 60-62");
                     else if (profile->expansion == EXPANSION_TBC)
-                        info += "  • Creature level: 70\n";
+                        handler.PSendSysMessage("  - Creature level: 70");
                     else
-                        info += "  • Creature level: 80\n";
+                        handler.PSendSysMessage("  - Creature level: 80");
                 }
                 
                 if (profile->mythicEnabled)
                 {
-                    info += "|cFFFF8000Mythic:|r\n";
+                    handler.PSendSysMessage("Mythic:");
                     if (profile->expansion == EXPANSION_WOTLK)
-                        info += "  • +80% HP and +80% Damage\n";
+                        handler.PSendSysMessage("  - +80%% HP and +80%% Damage");
                     else
-                        info += "  • +200% HP and +100% Damage\n";
-                    info += "  • Creature levels: 80-82\n";
-                    info += "  • Death budget: " + std::to_string(profile->deathBudget) + "\n";
-                    info += "  • Wipe budget: " + std::to_string(profile->wipeBudget) + "\n";
+                        handler.PSendSysMessage("  - +200%% HP and +100%% Damage");
+                    handler.PSendSysMessage("  - Creature levels: 80-82");
+                    handler.PSendSysMessage("  - Death budget: %u", static_cast<uint32>(profile->deathBudget));
+                    handler.PSendSysMessage("  - Wipe budget: %u", static_cast<uint32>(profile->wipeBudget));
                 }
-                
-                player->SendBroadcastMessage(info.c_str());
                 CloseGossipMenuFor(player);
                 break;
             }
@@ -260,9 +247,9 @@ public:
             case GOSSIP_ACTION_NORMAL:
             {
                 // Set difficulty to Normal and teleport
-                player->SetDungeonDifficultyID(DIFFICULTY_NORMAL);
+                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
                 // TODO: Implement teleport to dungeon entrance
-                player->SendBroadcastMessage("Entering Normal difficulty...");
+                ChatHandler(player->GetSession()).PSendSysMessage("Entering Normal difficulty...");
                 CloseGossipMenuFor(player);
                 break;
             }
@@ -270,9 +257,9 @@ public:
             case GOSSIP_ACTION_HEROIC:
             {
                 // Set difficulty to Heroic and teleport
-                player->SetDungeonDifficultyID(DIFFICULTY_HEROIC);
+                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
                 // TODO: Implement teleport to dungeon entrance
-                player->SendBroadcastMessage("Entering Heroic difficulty...");
+                ChatHandler(player->GetSession()).PSendSysMessage("Entering Heroic difficulty...");
                 CloseGossipMenuFor(player);
                 break;
             }
@@ -280,9 +267,9 @@ public:
             case GOSSIP_ACTION_MYTHIC:
             {
                 // Set difficulty to Mythic and teleport
-                player->SetDungeonDifficultyID(DIFFICULTY_10_N); // Using 10_N as Mythic
+                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_EPIC));
                 // TODO: Implement teleport to dungeon entrance
-                player->SendBroadcastMessage("Entering Mythic difficulty...");
+                ChatHandler(player->GetSession()).PSendSysMessage("Entering Mythic difficulty...");
                 CloseGossipMenuFor(player);
                 break;
             }

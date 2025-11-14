@@ -29,6 +29,9 @@
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ScriptMgr.h"
+#include "Map.h"
+#include "Group.h"
+#include "DC/MythicPlus/MythicDifficultyScaling.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
@@ -56,7 +59,7 @@ public:
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt>");
+            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -326,7 +329,170 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt>");
+        if (subNorm == "difficulty")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dc difficulty <normal|heroic|mythic|info>");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            Player* player = handler->GetSession()->GetPlayer();
+            if (!player)
+            {
+                handler->PSendSysMessage("You must be in-game to use this command.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string diffArg((*it).data(), (*it).size());
+            std::string diffNorm;
+            for (char c : diffArg)
+                diffNorm.push_back(std::tolower(static_cast<unsigned char>(c)));
+
+            if (diffNorm == "info")
+            {
+                Group* group = player->GetGroup();
+                Difficulty currentDiff = player->GetDungeonDifficulty();
+                std::string difficultyName;
+                switch (currentDiff)
+                {
+                    case DUNGEON_DIFFICULTY_NORMAL:
+                        difficultyName = "|cffffffffNormal|r";
+                        break;
+                    case DUNGEON_DIFFICULTY_HEROIC:
+                        difficultyName = "|cff0070ddHeroic|r";
+                        break;
+                    case DUNGEON_DIFFICULTY_EPIC:
+                        difficultyName = "|cffff8000Mythic|r";
+                        break;
+                    default:
+                        difficultyName = "Unknown";
+                        break;
+                }
+                handler->SendSysMessage("|cff00ff00=== Dungeon Difficulty Info ===");
+                handler->SendSysMessage(("Current difficulty: " + difficultyName).c_str());
+                if (group)
+                {
+                    std::string leaderStatus = group->IsLeader(player->GetGUID()) ? "|cff00ff00Yes|r" : "|cffff0000No|r";
+                    handler->SendSysMessage(("Group leader: " + leaderStatus).c_str());
+                    handler->PSendSysMessage("Group size: %u players", group->GetMembersCount());
+                }
+                else
+                    handler->SendSysMessage("You are |cffff9900not|r in a group");
+                handler->SendSysMessage("|cffaaaaaa=== Available Commands ===");
+                handler->SendSysMessage(".dc difficulty normal  - Set Normal difficulty");
+                handler->SendSysMessage(".dc difficulty heroic  - Set Heroic difficulty");
+                handler->SendSysMessage(".dc difficulty mythic  - Set Mythic (req. level 80)");
+                handler->SendSysMessage(" ");
+                handler->SendSysMessage("|cffaaaaaa=== How It Works ===");
+                handler->SendSysMessage("Solo: Change difficulty anytime (outside dungeon)");
+                handler->SendSysMessage("Group: Only leader can change for entire group");
+                return true;
+            }
+
+            // Check if inside instance
+            if (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid())
+            {
+                handler->PSendSysMessage("Cannot change difficulty inside an instance. Exit first.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            Group* group = player->GetGroup();
+            // In a group: only leader (or GM) can change difficulty
+            // Solo: player can always change their own difficulty
+            bool isGM = handler->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+            if (group && !group->IsLeader(player->GetGUID()) && !isGM)
+            {
+                handler->PSendSysMessage("Only the group leader can change difficulty.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+            // Solo players can always proceed
+
+            Difficulty newDiff;
+            std::string diffName;
+            
+            if (diffNorm == "normal")
+            {
+                newDiff = DUNGEON_DIFFICULTY_NORMAL;
+                diffName = "|cffffffffNormal|r";
+            }
+            else if (diffNorm == "heroic")
+            {
+                newDiff = DUNGEON_DIFFICULTY_HEROIC;
+                diffName = "|cff0070ddHeroic|r";
+            }
+            else if (diffNorm == "mythic")
+            {
+                // GMs bypass level requirement for testing
+                bool isGM = handler->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+                if (player->GetLevel() < 80 && !isGM)
+                {
+                    handler->PSendSysMessage("|cffff0000You must be level 80 to use Mythic difficulty.|r");
+                    handler->SetSentErrorMessage(true);
+                    return false;
+                }
+                newDiff = DUNGEON_DIFFICULTY_EPIC;
+                diffName = "|cffff8000Mythic|r";
+            }
+            else
+            {
+                handler->PSendSysMessage("Unknown difficulty. Use: normal, heroic, or mythic");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            if (group)
+            {
+                group->SetDungeonDifficulty(newDiff);
+                group->SendUpdate();
+                std::string msg = "|cff00ff00[Group]|r Difficulty set to " + diffName + " by " + player->GetName();
+                handler->SendSysMessage(msg.c_str());
+            }
+            else
+            {
+                player->SetDungeonDifficulty(newDiff);
+                player->SendDungeonDifficulty(false);
+                std::string msg = "|cff00ff00Difficulty set to " + diffName;
+                handler->SendSysMessage(msg.c_str());
+            }
+            return true;
+        }
+
+        if (subNorm == "reload")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dc reload mythic");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string reloadArg((*it).data(), (*it).size());
+            std::string reloadNorm;
+            for (char c : reloadArg)
+                reloadNorm.push_back(std::tolower(static_cast<unsigned char>(c)));
+
+            if (reloadNorm == "mythic" || reloadNorm == "mythicplus" || reloadNorm == "m+")
+            {
+                handler->SendSysMessage("|cff00ff00Reloading Mythic+ dungeon profiles...");
+                sMythicScaling->LoadDungeonProfiles();
+                handler->SendSysMessage("|cff00ff00Mythic+ profiles reloaded successfully!");
+                handler->PSendSysMessage("Note: Existing creatures in instances will use old scaling. New creatures will use updated values.");
+                return true;
+            }
+
+            handler->PSendSysMessage("Unknown reload target. Usage: .dc reload mythic");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic");
         handler->SetSentErrorMessage(true);
         return false;
     }

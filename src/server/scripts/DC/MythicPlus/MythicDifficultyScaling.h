@@ -30,8 +30,14 @@ struct DungeonProfile
     float baseDamageMult;
     float heroicHealthMult;    // 1.15 for Option A
     float heroicDamageMult;    // 1.10 for Option A
-    float mythicHealthMult;    // 3.0 for Vanilla/TBC, 1.8 for WotLK
-    float mythicDamageMult;    // 2.0 for Vanilla/TBC, 1.8 for WotLK
+    float mythicHealthMult;    // 3.0 for Vanilla/TBC, 1.35 for WotLK
+    float mythicDamageMult;    // 2.0 for Vanilla/TBC, 1.20 for WotLK
+    uint8 heroicLevelNormal;   // 0 = keep original level
+    uint8 heroicLevelElite;    // 0 = keep original level
+    uint8 heroicLevelBoss;     // 0 = keep original level
+    uint8 mythicLevelNormal;   // 0 = keep original level
+    uint8 mythicLevelElite;    // 0 = keep original level
+    uint8 mythicLevelBoss;     // 0 = keep original level
     uint8 deathBudget;
     uint8 wipeBudget;
     uint32 lootItemLevel;
