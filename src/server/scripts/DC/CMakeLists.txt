@@ -138,6 +138,14 @@ set(SCRIPTS_DC_SeasonalSystem
     Seasons/HLBGSeasonalParticipant.cpp
 )
 
+# DC Mythic+ System - Dungeon Scaling & Keystone System
+set(SCRIPTS_DC_MythicPlus
+    MythicPlus/MythicDifficultyScaling.h
+    MythicPlus/MythicDifficultyScaling.cpp
+    MythicPlus/mythic_plus_core_scripts.cpp
+    MythicPlus/npc_dungeon_portal_selector.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -160,6 +168,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Gilneas}
     ${SCRIPTS_DC_DungeonQuests}
     ${SCRIPTS_DC_ItemUpgrade}
+    ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_DungeonEnhancement}
 )
 
