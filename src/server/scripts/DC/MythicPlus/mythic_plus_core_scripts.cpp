@@ -10,6 +10,8 @@
 #include "Log.h"
 #include "Player.h"
 #include "Chat.h"
+#include <cmath>
+#include <sstream>
 
 // World script to load dungeon profiles on server startup
 class MythicPlusWorldScript : public WorldScript
@@ -194,6 +196,25 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
+        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
+
+        auto FormatScalingText = [](float hpMult, float damageMult) -> std::string
+        {
+            auto percentString = [](float mult) -> std::string
+            {
+                int32 pct = int32(std::round((mult - 1.0f) * 100.0f));
+                std::ostringstream stream;
+                if (pct >= 0)
+                    stream << "+";
+                stream << pct << "%";
+                return stream.str();
+            };
+
+            std::ostringstream result;
+            result << percentString(hpMult) << " HP, " << percentString(damageMult) << " Damage";
+            return result.str();
+        };
+
         // Announce difficulty on dungeon entry
         Difficulty diff = map->GetDifficulty();
         std::string diffName;
@@ -207,18 +228,19 @@ public:
                 break;
             case DUNGEON_DIFFICULTY_HEROIC:
                 diffName = "|cff0070ddHeroic|r";
-                scaling = "+15% HP, +10% Damage";
+                scaling = profile ? FormatScalingText(profile->heroicHealthMult, profile->heroicDamageMult)
+                                   : "+15% HP, +10% Damage";
                 break;
             case DUNGEON_DIFFICULTY_EPIC:
                 diffName = "|cffff8000Mythic|r";
-                scaling = "+35% HP, +20% Damage (WotLK) or +200% HP/+100% Damage (Vanilla/TBC)";
+                scaling = profile ? FormatScalingText(profile->mythicHealthMult, profile->mythicDamageMult)
+                                   : "+35% HP, +20% Damage";
                 break;
             default:
                 return; // Don't announce for other difficulties
         }
 
         // Get dungeon name
-        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
         std::string dungeonName = profile ? profile->name : "Unknown Dungeon";
 
         // Send announcement

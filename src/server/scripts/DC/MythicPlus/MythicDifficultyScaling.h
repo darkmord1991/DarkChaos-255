@@ -11,6 +11,8 @@
 #include "Map.h"
 #include "InstanceScript.h"
 #include "Player.h"
+#include <unordered_map>
+#include <unordered_set>
 
 enum Expansion : uint8
 {
@@ -73,9 +75,21 @@ public:
 private:
     MythicDifficultyScaling() = default;
     std::unordered_map<uint32, DungeonProfile> _dungeonProfiles;
+    struct KeystoneCacheEntry
+    {
+        uint32 level = 0;
+        uint64 lastUpdate = 0;
+    };
+    std::unordered_map<uint64, KeystoneCacheEntry> _activeKeystoneCache;
+    uint32 _activeSeasonId = 0;
+    uint32 _keystoneCacheTtlSeconds = 15;
     
     // Helper to determine expansion from map ID
     uint8 GetExpansionForMap(uint32 mapId);
+    uint32 ResolveKeystoneLevel(Map* map);
+    Player* GetPreferredKeystoneHolder(Map* map) const;
+    uint32 QueryPlayerKeystone(uint32 playerGuidLow, uint32 mapId) const;
+    uint64 MakeInstanceKey(Map* map) const;
 };
 
 #define sMythicScaling MythicDifficultyScaling::instance()

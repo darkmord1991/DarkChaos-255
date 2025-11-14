@@ -724,6 +724,195 @@ HinterlandBG.Expiry.Tiebreaker = 1
 
 # -------------------------------------------------------------------------
 # Starting Resources
+
+
+###########################################################################
+#
+#    SECTION 4: MYTHIC+ DUNGEON SYSTEM
+#
+#    Provides scaled dungeon difficulties (Normal, Heroic, Mythic) with
+#    configurable level scaling and stat multipliers. Features include:
+#    - Database-driven configuration per dungeon
+#    - Expansion-specific scaling strategies (Vanilla/TBC/WotLK)
+#    - Hot-reload support for testing
+#    - Dungeon entrance announcements
+#    - Solo player support (no group required)
+#
+###########################################################################
+
+#
+#    MythicPlus.Enable
+#        Description: Master toggle for the Mythic+ dungeon scaling system
+#                     When disabled, all dungeons use default difficulty scaling.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - vanilla difficulty behavior)
+#
+MythicPlus.Enable = 1
+
+#
+#    MythicPlus.Announce.Enabled
+#        Description: Show dungeon entrance announcements to players
+#                     Displays difficulty, scaling info, and keystone level (if any).
+#        Default:     1 (Enabled - show entrance announcements)
+#                     0 (Disabled - silent entry)
+#
+MythicPlus.Announce.Enabled = 1
+
+#
+#    MythicPlus.SoloMode
+#        Description: Allow solo players to change difficulty without a group
+#                     When enabled, players can use .dc difficulty commands alone.
+#        Default:     1 (Enabled - solo players can change difficulty)
+#                     0 (Disabled - must be group leader to change difficulty)
+#
+MythicPlus.SoloMode = 1
+
+#
+#    MythicPlus.LogLevel
+#        Description: Logging verbosity for Mythic+ system
+#                     Controls how much detail is logged to worldserver.log
+#        Default:     1 (Standard - log profile loading and scaling actions)
+#        Options:     0 = Disabled (no logging)
+#                     1 = Standard (loading, scaling, major events)
+#                     2 = Verbose (includes per-creature scaling details)
+#                     3 = Debug (all operations, very noisy)
+#
+MythicPlus.LogLevel = 1
+
+#
+#    MythicPlus.DebugMode
+#        Description: Enable debug mode with extra validation and logging
+#                     Useful for troubleshooting scaling issues.
+#                     WARNING: Very verbose, causes log spam!
+#        Default:     0 (Disabled - production mode)
+#                     1 (Enabled - debug logging for creature scaling)
+#
+MythicPlus.DebugMode = 0
+
+#
+#    MythicPlus.ReloadCommand.Enabled
+#        Description: Enable the .dc reload mythic command for hot-reloading
+#                     Allows GMs to reload dungeon profiles without server restart.
+#        Default:     1 (Enabled - .dc reload mythic available)
+#                     0 (Disabled - requires server restart for config changes)
+#
+MythicPlus.ReloadCommand.Enabled = 1
+
+#
+#    MythicPlus.Keystone.Enabled
+#        Description: Enable Mythic+ keystone system (M+2 through M+10)
+#                     When disabled, only base Mythic difficulty is available.
+#        Default:     0 (Disabled - coming soon, base Mythic only)
+#                     1 (Enabled - keystone system active)
+#
+MythicPlus.Keystone.Enabled = 0
+
+#
+#    MythicPlus.DeathBudget.Enabled
+#        Description: Enable death budget tracking for Mythic+ runs
+#                     Limits number of deaths before run fails.
+#        Default:     0 (Disabled - coming soon, unlimited deaths)
+#                     1 (Enabled - death budget enforced)
+#
+MythicPlus.DeathBudget.Enabled = 0
+
+#
+#    MythicPlus.Vault.Enabled
+#        Description: Enable weekly vault system for Mythic+ rewards
+#                     Tracks highest keystone completed each week for rewards.
+#        Default:     0 (Disabled - coming soon)
+#                     1 (Enabled - vault system active)
+#
+MythicPlus.Vault.Enabled = 0
+
+# -------------------------------------------------------------------------
+# Scaling Configuration (Database-Driven)
+# -------------------------------------------------------------------------
+# Most scaling configuration is stored in the database table:
+# world.dc_dungeon_mythic_profile
+#
+# Each dungeon has configurable:
+# - heroic_enabled / mythic_enabled (boolean toggles)
+# - heroic_health_mult / heroic_damage_mult (stat multipliers)
+# - mythic_health_mult / mythic_damage_mult (stat multipliers)
+# - heroic_level_normal/elite/boss (level overrides, 0 = keep original)
+# - mythic_level_normal/elite/boss (level overrides, 0 = keep original)
+#
+# Use .dc reload mythic to reload after database changes (no restart needed)
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.DefaultMultipliers.Heroic.Health
+#        Description: Default HP multiplier for Heroic difficulty if not in database
+#                     Only used as fallback when profile doesn't exist.
+#        Default:     1.15 (15% more HP)
+#        Range:       1.0 - 5.0
+#
+MythicPlus.DefaultMultipliers.Heroic.Health = 1.15
+
+#
+#    MythicPlus.DefaultMultipliers.Heroic.Damage
+#        Description: Default damage multiplier for Heroic difficulty if not in database
+#        Default:     1.10 (10% more damage)
+#        Range:       1.0 - 5.0
+#
+MythicPlus.DefaultMultipliers.Heroic.Damage = 1.10
+
+#
+#    MythicPlus.DefaultMultipliers.Mythic.Health.Vanilla
+#        Description: Default HP multiplier for Mythic difficulty in Vanilla dungeons
+#        Default:     3.0 (200% more HP)
+#        Range:       1.0 - 10.0
+#
+MythicPlus.DefaultMultipliers.Mythic.Health.Vanilla = 3.0
+
+#
+#    MythicPlus.DefaultMultipliers.Mythic.Damage.Vanilla
+#        Description: Default damage multiplier for Mythic difficulty in Vanilla dungeons
+#        Default:     2.0 (100% more damage)
+#        Range:       1.0 - 10.0
+#
+MythicPlus.DefaultMultipliers.Mythic.Damage.Vanilla = 2.0
+
+#
+#    MythicPlus.DefaultMultipliers.Mythic.Health.WotLK
+#        Description: Default HP multiplier for Mythic difficulty in WotLK dungeons
+#        Default:     1.35 (35% more HP)
+#        Range:       1.0 - 5.0
+#
+MythicPlus.DefaultMultipliers.Mythic.Health.WotLK = 1.35
+
+#
+#    MythicPlus.DefaultMultipliers.Mythic.Damage.WotLK
+#        Description: Default damage multiplier for Mythic difficulty in WotLK dungeons
+#        Default:     1.20 (20% more damage)
+#        Range:       1.0 - 5.0
+#
+MythicPlus.DefaultMultipliers.Mythic.Damage.WotLK = 1.20
+
+# -------------------------------------------------------------------------
+# Performance Tuning
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.CacheProfiles
+#        Description: Cache dungeon profiles in memory after first load
+#                     Improves performance but uses more RAM.
+#        Default:     1 (Enabled - cache profiles)
+#                     0 (Disabled - query database each time)
+#
+MythicPlus.CacheProfiles = 1
+
+#
+#    MythicPlus.OptimizeHooks
+#        Description: Optimize creature scaling hooks with early exits
+#                     Skips scaling checks for non-dungeon maps immediately.
+#        Default:     1 (Enabled - optimized hooks)
+#                     0 (Disabled - check all creatures)
+#
+MythicPlus.OptimizeHooks = 1
+
+###########################################################################
 # -------------------------------------------------------------------------
 
 #
@@ -3204,398 +3393,3 @@ Hardcore.TitleRewards = ""
 #
 Hardcore.ItemRewards = ""
 
-###########################################################################
-#
-#    SECTION 6.8: TRADEABLE LOOT WINDOW (RETAIL-LIKE)
-#
-#    Items looted in Mythic+ dungeons can be traded to group members
-#    for 2 hours after drop (retail behavior).
-#
-###########################################################################
-
-#
-#    MythicPlus.TradeableLoot.Enabled
-#        Description: Enable 2-hour trade window for M+ loot
-#        Default:     1 (Enabled, retail-like)
-#                     0 (Items become soulbound immediately)
-#
-MythicPlus.TradeableLoot.Enabled = 1
-
-#
-#    MythicPlus.TradeableLoot.Duration
-#        Description: Trade window duration in seconds
-#        Default:     7200 (2 hours, retail-like)
-#        Range:       600 - 14400 (10 minutes - 4 hours)
-#
-MythicPlus.TradeableLoot.Duration = 7200
-
-#
-#    MythicPlus.TradeableLoot.CleanupInterval
-#        Description: How often to remove expired tracking entries (seconds)
-#        Default:     3600 (1 hour)
-#        Range:       600 - 7200
-#        Note:        Lower values = more frequent cleanup = less database bloat
-#
-MythicPlus.TradeableLoot.CleanupInterval = 3600
-
-###########################################################################
-#
-#    SECTION 6.9: LEGACY CONTENT SCALING (DBC EDITING REQUIRED)
-#
-#    Scale all Vanilla/BC dungeons and raids to level 80 for endgame
-#    progression. Requires DBC edits (MapDifficulty.dbc).
-#
-###########################################################################
-
-#
-#    MythicPlus.ScaleAllContentTo80
-#        Description: Scale all Vanilla/BC content to level 80
-#                     Allows level 80 players to run legacy raids/dungeons
-#                     for progression instead of trivial farming.
-#        Default:     1 (Enabled - scale to 80)
-#                     0 (Keep original level requirements)
-#        Requires:    DBC edits (MapDifficulty.dbc) + creature_template updates
-#        Affects:     - Vanilla dungeons (1-60 → 80)
-#                     - Vanilla raids (MC, BWL, AQ40, Naxx → 80)
-#                     - BC dungeons (60-70 → 80)
-#                     - BC raids (Kara, SSC, TK, BT, Sunwell → 80)
-#
-MythicPlus.ScaleAllContentTo80 = 1
-
-#
-#    MythicPlus.LegacyScaling.VanillaMultiplier
-#        Description: Health/damage multiplier for Vanilla content at level 80
-#        Default:     3.0 (Vanilla bosses have 3x health/damage at 80)
-#        Range:       1.0 - 10.0
-#        Note:        Applies to Normal difficulty. Heroic/Mythic use higher values.
-#
-MythicPlus.LegacyScaling.VanillaMultiplier = 3.0
-
-#
-#    MythicPlus.LegacyScaling.BCMultiplier
-#        Description: Health/damage multiplier for BC content at level 80
-#        Default:     2.5 (BC bosses have 2.5x health/damage at 80)
-#        Range:       1.0 - 10.0
-#
-MythicPlus.LegacyScaling.BCMultiplier = 2.5
-
-###########################################################################
-#
-#    SECTION 6.10: CUSTOM CREATURE TEMPLATE IDS
-#
-#    Defines starting ID ranges for custom creatures in the Mythic+ system.
-#
-###########################################################################
-
-#
-#    MythicPlus.CustomCreature.StartID
-#        Description: Starting creature template ID for custom NPCs
-#                     Ensures no conflicts with existing creature IDs.
-#        Default:     100000 (matches keystone item ID range)
-#        Range:       100000 - 999999
-#        Used for:    - 100000: Mythic+ Dungeon Teleporter
-#                     - 100001: Mythic Raid Teleporter
-#                     - 100002: Font of Power (keystone activation)
-#                     - 100003: Great Vault NPC
-#                     - 100100+: Scaled Vanilla boss variants
-#                     - 100200+: Scaled BC boss variants
-#
-MythicPlus.CustomCreature.StartID = 100000
-
-#
-#    MythicPlus.CustomCreature.VanillaBossOffset
-#        Description: Offset for Vanilla boss variants (from StartID)
-#        Default:     100 (100000 + 100 = 100100)
-#        Example:     100100 = Ragnaros (Level 80 Mythic)
-#                     100101 = Nefarian (Level 80 Mythic)
-#
-MythicPlus.CustomCreature.VanillaBossOffset = 100
-
-#
-#    MythicPlus.CustomCreature.BCBossOffset
-#        Description: Offset for BC boss variants (from StartID)
-#        Default:     200 (100000 + 200 = 100200)
-#        Example:     100200 = Prince Malchezaar (Level 80 Mythic)
-#                     100203 = Illidan Stormrage (Level 80 Mythic)
-#
-MythicPlus.CustomCreature.BCBossOffset = 200
-
-###########################################################################
-#
-#    SECTION 6.11: ELUNA TELEPORTER INTEGRATION
-#
-#    Configuration for existing Eluna teleporter system integration.
-#
-###########################################################################
-
-#
-#    MythicPlus.ElunaT teleporter.Enabled
-#        Description: Enable Eluna teleporter integration for Mythic+ system
-#                     Uses existing eluna_teleporter table for menu system.
-#        Default:     1 (Enabled - reuse Eluna teleporter)
-#                     0 (Disabled - use C++ NPC teleporter from Section 2.11)
-#
-MythicPlus.ElunaTeleporter.Enabled = 1
-
-#
-#    MythicPlus.ElunaTeleporter.CreatureID
-#        Description: Creature entry ID for Eluna teleporter NPC
-#        Default:     800002 (from existing Eluna teleporter.lua)
-#        Note:        This is the NPC entry that uses Eluna scripts
-#
-MythicPlus.ElunaTeleporter.CreatureID = 800002
-
-#
-#    MythicPlus.ElunaTeleporter.MobileCreatureID
-#        Description: Creature entry ID for mobile Eluna teleporter
-#        Default:     33274 (from existing Eluna teleporter mobile.lua)
-#
-MythicPlus.ElunaTeleporter.MobileCreatureID = 33274
-
-#
-#    MythicPlus.ElunaTeleporter.MenuIDStart
-#        Description: Starting menu ID for Mythic+ entries in eluna_teleporter table
-#                     Prevents conflicts with existing teleporter menus.
-#        Default:     1000
-#        Range:       1000 - 9999
-#        Used for:    - 1000: [Mythic+ Dungeons] parent menu
-#                     - 1001-1008: Seasonal dungeon entries
-#
-MythicPlus.ElunaTeleporter.MenuIDStart = 1000
-
-###########################################################################
-#
-#    SECTION 6.12: LFG DUNGEON FINDER & GEARSCORE INTEGRATION
-#
-#    Native WotLK LFG tool integration via DBC editing + GearScore system.
-#
-###########################################################################
-
-#
-#    MythicPlus.LFG.Enabled
-#        Description: Enable Mythic+ in native LFG tool (Dungeon Finder UI)
-#                     Players can queue for M+ through "I" key interface.
-#        Default:     1 (Enabled)
-#                     0 (Disabled - M+ only via teleporter NPCs)
-#        Requires:    - LFGDungeons.dbc edited with M+ entries (10000-10207)
-#                     - patch-4.mpq packed and distributed to clients
-#
-MythicPlus.LFG.Enabled = 1
-
-#
-#    MythicPlus.LFG.RequireKeystone
-#        Description: Require appropriate keystone in inventory to queue
-#                     Keystone consumed on dungeon completion/depletion.
-#        Default:     1 (Required - retail behavior)
-#                     0 (Not required - allows testing)
-#
-MythicPlus.LFG.RequireKeystone = 1
-
-#
-#    MythicPlus.LFG.RequireGearScore
-#        Description: Require minimum GearScore to queue for Mythic+
-#                     Prevents undergeared players from joining high keys.
-#        Default:     1 (Required)
-#                     0 (Not required - no GS validation)
-#
-MythicPlus.LFG.RequireGearScore = 1
-
-#
-#    MythicPlus.LFG.MinGearScore.Base
-#        Description: Base GearScore requirement for Mythic+0 dungeons
-#                     Scaled by keystone level (see PerLevel setting).
-#        Default:     4000
-#        Range:       3000 - 7000
-#        Examples:    4000 = Fresh level 80 (ilvl ~200)
-#                     5000 = Well-geared (ilvl ~245)
-#                     6000 = BiS pre-raid (ilvl ~270)
-#
-MythicPlus.LFG.MinGearScore.Base = 4000
-
-#
-#    MythicPlus.LFG.MinGearScore.PerLevel
-#        Description: Additional GearScore per keystone level
-#                     Formula: Required GS = Base + (Level * PerLevel)
-#        Default:     100
-#        Range:       50 - 200
-#        Examples:    100 = M+10 requires 5000 GS (4000 + 10*100)
-#                     150 = M+10 requires 5500 GS (4000 + 10*150)
-#
-MythicPlus.LFG.MinGearScore.PerLevel = 100
-
-#
-#    MythicPlus.LFG.AutoCalculateGearScore
-#        Description: Auto-recalculate GearScore on equipment change
-#                     Updates characters.gear_score column automatically.
-#        Default:     1 (Enabled - always up-to-date)
-#                     0 (Disabled - manual recalculation only)
-#
-MythicPlus.LFG.AutoCalculateGearScore = 1
-
-#
-#    MythicPlus.LFG.ShowGearScoreInTooltip
-#        Description: Show GearScore when hovering over player names
-#        Default:     1 (Show)
-#                     0 (Hide - only show in LFG UI)
-#        Requires:    Client addon (GearScoreLite or custom implementation)
-#
-MythicPlus.LFG.ShowGearScoreInTooltip = 1
-
-#
-#    MythicPlus.LFG.AllowPreformedGroupsOnly
-#        Description: Only allow manual group formation (no auto-matchmaking)
-#                     Retail Mythic+ behavior - prevents random pugs.
-#        Default:     1 (Preformed only - like retail M+)
-#                     0 (Allow auto-matchmaking - not recommended)
-#        Note:        Set via LFGDungeons.dbc flags (0x20 = preformed only)
-#
-MythicPlus.LFG.AllowPreformedGroupsOnly = 1
-
-# -------------------------------------------------------------------------
-# Dungeon Enhancement Extended Settings (Phase 1)
-# -------------------------------------------------------------------------
-
-#
-#    MythicPlus.CacheRefresh.Dungeons
-#        Description: Cache refresh interval for dungeon configurations (in seconds)
-#                     Lower values = more database reads, higher values = stale data
-#        Default:     300 (5 minutes)
-#        Range:       60 - 3600 (1 minute to 1 hour)
-#
-MythicPlus.CacheRefresh.Dungeons = 300
-
-#
-#    MythicPlus.CacheRefresh.Affixes
-#        Description: Cache refresh interval for affix data (in seconds)
-#        Default:     600 (10 minutes)
-#        Range:       60 - 3600
-#
-MythicPlus.CacheRefresh.Affixes = 600
-
-#
-#    MythicPlus.CacheRefresh.Seasons
-#        Description: Cache refresh interval for season data (in seconds)
-#        Default:     3600 (1 hour)
-#        Range:       300 - 7200
-#
-MythicPlus.CacheRefresh.Seasons = 3600
-
-#
-#    MythicPlus.Scaling.BaseDifficultyNormal
-#        Description: Base difficulty multiplier for Normal dungeons
-#                     Applied to HP and damage of all creatures
-#        Default:     1.0 (same as Heroic)
-#        Range:       0.5 - 2.0
-#
-MythicPlus.Scaling.BaseDifficultyNormal = 1.0
-
-#
-#    MythicPlus.Scaling.BaseDifficultyHeroic
-#        Description: Base difficulty multiplier for Heroic dungeons
-#        Default:     1.0
-#        Range:       0.5 - 2.0
-#
-MythicPlus.Scaling.BaseDifficultyHeroic = 1.0
-
-#
-#    MythicPlus.Scaling.BaseDifficultyMythic0
-#        Description: Base difficulty multiplier for Mythic 0 (keystone-free)
-#                     Fixed at 1.8x HP/Damage (retail-like)
-#        Default:     1.8
-#        Range:       1.0 - 3.0
-#
-MythicPlus.Scaling.BaseDifficultyMythic0 = 1.8
-
-#
-#    MythicPlus.Scaling.MythicPlus.PerLevel
-#        Description: Scaling increase per Mythic+ level (as percentage)
-#                     Formula: base * (1 + (level-2) * PerLevel)
-#                     Example: 15% per level = 0.15
-#        Default:     0.15 (15% per level)
-#        Range:       0.10 - 0.30
-#
-MythicPlus.Scaling.MythicPlus.PerLevel = 0.15
-
-#
-#    MythicPlus.Timer.Announce.Interval
-#        Description: How often to announce remaining time in zone chat (in seconds)
-#                     0 = disabled (no periodic announcements)
-#        Default:     300 (every 5 minutes)
-#        Range:       0 - 600
-#
-MythicPlus.Timer.Announce.Interval = 300
-
-#
-#    MythicPlus.Timer.Warning.Thresholds
-#        Description: CSV list of remaining minutes to show urgent timer warnings
-#                     Example: "10,5,3,1" = show warnings at 10min, 5min, 3min, 1min remaining
-#        Default:     "10,5,3,1"
-#
-MythicPlus.Timer.Warning.Thresholds = "10,5,3,1"
-
-#
-#    MythicPlus.FontOfPower.BaseGameObjectId
-#        Description: Base GameObject ID for Font of Power (dungeon keystones activator)
-#                     Sequential IDs used for each dungeon: BaseId, BaseId+1, etc.
-#        Default:     700001
-#
-MythicPlus.FontOfPower.BaseGameObjectId = 700001
-
-#
-#    MythicPlus.GreatVault.GameObjectId
-#        Description: GameObject ID for Great Vault (weekly reward chest)
-#        Default:     700000
-#
-MythicPlus.GreatVault.GameObjectId = 700000
-
-#
-#    MythicPlus.NPC.DungeonTeleporterId
-#        Description: NPC entry ID for Mythic+ Dungeon Teleporter
-#                     Provides gossip menu to teleport to M+ dungeons
-#        Default:     190003
-#
-MythicPlus.NPC.DungeonTeleporterId = 190003
-
-#
-#    MythicPlus.NPC.RaidTeleporterId
-#        Description: NPC entry ID for Raid Teleporter (separate Mythic raid access)
-#        Default:     190004
-#
-MythicPlus.NPC.RaidTeleporterId = 190004
-
-#
-#    MythicPlus.NPC.TokenVendorId
-#        Description: NPC entry ID for Mythic Token Vendor
-#                     Sells gear and rewards for Mythic+ Tokens
-#        Default:     190005
-#
-MythicPlus.NPC.TokenVendorId = 190005
-
-#
-#    MythicPlus.NPC.KeystoneMasterId
-#        Description: NPC entry ID for Keystone Master
-#                     Provides keystone management (request replacement, destroy, view affixes)
-#        Default:     190006
-#
-MythicPlus.NPC.KeystoneMasterId = 190006
-
-#
-#    MythicPlus.Debug.LogLevel
-#        Description: Logging verbosity for Mythic+ system
-#        Default:     1 (Info - standard logging)
-#        Options:     0 = Errors only
-#                     1 = Info + Errors
-#                     2 = Verbose + Warnings + Errors
-#                     3 = Debug (all messages)
-#
-MythicPlus.Debug.LogLevel = 1
-
-#
-#    MythicPlus.Debug.BroadcastMessages
-#        Description: Broadcast debug messages to zone chat (dev/testing only)
-#        Default:     0 (Disabled - use LOG_INFO)
-#                     1 (Enabled - also broadcast to chat)
-#
-MythicPlus.Debug.BroadcastMessages = 0
-
-###########################################################################

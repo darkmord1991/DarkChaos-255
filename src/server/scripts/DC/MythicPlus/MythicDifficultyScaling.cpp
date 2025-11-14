@@ -4,12 +4,17 @@
  */
 
 #include "MythicDifficultyScaling.h"
+#include "Config.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
+#include "Group.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
 #include <string>
 #include <cmath>
+#include <unordered_set>
 
 MythicDifficultyScaling* MythicDifficultyScaling::instance()
 {
@@ -22,6 +27,8 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
     LOG_INFO("server.loading", "Loading Mythic+ dungeon profiles...");
     
     _dungeonProfiles.clear();
+    _activeKeystoneCache.clear();
+    _activeSeasonId = 0;
     
     QueryResult result = WorldDatabase.Query("SELECT map_id, name, heroic_enabled, mythic_enabled, "
                                              "base_health_mult, base_damage_mult, "
@@ -97,6 +104,16 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
     } while (result->NextRow());
     
     LOG_INFO("server.loading", ">> Loaded {} Mythic+ dungeon profiles", count);
+
+    if (QueryResult season = WorldDatabase.Query("SELECT season_id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY start_ts DESC LIMIT 1"))
+    {
+        _activeSeasonId = (*season)[0].Get<uint32>();
+        LOG_INFO("server.loading", ">> Active Mythic+ season detected (ID {})", _activeSeasonId);
+    }
+    else
+    {
+        LOG_WARN("server.loading", ">> No active Mythic+ season found in dc_mplus_seasons");
+    }
 }
 
 DungeonProfile* MythicDifficultyScaling::GetDungeonProfile(uint32 mapId)
