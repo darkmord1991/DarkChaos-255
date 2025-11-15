@@ -665,6 +665,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "INSERT INTO dc_token_rewards_log (character_guid, map_id, difficulty, keystone_level, player_level, tokens_awarded, boss_entry) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
+        
+    PrepareStatement(CHAR_SEL_MPLUS_VAULT_REWARDS,
+        "SELECT item_id, item_level FROM dc_vault_reward_pool WHERE character_guid = ? AND season_id = ? AND week_start = ? ORDER BY slot_index",
+        CONNECTION_SYNCH);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

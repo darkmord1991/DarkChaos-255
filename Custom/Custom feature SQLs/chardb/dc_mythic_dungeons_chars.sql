@@ -99,16 +99,15 @@ CREATE TABLE IF NOT EXISTS `dc_vault_reward_pool` (
   `character_guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
   `season_id` INT UNSIGNED NOT NULL COMMENT 'Season ID',
   `week_start` BIGINT UNSIGNED NOT NULL COMMENT 'Week start timestamp',
-  `slot` TINYINT UNSIGNED NOT NULL COMMENT 'Vault slot (1/2/3)',
-  `item_entry` INT UNSIGNED NOT NULL COMMENT 'Item entry from item_template',
-  `item_level` SMALLINT UNSIGNED NOT NULL COMMENT 'Item level',
-  `token_alternative` INT UNSIGNED NOT NULL COMMENT 'Token count if player chooses tokens instead',
-  PRIMARY KEY (`character_guid`, `season_id`, `week_start`, `slot`),
-  FOREIGN KEY (`character_guid`, `season_id`, `week_start`) 
-    REFERENCES `dc_weekly_vault`(`character_guid`, `season_id`, `week_start`) 
-    ON DELETE CASCADE
+  `item_id` INT UNSIGNED NOT NULL COMMENT 'Item/Token entry ID',
+  `item_level` SMALLINT UNSIGNED NOT NULL COMMENT 'Item level for this reward',
+  `slot_index` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Reward slot index (0-5)',
+  `claimed` TINYINT(1) UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Whether this reward was claimed',
+  `claimed_at` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT 'Timestamp when claimed',
+  PRIMARY KEY (`character_guid`, `season_id`, `week_start`, `slot_index`),
+  KEY `idx_claimed` (`character_guid`, `season_id`, `week_start`, `claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Pre-generated vault reward options';
+COMMENT='Generated vault reward options with claim tracking';
 
 -- ========================================================================
 -- Table: dc_token_rewards_log

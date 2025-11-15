@@ -9,10 +9,16 @@
 void AddSC_mythic_plus_core_scripts();
 void AddSC_dungeon_portal_selector();
 void AddSC_go_mythic_plus_font_of_power();
+void AddSC_npc_mythic_plus_great_vault();
+void AddSC_npc_mythic_token_vendor();
+void AddSC_mythic_plus_commands();
 
 void AddMythicPlusScripts()
 {
     AddSC_mythic_plus_core_scripts();
     AddSC_dungeon_portal_selector();
     AddSC_go_mythic_plus_font_of_power();
+    AddSC_npc_mythic_plus_great_vault();
+    AddSC_npc_mythic_token_vendor();
+    AddSC_mythic_plus_commands();
 }

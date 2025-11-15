@@ -52,6 +52,11 @@ public:
     void BuildVaultMenu(Player* player, Creature* creature);
     void HandleVaultSelection(Player* player, Creature* creature, uint32 actionId);
     void BuildStatisticsMenu(Player* player, Creature* creature);
+    
+    // Vault reward pool management
+    bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart, uint8 highestKeystoneLevel);
+    std::vector<std::pair<uint32, uint32>> GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
+    bool ClaimVaultItemReward(Player* player, uint8 slot, uint32 itemId);
 
 private:
     struct InstanceState
@@ -97,6 +102,7 @@ private:
     uint8 GetVaultThreshold(uint8 slot) const;
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
+    bool ClaimVaultSlot(Player* player, uint8 slot);
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
         std::string SerializeParticipants(const InstanceState* state) const;
 

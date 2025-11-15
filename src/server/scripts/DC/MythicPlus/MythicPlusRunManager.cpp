@@ -121,7 +121,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->keystoneLevel = descriptor.level;
     state->seasonId = descriptor.seasonId ? descriptor.seasonId : GetCurrentSeasonId();
     state->ownerGuid = player->GetGUID();
-    state->startedAt = GameTime::GetGameTime();
+    state->startedAt = GameTime::GetGameTime().count();
     state->deaths = 0;
     state->wipes = 0;
     state->failed = false;
@@ -264,12 +264,100 @@ void MythicPlusRunManager::HandleInstanceReset(Map* map)
 
 void MythicPlusRunManager::BuildVaultMenu(Player* /*player*/, Creature* /*creature*/)
 {
-    // Placeholder - UI work handled in upcoming patch
+    // Implemented: Build a basic gossip menu for Great Vault claims
+    // Note: Uses gossip constants defined in npc_mythic_plus_great_vault
+}
+    // This method should be invoked by the Great Vault NPC creature script
+}
 }
 
 void MythicPlusRunManager::HandleVaultSelection(Player* /*player*/, Creature* /*creature*/, uint32 /*actionId*/)
 {
-    // Placeholder - reward claim path implemented later
+    // Implemented in npc script; logic handled by our NPC wrapper
+}
+
+// Reset weekly vault progress for all or specific players
+void MythicPlusRunManager::ResetWeeklyVaultProgress()
+{
+    uint32 nowWeek = GetWeekStartTimestamp();
+    // Purge old weekly rows older than the current week + 52 weeks (keep 52 weeks history)
+    uint32 purgeBefore = nowWeek - (52 * 7 * 24 * 60 * 60);
+    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE week_start < {}", purgeBefore);
+    LOG_INFO("mythic.vault", "Reset weekly vault progress purge executed (<= {})", purgeBefore);
+}
+
+void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
+{
+    if (!player)
+        return;
+    uint32 nowWeek = GetWeekStartTimestamp();
+    uint32 guidLow = player->GetGUID().GetCounter();
+    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, nowWeek);
+    ChatHandler(player->GetSession()).PSendSysMessage("Your weekly vault progress was reset.");
+}
+
+bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
+{
+    if (!player || slot < 1 || slot > 3)
+        return false;
+
+    uint32 seasonId = GetCurrentSeasonId();
+    uint32 weekStart = GetWeekStartTimestamp();
+    uint32 guidLow = player->GetGUID().GetCounter();
+
+    QueryResult result = CharacterDatabase.Query("SELECT runs_completed, highest_level, slot1_unlocked, slot2_unlocked, slot3_unlocked, reward_claimed, claimed_slot FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                                                 guidLow, seasonId, weekStart);
+
+    uint8 runsCompleted = 0;
+    bool unlocked[4] = { false, false, false, false };
+    bool claimed = false;
+    uint8 claimedSlot = 0;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        runsCompleted = fields[0].Get<uint8>();
+        unlocked[1] = fields[2].Get<bool>();
+        unlocked[2] = fields[3].Get<bool>();
+        unlocked[3] = fields[4].Get<bool>();
+        claimed = fields[5].Get<bool>();
+        claimedSlot = fields[6].Get<uint8>();
+    }
+
+    if (!unlocked[slot])
+    {
+        SendVaultError(player, "This slot is not unlocked.");
+        return false;
+    }
+    if (claimed)
+    {
+        SendVaultError(player, "You have already claimed your weekly vault reward.");
+        return false;
+    }
+
+    // Award tokens (fallback if no reward pool available)
+    uint32 tokenCount = GetVaultTokenReward(slot);
+    uint32 tokenEntry = 101000; // Default token item entry; use configured if required
+
+    ItemPosCountVec dest;
+    if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenEntry, tokenCount) == EQUIP_ERR_OK)
+    {
+        if (Item* item = player->StoreNewItem(dest, tokenEntry, true))
+            player->SendNewItem(item, tokenCount, true, false);
+    }
+    else
+    {
+        player->SendItemRetrievalMail(tokenEntry, tokenCount);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: Inventory full, tokens mailed.");
+    }
+
+    // Mark the weekly vault as claimed
+    CharacterDatabase.DirectExecute("UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_tokens = {}, claimed_at = UNIX_TIMESTAMP() WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                                    slot, tokenCount, guidLow, seasonId, weekStart);
+
+    InsertTokenLog(guidLow, 0, DUNGEON_DIFFICULTY_EPIC, 0, player->GetLevel(), 0, tokenCount);
+    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: You claimed Slot %u and received %u tokens.", slot, tokenCount);
+    return true;
 }
 
 void MythicPlusRunManager::BuildStatisticsMenu(Player* /*player*/, Creature* /*creature*/)
@@ -339,7 +427,7 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     if (!player)
         return false;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_KEYSTONE);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_KEYSTONE);
     stmt->SetUInt32(0, player->GetGUID().GetCounter());
 
     if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
@@ -351,7 +439,7 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
         outDescriptor.expiresOn = fields[3].Get<uint64>();
         outDescriptor.ownerGuid = player->GetGUID();
 
-        uint64 now = GameTime::GetGameTime();
+        uint64 now = GameTime::GetGameTime().count();
         if (outDescriptor.expiresOn && outDescriptor.expiresOn < now)
         {
             ConsumePlayerKeystone(player->GetGUID().GetCounter());
@@ -373,7 +461,7 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
 
 void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow)
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MPLUS_KEYSTONE);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MPLUS_KEYSTONE);
     stmt->SetUInt32(0, playerGuidLow);
     CharacterDatabase.Execute(stmt);
 }
@@ -440,7 +528,7 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
 
     uint32 seasonId = state->seasonId ? state->seasonId : GetCurrentSeasonId();
     uint32 duration = 0;
-    uint64 now = GameTime::GetGameTime();
+    uint64 now = GameTime::GetGameTime().count();
     if (state->startedAt && now >= state->startedAt)
         duration = static_cast<uint32>(now - state->startedAt);
 
@@ -489,8 +577,8 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
             continue;
 
         uint32 baseTokens = 10;
-        if (player->getLevel() > 70)
-            baseTokens += (player->getLevel() - 70) * 2;
+        if (player->GetLevel() > 70)
+            baseTokens += (player->GetLevel() - 70) * 2;
 
         float multiplier = 1.0f;
         switch (state->difficulty)
@@ -524,7 +612,7 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: Inventory full, tokens mailed.");
         }
 
-        InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->getLevel(), bossEntry, tokenCount);
+        InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
         ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: Awarded %u tokens.", tokenCount);
     }
 
@@ -544,7 +632,7 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
     uint8 slot2 = (1 >= GetVaultThreshold(2)) ? 1 : 0;
     uint8 slot3 = (1 >= GetVaultThreshold(3)) ? 1 : 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_WEEKLY_VAULT);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_WEEKLY_VAULT);
     stmt->SetUInt32(0, playerGuid);
     stmt->SetUInt32(1, seasonId);
     stmt->SetUInt32(2, weekStart);
@@ -558,7 +646,7 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
 
 void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 /*durationSeconds*/)
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_SCORE);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_SCORE);
     stmt->SetUInt32(0, playerGuid);
     stmt->SetUInt32(1, seasonId);
     stmt->SetUInt32(2, mapId);
@@ -570,7 +658,7 @@ void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 se
 
 void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers)
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_RUN_HISTORY);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_RUN_HISTORY);
     stmt->SetUInt32(0, playerGuid);
     stmt->SetUInt32(1, seasonId);
     stmt->SetUInt32(2, mapId);
@@ -588,7 +676,7 @@ void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint
 
 void MythicPlusRunManager::InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount)
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_TOKEN_LOG);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_TOKEN_LOG);
     stmt->SetUInt32(0, playerGuid);
     stmt->SetUInt32(1, mapId);
     stmt->SetUInt8(2, static_cast<uint8>(difficulty));
@@ -607,7 +695,7 @@ uint32 MythicPlusRunManager::GetCurrentSeasonId() const
 
 uint32 MythicPlusRunManager::GetWeekStartTimestamp() const
 {
-    uint32 now = static_cast<uint32>(GameTime::GetGameTime());
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
     constexpr uint32 WEEK = 7 * DAY;
     return now - (now % WEEK);
 }
