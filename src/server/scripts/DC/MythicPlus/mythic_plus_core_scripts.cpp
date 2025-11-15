@@ -193,6 +193,21 @@ public:
         // Apply affix-specific scaling (e.g., Tyrannical, Fortified)
         sAffixMgr->OnCreatureSelectLevel(creature);
     }
+
+    void OnCreatureAddWorld(Creature* creature) override
+    {
+        // Only process in Mythic difficulty
+        if (map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
+            return;
+        
+        // Despawn quest givers
+        if (creature->IsQuestGiver())
+        {
+            LOG_INFO("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode", 
+                     creature->GetName(), creature->GetEntry());
+            creature->DespawnOrUnsummon();
+        }
+    }
 };
 
 // Player script to announce difficulty when entering dungeons

@@ -851,7 +851,7 @@ void MythicPlusRunManager::AnnounceAffixes(Player* player, const std::vector<uin
 std::string MythicPlusRunManager::GetAffixName(uint32 affixId) const
 {
     QueryResult result = WorldDatabase.Query(
-        "SELECT affix_name FROM dc_mplus_affixes WHERE affix_id = {}", affixId);
+        "SELECT name FROM dc_mplus_affixes WHERE affix_id = {}", affixId);
     
     if (result)
     {

@@ -10,54 +10,11 @@
 #   3. Hinterland Battleground - Custom 25v25 PvP battleground with affixes
 #   4. Mythic+ Dungeon System - Scaled dungeon difficulties with keystones
 #   5. Prestige System - Reset level 255 players with permanent bonuses
+#   6. Item Upgrade System - Progressive gear upgrade with currency
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
 # =====================================================================
-
-###########################################################################
-#
-#    SECTION 0: ITEM UPGRADE (CLIENT ADDON INTEGRATION)
-#
-#    Controls debug echo and messaging for the DC-ItemUpgrade addon.
-#    The addon listens on system messages by default; enabling the SAY echo
-#    is useful only for debugging or when developing new flows.
-#
-###########################################################################
-
-#
-#    ItemUpgrade.DebugToSay
-#        Description: Echo DCUPGRADE_* responses to SAY in addition to system text
-#                     System messages are always sent; SAY echo is optional and noisy.
-#        Default:     0 (Disabled - clean player chat)
-#                     1 (Enabled  - also echo to SAY for debug)
-#
-ItemUpgrade.DebugToSay = 0
-
-#
-#    ItemUpgrade.Currency.TokenId
-#        Description: Item entry used as Upgrade Token currency.
-#        Default:     100999 (fallback if not set)
-#
-ItemUpgrade.Currency.TokenId = 100999
-
-#
-#    ItemUpgrade.Currency.EssenceId
-#        Description: Item entry used as Artifact Essence currency (Tier 5 upgrades).
-#        Default:     109998 (updated default)
-#
-ItemUpgrade.Currency.EssenceId = 109998
-
-#
-#    ItemUpgrade.EndgamePlayerLevel
-#        Description: Minimum player level that marks gear as "Endgame" for the upgrade system.
-#                     Players at or above this level use the Tier 2 cost/track configuration.
-#                     Adjust per release bracket so leveling phases can raise the ceiling gradually.
-#        Default:     80
-#
-ItemUpgrade.EndgamePlayerLevel = 80
-
-###########################################################################
 
 ###########################################################################
 #

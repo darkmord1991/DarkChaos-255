@@ -158,6 +158,15 @@ public:
         if (!mapEntry || !mapEntry->IsDungeon())
             return;
         
+        // Don't spawn quest masters in Mythic or Mythic+ difficulties
+        Map* map = player->GetMap();
+        if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
+        {
+            LOG_DEBUG("scripts", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}", 
+                      player->GetName());
+            return;
+        }
+        
         // Check if follower already exists
         if (GetQuestMasterFollower(player))
             return;
@@ -274,6 +283,14 @@ public:
         if (!mapEntry || !mapEntry->IsDungeon())
         {
             handler->PSendSysMessage("You can only summon the Quest Master inside dungeons!");
+            return true;
+        }
+        
+        // Don't allow summoning in Mythic or Mythic+ difficulties
+        Map* map = player->GetMap();
+        if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
+        {
+            handler->PSendSysMessage("Quest Masters do not assist in Mythic difficulty!");
             return true;
         }
         
