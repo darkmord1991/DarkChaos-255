@@ -16,8 +16,8 @@
 #include <map>
 #include <vector>
 
-// Token item ID (same as vault rewards)
-constexpr uint32 MYTHIC_TOKEN_ITEM = 101000;
+// Token item ID (DC Item Upgrade Token)
+constexpr uint32 MYTHIC_TOKEN_ITEM = 100999;
 
 // Gear slot categories
 enum TokenGearSlot : uint8
