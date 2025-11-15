@@ -38,7 +38,7 @@ public:
         ClearGossipMenuFor(player);
 
         // Check if player is level 80
-        if (player->getLevel() < 80)
+        if (player->GetLevel() < 80)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|cffff0000You must be level 80 to receive a keystone.|r", 

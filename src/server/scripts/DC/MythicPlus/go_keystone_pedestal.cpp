@@ -14,15 +14,6 @@
 #include "Chat.h"
 
 using namespace MythicPlusConstants;
-        case 5: return "|cff1eff00[Mythic +5]|r";
-        case 6: return "|cff1eff00[Mythic +6]|r";
-        case 7: return "|cff1eff00[Mythic +7]|r";
-        case 8: return "|cffff8000[Mythic +8]|r";
-        case 9: return "|cffff8000[Mythic +9]|r";
-        case 10: return "|cffff8000[Mythic +10]|r";
-        default: return "|cffaaaaaa[Unknown]|r";
-    }
-}
 
 class go_keystone_pedestal : public GameObjectScript
 {
@@ -100,7 +91,7 @@ public:
         return true;
     }
 
-    bool OnUse(Player* player, GameObject* go) override
+    bool OnUse(Player* player, GameObject* go)
     {
         return OnGossipHello(player, go);
     }

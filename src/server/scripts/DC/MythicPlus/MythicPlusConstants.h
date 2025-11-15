@@ -135,13 +135,13 @@ namespace MythicPlusConstants
     }
     
     /**
-     * Check if GameObject is a Font of Power
-     * @param entry GameObject entry
+     * Check if a GameObject entry is a Font of Power pedestal
+     * @param entry GameObject entry ID
      * @return True if Font of Power
      */
     inline bool IsFontOfPower(uint32 entry)
     {
-        return entry >= GO_FONT_OF_POWER_START && entry <= GO_FONT_OF_POWER_END;
+        return entry == GO_FONT_OF_POWER;
     }
 }
 

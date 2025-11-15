@@ -111,7 +111,40 @@ void TeleportToDungeonEntrance(Player* player, uint32 mapId)
     
     // Query entrance coordinates from database
     QueryResult result = WorldDatabase.Query(
-        \"SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o \"\n        \"FROM dc_dungeon_entrances WHERE dungeon_map = {}\", mapId);\n    \n    if (!result)\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"Error: Dungeon entrance coordinates not found in database.\");\n        LOG_ERROR(\"mythic.portal\", \"No entrance found for dungeon map {}\", mapId);\n        return;\n    }\n    \n    Field* fields = result->Fetch();\n    uint32 entranceMap = fields[0].Get<uint32>();\n    float x = fields[1].Get<float>();\n    float y = fields[2].Get<float>();\n    float z = fields[3].Get<float>();\n    float o = fields[4].Get<float>();\n    \n    // Teleport player to entrance\n    if (player->TeleportTo(entranceMap, x, y, z, o))\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"|cff00ff00Teleporting to dungeon entrance...|r\");\n        LOG_INFO(\"mythic.portal\", \"Player {} teleported to dungeon {} entrance\",\n            player->GetName(), mapId);\n    }\n    else\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"Error: Failed to teleport to dungeon entrance.\");\n        LOG_ERROR(\"mythic.portal\", \"Failed to teleport player {} to dungeon {}\",\n            player->GetName(), mapId);\n    }\n}
+        "SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o "
+        "FROM dc_dungeon_entrances WHERE dungeon_map = {}", mapId);
+
+    if (!result)
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "Error: Dungeon entrance coordinates not found in database.");
+        LOG_ERROR("mythic.portal", "No entrance found for dungeon map {}", mapId);
+        return;
+    }
+
+    Field* fields = result->Fetch();
+    uint32 entranceMap = fields[0].Get<uint32>();
+    float x = fields[1].Get<float>();
+    float y = fields[2].Get<float>();
+    float z = fields[3].Get<float>();
+    float o = fields[4].Get<float>();
+
+    // Teleport player to entrance
+    if (player->TeleportTo(entranceMap, x, y, z, o))
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cff00ff00Teleporting to dungeon entrance...|r");
+        LOG_INFO("mythic.portal", "Player {} teleported to dungeon {} entrance",
+            player->GetName(), mapId);
+    }
+    else
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "Error: Failed to teleport to dungeon entrance.");
+        LOG_ERROR("mythic.portal", "Failed to teleport player {} to dungeon {}",
+            player->GetName(), mapId);
+    }
+}
 
 // Generic portal creature script for all dungeon entrances
 class npc_dungeon_portal_selector : public CreatureScript
