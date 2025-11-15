@@ -96,15 +96,14 @@ public:
     }
 
 private:
-    void DisplayPlayerStatistics(Player* player, Creature* creature)
+    void DisplayPlayerStatistics(Player* player, Creature* /*creature*/)
     {
         uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
         uint32 guidLow = player->GetGUID().GetCounter();
         
-        // Query overall stats
+        // Query overall stats from dc_mplus_scores
         QueryResult result = CharacterDatabase.Query(
-            "SELECT MAX(best_level) AS best_key, SUM(total_runs) AS total_runs, "
-            "AVG(avg_score) AS avg_score, SUM(total_deaths) AS total_deaths, SUM(total_wipes) AS total_wipes "
+            "SELECT MAX(best_level) AS best_key, SUM(total_runs) AS total_runs, MAX(best_score) AS best_score "
             "FROM dc_mplus_scores WHERE character_guid = {} AND season_id = {}",
             guidLow, seasonId);
         
@@ -113,17 +112,16 @@ private:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|cffff0000No Mythic+ data this season|r", 
                 GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Back]|r", GOSSIP_SENDER_MAIN, 0);
             return;
         }
         
         Field* fields = result->Fetch();
         uint8 bestKey = fields[0].Get<uint8>();
         uint32 totalRuns = fields[1].Get<uint32>();
-        uint32 avgScore = fields[2].Get<uint32>();
-        uint32 totalDeaths = fields[3].Get<uint32>();
-        uint32 totalWipes = fields[4].Get<uint32>();
+        uint32 bestScore = fields[2].Get<uint32>();
         
-        // Color code best key (green for 10+, orange for 15+)
+        // Color code best key
         std::string bestKeyColor = bestKey >= 15 ? "|cffff8000" : (bestKey >= 10 ? "|cff00ff00" : "|cffffffff");
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
@@ -142,31 +140,26 @@ private:
             GOSSIP_SENDER_MAIN, ACTION_CLOSE);
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffffffffAverage Score:|r " + std::to_string(avgScore), 
-            GOSSIP_SENDER_MAIN, ACTION_CLOSE);
-        
-        // Death budget efficiency (lower is better)
-        float deathsPerRun = totalRuns > 0 ? static_cast<float>(totalDeaths) / totalRuns : 0.0f;
-        std::string efficiencyColor = deathsPerRun < 2.0f ? "|cff00ff00" : (deathsPerRun < 5.0f ? "|cffffff00" : "|cffff0000");
-        
-        char buffer[128];
-        snprintf(buffer, sizeof(buffer), "%sDeaths Per Run:|r %.2f", efficiencyColor.c_str(), deathsPerRun);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, buffer, GOSSIP_SENDER_MAIN, ACTION_CLOSE);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffffffffTotal Wipes:|r " + std::to_string(totalWipes), 
+            "|cffffffffBest Score:|r " + std::to_string(bestScore), 
             GOSSIP_SENDER_MAIN, ACTION_CLOSE);
         
         // Vault progress
         QueryResult vaultResult = CharacterDatabase.Query(
-            "SELECT runs_completed FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-            guidLow, seasonId, sMythicRuns->GetWeekStartTimestamp());
+            "SELECT runs_completed, highest_level FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} "
+            "ORDER BY week_start DESC LIMIT 1",
+            guidLow, seasonId);
         
-        uint8 weeklyRuns = vaultResult ? vaultResult->Fetch()[0].Get<uint8>() : 0;
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, ACTION_CLOSE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffffff00This Week:|r " + std::to_string(weeklyRuns) + " runs completed", 
-            GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+        if (vaultResult)
+        {
+            Field* vaultFields = vaultResult->Fetch();
+            uint8 weeklyRuns = vaultFields[0].Get<uint8>();
+            uint8 highestLevel = vaultFields[1].Get<uint8>();
+            
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|cffffff00This Week:|r " + std::to_string(weeklyRuns) + " runs (Best: M+" + std::to_string(highestLevel) + ")", 
+                GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+        }
         
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Back]|r", GOSSIP_SENDER_MAIN, 0);
     }
@@ -176,11 +169,11 @@ private:
         uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT c.name, s.best_level, s.total_runs, s.avg_score "
+            "SELECT c.name, s.best_level, s.total_runs, s.best_score "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
             "WHERE s.season_id = {} "
-            "ORDER BY s.best_level DESC, s.avg_score DESC "
+            "ORDER BY s.best_level DESC, s.best_score DESC "
             "LIMIT 10",
             seasonId);
         
@@ -189,6 +182,7 @@ private:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|cffff0000No leaderboard data available|r", 
                 GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Back]|r", GOSSIP_SENDER_MAIN, 0);
             return;
         }
         
@@ -205,12 +199,12 @@ private:
             std::string playerName = fields[0].Get<std::string>();
             uint8 bestLevel = fields[1].Get<uint8>();
             uint32 totalRuns = fields[2].Get<uint32>();
-            uint32 avgScore = fields[3].Get<uint32>();
+            uint32 bestScore = fields[3].Get<uint32>();
             
             std::string rankColor = rank <= 3 ? "|cffff8000" : "|cffffffff";
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "%s#%u|r %s - M+%u (%u runs, %u avg score)", 
-                rankColor.c_str(), rank, playerName.c_str(), bestLevel, totalRuns, avgScore);
+            snprintf(buffer, sizeof(buffer), "%s#%u|r %s - M+%u (%u runs, %u score)", 
+                rankColor.c_str(), rank, playerName.c_str(), bestLevel, totalRuns, bestScore);
             
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, buffer, GOSSIP_SENDER_MAIN, ACTION_CLOSE);
             ++rank;
@@ -226,11 +220,10 @@ private:
         uint32 guidLow = player->GetGUID().GetCounter();
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT p.name, s.best_level, s.best_duration, s.total_runs "
+            "SELECT s.map_id, s.best_level, s.best_score, s.total_runs "
             "FROM dc_mplus_scores s "
-            "JOIN dc_dungeon_mythic_profile p ON s.map_id = p.map_id "
             "WHERE s.character_guid = {} AND s.season_id = {} AND s.best_level > 0 "
-            "ORDER BY s.best_level DESC, p.name ASC "
+            "ORDER BY s.best_level DESC, s.best_score DESC "
             "LIMIT 10",
             guidLow, seasonId);
         
@@ -239,6 +232,7 @@ private:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|cffff0000No dungeon clears this season|r", 
                 GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Back]|r", GOSSIP_SENDER_MAIN, 0);
             return;
         }
         
@@ -251,17 +245,14 @@ private:
         do
         {
             Field* fields = result->Fetch();
-            std::string dungeonName = fields[0].Get<std::string>();
+            uint32 mapId = fields[0].Get<uint32>();
             uint8 bestLevel = fields[1].Get<uint8>();
-            uint32 bestTime = fields[2].Get<uint32>();
+            uint32 bestScore = fields[2].Get<uint32>();
             uint32 totalRuns = fields[3].Get<uint32>();
             
-            uint32 minutes = bestTime / 60;
-            uint32 seconds = bestTime % 60;
-            
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "|cff1eff00%s|r - M+%u (%um %us, %u runs)", 
-                dungeonName.c_str(), bestLevel, minutes, seconds, totalRuns);
+            snprintf(buffer, sizeof(buffer), "|cff1eff00Map %u|r - M+%u (Score: %u, %u runs)", 
+                mapId, bestLevel, bestScore, totalRuns);
             
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, buffer, GOSSIP_SENDER_MAIN, ACTION_CLOSE);
             
