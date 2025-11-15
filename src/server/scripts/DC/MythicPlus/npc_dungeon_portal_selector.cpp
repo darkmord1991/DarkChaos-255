@@ -233,15 +233,12 @@ public:
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
                 ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Preparing to enter |cffffffffNormal|r difficulty...");
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
-                // Schedule teleport after 3 second delay for confirmation
-                player->m_Events.Schedule(3s, [player, dungeonMapId](){ TeleportToDungeonEntrance(player, dungeonMapId); });
                 break;
             
             case GOSSIP_ACTION_HEROIC:
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
                 ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Preparing to enter |cff0070ffHeroic|r difficulty...");
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
-                player->m_Events.Schedule(3s, [player, dungeonMapId](){ TeleportToDungeonEntrance(player, dungeonMapId); });
                 break;
             
             case GOSSIP_ACTION_MYTHIC:
@@ -249,9 +246,11 @@ public:
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Dungeon Portal]|r Preparing to enter |cffff8000Mythic|r difficulty...");
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500A protective barrier will block entry for 10 seconds.|r");
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
-                player->m_Events.Schedule(3s, [player, dungeonMapId](){ TeleportToDungeonEntrance(player, dungeonMapId); });
                 break;
         }
+        
+        // Teleport player after setting difficulty
+        TeleportToDungeonEntrance(player, dungeonMapId);
         
         CloseGossipMenuFor(player);
         return true;

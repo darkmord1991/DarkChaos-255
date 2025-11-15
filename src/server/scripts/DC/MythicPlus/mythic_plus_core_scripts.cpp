@@ -278,36 +278,8 @@ public:
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic Dungeon]|r Entry barrier activated!");
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500You cannot move for 10 seconds. |r");
                 
-                // Stun player for 10 seconds to show barrier effect
-                player->SetStunned(true);
-                
-                // Send countdown messages
-                for (uint8 i = 0; i < 10; ++i)
-                {
-                    uint8 seconds = 10 - i;
-                    player->m_Events.Schedule(Milliseconds(i * 1000), [player, seconds]()
-                    {
-                        if (seconds > 0)
-                        {
-                            if (seconds <= 3 || seconds % 2 == 0)
-                            {
-                                player->GetSession()->SendNotification("Barrier: %u seconds remaining", seconds);
-                                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000%u|r", seconds);
-                            }
-                        }
-                    });
-                }
-                
-                // Remove stun after 10 seconds
-                player->m_Events.Schedule(10s, [player]()
-                {
-                    if (player)
-                    {
-                        player->SetStunned(false);
-                        player->GetSession()->SendNotification("Barrier dispelled! You may now move.");
-                        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Barrier dispelled!|r");
-                    }
-                });
+                // Apply root aura (cannot move) for 10 seconds
+                player->CastSpell(player, 33786, true);
                 
                 break;
             default:
