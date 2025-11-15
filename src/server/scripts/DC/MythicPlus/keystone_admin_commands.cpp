@@ -18,14 +18,14 @@ class keystone_admin_commands : public CommandScript
 public:
     keystone_admin_commands() : CommandScript("keystone_admin_commands") { }
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> keystoneCommandTable =
+        static ChatCommandTable keystoneCommandTable =
         {
-            { "spawn",      HandleKeystoneSpawn,      SEC_GAMEMASTER, "Spawn a keystone NPC" },
-            { "info",       HandleKeystoneInfo,       SEC_GAMEMASTER, "Show keystone information" },
-            { "reward",     HandleKeystoneReward,     SEC_GAMEMASTER, "Show keystone reward info" },
-            { "start",      HandleKeystoneStart,      SEC_GAMEMASTER, "Start a test keystone run" },
+            { "spawn",      HandleKeystoneSpawn,      SEC_GAMEMASTER,     Console::No  },
+            { "info",       HandleKeystoneInfo,       SEC_GAMEMASTER,     Console::No  },
+            { "reward",     HandleKeystoneReward,     SEC_GAMEMASTER,     Console::No  },
+            { "start",      HandleKeystoneStart,      SEC_GAMEMASTER,     Console::No  },
         };
 
         static std::vector<ChatCommand> commandTable =

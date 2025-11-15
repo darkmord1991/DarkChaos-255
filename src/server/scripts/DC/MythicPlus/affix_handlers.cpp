@@ -44,7 +44,7 @@ public:
         std::list<Creature*> nearbyCreatures;
         Acore::AllWorldObjectsInRange checker(creature, 30.0f);
         Acore::CreatureListSearcher<Acore::AllWorldObjectsInRange> searcher(creature, nearbyCreatures, checker);
-        Cell::VisitGridObjects(creature, searcher, 30.0f);
+        Cell::VisitObjects(creature, searcher, 30.0f);
         
         for (Creature* ally : nearbyCreatures)
         {

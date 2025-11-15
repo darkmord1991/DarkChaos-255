@@ -426,7 +426,7 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
         return false;
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_KEYSTONE);
-    stmt->SetUInt32(0, player->GetGUID().GetCounter());
+    stmt->SetData(0, player->GetGUID().GetCounter());
 
     if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
     {
@@ -460,7 +460,7 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
 void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MPLUS_KEYSTONE);
-    stmt->SetUInt32(0, playerGuidLow);
+    stmt->SetData(0, playerGuidLow);
     CharacterDatabase.Execute(stmt);
 }
 
@@ -631,9 +631,9 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
     uint8 slot3 = (1 >= GetVaultThreshold(3)) ? 1 : 0;
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_WEEKLY_VAULT);
-    stmt->SetUInt32(0, playerGuid);
-    stmt->SetUInt32(1, seasonId);
-    stmt->SetUInt32(2, weekStart);
+    stmt->SetData(0, playerGuid);
+    stmt->SetData(1, seasonId);
+    stmt->SetData(2, weekStart);
     stmt->SetUInt8(3, 1); // runs completed delta
     stmt->SetUInt8(4, keystoneLevel);
     stmt->SetUInt8(5, slot1);
@@ -645,11 +645,11 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
 void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 /*durationSeconds*/)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_SCORE);
-    stmt->SetUInt32(0, playerGuid);
-    stmt->SetUInt32(1, seasonId);
-    stmt->SetUInt32(2, mapId);
+    stmt->SetData(0, playerGuid);
+    stmt->SetData(1, seasonId);
+    stmt->SetData(2, mapId);
     stmt->SetUInt8(3, success ? keystoneLevel : 0);
-    stmt->SetUInt32(4, score);
+    stmt->SetData(4, score);
 
     CharacterDatabase.Execute(stmt);
 }
@@ -657,16 +657,16 @@ void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 se
 void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_RUN_HISTORY);
-    stmt->SetUInt32(0, playerGuid);
-    stmt->SetUInt32(1, seasonId);
-    stmt->SetUInt32(2, mapId);
+    stmt->SetData(0, playerGuid);
+    stmt->SetData(1, seasonId);
+    stmt->SetData(2, mapId);
     stmt->SetUInt8(3, keystoneLevel);
-    stmt->SetUInt32(4, score);
+    stmt->SetData(4, score);
     stmt->SetUInt8(5, deaths);
     stmt->SetUInt8(6, wipes);
-    stmt->SetUInt32(7, durationSeconds);
+    stmt->SetData(7, durationSeconds);
     stmt->SetUInt8(8, success ? 1 : 0);
-    stmt->SetUInt32(9, 0); // affix pair placeholder
+    stmt->SetData(9, 0); // affix pair placeholder
     stmt->SetString(10, groupMembers);
 
     CharacterDatabase.Execute(stmt);
@@ -675,13 +675,13 @@ void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint
 void MythicPlusRunManager::InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_TOKEN_LOG);
-    stmt->SetUInt32(0, playerGuid);
-    stmt->SetUInt32(1, mapId);
+    stmt->SetData(0, playerGuid);
+    stmt->SetData(1, mapId);
     stmt->SetUInt8(2, static_cast<uint8>(difficulty));
     stmt->SetUInt8(3, keystoneLevel);
     stmt->SetUInt8(4, playerLevel);
-    stmt->SetUInt32(5, tokenCount);
-    stmt->SetUInt32(6, bossEntry);
+    stmt->SetData(5, tokenCount);
+    stmt->SetData(6, bossEntry);
 
     CharacterDatabase.Execute(stmt);
 }
