@@ -107,7 +107,7 @@ public:
         if (action == GOSSIP_ACTION_KEYSTONE_START)
         {
             // Give M+2 keystone (item 190001)
-            uint32 keystoneItemId = GetItemIdFromKeystoneLevel(MIN_KEYSTONE_LEVEL);
+            uint32 keystoneItemId = 190001; // M+2 keystone
 
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1);
@@ -119,12 +119,20 @@ public:
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
                         "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +2|r! Use it in any dungeon to begin your journey.");
+                    LOG_INFO("mythic.keystone", "Player {} received M+2 keystone", player->GetName());
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cffff0000Error:|r Failed to store keystone item!");
+                    LOG_ERROR("mythic.keystone", "Failed to store keystone for player {}", player->GetName());
                 }
             }
             else
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cffff0000Error:|r Not enough inventory space!");
+                LOG_WARN("mythic.keystone", "No inventory space for player {}", player->GetName());
             }
 
             CloseGossipMenuFor(player);

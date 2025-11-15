@@ -154,84 +154,30 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        // Get dungeon info from creature's AI data or database
-        uint32 mapId = creature->GetEntry(); // TODO: Map entry to dungeon mapId properly
+        if (!player || !creature)
+            return false;
+
+        ClearGossipMenuFor(player);
         
-        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(mapId);
-        if (!profile)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "This dungeon is not configured for difficulty selection.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
-            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-            return true;
-        }
+        // Simple gossip to select difficulty
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+            "|cffff8000=== Dungeon Difficulty ===|r", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
         
-        uint8 expansion = profile->expansion;
-        std::string dungeonName = profile->name;
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
         
-        // Build gossip menu
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFF00FF00[Information]|r View difficulty details", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+            "|cffffffff[Normal]|r - Base difficulty", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_NORMAL);
         
-        // Normal difficulty (always available)
-        DifficultyRequirements normalReq = GetDifficultyRequirements(expansion, DIFFICULTY_NORMAL);
-        if (player->GetLevel() >= normalReq.minLevel)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFFFFFFFF[Normal]|r Enter " + dungeonName, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_NORMAL);
-        }
-        else
-        {
-            std::string lockMsg = "|cFF808080[Normal]|r Requires level " + std::to_string(normalReq.minLevel);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, lockMsg, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
-        }
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+            "|cff0070ff[Heroic]|r - +15% HP/Damage", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_HEROIC);
         
-        // Heroic difficulty
-        if (profile->heroicEnabled)
-        {
-            DifficultyRequirements heroicReq = GetDifficultyRequirements(expansion, DIFFICULTY_HEROIC);
-            uint32 playerItemLevel = player->GetAverageItemLevel();
-            
-            if (player->GetLevel() >= heroicReq.minLevel && playerItemLevel >= heroicReq.minItemLevel)
-            {
-                std::string heroicText = "|cFF0070FF[Heroic]|r Enter " + dungeonName + " (Level ";
-                if (expansion == EXPANSION_VANILLA)
-                    heroicText += "60-62, +15% difficulty)";
-                else if (expansion == EXPANSION_TBC)
-                    heroicText += "70, +15% difficulty)";
-                else
-                    heroicText += "80, +15% difficulty)";
-                    
-                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, heroicText, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_HEROIC);
-            }
-            else
-            {
-                std::string lockMsg = "|cFF808080[Heroic]|r Requires level " + std::to_string(heroicReq.minLevel) + 
-                                     ", item level " + std::to_string(heroicReq.minItemLevel);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, lockMsg, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
-            }
-        }
-        
-        // Mythic difficulty
-        if (profile->mythicEnabled)
-        {
-            DifficultyRequirements mythicReq = GetDifficultyRequirements(expansion, DIFFICULTY_MYTHIC);
-            uint32 playerItemLevel = player->GetAverageItemLevel();
-            
-            if (player->GetLevel() >= mythicReq.minLevel && playerItemLevel >= mythicReq.minItemLevel)
-            {
-                std::string mythicText = "|cFFFF8000[Mythic]|r Enter " + dungeonName + " (Level 80-82";
-                if (expansion == EXPANSION_WOTLK)
-                    mythicText += ", +80% difficulty)";
-                else
-                    mythicText += ", +200% difficulty)";
-                    
-                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, mythicText, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MYTHIC);
-            }
-            else
-            {
-                std::string lockMsg = "|cFF808080[Mythic]|r Requires level " + std::to_string(mythicReq.minLevel) + 
-                                     ", item level " + std::to_string(mythicReq.minItemLevel);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, lockMsg, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
-            }
-        }
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+            "|cffff8000[Mythic]|r - +80% HP/Damage (M+)", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MYTHIC);
         
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
@@ -239,86 +185,40 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
-        ClearGossipMenuFor(player);
-        
-        uint32 mapId = creature->GetEntry(); // TODO: Map entry to dungeon mapId
-        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(mapId);
-        
-        if (!profile)
-        {
-            CloseGossipMenuFor(player);
-            return true;
-        }
-        
+        if (!player || !creature)
+            return false;
+
         switch (action)
         {
-            case GOSSIP_ACTION_INFO:
-            {
-                // Show detailed difficulty information
-                ChatHandler handler(player->GetSession());
-                handler.PSendSysMessage("=== %s ===", profile->name.c_str());
-                handler.PSendSysMessage(" ");
-                handler.PSendSysMessage("Normal: Base difficulty");
-                
-                if (profile->heroicEnabled)
-                {
-                    handler.PSendSysMessage("Heroic:");
-                    handler.PSendSysMessage("  - +15%% HP and +10%% Damage");
-                    if (profile->expansion == EXPANSION_VANILLA)
-                        handler.PSendSysMessage("  - Creature levels: 60-62");
-                    else if (profile->expansion == EXPANSION_TBC)
-                        handler.PSendSysMessage("  - Creature level: 70");
-                    else
-                        handler.PSendSysMessage("  - Creature level: 80");
-                }
-                
-                if (profile->mythicEnabled)
-                {
-                    handler.PSendSysMessage("Mythic:");
-                    if (profile->expansion == EXPANSION_WOTLK)
-                        handler.PSendSysMessage("  - +80%% HP and +80%% Damage");
-                    else
-                        handler.PSendSysMessage("  - +200%% HP and +100%% Damage");
-                    handler.PSendSysMessage("  - Creature levels: 80-82");
-                    handler.PSendSysMessage("  - Death budget: %u", static_cast<uint32>(profile->deathBudget));
-                    handler.PSendSysMessage("  - Wipe budget: %u", static_cast<uint32>(profile->wipeBudget));
-                }
-                CloseGossipMenuFor(player);
-                break;
-            }
-            
             case GOSSIP_ACTION_NORMAL:
             {
-                // Set difficulty to Normal and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
-                TeleportToDungeonEntrance(player, mapId);
-                CloseGossipMenuFor(player);
+                TeleportToDungeonEntrance(player, creature->GetMapId());
+                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Normal)...|r");
                 break;
             }
             
             case GOSSIP_ACTION_HEROIC:
             {
-                // Set difficulty to Heroic and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
-                TeleportToDungeonEntrance(player, mapId);
-                CloseGossipMenuFor(player);
+                TeleportToDungeonEntrance(player, creature->GetMapId());
+                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Heroic)...|r");
                 break;
             }
             
             case GOSSIP_ACTION_MYTHIC:
             {
-                // Set difficulty to Mythic and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_EPIC));
-                TeleportToDungeonEntrance(player, mapId);
-                CloseGossipMenuFor(player);
+                TeleportToDungeonEntrance(player, creature->GetMapId());
+                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Mythic)...|r");
                 break;
             }
             
             default:
-                CloseGossipMenuFor(player);
                 break;
         }
         
+        CloseGossipMenuFor(player);
         return true;
     }
 };
