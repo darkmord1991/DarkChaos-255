@@ -2,7 +2,7 @@
 -- Host:                         192.168.178.45
 -- Server-Version:               8.0.43-0ubuntu0.24.04.2 - (Ubuntu)
 -- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.13.0.7147
+-- HeidiSQL Version:             12.13.0.7152
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -1649,6 +1649,31 @@ CREATE TABLE IF NOT EXISTS `dc_difficulty_config` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_dungeon_mythic_profile
+CREATE TABLE IF NOT EXISTS `dc_dungeon_mythic_profile` (
+  `map_id` smallint unsigned NOT NULL COMMENT 'Map ID from Map.dbc',
+  `name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Dungeon display name',
+  `heroic_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enable Heroic difficulty (difficulty 2)',
+  `mythic_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enable Mythic difficulty (difficulty 3)',
+  `base_health_mult` float NOT NULL DEFAULT '1.25' COMMENT 'Mythic HP multiplier (1.25 = +25%)',
+  `base_damage_mult` float NOT NULL DEFAULT '1.15' COMMENT 'Mythic damage multiplier (1.15 = +15%)',
+  `heroic_level_normal` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Heroic normal mob level (0 = keep original)',
+  `heroic_level_elite` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Heroic elite mob level (0 = keep original)',
+  `heroic_level_boss` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Heroic boss level (0 = keep original)',
+  `mythic_level_normal` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Mythic normal mob level (0 = keep original)',
+  `mythic_level_elite` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Mythic elite mob level (0 = keep original)',
+  `mythic_level_boss` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Mythic boss level (0 = keep original)',
+  `death_budget` tinyint unsigned NOT NULL DEFAULT '10' COMMENT 'Max deaths allowed in Mythic',
+  `wipe_budget` tinyint unsigned NOT NULL DEFAULT '3' COMMENT 'Max wipes allowed in Mythic',
+  `loot_ilvl` int unsigned NOT NULL DEFAULT '219' COMMENT 'Base item level for Mythic loot',
+  `token_reward` int unsigned NOT NULL DEFAULT '101000' COMMENT 'Mythic token item ID',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`map_id`),
+  KEY `idx_enabled` (`mythic_enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mythic difficulty profiles for dungeons';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_dungeon_npc_mapping
 CREATE TABLE IF NOT EXISTS `dc_dungeon_npc_mapping` (
   `map_id` int unsigned NOT NULL COMMENT 'Dungeon map ID from Map.dbc',
@@ -1833,6 +1858,82 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_tiers` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_affix_pairs
+CREATE TABLE IF NOT EXISTS `dc_mplus_affix_pairs` (
+  `pair_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique affix pair identifier',
+  `name` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pair display name (e.g., "Tyrannical + Bolstering")',
+  `boss_affix_id` int unsigned NOT NULL COMMENT 'Boss-focused affix spell ID',
+  `trash_affix_id` int unsigned NOT NULL COMMENT 'Trash-focused affix spell ID',
+  `description` text COLLATE utf8mb4_unicode_ci COMMENT 'Player-facing description of combined effects',
+  PRIMARY KEY (`pair_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Affix pair definitions for weekly rotation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_affixes
+CREATE TABLE IF NOT EXISTS `dc_mplus_affixes` (
+  `affix_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique affix identifier',
+  `name` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Affix name (e.g., "Tyrannical-Lite")',
+  `type` enum('boss','trash') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Target type: boss or trash',
+  `spell_id` int unsigned NOT NULL COMMENT 'Spell ID to apply',
+  `description` text COLLATE utf8mb4_unicode_ci COMMENT 'Player-facing description',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enable/disable affix',
+  PRIMARY KEY (`affix_id`),
+  KEY `idx_type` (`type`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Individual affix definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_final_bosses
+CREATE TABLE IF NOT EXISTS `dc_mplus_final_bosses` (
+  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
+  `boss_entry` int unsigned NOT NULL COMMENT 'Creature entry for the final boss variant',
+  PRIMARY KEY (`map_id`,`boss_entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Final boss lookups for Mythic+ token rewards';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_seasons
+CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
+  `season_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique season identifier',
+  `label` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Season display name (e.g., "Season 1: Wrath of Winter")',
+  `start_ts` bigint unsigned NOT NULL COMMENT 'Season start timestamp (Unix)',
+  `end_ts` bigint unsigned NOT NULL COMMENT 'Season end timestamp (Unix)',
+  `featured_dungeons` json NOT NULL COMMENT 'Array of featured dungeon map IDs for this season',
+  `affix_schedule` json NOT NULL COMMENT 'Weekly affix rotation: [{week: 1, affixPairId: 1}, ...]',
+  `reward_curve` json NOT NULL COMMENT 'Reward scaling per keystone level: {1: {ilvl: 216, tokens: 30}, ...}',
+  `is_active` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Only one season can be active at a time',
+  PRIMARY KEY (`season_id`),
+  KEY `idx_active` (`is_active`),
+  KEY `idx_time_range` (`start_ts`,`end_ts`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal Mythic+ rotation and configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_teleporter_npcs
+CREATE TABLE IF NOT EXISTS `dc_mplus_teleporter_npcs` (
+  `entry` int unsigned NOT NULL COMMENT 'NPC entry from creature_template',
+  `name` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'NPC display name',
+  `subname` varchar(60) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC subtitle',
+  `purpose` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC function description',
+  `gossip_menu_id` int unsigned DEFAULT NULL COMMENT 'Gossip menu ID',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mythic+ hub NPC definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mythic_scaling_multipliers
+CREATE TABLE IF NOT EXISTS `dc_mythic_scaling_multipliers` (
+  `keystoneLevel` int unsigned NOT NULL COMMENT 'Keystone difficulty level (0-30+)',
+  `hpMultiplier` float NOT NULL DEFAULT '1' COMMENT 'Health multiplier for creatures',
+  `damageMultiplier` float NOT NULL DEFAULT '1' COMMENT 'Damage multiplier for creatures',
+  `description` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Label for this difficulty (e.g. "M+2", "M+10")',
+  PRIMARY KEY (`keystoneLevel`),
+  KEY `idx_keystoneLevel` (`keystoneLevel`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature scaling multipliers for each Mythic+ keystone level';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_npc_quest_link
 CREATE TABLE IF NOT EXISTS `dc_npc_quest_link` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1880,6 +1981,23 @@ CREATE TABLE IF NOT EXISTS `dc_synthesis_recipes` (
   KEY `idx_type` (`type`),
   KEY `idx_required_level` (`required_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Synthesis recipes for item transmutation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_token_vendor_items
+CREATE TABLE IF NOT EXISTS `dc_token_vendor_items` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `class` tinyint unsigned NOT NULL COMMENT 'Class ID (1=Warrior, 2=Paladin, etc)',
+  `slot` tinyint unsigned NOT NULL COMMENT 'Gear slot (1=Head, 2=Neck, 3=Shoulders, etc)',
+  `item_id` int unsigned NOT NULL COMMENT 'Item template ID',
+  `item_level` smallint unsigned NOT NULL COMMENT 'Item level (200, 213, 226, 239, 252, etc)',
+  `spec` tinyint unsigned DEFAULT '0' COMMENT 'Talent spec (0=all specs, 1=primary, 2=secondary, 3=tertiary)',
+  `token_cost` tinyint unsigned NOT NULL DEFAULT '11' COMMENT 'Token cost (overrides default)',
+  `priority` tinyint unsigned DEFAULT '1' COMMENT 'Selection priority (higher = preferred)',
+  PRIMARY KEY (`id`),
+  KEY `idx_class_slot_ilvl` (`class`,`slot`,`item_level`),
+  KEY `idx_item_id` (`item_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=797 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token vendor item pool for Mythic+ rewards';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2005,7 +2123,7 @@ CREATE TABLE IF NOT EXISTS `dungeon_access_template` (
   `comment` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Dungeon Name 5/10/25/40 man - Normal/Heroic',
   PRIMARY KEY (`id`),
   KEY `FK_dungeon_access_template__instance_template` (`map_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=122 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dungeon/raid access template and single requirements';
+) ENGINE=InnoDB AUTO_INCREMENT=138 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dungeon/raid access template and single requirements';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

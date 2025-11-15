@@ -6,12 +6,10 @@
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "MythicPlusRunManager.h"
+#include "MythicPlusRewards.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
-
-// Forward declaration - defined in vault_rewards.cpp
-extern uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel);
 
 class npc_mythic_plus_great_vault : public CreatureScript
 {

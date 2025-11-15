@@ -64,6 +64,14 @@ public:
     uint32 GetVaultTokenReward(uint8 slot) const;
     uint8 GetVaultThreshold(uint8 slot) const;
 
+    // Keystone item management (NEW)
+    uint8 GetPlayerKeystoneLevel(ObjectGuid::LowType playerGuid) const;
+    bool GiveKeystoneToPlayer(Player* player, uint8 keystoneLevel);
+    void CompleteRun(Map* map, bool successful);
+    void UpgradeKeystone(ObjectGuid::LowType playerGuid);
+    void DowngradeKeystone(ObjectGuid::LowType playerGuid);
+    void GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level);
+
 private:
     struct InstanceState
     {

@@ -757,3 +757,119 @@ std::string MythicPlusRunManager::SerializeParticipants(const InstanceState* sta
 
     return stream.str();
 }
+
+// ============================================================
+// Keystone Item Management Methods (NEW)
+// ============================================================
+
+uint8 MythicPlusRunManager::GetPlayerKeystoneLevel(ObjectGuid::LowType playerGuid) const
+{
+    auto result = CharacterDatabase.Query(
+        "SELECT current_keystone_level FROM dc_player_keystones WHERE player_guid = {}", playerGuid);
+    
+    if (result)
+    {
+        return result->Fetch()->Get<uint8>();
+    }
+    
+    return 2;  // Default to M+2
+}
+
+bool MythicPlusRunManager::GiveKeystoneToPlayer(Player* player, uint8 keystoneLevel)
+{
+    if (!player || keystoneLevel < 2 || keystoneLevel > 10)
+        return false;
+
+    // Keystone item IDs: 190001-190009 for M+2-M+10
+    uint32 keystoneItemId = 190000 + keystoneLevel - 1;
+
+    // Give player the keystone item
+    ItemPosCountVec dest;
+    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1);
+    
+    if (msg == EQUIP_ERR_OK)
+    {
+        Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
+        return keystoneItem != nullptr;
+    }
+
+    return false;
+}
+
+void MythicPlusRunManager::CompleteRun(Map* map, bool successful)
+{
+    if (!map)
+        return;
+
+    InstanceState* state = GetState(map);
+    if (!state)
+        return;
+
+    // Update player keystone levels based on run result
+    for (ObjectGuid::LowType playerGuid : state->participants)
+    {
+        if (successful)
+        {
+            UpgradeKeystone(playerGuid);
+        }
+        else
+        {
+            DowngradeKeystone(playerGuid);
+        }
+    }
+}
+
+void MythicPlusRunManager::UpgradeKeystone(ObjectGuid::LowType playerGuid)
+{
+    uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
+    uint8 newLevel = std::min(static_cast<uint8>(10), static_cast<uint8>(currentLevel + 1));
+
+    // Update database
+    CharacterDatabase.Execute(
+        "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}", 
+        newLevel, playerGuid);
+
+    // Generate new keystone item
+    GenerateNewKeystone(playerGuid, newLevel);
+}
+
+void MythicPlusRunManager::DowngradeKeystone(ObjectGuid::LowType playerGuid)
+{
+    uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
+    uint8 newLevel = std::max(static_cast<uint8>(2), static_cast<uint8>(currentLevel - 1));
+
+    // Update database
+    CharacterDatabase.Execute(
+        "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}", 
+        newLevel, playerGuid);
+
+    // Generate new keystone item
+    GenerateNewKeystone(playerGuid, newLevel);
+}
+
+void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level)
+{
+    if (level < 2 || level > 10)
+        return;
+
+    // Keystone item IDs: 190001-190009 for M+2-M+10
+    uint32 keystoneItemId = 190000 + level - 1;
+
+    // Get player from guid
+    Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid));
+    if (player)
+    {
+        // Add keystone to player inventory
+        ItemPosCountVec dest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1) == EQUIP_ERR_OK)
+        {
+            Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
+            if (keystoneItem)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cff00ff00Mythic+:|r New keystone generated (M+%d)", level);
+            }
+        }
+    }
+}
+

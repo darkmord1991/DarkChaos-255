@@ -8,7 +8,8 @@
 #   1. AoE Loot System - Collect loot from multiple nearby corpses
 #   2. Hotspots System - Random XP bonus zones across the world
 #   3. Hinterland Battleground - Custom 25v25 PvP battleground with affixes
-#   4. Prestige System - Reset level 255 players with permanent bonuses
+#   4. Mythic+ Dungeon System - Scaled dungeon difficulties with keystones
+#   5. Prestige System - Reset level 255 players with permanent bonuses
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -730,13 +731,17 @@ HinterlandBG.Expiry.Tiebreaker = 1
 #
 #    SECTION 4: MYTHIC+ DUNGEON SYSTEM
 #
-#    Provides scaled dungeon difficulties (Normal, Heroic, Mythic) with
+#    Provides scaled dungeon difficulties (Normal, Heroic, Mythic+) with
 #    configurable level scaling and stat multipliers. Features include:
 #    - Database-driven configuration per dungeon
+#    - Keystones with scaling multipliers (M+2 through M+20)
 #    - Expansion-specific scaling strategies (Vanilla/TBC/WotLK)
 #    - Hot-reload support for testing
-#    - Dungeon entrance announcements
+#    - Dungeon entrance announcements with difficulty info
 #    - Solo player support (no group required)
+#    - Weekly vault system for rewards tracking
+#    - Seasonal rotation with affix modifiers
+#    - Leaderboards and statistics tracking
 #
 ###########################################################################
 
@@ -800,30 +805,155 @@ MythicPlus.ReloadCommand.Enabled = 1
 
 #
 #    MythicPlus.Keystone.Enabled
-#        Description: Enable Mythic+ keystone system (M+2 through M+10)
+#        Description: Enable Mythic+ keystone system (M+2 through M+20)
 #                     When disabled, only base Mythic difficulty is available.
-#        Default:     0 (Disabled - coming soon, base Mythic only)
-#                     1 (Enabled - keystone system active)
+#        Default:     1 (Enabled - keystone system active)
+#                     0 (Disabled - base Mythic only)
 #
-MythicPlus.Keystone.Enabled = 0
+MythicPlus.Keystone.Enabled = 1
+
+#
+#    MythicPlus.MaxLevel
+#        Description: Maximum keystone level available in the system
+#                     Controls vendor offerings and upgrade caps
+#        Default:     20 (M+2 through M+20, matching retail-like progression)
+#        Range:       10 - 20 (lower values for phased rollout)
+#
+MythicPlus.MaxLevel = 20
 
 #
 #    MythicPlus.DeathBudget.Enabled
 #        Description: Enable death budget tracking for Mythic+ runs
 #                     Limits number of deaths before run fails.
-#        Default:     0 (Disabled - coming soon, unlimited deaths)
-#                     1 (Enabled - death budget enforced)
+#                     Formula: base_budget - (keystoneLevel × 1), minimum 5
+#        Default:     1 (Enabled - death budget enforced)
+#                     0 (Disabled - unlimited deaths, only affixes matter)
 #
-MythicPlus.DeathBudget.Enabled = 0
+MythicPlus.DeathBudget.Enabled = 1
+
+#
+#    MythicPlus.WipeBudget.Enabled
+#        Description: Enable wipe budget enforcement (boss evade/reset count)
+#                     When enabled, exceeding wipe limit causes run failure
+#        Default:     1 (Enabled - wipes cause failure)
+#                     0 (Disabled - unlimited wipes)
+#
+MythicPlus.WipeBudget.Enabled = 1
 
 #
 #    MythicPlus.Vault.Enabled
 #        Description: Enable weekly vault system for Mythic+ rewards
 #                     Tracks highest keystone completed each week for rewards.
-#        Default:     0 (Disabled - coming soon)
-#                     1 (Enabled - vault system active)
+#        Default:     1 (Enabled - vault system active)
+#                     0 (Disabled)
 #
-MythicPlus.Vault.Enabled = 0
+MythicPlus.Vault.Enabled = 1
+
+#
+#    MythicPlus.Vault.ScaleTokens
+#        Description: Scale token rewards with item level in vault
+#                     When enabled: baseTokens + (ilvl - 190) / 10
+#                     When disabled: use fixed slot-based amounts (50/100/150)
+#        Default:     1 (Enabled - dynamic scaling)
+#                     0 (Disabled - fixed amounts)
+#
+MythicPlus.Vault.ScaleTokens = 1
+
+#
+#    MythicPlus.Seasons.Enabled
+#        Description: Enable seasonal rotation system
+#                     Limits featured dungeons and rotates affixes weekly
+#        Default:     1 (Enabled - seasonal rotation)
+#                     0 (Disabled - all dungeons always available)
+#
+MythicPlus.Seasons.Enabled = 1
+
+#
+#    MythicPlus.Seasons.AutoRotate
+#        Description: Automatically rotate to next season when current expires
+#                     Requires dc_mplus_seasons table to have valid next season
+#        Default:     1 (Enabled - auto-advance seasons)
+#                     0 (Disabled - manual GM intervention required)
+#
+MythicPlus.Seasons.AutoRotate = 1
+
+#
+#    MythicPlus.Affixes.Enabled
+#        Description: Enable weekly affix modifiers for Mythic+ runs
+#                     Adds boss/trash mechanics based on weekly rotation
+#        Default:     1 (Enabled - affixes active)
+#                     0 (Disabled - pure scaling only)
+#
+MythicPlus.Affixes.Enabled = 1
+
+#
+#    MythicPlus.AffixDebug
+#        Description: Enable debug logging for affix triggers
+#                     Logs every affix event (OnDeath, OnDamage, etc.)
+#        Default:     0 (Disabled - no spam)
+#                     1 (Enabled - full affix logging to MYTHIC_PLUS channel)
+#
+MythicPlus.AffixDebug = 0
+
+#
+#    MythicPlus.Cache.KeystoneTTL
+#        Description: Time in seconds to cache keystone level per instance
+#                     Reduces database queries during creature scaling
+#        Default:     15 (15-second cache)
+#        Range:       5 - 60 (lower = more accurate, higher = less DB load)
+#
+MythicPlus.Cache.KeystoneTTL = 15
+
+#
+#    MythicPlus.FeaturedOnly
+#        Description: Restrict Mythic+ to only featured dungeons in current season
+#                     When enabled, non-featured dungeons cannot be run with keystones
+#        Default:     1 (Enabled - seasonal rotation enforced)
+#                     0 (Disabled - any dungeon with mythic_enabled can be run)
+#
+MythicPlus.FeaturedOnly = 1
+
+#
+#    MythicPlus.Announcement.RunStart
+#        Description: Announce to server when a high-level keystone is activated
+#                     Threshold controlled by MythicPlus.Announcement.Threshold
+#        Default:     1 (Enabled - server announcements)
+#                     0 (Disabled - silent activations)
+#
+MythicPlus.Announcement.RunStart = 1
+
+#
+#    MythicPlus.Announcement.Threshold
+#        Description: Minimum keystone level to trigger server announcement
+#        Default:     15 (Announce M+15 and higher)
+#        Range:       10 - 20
+#
+MythicPlus.Announcement.Threshold = 15
+
+#
+#    MythicPlus.Announcement.RunComplete
+#        Description: Announce to server when high-level keystones are completed
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+MythicPlus.Announcement.RunComplete = 1
+
+#
+#    MythicPlus.Score.Enabled
+#        Description: Calculate and track Mythic+ score (rating system)
+#                     Formula: (level × 60) - (deaths × 5) - (wipes × 15) + cleanBonus
+#        Default:     1 (Enabled - track scores)
+#                     0 (Disabled - no scoring)
+#
+MythicPlus.Score.Enabled = 1
+
+#
+#    MythicPlus.Leaderboard.Enabled
+#        Description: Enable leaderboard display via Statistics NPC
+#        Default:     1 (Enabled - top 10 shown)
+#                     0 (Disabled - no leaderboard)
+#
+MythicPlus.Leaderboard.Enabled = 1
 
 # -------------------------------------------------------------------------
 # Scaling Configuration (Database-Driven)
@@ -1370,7 +1500,7 @@ HinterlandBG.Affix.WeatherIntensity.6 = 0.0
 
 ###########################################################################
 #
-#    SECTION 4: PRESTIGE SYSTEM
+#    SECTION 5: PRESTIGE SYSTEM
 #
 #    Allows level 255 players to reset to level 1 with permanent stat
 #    bonuses and exclusive rewards. Up to 10 prestige levels with
@@ -3392,4 +3522,101 @@ Hardcore.TitleRewards = ""
 #        Default:     "" (empty - no item rewards)
 #
 Hardcore.ItemRewards = ""
+MythicPlus.Vault.ScaleTokens = 1
+
+#
+#    MythicPlus.Seasons.Enabled
+#        Description: Enable seasonal rotation system
+#                     Limits featured dungeons and rotates affixes weekly
+#        Default:     1 (Enabled - seasonal rotation)
+#                     0 (Disabled - all dungeons always available)
+#
+MythicPlus.Seasons.Enabled = 1
+
+#
+#    MythicPlus.Seasons.AutoRotate
+#        Description: Automatically rotate to next season when current expires
+#                     Requires dc_mplus_seasons table to have valid next season
+#        Default:     1 (Enabled - auto-advance seasons)
+#                     0 (Disabled - manual GM intervention required)
+#
+MythicPlus.Seasons.AutoRotate = 1
+
+#
+#    MythicPlus.Affixes.Enabled
+#        Description: Enable weekly affix modifiers for Mythic+ runs
+#                     Adds boss/trash mechanics based on weekly rotation
+#        Default:     1 (Enabled - affixes active)
+#                     0 (Disabled - pure scaling only)
+#
+MythicPlus.Affixes.Enabled = 1
+
+#
+#    MythicPlus.AffixDebug
+#        Description: Enable debug logging for affix triggers
+#                     Logs every affix event (OnDeath, OnDamage, etc.)
+#        Default:     0 (Disabled - no spam)
+#                     1 (Enabled - full affix logging to MYTHIC_PLUS channel)
+#
+MythicPlus.AffixDebug = 0
+
+#
+#    MythicPlus.Cache.KeystoneTTL
+#        Description: Time in seconds to cache keystone level per instance
+#                     Reduces database queries during creature scaling
+#        Default:     15 (15-second cache)
+#        Range:       5 - 60 (lower = more accurate, higher = less DB load)
+#
+MythicPlus.Cache.KeystoneTTL = 15
+
+#
+#    MythicPlus.FeaturedOnly
+#        Description: Restrict Mythic+ to only featured dungeons in current season
+#                     When enabled, non-featured dungeons cannot be run with keystones
+#        Default:     1 (Enabled - seasonal rotation enforced)
+#                     0 (Disabled - any dungeon with mythic_enabled can be run)
+#
+MythicPlus.FeaturedOnly = 1
+
+#
+#    MythicPlus.Announcement.RunStart
+#        Description: Announce to server when a high-level keystone is activated
+#                     Threshold controlled by MythicPlus.Announcement.Threshold
+#        Default:     1 (Enabled - server announcements)
+#                     0 (Disabled - silent activations)
+#
+MythicPlus.Announcement.RunStart = 1
+
+#
+#    MythicPlus.Announcement.Threshold
+#        Description: Minimum keystone level to trigger server announcement
+#        Default:     15 (Announce M+15 and higher)
+#        Range:       10 - 20
+#
+MythicPlus.Announcement.Threshold = 15
+
+#
+#    MythicPlus.Announcement.RunComplete
+#        Description: Announce to server when high-level keystones are completed
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+MythicPlus.Announcement.RunComplete = 1
+
+#
+#    MythicPlus.Score.Enabled
+#        Description: Calculate and track Mythic+ score (rating system)
+#                     Formula: (level × 60) - (deaths × 5) - (wipes × 15) + cleanBonus
+#        Default:     1 (Enabled - track scores)
+#                     0 (Disabled - no scoring)
+#
+MythicPlus.Score.Enabled = 1
+
+#
+#    MythicPlus.Leaderboard.Enabled
+#        Description: Enable leaderboard display via Statistics NPC
+#        Default:     1 (Enabled - top 10 shown)
+#                     0 (Disabled - no leaderboard)
+#
+MythicPlus.Leaderboard.Enabled = 1
 

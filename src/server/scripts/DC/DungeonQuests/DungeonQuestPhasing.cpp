@@ -94,6 +94,28 @@ public:
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.Enable", true))
             return;
 
+        // CRITICAL: Do NOT phase players in Mythic/Mythic+ difficulties
+        // Quest NPCs should NOT appear in Mythic (difficulty 3) or higher
+        Map* map = player->GetMap();
+        if (map && map->IsDungeon())
+        {
+            Difficulty difficulty = map->GetDifficulty();
+            if (difficulty >= DUNGEON_DIFFICULTY_EPIC) // Epic = Mythic (3)
+            {
+                // Keep default phase (1) for Mythic+ runs - no quest NPCs
+                if (player->GetPhaseMask() != 1)
+                {
+                    player->SetPhaseMask(1, true);
+                    
+                    if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 2)
+                    {
+                        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Mythic+ detected, phase reset to default (no quest NPCs)");
+                    }
+                }
+                return; // Don't apply dungeon quest phasing
+            }
+        }
+
         uint32 newPhase = CalculatePhaseForPlayer(player);
         
         // Only update if phase actually changed
@@ -151,6 +173,18 @@ public:
 
         if (inDungeon)
         {
+            // CRITICAL: Skip phasing for Mythic/Mythic+ difficulties
+            Map* map = player->GetMap();
+            if (map)
+            {
+                Difficulty difficulty = map->GetDifficulty();
+                if (difficulty >= DUNGEON_DIFFICULTY_EPIC)
+                {
+                    player->SetPhaseMask(1, true); // Default phase (no quest NPCs)
+                    return;
+                }
+            }
+            
             // Calculate phase similar to CalculatePhaseForPlayer
             uint32 basePhase = PHASE_BASE_DUNGEON_QUEST;
             if (Group* grp = player->GetGroup())
@@ -181,6 +215,18 @@ public:
 
         if (inDungeon)
         {
+            // CRITICAL: Skip phasing for Mythic/Mythic+ difficulties
+            Map* map = player->GetMap();
+            if (map)
+            {
+                Difficulty difficulty = map->GetDifficulty();
+                if (difficulty >= DUNGEON_DIFFICULTY_EPIC)
+                {
+                    player->SetPhaseMask(1, true); // Default phase (no quest NPCs)
+                    return;
+                }
+            }
+            
             uint32 basePhase = PHASE_BASE_DUNGEON_QUEST + (player->GetGUID().GetCounter() % 10000);
             uint32 mapPhaseModifier = (mapId % 1000) * 100000;
             uint32 newPhase = basePhase + mapPhaseModifier;
