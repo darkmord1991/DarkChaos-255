@@ -196,6 +196,13 @@ public:
 
     void OnCreatureAddWorld(Creature* creature) override
     {
+        if (!creature)
+            return;
+        
+        Map* map = creature->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+        
         // Only process in Mythic difficulty
         if (map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
             return;
