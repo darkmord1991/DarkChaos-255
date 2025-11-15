@@ -7,6 +7,7 @@
 #include "AllMapScript.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicPlusRunManager.h"
+#include "MythicPlusAffixes.h"
 #include "UnitScript.h"
 #include "Unit.h"
 #include "Creature.h"
@@ -16,6 +17,9 @@
 #include "Chat.h"
 #include <cmath>
 #include <sstream>
+
+// Forward declaration
+void RegisterMythicPlusAffixHandlers();
 
 // World script to load dungeon profiles on server startup
 class MythicPlusWorldScript : public WorldScript
@@ -28,6 +32,8 @@ public:
         LOG_INFO("server.loading", ">> Loading Mythic+ system...");
         sMythicScaling->LoadDungeonProfiles();
         sMythicRuns->Reset();
+        RegisterMythicPlusAffixHandlers();
+        LOG_INFO("server.loading", ">> Mythic+ system loaded successfully");
     }
 };
 
@@ -183,6 +189,9 @@ public:
                       creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), creature->GetLevel(), 
                       hpMult, uint32(baseHealth), newHealth, damageMult);
         }
+        
+        // Apply affix-specific scaling (e.g., Tyrannical, Fortified)
+        sAffixMgr->OnCreatureSelectLevel(creature);
     }
 };
 
@@ -261,7 +270,28 @@ public:
         if (keystoneLevel > 0)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("Keystone Level: |cffff8000+%u|r", keystoneLevel);
+            
+            // Show active affixes
+            auto activeAffixes = sAffixMgr->GetActiveAffixes(map);
+            if (!activeAffixes.empty())
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000Active Affixes:|r");
+                // TODO: Display affix names
+            }
         }
+    }
+    
+    void OnUpdate(Player* player, uint32 diff) override
+    {
+        if (!player || !player->IsInWorld())
+            return;
+            
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+            
+        // Dispatch to affix handlers for periodic effects (e.g., Grievous)
+        sAffixMgr->OnPlayerUpdate(player, diff);
     }
 };
 
@@ -276,6 +306,7 @@ public:
             return;
 
         sMythicRuns->HandleInstanceReset(map);
+        sAffixMgr->DeactivateAffixes(map);
     }
 };
 
@@ -305,6 +336,7 @@ public:
             return;
 
         sMythicRuns->HandleBossDeath(creature, killer);
+        sAffixMgr->OnCreatureDeath(creature, killer);
     }
 
     void OnUnitEnterEvadeMode(Unit* unit, uint8 /*evadeReason*/) override
@@ -324,6 +356,27 @@ public:
             return;
 
         sMythicRuns->HandleBossEvade(creature);
+    }
+    
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!attacker || !victim || damage == 0)
+            return;
+            
+        Map* map = attacker->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+            
+        // Dispatch to affix handlers
+        if (Creature* attackerCreature = attacker->ToCreature())
+        {
+            if (Player* victimPlayer = victim->ToPlayer())
+                sAffixMgr->OnPlayerDamageTaken(victimPlayer, attackerCreature, damage);
+            else if (Creature* victimCreature = victim->ToCreature())
+                sAffixMgr->OnCreatureDamageTaken(victimCreature, attacker, damage);
+                
+            sAffixMgr->OnCreatureDamageDone(attackerCreature, victim, damage);
+        }
     }
 };
 

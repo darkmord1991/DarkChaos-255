@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: GearScoreLite: Reborn
+## Notes: Helps you quickly and easily judge a player's level of gear.
+## Version: 3x05
+## Author: Mirrikat45, Gnomezilla [Warmane-Icecrown(A)]
+## SavedVariables: GS_Settings
+
+informationLite.lua
+GearScoreLite.lua

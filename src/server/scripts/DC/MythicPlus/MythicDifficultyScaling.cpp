@@ -317,15 +317,44 @@ uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* map)
 
 void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult)
 {
-    if (keystoneLevel == 0)
+    if (keystoneLevel == 0 || keystoneLevel < 2)
     {
         hpMult = 1.0f;
         damageMult = 1.0f;
         return;
     }
     
-    // Mythic+ scaling: +15% HP, +12% Damage per level (multiplicative)
-    // Formula: Multiplier = 1.15^level for HP, 1.12^level for Damage
-    hpMult = std::pow(1.15f, static_cast<float>(keystoneLevel));
-    damageMult = std::pow(1.12f, static_cast<float>(keystoneLevel));
+    // Retail WoW Mythic+ scaling values (Season 1 Dragonflight-style)
+    // Source: https://www.wowhead.com/guide/mythic-plus-dungeons
+    static const float RETAIL_SCALING[] = {
+        1.00f,  // M+0/M+1 (baseline)
+        1.00f,  // M+2: +0%
+        1.14f,  // M+3: +14%
+        1.23f,  // M+4: +23%
+        1.31f,  // M+5: +31%
+        1.40f,  // M+6: +40%
+        1.50f,  // M+7: +50%
+        1.61f,  // M+8: +61%
+        1.72f,  // M+9: +72%
+        1.84f,  // M+10: +84%
+        2.02f,  // M+11: +102%
+        2.22f,  // M+12: +122%
+        2.45f,  // M+13: +145%
+        2.69f,  // M+14: +169%
+        2.96f   // M+15: +196%
+    };
+    
+    const uint32 maxLevel = sizeof(RETAIL_SCALING) / sizeof(float) - 1;
+    
+    if (keystoneLevel <= maxLevel)
+    {
+        hpMult = damageMult = RETAIL_SCALING[keystoneLevel];
+    }
+    else
+    {
+        // Beyond M+15: continue with exponential scaling
+        // Approximately +10% per level beyond M+15
+        uint32 levelsAbove15 = keystoneLevel - maxLevel;
+        hpMult = damageMult = RETAIL_SCALING[maxLevel] * std::pow(1.10f, static_cast<float>(levelsAbove15));
+    }
 }
