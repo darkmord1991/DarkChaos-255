@@ -96,16 +96,20 @@ public:
         if (!player || !creature)
             return false;
 
-        // Close on close action
-        if (action == GOSSIP_ACTION_CLOSE || action == GOSSIP_ACTION_KEYSTONE_INFO)
+        LOG_INFO("mythic.keystone", "OnGossipSelect called for player {} with action {}", player->GetName(), action);
+
+        // Close on close action (action = 2 from SQL)
+        if (action == 2)
         {
             CloseGossipMenuFor(player);
             return true;
         }
 
-        // Handle starter keystone request
-        if (action == GOSSIP_ACTION_KEYSTONE_START)
+        // Handle starter keystone request (action = 1 from SQL)
+        if (action == 1)
         {
+            LOG_INFO("mythic.keystone", "Player {} requesting keystone", player->GetName());
+            
             // Give M+2 keystone (item 190001)
             uint32 keystoneItemId = 190001; // M+2 keystone
 
@@ -119,26 +123,27 @@ public:
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
                         "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +2|r! Use it in any dungeon to begin your journey.");
-                    LOG_INFO("mythic.keystone", "Player {} received M+2 keystone", player->GetName());
+                    LOG_INFO("mythic.keystone", "Player {} received M+2 keystone successfully", player->GetName());
                 }
                 else
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
                         "|cffff0000Error:|r Failed to store keystone item!");
-                    LOG_ERROR("mythic.keystone", "Failed to store keystone for player {}", player->GetName());
+                    LOG_ERROR("mythic.keystone", "Failed to store keystone for player {} - StoreNewItem returned null", player->GetName());
                 }
             }
             else
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cffff0000Error:|r Not enough inventory space!");
-                LOG_WARN("mythic.keystone", "No inventory space for player {}", player->GetName());
+                LOG_WARN("mythic.keystone", "No inventory space for player {} - error code {}", player->GetName(), msg);
             }
 
             CloseGossipMenuFor(player);
             return true;
         }
 
+        LOG_WARN("mythic.keystone", "Unknown action {} for player {}", action, player->GetName());
         CloseGossipMenuFor(player);
         return true;
     }
