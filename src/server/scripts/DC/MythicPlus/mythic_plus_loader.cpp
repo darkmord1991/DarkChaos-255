@@ -12,6 +12,8 @@ void AddSC_go_mythic_plus_font_of_power();
 void AddSC_npc_mythic_plus_great_vault();
 void AddSC_npc_mythic_token_vendor();
 void AddSC_mythic_plus_commands();
+void AddSC_npc_keystone_vendor();
+void AddSC_npc_mythic_plus_statistics();
 
 void AddMythicPlusScripts()
 {
@@ -21,4 +23,6 @@ void AddMythicPlusScripts()
     AddSC_npc_mythic_plus_great_vault();
     AddSC_npc_mythic_token_vendor();
     AddSC_mythic_plus_commands();
+    AddSC_npc_keystone_vendor();
+    AddSC_npc_mythic_plus_statistics();
 }

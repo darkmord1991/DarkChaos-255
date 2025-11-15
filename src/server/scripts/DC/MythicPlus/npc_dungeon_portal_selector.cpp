@@ -159,62 +159,86 @@ public:
 
         ClearGossipMenuFor(player);
         
-        // Simple gossip to select difficulty
+        // Show dungeon selection menu - using map IDs as action values
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffff8000=== Dungeon Difficulty ===|r", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+            "|cffff8000=== Select Dungeon ===|r", 
+            GOSSIP_SENDER_MAIN, 0);
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+            GOSSIP_SENDER_MAIN, 0);
         
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-            "|cffffffff[Normal]|r - Base difficulty", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_NORMAL);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-            "|cff0070ff[Heroic]|r - +15% HP/Damage", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_HEROIC);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-            "|cffff8000[Mythic]|r - +80% HP/Damage (M+)", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MYTHIC);
+        // WotLK Dungeons - use mapId as action
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Keep", GOSSIP_SENDER_MAIN, 574);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Pinnacle", GOSSIP_SENDER_MAIN, 575);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "The Nexus", GOSSIP_SENDER_MAIN, 576);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Azjol-Nerub", GOSSIP_SENDER_MAIN, 601);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Ahn'kahet", GOSSIP_SENDER_MAIN, 619);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Drak'Tharon Keep", GOSSIP_SENDER_MAIN, 600);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Lightning", GOSSIP_SENDER_MAIN, 602);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "The Culling of Stratholme", GOSSIP_SENDER_MAIN, 595);
         
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
         if (!player || !creature)
             return false;
 
+        ClearGossipMenuFor(player);
+
+        // If action is 0, just close (was a header)
+        if (action == 0)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        // If sender is 0, this is dungeon selection - show difficulty menu
+        if (sender == GOSSIP_SENDER_MAIN && action >= 574)
+        {
+            // Store selected dungeon map in sender for next step
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|cffff8000=== Select Difficulty ===|r", 
+                action, 0);
+            
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", action, 0);
+            
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                "|cffffffff[Normal]|r - Base difficulty", 
+                action, GOSSIP_ACTION_NORMAL);
+            
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                "|cff0070ff[Heroic]|r - +15% HP/Damage", 
+                action, GOSSIP_ACTION_HEROIC);
+            
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                "|cffff8000[Mythic]|r - +80% HP/Damage (M+)", 
+                action, GOSSIP_ACTION_MYTHIC);
+            
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
+
+        // Sender now contains the dungeon mapId, action is the difficulty
+        uint32 dungeonMapId = sender;
+        
         switch (action)
         {
             case GOSSIP_ACTION_NORMAL:
-            {
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
-                TeleportToDungeonEntrance(player, creature->GetMapId());
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Normal)...|r");
+                TeleportToDungeonEntrance(player, dungeonMapId);
                 break;
-            }
             
             case GOSSIP_ACTION_HEROIC:
-            {
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
-                TeleportToDungeonEntrance(player, creature->GetMapId());
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Heroic)...|r");
+                TeleportToDungeonEntrance(player, dungeonMapId);
                 break;
-            }
             
             case GOSSIP_ACTION_MYTHIC:
-            {
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_EPIC));
-                TeleportToDungeonEntrance(player, creature->GetMapId());
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleporting to dungeon entrance (Mythic)...|r");
-                break;
-            }
-            
-            default:
+                TeleportToDungeonEntrance(player, dungeonMapId);
                 break;
         }
         
