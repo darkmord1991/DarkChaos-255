@@ -183,18 +183,6 @@ Seasonal loot distribution for top-tier content.
 * Flightmasters to be implemented for more immersion (Ashzara Crater already done)
 * Teleporting guards for easier access
 
-## HinterlandBG Features:
-* Several commands (for reset, status)
-* Interface Addon via .hlbg or /hlbg or via the PvP panel (still WIP, little buggy -> reading history data from CharDB, Stats, Queue start, etc.)
-* Worldstates for current state
-* lots of stuff configurable via config
-* Queue system for the warmup phase
-* Affix/Weather system prepared
-* Season system prepared
-* Auto check for level
-* Autoinvite to raid group per faction
-* and much more
-
 ## used modules
 * git clone https://github.com/azerothcore/mod-ah-bot.git modules/mod-ah-bot
 * git clone https://github.com/azerothcore/mod-duel-reset.git modules/mod-duel-reset
