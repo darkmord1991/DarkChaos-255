@@ -11,17 +11,18 @@
 #include "ObjectGuid.h"
 
 // Helper function to get item level for keystone
+// Adjusted: Start at 232 ilvl (higher than purchasable gear ~230)
 uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
 {
     if (keystoneLevel < 2)
-        return 190;
+        return 226;  // Below M+2: 226 ilvl (higher than purchasable)
     if (keystoneLevel <= 7)
-        return 200 + ((keystoneLevel - 2) * 3);
+        return 232 + ((keystoneLevel - 2) * 3);  // M+2: 232, M+7: 247
     if (keystoneLevel <= 10)
-        return 216 + ((keystoneLevel - 7) * 4);
+        return 250 + ((keystoneLevel - 7) * 4);  // M+8: 250, M+10: 258
     if (keystoneLevel <= 15)
-        return 228 + ((keystoneLevel - 10) * 4);
-    return 248 + ((keystoneLevel - 15) * 3);
+        return 262 + ((keystoneLevel - 10) * 4);  // M+11: 262, M+15: 282
+    return 282 + ((keystoneLevel - 15) * 3);  // Beyond M+15: +3 ilvl per level
 }
 
 class npc_mythic_plus_great_vault : public CreatureScript

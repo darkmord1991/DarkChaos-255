@@ -42,8 +42,8 @@ public:
             
         // Find nearby non-boss creatures and bolster them
         std::list<Creature*> nearbyCreatures;
-        Trinity::AllWorldObjectsInRange checker(creature, 30.0f);
-        Trinity::CreatureListSearcher<Trinity::AllWorldObjectsInRange> searcher(creature, nearbyCreatures, checker);
+        Acore::AllWorldObjectsInRange checker(creature, 30.0f);
+        Acore::CreatureListSearcher<Acore::AllWorldObjectsInRange> searcher(creature, nearbyCreatures, checker);
         Cell::VisitGridObjects(creature, searcher, 30.0f);
         
         for (Creature* ally : nearbyCreatures)

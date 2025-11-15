@@ -268,8 +268,6 @@ void MythicPlusRunManager::BuildVaultMenu(Player* /*player*/, Creature* /*creatu
     // Note: Uses gossip constants defined in npc_mythic_plus_great_vault
 }
     // This method should be invoked by the Great Vault NPC creature script
-}
-}
 
 void MythicPlusRunManager::HandleVaultSelection(Player* /*player*/, Creature* /*creature*/, uint32 /*actionId*/)
 {
