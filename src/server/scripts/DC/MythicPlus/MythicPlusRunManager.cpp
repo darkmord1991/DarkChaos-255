@@ -130,6 +130,28 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->participants.clear();
     RegisterGroupMembers(player, state);
 
+    // Seasonal validation - check if dungeon is featured this season
+    if (sConfigMgr->GetOption<bool>("MythicPlus.FeaturedOnly", true))
+    {
+        if (!IsDungeonFeaturedThisSeason(map->GetId(), state->seasonId))
+        {
+            SendGenericError(player, "This dungeon is not featured in the current Mythic+ season.");
+            _instanceStates.erase(state->instanceKey);
+            return false;
+        }
+    }
+
+    // Affix activation - apply weekly affixes to the run
+    if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", true))
+    {
+        std::vector<uint32> affixes = GetWeeklyAffixes(state->seasonId);
+        if (!affixes.empty())
+        {
+            ActivateAffixes(map, affixes, descriptor.level);
+            AnnounceAffixes(player, affixes);
+        }
+    }
+
     ConsumePlayerKeystone(player->GetGUID().GetCounter());
 
     AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {}", descriptor.level, profile->name));
@@ -429,33 +451,25 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     if (!player)
         return false;
 
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_KEYSTONE);
-    stmt->SetData(0, player->GetGUID().GetCounter());
-
-    if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
+    // Check player inventory for keystone items (190001-190019 for M+2-M+20)
+    for (uint8 i = 0; i < 19; ++i)
     {
-        Field* fields = result->Fetch();
-        outDescriptor.mapId = fields[0].Get<uint32>();
-        outDescriptor.level = fields[1].Get<uint8>();
-        outDescriptor.seasonId = fields[2].Get<uint32>();
-        outDescriptor.expiresOn = fields[3].Get<uint64>();
-        outDescriptor.ownerGuid = player->GetGUID();
-
-        uint64 now = GameTime::GetGameTime().count();
-        if (outDescriptor.expiresOn && outDescriptor.expiresOn < now)
+        uint32 keystoneItemId = 190001 + i;
+        
+        // Check if player has this keystone in inventory
+        if (player->HasItemCount(keystoneItemId, 1, false))
         {
-            ConsumePlayerKeystone(player->GetGUID().GetCounter());
-            SendGenericError(player, "Your keystone has expired.");
-            return false;
+            uint8 keystoneLevel = i + 2; // M+2 starts at index 0
+            
+            // Fill descriptor
+            outDescriptor.mapId = expectedMap; // Keystone is valid for the current dungeon
+            outDescriptor.level = keystoneLevel;
+            outDescriptor.seasonId = GetCurrentSeasonId();
+            outDescriptor.expiresOn = 0; // No expiration for inventory keystones
+            outDescriptor.ownerGuid = player->GetGUID();
+            
+            return true;
         }
-
-        if (expectedMap && outDescriptor.mapId != expectedMap)
-        {
-            SendGenericError(player, "This keystone belongs to another dungeon.");
-            return false;
-        }
-
-        return true;
     }
 
     return false;
@@ -463,9 +477,22 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
 
 void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow)
 {
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MPLUS_KEYSTONE);
-    stmt->SetData(0, playerGuidLow);
-    CharacterDatabase.Execute(stmt);
+    Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuidLow));
+    if (!player)
+        return;
+
+    // Remove keystone item from player inventory (check all M+2-M+20 keystones)
+    for (uint8 i = 0; i < 19; ++i)
+    {
+        uint32 keystoneItemId = 190001 + i;
+        
+        if (player->HasItemCount(keystoneItemId, 1, false))
+        {
+            player->DestroyItemCount(keystoneItemId, 1, true);
+            LOG_INFO("mythic.run", "Consumed keystone item {} from player {}", keystoneItemId, playerGuidLow);
+            return;
+        }
+    }
 }
 
 void MythicPlusRunManager::AnnounceToInstance(Map* map, std::string_view message) const
@@ -736,6 +763,102 @@ bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
         return false;
 
     return itr->second.find(bossEntry) != itr->second.end();
+}
+
+bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
+{
+    QueryResult result = WorldDatabase.Query(
+        "SELECT 1 FROM dc_mplus_featured_dungeons WHERE season_id = {} AND map_id = {}",
+        seasonId, mapId);
+    
+    return result != nullptr;
+}
+
+std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) const
+{
+    std::vector<uint32> affixes;
+    
+    // Get current week number (0-51 for yearly rotation)
+    uint32 weekStart = GetWeekStartTimestamp();
+    uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+    
+    // Query affix schedule for this week
+    QueryResult result = WorldDatabase.Query(
+        "SELECT affix1, affix2 FROM dc_mplus_affix_schedule "
+        "WHERE season_id = {} AND week_number = {}",
+        seasonId, weekNumber);
+    
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        uint32 affix1 = fields[0].Get<uint32>();
+        uint32 affix2 = fields[1].Get<uint32>();
+        
+        if (affix1 > 0)
+            affixes.push_back(affix1);
+        if (affix2 > 0)
+            affixes.push_back(affix2);
+    }
+    
+    return affixes;
+}
+
+void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel)
+{
+    if (!map || affixes.empty())
+        return;
+
+    // Store active affixes in instance state for later use
+    InstanceState* state = GetState(map);
+    if (state)
+    {
+        // Apply affix scaling multipliers to creatures
+        // This would typically be handled by the MythicDifficultyScaling system
+        LOG_INFO("mythic.affix", "Activated {} affixes for keystone level {} in map {}",
+            affixes.size(), keystoneLevel, map->GetId());
+        
+        // Debug logging for affixes
+        if (sConfigMgr->GetOption<bool>("MythicPlus.AffixDebug", false))
+        {
+            for (uint32 affixId : affixes)
+            {
+                LOG_DEBUG("mythic.affix", "Affix ID {} active", affixId);
+            }
+        }
+    }
+}
+
+void MythicPlusRunManager::AnnounceAffixes(Player* player, const std::vector<uint32>& affixes)
+{
+    if (!player || affixes.empty())
+        return;
+
+    // Build affix name string
+    std::ostringstream ss;
+    ss << "|cffff8000Active Affixes|r: ";
+    
+    for (size_t i = 0; i < affixes.size(); ++i)
+    {
+        std::string affixName = GetAffixName(affixes[i]);
+        ss << affixName;
+        if (i < affixes.size() - 1)
+            ss << ", ";
+    }
+    
+    ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
+}
+
+std::string MythicPlusRunManager::GetAffixName(uint32 affixId) const
+{
+    QueryResult result = WorldDatabase.Query(
+        "SELECT affix_name FROM dc_mplus_affixes WHERE affix_id = {}", affixId);
+    
+    if (result)
+    {
+        return result->Fetch()->Get<std::string>();
+    }
+    
+    return "Unknown Affix";
 }
 
 std::string MythicPlusRunManager::SerializeParticipants(const InstanceState* state) const

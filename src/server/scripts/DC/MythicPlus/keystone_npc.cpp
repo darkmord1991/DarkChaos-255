@@ -37,32 +37,50 @@ public:
 
         ClearGossipMenuFor(player);
 
-        // Get player's current keystone level from database
-        // If they don't have a keystone, default to M+2
-        uint8 keystoneLevel = MIN_KEYSTONE_LEVEL;
-        
-        // TODO: Query player's active keystone level from database
-        // For now, default to M+2 for testing
+        // Check if player is level 80
+        if (player->getLevel() < 80)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|cffff0000You must be level 80 to receive a keystone.|r", 
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
 
-        // Display all available keystones
+        // Check if player already has a keystone in inventory
+        bool hasKeystone = false;
+        for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
+        {
+            uint32 itemId = GetItemIdFromKeystoneLevel(level);
+            if (player->HasItemCount(itemId, 1, false))
+            {
+                hasKeystone = true;
+                break;
+            }
+        }
+
+        if (hasKeystone)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|cffffff00You already have a keystone in your inventory.|r", 
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Close]|r", 
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
+
+        // Offer starter keystone (M+2)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffff8000=== Mythic+ Keystones ===|r", 
+            "|cffff8000=== Mythic+ Keystone Vendor ===|r", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
 
-        // Show keystone options for M+2 through M+20
-        for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
-        {
-            uint32 itemLevel = GetItemLevelForKeystoneLevel(level);
-            std::string coloredName = GetKeystoneColoredName(level);
-            std::string gossipText = coloredName + " |cffffffffItemLevel: " + std::to_string(itemLevel) + "|r";
-            
-            // Use level as action ID (2-20)
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, gossipText, 
-                GOSSIP_SENDER_MAIN, level);
-        }
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, 
+            "|cff00ff00Receive Mythic Keystone +2|r", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
@@ -79,19 +97,18 @@ public:
             return false;
 
         // Close on close action
-        if (action == GOSSIP_ACTION_CLOSE)
+        if (action == GOSSIP_ACTION_CLOSE || action == GOSSIP_ACTION_KEYSTONE_INFO)
         {
             CloseGossipMenuFor(player);
             return true;
         }
 
-        // Validate keystone level (action is the keystone level 2-20)
-        if (action >= MIN_KEYSTONE_LEVEL && action <= MAX_KEYSTONE_LEVEL)
+        // Handle starter keystone request
+        if (action == GOSSIP_ACTION_KEYSTONE_START)
         {
-            uint8 keystoneLevel = static_cast<uint8>(action);
-            uint32 keystoneItemId = GetItemIdFromKeystoneLevel(keystoneLevel);
+            // Give M+2 keystone (item 190001)
+            uint32 keystoneItemId = GetItemIdFromKeystoneLevel(MIN_KEYSTONE_LEVEL);
 
-            // Give player the keystone item
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1);
             
@@ -101,8 +118,7 @@ public:
                 if (keystoneItem)
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
-                        "|cff00ff00Mythic+:|r You received a %s |cffffffffKeystone|r!", 
-                        GetKeystoneColoredName(keystoneLevel).c_str());
+                        "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +2|r! Use it in any dungeon to begin your journey.");
                 }
             }
             else
@@ -110,6 +126,9 @@ public:
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cffff0000Error:|r Not enough inventory space!");
             }
+
+            CloseGossipMenuFor(player);
+            return true;
         }
 
         CloseGossipMenuFor(player);

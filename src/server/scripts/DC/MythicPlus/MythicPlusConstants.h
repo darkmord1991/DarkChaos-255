@@ -28,13 +28,13 @@ namespace MythicPlusConstants
     
     // NPC entries
     constexpr uint32 NPC_KEYSTONE_VENDOR = 100100;
+    constexpr uint32 NPC_PORTAL_SELECTOR = 100101;
     constexpr uint32 NPC_GREAT_VAULT = 100050;
     constexpr uint32 NPC_STATISTICS = 100060;
     constexpr uint32 NPC_TOKEN_VENDOR = 190005;
     
     // GameObject entries
-    constexpr uint32 GO_FONT_OF_POWER_START = 700001;
-    constexpr uint32 GO_FONT_OF_POWER_END = 700008;
+    constexpr uint32 GO_FONT_OF_POWER = 300200;  // Keystone activation pedestal
     constexpr uint32 GO_KEYSTONE_PEDESTAL = 300200;
     
     // Token items
@@ -141,7 +141,7 @@ namespace MythicPlusConstants
      */
     inline bool IsFontOfPower(uint32 entry)
     {
-        return entry >= GO_FONT_OF_POWER_START && entry <= GO_FONT OF_POWER_END;
+        return entry >= GO_FONT_OF_POWER_START && entry <= GO_FONT_OF_POWER_END;
     }
 }
 

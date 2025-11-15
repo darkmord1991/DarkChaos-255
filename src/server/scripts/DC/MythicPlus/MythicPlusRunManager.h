@@ -114,7 +114,14 @@ private:
     void SendGenericError(Player* player, std::string_view text);
     bool ClaimVaultSlot(Player* player, uint8 slot);
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
-        std::string SerializeParticipants(const InstanceState* state) const;
+    std::string SerializeParticipants(const InstanceState* state) const;
+    
+    // Seasonal validation and affix system (NEW)
+    bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;
+    std::vector<uint32> GetWeeklyAffixes(uint32 seasonId) const;
+    void ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel);
+    void AnnounceAffixes(Player* player, const std::vector<uint32>& affixes);
+    std::string GetAffixName(uint32 affixId) const;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
         std::unordered_map<uint32, std::unordered_set<uint32>> _finalBossEntries;

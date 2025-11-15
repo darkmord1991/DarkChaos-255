@@ -103,6 +103,16 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
     return req;
 }
 
+// Teleport player to dungeon entrance using dc_dungeon_entrances table
+void TeleportToDungeonEntrance(Player* player, uint32 mapId)
+{
+    if (!player)
+        return;
+    
+    // Query entrance coordinates from database
+    QueryResult result = WorldDatabase.Query(
+        \"SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o \"\n        \"FROM dc_dungeon_entrances WHERE dungeon_map = {}\", mapId);\n    \n    if (!result)\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"Error: Dungeon entrance coordinates not found in database.\");\n        LOG_ERROR(\"mythic.portal\", \"No entrance found for dungeon map {}\", mapId);\n        return;\n    }\n    \n    Field* fields = result->Fetch();\n    uint32 entranceMap = fields[0].Get<uint32>();\n    float x = fields[1].Get<float>();\n    float y = fields[2].Get<float>();\n    float z = fields[3].Get<float>();\n    float o = fields[4].Get<float>();\n    \n    // Teleport player to entrance\n    if (player->TeleportTo(entranceMap, x, y, z, o))\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"|cff00ff00Teleporting to dungeon entrance...|r\");\n        LOG_INFO(\"mythic.portal\", \"Player {} teleported to dungeon {} entrance\",\n            player->GetName(), mapId);\n    }\n    else\n    {\n        ChatHandler(player->GetSession()).PSendSysMessage(\n            \"Error: Failed to teleport to dungeon entrance.\");\n        LOG_ERROR(\"mythic.portal\", \"Failed to teleport player {} to dungeon {}\",\n            player->GetName(), mapId);\n    }\n}
+
 // Generic portal creature script for all dungeon entrances
 class npc_dungeon_portal_selector : public CreatureScript
 {
@@ -248,8 +258,7 @@ public:
             {
                 // Set difficulty to Normal and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
-                // TODO: Implement teleport to dungeon entrance
-                ChatHandler(player->GetSession()).PSendSysMessage("Entering Normal difficulty...");
+                TeleportToDungeonEntrance(player, mapId);
                 CloseGossipMenuFor(player);
                 break;
             }
@@ -258,8 +267,7 @@ public:
             {
                 // Set difficulty to Heroic and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
-                // TODO: Implement teleport to dungeon entrance
-                ChatHandler(player->GetSession()).PSendSysMessage("Entering Heroic difficulty...");
+                TeleportToDungeonEntrance(player, mapId);
                 CloseGossipMenuFor(player);
                 break;
             }
@@ -268,8 +276,7 @@ public:
             {
                 // Set difficulty to Mythic and teleport
                 player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_EPIC));
-                // TODO: Implement teleport to dungeon entrance
-                ChatHandler(player->GetSession()).PSendSysMessage("Entering Mythic difficulty...");
+                TeleportToDungeonEntrance(player, mapId);
                 CloseGossipMenuFor(player);
                 break;
             }
