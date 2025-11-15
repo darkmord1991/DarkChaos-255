@@ -165,7 +165,7 @@ void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
     state->participants.insert(player->GetGUID().GetCounter());
 }
 
-void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
+void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*/)
 {
     if (!player)
         return;

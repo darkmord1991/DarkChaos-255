@@ -52,6 +52,8 @@ public:
     void BuildVaultMenu(Player* player, Creature* creature);
     void HandleVaultSelection(Player* player, Creature* creature, uint32 actionId);
     void BuildStatisticsMenu(Player* player, Creature* creature);
+    void ResetWeeklyVaultProgress();
+    void ResetWeeklyVaultProgress(Player* player);
     
     // Vault reward pool management
     bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart, uint8 highestKeystoneLevel);
