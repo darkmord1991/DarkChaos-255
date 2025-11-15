@@ -10,17 +10,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
 
-// Helper function to get item level for keystone
-// Note: ilvl capped at M+10 (+12 ilvl). Beyond M+10, only tokens scale.
-uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
-{
-    if (keystoneLevel < 2)
-        return 226;  // Below M+2: 226 ilvl (higher than purchasable)
-    if (keystoneLevel <= 10)
-        return 232 + ((keystoneLevel - 2) * 2);  // M+2: 232, M+10: 248 (+16 ilvl total)
-    // Beyond M+10: ilvl stays at 248, only token quantity increases
-    return 248;
-}
+// Forward declaration - defined in vault_rewards.cpp
+extern uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel);
 
 class npc_mythic_plus_great_vault : public CreatureScript
 {

@@ -155,16 +155,9 @@ public:
             }
 
             // Start the M+ run
-            if (sMythicRuns->StartRun(player, keystoneLevel))
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00Mythic+:|r Starting Mythic +%d dungeon!", keystoneLevel);
-            }
-            else
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cffff0000Error:|r Failed to start keystone. Check if keystone is already active.");
-            }
+            // Note: Run is activated when entering dungeon with active keystone
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cff00ff00Mythic+:|r Keystone is ready! Enter the dungeon to start M+%d run.", keystoneLevel);
         }
 
         CloseGossipMenuFor(player);
@@ -183,8 +176,8 @@ void AddSC_keystone_npcs()
     }
 }
 
-// Add to script registry
-void AddSCKeystoneNPCs(ScriptMgr* scriptMgr)
+// Script entry point
+void AddSCKeystoneNPCs()
 {
-    scriptMgr->RegisterCreatureScript("npc_keystone", new npc_keystone());
+    new npc_keystone();
 }

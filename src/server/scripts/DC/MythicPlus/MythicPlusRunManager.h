@@ -59,6 +59,10 @@ public:
     bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart, uint8 highestKeystoneLevel);
     std::vector<std::pair<uint32, uint32>> GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
     bool ClaimVaultItemReward(Player* player, uint8 slot, uint32 itemId);
+    uint32 GetCurrentSeasonId() const;
+    uint32 GetWeekStartTimestamp() const;
+    uint32 GetVaultTokenReward(uint8 slot) const;
+    uint8 GetVaultThreshold(uint8 slot) const;
 
 private:
     struct InstanceState
@@ -98,10 +102,6 @@ private:
     void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
     void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
     void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);
-    uint32 GetCurrentSeasonId() const;
-    uint32 GetWeekStartTimestamp() const;
-    uint32 GetVaultTokenReward(uint8 slot) const;
-    uint8 GetVaultThreshold(uint8 slot) const;
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
     bool ClaimVaultSlot(Player* player, uint8 slot);

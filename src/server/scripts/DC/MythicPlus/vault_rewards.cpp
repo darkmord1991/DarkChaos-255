@@ -16,6 +16,7 @@
 #include <vector>
 
 // Item level calculation based on keystone level (retail-style)
+// This function is used across multiple Mythic+ reward systems
 uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
 {
     // Base item levels following retail Mythic+ structure

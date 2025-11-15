@@ -58,9 +58,6 @@ public:
             return false;
         }
 
-        // Simulate keystone activation
-        sMythicScaling->SetKeystoneLevel(map, keystoneLevel);
-        
         // Activate sample affixes
         std::vector<AffixType> affixes = { AFFIX_TYRANNICAL, AFFIX_BOLSTERING };
         if (keystoneLevel >= 7)
@@ -84,6 +81,8 @@ public:
     // .mplus vault [slot] [level] - Generate test vault rewards
     static bool HandleMPlusVaultCommand(ChatHandler* handler, Optional<uint8> slot, Optional<uint8> keystoneLevel)
     {
+        (void)slot;  // Currently unused, reserved for future vault slot selection
+        
         Player* player = handler->GetPlayer();
         if (!player)
             return false;

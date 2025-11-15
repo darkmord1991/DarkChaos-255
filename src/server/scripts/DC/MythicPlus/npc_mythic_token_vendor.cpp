@@ -130,6 +130,8 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
+        (void)sender;  // Currently unused
+        
         if (!player || !creature)
             return false;
 
@@ -223,6 +225,8 @@ private:
 
     void PurchaseGear(Player* player, Creature* creature, uint32 itemLevel, uint8 slot)
     {
+        (void)creature;  // Used for potential future creature-specific behavior
+        
         uint32 cost = GetTokenCost(itemLevel);
         uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
         

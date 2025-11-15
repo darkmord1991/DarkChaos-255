@@ -315,12 +315,16 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
     {
         Field* fields = result->Fetch();
         runsCompleted = fields[0].Get<uint8>();
+        claimedSlot = fields[6].Get<uint8>();
         unlocked[1] = fields[2].Get<bool>();
         unlocked[2] = fields[3].Get<bool>();
         unlocked[3] = fields[4].Get<bool>();
         claimed = fields[5].Get<bool>();
         claimedSlot = fields[6].Get<uint8>();
     }
+    
+    (void)runsCompleted; // Suppress unused variable warning
+    (void)claimedSlot;   // Suppress unused variable warning
 
     if (!unlocked[slot])
     {
@@ -667,7 +671,7 @@ void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint
     stmt->SetData(7, durationSeconds);
     stmt->SetData(8, success ? 1 : 0);
     stmt->SetData(9, 0); // affix pair placeholder
-    stmt->SetString(10, groupMembers);
+    stmt->SetData(10, groupMembers);
 
     CharacterDatabase.Execute(stmt);
 }

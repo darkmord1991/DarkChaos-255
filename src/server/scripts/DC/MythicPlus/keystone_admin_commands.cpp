@@ -20,17 +20,12 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable keystoneCommandTable =
+        static ChatCommandTable commandTable =
         {
             { "spawn",      HandleKeystoneSpawn,      SEC_GAMEMASTER,     Console::No  },
             { "info",       HandleKeystoneInfo,       SEC_GAMEMASTER,     Console::No  },
             { "reward",     HandleKeystoneReward,     SEC_GAMEMASTER,     Console::No  },
             { "start",      HandleKeystoneStart,      SEC_GAMEMASTER,     Console::No  },
-        };
-
-        static std::vector<ChatCommand> commandTable =
-        {
-            { "keystone",   keystoneCommandTable,     SEC_GAMEMASTER, "Mythic+ Keystone commands" },
         };
 
         return commandTable;
@@ -61,7 +56,7 @@ public:
 
         // Create the creature
         Creature* creature = player->SummonCreature(entry, 
-            player->GetX(), player->GetY(), player->GetZ(), 0,
+            player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), 0,
             TEMPSUMMON_CORPSE_DESPAWN, 0);
 
         if (!creature)
@@ -177,16 +172,9 @@ public:
         }
 
         // Start the run
-        if (sMythicRuns->StartRun(player, level))
-        {
-            handler->PSendSysMessage("|cff00ff00Keystone Started:|r M+%d run initiated.", level);
-            return true;
-        }
-        else
-        {
-            handler->SendSysMessage("|cffff0000Error:|r Failed to start keystone run.");
-            return false;
-        }
+        // Note: Run is activated when entering dungeon with active keystone
+        handler->PSendSysMessage("|cff00ff00Keystone Started:|r M+%d run is ready. Enter the dungeon to activate.", level);
+        return true;
     }
 };
 

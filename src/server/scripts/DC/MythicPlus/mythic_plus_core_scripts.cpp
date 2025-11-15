@@ -280,8 +280,15 @@ public:
             }
         }
     }
-    
-    void OnUpdate(Player* player, uint32 diff) override
+};
+
+// Additional update hook for affix periodic effects
+class MythicPlusUpdateScript : public PlayerScript
+{
+public:
+    MythicPlusUpdateScript() : PlayerScript("MythicPlusUpdateScript") { }
+
+    void OnPlayerUpdate(Player* player, uint32 diff)
     {
         if (!player || !player->IsInWorld())
             return;
