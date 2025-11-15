@@ -273,14 +273,6 @@ public:
                 diffName = "|cffff8000Mythic|r";
                 scaling = profile ? FormatScalingText(profile->mythicHealthMult, profile->mythicDamageMult)
                                    : "+35% HP, +20% Damage";
-                
-                // Apply 10-second entry barrier for Mythic dungeons
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic Dungeon]|r Entry barrier activated!");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500You cannot move for 10 seconds. |r");
-                
-                // Apply root aura (cannot move) for 10 seconds
-                player->CastSpell(player, 33786, true);
-                
                 break;
             default:
                 return; // Don't announce for other difficulties

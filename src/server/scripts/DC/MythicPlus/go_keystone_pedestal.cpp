@@ -61,7 +61,6 @@ public:
         player->DestroyItemCount(keystoneItem->GetEntry(), 1, true);
 
         // Initialize the M+ run
-        // This registers the run with MythicPlusRunManager and applies dungeon scaling
         auto runManager = MythicPlusRunManager::instance();
         if (runManager)
         {
@@ -69,7 +68,7 @@ public:
             // runManager->InitializeRun(player->GetGroup(), keystoneLevel, dungeonId);
         }
 
-        // Notify party
+        // Notify party and apply barrier effect
         ChatHandler(player->GetSession()).PSendSysMessage(
             "|cff00ff00Mythic+:|r Starting run with %s keystone!", 
             GetKeystoneColoredName(keystoneLevel).c_str());
@@ -79,11 +78,32 @@ public:
             for (GroupReference* ref = player->GetGroup()->GetFirstMember(); ref != nullptr; ref = ref->next())
             {
                 Player* groupMember = ref->GetSource();
-                if (groupMember && groupMember != player)
+                if (groupMember)
                 {
+                    // Send start message
                     ChatHandler(groupMember->GetSession()).PSendSysMessage(
                         "|cff00ff00Mythic+:|r Starting run with %s keystone!", 
                         GetKeystoneColoredName(keystoneLevel).c_str());
+                    
+                    // Apply 10-second barrier to all group members
+                    if (groupMember->GetMap() && groupMember->GetMap()->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
+                    {
+                        ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffff8000[Mythic+ Activated]|r Entry barrier activated!");
+                        ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffffa500You cannot move for 10 seconds.|r");
+                        
+                        // Apply root aura for 10 seconds
+                        groupMember->CastSpell(groupMember, 33786, true);
+                        
+                        // Send countdown messages at 10, 5, 4, 3, 2, 1
+                        for (uint8 i = 1; i <= 10; ++i)
+                        {
+                            uint8 seconds_left = 11 - i;
+                            if (seconds_left <= 5 || seconds_left == 10)
+                            {
+                                ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffff0000%u|r seconds", seconds_left);
+                            }
+                        }
+                    }
                 }
             }
         }
