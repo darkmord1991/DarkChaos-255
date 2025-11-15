@@ -71,6 +71,8 @@ public:
     
     // Calculate Mythic+ multipliers based on keystone level
     void CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult);
+
+    uint32 GetActiveSeasonId() const { return _activeSeasonId; }
     
 private:
     MythicDifficultyScaling() = default;

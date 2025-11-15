@@ -4,6 +4,7 @@
  */
 
 #include "MythicDifficultyScaling.h"
+#include "MythicPlusRunManager.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
@@ -306,10 +307,12 @@ void MythicDifficultyScaling::ApplyMultipliers(Creature* creature, float hpMult,
     }
 }
 
-uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* /*map*/)
+uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* map)
 {
-    // Keystone tracking is not implemented yet: Mythic+ scaling disabled.
-    return 0;
+    if (!map)
+        return 0;
+
+    return sMythicRuns->GetKeystoneLevel(map);
 }
 
 void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult)

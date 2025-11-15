@@ -8,6 +8,9 @@
 
 #include "ObjectGuid.h"
 #include "Optional.h"
+#include "SharedDefines.h"
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -55,6 +58,7 @@ private:
     {
         uint64 instanceKey = 0;
         uint32 mapId = 0;
+        uint32 instanceId = 0;
         Difficulty difficulty = DUNGEON_DIFFICULTY_NORMAL;
         uint8 keystoneLevel = 0;
         uint32 seasonId = 0;
@@ -82,11 +86,11 @@ private:
     bool IsWipeBudgetEnabled() const;
     bool IsKeystoneRequirementEnabled() const;
     void RecordRunResult(const InstanceState* state, bool success, uint32 bossEntry);
-    void AwardTokens(const InstanceState* state, uint32 bossEntry);
+    void AwardTokens(InstanceState* state, uint32 bossEntry);
     void UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds);
     void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
-    void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds);
-    void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint32 tokenItemId, uint32 bossEntry, uint32 tokenCount);
+    void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
+    void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);
     uint32 GetCurrentSeasonId() const;
     uint32 GetWeekStartTimestamp() const;
     uint32 GetVaultTokenReward(uint8 slot) const;
@@ -94,8 +98,10 @@ private:
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
+        std::string SerializeParticipants(const InstanceState* state) const;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
+        std::unordered_map<uint32, std::unordered_set<uint32>> _finalBossEntries;
 };
 
 #define sMythicRuns MythicPlusRunManager::instance()

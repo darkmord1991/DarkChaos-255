@@ -1,4 +1,4 @@
-# Dungeon Enhancement System (Mythic+) Implementation Plan
+﻿# Dungeon Enhancement System (Mythic+) Implementation Plan
 ## DarkChaos Server - Wrath 3.3.5a Edition
 
 ---
@@ -13,168 +13,338 @@ Implement a comprehensive Mythic+ system for DarkChaos that adds challenging end
 - **NPC Architecture**: Follows patterns from ItemUpgradeCurator (190002) and DungeonQuestMaster
 - **Database Design**: Uses `dc_*` prefix convention, CharacterDatabase queries
 - **Achievement System**: Integrates with existing dc_achievements.cpp infrastructure
-- **Token/Currency**: Similar patterns to dc_player_upgrade_tokens
-- **Gossip Menus**: GOSSIP_ACTION_INFO_DEF + offset pattern, try-catch error handling
+# Mythic+ System Plan (2026 Refresh)
 
-**File Structure:**
-- **C++ Scripts**: `src/server/scripts/DC/DungeonEnhancement/`
-- **SQL (Character DB)**: `Custom/Custom feature SQLs/characters/`
-- **SQL (World DB)**: `Custom/Custom feature SQLs/world/`
-- **GameObject IDs**: Start at 700000 (Great Vault = 700000)
-- **NPC IDs**: 190003-190006 (Teleporter, Vault, Token Vendor, Keystone Master)
-- **Item IDs**: 100000-100008 (keystones), 100020-100021 (tokens)
+**Purpose:** Define the streamlined Mythic/Mythic+ system that rides exclusively on dungeon difficulty 3 (“Epic”) and avoids all raid or timer mechanics.
+
+**Audience:** Gameplay engineers, database engineers, design reviewers.
+
+> **Housekeeping (Nov 2025):** Legacy DungeonEnhancement write-ups—implementation summaries, DBC additions, etc.—now live in `Custom/feature stuff/DungeonEnhancement/old/`. Reference them only for historical context; all active work follows this refresh and the updated evaluation document.
 
 ---
 
-## PART 1: GENERAL SYSTEM ARCHITECTURE
+## 1. Goals & Non-Goals
 
-### 1.1 Database Schema (`dc_` prefix)
+### Goals
+- Turn existing difficulty 3 into a consistent “Mythic” baseline for every dungeon.
+- Introduce a Mythic+ modifier layer that uses keystone-style scaling without timers.
+- Keep the entire feature inside DarkChaos namespaces (`dc_*` tables, custom scripts) to preserve AzerothCore’s upgradability.
+- Provide a repeatable reward and score loop that can be extended with seasonal hooks.
+- Force Mythic dungeon content to level 80 minimum: TBC Heroics stay at level 70, but all Mythic difficulty (Vanilla/TBC) uses differentiated levels (normal 80, elite 81, boss 82). WotLK untouched to preserve existing scaling.
 
-**Character Database (Custom/Custom feature SQLs/characters/):**
+### Non-Goals
+- No raid changes, no prestige systems, no complex UI add-ons at launch.
+- No new difficulty IDs or map clones; we reuse existing records wherever possible.
+- No timer race. Performance pressure comes from death budgets and score decay.
+
+---
+
+## 2. System Overview
+
+| Layer | Description |
+|-------|-------------|
+| Mythic Baseline | Difficulty 3 scaling, fixed death budget, guaranteed token reward. Always available. |
+| Mythic+ Overlay | Keystone-managed scaling (levels 1–8), two rotating affixes, per-dungeon score. Limited to seasonal rotation list. |
+| Seasonal Data | Defines which dungeons are eligible for Mythic+ each quarter, affix pairings, reward tables, and leaderboard reset dates. |
+
+---
+
+## 3. Data Design
+
 ```sql
-dc_mythic_player_rating       -- Player seasonal rating, rank
-dc_mythic_run_history          -- Completed runs per player
-dc_mythic_keystones            -- Active keystone ownership
-dc_mythic_vault_progress       -- Weekly vault unlock progress
-dc_mythic_achievement_progress -- Player achievement tracking
-```
-
-**World Database (Custom/Custom feature SQLs/world/):**
-```sql
-dc_mythic_seasons              -- Season definitions, dates
-dc_mythic_dungeons_config      -- Dungeon scaling configs
-dc_mythic_raid_config          -- Raid difficulty configs
-dc_mythic_affixes              -- Affix definitions
-dc_mythic_vault_rewards        -- Vault loot table definitions
-dc_mythic_tokens_loot          -- Token reward amounts
-dc_mythic_achievement_defs     -- Achievement criteria
-dc_mythic_npc_spawns           -- NPC creature spawns
-dc_mythic_gameobjects          -- GameObject (Great Vault, Font of Power)
-```
-
-**Schema Files Reference:**
-- Existing schemas available in `Custom/Custom feature SQLs/` directory
-- Follow existing patterns for table structure and indexing
-
-### 1.2 Core Principles
-- **Separation**: Keep all mythic+ systems separate from core AzerothCore to enable future updates
-- **Scalability**: Enemy HP/Damage scales per difficulty level
-- **Accessibility**: Level requirements configurable per dungeon/raid
-- **Cosmetics**: Titles, achievements, transmog rewards
-- **Progression**: Rating-based matchmaking, seasonal progression tracking
-
-### 1.3 Difficulty Levels (In Order)
-1. **Normal** - Baseline difficulty
-2. **Heroic** - 1.3x HP/Damage scaling (legacy dungeons upgrade)
-3. **Mythic (M+0)** - 1.8x HP/Damage scaling (base mythic, no keystone required)
-4. **Mythic+2 to +10** - Progressive scaling (2.0x to 3.2x HP/Damage)
-
-**Note:** There is NO Mythic+1 difficulty. Players start with Mythic (M+0) baseline, then jump directly to Mythic+2 with keystones. This matches retail behavior where M+0 is the entry point.
-
-### 1.4 Integration with Existing DarkChaos Systems
-
-**NPC Architecture (Existing Patterns to Follow):**
-```
-NPC 190001: Item Upgrade Vendor (ItemUpgradeNPC_Vendor.cpp)
-NPC 190002: Artifact Curator (ItemUpgradeNPC_Curator.cpp)
-NPC 190003: Mythic+ Dungeon Teleporter (NEW - src/server/scripts/DC/DungeonEnhancement/NPCs/)
-NPC 190004: Mythic Raid Teleporter (NEW - src/server/scripts/DC/DungeonEnhancement/NPCs/)
-NPC 190005: Mythic+ Token Vendor (NEW - src/server/scripts/DC/DungeonEnhancement/NPCs/)
-NPC 190006: Keystone Master (NEW - src/server/scripts/DC/DungeonEnhancement/NPCs/)
-GameObject 700000: Great Vault (NEW - src/server/scripts/DC/DungeonEnhancement/GameObjects/)
-GameObject 700001-700008: Font of Power (one per seasonal dungeon)
-```
-
-**Database Pattern Alignment:**
-- All tables use `dc_*` prefix (dc_mythic_seasons, dc_mythic_player_rating, etc.)
-- CharacterDatabase.Query with format strings for player data
-- try-catch blocks for error handling (LOG_WARN on failure)
-- Foreign key relationships where applicable
-
-**Gossip Menu Pattern (from ItemUpgradeCurator.cpp):**
-```cpp
-// Main menu structure
-OnGossipHello:
-  - ClearGossipMenuFor(player)
-  - CharacterDatabase.Query for player stats
-  - Display greeting with color-coded text (|cff00ff00 green, |cffff9900 orange)
-  - AddGossipItemFor with GOSSIP_ICON_* constants
-  - Use GOSSIP_ACTION_INFO_DEF + offset for action IDs
-  - player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID())
-
-OnGossipSelect:
-  - switch/case on action parameter
-  - GOSSIP_ACTION_INFO_DEF + 1, +2, +3... for menu options
-  - GOSSIP_ACTION_INFO_DEF + 20 for "Back" button
-  - Submenu navigation with ClearGossipMenuFor → AddGossipItemFor → SendGossipMenu
-```
-
-**Achievement Integration (dc_achievements.cpp):**
-- Mythic+ achievements follow existing achievement ID ranges
-- Use AchievementMgr for criteria completion
-- Store in character_achievement table (standard AC)
-- Custom tracking in dc_mythic_achievements for seasonal data
-
-**Currency/Token Pattern (from dc_player_upgrade_tokens):**
-```sql
--- Two separate token types: Dungeon tokens and Raid tokens
-CREATE TABLE dc_mythic_tokens (
-  player_guid BIGINT,
-  token_type VARCHAR(50),  -- 'mythic_dungeon_tokens' OR 'mythic_raid_tokens'
-  amount INT,
-  last_updated DATETIME,
-  UNIQUE KEY idx_player_token (player_guid, token_type)
+-- Dungeons that support Mythic baseline (all of them)
+CREATE TABLE dc_dungeon_mythic_profile (
+  map_id SMALLINT PRIMARY KEY,
+  name VARCHAR(80),
+  heroic_enabled BOOLEAN DEFAULT TRUE,
+  mythic_enabled BOOLEAN DEFAULT TRUE,
+  base_health_mult FLOAT DEFAULT 1.25,
+  base_damage_mult FLOAT DEFAULT 1.15,
+  death_budget TINYINT DEFAULT 10,
+  wipe_budget TINYINT DEFAULT 3,
+  loot_ilvl INT DEFAULT 219,
+  token_reward INT DEFAULT 101000,
+  updated_at TIMESTAMP
 );
 
--- Token Item IDs
--- 100020 = Mythic Dungeon Token (M+ completion rewards)
--- 100021 = Mythic Raid Token (raid difficulty rewards)
+-- Seasonal rotation for Mythic+
+CREATE TABLE dc_mplus_seasons (
+  season_id INT PRIMARY KEY AUTO_INCREMENT,
+  label VARCHAR(40),
+  start_ts BIGINT,
+  end_ts BIGINT,
+  featured_dungeons JSON,
+  affix_schedule JSON,
+  reward_curve JSON,
+  is_active BOOL DEFAULT FALSE
+);
+
+-- Keystone inventory (max 1 per character)
+CREATE TABLE dc_mplus_keystones (
+  character_guid INT PRIMARY KEY,
+  map_id SMALLINT NOT NULL,
+  level TINYINT NOT NULL,
+  season_id INT,
+  expires_on BIGINT,
+  FOREIGN KEY (map_id) REFERENCES dc_dungeon_mythic_profile(map_id)
+);
+
+-- Score snapshots per dungeon and season
+CREATE TABLE dc_mplus_scores (
+  character_guid INT,
+  season_id INT,
+  map_id SMALLINT,
+  best_level TINYINT,
+  best_score INT,
+  last_run_ts BIGINT,
+  PRIMARY KEY (character_guid, season_id, map_id)
+);
 ```
 
-**Token Distribution:**
-- **Mythic Dungeon Tokens:** Awarded at the end of every Mythic/Mythic+ dungeon run
-  - Base amount: 20 tokens per completion
-  - Bonus: +5 tokens per keystone level (M+2 = 30 tokens, M+5 = 45 tokens, M+10 = 70 tokens)
-  - Entire group receives tokens (not just keystone owner)
-  
-- **Mythic Raid Tokens:** Awarded per boss kill in Mythic/Heroic raids
-  - Base amount: 10 tokens per boss (Heroic), 20 tokens per boss (Mythic)
-  - Used to purchase raid-specific gear/cosmetics
+All auxiliary lookup data (affixes, reward tables, rotation metadata) also sits inside `dc_*` structures so the system can be disabled cleanly.
 
-**Quest System Integration (DungeonQuests patterns):**
-- Weekly vault follows DungeonQuests daily/weekly reset logic
-- Use world_state variables for season tracking
-- Event handlers for season start/end (similar to quest resets)
+`Custom/Custom feature SQLs/world schema.sql` (Nov 2025) intentionally removed the deprecated `dc_mythic_*` schema from the pre-refresh implementation. New migrations are located in:
+- **World DB:** `Custom/Custom feature SQLs/worlddb/dc_mythic_dungeons_world.sql`
+- **Character DB:** `Custom/Custom feature SQLs/chardb/dc_mythic_dungeons_chars.sql`
+
+These files contain all tables defined in this plan plus supporting lookup data.
 
 ---
 
-## PART 2: DUNGEONS - MYTHIC+ SYSTEM
+## 3.5 Legacy Dungeon Integration Procedure
 
-### 2.1 Dungeon Selection & Access
+Retail-style Mythic access requires that every Vanilla and TBC dungeon exposes Heroic (difficulty 2) and Mythic (difficulty 3/Epic) entries. We reuse the existing map rows and keep all changes server-side.
 
-#### **NPC Architecture (Following DarkChaos Patterns)**
+1. **SQL enablement**
+  - Populate `dc_dungeon_mythic_profile` for each legacy dungeon with conservative multipliers (Heroic: +15% HP/+10% damage, Mythic: +35% HP/+20% damage).
+  - Run the helper script `sql/custom/dc_enable_legacy_mythic.sql` to backfill missing MapDifficulty rows and minimum-level requirements (Normal ≥ 45, Heroic ≥ 70, Mythic ≥ 80).
+2. **Portal gossip**
+  - Attach `dungeon_portal_difficulty_selector` (see §2.8.5) to every legacy portal. Players now see `Normal → Heroic → Mythic` when they click the instance swirl.
+3. **Creature scaling hook**
+  - The existing `MythicDifficultyScaling::ScaleCreature` hook reads the dungeon profile and applies multipliers during `OnCreatureAddWorld`. No DBC/process restarts required.
+4. **Loot + lockouts**
+  - Heroic uses the original loot template. Mythic layers the new token + deterministic drop pool described in §11. Dungeon lockouts remain disabled so runs stay farmable like retail.
+5. **Validation checklist**
+  - Confirm entry gating (level/iLvl) per portal, verify scaling values in combat log, and run one mythic clear per dungeon to confirm loot tokens drop correctly.
 
-**NPC 190003: Mythic+ Dungeon Teleporter**
-- Location: Main cities (Dalaran/Orgrimmar/Stormwind)
-- Pattern: Follows ItemUpgradeCurator (NPC 190002) gossip menu structure
-- Purpose: Teleport to Mythic/Mythic+ dungeons with difficulty selection
+This process upgrades every Vanilla/TBC dungeon to Heroic/Mythic in less than a day and guarantees Mythic+ eligibility for any dungeon the season rotation requires.
 
-**Implementation Pattern:**
-```cpp
-class MythicPlusDungeonTeleporter : public CreatureScript
-{
-public:
-    MythicPlusDungeonTeleporter() : CreatureScript("npc_mythic_plus_dungeon_teleporter") { }
+## 3.6 Legacy Level Normalization (Mythic Only)
 
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        ClearGossipMenuFor(player);
-        
-        try {
-            // Get current active season
-            QueryResult seasonResult = CharacterDatabase.Query(
-                "SELECT season_id, season_name FROM dc_mythic_seasons WHERE active = 1 LIMIT 1"
-            );
+Mythic difficulty (difficulty 3) assumes differentiated levels for Vanilla/TBC dungeons to provide clear challenge tiers. TBC Heroic dungeons remain at level 70 to preserve their original identity. WotLK dungeons are untouched (they retain existing scaling). For Vanilla/TBC Mythic:
+
+- Normal NPCs: level 80
+- Elites: level 81
+- Bosses: level 82
+
+**Access Requirements:**
+- Heroic (TBC): level 70 minimum
+- Mythic (all expansions): level 80 minimum, item level ≥ 180
+
+To enforce Mythic levels:
+
+1. **Audit existing levels** – run `Custom/Custom feature SQLs/dc_dungeon_level_audit.sql` against the world database. The script reports every Vanilla/TBC boss or elite (rank ≥ 2) that still spawns below the target levels.
+2. **Update templates** – use the differentiated UPDATE block in the same script to set `minlevel = maxlevel` based on `rank` (normal 80, elite 81, boss 82). Keeping min/max equal prevents drifting when the runtime scaling hook fires.
+3. **Spot-check in game** – enter each dungeon on Mythic difficulty, target a boss, and verify the creature frame displays the correct level. Adjust any missed entry manually.
+
+These SQL helpers keep the source data clean so the Mythic controller no longer needs special cases for Vanilla/TBC bosses. TBC Heroics and WotLK dungeons are excluded to preserve their native scaling.
+
+---
+
+## 4. Flow: Mythic Baseline
+
+1. Player interacts with dungeon-specific teleporter or instance portal.
+2. Gossip presents `Normal`, `Heroic`, `Mythic` (difficulty 3). Mythic option appears only if player level ≥ 80 and item level ≥ 180.
+3. On entry, the Mythic controller loads dungeon profile → applies health/damage multipliers via `Creature::SetModifier` hooks.
+4. Death budget and wipe budget counters spawn per-instance and sync to players via the Mythic HUD packet every 5 seconds.
+5. Completion success = all bosses dead before budgets expire → drop table: 2 loot rolls + 1 Mythic token chest; failure = no loot + token consolation.
+
+Implementation detail: budgets stored in `InstanceScript` state; once failure triggered, instance sets a locking aura so players know to reset.
+
+---
+
+## 5. Flow: Mythic+
+
+1. Weekly login job grants one keystone (level 1, random featured dungeon) if the character lacks one.
+2. At the dungeon entrance a **Font of Power** gameobject (700001–700008) mirrors retail: the group leader socket their keystone, the dungeon instance soft-resets, a spectral shield seals the entrance, and a visible countdown (10 seconds) broadcasts via HUD so every player knows when combat starts.
+3. When the countdown finishes the shield drops, the party zones in, and validation runs:
+  - Leader holds a keystone for the targeted dungeon.
+  - Dungeon is in the current season’s featured list.
+  - Each party member meets level/iLvl requirements.
+4. Instance loads with additional data:
+  - Keystone level → extra multiplier from reward curve.
+  - Affix set → script registers Spell auras/periodic events.
+  - Death budget = base budget – (level × 1), min 5.
+5. Score formula on completion: `score = (level × 60) − (deaths × 5) − (wipes × 15) + cleanBonus`.
+6. If score ≥ threshold(level): keystone upgrades by 1. If score < threshold/2: keystone downgrades by 1. Otherwise level stays the same but keystone rerolls to a different featured dungeon.
+7. Rewards: deterministic loot table per featured dungeon + seasonal currency chest sized by level (see §11).
+8. `dc_mplus_scores` updated with best score for the dungeon; aggregated leaderboard view refreshes nightly.
+
+Failure rules: exceeding death or wipe budget immediately fails the run, destroying the keystone and granting a consolation keystone box (opens next day to avoid instant spam).
+
+---
+
+## 6. Affix Model
+
+Only two affix slots exist to keep encounter risk low:
+
+| Slot | Examples | Implementation |
+|------|----------|----------------|
+| Boss-focused | Tyrannical-Lite (boss HP +15%), Brutal Aura (boss periodic AoE raid damage) | SpellScript hooking bosses on spawn. |
+| Trash-focused | Fortified-Lite (non-boss HP +12%), Bolstering-Lite (stacking +5% dmg on nearby mobs) | Aura applied to non-boss creatures grouping by entry ID. |
+
+Affix schedule stored in the season record as a list of `(weekStart, affixPairId)` tuples. Reset job updates active affix pair every Wednesday reset.
+
+---
+
+## 7. Teleporters & Access Control
+
+- Main Mythic steward NPC (entry 99001) shows three menus: Normal/Heroic list, Mythic list, Mythic+ featured list.
+- Mythic list requires nothing special; Mythic+ list displays keystone level badge next to each dungeon.
+- Teleportation uses existing coordinates; no new maps.
+- Access gating (level/iLvl) implemented on gossip selection, not on teleport cast, to surface errors early.
+
+---
+
+### 7.1 `/dc difficulty` Command & Confirmation Flow
+
+Portal gossip remains the fastest way to pick Normal/Heroic/Mythic, but groups also gain a command-driven controller for mid-session changes:
+
+1. **Request phase** – the group leader stands outside combat (either before entering or within 30 yards of the portal) and types `/dc difficulty <normal|heroic|mythic>`. The command records a pending change on the instance, announces it to party chat, and starts a 60-second confirmation window. Duplicate requests for the same difficulty are rejected with “request already active”.
+2. **Player confirmations** – each member can type `/dc difficulty confirm` (or click the popup) to vote. A single `/dc difficulty cancel` from any player aborts the request. The server requires either unanimity or a configurable majority before proceeding. Votes are only allowed while everyone is alive and out of combat.
+3. **Execution** – on success the instance performs a soft reset, teleports every player to the entrance, clears trash, and applies the desired difficulty flag. Because dungeon lockouts stay disabled, parties can repeat this flow without weekly limits. A five-minute cooldown between accepted changes prevents spam.
+4. **Logging & safety** – each transition is emitted to the `MYTHIC_PLUS` log channel with requester/voters/dungeon data, allowing GMs to audit griefing attempts.
+
+This command mirrors retail’s difficulty prompt while honoring DarkChaos’ always-available resets and “no lockouts” policy.
+
+---
+
+## 8. Failure Handling
+
+| Situation | Result |
+|-----------|--------|
+| Player disconnects mid-run | Counters persist server-side; reconnect allowed. |
+| Instance soft-reset | Resets budgets and keystone; counts as failed run, keystone despawns. |
+| Dungeon script bug | Admin command `dc mplus fail` toggles failure state and refunds keystone for QA. |
+| Weekly rollover | Active keystones expire. New keystone mailed with “Seasonal Charter” explaining featured list. |
+
+---
+
+## 9. Integration Points
+
+- **Loot:** Mythic tokens feed existing upgrade vendors. Mythic+ currency uses new vendor entry 120345 (seasonal quartermaster).
+- **Achievements:** Lightweight achievements for “Mythic completion” per dungeon and “Mythic+ Veteran” (complete all featured dungeons level 4+).
+- **Config:** `darkchaos-custom.conf` gains `MythicPlus.Enable`, `MythicPlus.MaxLevel`, `MythicPlus.AffixDebug` toggles.
+- **Logging:** Dedicated channel `MYTHIC_PLUS` to help GMs audit run outcomes.
+
+---
+
+## 9.5 Token Rewards & Final Boss Distribution
+
+**Token Reward Formula (Final Boss)**
+
+At the final boss kill, every player in the group who participated in the encounter receives upgrade tokens automatically:
+
+```
+Base Tokens = 10 + (Player Level - 70)  2
+Difficulty Multiplier:
+  - Normal: 1.0
+  - Heroic: 1.5
+  - Mythic (base): 2.0
+  - Mythic+ (per level): 2.0 + (Keystone Level  0.25)
+
+Final Tokens = FLOOR(Base Tokens  Difficulty Multiplier)
+```
+
+**Example Calculations:**
+- Level 80 player, Normal: `10 + (80-70)2 = 30 tokens  1.0 = 30 tokens`
+- Level 80 player, Heroic: `30  1.5 = 45 tokens`
+- Level 80 player, Mythic+0: `30  2.0 = 60 tokens`
+- Level 80 player, Mythic+5: `30  (2.0 + 50.25) = 30  3.25 = 97 tokens`
+
+**Distribution Rules:**
+1. All players in the dungeon instance at boss death receive tokens
+2. Players must have participated in the final boss encounter (dealt damage or healing)
+3. Tokens are mailed if inventory is full
+4. Logged to `dc_token_rewards_log` for audit and statistics
+
+**Boss + End-of-Run Loot**
+- Bosses drop one group item scaled by keystone level (Mythic+ only)
+- The final chest rolls two guaranteed items and a third 30% bonus item
+- Two-hour trade window hook (§2.9) allows loot sharing like retail
+- Each completion records into `dc_mplus_runs` which feeds scoreboards and vault eligibility
+
+## 9.6 Weekly Great Vault System
+
+**NPC: Vault Curator Lyra (entry 100050)**
+- Location: Next to Dalaran bank (Violet Citadel entrance)
+- Gossip opens vault UI showing up to three reward slots
+- Available every Tuesday after weekly reset
+
+**Slot Unlock Requirements:**
+```
+Slot 1: Complete 1 Mythic+ dungeon this week
+   Reward ilvl = highest keystone cleared
+   Alternative: 50 upgrade tokens
+
+Slot 2: Complete 4 Mythic+ dungeons this week
+   Reward ilvl = highest keystone + 6
+   Alternative: 100 upgrade tokens
+
+Slot 3: Complete 8 Mythic+ dungeons this week
+   Reward ilvl = highest keystone + 12
+   Alternative: 200 upgrade tokens
+```
+
+**Reward Selection:**
+1. Each unlocked slot shows one pre-generated item from dungeon loot pools
+2. Player picks ONE reward total from any unlocked slot
+3. Unclaimed rewards expire at next Tuesday reset
+4. Selection is permanent (no re-rolls)
+5. Tracked in `dc_weekly_vault` and `dc_vault_reward_pool` tables
+
+**Weekly Reset Logic:**
+1. Tuesday 3 AM server time: trigger `dc_vault_weekly_reset` procedure
+2. Archive unclaimed vault entries to `dc_weekly_vault_history`
+3. Reset `runs_completed` counters to 0
+4. Generate new reward pools for eligible players
+5. Mail notification: "Your Great Vault is ready!"
+
+**Implementation Tables:**
+- `dc_weekly_vault`: Current week progress and claim status
+- `dc_vault_reward_pool`: Pre-generated item options per slot
+- `dc_mplus_runs`: Run history feeding vault eligibility
+- `dc_token_rewards_log`: Token distribution audit trail
+
+All schema defined in `Custom/Custom feature SQLs/chardb/dc_mythic_dungeons_chars.sql`.
+
+This section ensures documentation explicitly spells out how loot mirrors retail expectations in both moment-to-moment gameplay and the weekly cadence.
+
+---
+## 9.7 Mythic+ Statistics NPC
+
+To mirror the Hinterland BG stats board we add `NPC 100060 – Archivist Serah` positioned near the Mythic teleporter hub.
+
+- **Data surfaced:** best key level, total Mythic runs, seasonal rating, death-budget efficiency (average deaths vs allowed), weekly vault progress, and per-dungeon personal bests.
+- **Implementation:** Gossip option “Show my Mythic+ statistics” calls a new stored procedure `dc_mplus_get_player_stats(guid, season)` that collates data from `dc_mplus_scores`, `dc_weekly_vault`, and `dc_mplus_runs`. Output is formatted with the same color coding used in Hinterland BG (green for bests, orange for warnings).
+- **Social hooks:** Secondary gossip page “Top performers this season” lists the top 10 players using the leaderboard cache so players can compare progress without opening external dashboards.
+
+This dedicated NPC gives players an in-game place to review performance metrics and mirrors the presentation users already know from Hinterland BG.
+
+---
+
+## 10. Rollout Checklist
+
+1. Populate `dc_dungeon_mythic_profile` for every dungeon (SQL migration + review).
+2. Implement Mythic controller script (Creatures, InstanceScript hooks, HUD packet).
+3. Build keystone distribution job + teleporter gating.
+4. Add Mythic+ overlays (affix applier, score calculator, reward handler).
+5. Stand up QA realm, run 10 sample dungeons across tiers, validate death budgets.
+6. Flip `MythicPlus.Enable = 1` on staging, monitor logs, gather tuning feedback.
+
+---
+
+**Status:** Approved plan. Ready for ticket decomposition and engineering assignment.
             
             if (!seasonResult) {
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, 

@@ -625,6 +625,46 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID, "SELECT accumulated FROM dc_aoeloot_credits WHERE guid = ?", CONNECTION_SYNCH);
     PrepareStatement(CHAR_SEL_DC_AOELOOT_TOP10, "SELECT guid, accumulated FROM dc_aoeloot_credits ORDER BY accumulated DESC LIMIT 10", CONNECTION_SYNCH);
     PrepareStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED, "REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES (?, ?)", CONNECTION_ASYNC);
+
+    // DarkChaos Mythic+ persistence
+    PrepareStatement(CHAR_SEL_MPLUS_KEYSTONE,
+        "SELECT map_id, level, season_id, expires_on FROM dc_mplus_keystones WHERE character_guid = ?",
+        CONNECTION_SYNCH);
+
+    PrepareStatement(CHAR_DEL_MPLUS_KEYSTONE,
+        "DELETE FROM dc_mplus_keystones WHERE character_guid = ?",
+        CONNECTION_ASYNC);
+
+    PrepareStatement(CHAR_INS_MPLUS_RUN_HISTORY,
+        "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, affix_pair_id, group_members) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
+
+    PrepareStatement(CHAR_INS_MPLUS_SCORE,
+        "INSERT INTO dc_mplus_scores (character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs) "
+        "VALUES (?, ?, ?, ?, ?, UNIX_TIMESTAMP(), 1) "
+        "ON DUPLICATE KEY UPDATE "
+        "best_level = GREATEST(best_level, VALUES(best_level)), "
+        "best_score = GREATEST(best_score, VALUES(best_score)), "
+        "last_run_ts = UNIX_TIMESTAMP(), "
+        "total_runs = total_runs + 1",
+        CONNECTION_ASYNC);
+
+    PrepareStatement(CHAR_INS_MPLUS_WEEKLY_VAULT,
+        "INSERT INTO dc_weekly_vault (character_guid, season_id, week_start, runs_completed, highest_level, slot1_unlocked, slot2_unlocked, slot3_unlocked) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON DUPLICATE KEY UPDATE "
+        "runs_completed = runs_completed + VALUES(runs_completed), "
+        "highest_level = GREATEST(highest_level, VALUES(highest_level)), "
+        "slot1_unlocked = GREATEST(slot1_unlocked, VALUES(slot1_unlocked)), "
+        "slot2_unlocked = GREATEST(slot2_unlocked, VALUES(slot2_unlocked)), "
+        "slot3_unlocked = GREATEST(slot3_unlocked, VALUES(slot3_unlocked))",
+        CONNECTION_ASYNC);
+
+    PrepareStatement(CHAR_INS_MPLUS_TOKEN_LOG,
+        "INSERT INTO dc_token_rewards_log (character_guid, map_id, difficulty, keystone_level, player_level, tokens_awarded, boss_entry) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

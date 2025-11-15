@@ -1033,7 +1033,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=5300695 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=5300700 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1700,15 +1700,15 @@ CREATE TABLE IF NOT EXISTS `dc_item_proc_spells` (
 CREATE TABLE IF NOT EXISTS `dc_item_templates_upgrade` (
   `item_id` int unsigned NOT NULL,
   `tier_id` tinyint unsigned DEFAULT '1',
-  `armor_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'misc',
+  `armor_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'misc',
   `item_slot` tinyint unsigned DEFAULT '0',
   `rarity` tinyint unsigned DEFAULT '0',
-  `source_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'import',
+  `source_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'import',
   `source_id` int unsigned DEFAULT '0',
   `base_stat_value` smallint unsigned DEFAULT '0',
   `cosmetic_variant` tinyint unsigned DEFAULT '0',
   `is_active` tinyint(1) DEFAULT '1',
-  `upgrade_category` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'common',
+  `upgrade_category` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'common',
   `season` tinyint unsigned DEFAULT '1',
   PRIMARY KEY (`item_id`),
   KEY `idx_tier_season` (`tier_id`,`season`),

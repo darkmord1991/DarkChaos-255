@@ -142,6 +142,9 @@ set(SCRIPTS_DC_SeasonalSystem
 set(SCRIPTS_DC_MythicPlus
     MythicPlus/MythicDifficultyScaling.h
     MythicPlus/MythicDifficultyScaling.cpp
+    MythicPlus/MythicPlusRunManager.h
+    MythicPlus/MythicPlusRunManager.cpp
+    MythicPlus/go_mythic_plus_font_of_power.cpp
     MythicPlus/mythic_plus_core_scripts.cpp
     MythicPlus/mythic_plus_loader.cpp
     MythicPlus/npc_dungeon_portal_selector.cpp

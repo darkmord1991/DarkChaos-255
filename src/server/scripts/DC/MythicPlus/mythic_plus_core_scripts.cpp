@@ -4,7 +4,11 @@
  */
 
 #include "ScriptMgr.h"
+#include "AllMapScript.h"
 #include "MythicDifficultyScaling.h"
+#include "MythicPlusRunManager.h"
+#include "UnitScript.h"
+#include "Unit.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Log.h"
@@ -23,6 +27,7 @@ public:
     {
         LOG_INFO("server.loading", ">> Loading Mythic+ system...");
         sMythicScaling->LoadDungeonProfiles();
+        sMythicRuns->Reset();
     }
 };
 
@@ -196,6 +201,8 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
+        sMythicRuns->RegisterPlayerEnter(player);
+
         DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
 
         auto FormatScalingText = [](float hpMult, float damageMult) -> std::string
@@ -258,9 +265,73 @@ public:
     }
 };
 
+class MythicPlusAllMapScript : public AllMapScript
+{
+public:
+    MythicPlusAllMapScript() : AllMapScript("MythicPlusAllMapScript") { }
+
+    void OnDestroyMap(Map* map) override
+    {
+        if (!map || !map->IsDungeon())
+            return;
+
+        sMythicRuns->HandleInstanceReset(map);
+    }
+};
+
+class MythicPlusUnitScript : public UnitScript
+{
+public:
+    MythicPlusUnitScript() : UnitScript("MythicPlusUnitScript") { }
+
+    void OnUnitDeath(Unit* unit, Unit* killer) override
+    {
+        if (!unit)
+            return;
+
+        Map* map = unit->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        if (Player* player = unit->ToPlayer())
+        {
+            Creature* creatureKiller = killer ? killer->ToCreature() : nullptr;
+            sMythicRuns->HandlePlayerDeath(player, creatureKiller);
+            return;
+        }
+
+        Creature* creature = unit->ToCreature();
+        if (!creature || !creature->IsDungeonBoss())
+            return;
+
+        sMythicRuns->HandleBossDeath(creature, killer);
+    }
+
+    void OnUnitEnterEvadeMode(Unit* unit, uint8 /*evadeReason*/) override
+    {
+        if (!unit)
+            return;
+
+        Creature* creature = unit->ToCreature();
+        if (!creature)
+            return;
+
+        Map* map = creature->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        if (!creature->IsDungeonBoss())
+            return;
+
+        sMythicRuns->HandleBossEvade(creature);
+    }
+};
+
 void AddSC_mythic_plus_core_scripts()
 {
     new MythicPlusWorldScript();
     new MythicPlusCreatureScript();
     new MythicPlusPlayerScript();
+    new MythicPlusAllMapScript();
+    new MythicPlusUnitScript();
 }
