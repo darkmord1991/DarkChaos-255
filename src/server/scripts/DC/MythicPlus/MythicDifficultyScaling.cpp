@@ -324,37 +324,25 @@ void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLeve
         return;
     }
     
-    // Retail WoW Mythic+ scaling values (Season 1 Dragonflight-style)
-    // Source: https://www.wowhead.com/guide/mythic-plus-dungeons
-    static const float RETAIL_SCALING[] = {
-        1.00f,  // M+0/M+1 (baseline)
-        1.00f,  // M+2: +0%
-        1.14f,  // M+3: +14%
-        1.23f,  // M+4: +23%
-        1.31f,  // M+5: +31%
-        1.40f,  // M+6: +40%
-        1.50f,  // M+7: +50%
-        1.61f,  // M+8: +61%
-        1.72f,  // M+9: +72%
-        1.84f,  // M+10: +84%
-        2.02f,  // M+11: +102%
-        2.22f,  // M+12: +122%
-        2.45f,  // M+13: +145%
-        2.69f,  // M+14: +169%
-        2.96f   // M+15: +196%
-    };
+    // Load scaling multipliers from database
+    QueryResult result = WorldDatabase.Query(
+        "SELECT hpMultiplier, damageMultiplier FROM dc_mythic_scaling_multipliers WHERE keystoneLevel = {}",
+        keystoneLevel);
     
-    const uint32 maxLevel = sizeof(RETAIL_SCALING) / sizeof(float) - 1;
-    
-    if (keystoneLevel <= maxLevel)
+    if (result)
     {
-        hpMult = damageMult = RETAIL_SCALING[keystoneLevel];
+        Field* fields = result->Fetch();
+        hpMult = fields[0].Get<float>();
+        damageMult = fields[1].Get<float>();
     }
     else
     {
-        // Beyond M+15: continue with exponential scaling
-        // Approximately +10% per level beyond M+15
-        uint32 levelsAbove15 = keystoneLevel - maxLevel;
-        hpMult = damageMult = RETAIL_SCALING[maxLevel] * std::pow(1.10f, static_cast<float>(levelsAbove15));
+        // Fallback: if not in database, calculate exponentially from M+15 baseline (2.96x)
+        // Approximately +10% per level beyond defined values
+        constexpr float M15_BASELINE = 2.96f;
+        hpMult = damageMult = M15_BASELINE * std::pow(1.10f, static_cast<float>(keystoneLevel - 15));
+        LOG_WARN("mythic.scaling", "Scaling multipliers not found for keystoneLevel {}, using exponential fallback: {}", 
+                 keystoneLevel, hpMult);
     }
 }
+

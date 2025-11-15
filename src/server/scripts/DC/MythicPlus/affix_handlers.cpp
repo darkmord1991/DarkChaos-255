@@ -192,14 +192,14 @@ public:
             {
                 if (Aura* aura = player->GetAura(SPELL_GRIEVOUS_AFFIX))
                 {
-                    // Increase stacks if still below 90%
+                    // Increase stacks if still below 10
                     if (aura->GetStackAmount() < 10)
                         aura->ModStackAmount(1);
                         
                     // Deal damage based on stacks (each stack = 1% max HP per tick)
                     uint32 damagePerStack = player->GetMaxHealth() / 100;
                     uint32 totalDamage = damagePerStack * aura->GetStackAmount();
-                    player->DealDamage(player, totalDamage, nullptr, NODAMAGE, SPELL_SCHOOL_MASK_SHADOW, spellInfo, false);
+                    Unit::DealDamage(player, player, totalDamage, nullptr, NODAMAGE, SPELL_SCHOOL_MASK_SHADOW, spellInfo, false);
                 }
                 else
                 {

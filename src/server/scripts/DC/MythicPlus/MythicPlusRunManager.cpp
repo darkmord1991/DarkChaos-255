@@ -634,11 +634,11 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
     stmt->SetData(0, playerGuid);
     stmt->SetData(1, seasonId);
     stmt->SetData(2, weekStart);
-    stmt->SetUInt8(3, 1); // runs completed delta
-    stmt->SetUInt8(4, keystoneLevel);
-    stmt->SetUInt8(5, slot1);
-    stmt->SetUInt8(6, slot2);
-    stmt->SetUInt8(7, slot3);
+    stmt->SetData(3, 1); // runs completed delta
+    stmt->SetData(4, keystoneLevel);
+    stmt->SetData(5, slot1);
+    stmt->SetData(6, slot2);
+    stmt->SetData(7, slot3);
     CharacterDatabase.Execute(stmt);
 }
 
@@ -648,7 +648,7 @@ void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 se
     stmt->SetData(0, playerGuid);
     stmt->SetData(1, seasonId);
     stmt->SetData(2, mapId);
-    stmt->SetUInt8(3, success ? keystoneLevel : 0);
+    stmt->SetData(3, success ? keystoneLevel : 0);
     stmt->SetData(4, score);
 
     CharacterDatabase.Execute(stmt);
@@ -660,12 +660,12 @@ void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint
     stmt->SetData(0, playerGuid);
     stmt->SetData(1, seasonId);
     stmt->SetData(2, mapId);
-    stmt->SetUInt8(3, keystoneLevel);
+    stmt->SetData(3, keystoneLevel);
     stmt->SetData(4, score);
-    stmt->SetUInt8(5, deaths);
-    stmt->SetUInt8(6, wipes);
+    stmt->SetData(5, deaths);
+    stmt->SetData(6, wipes);
     stmt->SetData(7, durationSeconds);
-    stmt->SetUInt8(8, success ? 1 : 0);
+    stmt->SetData(8, success ? 1 : 0);
     stmt->SetData(9, 0); // affix pair placeholder
     stmt->SetString(10, groupMembers);
 
@@ -677,9 +677,9 @@ void MythicPlusRunManager::InsertTokenLog(ObjectGuid::LowType playerGuid, uint32
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_TOKEN_LOG);
     stmt->SetData(0, playerGuid);
     stmt->SetData(1, mapId);
-    stmt->SetUInt8(2, static_cast<uint8>(difficulty));
-    stmt->SetUInt8(3, keystoneLevel);
-    stmt->SetUInt8(4, playerLevel);
+    stmt->SetData(2, static_cast<uint8>(difficulty));
+    stmt->SetData(3, keystoneLevel);
+    stmt->SetData(4, playerLevel);
     stmt->SetData(5, tokenCount);
     stmt->SetData(6, bossEntry);
 
