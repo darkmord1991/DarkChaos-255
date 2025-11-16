@@ -60,7 +60,7 @@ public:
         return true;
     }
 
-    bool OnUse(Player* player, GameObject* go) override
+    bool OnUse(Player* player, GameObject* go)
     {
         return OnGossipHello(player, go);
     }
