@@ -875,7 +875,7 @@ public:
             _lastNudgeIdx = 255;
 
         // Stuck control: if the gryphon hasn't moved significantly for 20 seconds while flying, recover
-        if (_started && !_isLanding)
+        if (_started && !_isLanding && !_splineActive)
         {
             float cX = me->GetPositionX();
             float cY = me->GetPositionY();
@@ -1079,6 +1079,7 @@ public:
         _activeSplineId = 0;
         _splineSegments = 0;
         _splineProgress = 0;
+        me->ClearUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
     }
 
     bool LaunchSplineFromQueue(Position const& finalDestination)
@@ -1115,6 +1116,7 @@ public:
         me->SetDisableGravity(true);
         me->SetHover(true);
         me->GetMotionMaster()->Clear();
+        me->AddUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
         me->GetMotionMaster()->MoveSplinePath(&splinePoints, FORCED_MOVEMENT_NONE);
 
         _splineActive = true;
