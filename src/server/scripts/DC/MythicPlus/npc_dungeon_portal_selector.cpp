@@ -15,6 +15,22 @@
 #include "Log.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
 
+namespace
+{
+float GetDungeonZOffset(uint32 dungeonMapId)
+{
+    switch (dungeonMapId)
+    {
+        case 599: // Halls of Stone
+            return 3.0f;
+        case 602: // Halls of Lightning
+            return 4.0f;
+        default:
+            return 0.0f;
+    }
+}
+}
+
 // Gossip menu actions
 enum DifficultyGossipActions
 {
@@ -132,6 +148,8 @@ void TeleportToDungeonEntrance(Player* player, uint32 mapId)
     float z = fields[3].Get<float>();
     float o = fields[4].Get<float>();
 
+    z += GetDungeonZOffset(mapId);
+
     // Teleport player to entrance
     if (player->TeleportTo(entranceMap, x, y, z, o))
     {
@@ -177,6 +195,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Azjol-Nerub", GOSSIP_SENDER_MAIN, 601);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Ahn'kahet", GOSSIP_SENDER_MAIN, 619);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Drak'Tharon Keep", GOSSIP_SENDER_MAIN, 600);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Stone", GOSSIP_SENDER_MAIN, 599);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Lightning", GOSSIP_SENDER_MAIN, 602);
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "The Culling of Stratholme", GOSSIP_SENDER_MAIN, 595);
         
@@ -227,27 +246,29 @@ public:
         // Sender now contains the dungeon mapId, action is the difficulty
         uint32 dungeonMapId = sender;
         
+        Difficulty selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
+        const char* difficultyLabel = "|cffffffffNormal|r";
+
         switch (action)
         {
             case GOSSIP_ACTION_NORMAL:
-                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_NORMAL));
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Preparing to enter |cffffffffNormal|r difficulty...");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
+                selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
+                difficultyLabel = "|cffffffffNormal|r";
                 break;
-            
             case GOSSIP_ACTION_HEROIC:
-                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_HEROIC));
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Preparing to enter |cff0070ffHeroic|r difficulty...");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
+                selectedDifficulty = DUNGEON_DIFFICULTY_HEROIC;
+                difficultyLabel = "|cff0070ffHeroic|r";
                 break;
-            
             case GOSSIP_ACTION_MYTHIC:
-                player->SetDungeonDifficulty(Difficulty(DUNGEON_DIFFICULTY_EPIC));
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Dungeon Portal]|r Preparing to enter |cffff8000Mythic|r difficulty...");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500A protective barrier will block entry for 10 seconds.|r");
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffffa500Teleporting in 3 seconds.|r");
+                selectedDifficulty = DUNGEON_DIFFICULTY_EPIC;
+                difficultyLabel = "|cffff8000Mythic|r";
+                break;
+            default:
                 break;
         }
+
+        player->SetDungeonDifficulty(selectedDifficulty);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Teleporting to %s entrance...", difficultyLabel);
         
         // Teleport player after setting difficulty
         TeleportToDungeonEntrance(player, dungeonMapId);

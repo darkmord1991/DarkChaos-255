@@ -8,8 +8,6 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "GameObject.h"
-#include "ScriptedCreature.h"
-#include "MythicPlusRunManager.h"
 #include "MythicPlusConstants.h"
 #include "Chat.h"
 
@@ -27,91 +25,42 @@ public:
 
         // Check if player has a keystone item
         uint8 keystoneLevel = 0;
-        Item* keystoneItem = nullptr;
-
-        for (uint32 i = 0; i < 9; ++i)
+        for (uint8 i = 0; i < MAX_KEYSTONE_LEVEL - MIN_KEYSTONE_LEVEL + 1; ++i)
         {
-            keystoneItem = player->GetItemByEntry(KEYSTONE_ITEM_IDS[i]);
-            if (keystoneItem)
+            if (player->HasItemCount(KEYSTONE_ITEM_IDS[i], 1, false))
             {
-                keystoneLevel = i + 2;  // M+2 = i+2
+                keystoneLevel = i + MIN_KEYSTONE_LEVEL;
                 break;
             }
         }
 
-        if (!keystoneLevel || !keystoneItem)
+        if (!keystoneLevel)
         {
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cffff0000Error:|r You do not have a Mythic+ Keystone in your inventory!");
-            return false;
+            return true;
         }
 
-        // Verify player is party leader
-        if (!player->GetGroup() || player->GetGroup()->GetLeaderGUID() != player->GetGUID())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cffff0000Error:|r Only the party leader can start a Mythic+ run!");
-            return false;
-        }
-
-        // Verify party is in the correct dungeon
-        // TODO: Add dungeon validation logic
-        
-        // Consume the keystone item
-        player->DestroyItemCount(keystoneItem->GetEntry(), 1, true);
-
-        // Initialize the M+ run
-        auto runManager = MythicPlusRunManager::instance();
-        if (runManager)
-        {
-            // TODO: Initialize run with keystoneLevel
-            // runManager->InitializeRun(player->GetGroup(), keystoneLevel, dungeonId);
-        }
-
-        // Notify party and apply barrier effect
+        // Provide guidance instead of consuming the keystone here
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cff00ff00Mythic+:|r Starting run with %s keystone!", 
+            "|cff00ff00Mythic+:|r %s detected. Take your group inside the dungeon and use the Font of Power to begin the run.",
             GetKeystoneColoredName(keystoneLevel).c_str());
 
-        if (player->GetGroup())
+        if (!player->GetGroup())
         {
-            for (GroupReference* ref = player->GetGroup()->GetFirstMember(); ref != nullptr; ref = ref->next())
-            {
-                Player* groupMember = ref->GetSource();
-                if (groupMember)
-                {
-                    // Send start message
-                    ChatHandler(groupMember->GetSession()).PSendSysMessage(
-                        "|cff00ff00Mythic+:|r Starting run with %s keystone!", 
-                        GetKeystoneColoredName(keystoneLevel).c_str());
-                    
-                    // Apply 10-second barrier to all group members
-                    if (groupMember->GetMap() && groupMember->GetMap()->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
-                    {
-                        ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffff8000[Mythic+ Activated]|r Entry barrier activated!");
-                        ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffffa500You cannot move for 10 seconds.|r");
-                        
-                        // Apply root aura for 10 seconds
-                        groupMember->CastSpell(groupMember, 33786, true);
-                        
-                        // Send countdown messages at 10, 5, 4, 3, 2, 1
-                        for (uint8 i = 1; i <= 10; ++i)
-                        {
-                            uint8 seconds_left = 11 - i;
-                            if (seconds_left <= 5 || seconds_left == 10)
-                            {
-                                ChatHandler(groupMember->GetSession()).PSendSysMessage("|cffff0000%u|r seconds", seconds_left);
-                            }
-                        }
-                    }
-                }
-            }
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffffa500Tip:|r Mythic+ runs require a party. Invite your teammates before activating the keystone.");
+        }
+        else if (player->GetGroup()->GetLeaderGUID() != player->GetGUID())
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffffa500Note:|r Only the party leader can activate the keystone at the Font of Power.");
         }
 
         return true;
     }
 
-    bool OnUse(Player* player, GameObject* go)
+    bool OnUse(Player* player, GameObject* go) override
     {
         return OnGossipHello(player, go);
     }

@@ -7,6 +7,7 @@
 
 #include "Chat.h"
 #include "Config.h"
+#include "Creature.h"
 #include "DatabaseEnv.h"
 #include "GameObject.h"
 #include "GameTime.h"
@@ -29,6 +30,7 @@ constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
 constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
+constexpr uint32 ENTRY_BARRIER_SPELL = 33786;
 }
 
 MythicPlusRunManager* MythicPlusRunManager::instance()
@@ -155,6 +157,8 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     ConsumePlayerKeystone(player->GetGUID().GetCounter());
 
     AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {}", descriptor.level, profile->name));
+    ApplyKeystoneScaling(map, descriptor.level);
+    ApplyEntryBarrier(map);
 
     return true;
 }
@@ -507,6 +511,68 @@ void MythicPlusRunManager::AnnounceToInstance(Map* map, std::string_view message
         if (Player* player = ref.GetSource())
             ChatHandler(player->GetSession()).SendSysMessage(text.c_str());
     }
+}
+
+void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
+{
+    if (!map || map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
+        return;
+
+    static constexpr uint8 COUNTDOWN_POINTS[] = { 10, 5, 4, 3, 2, 1 };
+
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        Player* player = ref.GetSource();
+        if (!player || !player->GetSession())
+            continue;
+
+        ChatHandler handler(player->GetSession());
+        handler.PSendSysMessage("|cffff8000[Mythic+ Activated]|r Entry barrier activated!");
+        handler.PSendSysMessage("|cffffa500You cannot move for 10 seconds.|r");
+
+        player->CastSpell(player, ENTRY_BARRIER_SPELL, true);
+
+        for (uint8 seconds : COUNTDOWN_POINTS)
+            handler.PSendSysMessage("|cffff0000%u|r seconds", seconds);
+    }
+}
+
+void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) const
+{
+    if (!map || keystoneLevel < 2)
+        return;
+
+    float hpMult = 1.0f;
+    float damageMult = 1.0f;
+    sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, hpMult, damageMult);
+
+    if (hpMult <= 1.0f && damageMult <= 1.0f)
+        return;
+
+    uint32 affected = 0;
+    auto& creatureStore = map->GetCreatureBySpawnIdStore();
+    for (auto const& pair : creatureStore)
+    {
+        Creature* creature = pair.second;
+        if (!creature || creature->GetMap() != map)
+            continue;
+
+        if (!creature->IsAlive())
+            continue;
+
+        if (!creature->IsHostileToPlayers())
+            continue;
+
+        if (creature->IsControlledByPlayer())
+            continue;
+
+        sMythicScaling->ApplyMultipliers(creature, hpMult, damageMult);
+        ++affected;
+    }
+
+    LOG_INFO("mythic.run", "Applied keystone scaling (+{} level) to {} creatures in instance {} (map {})",
+             keystoneLevel, affected, map->GetInstanceId(), map->GetId());
 }
 
 void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_view reason, bool downgradeKeystone)
