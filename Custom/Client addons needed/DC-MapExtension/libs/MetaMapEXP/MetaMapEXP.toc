@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: MetaMapEXP
+## Author: MetaHawk
+## Notes: MetaMap export module.
+## Dependencies: MetaMap
+## LoadOnDemand: 1
+## SavedVariables: exp_WKB_Data, exp_MetaMap_Notes, exp_MetaMap_Lines, exp_QST_QuestBase, exp_TRK_Data, exp_NBK_NoteBookData
+MetaMapEXP.xml

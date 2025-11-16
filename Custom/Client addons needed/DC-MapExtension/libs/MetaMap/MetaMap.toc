@@ -1,0 +1,12 @@
+## Interface: 30300
+## Version: 3.3.0
+## Title: MetaMap
+## Author: MetaHawk
+## Author for Fan Update 3.0: Charroux
+## Author for Fan Update 3.x: Mbanks850
+## Notes: MetaMap adds many enhancements to the WoW WorldMap.
+## Dependencies:
+## OptionalDeps: Gatherer, FlightMap, NotesUNeed, Titan, myAddOns
+## DefaultState: enabled
+## SavedVariables: MetaMapOptions, MetaMap_Notes, MetaMap_Lines, MetaMap_MiniNote_Data, MetaMap_NoteFilter, MetaMap_ZoneCapture
+MetaMap.xml

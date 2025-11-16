@@ -1,0 +1,13 @@
+## Interface: 30300
+## Title: DC-MapExtension
+## Notes: Map extension addon for DarkChaos - show custom map backgrounds and POIs (Wrath 3.3.5a)
+## Author: DarkChaos team
+## SavedVariables: DCMapExtensionDB
+## OptionalDeps: DC_DebugUtils, LibMapData-1.0
+## X-Embeds: LibStub, LibMapData-1.0
+
+..\DC_DebugUtils.lua
+..\LibMapData-1.0\LibMapData-1.0.lua
+LibMapData_CustomZones.lua
+Core.lua
+## (Note) Textures are loaded dynamically from the Textures/AzsharaCrater/ folder; individual BLPs are not listed here to avoid load errors

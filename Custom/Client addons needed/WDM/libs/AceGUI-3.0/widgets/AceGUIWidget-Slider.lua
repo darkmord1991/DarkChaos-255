@@ -1,19 +1,23 @@
-﻿--[[-----------------------------------------------------------------------------
+--[[-----------------------------------------------------------------------------
 Slider Widget
 Graphical Slider, like, for Range values.
 -------------------------------------------------------------------------------]]
 local Type, Version = "Slider", 20
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
+
 -- Lua APIs
 local min, max, floor = math.min, math.max, math.floor
 local tonumber, pairs = tonumber, pairs
+
 -- WoW APIs
 local PlaySound = PlaySound
 local CreateFrame, UIParent = CreateFrame, UIParent
+
 -- Global vars/functions that we don't upvalue since they might get hooked, or upgraded
 -- List them here for Mikk's FindGlobals script
 -- GLOBALS: GameFontHighlightSmall
+
 --[[-----------------------------------------------------------------------------
 Support functions
 -------------------------------------------------------------------------------]]
@@ -25,6 +29,7 @@ local function UpdateText(self)
 		self.editbox:SetText(floor(value * 100 + 0.5) / 100)
 	end
 end
+
 local function UpdateLabels(self)
 	local min, max = (self.min or 0), (self.max or 100)
 	if self.ispercent then
@@ -35,19 +40,23 @@ local function UpdateLabels(self)
 		self.hightext:SetText(max)
 	end
 end
+
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
 local function Control_OnEnter(frame)
 	frame.obj:Fire("OnEnter")
 end
+
 local function Control_OnLeave(frame)
 	frame.obj:Fire("OnLeave")
 end
+
 local function Frame_OnMouseDown(frame)
 	frame.obj.slider:EnableMouseWheel(true)
 	AceGUI:ClearFocus()
 end
+
 local function Slider_OnValueChanged(frame)
 	local self = frame.obj
 	if not frame.setup then
@@ -61,10 +70,12 @@ local function Slider_OnValueChanged(frame)
 		end
 	end
 end
+
 local function Slider_OnMouseUp(frame)
 	local self = frame.obj
 	self:Fire("OnMouseUp", self.value)
 end
+
 local function Slider_OnMouseWheel(frame, v)
 	local self = frame.obj
 	if not self.disabled then
@@ -77,9 +88,11 @@ local function Slider_OnMouseWheel(frame, v)
 		self.slider:SetValue(value)
 	end
 end
+
 local function EditBox_OnEscapePressed(frame)
 	frame:ClearFocus()
 end
+
 local function EditBox_OnEnterPressed(frame)
 	local self = frame.obj
 	local value = frame:GetText()
@@ -89,18 +102,22 @@ local function EditBox_OnEnterPressed(frame)
 	else
 		value = tonumber(value)
 	end
+	
 	if value then
 		PlaySound("igMainMenuOptionCheckBoxOn")
 		self.slider:SetValue(value)
 		self:Fire("OnMouseUp", value)
 	end
 end
+
 local function EditBox_OnEnter(frame)
 	frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
 end
+
 local function EditBox_OnLeave(frame)
 	frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
 end
+
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -114,7 +131,9 @@ local methods = {
 		self:SetValue(0)
 		self.slider:EnableMouseWheel(false)
 	end,
+
 	-- ["OnRelease"] = nil,
+
 	["SetDisabled"] = function(self, disabled)
 		self.disabled = disabled
 		if disabled then
@@ -136,6 +155,7 @@ local methods = {
 			self.editbox:EnableMouse(true)
 		end
 	end,
+
 	["SetValue"] = function(self, value)
 		self.slider.setup = true
 		self.slider:SetValue(value)
@@ -143,12 +163,15 @@ local methods = {
 		UpdateText(self)
 		self.slider.setup = nil
 	end,
+
 	["GetValue"] = function(self)
 		return self.value
 	end,
+
 	["SetLabel"] = function(self, text)
 		self.label:SetText(text)
 	end,
+
 	["SetSliderValues"] = function(self, min, max, step)
 		local frame = self.slider
 		frame.setup = true
@@ -163,12 +186,14 @@ local methods = {
 		end
 		frame.setup = nil
 	end,
+
 	["SetIsPercent"] = function(self, value)
 		self.ispercent = value
 		UpdateLabels(self)
 		UpdateText(self)
 	end
 }
+
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
@@ -178,20 +203,25 @@ local SliderBackdrop  = {
 	tile = true, tileSize = 8, edgeSize = 8,
 	insets = { left = 3, right = 3, top = 6, bottom = 6 }
 }
+
 local ManualBackdrop = {
 	bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
 	edgeFile = "Interface\\ChatFrame\\ChatFrameBackground",
 	tile = true, edgeSize = 1, tileSize = 5,
 }
+
 local function Constructor()
 	local frame = CreateFrame("Frame", nil, UIParent)
+
 	frame:EnableMouse(true)
 	frame:SetScript("OnMouseDown", Frame_OnMouseDown)
+
 	local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	label:SetPoint("TOPLEFT")
 	label:SetPoint("TOPRIGHT")
 	label:SetJustifyH("CENTER")
 	label:SetHeight(15)
+
 	local slider = CreateFrame("Slider", nil, frame)
 	slider:SetOrientation("HORIZONTAL")
 	slider:SetHeight(15)
@@ -207,10 +237,13 @@ local function Constructor()
 	slider:SetScript("OnLeave", Control_OnLeave)
 	slider:SetScript("OnMouseUp", Slider_OnMouseUp)
 	slider:SetScript("OnMouseWheel", Slider_OnMouseWheel)
+
 	local lowtext = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	lowtext:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 2, 3)
+
 	local hightext = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	hightext:SetPoint("TOPRIGHT", slider, "BOTTOMRIGHT", -2, 3)
+
 	local editbox = CreateFrame("EditBox", nil, frame)
 	editbox:SetAutoFocus(false)
 	editbox:SetFontObject(GameFontHighlightSmall)
@@ -226,6 +259,7 @@ local function Constructor()
 	editbox:SetScript("OnLeave", EditBox_OnLeave)
 	editbox:SetScript("OnEnterPressed", EditBox_OnEnterPressed)
 	editbox:SetScript("OnEscapePressed", EditBox_OnEscapePressed)
+
 	local widget = {
 		label       = label,
 		slider      = slider,
@@ -240,7 +274,8 @@ local function Constructor()
 		widget[method] = func
 	end
 	slider.obj, editbox.obj = widget, widget
+
 	return AceGUI:RegisterAsWidget(widget)
 end
-AceGUI:RegisterWidgetType(Type,Constructor,Version)
 
+AceGUI:RegisterWidgetType(Type,Constructor,Version)
