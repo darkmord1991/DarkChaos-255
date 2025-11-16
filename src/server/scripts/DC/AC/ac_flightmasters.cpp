@@ -509,7 +509,7 @@ public:
         }
 
         // Proximity-based waypoint arrival fallback in case MovementInform is skipped
-        if (_awaitingArrival)
+        if (_awaitingArrival && !_splineActive)
         {
             Player* passenger = GetCachedPassenger();
             _sinceMoveMs += diff;
