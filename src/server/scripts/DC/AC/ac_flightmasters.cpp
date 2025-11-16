@@ -947,7 +947,7 @@ public:
                 // Use centralized helper to calculate and queue intermediate smart-path points
                 if (_pathHelper->CalculateAndQueue(dest, _smartPathQueue, me) && !_smartPathQueue.empty())
                 {
-                    if (LaunchSplineFromQueue(destination))
+                    if (LaunchSplineFromQueue(dest))
                         return;
 
                     Position next = _smartPathQueue.front();
