@@ -46,6 +46,12 @@ using namespace DarkChaos::ItemUpgrade;
 
 uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
 {
+    // TEMPORARILY DISABLED: Essence costs are set to 0 until the currency system is fully implemented
+    // The upgrade system should only use Upgrade Tokens for now
+    return 0;
+    
+    // Original implementation (disabled):
+    /*
     if (current_level >= 15)
         return 0; // Already maxed
 
@@ -65,6 +71,7 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
     float escalated_cost = base_cost * std::pow(1.1f, static_cast<float>(current_level));
 
     return static_cast<uint32>(std::ceil(escalated_cost));
+    */
 }
 
 uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)

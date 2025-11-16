@@ -467,12 +467,6 @@ private:
                 return true;
             }
 
-            if (targetLevel > 15)
-            {
-                SendAddonResponse(player, "DCUPGRADE_ERROR:Max level is 15");
-                return true;
-            }
-
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
@@ -506,6 +500,25 @@ private:
                     tier = mgr->GetItemTier(item->GetEntry());
                 else
                     tier = 1; // fallback if manager not available
+            }
+
+            // Check tier-specific max level from database
+            uint32 tierMaxLevel = 15; // default fallback
+            QueryResult tierResult = WorldDatabase.Query(
+                "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
+                tier
+            );
+            if (tierResult)
+            {
+                tierMaxLevel = (*tierResult)[0].Get<uint32>();
+            }
+
+            if (targetLevel > tierMaxLevel)
+            {
+                std::ostringstream ss;
+                ss << "DCUPGRADE_ERROR:Max level for this tier is " << tierMaxLevel;
+                SendAddonResponse(player, ss.str());
+                return true;
             }
 
             if (targetLevel <= currentLevel)
@@ -572,7 +585,8 @@ private:
                 return true;
             }
 
-            if (currentEssence < essenceNeeded)
+            // Only check essence if it's actually needed (essence cost > 0)
+            if (essenceNeeded > 0 && currentEssence < essenceNeeded)
             {
                 std::ostringstream ss;
                 ss << "DCUPGRADE_ERROR:Need " << essenceNeeded << " essence, have " << currentEssence;

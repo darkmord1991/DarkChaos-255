@@ -12,6 +12,7 @@
 #include "ac_flightmasters_data.h"
 #include "ac_flightmasters_path.h"
 #include "MoveSplineInit.h"
+#include "MotionMaster.h"
 // === NEW: Refactoring includes ===
 #include "FlightConstants.h"
 #include "FlightStateMachine.h"
@@ -175,6 +176,7 @@ public:
         _customPointSeq = 0;
         _pathfindingRetries = 0;
         _useSmartPathfinding = false;
+        ClearSplineState();
         _sinceMoveMs = 0;
         _hopElapsedMs = 0;
         _hopRetries = 0;
@@ -267,7 +269,21 @@ public:
     void MovementInform(uint32 type, uint32 id) override
     {
         if (type != POINT_MOTION_TYPE)
+        {
+            if (type == ESCORT_MOTION_TYPE && _splineActive)
+            {
+                _splineProgress = std::min<uint32>(id + 1, _splineSegments);
+                if (_splineSegments == 0 || (id + 1) >= _splineSegments)
+                {
+                    ClearSplineState();
+                    _movingToCustom = false;
+                    _awaitingArrival = false;
+                    _useSmartPathfinding = false;
+                    MoveToIndex(_index);
+                }
+            }
             return;
+        }
 
         if (id == POINT_TAKEOFF)
             return; // ignore pre-flight lift
@@ -302,6 +318,7 @@ public:
             // No more smart-path points: finish custom movement and continue to the planned waypoint
             _movingToCustom = false;
             _awaitingArrival = false;
+            ClearSplineState();
 
             // Reset pathfinding retry counter on successful intermediate point arrival
             if (_useSmartPathfinding)
@@ -341,6 +358,9 @@ public:
         _landingScheduled = false;
         _isLanding = true;
         me->GetMotionMaster()->Clear();
+        ClearSplineState();
+        _smartPathQueue.clear();
+        _useSmartPathfinding = false;
 
         float x = me->GetPositionX();
         float y = me->GetPositionY();
@@ -455,6 +475,9 @@ public:
         me->SetHover(false);
         me->SetDisableGravity(false);
         me->SetCanFly(false);
+        ClearSplineState();
+        _smartPathQueue.clear();
+        _useSmartPathfinding = false;
         
         // Reset flight state variables
         _isLanding = false;
@@ -543,7 +566,7 @@ public:
                         HandleArriveAtCurrentNode(true /*isProximity*/);
                     }
                 }
-                else
+                else if (!_splineActive)
                 {
                         // Per-node proximity tuning: nodes known to be sticky get relaxed near2d thresholds
                         if (_index == 2 || _index == 30 || _index == 13) // acfm3, acfm34, acfm14
@@ -924,6 +947,9 @@ public:
                 // Use centralized helper to calculate and queue intermediate smart-path points
                 if (_pathHelper->CalculateAndQueue(dest, _smartPathQueue, me) && !_smartPathQueue.empty())
                 {
+                    if (LaunchSplineFromQueue(destination))
+                        return;
+
                     Position next = _smartPathQueue.front();
                     _smartPathQueue.pop_front();
                     _useSmartPathfinding = true;
@@ -934,21 +960,26 @@ public:
                     return;
                 }
 
-                // If smart path failed, fallback to previous behaviour: teleport back to start and dismount
+                // If smart path failed, fail-safe by delivering everyone to the intended destination instead of the start
                 Player* passenger = GetCachedPassenger();
                 if (passenger && passenger->IsGameMaster())
-                    ChatHandler(passenger->GetSession()).SendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting to start and dismounting.");
-                float sx = _flightStartPos.GetPositionX();
-                float sy = _flightStartPos.GetPositionY();
-                float sz = _flightStartPos.GetPositionZ();
-                me->UpdateGroundPositionZ(sx, sy, sz);
-                me->NearTeleportTo(sx, sy, sz + 0.5f, _flightStartPos.GetOrientation());
+                    ChatHandler(passenger->GetSession()).PSendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting safely to destination.");
+
+                float dx = dest.GetPositionX();
+                float dy = dest.GetPositionY();
+                float dz = dest.GetPositionZ();
+                me->UpdateGroundPositionZ(dx, dy, dz);
+                me->NearTeleportTo(dx, dy, dz + 0.5f, dest.GetOrientation());
+                if (Player* p = GetCachedPassenger())
+                    p->NearTeleportTo(dx, dy, dz, dest.GetOrientation());
+
                 me->SetHover(false);
                 me->SetDisableGravity(false);
                 me->SetCanFly(false);
                 _isLanding = false;
                 _awaitingArrival = false;
                 _landingScheduled = false;
+                ClearSplineState();
                 DismountAndDespawn();
                 return;
             }
@@ -987,6 +1018,7 @@ public:
 
     void MoveToIndex(uint8 idx)
     {
+        ClearSplineState();
         auto pos = FlightPathAccessor::GetSafePosition(idx);
         if (!pos)
         {
@@ -1025,6 +1057,7 @@ public:
 
     void MoveToCustom(Position const& pos)
     {
+        ClearSplineState();
         _customTarget = pos;
         _movingToCustom = true;
         _currentPointId = 20000u + (++_customPointSeq); // unique id for custom targets
@@ -1038,6 +1071,69 @@ public:
         _sinceMoveMs = 0;
         _hopElapsedMs = 0;
         _hopRetries = 0;
+    }
+
+    void ClearSplineState()
+    {
+        _splineActive = false;
+        _activeSplineId = 0;
+        _splineSegments = 0;
+        _splineProgress = 0;
+    }
+
+    bool LaunchSplineFromQueue(Position const& finalDestination)
+    {
+        if (_smartPathQueue.empty())
+            return false;
+
+        Movement::PointsArray splinePoints;
+        splinePoints.reserve(_smartPathQueue.size() + 2);
+        auto appendPoint = [&splinePoints](float x, float y, float z)
+        {
+            if (!splinePoints.empty())
+            {
+                G3D::Vector3 const& last = splinePoints.back();
+                float dx = last.x - x;
+                float dy = last.y - y;
+                float dz = last.z - z;
+                constexpr float kDuplicateEpsilonSq = 0.0625f; // ~0.25 units tolerance
+                if ((dx * dx + dy * dy + dz * dz) < kDuplicateEpsilonSq)
+                    return;
+            }
+            splinePoints.emplace_back(x, y, z);
+        };
+
+        appendPoint(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ());
+        for (Position const& hop : _smartPathQueue)
+            appendPoint(hop.GetPositionX(), hop.GetPositionY(), hop.GetPositionZ());
+        appendPoint(finalDestination.GetPositionX(), finalDestination.GetPositionY(), finalDestination.GetPositionZ());
+
+        if (splinePoints.size() < 3)
+            return false; // need at least two intermediate points to benefit
+
+        me->SetCanFly(true);
+        me->SetDisableGravity(true);
+        me->SetHover(true);
+        me->GetMotionMaster()->Clear();
+        me->GetMotionMaster()->MoveSplinePath(&splinePoints, FORCED_MOVEMENT_NONE);
+
+        _splineActive = true;
+        _activeSplineId = me->movespline ? me->movespline->GetId() : 0;
+        _splineSegments = static_cast<uint32>(splinePoints.size() - 1);
+        _splineProgress = 0;
+        _movingToCustom = true;
+        _customTarget = finalDestination;
+        _awaitingArrival = true;
+        _sinceMoveMs = 0;
+        _hopElapsedMs = 0;
+        _hopRetries = 0;
+        _useSmartPathfinding = true;
+        _smartPathQueue.clear();
+
+        if (Player* gm = GetCachedPassenger(); gm && gm->IsGameMaster())
+            ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] Launching spline chain with {} segments toward {}.", _splineSegments, NodeLabel(_index));
+
+        return true;
     }
 
     void AdjustSpeedForTurn(float angleDeg)
@@ -1140,6 +1236,10 @@ public:
     bool _useSmartPathfinding = false;
     uint32 _pathfindingRetries = 0;
     std::deque<Position> _smartPathQueue; // queued intermediate positions from PathHelper
+    bool _splineActive = false;           // true while escort spline is running
+    uint32 _activeSplineId = 0;
+    uint32 _splineSegments = 0;           // number of spline hops (points - 1)
+    uint32 _splineProgress = 0;           // last completed hop index
     
     // Enhanced pathfinding with fallback to waypoints
     void MoveToIndexWithSmartPath(uint8 idx)
@@ -1194,12 +1294,16 @@ public:
             _useSmartPathfinding = true;
             _pathfindingRetries = 0;
 
-            Position next = _smartPathQueue.front();
-            _smartPathQueue.pop_front();
-            MoveToCustom(next);
             Player* terrainArcPlayer = GetCachedPassenger();
             if (terrainArcPlayer && terrainArcPlayer->IsGameMaster())
                 ChatHandler(terrainArcPlayer->GetSession()).PSendSysMessage("[Flight Debug] Elevating arc to clear terrain for {}.", NodeLabel(idx));
+
+            if (LaunchSplineFromQueue(destination))
+                return;
+
+            Position next = _smartPathQueue.front();
+            _smartPathQueue.pop_front();
+            MoveToCustom(next);
             return;
         }
 
@@ -1233,12 +1337,16 @@ public:
             _useSmartPathfinding = true;
             _pathfindingRetries = 0;
 
-            Position next = _smartPathQueue.front();
-            _smartPathQueue.pop_front();
-            MoveToCustom(next);
             Player* startcampArcPlayer = GetCachedPassenger();
             if (startcampArcPlayer && startcampArcPlayer->IsGameMaster())
                 ChatHandler(startcampArcPlayer->GetSession()).PSendSysMessage("[Flight Debug] Overhead arc engaged for Startcamp landing.");
+
+            if (LaunchSplineFromQueue(destination))
+                return;
+
+            Position next = _smartPathQueue.front();
+            _smartPathQueue.pop_front();
+            MoveToCustom(next);
             return;
         }
 
@@ -1255,6 +1363,9 @@ public:
                 _pathHelper = std::make_unique<FlightPathHelper>(me);
             if (_pathHelper->CalculateAndQueue(destination, _smartPathQueue, me) && !_smartPathQueue.empty())
             {
+                if (LaunchSplineFromQueue(destination))
+                    return;
+
                 if (_smartPathQueue.size() == 1 && dist3D < 220.0f)
                 {
                     // One-step smart paths on short legs tend to oscillate; but some single-point fixes
@@ -1398,10 +1509,9 @@ public:
         // === NEW: Use route strategy to determine next index ===
         Player* routePlayer = GetCachedPassenger();
         
-        // Get next index from route strategy
-        uint8 finalIdx = 0;
-        uint8 nextIdx = _currentRoute->GetNextIndex(_index, finalIdx);
-        bool hasNext = !_currentRoute->IsFinalIndex(_index);
+        // Get next index from route strategy; bool indicates if another hop exists
+        uint8 nextIdx = 0;
+        bool hasNext = _currentRoute->GetNextIndex(_index, nextIdx);
         
         if (hasNext)
         {
