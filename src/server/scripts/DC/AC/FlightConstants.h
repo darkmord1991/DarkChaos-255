@@ -85,6 +85,7 @@ namespace Timeout
     // Landing fallbacks
     constexpr uint32 LANDING_FALLBACK_MS = 6000;      // Fallback timer for landing sequence
     constexpr uint32 EARLY_EXIT_FALLBACK_MS = 5000;   // Fallback for early exit landing
+    constexpr uint32 SPLINE_WATCHDOG_MS = 15000;      // Max time allowed for a spline chain before forcing recovery
     
     // Scheduled task delays
     constexpr uint32 TAKEOFF_SCHEDULE_MS = 300;       // Delay before moving after takeoff

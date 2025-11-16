@@ -274,13 +274,7 @@ public:
             {
                 _splineProgress = std::min<uint32>(id + 1, _splineSegments);
                 if (_splineSegments == 0 || (id + 1) >= _splineSegments)
-                {
-                    ClearSplineState();
-                    _movingToCustom = false;
-                    _awaitingArrival = false;
-                    _useSmartPathfinding = false;
-                    MoveToIndex(_index);
-                }
+                    ResumeAfterSpline();
             }
             return;
         }
@@ -491,6 +485,30 @@ public:
     {
         // Drive scheduled tasks
         _scheduler.Update(diff);
+
+        if (_splineActive)
+        {
+            if (_splineWatchdogMs < Timeout::SPLINE_WATCHDOG_MS)
+                _splineWatchdogMs += diff;
+
+            bool splineFinished = !me->movespline || me->movespline->Finalized();
+            if (splineFinished)
+            {
+                ResumeAfterSpline("Spline finalized without MovementInform.");
+                return;
+            }
+
+            if (_splineWatchdogMs >= Timeout::SPLINE_WATCHDOG_MS)
+            {
+                Player* gm = GetCachedPassenger();
+                if (gm && gm->IsGameMaster())
+                    ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] Spline watchdog ({} ms) triggered at {}. Reissuing scripted hop.", Timeout::SPLINE_WATCHDOG_MS, NodeLabel(_index));
+
+                me->GetMotionMaster()->Clear();
+                ResumeAfterSpline();
+                return;
+            }
+        }
         
         // === NEW: Update passenger cache periodically ===
         _passengerCacheMs += diff;
@@ -1079,6 +1097,7 @@ public:
         _activeSplineId = 0;
         _splineSegments = 0;
         _splineProgress = 0;
+        _splineWatchdogMs = 0;
         me->ClearUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
     }
 
@@ -1123,6 +1142,7 @@ public:
         _activeSplineId = me->movespline ? me->movespline->GetId() : 0;
         _splineSegments = static_cast<uint32>(splinePoints.size() - 1);
         _splineProgress = 0;
+        _splineWatchdogMs = 0;
         _movingToCustom = true;
         _customTarget = finalDestination;
         _awaitingArrival = true;
@@ -1136,6 +1156,20 @@ public:
             ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] Launching spline chain with {} segments toward {}.", _splineSegments, NodeLabel(_index));
 
         return true;
+    }
+
+    void ResumeAfterSpline(char const* reason = nullptr)
+    {
+        Player* gm = GetCachedPassenger();
+        if (reason && gm && gm->IsGameMaster())
+            ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] {} Resuming scripted hop toward {}.", reason, NodeLabel(_index));
+
+        ClearSplineState();
+        _movingToCustom = false;
+        _awaitingArrival = false;
+        _useSmartPathfinding = false;
+        _smartPathQueue.clear();
+        MoveToIndex(_index);
     }
 
     void AdjustSpeedForTurn(float angleDeg)
@@ -1242,6 +1276,7 @@ public:
     uint32 _activeSplineId = 0;
     uint32 _splineSegments = 0;           // number of spline hops (points - 1)
     uint32 _splineProgress = 0;           // last completed hop index
+    uint32 _splineWatchdogMs = 0;         // elapsed time spent inside current spline chain
     
     // Enhanced pathfinding with fallback to waypoints
     void MoveToIndexWithSmartPath(uint8 idx)
