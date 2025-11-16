@@ -1,8 +1,6 @@
 only two Patches Right now, they were merged!
 Patch-A -> AllRaces All Classes
-Patch-5 -> ALL DC stuff
-patch-enGB-M.MPQ -> Dungeon Maps
-patch-enGB-N.MPQ -> more map stuff
+Patch-5 -> ALL DC stuff + dungeon Maps, worldmaps, etc.
 
 ------------------------------------
 Patch-A -> AllRaces All Classes

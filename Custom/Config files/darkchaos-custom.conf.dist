@@ -10,7 +10,10 @@
 #   3. Hinterland Battleground - Custom 25v25 PvP battleground with affixes
 #   4. Mythic+ Dungeon System - Scaled dungeon difficulties with keystones
 #   5. Prestige System - Reset level 255 players with permanent bonuses
-#   6. Item Upgrade System - Progressive gear upgrade with currency
+#   6. Challenge Modes System - Hardcore and specialized challenge modes
+#   7. Item Upgrade System - Progressive gear upgrade with currency
+#   8. AzerothCore Module Configurations - Various gameplay modules
+#   9. Map Extension System - GPS tracking for custom zones
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -1656,7 +1659,7 @@ Prestige.AnnounceWorld = 1
 
 ###########################################################################
 #
-#    SECTION 5: CHALLENGE MODES SYSTEM
+#    SECTION 6: CHALLENGE MODES SYSTEM
 #
 #    Hardcore and specialized challenge modes inspired by Project Ascension
 #    and WoW Classic Season of Mastery. Players activate challenge modes at
@@ -2419,17 +2422,6 @@ DungeonQuest.Statistics.Enable = 1
 DungeonQuest.Leaderboard.Enable = 1
 
 #
-DungeonQuest.Statistics.Enable = 1
-
-#
-#    DungeonQuest.Leaderboard.Enable
-#        Description: Enable leaderboard commands (.dungeonleaderboard)
-#        Default:     1 (Enabled)
-#                     0 (Disabled)
-#
-DungeonQuest.Leaderboard.Enable = 1
-
-#
 #    DungeonQuest.Statistics.ResetSeason
 #        Description: Reset season statistics (for seasonal leaderboards)
 #                     Change this value to start a new season.
@@ -2962,7 +2954,12 @@ ItemUpgrade.Test.TokensGrant = 2500
 #    - AoE Loot: Kill multiple mobs, loot one corpse
 #    - Hotspots: Use GM command .hotspot spawnhere
 #    - HLBG: Queue via NPC or use .hlbg commands
+#    - Mythic+: Use .dc difficulty command in dungeons
+#    - Prestige: Reach level 255, talk to prestige NPC
+#    - Challenge Modes: Interact with challenge shrine
 #    - Item Upgrade: Use .upgradeprog testset to get test gear
+#    - AzerothCore Modules: Various difficulty modes (see Section 8)
+#    - Map Extension: GPS tracking in enabled maps (see Section 9)
 #
 # 4. Client addon support:
 #    - Hotspots: Optional addon for "XP+" text display on map
@@ -2984,7 +2981,7 @@ ItemUpgrade.Test.TokensGrant = 2500
 
 ###########################################################################
 #
-#    SECTION 5: AZEROTHCORE MODULE CONFIGURATIONS
+#    SECTION 8: AZEROTHCORE MODULE CONFIGURATIONS
 #
 #    Configuration for various AzerothCore gameplay modules that provide
 #    different difficulty modes and progression systems.
@@ -3332,7 +3329,7 @@ Hardcore.TalentRewards = ""
 
 ###########################################################################
 #
-#    SECTION 7: MAP EXTENSION SYSTEM (GPS TRACKING)
+#    SECTION 9: MAP EXTENSION SYSTEM (GPS TRACKING)
 #
 #    Provides real-time GPS coordinate tracking for players in custom zones
 #    via AIO (Addon I/O) integration. Automatically sends player position,
@@ -3479,101 +3476,4 @@ Hardcore.TitleRewards = ""
 #        Default:     "" (empty - no item rewards)
 #
 Hardcore.ItemRewards = ""
-MythicPlus.Vault.ScaleTokens = 1
-
-#
-#    MythicPlus.Seasons.Enabled
-#        Description: Enable seasonal rotation system
-#                     Limits featured dungeons and rotates affixes weekly
-#        Default:     1 (Enabled - seasonal rotation)
-#                     0 (Disabled - all dungeons always available)
-#
-MythicPlus.Seasons.Enabled = 1
-
-#
-#    MythicPlus.Seasons.AutoRotate
-#        Description: Automatically rotate to next season when current expires
-#                     Requires dc_mplus_seasons table to have valid next season
-#        Default:     1 (Enabled - auto-advance seasons)
-#                     0 (Disabled - manual GM intervention required)
-#
-MythicPlus.Seasons.AutoRotate = 1
-
-#
-#    MythicPlus.Affixes.Enabled
-#        Description: Enable weekly affix modifiers for Mythic+ runs
-#                     Adds boss/trash mechanics based on weekly rotation
-#        Default:     1 (Enabled - affixes active)
-#                     0 (Disabled - pure scaling only)
-#
-MythicPlus.Affixes.Enabled = 1
-
-#
-#    MythicPlus.AffixDebug
-#        Description: Enable debug logging for affix triggers
-#                     Logs every affix event (OnDeath, OnDamage, etc.)
-#        Default:     0 (Disabled - no spam)
-#                     1 (Enabled - full affix logging to MYTHIC_PLUS channel)
-#
-MythicPlus.AffixDebug = 0
-
-#
-#    MythicPlus.Cache.KeystoneTTL
-#        Description: Time in seconds to cache keystone level per instance
-#                     Reduces database queries during creature scaling
-#        Default:     15 (15-second cache)
-#        Range:       5 - 60 (lower = more accurate, higher = less DB load)
-#
-MythicPlus.Cache.KeystoneTTL = 15
-
-#
-#    MythicPlus.FeaturedOnly
-#        Description: Restrict Mythic+ to only featured dungeons in current season
-#                     When enabled, non-featured dungeons cannot be run with keystones
-#        Default:     1 (Enabled - seasonal rotation enforced)
-#                     0 (Disabled - any dungeon with mythic_enabled can be run)
-#
-MythicPlus.FeaturedOnly = 1
-
-#
-#    MythicPlus.Announcement.RunStart
-#        Description: Announce to server when a high-level keystone is activated
-#                     Threshold controlled by MythicPlus.Announcement.Threshold
-#        Default:     1 (Enabled - server announcements)
-#                     0 (Disabled - silent activations)
-#
-MythicPlus.Announcement.RunStart = 1
-
-#
-#    MythicPlus.Announcement.Threshold
-#        Description: Minimum keystone level to trigger server announcement
-#        Default:     15 (Announce M+15 and higher)
-#        Range:       10 - 20
-#
-MythicPlus.Announcement.Threshold = 15
-
-#
-#    MythicPlus.Announcement.RunComplete
-#        Description: Announce to server when high-level keystones are completed
-#        Default:     1 (Enabled)
-#                     0 (Disabled)
-#
-MythicPlus.Announcement.RunComplete = 1
-
-#
-#    MythicPlus.Score.Enabled
-#        Description: Calculate and track Mythic+ score (rating system)
-#                     Formula: (level × 60) - (deaths × 5) - (wipes × 15) + cleanBonus
-#        Default:     1 (Enabled - track scores)
-#                     0 (Disabled - no scoring)
-#
-MythicPlus.Score.Enabled = 1
-
-#
-#    MythicPlus.Leaderboard.Enabled
-#        Description: Enable leaderboard display via Statistics NPC
-#        Default:     1 (Enabled - top 10 shown)
-#                     0 (Disabled - no leaderboard)
-#
-MythicPlus.Leaderboard.Enabled = 1
 

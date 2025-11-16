@@ -128,6 +128,19 @@ INSERT INTO `dc_mplus_teleporter_npcs` (`entry`, `name`, `subname`, `purpose`, `
 ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 
 -- ========================================================================
+-- Creature templates: bind scripts for Great Vault + Token Vendor
+-- ========================================================================
+DELETE FROM `creature_template` WHERE `entry` IN (100050, 120345);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(100050, 0, 0, 0, 0, 0, 'Vault Curator Lyra', 'Great Vault Keeper', '', 0, 80, 80, 0, 35, 4097, 1, 1.14286, 1, 1, 0, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_mythic_plus_great_vault', 0),
+(100051, 0, 0, 0, 0, 0, 'Seasonal Quartermaster', 'Mythic+ Token Vendor', '', 0, 80, 80, 0, 35, 4097, 1, 1.14286, 1, 1, 0, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_mythic_token_vendor', 0);
+
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (100050, 120345);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(100050, 0, 30259, 1, 1, 0),
+(100051, 0, 30302, 1, 1, 0);
+
+-- ========================================================================
 -- Table: dc_mplus_final_bosses
 -- Purpose: Maps each dungeon to its final boss entries for token payouts
 -- ========================================================================
