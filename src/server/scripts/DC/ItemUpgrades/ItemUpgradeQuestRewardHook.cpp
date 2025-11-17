@@ -8,7 +8,7 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
-#include "Quest.h"
+#include "Quests/Quest.h"
 #include "ObjectAccessor.h"
 #include "ItemUpgrade/ItemUpgradeManager.h"
 #include "Log.h"
