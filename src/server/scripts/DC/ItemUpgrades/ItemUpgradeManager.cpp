@@ -294,8 +294,6 @@ namespace DarkChaos
                         max_mult = def->stat_multiplier_max;
                     else if (tier == TIER_HEIRLOOM)
                         max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
-                    else if (tier == TIER_ARTIFACT)
-                        max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
 
                     float progress = max_level > 0 ? static_cast<float>(next_level) / static_cast<float>(max_level) : 0.0f;
                     if (progress > 1.0f)
