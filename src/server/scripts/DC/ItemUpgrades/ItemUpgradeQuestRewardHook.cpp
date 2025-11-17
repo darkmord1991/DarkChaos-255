@@ -76,22 +76,9 @@ namespace DarkChaos
             }
 
             /**
-             * Alternative hook: OnQuestReward
-             * Fires when player receives quest rewards from quest giver
-             * Can be used as backup to OnQuestComplete
+             * Script Load Hook - Register the player script
              */
-            void OnQuestReward(Player* player, Quest const* quest, uint32 /*opt*/) override
-            {
-                // This is a backup - same logic as OnQuestComplete
-                // Uncomment if OnQuestComplete doesn't fire
-                // OnQuestComplete(player, quest);
-            }
-        };
-
-        /**
-         * Script Load Hook - Register the player script
-         */
-        class ItemUpgradeQuestRewardLoader : public ScriptMgr
+            class ItemUpgradeQuestRewardLoader : public ScriptMgr
         {
         public:
             void OnScriptLoad() override
