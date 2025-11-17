@@ -1,0 +1,181 @@
+===============================================================================
+DBC CSV UPDATES FOR HEIRLOOM TIER 3 SYSTEM
+===============================================================================
+Date: November 16, 2025
+Files Updated: Item.csv, ScalingStatDistribution.csv
+Items Added: 33 heirloom items (191101-191133)
+
+===============================================================================
+1. ITEM.CSV UPDATES
+===============================================================================
+
+Added 33 entries for heirloom items with the following structure:
+  - Entry IDs: 191101-191133
+  - Class/Subclass: Proper weapon and armor classifications
+  - Material: Appropriate material types (1=Metal, 6=Plate, 7=Mail, 8=Leather)
+  - DisplayInfoID: Custom display IDs (45001-45009 for weapons, 50001-50024 for armor)
+  - InventoryType: Correct equipment slots (1=Head, 3=Shoulders, 5=Chest, etc.)
+  - SheatheType: Weapon sheathing (0=none, 1=ranged, 2=two-hand, 3=one-hand)
+
+WEAPONS (191101-191109):
+  191101: Flamefury Blade        - ClassID=2, SubclassID=7 (Sword), InventoryType=13, SheatheType=3
+  191102: Stormfury              - ClassID=2, SubclassID=7 (Sword), InventoryType=13, SheatheType=3
+  191103: Frostbite Axe          - ClassID=2, SubclassID=0 (Axe), InventoryType=13, SheatheType=3
+  191104: Shadow Dagger          - ClassID=2, SubclassID=15 (Dagger), InventoryType=13, SheatheType=3
+  191105: Arcane Staff           - ClassID=2, SubclassID=10 (Staff), InventoryType=17, SheatheType=2
+  191106: Zephyr Bow             - ClassID=2, SubclassID=2 (Bow), InventoryType=26, SheatheType=1
+  191107: Arcane Wand            - ClassID=2, SubclassID=19 (Wand), InventoryType=26, SheatheType=1
+  191108: Earthshaker Mace       - ClassID=2, SubclassID=4 (Mace), InventoryType=13, SheatheType=3
+  191109: Polearm                - ClassID=2, SubclassID=6 (Polearm), InventoryType=17, SheatheType=2
+
+ARMOR - HELMS (191110-191112):
+  191110: War Crown              - ClassID=4, SubclassID=4 (Plate), InventoryType=1 (Head)
+  191111: Battle Helm            - ClassID=4, SubclassID=4 (Plate), InventoryType=1 (Head)
+  191112: Kingly Circlet         - ClassID=4, SubclassID=4 (Mail), InventoryType=1 (Head)
+
+ARMOR - CHEST (191113-191115):
+  191113: Battleplate            - ClassID=4, SubclassID=4 (Plate), InventoryType=5 (Chest)
+  191114: Dragonhide Tunic       - ClassID=4, SubclassID=2 (Leather), InventoryType=5 (Chest)
+  191115: Mithril Robe           - ClassID=4, SubclassID=1 (Cloth), InventoryType=5 (Chest)
+
+ARMOR - LEGS (191116-191118):
+  191116: Legplates              - ClassID=4, SubclassID=4 (Plate), InventoryType=7 (Legs)
+  191117: Leggings               - ClassID=4, SubclassID=2 (Leather), InventoryType=7 (Legs)
+  191118: Trousers               - ClassID=4, SubclassID=1 (Cloth), InventoryType=7 (Legs)
+
+ARMOR - SHOULDERS (191119-191121):
+  191119: Pauldrons              - ClassID=4, SubclassID=4 (Plate), InventoryType=3 (Shoulders)
+  191120: Mantle                 - ClassID=4, SubclassID=2 (Leather), InventoryType=3 (Shoulders)
+  191121: Spaulders              - ClassID=4, SubclassID=1 (Cloth), InventoryType=3 (Shoulders)
+
+ARMOR - WAIST (191122-191124):
+  191122: Girdle                 - ClassID=4, SubclassID=4 (Plate), InventoryType=6 (Waist)
+  191123: Cord                   - ClassID=4, SubclassID=2 (Leather), InventoryType=6 (Waist)
+  191124: Waistband              - ClassID=4, SubclassID=1 (Cloth), InventoryType=6 (Waist)
+
+ARMOR - FEET (191125-191127):
+  191125: Sabatons               - ClassID=4, SubclassID=4 (Plate), InventoryType=8 (Feet)
+  191126: Treads                 - ClassID=4, SubclassID=2 (Leather), InventoryType=8 (Feet)
+  191127: Boots                  - ClassID=4, SubclassID=1 (Cloth), InventoryType=8 (Feet)
+
+ARMOR - WRISTS (191128-191130):
+  191128: Bracers                - ClassID=4, SubclassID=4 (Plate), InventoryType=9 (Wrists)
+  191129: Vambraces              - ClassID=4, SubclassID=2 (Leather), InventoryType=9 (Wrists)
+  191130: Wristguards            - ClassID=4, SubclassID=1 (Cloth), InventoryType=9 (Wrists)
+
+ARMOR - HANDS (191131-191133):
+  191131: Gauntlets              - ClassID=4, SubclassID=4 (Plate), InventoryType=10 (Hands)
+  191132: Gloves                 - ClassID=4, SubclassID=2 (Leather), InventoryType=10 (Hands)
+  191133: Mittens                - ClassID=4, SubclassID=1 (Cloth), InventoryType=10 (Hands)
+
+===============================================================================
+2. SCALINGSTATDISTRIBUTION.CSV UPDATES
+===============================================================================
+
+Added 33 entries for heirloom scaling system:
+  - Entry IDs: 191101-191133 (match item IDs)
+  - StatID_1: Primary stat type (3=AGI, 4=STR, 5=INT, 7=STA)
+  - StatID_2-10: -1 (no additional stats)
+  - Bonus_1: 10000 (scaling coefficient)
+  - Bonus_2-10: 0 (no additional bonuses)
+  - Maxlevel: 255 (scales up to level 255)
+
+SCALING STAT MAPPING:
+  Weapons:
+    191101-191103: STR (4) - Melee weapons (Sword, Axe)
+    191104:        AGI (3) - Dagger
+    191105:        INT (5) - Staff
+    191106:        AGI (3) - Bow
+    191107:        INT (5) - Wand
+    191108:        STR (4) - Mace
+    191109:        STR (4) - Polearm
+
+  Armor (Helms):
+    191110:        STA (7) - Plate helm
+    191111:        STR (4) - Plate helm
+    191112:        INT (5) - Mail helm
+
+  Armor (Chest):
+    191113:        STA (7) - Plate chest
+    191114:        INT (5) - Leather chest
+    191115:        INT (5) - Cloth chest
+
+  Armor (Legs):
+    191116:        STA (7) - Plate legs
+    191117:        AGI (3) - Leather legs
+    191118:        INT (5) - Cloth legs
+
+  Armor (Shoulders):
+    191119:        STR (4) - Plate shoulders
+    191120:        INT (5) - Leather shoulders
+    191121:        AGI (3) - Cloth shoulders
+
+  Armor (Waist):
+    191122:        STA (7) - Plate waist
+    191123:        INT (5) - Leather waist
+    191124:        AGI (3) - Cloth waist
+
+  Armor (Feet):
+    191125:        STA (7) - Plate feet
+    191126:        INT (5) - Leather feet
+    191127:        STR (4) - Cloth feet
+
+  Armor (Wrists):
+    191128:        STA (7) - Plate wrists
+    191129:        INT (5) - Leather wrists
+    191130:        AGI (3) - Cloth wrists
+
+  Armor (Hands):
+    191131:        STR (4) - Plate hands
+    191132:        INT (5) - Leather hands
+    191133:        AGI (3) - Cloth hands
+
+===============================================================================
+3. STAT CODES REFERENCE
+===============================================================================
+
+Primary Stats:
+  3  = ITEM_MOD_AGILITY    (Agility)
+  4  = ITEM_MOD_STRENGTH   (Strength)
+  5  = ITEM_MOD_INTELLECT  (Intellect)
+  6  = ITEM_MOD_SPIRIT     (Spirit)
+  7  = ITEM_MOD_STAMINA    (Stamina)
+
+Secondary Stats (NOT in base items - added via ItemUpgrade system):
+  12 = ITEM_MOD_DEFENSE_SKILL_RATING
+  13 = ITEM_MOD_DODGE_RATING
+  14 = ITEM_MOD_PARRY_RATING
+  15 = ITEM_MOD_BLOCK_RATING
+  31 = ITEM_MOD_HIT_RATING
+  32 = ITEM_MOD_CRIT_RATING
+  35 = ITEM_MOD_RESILIENCE_RATING
+  36 = ITEM_MOD_HASTE_RATING
+  37 = ITEM_MOD_EXPERTISE_RATING
+  44 = ITEM_MOD_ARMOR_PENETRATION_RATING
+
+===============================================================================
+4. NEXT STEPS
+===============================================================================
+
+1. Convert CSV to DBC:
+   - Use WoW DBC Editor or similar tool to import CSV changes
+   - Generate Item.dbc and ScalingStatDistribution.dbc files
+   - Place in custom DBCs folder
+
+2. Test in-game:
+   - Verify items appear with correct display models
+   - Confirm primary stats scale with character level
+   - Test that NO secondary stats appear on base items
+   - Verify ItemUpgrade system can add secondary stats
+
+3. Client Patch:
+   - Ensure custom display IDs (45001-50024) are patched in client
+   - Test item icons and 3D models display correctly
+
+4. Database:
+   - Run HEIRLOOM_TIER3_SYSTEM_WORLD.sql to add items to database
+   - Run HEIRLOOM_TIER3_SYSTEM_CHARS.sql for character database
+
+===============================================================================
+END OF SUMMARY
+===============================================================================
