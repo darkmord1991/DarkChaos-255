@@ -72,19 +72,19 @@ COMMENT='Final boss definitions for dungeon completion tracking';
 -- SEED DATA: Sample entrances for WotLK dungeons
 -- ========================================================================
 INSERT INTO `dc_dungeon_entrances` (`dungeon_map`, `entrance_map`, `entrance_x`, `entrance_y`, `entrance_z`, `entrance_o`) VALUES
--- WotLK Dungeons
-(574, 571, 3707.86, 2150.23, 36.76, 3.22), -- Utgarde Keep
-(575, 571, 1267.24, -4857.3, 215.76, 3.22), -- Utgarde Pinnacle
-(576, 571, 3782.89, 6965.23, 105.088, 6.14), -- The Nexus
-(578, 571, 3782.89, 6965.23, 105.088, 6.14), -- The Oculus
-(595, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Culling of Stratholme
-(599, 571, 3707.86, 2150.23, 36.76, 3.22), -- Halls of Stone
-(600, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Drak'Tharon Keep
-(601, 571, 1267.24, -4857.3, 215.76, 3.22), -- Azjol-Nerub
-(602, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Halls of Lightning
-(604, 571, 3707.86, 2150.23, 36.76, 3.22), -- Gundrak
-(608, 571, 1267.24, -4857.3, 215.76, 3.22), -- Violet Hold
-(619, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Ahn'kahet: The Old Kingdom
+-- WotLK Dungeons - Updated coordinates from game data
+(574, 571, 1206.940, -4868.050, 41.249, 0.280), -- Utgarde Keep
+(575, 571, 1256.960, -4852.940, 215.550, 3.447), -- Utgarde Pinnacle (Utgarde Tower)
+(576, 571, 5705.190, 517.960, 649.780, 4.031), -- The Nexus (Violet Citadel)
+(578, 571, 3782.89, 6965.23, 105.088, 6.14), -- The Oculus (using old coordinates - not in update)
+(595, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Culling of Stratholme (using old coordinates - not in update)
+(599, 571, 8922.450, -1012.960, 1039.590, 1.563), -- Halls of Stone
+(600, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Drak'Tharon Keep (using old coordinates - not in update)
+(601, 571, 3700.870, 2152.580, 36.044, 3.596), -- Azjol-Nerub
+(602, 571, 9105.720, -1319.860, 1058.390, 5.650), -- Halls of Lightning
+(604, 571, 3707.86, 2150.23, 36.76, 3.22), -- Gundrak (using old coordinates - not in update)
+(608, 571, 1267.24, -4857.3, 215.76, 3.22), -- Violet Hold (using old coordinates - not in update)
+(619, 571, 3700.870, 2152.580, 36.044, 3.596), -- Ahn'kahet: The Old Kingdom
 (632, 571, 5663.56, 2008.66, 798.05, 4.60), -- Forge of Souls
 (658, 571, 5663.56, 2008.66, 798.05, 4.60), -- Pit of Saron
 (668, 571, 5663.56, 2008.66, 798.05, 4.60)  -- Halls of Reflection

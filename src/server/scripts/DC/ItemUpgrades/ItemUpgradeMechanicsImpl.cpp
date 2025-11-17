@@ -46,22 +46,19 @@ using namespace DarkChaos::ItemUpgrade;
 
 uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
 {
-    // TEMPORARILY DISABLED: Essence costs are set to 0 until the currency system is fully implemented
-    // The upgrade system should only use Upgrade Tokens for now
-    return 0;
-    
-    // Original implementation (disabled):
-    /*
+    // Artifact (Tier 5) items use essence currency for upgrades
+    // Implementation enabled: Essence costs calculated based on tier and level
+
     if (current_level >= 15)
         return 0; // Already maxed
 
     // Base costs per tier
     static const float tier_costs[] = {
-        10.0f,    // Tier 1: Common
-        25.0f,    // Tier 2: Uncommon
-        50.0f,    // Tier 3: Rare
-        100.0f,   // Tier 4: Epic
-        200.0f    // Tier 5: Legendary
+        10.0f,    // Tier 1: Common (not used - tokens only)
+        25.0f,    // Tier 2: Uncommon (not used - tokens only)
+        75.0f,    // Tier 3: Heirloom (HEIRLOOM - essence only)
+        100.0f,   // Tier 4: Epic (not used - tokens only)
+        200.0f    // Tier 5: Legendary (ARTIFACT - essence only)
     };
 
     if (tier_id < 1 || tier_id > 5)
@@ -71,7 +68,6 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
     float escalated_cost = base_cost * std::pow(1.1f, static_cast<float>(current_level));
 
     return static_cast<uint32>(std::ceil(escalated_cost));
-    */
 }
 
 uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
@@ -83,7 +79,7 @@ uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
     static const float tier_costs[] = {
         5.0f,     // Tier 1: Common
         10.0f,    // Tier 2: Uncommon
-        15.0f,    // Tier 3: Rare
+        0.0f,     // Tier 3: Heirloom (essence only, no tokens)
         25.0f,    // Tier 4: Epic
         50.0f     // Tier 5: Legendary
     };
@@ -132,7 +128,24 @@ float StatScalingCalculator::GetStatMultiplier(uint8 upgrade_level)
     // Level 5: 1.125x (+12.5% bonus)
     // Level 10: 1.25x (+25% bonus)
     // Level 15: 1.375x (+37.5% bonus)
+    //
+    // Note: For Heirlooms (Tier 3), use GetStatMultiplierHeirloom() instead
+    // This function only affects secondary stats added via enchants
     return 1.0f + (upgrade_level * 0.025f);
+}
+
+float StatScalingCalculator::GetStatMultiplierHeirloom(uint8 upgrade_level)
+{
+    // Heirloom-specific formula: 1.05 + (level * 0.02)
+    // Level 0: 1.05x (+5% bonus)
+    // Level 5: 1.15x (+15% bonus)
+    // Level 10: 1.25x (+25% bonus)
+    // Level 15: 1.35x (+35% bonus)
+    //
+    // IMPORTANT: This ONLY affects secondary stats (Crit/Haste/Hit/Expertise/ArmorPen)
+    // Note: Mastery stat does not exist in WotLK 3.3.5a (was added in Cataclysm 4.0.1)
+    // Primary stats (STR/AGI/INT/STA/SPI) are handled by heirloom_scaling_255.cpp
+    return 1.05f + (upgrade_level * 0.02f);
 }
 
 float StatScalingCalculator::GetTierMultiplier(uint8 tier_id)
@@ -141,7 +154,7 @@ float StatScalingCalculator::GetTierMultiplier(uint8 tier_id)
     static const float tier_multipliers[] = {
         0.9f,     // Tier 1: Common (reduces scaling)
         0.95f,    // Tier 2: Uncommon
-        1.0f,     // Tier 3: Rare (no adjustment)
+        1.0f,     // Tier 3: Heirloom (no adjustment - has own multiplier)
         1.15f,    // Tier 4: Epic (enhances scaling)
         1.25f     // Tier 5: Legendary (maximum scaling)
     };
@@ -182,7 +195,7 @@ uint16 ItemLevelCalculator::GetItemLevelBonus(uint8 upgrade_level, uint8 tier_id
     static const float tier_ilvl_per_level[] = {
         1.0f,     // Tier 1: Common
         1.0f,     // Tier 2: Uncommon
-        1.5f,     // Tier 3: Rare
+        0.0f,     // Tier 3: Heirloom (item level scales with player level)
         2.0f,     // Tier 4: Epic
         2.5f      // Tier 5: Legendary
     };
@@ -302,16 +315,12 @@ bool ItemUpgradeState::SaveToDatabase() const
 
 [[maybe_unused]] static uint8 Mechanics_GetItemTierByIlvl(uint16 item_level)
 {
-    if (item_level < 340)
+    if (item_level < 213)
         return TIER_LEVELING;
-    else if (item_level < 355)
+    else if (item_level <= 226)
         return TIER_HEROIC;
-    else if (item_level < 370)
-        return TIER_RAID;
-    else if (item_level < 385)
-        return TIER_MYTHIC;
     else
-        return TIER_ARTIFACT;
+        return TIER_HEIRLOOM;  // Heirlooms or high-level items
 }
 
 [[maybe_unused]] static uint32 Mechanics_GetCurrentSeason()

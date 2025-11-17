@@ -680,7 +680,7 @@ namespace DarkChaos
                                                           static_cast<uint8>(state->upgrade_level + level_bonus));
                         }
 
-                        float max_mult = (target_tier == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                        float max_mult = (target_tier == TIER_HEIRLOOM) ? STAT_MULTIPLIER_MAX_HEIRLOOM : STAT_MULTIPLIER_MAX_REGULAR;
                         state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
                         mgr->SaveItemUpgrade(item_guid);
 
@@ -695,7 +695,7 @@ namespace DarkChaos
                             state->upgrade_level = std::max(static_cast<uint8>(0),
                                                           static_cast<uint8>(state->upgrade_level - level_loss));
 
-                            float max_mult = (state->tier_id == TIER_ARTIFACT) ? STAT_MULTIPLIER_MAX_ARTIFACT : STAT_MULTIPLIER_MAX_REGULAR;
+                            float max_mult = (state->tier_id == TIER_HEIRLOOM) ? STAT_MULTIPLIER_MAX_HEIRLOOM : STAT_MULTIPLIER_MAX_REGULAR;
                             state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
                             mgr->SaveItemUpgrade(item_guid);
 
@@ -762,8 +762,8 @@ namespace DarkChaos
 
                 if (!config.allow_cross_quality_conversion)
                 {
-                    bool from_high_quality = (state->tier_id >= TIER_RAID);
-                    bool to_high_quality = (target_tier >= TIER_RAID);
+                    bool from_high_quality = (state->tier_id >= TIER_HEIRLOOM);
+                    bool to_high_quality = (target_tier >= TIER_HEIRLOOM);
 
                     if (from_high_quality != to_high_quality)
                     {

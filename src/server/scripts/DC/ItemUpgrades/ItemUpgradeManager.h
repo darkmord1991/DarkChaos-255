@@ -25,11 +25,9 @@ namespace DarkChaos
 
         enum UpgradeTier : uint8
         {
-            TIER_LEVELING = 1,      // T1: Quests, 1-60
-            TIER_HEROIC = 2,        // T2: Heroic Dungeons
-            TIER_RAID = 3,          // T3: Heroic Raid + Mythic Dungeons
-            TIER_MYTHIC = 4,        // T4: Mythic Raid + Mythic+
-            TIER_ARTIFACT = 5,      // T5: Chaos Artifacts
+            TIER_LEVELING = 1,      // T1: Regular items (6 levels)
+            TIER_HEROIC = 2,        // T2: Heroic items (15 levels)
+            TIER_HEIRLOOM = 3,      // T3: Heirlooms (80 levels, scales with player level)
             TIER_INVALID = 0
         };
 
@@ -40,12 +38,17 @@ namespace DarkChaos
         };
 
         // Constants
-    static const uint8 MAX_UPGRADE_LEVEL = 15;
+    static const uint8 MAX_UPGRADE_LEVEL = 80;  // Max for heirlooms (Tier 3)
         static const uint8 MIN_UPGRADE_LEVEL = 0;
-    static const uint8 NUM_TIERS = 2;
+    static const uint8 NUM_TIERS = 3;
         static const float STAT_MULTIPLIER_BASE = 1.0f;
-        static const float STAT_MULTIPLIER_MAX_REGULAR = 1.5f;
-        static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.75f;
+        static const float STAT_MULTIPLIER_MAX_REGULAR = 1.375f;
+        static const float STAT_MULTIPLIER_MAX_HEIRLOOM = 1.35f;   // Tier 3: 1.05x → 1.35x
+        static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.5f;
+        
+        // Heirloom item ID range (191101-191133)
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MIN = 191101;
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MAX = 191133;
 
         // Centralize backing table name so SQL stays consistent with the deployed schema
         inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";

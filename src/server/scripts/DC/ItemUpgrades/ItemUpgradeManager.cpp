@@ -166,8 +166,8 @@ namespace DarkChaos
                 float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
                 if (const TierDefinition* def = GetTierDefinition(state.tier_id))
                     max_mult = def->stat_multiplier_max;
-                else if (state.tier_id == TIER_ARTIFACT)
-                    max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
+                else if (state.tier_id == TIER_HEIRLOOM)
+                    max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
 
                 if (state.upgrade_level > 0)
                 {
@@ -245,9 +245,9 @@ namespace DarkChaos
                     uint32 essence_cost = GetEssenceCost(tier, next_level);
 
                     // Check currency
-                    if (tier == TIER_ARTIFACT)
+                    if (tier == TIER_HEIRLOOM)
                     {
-                        // Artifacts use essence
+                        // Heirlooms use essence
                         uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
                         if (essence < essence_cost)
                         {
@@ -269,7 +269,7 @@ namespace DarkChaos
                     }
 
                     // Perform upgrade
-                    if (tier == TIER_ARTIFACT)
+                    if (tier == TIER_HEIRLOOM)
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
                             return false;
@@ -292,6 +292,8 @@ namespace DarkChaos
                     float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
                     if (const TierDefinition* def = GetTierDefinition(tier))
                         max_mult = def->stat_multiplier_max;
+                    else if (tier == TIER_HEIRLOOM)
+                        max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
                     else if (tier == TIER_ARTIFACT)
                         max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
 
@@ -354,9 +356,7 @@ namespace DarkChaos
                     {
                         case TIER_LEVELING: mastery_points = 1; break;
                         case TIER_HEROIC: mastery_points = 2; break;
-                        case TIER_RAID: mastery_points = 3; break;
-                        case TIER_MYTHIC: mastery_points = 5; break;
-                        case TIER_ARTIFACT: mastery_points = 10; break;
+                        case TIER_HEIRLOOM: mastery_points = 6; break;
                         default: mastery_points = 1; break;
                     }
 
@@ -558,8 +558,8 @@ namespace DarkChaos
                 float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
                 if (const TierDefinition* def = GetTierDefinition(state->tier_id))
                     max_mult = def->stat_multiplier_max;
-                else if (state->tier_id == TIER_ARTIFACT)
-                    max_mult = STAT_MULTIPLIER_MAX_ARTIFACT;
+                else if (state->tier_id == TIER_HEIRLOOM)
+                    max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
 
                 float progress = max_level > 0 ? static_cast<float>(level) / static_cast<float>(max_level) : 0.0f;
                 if (progress > 1.0f)
@@ -601,12 +601,10 @@ namespace DarkChaos
                 // Fallback to hardcoded values if database not loaded
                 switch (tier_id)
                 {
-                    case TIER_LEVELING: return 5;
-                    case TIER_HEROIC: return 8;
-                    case TIER_RAID: return 15;
-                    case TIER_MYTHIC: return 8;
-                    case TIER_ARTIFACT: return 12;
-                    default: return 5;
+                    case TIER_LEVELING: return 60;
+                    case TIER_HEROIC: return 15;
+                    case TIER_HEIRLOOM: return 15;
+                    default: return 15;
                 }
             }
 
@@ -739,6 +737,10 @@ namespace DarkChaos
 
             uint8 GetItemTier(uint32 item_id) override
             {
+                // Check for heirlooms first (special item ID range)
+                if (item_id >= HEIRLOOM_ITEM_ID_MIN && item_id <= HEIRLOOM_ITEM_ID_MAX)
+                    return TIER_HEIRLOOM;
+
                 // First check explicit database mapping
                 auto it = item_to_tier.find(item_id);
                 if (it != item_to_tier.end())
@@ -754,13 +756,9 @@ namespace DarkChaos
                     if (itemLevel < 213)
                         return TIER_LEVELING;      // T1: < 213 ilevel
                     else if (itemLevel < 355)
-                        return TIER_HEROIC;       // T2: 213-354 ilevel
-                    else if (itemLevel < 370)
-                        return TIER_RAID;         // T3: 355-369 ilevel
-                    else if (itemLevel < 385)
-                        return TIER_MYTHIC;       // T4: 370-384 ilevel
+                        return TIER_HEROIC;       // T2: 213-226 ilevel
                     else
-                        return TIER_ARTIFACT;     // T5: >= 385 ilevel
+                        return TIER_HEIRLOOM;     // T3: >226 ilevel (heirlooms/special items)
                 }
 
                 // If item template not found, return invalid

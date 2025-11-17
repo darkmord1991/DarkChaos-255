@@ -1033,7 +1033,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=5300700 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9000079 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1649,6 +1649,20 @@ CREATE TABLE IF NOT EXISTS `dc_difficulty_config` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_dungeon_entrances
+CREATE TABLE IF NOT EXISTS `dc_dungeon_entrances` (
+  `dungeon_map` smallint unsigned NOT NULL COMMENT 'Dungeon map ID (same as in dc_dungeon_mythic_profile)',
+  `entrance_map` int unsigned NOT NULL COMMENT 'Map where the entrance is located',
+  `entrance_x` float NOT NULL COMMENT 'X coordinate of entrance',
+  `entrance_y` float NOT NULL COMMENT 'Y coordinate of entrance',
+  `entrance_z` float NOT NULL COMMENT 'Z coordinate of entrance',
+  `entrance_o` float NOT NULL COMMENT 'Orientation at entrance',
+  PRIMARY KEY (`dungeon_map`),
+  CONSTRAINT `dc_dungeon_entrances_ibfk_1` FOREIGN KEY (`dungeon_map`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dungeon entrance coordinates for portal teleportation';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_dungeon_mythic_profile
 CREATE TABLE IF NOT EXISTS `dc_dungeon_mythic_profile` (
   `map_id` smallint unsigned NOT NULL COMMENT 'Map ID from Map.dbc',
@@ -1767,7 +1781,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `gold_cost` int unsigned DEFAULT '0',
   PRIMARY KEY (`cost_id`),
   UNIQUE KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB AUTO_INCREMENT=152 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=173 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1870,6 +1884,18 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_affix_pairs` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_affix_schedule
+CREATE TABLE IF NOT EXISTS `dc_mplus_affix_schedule` (
+  `season_id` int unsigned NOT NULL COMMENT 'Season from dc_mplus_seasons',
+  `week_number` tinyint unsigned NOT NULL COMMENT 'Week of the season (0-51)',
+  `affix1` tinyint unsigned NOT NULL COMMENT 'First affix ID (boss-focused)',
+  `affix2` tinyint unsigned NOT NULL COMMENT 'Second affix ID (trash-focused)',
+  PRIMARY KEY (`season_id`,`week_number`),
+  CONSTRAINT `dc_mplus_affix_schedule_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly affix rotation schedule for Mythic+ seasons';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_mplus_affixes
 CREATE TABLE IF NOT EXISTS `dc_mplus_affixes` (
   `affix_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique affix identifier',
@@ -1881,6 +1907,19 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_affixes` (
   PRIMARY KEY (`affix_id`),
   KEY `idx_type` (`type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Individual affix definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_featured_dungeons
+CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
+  `season_id` int unsigned NOT NULL COMMENT 'Season from dc_mplus_seasons',
+  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
+  `sort_order` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Display order in UI',
+  PRIMARY KEY (`season_id`,`map_id`),
+  KEY `map_id` (`map_id`),
+  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE CASCADE,
+  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_2` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Featured dungeons per season for Mythic+ rotation';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1906,7 +1945,7 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
   PRIMARY KEY (`season_id`),
   KEY `idx_active` (`is_active`),
   KEY `idx_time_range` (`start_ts`,`end_ts`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal Mythic+ rotation and configuration';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal Mythic+ rotation and configuration';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2621,7 +2660,7 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `VerifiedBuild` int DEFAULT NULL,
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=5530824 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
+) ENGINE=InnoDB AUTO_INCREMENT=5530874 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

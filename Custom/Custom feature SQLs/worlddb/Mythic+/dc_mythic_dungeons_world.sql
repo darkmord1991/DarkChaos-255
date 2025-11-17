@@ -135,10 +135,10 @@ INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entr
 (100050, 0, 0, 0, 0, 0, 'Vault Curator Lyra', 'Great Vault Keeper', '', 0, 80, 80, 0, 35, 4097, 1, 1.14286, 1, 1, 0, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_mythic_plus_great_vault', 0),
 (100051, 0, 0, 0, 0, 0, 'Seasonal Quartermaster', 'Mythic+ Token Vendor', '', 0, 80, 80, 0, 35, 4097, 1, 1.14286, 1, 1, 0, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 'npc_mythic_token_vendor', 0);
 
-DELETE FROM `creature_template_model` WHERE `CreatureID` IN (100050, 120345);
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (100050, 100051);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (100050, 0, 30259, 1, 1, 0),
-(100051, 0, 30302, 1, 1, 0);
+(100051, 0, 30259, 1, 1, 0);
 
 -- ========================================================================
 -- Table: dc_mplus_final_bosses
