@@ -10,7 +10,7 @@
 #include "Player.h"
 #include "Quests/QuestDef.h"
 #include "ObjectAccessor.h"
-#include "ItemUpgrade/ItemUpgradeManager.h"
+#include "ItemUpgradeManager.h"
 #include "Log.h"
 
 // Forward declarations
