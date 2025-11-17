@@ -159,7 +159,7 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
     if (!profile)
         return; // No profile = no scaling
     
-    Difficulty difficulty = map->GetDifficulty();
+    Difficulty difficulty = ResolveDungeonDifficulty(map);
     
     // Calculate appropriate level
     uint8 newLevel = CalculateCreatureLevel(creature, map, profile);
@@ -232,7 +232,7 @@ uint8 MythicDifficultyScaling::CalculateCreatureLevel(Creature* creature, Map* m
     if (!creature || !map || !profile)
         return 0;
     
-    Difficulty difficulty = map->GetDifficulty();
+    Difficulty difficulty = ResolveDungeonDifficulty(map);
     uint32 rank = creature->GetCreatureTemplate()->rank;
     uint8 originalLevel = creature->GetLevel();
     
@@ -313,6 +313,22 @@ uint32 MythicDifficultyScaling::GetKeystoneLevel(Map* map)
         return 0;
 
     return sMythicRuns->GetKeystoneLevel(map);
+}
+
+Difficulty MythicDifficultyScaling::ResolveDungeonDifficulty(Map* map) const
+{
+    if (!map)
+        return DUNGEON_DIFFICULTY_NORMAL;
+
+    Difficulty difficulty = map->GetDifficulty();
+    if (difficulty <= DUNGEON_DIFFICULTY_EPIC)
+        return difficulty;
+
+    uint8 spawnMode = map->GetSpawnMode();
+    if (spawnMode > DUNGEON_DIFFICULTY_EPIC)
+        spawnMode = DUNGEON_DIFFICULTY_EPIC;
+
+    return Difficulty(spawnMode);
 }
 
 void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult)

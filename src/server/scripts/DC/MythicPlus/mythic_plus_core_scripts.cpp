@@ -58,7 +58,7 @@ public:
         if (!profile)
             return;
 
-        Difficulty difficulty = map->GetDifficulty();
+        Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
         uint32 rank = creature->GetCreatureTemplate()->rank;
         
         // Determine creature type
@@ -115,7 +115,7 @@ public:
         if (!profile)
             return;
 
-        Difficulty difficulty = map->GetDifficulty();
+        Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
         
         // Determine multipliers based on difficulty
         float hpMult = 1.0f;
@@ -204,7 +204,7 @@ public:
             return;
         
         // Only process in Mythic difficulty
-        if (map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
+        if (sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
             return;
         
         // Despawn quest givers cleanly (remove from world immediately - no corpse)
@@ -254,7 +254,7 @@ public:
         };
 
         // Announce difficulty on dungeon entry
-        Difficulty diff = map->GetDifficulty();
+        Difficulty diff = sMythicScaling->ResolveDungeonDifficulty(map);
         std::string diffName;
         std::string scaling;
 

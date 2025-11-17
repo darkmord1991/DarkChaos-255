@@ -10,6 +10,7 @@
 #include "SharedDefines.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
+#include "DatabaseEnv.h"
 
 /*
  * Heirloom Scaling Extension to Level 255
@@ -17,17 +18,52 @@
  * This script extends heirloom item scaling beyond the default DBC cap (level 80)
  * up to level 255 for custom high-level servers.
  * 
+ * IMPORTANT: For Tier 3 Heirloom Upgrade System Integration:
+ * - Primary stats (STR/AGI/INT/STA/SPI) scale with player level (handled here)
+ * - Secondary stats (Crit/Haste/Hit/Expertise/ArmorPen) scale with upgrade level (handled by upgrade system)
+ * - Item level NEVER changes (stays at 80) - tier 3 items use upgrade level only
+ * - Upgrade system adds secondary stats via permanent enchantments
+ * 
  * Features:
- * - Scales heirloom armor/weapons stats (Strength, Stamina, etc.)
+ * - Scales heirloom armor/weapons PRIMARY stats (Strength, Stamina, etc.) with player level
  * - Scales heirloom bag slots (containers get more slots at higher levels)
+ * - Respects upgrade system for secondary stat bonuses
  * 
  * How it works:
  * - Intercepts the ScalingStatValue lookup before DBC capping occurs
- * - For heirloom items (Quality 7, Flags 134221824), uses level 80 scaling data
- *   and extrapolates it with 2x accelerated scaling for levels 81-255
+ * - For heirloom items (Quality 7), uses level 80 scaling data
+ *   and extrapolates it with linear scaling for levels 81-255
  * - Maintains proper stat scaling ratios while extending the level range
  * - For bags: increases ContainerSlots based on player level
+ * - Queries dc_item_upgrades table to check for secondary stat bonuses
  */
+
+namespace {
+    // Helper to get item upgrade info from database
+    struct HeirloomUpgradeInfo {
+        uint8 upgradeLevel = 0;
+        uint8 tier = 3; // Default to tier 3 for heirlooms
+        bool hasUpgrade = false;
+    };
+    
+    HeirloomUpgradeInfo GetHeirloomUpgradeInfo(uint32 itemGUID) {
+        HeirloomUpgradeInfo info;
+        
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT upgrade_level, tier_id FROM dc_item_upgrades WHERE item_guid = {}",
+            itemGUID
+        );
+        
+        if (result) {
+            Field* fields = result->Fetch();
+            info.upgradeLevel = fields[0].Get<uint8>();
+            info.tier = fields[1].Get<uint8>();
+            info.hasUpgrade = true;
+        }
+        
+        return info;
+    }
+}
 
 class heirloom_scaling_255 : public PlayerScript
 {

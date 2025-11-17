@@ -1,11 +1,14 @@
 /*
  * DarkChaos Item Upgrade - Vendor NPC
  *
- * This file implements the Item Upgrade Vendor NPC (ID: 190001)
+ * This file implements the Item Upgrade Vendor NPC (ID: 191001)
  * who provides item upgrade services and token exchange
+ *
+ * NOTE: ID changed from 190001 to 191001 to avoid conflict with M+ Keystone items
  *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
+ * Updated: November 17, 2025 - ID change
  */
 
 #include "ScriptMgr.h"
@@ -16,7 +19,7 @@
 #include "DatabaseEnv.h"
 #include <sstream>
 
-// NPC ID: 190001 - Item Upgrade Vendor
+// NPC ID: 191001 - Item Upgrade Vendor
 // Locations: Main cities (faction-based)
 
 class ItemUpgradeVendor : public CreatureScript

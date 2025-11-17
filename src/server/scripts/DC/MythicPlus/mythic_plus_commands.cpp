@@ -217,7 +217,7 @@ public:
             handler->PSendSysMessage("Dungeon: |cffffffff%s|r", profile->name.c_str());
         
         handler->PSendSysMessage("Map ID: |cffffffff%u|r", map->GetId());
-        handler->PSendSysMessage("Difficulty: |cffffffff%u|r", static_cast<uint32>(map->GetDifficulty()));
+        handler->PSendSysMessage("Difficulty: |cffffffff%u|r", static_cast<uint32>(sMythicScaling->ResolveDungeonDifficulty(map)));
         
         if (keystoneLevel > 0)
         {

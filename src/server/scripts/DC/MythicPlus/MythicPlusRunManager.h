@@ -39,6 +39,7 @@ public:
 
     // Keystone lifecycle
     bool TryActivateKeystone(Player* player, GameObject* font);
+    bool CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText);
     uint32 GetKeystoneLevel(Map* map) const;
 
     // Participation tracking

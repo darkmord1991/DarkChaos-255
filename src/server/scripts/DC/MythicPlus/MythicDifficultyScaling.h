@@ -72,6 +72,9 @@ public:
     // Calculate Mythic+ multipliers based on keystone level
     void CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult);
 
+    // Normalizes dungeon difficulty detection (accounts for spawn mode fallback)
+    Difficulty ResolveDungeonDifficulty(Map* map) const;
+
     uint32 GetActiveSeasonId() const { return _activeSeasonId; }
     
 private:

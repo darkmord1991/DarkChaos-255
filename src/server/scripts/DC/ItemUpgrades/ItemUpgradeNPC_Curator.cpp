@@ -1,11 +1,21 @@
 /*
  * DarkChaos Item Upgrade - Artifact Curator NPC
  *
- * This file implements the Chaos Artifact Curator NPC (ID: 190002)
- * who manages artifact collection, discovery, and cosmetic display
+ * This file implements the Chaos Artifact Curator NPC (ID: 191002)
+ * who manages the heirloom and artifact collection systems.
+ *
+ * LEADING NPC FOR HEIRLOOM/ARTIFACT SYSTEM:
+ * This is the primary interface for players to:
+ *   - View discovered artifacts and heirlooms (items 191101-191135)
+ *   - Check artifact essence balance
+ *   - Learn about artifact/heirloom mechanics
+ *   - Access cosmetic features (Phase 4B)
+ *
+ * NOTE: ID changed from 190002 to 191002 to avoid conflict with M+ Keystone items
  *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025
+ * Updated: November 17, 2025 - ID change and enhanced documentation
  */
 
 #include "ScriptMgr.h"
@@ -16,7 +26,7 @@
 #include "DatabaseEnv.h"
 #include <sstream>
 
-// NPC ID: 190002 - Artifact Curator
+// NPC ID: 191002 - Artifact Curator (LEADING HEIRLOOM/ARTIFACT NPC)
 // Location: Single location (curator museum/vault)
 
 class ItemUpgradeCurator : public CreatureScript
@@ -61,7 +71,8 @@ public:
         // Build greeting text
         std::ostringstream greetingText;
         greetingText << "Greetings, " << player->GetName() << ".\n\n";
-        greetingText << "I am the Artifact Curator. I preserve knowledge of ancient artifacts and can help you unlock their power.\n\n";
+        greetingText << "I am the Artifact Curator, keeper of the ancient heirlooms and artifacts of Dark Chaos.\n";
+        greetingText << "Through me, you may discover powerful heirlooms that scale with your growth.\n\n";
         greetingText << "|cff00ff00Upgrade Tokens:|r " << DarkChaos::ItemUpgrade::UI::FormatCurrency(upgradeTokens) << "\n";
         greetingText << "|cffff9900Artifact Essence:|r " << DarkChaos::ItemUpgrade::UI::FormatCurrency(artifactEssence);
 
