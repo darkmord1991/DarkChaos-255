@@ -12,6 +12,7 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "StringFormat.h"
 #include <algorithm>
 #include <random>
 #include <vector>
@@ -146,14 +147,17 @@ bool MythicPlusRunManager::GenerateVaultRewardPool(ObjectGuid::LowType playerGui
         std::string armorType = GetPlayerArmorType(player);
         uint8 classId = player->getClass();
         
-        // Query eligible items from loot table
-        WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_MPLUS_VAULT_LOOT);
-        stmt->SetData(0, classId);
-        stmt->SetData(1, playerSpec);
-        stmt->SetData(2, armorType);
-        stmt->SetData(3, itemLevel);
+        // Query eligible items from loot table using direct query
+        std::string query = Acore::StringFormat(
+            "SELECT item_id FROM dc_vault_loot_table "
+            "WHERE (class_id = {} OR class_id = 0) "
+            "AND (spec_name = '{}' OR spec_name = 'All') "
+            "AND (armor_type = '{}' OR armor_type = 'All') "
+            "AND item_level >= {} AND item_level <= {} "
+            "ORDER BY RAND() LIMIT 50",
+            classId, playerSpec, armorType, itemLevel - 5, itemLevel + 5);
         
-        if (PreparedQueryResult result = WorldDatabase.Query(stmt))
+        if (QueryResult result = WorldDatabase.Query(query.c_str()))
         {
             std::vector<uint32> eligibleItems;
             do {
