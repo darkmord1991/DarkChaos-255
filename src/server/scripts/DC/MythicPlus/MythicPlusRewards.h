@@ -8,22 +8,25 @@
 
 #include <cstdint>
 
-// Item level calculation based on keystone level (retail-style)
-// Base item levels follow retail Mythic+ structure
-// M+2: ilvl 200, M+3: 203, M+4: 207, etc.
+// Item level calculation based on keystone level (simplified progression)
+// Simplified tier system with higher rewards:
+// M+2-4: 239 ilvl
+// M+5-7: 252 ilvl
+// M+8-11: 264 ilvl
+// M+12+: 277 ilvl (+13 per tier beyond M+12)
 inline uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
 {
     if (keystoneLevel < 2)
-        return 190; // Mythic 0 baseline
+        return 226; // Mythic 0 baseline (increased from 190)
+    if (keystoneLevel <= 4)
+        return 239; // M+2-4: Tier 1
     if (keystoneLevel <= 7)
-        return 200 + ((keystoneLevel - 2) * 3); // M+2-7: 200, 203, 207, 210, 213, 216
-    if (keystoneLevel <= 10)
-        return 216 + ((keystoneLevel - 7) * 4); // M+8-10: 220, 224, 228
-    if (keystoneLevel <= 15)
-        return 228 + ((keystoneLevel - 10) * 4); // M+11-15: 232, 236, 240, 244, 248
+        return 252; // M+5-7: Tier 2
+    if (keystoneLevel <= 11)
+        return 264; // M+8-11: Tier 3
     
-    // Beyond M+15: +3 ilvl per level
-    return 248 + ((keystoneLevel - 15) * 3);
+    // M+12+: 277 base + 13 per tier (M+16=290, M+20=303, etc.)
+    return 277 + (((keystoneLevel - 12) / 4) * 13);
 }
 
 #endif // MYTHIC_PLUS_REWARDS_H

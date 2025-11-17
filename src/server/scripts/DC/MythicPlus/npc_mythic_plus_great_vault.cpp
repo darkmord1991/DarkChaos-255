@@ -86,7 +86,7 @@ public:
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
 
-        // Display slots with token/ilvl info
+        // Display slots with token/ilvl info OR gear choices
         for (uint8 slot = 1; slot <= 3; ++slot)
         {
             uint8 threshold = sMythicRuns->GetVaultThreshold(slot);
@@ -97,12 +97,56 @@ public:
                     "|cff00ff00[Slot " + std::to_string(slot) + "]|r Already Claimed", 
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
             }
-            else if (unlocked[slot] && !claimed && tokenCount > 0)
+            else if (unlocked[slot] && !claimed)
             {
-                std::string rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cffffffff" + 
-                                        std::to_string(tokenCount) + " Tokens|r |cffff8000(ilvl " + 
-                                        std::to_string(itemLevel) + " equivalent)|r";
-                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, rewardText, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + slot);
+                // Group rewards by slot (0-2=slot1, 3-5=slot2, 6-8=slot3)
+                std::vector<std::pair<uint32, uint32>> slotRewards;
+                uint8 slotStartIdx = (slot - 1) * 3;
+                uint8 slotEndIdx = slot * 3;
+                
+                for (size_t i = slotStartIdx; i < rewards.size() && i < slotEndIdx; ++i)
+                {
+                    slotRewards.push_back(rewards[i]);
+                }
+
+                if (!slotRewards.empty())
+                {
+                    // Check if first reward is token (MYTHIC_VAULT_TOKEN = 101000)
+                    if (slotRewards[0].first == 101000)
+                    {
+                        // Token mode display (backward compatible)
+                        std::string rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cffffffff" + 
+                                                std::to_string(tokenCount) + " Tokens|r |cffff8000(ilvl " + 
+                                                std::to_string(itemLevel) + " equivalent)|r";
+                        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, rewardText, GOSSIP_SENDER_MAIN, 1000 + slotStartIdx);
+                    }
+                    else
+                    {
+                        // Gear mode display (Blizzlike)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                            "|cff00ff00[Slot " + std::to_string(slot) + "]|r Choose Your Reward:", 
+                            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+
+                        for (size_t i = 0; i < slotRewards.size(); ++i)
+                        {
+                            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(slotRewards[i].first);
+                            if (itemTemplate)
+                            {
+                                std::string itemText = "  |cff0070dd→ " + std::string(itemTemplate->Name1) + 
+                                                      "|r |cffaaaaaa(ilvl " + std::to_string(slotRewards[i].second) + ")|r";
+                                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, itemText,
+                                               GOSSIP_SENDER_MAIN, 1000 + slotStartIdx + i);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback if no rewards generated (should not happen with TokenFallback=1)
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                        "|cffaaaaaa[Slot " + std::to_string(slot) + "]|r No rewards available", 
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+                }
             }
             else if (unlocked[slot] && claimed)
             {
@@ -134,7 +178,40 @@ public:
 
         ClearGossipMenuFor(player);
 
-        // Claim slot
+        // Claim slot (action 1000-1029 for gear choices, or legacy GOSSIP_ACTION_INFO_DEF+slot for tokens)
+        if (action >= 1000 && action < 1030)
+        {
+            // New action range: 1000-1029 (3 slots × 3 choices × 3 max + buffer)
+            // slot_index encoding: 0-2=slot1, 3-5=slot2, 6-8=slot3
+            uint8 rewardIndex = action - 1000;
+            uint8 slot = (rewardIndex / 3) + 1;  // Which vault slot (1-3)
+            
+            // Get reward info
+            uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
+            uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
+            uint32 guidLow = player->GetGUID().GetCounter();
+            
+            auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+            if (rewardIndex < rewards.size())
+            {
+                uint32 itemId = rewards[rewardIndex].first;
+                if (sMythicRuns->ClaimVaultItemReward(player, slot, itemId))
+                {
+                    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+                    std::string itemName = itemTemplate ? std::string(itemTemplate->Name1) : "Item";
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Great Vault:|r Claimed %s successfully!", itemName.c_str());
+                }
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r Invalid reward selection.");
+            }
+            
+            CloseGossipMenuFor(player);
+            return true;
+        }
+        
+        // Legacy claim action for backward compatibility
         if (action >= GOSSIP_ACTION_INFO_DEF + 1 && action <= GOSSIP_ACTION_INFO_DEF + 3)
         {
             uint8 slot = action - GOSSIP_ACTION_INFO_DEF;

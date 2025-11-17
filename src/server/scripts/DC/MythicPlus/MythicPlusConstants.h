@@ -91,18 +91,30 @@ namespace MythicPlusConstants
     
     /**
      * Calculate item level for a given keystone level
-     * Formula: 213 + (level × 3)
+     * Simplified tier system:
+     * M+2-4: 239 ilvl
+     * M+5-7: 252 ilvl
+     * M+8-11: 264 ilvl
+     * M+12+: 277+ ilvl (13 per tier)
      * @param keystoneLevel Keystone level (2-20)
      * @return Item level
      */
     inline uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
     {
         if (keystoneLevel < MIN_KEYSTONE_LEVEL)
-            return 213; // Base Mythic ilvl
+            return 226; // Base Mythic ilvl
         if (keystoneLevel > MAX_KEYSTONE_LEVEL)
             keystoneLevel = MAX_KEYSTONE_LEVEL;
         
-        return 213 + (keystoneLevel * 3);
+        if (keystoneLevel <= 4)
+            return 239; // M+2-4: Tier 1
+        if (keystoneLevel <= 7)
+            return 252; // M+5-7: Tier 2
+        if (keystoneLevel <= 11)
+            return 264; // M+8-11: Tier 3
+        
+        // M+12+: 277 + 13 per tier
+        return 277 + (((keystoneLevel - 12) / 4) * 13);
     }
     
     /**

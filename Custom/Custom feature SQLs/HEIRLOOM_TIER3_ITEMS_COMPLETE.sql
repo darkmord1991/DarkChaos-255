@@ -315,12 +315,13 @@ VALUES
   -- ====================================================================================
   
   -- Heirloom Bag (NOT upgradeable, scales slots via heirloom_scaling_255 system)
+  -- Starting at 12 slots (level 1), scales to 36 slots (level 130+)
   (191134, 1, 0, 'Heirloom Bottomless Bag', 19914, 7, 1, 0, 1, 0, 0,
    0, -1, -1, 1, 1,
    0, 0, 0, 0,
    0, 0,
-   0, 0, 1, 'Bag slots scale with character level. NOT upgradeable.', 5, 0, 0,
-   0, 16, 'HeirloomBagScript', 12340),
+   0, 0, 1, 'Bag slots scale with character level. Starts at 12 slots, reaches 36 at level 130.', 5, 0, 0,
+   0, 12, '', 12340),
   
   -- Heirloom Shirt (Cosmetic, NOT upgradeable)
   (191135, 4, 0, 'Heirloom Formal Shirt', 6833, 7, 1, 0, 1, 0, 0,

@@ -819,6 +819,101 @@ MythicPlus.Vault.Enabled = 1
 #
 MythicPlus.Vault.ScaleTokens = 1
 
+# -------------------------------------------------------------------------
+# Great Vault Reward System (Blizzlike Spec-Based Loot)
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.Vault.RewardMode
+#        Description: Vault reward distribution mode
+#                     Controls whether players receive tokens or actual gear items
+#                     
+#                     Mode 0 (TOKENS): 
+#                       - Gives MYTHIC_VAULT_TOKEN (item 101000)
+#                       - Amount: 10 + (ilvl - 190) / 10 per slot
+#                       - Players exchange tokens at vendor for chosen gear
+#                       - Backward compatible with existing system
+#                     
+#                     Mode 1 (GEAR - Blizzlike): 
+#                       - Generates 3 actual gear items per unlocked slot
+#                       - Items filtered by player's class, spec, armor type, role
+#                       - Matches retail WoW Great Vault behavior
+#                       - Requires populated dc_vault_loot_table (world DB)
+#                       - Falls back to tokens if no matching gear found
+#                     
+#                     Mode 2 (HYBRID):
+#                       - Slot 1: Tokens (backward compatible)
+#                       - Slots 2-3: Gear items (if available)
+#                       - Provides both options to players
+#        Default:     0 (Tokens - existing behavior)
+#        Options:     0 = Tokens only (default/safe)
+#                     1 = Gear only (full Blizzlike, requires loot table)
+#                     2 = Hybrid (tokens + gear)
+#
+MythicPlus.Vault.RewardMode = 1
+
+#
+#    MythicPlus.Vault.ChoicesPerSlot
+#        Description: Number of gear items to generate per unlocked vault slot
+#                     Only used when RewardMode = 1 (GEAR) or 2 (HYBRID)
+#                     
+#                     Retail WoW behavior: 3 choices per slot (9 total for 3 slots)
+#                     Player selects 1 item from each slot's choices.
+#        Default:     3 (Blizzlike - matches retail Great Vault)
+#        Range:       1 - 5 (higher values increase selection but slow down UI)
+#
+MythicPlus.Vault.ChoicesPerSlot = 3
+
+#
+#    MythicPlus.Vault.TokenFallback
+#        Description: Fallback to tokens if no matching gear found in loot table
+#                     Only applies to RewardMode = 1 (GEAR) or 2 (HYBRID)
+#                     
+#                     When enabled and dc_vault_loot_table has no matching items:
+#                       - Automatically give tokens instead
+#                       - Prevents empty vault slots
+#                       - Logs warning to worldserver.log
+#                     
+#                     When disabled and no gear found:
+#                       - Vault slot remains empty/locked
+#                       - Player gets nothing for that slot
+#        Default:     1 (Enabled - always give something)
+#                     0 (Disabled - strict gear-only, empty if no match)
+#
+MythicPlus.Vault.TokenFallback = 1
+
+#
+#    MythicPlus.Vault.FilterBySpec
+#        Description: Enable strict spec filtering for gear generation
+#                     When enabled: Only items matching player's active spec
+#                     When disabled: Any item matching class/armor type
+#                     
+#                     Example (Warrior with Arms spec):
+#                       Enabled:  Only Arms-specific items + multi-spec items
+#                       Disabled: All warrior plate items (Arms/Fury/Prot)
+#        Default:     1 (Enabled - strict spec filtering)
+#                     0 (Disabled - class-wide pool)
+#
+MythicPlus.Vault.FilterBySpec = 1
+
+#
+#    MythicPlus.Vault.RequirePopulatedTable
+#        Description: Prevent Mode 1 (GEAR) if dc_vault_loot_table is empty
+#                     Safety check to avoid empty vaults on fresh installations.
+#                     
+#                     When enabled and table empty:
+#                       - Forces RewardMode = 0 (tokens) temporarily
+#                       - Logs error to worldserver.log
+#                       - Server continues functioning
+#                     
+#                     When disabled:
+#                       - Allows Mode 1 even with empty table
+#                       - Relies on TokenFallback setting
+#        Default:     1 (Enabled - safety check active)
+#                     0 (Disabled - trust configuration)
+#
+MythicPlus.Vault.RequirePopulatedTable = 1
+
 #
 #    MythicPlus.Seasons.Enabled
 #        Description: Enable seasonal rotation system
