@@ -531,7 +531,7 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
 
         if (creature->IsAlive())
         {
-            creature->SetDeathState(JUST_DIED);
+            creature->DisappearAndDie();
             ++forcedRespawns;
         }
 
