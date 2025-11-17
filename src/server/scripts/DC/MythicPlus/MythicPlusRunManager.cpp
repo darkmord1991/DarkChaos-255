@@ -62,47 +62,24 @@ void MythicPlusRunManager::Reset()
 
 bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
 {
+    KeystoneDescriptor descriptor;
+    std::string validationError;
+    if (!CanActivateKeystone(player, font, descriptor, validationError))
+    {
+        SendGenericError(player, validationError);
+        return false;
+    }
+
     if (!player || !font)
         return false;
 
-    if (!IsKeystoneRequirementEnabled())
-    {
-        SendGenericError(player, "Mythic+ keystones are currently disabled.");
-        return false;
-    }
-
     Map* map = font->GetMap();
-    if (!map || !map->IsDungeon())
-    {
-        SendGenericError(player, "The Font of Power must be used inside a dungeon instance.");
+    if (!map)
         return false;
-    }
-
-    if (map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
-    {
-        SendGenericError(player, "Set the instance to Mythic difficulty before activating a keystone.");
-        return false;
-    }
 
     DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
-    if (!profile || !profile->mythicEnabled)
-    {
-        SendGenericError(player, "This dungeon is not configured for Mythic+ runs yet.");
+    if (!profile)
         return false;
-    }
-
-    KeystoneDescriptor descriptor;
-    if (!LoadPlayerKeystone(player, map->GetId(), descriptor))
-    {
-        SendGenericError(player, "You do not possess a valid keystone for this dungeon.");
-        return false;
-    }
-
-    if (descriptor.level == 0)
-    {
-        SendGenericError(player, "Keystone data is invalid. Please relog or contact a GM.");
-        return false;
-    }
 
     InstanceState* state = GetOrCreateState(map);
     if (!state)
@@ -111,15 +88,9 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
         return false;
     }
 
-    if (state->keystoneLevel > 0 && !state->failed && !state->completed)
-    {
-        SendGenericError(player, "A keystone is already active in this instance.");
-        return false;
-    }
-
     state->mapId = map->GetId();
     state->instanceId = map->GetInstanceId();
-    state->difficulty = map->GetDifficulty();
+    state->difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
     state->keystoneLevel = descriptor.level;
     state->seasonId = descriptor.seasonId ? descriptor.seasonId : GetCurrentSeasonId();
     state->ownerGuid = player->GetGUID();
@@ -415,7 +386,7 @@ MythicPlusRunManager::InstanceState* MythicPlusRunManager::GetOrCreateState(Map*
         state.instanceKey = key;
         state.mapId = map->GetId();
         state.instanceId = map->GetInstanceId();
-        state.difficulty = map->GetDifficulty();
+        state.difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
     }
 
     return &state;
@@ -515,7 +486,7 @@ void MythicPlusRunManager::AnnounceToInstance(Map* map, std::string_view message
 
 void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
 {
-    if (!map || map->GetDifficulty() != DUNGEON_DIFFICULTY_EPIC)
+    if (!map || sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
         return;
 
     static constexpr uint8 COUNTDOWN_POINTS[] = { 10, 5, 4, 3, 2, 1 };
@@ -534,7 +505,7 @@ void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
         player->CastSpell(player, ENTRY_BARRIER_SPELL, true);
 
         for (uint8 seconds : COUNTDOWN_POINTS)
-            handler.PSendSysMessage("|cffff0000%u|r seconds", seconds);
+            handler.SendSysMessage(Acore::StringFormat("|cffff0000{}|r seconds", uint32(seconds)).c_str());
     }
 }
 
@@ -543,22 +514,13 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
     if (!map || keystoneLevel < 2)
         return;
 
-    float hpMult = 1.0f;
-    float damageMult = 1.0f;
-    sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, hpMult, damageMult);
-
-    if (hpMult <= 1.0f && damageMult <= 1.0f)
-        return;
-
-    uint32 affected = 0;
+    uint32 refreshed = 0;
+    uint32 forcedRespawns = 0;
     auto& creatureStore = map->GetCreatureBySpawnIdStore();
     for (auto const& pair : creatureStore)
     {
         Creature* creature = pair.second;
         if (!creature || creature->GetMap() != map)
-            continue;
-
-        if (!creature->IsAlive())
             continue;
 
         if (!creature->IsHostileToPlayers())
@@ -567,12 +529,18 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
         if (creature->IsControlledByPlayer())
             continue;
 
-        sMythicScaling->ApplyMultipliers(creature, hpMult, damageMult);
-        ++affected;
+        if (creature->IsAlive())
+        {
+            creature->SetDeathState(JUST_DIED);
+            ++forcedRespawns;
+        }
+
+        creature->Respawn(true);
+        ++refreshed;
     }
 
-    LOG_INFO("mythic.run", "Applied keystone scaling (+{} level) to {} creatures in instance {} (map {})",
-             keystoneLevel, affected, map->GetInstanceId(), map->GetId());
+    LOG_INFO("mythic.run", "Refreshed {} hostile creatures ({} forced) for keystone level +{} in instance {} (map {})",
+             refreshed, forcedRespawns, keystoneLevel, map->GetInstanceId(), map->GetId());
 }
 
 void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_view reason, bool downgradeKeystone)

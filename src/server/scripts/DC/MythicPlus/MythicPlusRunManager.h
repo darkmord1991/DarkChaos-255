@@ -6,6 +6,9 @@
 #ifndef MYTHIC_PLUS_RUN_MANAGER_H
 #define MYTHIC_PLUS_RUN_MANAGER_H
 
+#include "Config.h"
+#include "GameObject.h"
+#include "MythicDifficultyScaling.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "SharedDefines.h"
@@ -129,6 +132,73 @@ private:
     std::unordered_map<uint64, InstanceState> _instanceStates;
         std::unordered_map<uint32, std::unordered_set<uint32>> _finalBossEntries;
 };
+
+inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)
+{
+    outErrorText.clear();
+
+    if (!player || !font)
+    {
+        outErrorText = "Invalid keystone activation request.";
+        return false;
+    }
+
+    if (!IsKeystoneRequirementEnabled())
+    {
+        outErrorText = "Mythic+ keystones are currently disabled.";
+        return false;
+    }
+
+    Map* map = font->GetMap();
+    if (!map || !map->IsDungeon())
+    {
+        outErrorText = "The Font of Power must be used inside a dungeon instance.";
+        return false;
+    }
+
+    if (sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
+    {
+        outErrorText = "Set the instance to Mythic difficulty before activating a keystone.";
+        return false;
+    }
+
+    DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
+    if (!profile || !profile->mythicEnabled)
+    {
+        outErrorText = "This dungeon is not configured for Mythic+ runs yet.";
+        return false;
+    }
+
+    if (!LoadPlayerKeystone(player, map->GetId(), outDescriptor))
+    {
+        outErrorText = "You do not possess a valid keystone for this dungeon.";
+        return false;
+    }
+
+    if (outDescriptor.level == 0)
+    {
+        outErrorText = "Keystone data is invalid. Please relog or contact a GM.";
+        return false;
+    }
+
+    uint32 seasonId = outDescriptor.seasonId ? outDescriptor.seasonId : GetCurrentSeasonId();
+    if (sConfigMgr->GetOption<bool>("MythicPlus.FeaturedOnly", true) && !IsDungeonFeaturedThisSeason(map->GetId(), seasonId))
+    {
+        outErrorText = "This dungeon is not featured in the current Mythic+ season.";
+        return false;
+    }
+
+    if (InstanceState* state = GetState(map))
+    {
+        if (state->keystoneLevel > 0 && !state->failed && !state->completed)
+        {
+            outErrorText = "A keystone is already active in this instance.";
+            return false;
+        }
+    }
+
+    return true;
+}
 
 #define sMythicRuns MythicPlusRunManager::instance()
 
