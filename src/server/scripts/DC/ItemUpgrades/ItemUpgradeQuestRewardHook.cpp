@@ -74,17 +74,6 @@ namespace DarkChaos
                     LOG_WARN("scripts.darkchaos", "ItemUpgradeArtifactQuestHook: Failed to award essence to player %u (quest %u)", playerGuid, ARTIFACT_QUEST_ID);
                 }
             }
-
-            /**
-             * Script Load Hook - Register the player script
-             */
-            class ItemUpgradeQuestRewardLoader : public ScriptMgr
-        {
-        public:
-            void OnScriptLoad() override
-            {
-                new ItemUpgradeArtifactQuestHook();
-            }
         };
     }
 }
