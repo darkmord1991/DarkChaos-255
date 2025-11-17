@@ -54,12 +54,10 @@ public:
         // Fetch reward pool info
         auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
         uint32 itemLevel = 0;
-        uint32 tokenItemId = 0;
         
         if (!rewards.empty())
         {
             itemLevel = rewards[0].second;  // Item level
-            tokenItemId = rewards[0].first; // Token item ID
         }
         else if (highestLevel > 0)
         {

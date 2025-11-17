@@ -34,25 +34,51 @@ std::string GetPlayerSpec(Player* player)
         return "Unknown";
     
     uint8 classId = player->getClass();
-    uint32 activeSpec = player->GetPrimaryTalentTree(player->GetActiveSpec());
+    uint8 primaryTree = player->GetMostPointsTalentTree(); // Returns 0, 1, or 2
     
-    // Map talent tree to spec name (simplified)
-    // You'll need to expand this based on your talent system
+    // Map class + tree index to spec name
     switch (classId)
     {
         case CLASS_WARRIOR:
-            if (activeSpec == 746) return "Arms";
-            if (activeSpec == 815) return "Fury";
+            if (primaryTree == 0) return "Arms";
+            if (primaryTree == 1) return "Fury";
             return "Protection";
         case CLASS_PALADIN:
-            if (activeSpec == 831) return "Holy";
-            if (activeSpec == 839) return "Protection";
+            if (primaryTree == 0) return "Holy";
+            if (primaryTree == 1) return "Protection";
             return "Retribution";
+        case CLASS_HUNTER:
+            if (primaryTree == 0) return "Beast Mastery";
+            if (primaryTree == 1) return "Marksmanship";
+            return "Survival";
+        case CLASS_ROGUE:
+            if (primaryTree == 0) return "Assassination";
+            if (primaryTree == 1) return "Combat";
+            return "Subtlety";
+        case CLASS_PRIEST:
+            if (primaryTree == 0) return "Discipline";
+            if (primaryTree == 1) return "Holy";
+            return "Shadow";
         case CLASS_DEATH_KNIGHT:
-            if (activeSpec == 398) return "Blood";
-            if (activeSpec == 399) return "Frost";
+            if (primaryTree == 0) return "Blood";
+            if (primaryTree == 1) return "Frost";
             return "Unholy";
-        // Add other classes...
+        case CLASS_SHAMAN:
+            if (primaryTree == 0) return "Elemental";
+            if (primaryTree == 1) return "Enhancement";
+            return "Restoration";
+        case CLASS_MAGE:
+            if (primaryTree == 0) return "Arcane";
+            if (primaryTree == 1) return "Fire";
+            return "Frost";
+        case CLASS_WARLOCK:
+            if (primaryTree == 0) return "Affliction";
+            if (primaryTree == 1) return "Demonology";
+            return "Destruction";
+        case CLASS_DRUID:
+            if (primaryTree == 0) return "Balance";
+            if (primaryTree == 1) return "Feral Combat";
+            return "Restoration";
         default:
             return "Unknown";
     }
