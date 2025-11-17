@@ -29,7 +29,7 @@ namespace DarkChaos
              * Hook triggered when player completes any quest
              * Awards essence if quest is an artifact quest
              */
-            void OnQuestComplete(Player* player, Quest const* quest) override
+            void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
             {
                 if (!player || !quest)
                     return;
