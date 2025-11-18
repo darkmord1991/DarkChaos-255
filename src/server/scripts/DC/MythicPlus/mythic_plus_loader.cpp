@@ -14,6 +14,7 @@ void AddSC_npc_mythic_token_vendor();
 void AddSC_mythic_plus_commands();
 void AddSC_npc_keystone_vendor();
 void AddSC_npc_mythic_plus_statistics();
+void AddSC_item_mythic_keystone();
 
 void AddMythicPlusScripts()
 {
@@ -25,4 +26,5 @@ void AddMythicPlusScripts()
     AddSC_mythic_plus_commands();
     AddSC_npc_keystone_vendor();
     AddSC_npc_mythic_plus_statistics();
+    AddSC_item_mythic_keystone();
 }

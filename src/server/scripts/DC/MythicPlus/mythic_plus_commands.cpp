@@ -22,6 +22,7 @@ public:
         static ChatCommandTable mplusCommandTable =
         {
             { "keystone",   HandleMPlusKeystoneCommand,     SEC_GAMEMASTER, Console::No },
+            { "give",       HandleMPlusGiveCommand,         SEC_GAMEMASTER, Console::No },
             { "vault",      HandleMPlusVaultCommand,        SEC_GAMEMASTER, Console::No },
             { "affix",      HandleMPlusAffixCommand,        SEC_GAMEMASTER, Console::No },
             { "scaling",    HandleMPlusScalingCommand,      SEC_GAMEMASTER, Console::No },
@@ -77,6 +78,40 @@ public:
             handler->PSendSysMessage("  - Grievous");
 
         return true;
+    }
+
+    // .mplus give [level] - Generate a keystone item for testing
+    static bool HandleMPlusGiveCommand(ChatHandler* handler, Optional<uint8> level)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        uint8 keystoneLevel = level.value_or(2);
+        if (keystoneLevel < 2 || keystoneLevel > 10)
+        {
+            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 10.");
+            return false;
+        }
+
+        // Keystone item IDs: 190001-190009 for M+2-M+10
+        uint32 keystoneItemId = 190000 + keystoneLevel - 1;
+
+        // Add keystone to player inventory
+        ItemPosCountVec dest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1) == EQUIP_ERR_OK)
+        {
+            Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
+            if (keystoneItem)
+            {
+                player->SendNewItem(keystoneItem, 1, true, false);
+                handler->PSendSysMessage("|cff00ff00Mythic+:|r Generated Mythic Keystone +%u", keystoneLevel);
+                return true;
+            }
+        }
+        
+        handler->PSendSysMessage("|cffff0000Error:|r Could not create keystone. Inventory may be full.");
+        return false;
     }
 
     // .mplus vault [slot] [level] - Generate test vault rewards

@@ -250,9 +250,18 @@ private:
             uint32 bestScore = fields[2].Get<uint32>();
             uint32 totalRuns = fields[3].Get<uint32>();
             
+            // Get dungeon name from MapEntry
+            std::string dungeonName = "Unknown";
+            if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId))
+                dungeonName = mapEntry->name[0];
+            
+            // Truncate long dungeon names
+            if (dungeonName.length() > 25)
+                dungeonName = dungeonName.substr(0, 22) + "...";
+            
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "|cff1eff00Map %u|r - M+%u (Score: %u, %u runs)", 
-                mapId, bestLevel, bestScore, totalRuns);
+            snprintf(buffer, sizeof(buffer), "|cff1eff00%s|r - M+%u (%u runs)", 
+                dungeonName.c_str(), bestLevel, totalRuns);
             
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, buffer, GOSSIP_SENDER_MAIN, ACTION_CLOSE);
             
