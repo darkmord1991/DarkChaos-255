@@ -427,49 +427,6 @@ public:
     }
 };
 
-// Loot suppression script - only final boss drops loot in Mythic+
-class MythicPlusLootScript : public AllCreatureScript
-{
-public:
-    MythicPlusLootScript() : AllCreatureScript("MythicPlusLootScript") { }
-
-    void OnCreatureGenerateLoot(Creature* creature) override
-    {
-        if (!creature)
-            return;
-
-        Map* map = creature->GetMap();
-        if (!map || !map->IsDungeon())
-            return;
-
-        // Only apply in Mythic difficulty
-        if (sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
-            return;
-
-        // Check if keystone is active
-        if (sMythicRuns->GetKeystoneLevel(map) == 0)
-            return;
-
-        // Get instance state to check if this is a final boss
-        uint32 mapId = map->GetId();
-        uint32 creatureEntry = creature->GetEntry();
-        
-        // Check if this is the final boss using the manager's method
-        if (!sMythicRuns->IsFinalBoss(mapId, creatureEntry))
-        {
-            // Suppress all loot from non-final bosses
-            creature->loot.clear();
-            LOG_INFO("mythic.loot", "Suppressed loot from {} (entry {}) in map {} - not final boss",
-                     creature->GetName(), creatureEntry, mapId);
-        }
-        else
-        {
-            LOG_INFO("mythic.loot", "Allowing loot from final boss {} (entry {}) in map {}",
-                     creature->GetName(), creatureEntry, mapId);
-        }
-    }
-};
-
 void AddSC_mythic_plus_core_scripts()
 {
     new MythicPlusWorldScript();
@@ -478,5 +435,4 @@ void AddSC_mythic_plus_core_scripts()
     new MythicPlusAllMapScript();
     new MythicPlusUnitScript();
     new MythicPlusUpdateScript();
-    new MythicPlusLootScript();
 }
