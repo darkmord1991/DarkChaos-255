@@ -276,7 +276,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         return;
 
     // Count boss kill
-    if (creature->IsWorldBoss() || creature->IsDungeonBoss())
+    if (creature->isWorldBoss() || creature->IsDungeonBoss())
         ++state->bossesKilled;
 
     if (!IsFinalBoss(state->mapId, creature->GetEntry()))
