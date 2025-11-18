@@ -80,6 +80,7 @@ public:
     // Run cancellation and management
     void InitiateCancellation(Map* map);
     void ProcessCancellationTimers();
+    void ProcessCountdowns();
     bool VoteToCancelRun(Player* player, Map* map);
     void ProcessCancellationVotes();
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;

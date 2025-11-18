@@ -140,65 +140,13 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds...", 
         descriptor.level, profile->name, countdownDuration));
     
-    // Schedule countdown announcements at specific intervals using world scheduler
-    uint64 instanceKey = state->instanceKey;
+    // Mark countdown as active and store start time
+    state->countdownActive = true;
+    state->countdownStarted = GameTime::GetGameTime().count();
     
+    // Announce immediately if countdown is 10 seconds
     if (countdownDuration >= 10)
-    {
-        sWorld->GetScheduler().Schedule(Seconds(0), [this, instanceKey](TaskContext)
-        {
-            auto itr = _instanceStates.find(instanceKey);
-            if (itr != _instanceStates.end())
-            {
-                if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
-                    AnnounceToInstance(m, "|cffff8000Mythic+ starting in 10...|r");
-            }
-        });
-    }
-    if (countdownDuration >= 5)
-    {
-        uint32 delay = countdownDuration >= 10 ? 5 : 0;
-        sWorld->GetScheduler().Schedule(Seconds(delay), [this, instanceKey](TaskContext)
-        {
-            auto itr = _instanceStates.find(instanceKey);
-            if (itr != _instanceStates.end())
-            {
-                if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
-                    AnnounceToInstance(m, "|cffff8000Mythic+ starting in 5...|r");
-            }
-        });
-    }
-    for (uint32 i = 4; i > 0; --i)
-    {
-        if (countdownDuration >= (5 - i + 1))
-        {
-            uint32 announceDelay = countdownDuration - i;
-            sWorld->GetScheduler().Schedule(Seconds(announceDelay), [this, instanceKey, i](TaskContext)
-            {
-                auto itr = _instanceStates.find(instanceKey);
-                if (itr != _instanceStates.end())
-                {
-                    if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
-                        AnnounceToInstance(m, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", i));
-                }
-            });
-        }
-    }
-
-    // Schedule actual run start after countdown
-    ObjectGuid playerGuid = player->GetGUID();
-    sWorld->GetScheduler().Schedule(Seconds(countdownDuration), [this, instanceKey, playerGuid](TaskContext)
-    {
-        auto itr = _instanceStates.find(instanceKey);
-        if (itr != _instanceStates.end())
-        {
-            if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
-            {
-                if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
-                    StartRunAfterCountdown(&itr->second, m, p);
-            }
-        }
-    });
+        AnnounceToInstance(map, "|cffff8000Mythic+ starting in 10...|r");
 
     return true;
 }
@@ -1354,6 +1302,52 @@ void MythicPlusRunManager::ProcessCancellationTimers()
             HandleFailState(&state, "Run abandoned - all players left", true);
             LOG_INFO("mythic.run", "Auto-cancelled abandoned run for instance {} (map {})",
                      state.instanceId, state.mapId);
+        }
+    }
+}
+
+void MythicPlusRunManager::ProcessCountdowns()
+{
+    uint64 now = GameTime::GetGameTime().count();
+    uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
+    
+    static std::unordered_map<uint64, std::unordered_set<uint32>> announcedIntervals;
+    
+    for (auto& [key, state] : _instanceStates)
+    {
+        if (!state.countdownActive || state.completed || state.failed)
+            continue;
+            
+        uint64 elapsed = now - state.countdownStarted;
+        uint32 remaining = elapsed < countdownDuration ? countdownDuration - elapsed : 0;
+        
+        Map* map = sMapMgr->FindMap(state.mapId, state.instanceId);
+        if (!map)
+        {
+            state.countdownActive = false;
+            continue;
+        }
+        
+        // Announce at specific intervals: 5, 4, 3, 2, 1
+        if (remaining > 0 && remaining <= 5)
+        {
+            if (announcedIntervals[key].find(remaining) == announcedIntervals[key].end())
+            {
+                AnnounceToInstance(map, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", remaining));
+                announcedIntervals[key].insert(remaining);
+            }
+        }
+        
+        // Start the run when countdown completes
+        if (remaining == 0 && elapsed >= countdownDuration)
+        {
+            state.countdownActive = false;
+            announcedIntervals.erase(key);
+            
+            // Find the keystone owner to start the run
+            Player* owner = ObjectAccessor::FindPlayer(state.ownerGuid);
+            if (owner)
+                StartRunAfterCountdown(&state, map, owner);
         }
     }
 }
