@@ -140,20 +140,32 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds...", 
         descriptor.level, profile->name, countdownDuration));
     
-    // Schedule countdown announcements at specific intervals
+    // Schedule countdown announcements at specific intervals using world scheduler
+    uint64 instanceKey = state->instanceKey;
+    
     if (countdownDuration >= 10)
     {
-        map->GetScheduler().Schedule(Seconds(0), [this, map](TaskContext)
+        sWorld->GetScheduler().Schedule(Seconds(0), [this, instanceKey](TaskContext)
         {
-            AnnounceToInstance(map, "|cffff8000Mythic+ starting in 10...|r");
+            auto itr = _instanceStates.find(instanceKey);
+            if (itr != _instanceStates.end())
+            {
+                if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
+                    AnnounceToInstance(m, "|cffff8000Mythic+ starting in 10...|r");
+            }
         });
     }
     if (countdownDuration >= 5)
     {
         uint32 delay = countdownDuration >= 10 ? 5 : 0;
-        map->GetScheduler().Schedule(Seconds(delay), [this, map](TaskContext)
+        sWorld->GetScheduler().Schedule(Seconds(delay), [this, instanceKey](TaskContext)
         {
-            AnnounceToInstance(map, "|cffff8000Mythic+ starting in 5...|r");
+            auto itr = _instanceStates.find(instanceKey);
+            if (itr != _instanceStates.end())
+            {
+                if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
+                    AnnounceToInstance(m, "|cffff8000Mythic+ starting in 5...|r");
+            }
         });
     }
     for (uint32 i = 4; i > 0; --i)
@@ -161,17 +173,31 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
         if (countdownDuration >= (5 - i + 1))
         {
             uint32 announceDelay = countdownDuration - i;
-            map->GetScheduler().Schedule(Seconds(announceDelay), [this, map, i](TaskContext)
+            sWorld->GetScheduler().Schedule(Seconds(announceDelay), [this, instanceKey, i](TaskContext)
             {
-                AnnounceToInstance(map, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", i));
+                auto itr = _instanceStates.find(instanceKey);
+                if (itr != _instanceStates.end())
+                {
+                    if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
+                        AnnounceToInstance(m, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", i));
+                }
             });
         }
     }
 
     // Schedule actual run start after countdown
-    map->GetScheduler().Schedule(Seconds(countdownDuration), [this, state, map, player](TaskContext)
+    ObjectGuid playerGuid = player->GetGUID();
+    sWorld->GetScheduler().Schedule(Seconds(countdownDuration), [this, instanceKey, playerGuid](TaskContext)
     {
-        StartRunAfterCountdown(state, map, player);
+        auto itr = _instanceStates.find(instanceKey);
+        if (itr != _instanceStates.end())
+        {
+            if (Map* m = sMapMgr->FindMap(itr->second.mapId, itr->second.instanceId))
+            {
+                if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
+                    StartRunAfterCountdown(&itr->second, m, p);
+            }
+        }
     });
 
     return true;
