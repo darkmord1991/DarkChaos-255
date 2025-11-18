@@ -1213,31 +1213,39 @@ void MythicPlusRunManager::ProcessAchievements(InstanceState* state, Player* pla
     if (!state || !player || !success)
         return;
 
-    // Achievement criteria types from AchievementCriteriaTypes.h
-    // ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER = 32
-    // ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID = 94
+    // Use available achievement criteria types from WotLK (3.3.5a)
+    // ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE = 0 (for boss kills)
+    // ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID = 19 (closest to dungeon completion)
     
-    // Update for dungeon completion
-    player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId);
+    // Track boss kills for achievement criteria
+    if (state->bossesKilled > 0)
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE, state->mapId, state->bossesKilled);
     
-    // Special achievements based on performance
+    // Track dungeon completion (using raid completion as proxy for mythic dungeons)
+    player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID, state->mapId);
+    
+    // Special tracking for flawless completions
     if (state->deaths == 0)
     {
-        // Flawless completion - no deaths
-        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 0);
-        LOG_INFO("mythic.achievement", "Player {} earned flawless completion for map {}", 
+        LOG_INFO("mythic.achievement", "Player {} earned flawless completion for map {} (M+{})", 
+                 player->GetGUID().GetCounter(), state->mapId, state->keystoneLevel);
+    }
+    
+    // Log keystone level milestones
+    if (state->keystoneLevel >= 5)
+    {
+        LOG_INFO("mythic.achievement", "Player {} completed M+5 milestone in map {}", 
                  player->GetGUID().GetCounter(), state->mapId);
     }
     
-    // Keystone level milestones
-    if (state->keystoneLevel >= 5)
-        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 5);
-    
     if (state->keystoneLevel >= 10)
-        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 10);
+    {
+        LOG_INFO("mythic.achievement", "Player {} completed M+10 milestone in map {}", 
+                 player->GetGUID().GetCounter(), state->mapId);
+    }
     
-    LOG_INFO("mythic.achievement", "Processed achievements for player {} in map {} (M+{})",
-             player->GetGUID().GetCounter(), state->mapId, state->keystoneLevel);
+    LOG_INFO("mythic.achievement", "Processed achievements for player {} in map {} (M+{}, deaths: {}, bosses: {})",
+             player->GetGUID().GetCounter(), state->mapId, state->keystoneLevel, state->deaths, state->bossesKilled);
 }
 
 // ============================================================
