@@ -739,6 +739,182 @@ MythicPlus.SoloMode = 1
 #        Default:     1 (Standard - log profile loading and scaling actions)
 #        Options:     0 = Disabled (no logging)
 #                     1 = Standard (loading, scaling, major events)
+
+# -------------------------------------------------------------------------
+# Mythic+ Boss Loot System (Retail-Like)
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.BossLoot.Enabled
+#        Description: Enable retail-like spec-based loot drops from Mythic+ bosses
+#                     When enabled, bosses drop gear appropriate for players' classes/specs
+#                     Uses the dc_vault_loot_table to generate spec-appropriate loot
+#        Default:     1 (Enabled - retail-like boss loot)
+#                     0 (Disabled - only tokens awarded)
+#
+MythicPlus.BossLoot.Enabled = 1
+
+#
+#    MythicPlus.BaseItemLevel
+#        Description: Base item level for Mythic+0 dungeons
+#                     Item level scales with keystone level using retail formula:
+#                     - Levels 1-10: Base + (Level × 3)
+#                     - Levels 11+:  Base + 30 + ((Level - 10) × 4)
+#                     
+#                     Examples (Base 226):
+#                       M+2:  232 ilvl
+#                       M+5:  241 ilvl
+#                       M+10: 256 ilvl
+#                       M+15: 276 ilvl
+#                       M+20: 296 ilvl
+#        Default:     226 (Shadowlands Season 1 equivalent)
+#        Range:       200 - 300
+#
+MythicPlus.BaseItemLevel = 226
+
+#
+#    MythicPlus.LootMode
+#        Description: How boss loot is distributed in Mythic+ dungeons
+#                     Personal loot = each player gets spec-appropriate items
+#                     Group loot = items drop on corpse, players roll (not yet implemented)
+#        Default:     0 (Personal Loot - retail Shadowlands behavior)
+#        Options:     0 = Personal Loot (spec-based filtering)
+#                     1 = Group Loot (tradeable, not yet implemented)
+#
+MythicPlus.LootMode = 0
+
+# -------------------------------------------------------------------------
+# Mythic+ Run Management
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.SuppressTrashLoot
+#        Description: Prevent non-boss creatures from dropping loot in M+ dungeons
+#                     Only final boss drops loot (tokens + gear)
+#                     Matches retail Mythic+ behavior
+#        Default:     1 (Enabled - only boss loot)
+#                     0 (Disabled - all creatures drop normal loot)
+#
+MythicPlus.SuppressTrashLoot = 1
+
+#
+#    MythicPlus.CancellationTimeout
+#        Description: Seconds before auto-cancelling abandoned runs
+#                     When all players leave instance, countdown starts
+#                     If timer expires, run fails and keystone downgrades
+#        Default:     180 (3 minutes)
+#        Range:       60 - 600 (1 to 10 minutes)
+#
+MythicPlus.CancellationTimeout = 180
+
+#
+#    MythicPlus.CountdownDuration
+#        Description: Countdown seconds before Mythic+ timer starts
+#                     Gives players time to prepare after keystone activation
+#                     Announcements at: 10, 5, 4, 3, 2, 1 seconds
+#        Default:     10
+#        Range:       5 - 30
+#
+MythicPlus.CountdownDuration = 10
+
+#
+#    MythicPlus.TeleportToEntrance
+#        Description: Teleport all group members to dungeon entrance when keystone activated
+#                     Ensures fair start position for all players
+#                     Uses existing areatrigger_teleport coordinates
+#        Default:     1 (Enabled - retail behavior)
+#                     0 (Disabled - players start wherever they are)
+#
+MythicPlus.TeleportToEntrance = 1
+
+#
+#    MythicPlus.AllowManualCancellation
+#        Description: Allow players to vote for run cancellation via .mplus cancel
+#                     Requires multiple votes to prevent trolling
+#        Default:     1 (Enabled - vote system active)
+#                     0 (Disabled - only auto-cancel on abandonment)
+#
+MythicPlus.AllowManualCancellation = 1
+
+#
+#    MythicPlus.CancellationVotesRequired
+#        Description: Number of players needed to vote for cancellation
+#                     Prevents single player from ruining runs
+#        Default:     2 (minimum 2 players must vote)
+#        Range:       1 - 5
+#
+MythicPlus.CancellationVotesRequired = 2
+
+#
+#    MythicPlus.CancellationVoteTimeout
+#        Description: Seconds before cancellation votes expire
+#                     If threshold not met, voting resets
+#        Default:     60 (1 minute)
+#        Range:       30 - 300
+#
+MythicPlus.CancellationVoteTimeout = 60
+
+#
+#    MythicPlus.MinimumKeystoneLevel
+#        Description: Minimum keystone level (prevents downgrading below this)
+#                     Failed runs downgrade keystone but won't go below minimum
+#        Default:     2 (M+2 is lowest)
+#        Range:       2 - 10
+#
+MythicPlus.MinimumKeystoneLevel = 2
+
+# -------------------------------------------------------------------------
+# Mythic+ Death Penalty
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.DeathPenalty.Enabled
+#        Description: Enable time penalty for player deaths (retail mechanic)
+#                     Each death adds seconds to the timer
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no time penalty)
+#
+MythicPlus.DeathPenalty.Enabled = 1
+
+#
+#    MythicPlus.DeathPenalty.Seconds
+#        Description: Time penalty in seconds per death
+#                     Retail uses 5 seconds per death
+#        Default:     5
+#        Range:       1 - 30
+#
+MythicPlus.DeathPenalty.Seconds = 5
+
+# -------------------------------------------------------------------------
+# Mythic+ Weekly Vault Rewards
+# -------------------------------------------------------------------------
+
+#
+#    MythicPlus.Vault.TokenReward.Slot1
+#        Description: Token reward for completing 1 Mythic+ dungeon per week
+#                     First vault slot unlocks at 1 completion
+#        Default:     50
+#        Range:       10 - 500
+#
+MythicPlus.Vault.TokenReward.Slot1 = 50
+
+#
+#    MythicPlus.Vault.TokenReward.Slot2
+#        Description: Token reward for completing 4 Mythic+ dungeons per week
+#                     Second vault slot unlocks at 4 completions
+#        Default:     100
+#        Range:       20 - 1000
+#
+MythicPlus.Vault.TokenReward.Slot2 = 100
+
+#
+#    MythicPlus.Vault.TokenReward.Slot3
+#        Description: Token reward for completing 10 Mythic+ dungeons per week
+#                     Third vault slot unlocks at 10 completions
+#        Default:     150
+#        Range:       30 - 1500
+#
+MythicPlus.Vault.TokenReward.Slot3 = 150
 #                     2 = Verbose (includes per-creature scaling details)
 #                     3 = Debug (all operations, very noisy)
 #

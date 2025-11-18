@@ -2,7 +2,7 @@
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  * 
- * Item Script: Mythic Keystone Items (190001-190009 for M+2-M+10)
+ * Item Script: Mythic Keystone Items (190001-190019 for M+2-M+20)
  * Shows information about Mythic+ system when used
  */
 
@@ -10,8 +10,17 @@
 #include "Player.h"
 #include "Item.h"
 #include "Chat.h"
+#include "ScriptedGossip.h"
 #include "MythicPlusRunManager.h"
 #include "MythicDifficultyScaling.h"
+
+enum KeystoneGossipActions
+{
+    GOSSIP_ACTION_INFO = 1,
+    GOSSIP_ACTION_SCALING = 2,
+    GOSSIP_ACTION_REWARDS = 3,
+    GOSSIP_ACTION_CLOSE = 4
+};
 
 class item_mythic_keystone : public ItemScript
 {
@@ -23,87 +32,187 @@ public:
         if (!player || !item)
             return false;
 
-        // Calculate keystone level from item ID (190001 = M+2, 190002 = M+3, etc.)
+        // Calculate keystone level from item ID (190001 = M+2, 190002 = M+3, ..., 190019 = M+20)
         uint32 itemId = item->GetEntry();
         uint8 keystoneLevel = 0;
         
-        if (itemId >= 190001 && itemId <= 190009)
+        if (itemId >= 190001 && itemId <= 190019)
             keystoneLevel = (itemId - 190001) + 2;
         else
             keystoneLevel = 2; // Default fallback
 
+        // Calculate scaling values
+        float hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
+        float dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
+        
+        // Calculate item level reward
+        uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
+        uint32 itemLevel = (keystoneLevel <= 10) 
+            ? baseItemLevel + (keystoneLevel * 3)
+            : baseItemLevel + 30 + ((keystoneLevel - 10) * 4);
+
+        ClearGossipMenuFor(player);
+        
+        // Header with keystone level
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+            "|cffff8000=== MYTHIC KEYSTONE +" + std::to_string(keystoneLevel) + " ===",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+        
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+        
+        // How to use section
+        AddGossipItemFor(player, GOSSIP_ICON_TALK,
+            "|cffffd700How to Use This Keystone|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
+        
+        // Scaling information section
+        std::string scalingText = "|cffffd700Difficulty Scaling (M+" + std::to_string(keystoneLevel) + ")|r";
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+            scalingText,
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SCALING);
+        
+        // Rewards section
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+            "|cffffd700Rewards & Upgrades|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_REWARDS);
+        
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+        
+        // Close button
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            "|cffaaaaaa[Close]|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
+        
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
+        return true;
+    }
+    
+    bool OnGossipSelect(Player* player, Item* item, uint32 /*sender*/, uint32 action)
+    {
+        if (!player || !item)
+            return false;
+        
+        // Calculate keystone level
+        uint32 itemId = item->GetEntry();
+        uint8 keystoneLevel = 0;
+        
+        if (itemId >= 190001 && itemId <= 190019)
+            keystoneLevel = (itemId - 190001) + 2;
+        else
+            keystoneLevel = 2;
+        
         ChatHandler handler(player->GetSession());
         
-        // Header
-        handler.SendSysMessage("|cff00ff00========================================|r");
-        handler.PSendSysMessage("|cffff8000    MYTHIC KEYSTONE +%u|r", keystoneLevel);
-        handler.SendSysMessage("|cff00ff00========================================|r");
-        handler.SendSysMessage(" ");
+        if (action == GOSSIP_ACTION_CLOSE)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
         
-        // How to use
-        handler.SendSysMessage("|cffffd700How to Use:|r");
-        handler.SendSysMessage("|cffffffff1. Enter a dungeon with your group|r");
-        handler.SendSysMessage("|cffffffff2. Find the Font of Power (at start)|r");
-        handler.SendSysMessage("|cffffffff3. Click the Font to activate keystone|r");
-        handler.SendSysMessage("|cffffffff4. Complete before death limit (15)|r");
-        handler.SendSysMessage(" ");
-        
-        // Scaling information
-        handler.SendSysMessage("|cffffd700Mythic+ Scaling:|r");
-        
-        // Get scaling values from the profile
-        float hpMultiplier = 1.0f;
-        float dmgMultiplier = 1.0f;
-        
-        // Base Mythic is 2.0x, each keystone level adds 0.25x
-        hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
-        dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
-        
-        handler.PSendSysMessage("|cffffffff  Enemy Health: |cffff8000+%.0f%%|r", (hpMultiplier - 1.0f) * 100.0f);
-        handler.PSendSysMessage("|cffffffff  Enemy Damage: |cffff8000+%.0f%%|r", (dmgMultiplier - 1.0f) * 100.0f);
-        handler.PSendSysMessage("|cffffffff  Death Budget: |cffff000015 deaths|r");
-        handler.SendSysMessage(" ");
-        
-        // Rewards
-        handler.SendSysMessage("|cffffd700Rewards:|r");
-        
-        // Token calculation
+        // Calculate values
+        float hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
+        float dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
+        uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
+        uint32 itemLevel = (keystoneLevel <= 10) 
+            ? baseItemLevel + (keystoneLevel * 3)
+            : baseItemLevel + 30 + ((keystoneLevel - 10) * 4);
         uint32 baseTokens = 10 + (player->GetLevel() - 70) * 2;
         float tokenMultiplier = 2.0f + (keystoneLevel * 0.25f);
         uint32 estimatedTokens = static_cast<uint32>(baseTokens * tokenMultiplier);
         
-        handler.PSendSysMessage("|cffffffff  Tokens (estimated): |cff00ff00~%u|r", estimatedTokens);
-        handler.SendSysMessage("|cffffffff  Weekly Vault Progress: +1 run|r");
-        handler.SendSysMessage(" ");
-        
-        // Upgrade information
-        handler.SendSysMessage("|cffffd700Keystone Upgrade:|r");
-        handler.SendSysMessage("|cff00ff00  0-5 deaths:|r +2 levels");
-        handler.SendSysMessage("|cffffff00  6-10 deaths:|r +1 level");
-        handler.SendSysMessage("|cffffaa00  11-14 deaths:|r Same level");
-        handler.SendSysMessage("|cffff6600  15+ deaths:|r Run failed");
-        handler.SendSysMessage(" ");
-        
-        // Affixes (if any are active this season)
-        uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
-        auto affixes = sMythicRuns->GetWeeklyAffixes(seasonId);
-        
-        if (!affixes.empty())
+        if (action == GOSSIP_ACTION_INFO)
         {
-            handler.SendSysMessage("|cffffd700Weekly Affixes:|r");
-            for (uint32 affixId : affixes)
-            {
-                std::string affixName = sMythicRuns->GetAffixName(affixId);
-                handler.PSendSysMessage("|cffff8000  • %s|r", affixName.c_str());
-            }
+            handler.SendSysMessage("|cff00ff00========================================|r");
+            handler.PSendSysMessage("|cffff8000    HOW TO USE KEYSTONE +%u|r", keystoneLevel);
+            handler.SendSysMessage("|cff00ff00========================================|r");
             handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd7001. Enter a Dungeon|r");
+            handler.SendSysMessage("|cffffffff   Set difficulty to Mythic before entering|r");
+            handler.SendSysMessage("|cffffffff   Enter with your group (or solo)|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd7002. Find the Font of Power|r");
+            handler.SendSysMessage("|cffffffff   Located at the dungeon entrance|r");
+            handler.SendSysMessage("|cffffffff   Look for a glowing pedestal/font|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd7003. Activate Your Keystone|r");
+            handler.SendSysMessage("|cffffffff   Click the Font of Power|r");
+            handler.SendSysMessage("|cffffffff   Confirm keystone activation|r");
+            handler.SendSysMessage("|cffffffff   Keystone will be consumed|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd7004. Complete the Dungeon|r");
+            handler.SendSysMessage("|cffffffff   10-second countdown before timer starts|r");
+            handler.SendSysMessage("|cffffffff   All players teleported to entrance|r");
+            handler.SendSysMessage("|cffffffff   Defeat all bosses before 15 deaths|r");
+            handler.SendSysMessage("|cffffffff   Only final boss drops loot|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffaaaaaa[Keystone is consumed when activated at Font of Power]|r");
+            handler.SendSysMessage("|cff00ff00========================================|r");
+        }
+        else if (action == GOSSIP_ACTION_SCALING)
+        {
+            handler.SendSysMessage("|cff00ff00========================================|r");
+            handler.PSendSysMessage("|cffff8000    MYTHIC+ SCALING (Level +%u)|r", keystoneLevel);
+            handler.SendSysMessage("|cff00ff00========================================|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Enemy Difficulty:|r");
+            handler.PSendSysMessage("|cffffffff  Health: |cffff8000+%.0f%%|r (%.1fx multiplier)", 
+                (hpMultiplier - 1.0f) * 100.0f, hpMultiplier);
+            handler.PSendSysMessage("|cffffffff  Damage: |cffff8000+%.0f%%|r (%.1fx multiplier)", 
+                (dmgMultiplier - 1.0f) * 100.0f, dmgMultiplier);
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Scaling Formula:|r");
+            handler.SendSysMessage("|cffffffff  Base Mythic: 2.0x multiplier|r");
+            handler.SendSysMessage("|cffffffff  Each +1 level: +0.25x multiplier|r");
+            handler.PSendSysMessage("|cffffffff  Your M+%u: 2.0 + (%u × 0.25) = %.1fx|r",
+                keystoneLevel, keystoneLevel, hpMultiplier);
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Death Budget:|r");
+            handler.SendSysMessage("|cffff0000  Maximum: 15 deaths|r");
+            handler.SendSysMessage("|cffffffff  Each death counts toward limit|r");
+            handler.SendSysMessage("|cffffffff  15th death = instant run failure|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Loot Item Level:|r");
+            handler.PSendSysMessage("|cff00ff00  Boss drops: %u ilvl gear|r", itemLevel);
+            handler.SendSysMessage("|cffffffff  Formula: Base + (Level × 3) up to +10|r");
+            handler.SendSysMessage("|cffffffff  Then: Base + 30 + ((Level-10) × 4)|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cff00ff00========================================|r");
+        }
+        else if (action == GOSSIP_ACTION_REWARDS)
+        {
+            handler.SendSysMessage("|cff00ff00========================================|r");
+            handler.PSendSysMessage("|cffff8000    REWARDS & UPGRADES (M+%u)|r", keystoneLevel);
+            handler.SendSysMessage("|cff00ff00========================================|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Boss Loot (Spec-Based):|r");
+            handler.PSendSysMessage("|cff00ff00  Item Level: %u|r", itemLevel);
+            handler.SendSysMessage("|cffffffff  1 item per normal boss|r");
+            handler.SendSysMessage("|cffffffff  2 items from final boss|r");
+            handler.SendSysMessage("|cffffffff  Filtered by your class/spec/role|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Token Rewards:|r");
+            handler.PSendSysMessage("|cff00ff00  Estimated: ~%u tokens|r", estimatedTokens);
+            handler.SendSysMessage("|cffffffff  Awarded at final boss kill|r");
+            handler.SendSysMessage("|cffffffff  Used for gear upgrades|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Keystone Upgrade (Auto):|r");
+            handler.SendSysMessage("|cff00ff00  0-5 deaths: +2 levels|r");
+            handler.SendSysMessage("|cffffff00  6-10 deaths: +1 level|r");
+            handler.SendSysMessage("|cffffaa00  11-14 deaths: Same level|r");
+            handler.SendSysMessage("|cffff6600  15+ deaths: Run failed (-1 level)|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cffffd700Weekly Vault:|r");
+            handler.SendSysMessage("|cffffffff  Completion counts toward vault progress|r");
+            handler.SendSysMessage("|cffffffff  1 run = Unlock slot 1 (50 tokens)|r");
+            handler.SendSysMessage("|cffffffff  4 runs = Unlock slot 2 (100 tokens)|r");
+            handler.SendSysMessage("|cffffffff  10 runs = Unlock slot 3 (150 tokens)|r");
+            handler.SendSysMessage(" ");
+            handler.SendSysMessage("|cff00ff00========================================|r");
         }
         
-        // Footer
-        handler.SendSysMessage("|cffaaaaaa[This keystone is consumed when used at Font of Power]|r");
-        handler.SendSysMessage("|cff00ff00========================================|r");
-        
-        // Prevent the item from being consumed
+        CloseGossipMenuFor(player);
         return true;
     }
 };

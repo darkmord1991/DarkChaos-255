@@ -84,6 +84,11 @@ public:
     bool VoteToCancelRun(Player* player, Map* map);
     void ProcessCancellationVotes();
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
+    
+    // Boss loot generation (retail-like spec-based drops)
+    void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
+    uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
+    uint32 GetTotalBossesForDungeon(uint32 mapId) const;
 
 private:
     struct InstanceState

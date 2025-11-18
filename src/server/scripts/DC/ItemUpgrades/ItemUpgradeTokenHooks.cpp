@@ -294,6 +294,10 @@ namespace DarkChaos
                 if (!player)
                     return;
 
+                // Don't award tokens in Mythic+ dungeons (they have their own token system)
+                if (DarkChaos::MythicPlus::MythicPlusRunManager::Instance()->IsPlayerInActiveRun(player->GetGUID()))
+                    return;
+
                 // Don't award tokens for trivial kills (very low level creatures)
                 if (creature->GetLevel() < 50)
                     return;  // Skip low-level creatures
