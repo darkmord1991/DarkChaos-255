@@ -141,7 +141,6 @@ private:
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
     bool ClaimVaultSlot(Player* player, uint8 slot);
-    bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
     std::string SerializeParticipants(const InstanceState* state) const;
     
     // Teleportation helpers
