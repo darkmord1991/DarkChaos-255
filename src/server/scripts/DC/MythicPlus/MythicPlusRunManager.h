@@ -50,6 +50,7 @@ public:
     void HandlePlayerDeath(Player* player, Creature* killer);
     void HandleBossEvade(Creature* creature);
     void HandleBossDeath(Creature* creature, Unit* killer);
+    void HandleCreatureKill(Creature* creature, Unit* killer);
     void HandleInstanceReset(Map* map);
 
     // Weekly vault + statistics NPC support
@@ -75,6 +76,13 @@ public:
     void UpgradeKeystone(ObjectGuid::LowType playerGuid);
     void DowngradeKeystone(ObjectGuid::LowType playerGuid);
     void GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level);
+    
+    // Run cancellation and management
+    void InitiateCancellation(Map* map);
+    void ProcessCancellationTimers();
+    bool VoteToCancelRun(Player* player, Map* map);
+    void ProcessCancellationVotes();
+    bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
 
 private:
     struct InstanceState
@@ -89,10 +97,21 @@ private:
         uint64 startedAt = 0;
         uint8 deaths = 0;
         uint8 wipes = 0;
+        uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
+        uint32 bossesKilled = 0;       // Boss creatures killed
+        uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
+        uint8 upgradeLevel = 0;        // New keystone level after upgrade
         bool failed = false;
         bool completed = false;
         bool tokensGranted = false;
+        bool keystoneUpgraded = false; // Tracks if keystone was upgraded
+        uint64 abandonedAt = 0;  // Timestamp when last player left
+        bool cancellationPending = false;
+        uint64 countdownStarted = 0;  // Timestamp when countdown began
+        bool countdownActive = false;
         std::unordered_set<ObjectGuid::LowType> participants;
+        std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
+        uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
     };
 
     MythicPlusRunManager() = default;
@@ -115,12 +134,20 @@ private:
     void UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds);
     void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
     void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
+    void SendRunSummary(InstanceState* state, Player* player);
+    void AutoUpgradeKeystone(InstanceState* state);
+    void ProcessAchievements(InstanceState* state, Player* player, bool success);
     void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
     bool ClaimVaultSlot(Player* player, uint8 slot);
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
     std::string SerializeParticipants(const InstanceState* state) const;
+    
+    // Teleportation helpers
+    void TeleportGroupToEntrance(Player* activator, Map* map);
+    void TeleportPlayerToEntrance(Player* player, Map* map);
+    void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
     
     // Seasonal validation and affix system (NEW)
     bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;

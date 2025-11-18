@@ -26,7 +26,8 @@ public:
             { "affix",      HandleMPlusAffixCommand,        SEC_GAMEMASTER, Console::No },
             { "scaling",    HandleMPlusScalingCommand,      SEC_GAMEMASTER, Console::No },
             { "season",     HandleMPlusSeasonCommand,       SEC_GAMEMASTER, Console::No },
-            { "info",       HandleMPlusInfoCommand,         SEC_PLAYER,     Console::No }
+            { "info",       HandleMPlusInfoCommand,         SEC_PLAYER,     Console::No },
+            { "cancel",     HandleMPlusCancelCommand,       SEC_PLAYER,     Console::No }
         };
 
         static ChatCommandTable commandTable =
@@ -231,6 +232,34 @@ public:
         }
 
         return true;
+    }
+    
+    // .mplus cancel - Cancel the current Mythic+ run and downgrade keystone
+    static bool HandleMPlusCancelCommand(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+        {
+            handler->PSendSysMessage("|cffff0000Error:|r You must be inside a dungeon to cancel a Mythic+ run.");
+            return false;
+        }
+
+        if (!sConfigMgr->GetOption<bool>("MythicPlus.AllowManualCancellation", true))
+        {
+            handler->PSendSysMessage("|cffff0000Error:|r Manual cancellation is disabled on this server.");
+            return false;
+        }
+
+        if (sMythicRuns->VoteToCancelRun(player, map))
+        {
+            return true;
+        }
+
+        return false;
     }
 };
 

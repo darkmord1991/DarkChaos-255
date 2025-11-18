@@ -94,12 +94,14 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->keystoneLevel = descriptor.level;
     state->seasonId = descriptor.seasonId ? descriptor.seasonId : GetCurrentSeasonId();
     state->ownerGuid = player->GetGUID();
-    state->startedAt = GameTime::GetGameTime().count();
+    state->startedAt = 0; // Will be set after countdown
     state->deaths = 0;
     state->wipes = 0;
     state->failed = false;
     state->completed = false;
     state->tokensGranted = false;
+    state->countdownActive = false;
+    state->countdownStarted = 0;
     state->participants.clear();
     RegisterGroupMembers(player, state);
 
@@ -127,9 +129,50 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
 
     ConsumePlayerKeystone(player->GetGUID().GetCounter());
 
-    AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {}", descriptor.level, profile->name));
-    ApplyKeystoneScaling(map, descriptor.level);
-    ApplyEntryBarrier(map);
+    // Teleport all players to entrance
+    TeleportGroupToEntrance(player, map);
+
+    // Start countdown before activating run
+    uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
+    state->countdownStarted = GameTime::GetGameTime().count();
+    state->countdownActive = true;
+
+    AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds...", 
+        descriptor.level, profile->name, countdownDuration));
+    
+    // Schedule countdown announcements at specific intervals
+    if (countdownDuration >= 10)
+    {
+        map->GetScheduler().Schedule(Seconds(0), [this, map](TaskContext)
+        {
+            AnnounceToInstance(map, "|cffff8000Mythic+ starting in 10...|r");
+        });
+    }
+    if (countdownDuration >= 5)
+    {
+        uint32 delay = countdownDuration >= 10 ? 5 : 0;
+        map->GetScheduler().Schedule(Seconds(delay), [this, map](TaskContext)
+        {
+            AnnounceToInstance(map, "|cffff8000Mythic+ starting in 5...|r");
+        });
+    }
+    for (uint32 i = 4; i > 0; --i)
+    {
+        if (countdownDuration >= (5 - i + 1))
+        {
+            uint32 announceDelay = countdownDuration - i;
+            map->GetScheduler().Schedule(Seconds(announceDelay), [this, map, i](TaskContext)
+            {
+                AnnounceToInstance(map, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", i));
+            });
+        }
+    }
+
+    // Schedule actual run start after countdown
+    map->GetScheduler().Schedule(Seconds(countdownDuration), [this, state, map, player](TaskContext)
+    {
+        StartRunAfterCountdown(state, map, player);
+    });
 
     return true;
 }
@@ -225,6 +268,26 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
     AnnounceToInstance(map, "|cffff0000Mythic+|r: Boss reset detected. Prepare for another pull!");
 }
 
+void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer*/)
+{
+    if (!creature)
+        return;
+
+    Map* map = creature->GetMap();
+    if (!map || !map->IsDungeon())
+        return;
+
+    InstanceState* state = GetState(map);
+    if (!state || state->completed || state->failed)
+        return;
+
+    // Only count hostile creatures that give XP (exclude pets, totems, etc.)
+    if (creature->IsHostileToPlayers() && !creature->IsPet() && !creature->IsTotem())
+    {
+        ++state->npcsKilled;
+    }
+}
+
 void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 {
     if (!creature)
@@ -238,6 +301,10 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     if (!state || state->completed)
         return;
 
+    // Count boss kill
+    if (creature->IsWorldBoss() || creature->IsDungeonBoss())
+        ++state->bossesKilled;
+
     if (!IsFinalBoss(state->mapId, creature->GetEntry()))
         return;
 
@@ -246,6 +313,23 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     AwardTokens(state, creature->GetEntry());
     RecordRunResult(state, true, creature->GetEntry());
+    
+    // Automate keystone upgrade
+    AutoUpgradeKeystone(state);
+
+    // Send comprehensive run summary to all participants
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        if (Player* player = ref.GetSource())
+        {
+            if (state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
+            {
+                SendRunSummary(state, player);
+                ProcessAchievements(state, player, true);
+            }
+        }
+    }
 
     _instanceStates.erase(state->instanceKey);
 }
@@ -677,6 +761,10 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
 
         InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
         ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: Awarded %u tokens.", tokenCount);
+        
+        // Track tokens for run summary (only for keystone owner)
+        if (player->GetGUID() == state->ownerGuid)
+            state->tokensAwarded = tokenCount;
     }
 
     state->tokensGranted = true;
@@ -1028,5 +1116,388 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
             }
         }
     }
+}
+
+void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
+{
+    if (!state || !player)
+        return;
+
+    ChatHandler handler(player->GetSession());
+    
+    // Calculate duration
+    uint32 duration = 0;
+    uint64 now = GameTime::GetGameTime().count();
+    if (state->startedAt && now >= state->startedAt)
+        duration = static_cast<uint32>(now - state->startedAt);
+    
+    uint32 minutes = duration / 60;
+    uint32 seconds = duration % 60;
+
+    // Header
+    handler.SendSysMessage("|cff00ff00========================================|r");
+    handler.SendSysMessage("|cffff8000        MYTHIC+ RUN COMPLETE       |r");
+    handler.SendSysMessage("|cff00ff00========================================|r");
+    
+    // Dungeon info
+    std::string dungeonName = "Unknown Dungeon";
+    if (MapEntry const* mapEntry = sMapStore.LookupEntry(state->mapId))
+        dungeonName = mapEntry->name[0];
+    
+    handler.PSendSysMessage("|cffffd700Dungeon:|r %s", dungeonName.c_str());
+    handler.PSendSysMessage("|cffffd700Keystone Level:|r +%u", state->keystoneLevel);
+    handler.PSendSysMessage("|cffffd700Duration:|r %u min %u sec", minutes, seconds);
+    handler.SendSysMessage("|cff00ff00----------------------------------------|r");
+    
+    // Combat statistics
+    handler.SendSysMessage("|cffff8000Combat Statistics:|r");
+    handler.PSendSysMessage("|cffffffff  Bosses Killed:|r %u", state->bossesKilled);
+    handler.PSendSysMessage("|cffffffff  Enemies Killed:|r %u", state->npcsKilled);
+    handler.PSendSysMessage("|cffffffff  Total Deaths:|r %u", state->deaths);
+    handler.PSendSysMessage("|cffffffff  Group Wipes:|r %u", state->wipes);
+    handler.SendSysMessage("|cff00ff00----------------------------------------|r");
+    
+    // Rewards
+    handler.SendSysMessage("|cffff8000Rewards:|r");
+    handler.PSendSysMessage("|cffffffff  Tokens Awarded:|r %u", state->tokensAwarded);
+    
+    if (state->keystoneUpgraded)
+    {
+        uint8 oldLevel = state->keystoneLevel;
+        uint8 newLevel = state->upgradeLevel;
+        int8 levelChange = static_cast<int8>(newLevel) - static_cast<int8>(oldLevel);
+        
+        if (levelChange > 0)
+            handler.PSendSysMessage("|cff00ff00  Keystone:|r Upgraded from +%u to |cff00ff00+%u|r (+%d)", oldLevel, newLevel, levelChange);
+        else if (levelChange < 0)
+            handler.PSendSysMessage("|cffffaa00  Keystone:|r Downgraded from +%u to |cffffaa00+%u|r (%d)", oldLevel, newLevel, levelChange);
+        else
+            handler.PSendSysMessage("|cffffffff  Keystone:|r Maintained at +%u", newLevel);
+    }
+    else if (player->GetGUID() == state->ownerGuid)
+    {
+        handler.PSendSysMessage("|cffffffff  Keystone:|r Check your inventory");
+    }
+    
+    handler.SendSysMessage("|cff00ff00========================================|r");
+    
+    // Performance message
+    if (state->deaths == 0)
+        handler.SendSysMessage("|cff00ff00Flawless Victory - No Deaths!|r");
+    else if (state->deaths <= 5)
+        handler.SendSysMessage("|cff00ff00Excellent Performance!|r");
+    else if (state->deaths <= 10)
+        handler.SendSysMessage("|cffffaa00Good Effort!|r");
+    else
+        handler.SendSysMessage("|cffff6600Room for Improvement!|r");
+}
+
+void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
+{
+    if (!state || !state->ownerGuid)
+        return;
+
+    ObjectGuid::LowType ownerGuidLow = state->ownerGuid.GetCounter();
+    uint8 currentLevel = state->keystoneLevel;
+    
+    // Calculate upgrade based on death performance
+    // 0-5 deaths = +2 levels
+    // 6-10 deaths = +1 level
+    // 11-14 deaths = same level
+    // 15+ deaths = downgrade (but shouldn't happen as run fails at 15)
+    
+    uint8 newLevel = currentLevel;
+    
+    if (state->deaths <= 5)
+        newLevel = std::min<uint8>(10, currentLevel + 2);
+    else if (state->deaths <= 10)
+        newLevel = std::min<uint8>(10, currentLevel + 1);
+    else if (state->deaths <= 14)
+        newLevel = currentLevel; // Maintain same level
+    else
+        newLevel = std::max<uint8>(2, currentLevel - 1); // Downgrade
+    
+    state->upgradeLevel = newLevel;
+    state->keystoneUpgraded = true;
+    
+    // Update database
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_player_keystones (player_guid, current_keystone_level, last_updated) "
+        "VALUES ({}, {}, UNIX_TIMESTAMP()) "
+        "ON DUPLICATE KEY UPDATE current_keystone_level = {}, last_updated = UNIX_TIMESTAMP()",
+        ownerGuidLow, newLevel, newLevel);
+    
+    // Generate new keystone for owner
+    GenerateNewKeystone(ownerGuidLow, newLevel);
+    
+    LOG_INFO("mythic.run", "Auto-upgraded keystone for player {} from +{} to +{} (deaths: {})",
+             ownerGuidLow, currentLevel, newLevel, state->deaths);
+}
+
+void MythicPlusRunManager::ProcessAchievements(InstanceState* state, Player* player, bool success)
+{
+    if (!state || !player || !success)
+        return;
+
+    // Achievement criteria types from AchievementCriteriaTypes.h
+    // ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER = 32
+    // ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID = 94
+    
+    // Update for dungeon completion
+    player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId);
+    
+    // Special achievements based on performance
+    if (state->deaths == 0)
+    {
+        // Flawless completion - no deaths
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 0);
+        LOG_INFO("mythic.achievement", "Player {} earned flawless completion for map {}", 
+                 player->GetGUID().GetCounter(), state->mapId);
+    }
+    
+    // Keystone level milestones
+    if (state->keystoneLevel >= 5)
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 5);
+    
+    if (state->keystoneLevel >= 10)
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DUNGEON_ENCOUNTER, state->mapId, 10);
+    
+    LOG_INFO("mythic.achievement", "Processed achievements for player {} in map {} (M+{})",
+             player->GetGUID().GetCounter(), state->mapId, state->keystoneLevel);
+}
+
+// ============================================================
+// Run Cancellation System
+// ============================================================
+
+void MythicPlusRunManager::InitiateCancellation(Map* map)
+{
+    if (!map)
+        return;
+
+    InstanceState* state = GetState(map);
+    if (!state || state->completed || state->failed)
+        return;
+
+    // Check if all players have left
+    bool allLeft = true;
+    for (auto guid : state->participants)
+    {
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(ObjectGuid::Create<HighGuid::Player>(guid)))
+        {
+            if (player->GetMapId() == state->mapId && player->GetInstanceId() == state->instanceId)
+            {
+                allLeft = false;
+                break;
+            }
+        }
+    }
+
+    if (allLeft && !state->cancellationPending)
+    {
+        state->cancellationPending = true;
+        state->abandonedAt = GameTime::GetGameTime().count();
+        LOG_INFO("mythic.run", "Cancellation initiated for instance {} (map {})", 
+                 state->instanceId, state->mapId);
+    }
+}
+
+void MythicPlusRunManager::ProcessCancellationTimers()
+{
+    uint64 now = GameTime::GetGameTime().count();
+    uint64 cancelTimeout = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationTimeout", 180);
+
+    std::vector<uint64> toCancel;
+    for (auto& [key, state] : _instanceStates)
+    {
+        if (state.cancellationPending && !state.completed && !state.failed)
+        {
+            if (now - state.abandonedAt >= cancelTimeout)
+            {
+                toCancel.push_back(key);
+            }
+        }
+    }
+
+    for (uint64 key : toCancel)
+    {
+        auto itr = _instanceStates.find(key);
+        if (itr != _instanceStates.end())
+        {
+            InstanceState& state = itr->second;
+            HandleFailState(&state, "Run abandoned - all players left", true);
+            LOG_INFO("mythic.run", "Auto-cancelled abandoned run for instance {} (map {})",
+                     state.instanceId, state.mapId);
+        }
+    }
+}
+
+bool MythicPlusRunManager::VoteToCancelRun(Player* player, Map* map)
+{
+    if (!player || !map)
+        return false;
+
+    InstanceState* state = GetState(map);
+    if (!state || state->completed || state->failed)
+    {
+        SendGenericError(player, "No active Mythic+ run to cancel.");
+        return false;
+    }
+
+    // Check if player is a participant
+    if (state->participants.find(player->GetGUID().GetCounter()) == state->participants.end())
+    {
+        SendGenericError(player, "You are not part of this Mythic+ run.");
+        return false;
+    }
+
+    // Check if player already voted
+    if (state->cancellationVotes.find(player->GetGUID().GetCounter()) != state->cancellationVotes.end())
+    {
+        SendGenericError(player, "You have already voted to cancel this run.");
+        return false;
+    }
+
+    // Add vote
+    state->cancellationVotes.insert(player->GetGUID().GetCounter());
+    if (state->cancellationVotes.size() == 1)
+    {
+        state->cancellationVoteStarted = GameTime::GetGameTime().count();
+    }
+
+    uint32 requiredVotes = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationVotesRequired", 2);
+    uint32 currentVotes = state->cancellationVotes.size();
+
+    // Announce vote
+    AnnounceToInstance(map, Acore::StringFormat(
+        "|cffff8000[Cancellation Vote]|r {} voted to cancel ({}/{} votes needed)",
+        player->GetName(), currentVotes, requiredVotes));
+
+    // Check if enough votes
+    if (currentVotes >= requiredVotes)
+    {
+        HandleFailState(state, "Run cancelled by group vote", true);
+        AnnounceToInstance(map, "|cffff0000Mythic+ run cancelled by group vote. Keystone downgraded.|r");
+        return true;
+    }
+
+    ChatHandler(player->GetSession()).PSendSysMessage(
+        "|cff00ff00Vote registered.|r {}/{} votes needed to cancel the run.",
+        currentVotes, requiredVotes);
+    return true;
+}
+
+void MythicPlusRunManager::ProcessCancellationVotes()
+{
+    uint64 now = GameTime::GetGameTime().count();
+    uint64 voteTimeout = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationVoteTimeout", 60);
+
+    for (auto& [key, state] : _instanceStates)
+    {
+        if (!state.cancellationVotes.empty() && !state.completed && !state.failed)
+        {
+            // Reset votes after timeout
+            if (now - state.cancellationVoteStarted >= voteTimeout)
+            {
+                state.cancellationVotes.clear();
+                state.cancellationVoteStarted = 0;
+                LOG_INFO("mythic.run", "Cancellation votes reset for instance {} (map {}) due to timeout",
+                         state.instanceId, state.mapId);
+            }
+        }
+    }
+}
+
+// ============================================================
+// Teleportation System
+// ============================================================
+
+void MythicPlusRunManager::TeleportGroupToEntrance(Player* activator, Map* map)
+{
+    if (!activator || !map)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.TeleportToEntrance", true))
+        return;
+
+    Group* group = activator->GetGroup();
+    if (!group)
+    {
+        // Solo player
+        TeleportPlayerToEntrance(activator, map);
+        return;
+    }
+
+    // Teleport all group members in the instance
+    for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* member = itr->GetSource();
+        if (member && member->GetMapId() == map->GetId() && 
+            member->GetInstanceId() == map->GetInstanceId())
+        {
+            TeleportPlayerToEntrance(member, map);
+        }
+    }
+}
+
+void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
+{
+    if (!player || !map)
+        return;
+
+    // Reuse existing areatrigger_teleport coordinates (same as dungeon entrance portals)
+    // This table already contains entrance coordinates for all dungeons
+    QueryResult result = WorldDatabase.Query(
+        "SELECT target_position_x, target_position_y, target_position_z, target_orientation "
+        "FROM areatrigger_teleport "
+        "WHERE target_map = {} "
+        "ORDER BY id ASC LIMIT 1",
+        map->GetId()
+    );
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        float x = fields[0].Get<float>();
+        float y = fields[1].Get<float>();
+        float z = fields[2].Get<float>();
+        float o = fields[3].Get<float>();
+
+        player->TeleportTo(map->GetId(), x, y, z, o);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Teleported to dungeon entrance.|r");
+        
+        LOG_DEBUG("mythic.run", "Teleported {} to entrance of map {} at ({}, {}, {})",
+                  player->GetName(), map->GetId(), x, y, z);
+    }
+    else
+    {
+        LOG_WARN("mythic.run", "No entrance areatrigger found for map {} - player not teleported", 
+                 map->GetId());
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cffff0000Warning:|r No entrance coordinates found for this dungeon.");
+    }
+}
+
+// ============================================================
+// Countdown and Run Start System
+// ============================================================
+
+void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator)
+{
+    if (!state || !map || !activator)
+        return;
+
+    // Mark run as officially started
+    state->startedAt = GameTime::GetGameTime().count();
+    state->countdownActive = false;
+    
+    // Apply scaling and barriers
+    ApplyKeystoneScaling(map, state->keystoneLevel);
+    ApplyEntryBarrier(map);
+    
+    AnnounceToInstance(map, "|cff00ff00Mythic+ timer started! Good luck!|r");
+    
+    LOG_INFO("mythic.run", "Started Mythic+ run for instance {} (map {}) at keystone level +{}",
+             state->instanceId, state->mapId, state->keystoneLevel);
 }
 
