@@ -29,7 +29,6 @@
 #include "ChatPackets.h"
 #include "ChatTextBuilder.h"
 #include "Common.h"
-#include "MythicPlusRunManager.h"
 #include "ConditionMgr.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
@@ -17832,17 +17831,11 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
             Loot* loot = &creature->loot;
             loot->clear();
 
-            // Skip loot generation in Mythic+ dungeons (tokens handled separately)
-            bool isInMythicPlus = MythicPlusRunManager::instance()->IsPlayerInActiveRun(looter ? looter->GetGUID() : ObjectGuid::Empty);
-            
-            if (!isInMythicPlus)
-            {
-                if (uint32 lootid = creature->GetCreatureTemplate()->lootid)
-                    loot->FillLoot(lootid, LootTemplates_Creature, looter, false, false, creature->GetLootMode(), creature);
+            if (uint32 lootid = creature->GetCreatureTemplate()->lootid)
+                loot->FillLoot(lootid, LootTemplates_Creature, looter, false, false, creature->GetLootMode(), creature);
 
-                if (creature->GetLootMode())
-                    loot->generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
-            }
+            if (creature->GetLootMode())
+                loot->generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
 
             if (group)
             {

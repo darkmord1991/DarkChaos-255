@@ -90,7 +90,6 @@ public:
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
 
-private:
     struct InstanceState
     {
         uint64 instanceKey = 0;
@@ -120,6 +119,7 @@ private:
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
     };
 
+private:
     MythicPlusRunManager() = default;
 
     uint64 MakeInstanceKey(const Map* map) const;

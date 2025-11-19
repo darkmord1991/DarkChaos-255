@@ -20,7 +20,6 @@
 #include "Log.h"
 #include "Chat.h"
 #include "ItemUpgradeManager.h"
-#include "MythicPlusRunManager.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -293,10 +292,6 @@ namespace DarkChaos
 
                 Player* player = killer->ToPlayer();
                 if (!player)
-                    return;
-
-                // Don't award tokens in Mythic+ dungeons (they have their own token system)
-                if (MythicPlusRunManager::instance()->IsPlayerInActiveRun(player->GetGUID()))
                     return;
 
                 // Don't award tokens for trivial kills (very low level creatures)
