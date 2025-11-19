@@ -36,6 +36,37 @@ struct KeystoneDescriptor
 class MythicPlusRunManager
 {
 public:
+    // Define InstanceState first so it can be used in method signatures
+    struct InstanceState
+    {
+        uint64 instanceKey = 0;
+        uint32 mapId = 0;
+        uint32 instanceId = 0;
+        Difficulty difficulty = DUNGEON_DIFFICULTY_NORMAL;
+        uint8 keystoneLevel = 0;
+        uint32 seasonId = 0;
+        ObjectGuid ownerGuid;
+        uint64 startedAt = 0;
+        uint8 deaths = 0;
+        uint8 wipes = 0;
+        uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
+        uint32 bossesKilled = 0;       // Boss creatures killed
+        uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
+        uint8 upgradeLevel = 0;        // New keystone level after upgrade
+        bool failed = false;
+        bool completed = false;
+        bool tokensGranted = false;
+        bool keystoneUpgraded = false; // Tracks if keystone was upgraded
+        uint64 abandonedAt = 0;  // Timestamp when last player left
+        bool cancellationPending = false;
+        uint64 countdownStarted = 0;  // Timestamp when countdown began
+        bool countdownActive = false;
+        std::unordered_set<ObjectGuid::LowType> participants;
+        std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
+        uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
+    };
+
+    // Public methods
     static MythicPlusRunManager* instance();
 
     void Reset();
@@ -89,35 +120,6 @@ public:
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
-
-    struct InstanceState
-    {
-        uint64 instanceKey = 0;
-        uint32 mapId = 0;
-        uint32 instanceId = 0;
-        Difficulty difficulty = DUNGEON_DIFFICULTY_NORMAL;
-        uint8 keystoneLevel = 0;
-        uint32 seasonId = 0;
-        ObjectGuid ownerGuid;
-        uint64 startedAt = 0;
-        uint8 deaths = 0;
-        uint8 wipes = 0;
-        uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
-        uint32 bossesKilled = 0;       // Boss creatures killed
-        uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
-        uint8 upgradeLevel = 0;        // New keystone level after upgrade
-        bool failed = false;
-        bool completed = false;
-        bool tokensGranted = false;
-        bool keystoneUpgraded = false; // Tracks if keystone was upgraded
-        uint64 abandonedAt = 0;  // Timestamp when last player left
-        bool cancellationPending = false;
-        uint64 countdownStarted = 0;  // Timestamp when countdown began
-        bool countdownActive = false;
-        std::unordered_set<ObjectGuid::LowType> participants;
-        std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
-        uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
-    };
 
 private:
     MythicPlusRunManager() = default;
