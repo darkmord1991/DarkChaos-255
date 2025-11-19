@@ -33,7 +33,7 @@ void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixTy
     if (!map)
         return;
         
-    uint32 key = MakeInstanceKey(map);
+        uint64 key = MakeInstanceKey(map);
     auto& state = _instanceStates[key];
     state.activeAffixes = affixes;
     state.keystoneLevel = keystoneLevel;
@@ -55,7 +55,7 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
     if (!map)
         return;
         
-    uint32 key = MakeInstanceKey(map);
+        uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     if (itr == _instanceStates.end())
         return;
@@ -185,7 +185,7 @@ std::vector<AffixType> MythicPlusAffixManager::GetActiveAffixes(Map* map) const
     if (!map)
         return {};
         
-    uint32 key = MakeInstanceKey(map);
+        uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? itr->second.activeAffixes : std::vector<AffixType>{};
 }
@@ -195,16 +195,16 @@ uint8 MythicPlusAffixManager::GetKeystoneLevel(Map* map) const
     if (!map)
         return 0;
         
-    uint32 key = MakeInstanceKey(map);
+    uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? itr->second.keystoneLevel : 0;
 }
 
-uint32 MythicPlusAffixManager::MakeInstanceKey(const Map* map) const
+uint64 MythicPlusAffixManager::MakeInstanceKey(const Map* map) const
 {
     if (!map)
         return 0;
-    return map->GetId() | (map->GetInstanceId() << 16);
+    return (static_cast<uint64>(map->GetInstanceId()) << 32) | map->GetId();
 }
 
 MythicPlusAffixManager::InstanceAffixState* MythicPlusAffixManager::GetInstanceState(Map* map)
@@ -212,7 +212,7 @@ MythicPlusAffixManager::InstanceAffixState* MythicPlusAffixManager::GetInstanceS
     if (!map)
         return nullptr;
         
-    uint32 key = MakeInstanceKey(map);
+    uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? &itr->second : nullptr;
 }

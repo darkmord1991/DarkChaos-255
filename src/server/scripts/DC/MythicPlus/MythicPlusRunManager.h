@@ -65,6 +65,8 @@ public:
         std::unordered_set<ObjectGuid::LowType> participants;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
+        std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot seeding per encounter
+        bool finalBossLootGranted = false;
     };
 
     // Public methods

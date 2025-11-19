@@ -10,8 +10,10 @@
 #include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
 #include "MythicPlusRunManager.h"
+#include "MythicPlusConstants.h"
 
 using namespace Acore::ChatCommands;
+using namespace MythicPlusConstants;
 
 class keystone_admin_commands : public CommandScript
 {
@@ -36,14 +38,14 @@ public:
     {
         if (!*args)
         {
-            handler->SendSysMessage("Usage: .keystone spawn <M+2-M+10>");
+            handler->PSendSysMessage("Usage: .keystone spawn <M+%u-M+%u>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             return false;
         }
 
         uint8 level = atoi(args);
-        if (level < 2 || level > 10)
+        if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->SendSysMessage("Invalid keystone level. Must be between 2 and 10.");
+            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             return false;
         }
 
@@ -91,11 +93,8 @@ public:
         uint8 level = (entry - 100000) / 100;
         
         // Calculate rewards
-        uint32 itemLevel = 226;
-        if (level >= 2 && level <= 10)
-            itemLevel = 232 + ((level - 2) * 2);
-        
-        uint32 baseTokens = 10 + std::max(0, static_cast<int32>((itemLevel - 190) / 10));
+        uint32 itemLevel = GetItemLevelForKeystoneLevel(level);
+        uint32 baseTokens = GetTokenRewardForKeystoneLevel(level);
 
         handler->PSendSysMessage("|cffff8000Keystone Information:|r");
         handler->PSendSysMessage("  Level: M+%d", level);
@@ -113,28 +112,28 @@ public:
         if (!*args)
         {
             // Show all keystones
-            handler->SendSysMessage("|cffff8000Mythic+ Keystone Rewards (M+2 to M+10):|r");
+            handler->PSendSysMessage("|cffff8000Mythic+ Keystone Rewards (M+%u to M+%u):|r", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             handler->SendSysMessage("Level | Item Level | Base Tokens");
             handler->SendSysMessage("------|------------|------------");
             
-            for (uint8 level = 2; level <= 10; ++level)
+            for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
             {
-                uint32 ilvl = 232 + ((level - 2) * 2);
-                uint32 tokens = 10 + ((ilvl - 190) / 10);
+                uint32 ilvl = GetItemLevelForKeystoneLevel(level);
+                uint32 tokens = GetTokenRewardForKeystoneLevel(level);
                 handler->PSendSysMessage("M+%-2u | %-10u | %u", level, ilvl, tokens);
             }
             return true;
         }
 
         uint8 level = atoi(args);
-        if (level < 2 || level > 10)
+        if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->SendSysMessage("Invalid keystone level. Must be between 2 and 10.");
+            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             return false;
         }
 
-        uint32 ilvl = 232 + ((level - 2) * 2);
-        uint32 tokens = 10 + ((ilvl - 190) / 10);
+        uint32 ilvl = GetItemLevelForKeystoneLevel(level);
+        uint32 tokens = GetTokenRewardForKeystoneLevel(level);
 
         handler->PSendSysMessage("|cffff8000Keystone M+%d Rewards:|r", level);
         handler->PSendSysMessage("  Item Level: %u", ilvl);
@@ -149,14 +148,14 @@ public:
     {
         if (!*args)
         {
-            handler->SendSysMessage("Usage: .keystone start <M+2-M+10>");
+            handler->PSendSysMessage("Usage: .keystone start <M+%u-M+%u>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             return false;
         }
 
         uint8 level = atoi(args);
-        if (level < 2 || level > 10)
+        if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->SendSysMessage("Invalid keystone level. Must be between 2 and 10.");
+            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
             return false;
         }
 

@@ -852,16 +852,19 @@ void MythicPlusRunManager::SendGenericError(Player* player, std::string_view tex
 bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 {
     // Check instance_encounters table for final boss flag
+    // Join with dungeonencounter_dbc to filter by map
     QueryResult result = WorldDatabase.Query(
-        "SELECT lastEncounterDungeon FROM instance_encounters "
-        "WHERE map = {} AND creditEntry = {} LIMIT 1",
+        "SELECT ie.lastEncounterDungeon FROM instance_encounters ie "
+        "INNER JOIN dungeonencounter_dbc de ON ie.entry = de.ID "
+        "WHERE de.MapID = {} AND ie.creditEntry = {} AND ie.lastEncounterDungeon > 0 "
+        "LIMIT 1",
         mapId, bossEntry);
     
     if (result)
     {
         Field* fields = result->Fetch();
-        uint8 isLastEncounter = fields[0].Get<uint8>();
-        return isLastEncounter == 1;
+        uint16 lastEncounterDungeon = fields[0].Get<uint16>();
+        return lastEncounterDungeon > 0;
     }
     
     return false;

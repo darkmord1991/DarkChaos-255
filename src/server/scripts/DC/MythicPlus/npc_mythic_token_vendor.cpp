@@ -13,8 +13,10 @@
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
+#include "SharedDefines.h"
 #include <map>
 #include <vector>
+#include <sstream>
 
 // Token item ID (DC Item Upgrade Token)
 constexpr uint32 MYTHIC_TOKEN_ITEM = 100999;
@@ -54,7 +56,31 @@ struct ClassGearPool
     std::map<uint8, std::vector<uint32>> gearBySlot;  // slot -> list of item IDs
 };
 
-// Get class-appropriate armor type
+// Get class-appropriate armor subclass
+uint8 GetArmorSubclassForClass(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR:
+        case CLASS_PALADIN:
+        case CLASS_DEATH_KNIGHT:
+            return ITEM_SUBCLASS_ARMOR_PLATE;
+        case CLASS_HUNTER:
+        case CLASS_SHAMAN:
+            return ITEM_SUBCLASS_ARMOR_MAIL;
+        case CLASS_ROGUE:
+        case CLASS_DRUID:
+            return ITEM_SUBCLASS_ARMOR_LEATHER;
+        case CLASS_PRIEST:
+        case CLASS_MAGE:
+        case CLASS_WARLOCK:
+            return ITEM_SUBCLASS_ARMOR_CLOTH;
+        default:
+            return ITEM_SUBCLASS_ARMOR_MISC;
+    }
+}
+
+// Get class-appropriate armor type name
 std::string GetArmorTypeForClass(uint8 playerClass)
 {
     switch (playerClass)
@@ -76,6 +102,47 @@ std::string GetArmorTypeForClass(uint8 playerClass)
         default:
             return "Unknown";
     }
+}
+
+// Convert token slot to InventoryType
+uint8 TokenSlotToInventoryType(uint8 tokenSlot)
+{
+    switch (tokenSlot)
+    {
+        case TOKEN_SLOT_HEAD:      return INVTYPE_HEAD;
+        case TOKEN_SLOT_NECK:      return INVTYPE_NECK;
+        case TOKEN_SLOT_SHOULDERS: return INVTYPE_SHOULDERS;
+        case TOKEN_SLOT_BACK:      return INVTYPE_CLOAK;
+        case TOKEN_SLOT_CHEST:     return INVTYPE_CHEST;
+        case TOKEN_SLOT_WRIST:     return INVTYPE_WRISTS;
+        case TOKEN_SLOT_HANDS:     return INVTYPE_HANDS;
+        case TOKEN_SLOT_WAIST:     return INVTYPE_WAIST;
+        case TOKEN_SLOT_LEGS:      return INVTYPE_LEGS;
+        case TOKEN_SLOT_FEET:      return INVTYPE_FEET;
+        case TOKEN_SLOT_FINGER:    return INVTYPE_FINGER;
+        case TOKEN_SLOT_TRINKET:   return INVTYPE_TRINKET;
+        case TOKEN_SLOT_WEAPON:    return INVTYPE_WEAPON;
+        case TOKEN_SLOT_OFFHAND:   return INVTYPE_SHIELD;
+        default:                   return INVTYPE_NON_EQUIP;
+    }
+}
+
+// Structure to hold item choices
+struct ItemChoice
+{
+    uint32 itemId;
+    std::string name;
+    uint32 itemLevel;
+    std::string stats;
+};
+
+// Get item link for gossip display
+std::string GetItemLink(uint32 itemId, ItemTemplate const* proto)
+{
+    std::ostringstream ss;
+    ss << "|c" << std::hex << ItemQualityColors[proto->Quality] << std::dec;
+    ss << "|Hitem:" << itemId << ":0:0:0:0:0:0:0:0|h[" << proto->Name1 << "]|h|r";
+    return ss.str();
 }
 
 // Get token cost based on item level
@@ -174,13 +241,21 @@ public:
             return true;
         }
 
-        // Purchase gear (action format: ilvl * 1000 + slot)
-        if (action >= 200000)
+        // Show item choices for slot (action format: ilvl * 1000 + slot)
+        if (action >= 200000 && action < 300000)
         {
             uint32 itemLevel = action / 1000;
             uint8 slot = action % 1000;
             
-            PurchaseGear(player, creature, itemLevel, slot);
+            ShowItemChoices(player, creature, itemLevel, slot);
+            return true;
+        }
+
+        // Purchase gear (action format: 5000000 + itemId)
+        if (action >= 5000000)
+        {
+            uint32 itemId = action - 5000000;
+            PurchaseGear(player, creature, itemId);
             return true;
         }
 
@@ -223,39 +298,72 @@ private:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    void PurchaseGear(Player* player, Creature* creature, uint32 itemLevel, uint8 slot)
+    void ShowItemChoices(Player* player, Creature* creature, uint32 itemLevel, uint8 slot)
     {
-        (void)creature;  // Used for potential future creature-specific behavior
+        ClearGossipMenuFor(player);
         
+        uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
         uint32 cost = GetTokenCost(itemLevel);
+        
+        // Query item_template for suitable items
+        std::vector<ItemChoice> choices = GetItemsForSlotAndClass(player->getClass(), slot, itemLevel);
+        
+        if (choices.empty())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000No items found!|r", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No suitable items found for your class,", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "slot, and item level combination.", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, itemLevel);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return;
+        }
+        
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000Choose Your Item|r", GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " tokens | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+        
+        // Show up to 3 item choices with preview
+        for (size_t i = 0; i < choices.size() && i < 3; ++i)
+        {
+            ItemChoice const& choice = choices[i];
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(choice.itemId);
+            if (!proto)
+                continue;
+                
+            std::string itemLink = GetItemLink(choice.itemId, proto);
+            std::string displayText = itemLink + " (ilvl " + std::to_string(choice.itemLevel) + ")";
+            
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, displayText, GOSSIP_SENDER_MAIN, 5000000 + choice.itemId);
+        }
+        
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, itemLevel);
+        
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void PurchaseGear(Player* player, Creature* creature, uint32 itemId)
+    {
+        (void)creature;
+        
+        // Verify item template exists
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+        if (!itemTemplate)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r Item template not found.");
+            CloseGossipMenuFor(player);
+            return;
+        }
+        
+        uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
         uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
         
         // Check if player has enough tokens
         if (tokenCount < cost)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r You need %u tokens but only have %u.", cost, tokenCount);
-            CloseGossipMenuFor(player);
-            return;
-        }
-
-        // TODO: Get class/spec appropriate item for this slot and ilvl
-        // For now, create a generic item or token
-        // You would query a database table or use predefined item pools here
-        
-        uint32 itemId = GetItemForSlotAndClass(player->getClass(), slot, itemLevel);
-        
-        if (itemId == 0)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r No suitable item found for your class and slot.");
-            CloseGossipMenuFor(player);
-            return;
-        }
-
-        // Verify item template exists
-        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
-        if (!itemTemplate)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r Item template not found.");
             CloseGossipMenuFor(player);
             return;
         }
@@ -286,24 +394,146 @@ private:
         CloseGossipMenuFor(player);
     }
 
-    // Query database for class/spec appropriate item
-    uint32 GetItemForSlotAndClass(uint8 playerClass, uint8 slot, uint32 itemLevel)
+    // Query item_template for class/spec appropriate items
+    std::vector<ItemChoice> GetItemsForSlotAndClass(uint8 playerClass, uint8 slot, uint32 itemLevel)
     {
-        QueryResult result = WorldDatabase.Query(
-            "SELECT item_id FROM dc_token_vendor_items "
-            "WHERE class = {} AND slot = {} AND item_level = {} "
-            "ORDER BY priority DESC, spec ASC LIMIT 1",
-            playerClass, slot, itemLevel
-        );
-
-        if (!result)
+        std::vector<ItemChoice> choices;
+        
+        uint8 invType = TokenSlotToInventoryType(slot);
+        if (invType == INVTYPE_NON_EQUIP)
+            return choices;
+        
+        // Build query based on slot type
+        std::string query;
+        
+        // For armor slots, filter by armor subclass
+        if (slot >= TOKEN_SLOT_HEAD && slot <= TOKEN_SLOT_FEET && slot != TOKEN_SLOT_NECK && slot != TOKEN_SLOT_BACK)
         {
-            // No item found in database - could fallback to generic items or return 0
-            return 0;
+            uint8 armorSubclass = GetArmorSubclassForClass(playerClass);
+            
+            query = "SELECT entry, name, ItemLevel FROM item_template "
+                    "WHERE class = " + std::to_string(ITEM_CLASS_ARMOR) + " "
+                    "AND subclass = " + std::to_string(armorSubclass) + " "
+                    "AND InventoryType = " + std::to_string(invType) + " "
+                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                    "AND Quality >= 3 "  // Rare or better
+                    "ORDER BY ItemLevel DESC, name ASC "
+                    "LIMIT 3";
         }
-
-        Field* fields = result->Fetch();
-        return fields[0].Get<uint32>();
+        // For non-armor slots (neck, back, finger, trinket)
+        else if (slot == TOKEN_SLOT_NECK || slot == TOKEN_SLOT_BACK || slot == TOKEN_SLOT_FINGER || slot == TOKEN_SLOT_TRINKET)
+        {
+            query = "SELECT entry, name, ItemLevel FROM item_template "
+                    "WHERE InventoryType = " + std::to_string(invType) + " "
+                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                    "AND Quality >= 3 "
+                    "ORDER BY ItemLevel DESC, name ASC "
+                    "LIMIT 3";
+        }
+        // For weapon slots
+        else if (slot == TOKEN_SLOT_WEAPON || slot == TOKEN_SLOT_OFFHAND)
+        {
+            // Get class-appropriate weapon types
+            std::string weaponFilter = GetWeaponFilterForClass(playerClass, slot);
+            
+            query = "SELECT entry, name, ItemLevel FROM item_template "
+                    "WHERE (" + weaponFilter + ") "
+                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                    "AND Quality >= 3 "
+                    "ORDER BY ItemLevel DESC, name ASC "
+                    "LIMIT 3";
+        }
+        
+        if (query.empty())
+            return choices;
+        
+        QueryResult result = WorldDatabase.Query(query.c_str());
+        if (!result)
+            return choices;
+        
+        do
+        {
+            Field* fields = result->Fetch();
+            ItemChoice choice;
+            choice.itemId = fields[0].Get<uint32>();
+            choice.name = fields[1].Get<std::string>();
+            choice.itemLevel = fields[2].Get<uint32>();
+            choices.push_back(choice);
+        }
+        while (result->NextRow());
+        
+        return choices;
+    }
+    
+    // Get weapon filter SQL for class
+    std::string GetWeaponFilterForClass(uint8 playerClass, uint8 slot)
+    {
+        std::ostringstream filter;
+        
+        if (slot == TOKEN_SLOT_OFFHAND)
+        {
+            // Shields for plate/mail tanks, off-hand for others
+            if (playerClass == CLASS_WARRIOR || playerClass == CLASS_PALADIN || playerClass == CLASS_SHAMAN)
+            {
+                filter << "class = " << ITEM_CLASS_ARMOR << " AND subclass = " << ITEM_SUBCLASS_ARMOR_SHIELD;
+            }
+            else
+            {
+                filter << "(InventoryType = " << INVTYPE_WEAPONOFFHAND << " OR InventoryType = " << INVTYPE_HOLDABLE << ")";
+            }
+        }
+        else
+        {
+            // Main hand weapons - allow various types based on class
+            std::vector<uint8> allowedTypes;
+            
+            switch (playerClass)
+            {
+                case CLASS_WARRIOR:
+                case CLASS_PALADIN:
+                case CLASS_DEATH_KNIGHT:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2, 
+                                   ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                                   ITEM_SUBCLASS_WEAPON_POLEARM};
+                    break;
+                case CLASS_HUNTER:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
+                                   ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF};
+                    break;
+                case CLASS_ROGUE:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
+                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON};
+                    break;
+                case CLASS_DRUID:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                                   ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_STAFF,
+                                   ITEM_SUBCLASS_WEAPON_POLEARM};
+                    break;
+                case CLASS_SHAMAN:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                                   ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST_WEAPON};
+                    break;
+                case CLASS_MAGE:
+                case CLASS_PRIEST:
+                case CLASS_WARLOCK:
+                    allowedTypes = {ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                                   ITEM_SUBCLASS_WEAPON_SWORD};
+                    break;
+            }
+            
+            filter << "class = " << ITEM_CLASS_WEAPON << " AND (";
+            for (size_t i = 0; i < allowedTypes.size(); ++i)
+            {
+                if (i > 0)
+                    filter << " OR ";
+                filter << "subclass = " << (uint32)allowedTypes[i];
+            }
+            filter << ")";
+        }
+        
+        return filter.str();
     }
 };
 

@@ -331,7 +331,7 @@ public:
                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
 
-    void OnPlayerLeaveWorld(Player* player) override
+    void OnPlayerLeaveWorld(Player* player)
     {
         if (!player)
             return;

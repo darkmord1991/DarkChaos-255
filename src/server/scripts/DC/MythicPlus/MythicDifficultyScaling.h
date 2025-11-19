@@ -13,6 +13,7 @@
 #include "Player.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 enum Expansion : uint8
 {
@@ -88,6 +89,7 @@ private:
     std::unordered_map<uint64, KeystoneCacheEntry> _activeKeystoneCache;
     uint32 _activeSeasonId = 0;
     uint32 _keystoneCacheTtlSeconds = 15;
+    std::unordered_map<uint32, std::pair<float, float>> _scalingMultipliers;
     
     // Helper to determine expansion from map ID
     uint8 GetExpansionForMap(uint32 mapId);
@@ -95,6 +97,7 @@ private:
     Player* GetPreferredKeystoneHolder(Map* map) const;
     uint32 QueryPlayerKeystone(uint32 playerGuidLow, uint32 mapId) const;
     uint64 MakeInstanceKey(Map* map) const;
+    void LoadScalingMultipliers();
 };
 
 #define sMythicScaling MythicDifficultyScaling::instance()

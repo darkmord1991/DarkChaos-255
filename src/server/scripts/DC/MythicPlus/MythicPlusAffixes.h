@@ -91,9 +91,9 @@ private:
     };
     
     std::unordered_map<AffixType, std::unique_ptr<IAffixHandler>> _handlers;
-    std::unordered_map<uint32, InstanceAffixState> _instanceStates; // Key: mapId | (instanceId << 16)
+    std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines instance + map ID
     
-    uint32 MakeInstanceKey(const Map* map) const;
+    uint64 MakeInstanceKey(const Map* map) const;
     InstanceAffixState* GetInstanceState(Map* map);
 };
 

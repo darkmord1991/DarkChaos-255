@@ -1115,7 +1115,7 @@ MythicPlus.Seasons.AutoRotate = 1
 #        Default:     1 (Enabled - affixes active)
 #                     0 (Disabled - pure scaling only)
 #
-MythicPlus.Affixes.Enabled = 1
+MythicPlus.Affixes.Enabled = 0
 
 #
 #    MythicPlus.AffixDebug

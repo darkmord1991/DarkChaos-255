@@ -106,6 +106,8 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
     
     LOG_INFO("server.loading", ">> Loaded {} Mythic+ dungeon profiles", count);
 
+    LoadScalingMultipliers();
+
     if (QueryResult season = WorldDatabase.Query("SELECT season_id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY start_ts DESC LIMIT 1"))
     {
         _activeSeasonId = (*season)[0].Get<uint32>();
@@ -114,6 +116,31 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
     else
     {
         LOG_WARN("server.loading", ">> No active Mythic+ season found in dc_mplus_seasons");
+    }
+}
+
+void MythicDifficultyScaling::LoadScalingMultipliers()
+{
+    _scalingMultipliers.clear();
+
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT keystoneLevel, hpMultiplier, damageMultiplier FROM dc_mythic_scaling_multipliers"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 level = fields[0].Get<uint32>();
+            float hp = fields[1].Get<float>();
+            float damage = fields[2].Get<float>();
+            _scalingMultipliers[level] = { hp, damage };
+        }
+        while (result->NextRow());
+
+        LOG_INFO("server.loading", ">> Cached {} Mythic+ scaling entries", _scalingMultipliers.size());
+    }
+    else
+    {
+        LOG_WARN("server.loading", ">> No rows found in dc_mythic_scaling_multipliers; fallback math will be used");
     }
 }
 
@@ -339,26 +366,21 @@ void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLeve
         damageMult = 1.0f;
         return;
     }
-    
-    // Load scaling multipliers from database
-    QueryResult result = WorldDatabase.Query(
-        "SELECT hpMultiplier, damageMultiplier FROM dc_mythic_scaling_multipliers WHERE keystoneLevel = {}",
-        keystoneLevel);
-    
-    if (result)
+
+    if (auto itr = _scalingMultipliers.find(keystoneLevel); itr != _scalingMultipliers.end())
     {
-        Field* fields = result->Fetch();
-        hpMult = fields[0].Get<float>();
-        damageMult = fields[1].Get<float>();
+        hpMult = itr->second.first;
+        damageMult = itr->second.second;
+        return;
     }
-    else
-    {
-        // Fallback: if not in database, calculate exponentially from M+15 baseline (2.96x)
-        // Approximately +10% per level beyond defined values
-        constexpr float M15_BASELINE = 2.96f;
-        hpMult = damageMult = M15_BASELINE * std::pow(1.10f, static_cast<float>(keystoneLevel - 15));
-        LOG_WARN("mythic.scaling", "Scaling multipliers not found for keystoneLevel {}, using exponential fallback: {}", 
-                 keystoneLevel, hpMult);
-    }
+
+    // Fallback: approximate scaling relative to M+15 baseline (2.96x) at ~10% per level delta
+    constexpr float M15_BASELINE = 2.96f;
+    int32 levelDelta = static_cast<int32>(keystoneLevel) - 15;
+    float fallback = M15_BASELINE * std::pow(1.10f, static_cast<float>(levelDelta));
+    hpMult = damageMult = fallback;
+    _scalingMultipliers[keystoneLevel] = { hpMult, damageMult };
+    LOG_WARN("mythic.scaling", "Scaling multipliers missing for keystoneLevel {}. Using fallback {:.2f}x and caching result",
+             keystoneLevel, fallback);
 }
 

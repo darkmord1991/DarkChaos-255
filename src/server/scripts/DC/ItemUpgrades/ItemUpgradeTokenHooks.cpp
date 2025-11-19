@@ -368,11 +368,11 @@ namespace DarkChaos
 
                 // Send notification
                 if (token_reward > 0 && essence_reward > 0)
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Tokens|r, |cffff9900+%u Essence|r", token_reward, essence_reward);
+                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Tokens|r, |cffff9900+{} Essence|r", token_reward, essence_reward).c_str());
                 else if (token_reward > 0)
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r", token_reward);
+                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Upgrade Tokens|r", token_reward).c_str());
                 else if (essence_reward > 0)
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r", essence_reward);
+                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff9900+{} Artifact Essence|r", essence_reward).c_str());
 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}",
             player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());

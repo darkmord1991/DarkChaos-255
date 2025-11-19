@@ -8,15 +8,18 @@
 
 #include "MythicPlusRunManager.h"
 #include "MythicPlusRewards.h"
+#include "Chat.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "Group.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
-#include "Group.h"
+#include "SharedDefines.h"
 #include <algorithm>
 #include <random>
 #include <vector>
@@ -147,101 +150,137 @@ uint8 GetPlayerRoleMask(Player* player)
 
 // MythicPlusRunManager is at global scope, not in a namespace
 void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceState* state)
+{
+    if (!boss || !map || !state)
+        return;
+
+    if (state->keystoneLevel == 0)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.BossLoot.Enabled", true))
+        return;
+
+    bool isFinalBoss = IsFinalBoss(state->mapId, boss->GetEntry());
+    if (!isFinalBoss)
+    {
+        boss->loot.clear();
+        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+        LOG_DEBUG("mythic.loot", "Skipping loot for non-final boss {} (entry {}) in Mythic+ run {}", boss->GetName(), boss->GetEntry(), state->instanceId);
+        return;
+    }
+
+    if (state->finalBossLootGranted)
+    {
+        LOG_DEBUG("mythic.loot", "Final boss loot already granted for instance {}", state->instanceId);
+        return;
+    }
+
+    state->finalBossLootGranted = true;
+    state->lootGrantedBosses.insert(boss->GetEntry());
+
+    std::vector<Player*> participants;
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        if (Player* player = ref.GetSource())
         {
-            if (!boss || !map || !state)
-                return;
-
-            // Check if loot generation is enabled
-            if (!sConfigMgr->GetOption<bool>("MythicPlus.BossLoot.Enabled", true))
-                return;
-
-            // Get keystone level for item level calculation
-            uint32 targetItemLevel = GetItemLevelForKeystoneLevel(state->keystoneLevel);
-            
-            // Get all eligible players
-            std::vector<Player*> eligiblePlayers;
-            Map::PlayerList const& players = map->GetPlayers();
-            for (auto const& ref : players)
-            {
-                Player* player = ref.GetSource();
-                if (player && state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
-                    eligiblePlayers.push_back(player);
-            }
-
-            if (eligiblePlayers.empty())
-                return;
-
-            // Determine loot count based on boss type
-            uint32 itemsToGenerate = IsFinalBoss(state->mapId, boss->GetEntry()) ? 2 : 1;
-            
-            LOG_INFO("mythic.loot", "Generating {} items for boss {} (entry {}) at ilvl {} for {} players",
-                itemsToGenerate, boss->GetName(), boss->GetEntry(), targetItemLevel, eligiblePlayers.size());
-
-            // Generate items for random players
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::shuffle(eligiblePlayers.begin(), eligiblePlayers.end(), gen);
-
-            uint32 itemsGenerated = 0;
-            for (uint32 i = 0; i < itemsToGenerate && i < eligiblePlayers.size(); ++i)
-            {
-                Player* player = eligiblePlayers[i];
-                if (!player)
-                    continue;
-
-                // Get player's spec/class info
-                std::string playerSpec = GetPlayerSpecForLoot(player);
-                std::string armorType = GetPlayerArmorTypeForLoot(player);
-                uint8 classId = player->getClass();
-                uint8 roleMask = GetPlayerRoleMask(player);
-
-                // Query eligible items from loot table
-                QueryResult result = WorldDatabase.Query(
-                    "SELECT item_id FROM dc_vault_loot_table "
-                    "WHERE ((class_mask & {}) OR class_mask = 1023) "
-                    "AND (spec_name = '{}' OR spec_name IS NULL) "
-                    "AND (armor_type = '{}' OR armor_type = 'Misc') "
-                    "AND ((role_mask & {}) OR role_mask = 7) "
-                    "AND item_level_min <= {} AND item_level_max >= {} "
-                    "ORDER BY RAND() LIMIT 1",
-                    (1 << (classId - 1)), playerSpec, armorType, roleMask, targetItemLevel, targetItemLevel);
-
-                if (!result)
-                {
-                    LOG_WARN("mythic.loot", "No eligible items found for player {} (class {}, spec {}, armor {}, role {}, ilvl {})",
-                        player->GetName(), classId, playerSpec, armorType, roleMask, targetItemLevel);
-                    continue;
-                }
-
-                Field* fields = result->Fetch();
-                uint32 itemId = fields[0].Get<uint32>();
-
-                // Add item to boss loot
-                ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
-                if (!itemTemplate)
-                {
-                    LOG_ERROR("mythic.loot", "Invalid item template for item {}", itemId);
-                    continue;
-                }
-
-                // Create loot item
-                LootStoreItem storeItem(itemId, 0, 100.0f, false, 1, 1, 1, 1);
-                boss->loot.AddItem(storeItem);
-                
-                // Set item level on the generated item
-                // Note: This requires item scaling which may need additional hooks
-                
-                itemsGenerated++;
-
-                LOG_INFO("mythic.loot", "Generated item {} ({}) for player {} at ilvl {}",
-                    itemId, itemTemplate->Name1, player->GetName(), targetItemLevel);
-
-                // Send notification to player
-                std::string lootMessage = "|cff00ff00[Mythic+]|r " + boss->GetName() + " dropped: |cff0070dd[" + 
-                                         std::string(itemTemplate->Name1) + "]|r (ilvl " + std::to_string(targetItemLevel) + ")";
-                ChatHandler(player->GetSession()).SendSysMessage(lootMessage.c_str());
-            }
-
-            LOG_INFO("mythic.loot", "Generated {} items for boss {} (requested: {})",
-                itemsGenerated, boss->GetName(), itemsToGenerate);
+            if (state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
+                participants.push_back(player);
         }
+    }
+
+    if (participants.empty())
+    {
+        LOG_WARN("mythic.loot", "No eligible players present to receive loot for map {} instance {}", state->mapId, state->instanceId);
+        return;
+    }
+
+    uint32 targetItemLevel = GetItemLevelForKeystoneLevel(state->keystoneLevel);
+
+    // Prepare loot container so the standard loot pipeline (FFA/master/etc.) is honored
+    boss->loot.clear();
+    boss->loot.sourceWorldObjectGUID = boss->GetGUID();
+    boss->loot.containerGUID = boss->GetGUID();
+    boss->loot.loot_type = LOOT_CORPSE;
+    boss->loot.gold = 0;
+
+    Player* owner = ObjectAccessor::FindPlayer(state->ownerGuid);
+    if (!owner || owner->GetMap() != map)
+        owner = participants.front();
+    boss->loot.lootOwnerGUID = owner->GetGUID();
+
+    for (Player* participant : participants)
+        boss->loot.AddLooter(participant->GetGUID());
+
+    boss->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+
+    // Randomize selection order so winners are unpredictable
+    std::vector<Player*> shuffled = participants;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(shuffled.begin(), shuffled.end(), gen);
+
+    uint32 itemsRequested = std::min<uint32>(2, shuffled.size());
+    uint32 itemsGenerated = 0;
+
+    LOG_INFO("mythic.loot", "Final boss {} dropping {} spec-tailored items (M+{}). Eligible players: {}", boss->GetName(), itemsRequested, state->keystoneLevel, participants.size());
+
+    for (Player* player : shuffled)
+    {
+        if (itemsGenerated >= itemsRequested)
+            break;
+
+        if (!player)
+            continue;
+
+        std::string playerSpec = GetPlayerSpecForLoot(player);
+        std::string armorType = GetPlayerArmorTypeForLoot(player);
+        uint8 classId = player->getClass();
+        uint8 roleMask = GetPlayerRoleMask(player);
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT item_id FROM dc_vault_loot_table "
+            "WHERE ((class_mask & {}) OR class_mask = 1023) "
+            "AND (spec_name = '{}' OR spec_name IS NULL) "
+            "AND (armor_type = '{}' OR armor_type = 'Misc') "
+            "AND ((role_mask & {}) OR role_mask = 7) "
+            "AND item_level_min <= {} AND item_level_max >= {} "
+            "ORDER BY RAND() LIMIT 1",
+            (1u << (classId - 1)), playerSpec, armorType, roleMask, targetItemLevel, targetItemLevel);
+
+        if (!result)
+        {
+            LOG_WARN("mythic.loot", "No eligible items found for {} (class {}, spec {}, armor {}, role {}, ilvl {})", player->GetName(), classId, playerSpec, armorType, roleMask, targetItemLevel);
+            continue;
+        }
+
+        Field* fields = result->Fetch();
+        uint32 itemId = fields[0].Get<uint32>();
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+        if (!itemTemplate)
+        {
+            LOG_ERROR("mythic.loot", "Invalid item template {} referenced for Mythic+ loot", itemId);
+            continue;
+        }
+
+        LootStoreItem storeItem(itemId, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1);
+        boss->loot.AddItem(storeItem);
+        if (!boss->loot.items.empty())
+        {
+            LootItem& lootItem = boss->loot.items.back();
+            lootItem.follow_loot_rules = true;
+        }
+
+        ++itemsGenerated;
+
+        LOG_INFO("mythic.loot", "Queued loot item {} ({}) for player {} (spec {}, ilvl {})", itemId, itemTemplate->Name1, player->GetName(), playerSpec, targetItemLevel);
+
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[%s]|r (ilvl %u)", itemTemplate->Name1, targetItemLevel);
+    }
+
+    if (!itemsGenerated)
+    {
+        LOG_WARN("mythic.loot", "Final boss {} generated no loot for map {} instance {}", boss->GetName(), state->mapId, state->instanceId);
+        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+    }
+}

@@ -18,11 +18,11 @@
 using namespace MythicPlusConstants;
 
 // Gossip action IDs
-enum KeystoneGossipActions
+enum KeystoneGossipActions : uint32
 {
-    GOSSIP_ACTION_KEYSTONE_START = 1,
-    GOSSIP_ACTION_KEYSTONE_INFO = 2,
-    GOSSIP_ACTION_CLOSE = 3
+    GOSSIP_ACTION_KEYSTONE_INFO       = 1,
+    GOSSIP_ACTION_CLOSE               = 2,
+    GOSSIP_ACTION_KEYSTONE_SELECT_BASE = 100
 };
 
 class npc_keystone_vendor : public CreatureScript
@@ -90,7 +90,7 @@ public:
                 std::ostringstream ss;
                 ss << "|cff00ff00Receive Mythic Keystone +" << static_cast<uint32>(level) << "|r";
                 AddGossipItemFor(player, GOSSIP_ICON_VENDOR, ss.str(), 
-                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START + level - MIN_KEYSTONE_LEVEL);
+                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_SELECT_BASE + level);
             }
         }
         else
@@ -98,7 +98,7 @@ public:
             // Regular players get starter keystone (M+2)
             AddGossipItemFor(player, GOSSIP_ICON_VENDOR, 
                 "|cff00ff00Receive Mythic Keystone +2|r", 
-                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START);
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_SELECT_BASE + MIN_KEYSTONE_LEVEL);
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
@@ -117,18 +117,16 @@ public:
 
         LOG_INFO("mythic.keystone", "OnGossipSelect called for player {} with action {}", player->GetName(), action);
 
-        // Close on close action (action = 2 from SQL)
-        if (action == 2)
+        if (action == GOSSIP_ACTION_CLOSE || action == GOSSIP_ACTION_KEYSTONE_INFO)
         {
             CloseGossipMenuFor(player);
             return true;
         }
 
-        // Handle keystone request
-        if (action >= GOSSIP_ACTION_KEYSTONE_START)
+        if (action >= GOSSIP_ACTION_KEYSTONE_SELECT_BASE)
         {
-            // Calculate which keystone level was requested
-            uint8 keystoneLevel = MIN_KEYSTONE_LEVEL + (action - GOSSIP_ACTION_KEYSTONE_START);
+            uint32 requestedLevel = action - GOSSIP_ACTION_KEYSTONE_SELECT_BASE;
+            uint8 keystoneLevel = static_cast<uint8>(requestedLevel);
             
             // Validate level range
             if (keystoneLevel < MIN_KEYSTONE_LEVEL || keystoneLevel > MAX_KEYSTONE_LEVEL)
@@ -185,7 +183,7 @@ public:
             return true;
         }
 
-        LOG_WARN("mythic.keystone", "Unknown action {} for player {}", action, player->GetName());
+            LOG_WARN("mythic.keystone", "Unknown action {} for player {}", action, player->GetName());
         CloseGossipMenuFor(player);
         return true;
     }

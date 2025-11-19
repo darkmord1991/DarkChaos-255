@@ -12,7 +12,29 @@
 #include "Chat.h"
 #include "ScriptedGossip.h"
 #include "MythicPlusRunManager.h"
+#include "MythicPlusConstants.h"
 #include "MythicDifficultyScaling.h"
+
+namespace
+{
+uint8 ResolveKeystoneLevel(uint32 itemId)
+{
+    uint8 level = MythicPlusConstants::GetKeystoneLevelFromItemId(itemId);
+    if (!level)
+        level = MythicPlusConstants::MIN_KEYSTONE_LEVEL;
+    return level;
+}
+
+uint32 GetRewardItemLevel(uint8 keystoneLevel)
+{
+    return MythicPlusConstants::GetItemLevelForKeystoneLevel(keystoneLevel);
+}
+
+uint32 GetEstimatedTokenReward(uint8 keystoneLevel)
+{
+    return MythicPlusConstants::GetTokenRewardForKeystoneLevel(keystoneLevel);
+}
+}
 
 enum KeystoneGossipActions
 {
@@ -32,18 +54,7 @@ public:
         if (!player || !item)
             return false;
 
-        // Calculate keystone level from item ID (190001 = M+2, 190002 = M+3, ..., 190019 = M+20)
-        uint32 itemId = item->GetEntry();
-        uint8 keystoneLevel = 0;
-        
-        if (itemId >= 190001 && itemId <= 190019)
-            keystoneLevel = (itemId - 190001) + 2;
-        else
-            keystoneLevel = 2; // Default fallback
-
-        // Calculate scaling values (done in OnGossipSelect when needed)
-        
-        // Calculate item level reward (done in OnGossipSelect when needed)
+        uint8 keystoneLevel = ResolveKeystoneLevel(item->GetEntry());
 
         ClearGossipMenuFor(player);
         
@@ -89,13 +100,7 @@ public:
             return;
         
         // Calculate keystone level
-        uint32 itemId = item->GetEntry();
-        uint8 keystoneLevel = 0;
-        
-        if (itemId >= 190001 && itemId <= 190019)
-            keystoneLevel = (itemId - 190001) + 2;
-        else
-            keystoneLevel = 2;
+        uint8 keystoneLevel = ResolveKeystoneLevel(item->GetEntry());
         
         ChatHandler handler(player->GetSession());
         
@@ -108,13 +113,8 @@ public:
         // Calculate values
         float hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
         float dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
-        uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
-        uint32 itemLevel = (keystoneLevel <= 10) 
-            ? baseItemLevel + (keystoneLevel * 3)
-            : baseItemLevel + 30 + ((keystoneLevel - 10) * 4);
-        uint32 baseTokens = 10 + (player->GetLevel() - 70) * 2;
-        float tokenMultiplier = 2.0f + (keystoneLevel * 0.25f);
-        uint32 estimatedTokens = static_cast<uint32>(baseTokens * tokenMultiplier);
+        uint32 itemLevel = GetRewardItemLevel(keystoneLevel);
+        uint32 estimatedTokens = GetEstimatedTokenReward(keystoneLevel);
         
         if (action == GOSSIP_ACTION_INFO)
         {

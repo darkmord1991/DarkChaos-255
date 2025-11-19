@@ -9,6 +9,7 @@
 #include "MythicPlusRunManager.h"
 #include "MythicPlusAffixes.h"
 #include "MythicDifficultyScaling.h"
+#include "MythicPlusConstants.h"
 
 using namespace Acore::ChatCommands;
 
@@ -87,15 +88,20 @@ public:
         if (!player)
             return false;
 
-        uint8 keystoneLevel = level.value_or(2);
-        if (keystoneLevel < 2 || keystoneLevel > 10)
+        uint8 keystoneLevel = level.value_or(MythicPlusConstants::MIN_KEYSTONE_LEVEL);
+        if (keystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL || keystoneLevel > MythicPlusConstants::MAX_KEYSTONE_LEVEL)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 10.");
+            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between %u and %u.",
+                MythicPlusConstants::MIN_KEYSTONE_LEVEL, MythicPlusConstants::MAX_KEYSTONE_LEVEL);
             return false;
         }
 
-        // Keystone item IDs: 190001-190009 for M+2-M+10
-        uint32 keystoneItemId = 190000 + keystoneLevel - 1;
+        uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(keystoneLevel);
+        if (!keystoneItemId)
+        {
+            handler->PSendSysMessage("|cffff0000Error:|r Unable to resolve keystone item for level %u.", keystoneLevel);
+            return false;
+        }
 
         // Add keystone to player inventory
         ItemPosCountVec dest;
@@ -185,9 +191,9 @@ public:
     static bool HandleMPlusScalingCommand(ChatHandler* handler, Optional<uint8> level)
     {
         uint8 keystoneLevel = level.value_or(10);
-        if (keystoneLevel > 30)
+        if (keystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL || keystoneLevel > 30)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between 0 and 30.");
+            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between %u and 30.", MythicPlusConstants::MIN_KEYSTONE_LEVEL);
             return false;
         }
 
@@ -195,18 +201,7 @@ public:
         float damageMult = 1.0f;
         sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, hpMult, damageMult);
 
-        uint32 itemLevel = 190;
-        if (keystoneLevel >= 2)
-        {
-            if (keystoneLevel <= 7)
-                itemLevel = 200 + ((keystoneLevel - 2) * 3);
-            else if (keystoneLevel <= 10)
-                itemLevel = 216 + ((keystoneLevel - 7) * 4);
-            else if (keystoneLevel <= 15)
-                itemLevel = 228 + ((keystoneLevel - 10) * 4);
-            else
-                itemLevel = 248 + ((keystoneLevel - 15) * 3);
-        }
+        uint32 itemLevel = MythicPlusConstants::GetItemLevelForKeystoneLevel(keystoneLevel);
 
         handler->PSendSysMessage("|cff00ff00Mythic+ Scaling Info for Level +%u:|r", keystoneLevel);
         handler->PSendSysMessage("  HP Multiplier: |cffffffff%.2fx|r (+%.0f%%)", hpMult, (hpMult - 1.0f) * 100.0f);
