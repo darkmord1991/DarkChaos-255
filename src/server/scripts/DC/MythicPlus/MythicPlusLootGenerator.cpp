@@ -13,7 +13,6 @@
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
-#include "Loot.h"
 #include "LootMgr.h"
 #include "ObjectMgr.h"
 #include "Player.h"
