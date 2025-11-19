@@ -29,6 +29,7 @@
 #include "ChatPackets.h"
 #include "ChatTextBuilder.h"
 #include "Common.h"
+#include "MythicPlusRunManager.h"
 #include "ConditionMgr.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
@@ -17832,7 +17833,7 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
             loot->clear();
 
             // Skip loot generation in Mythic+ dungeons (tokens handled separately)
-            bool isInMythicPlus = DarkChaos::MythicPlus::MythicPlusRunManager::Instance()->IsPlayerInActiveRun(looter ? looter->GetGUID() : ObjectGuid::Empty);
+            bool isInMythicPlus = MythicPlusRunManager::instance()->IsPlayerInActiveRun(looter ? looter->GetGUID() : ObjectGuid::Empty);
             
             if (!isInMythicPlus)
             {

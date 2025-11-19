@@ -277,7 +277,19 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     // Count boss kill
     if (creature->isWorldBoss() || creature->IsDungeonBoss())
+    {
         ++state->bossesKilled;
+        
+        // Record boss death time for statistics
+        state->bossDeathTimes.push_back(GameTime::GetGameTime().count());
+        
+        // Generate retail-like spec-based loot for the boss
+        GenerateBossLoot(creature, map, state);
+        
+        // Announce boss kill to the group
+        std::string bossName = creature->GetName();
+        AnnounceToInstance(map, "|cffff8000[Mythic+]|r Boss defeated: |cff00ff00" + bossName + "|r (" + std::to_string(state->bossesKilled) + "/" + std::to_string(GetTotalBossesForDungeon(state->mapId)) + ")");
+    }
 
     if (!IsFinalBoss(state->mapId, creature->GetEntry()))
         return;
@@ -1527,5 +1539,94 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     
     LOG_INFO("mythic.run", "Started Mythic+ run for instance {} (map {}) at keystone level +{}",
              state->instanceId, state->mapId, state->keystoneLevel);
+}
+
+// ============================================================
+// Item Level Calculation for Boss Loot
+// ============================================================
+
+uint32 MythicPlusRunManager::GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const
+{
+    // Retail-like scaling: Base ilvl + (keystone level * scaling factor)
+    // Base: 226 (Shadowlands S1 M+0)
+    // Each level adds 3 item levels up to +10, then 4 per level
+    uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
+    
+    if (keystoneLevel <= 10)
+        return baseItemLevel + (keystoneLevel * 3);
+    else
+        return baseItemLevel + (10 * 3) + ((keystoneLevel - 10) * 4);
+}
+
+uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
+{
+    // Query instance_encounters table (use core DB table as user requested)
+    QueryResult result = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM instance_encounters WHERE mapId = {}", mapId);
+    
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        return fields[0].Get<uint32>();
+    }
+    
+    // Fallback to hardcoded values if table is empty
+    switch (mapId)
+    {
+        case 33:   return 5;  // Shadowfang Keep
+        case 34:   return 4;  // The Stockade
+        case 36:   return 6;  // Deadmines
+        case 43:   return 5;  // Wailing Caverns
+        case 47:   return 6;  // Razorfen Kraul
+        case 48:   return 6;  // Blackfathom Deeps
+        case 189:  return 4;  // Scarlet Monastery
+        case 209:  return 5;  // Zul'Farrak
+        case 249:  return 8;  // Onyxia's Lair
+        case 269:  return 4;  // The Black Morass
+        case 389:  return 8;  // Ragefire Chasm
+        case 429:  return 7;  // Dire Maul
+        case 533:  return 15; // Naxxramas
+        case 534:  return 9;  // The Battle for Mount Hyjal
+        case 542:  return 4;  // Blood Furnace
+        case 543:  return 6;  // Hellfire Ramparts
+        case 545:  return 3;  // The Steamvault
+        case 546:  return 3;  // The Underbog
+        case 547:  return 3;  // The Slave Pens
+        case 548:  return 4;  // Serpentshrine Cavern (Coilfang Reservoir)
+        case 550:  return 4;  // The Eye (Tempest Keep)
+        case 552:  return 5;  // The Arcatraz
+        case 553:  return 4;  // The Botanica
+        case 554:  return 5;  // The Mechanar
+        case 555:  return 4;  // Shadow Labyrinth
+        case 556:  return 3;  // Sethekk Halls
+        case 557:  return 3;  // Mana-Tombs
+        case 558:  return 4;  // Auchenai Crypts
+        case 560:  return 3;  // Old Hillsbrad Foothills
+        case 568:  return 4;  // Zul'Aman
+        case 574:  return 5;  // Utgarde Keep
+        case 575:  return 4;  // Utgarde Pinnacle
+        case 576:  return 4;  // The Nexus
+        case 578:  return 5;  // The Oculus
+        case 595:  return 4;  // The Culling of Stratholme
+        case 599:  return 4;  // Halls of Stone
+        case 600:  return 3;  // Drak'Tharon Keep
+        case 601:  return 4;  // Azjol-Nerub
+        case 602:  return 3;  // Halls of Lightning
+        case 603:  return 5;  // Ulduar
+        case 604:  return 4;  // Gundrak
+        case 608:  return 4;  // Violet Hold
+        case 615:  return 5;  // The Obsidian Sanctum
+        case 616:  return 2;  // The Eye of Eternity
+        case 619:  return 3;  // Ahn'kahet: The Old Kingdom
+        case 624:  return 3;  // Vault of Archavon
+        case 631:  return 12; // Icecrown Citadel
+        case 632:  return 4;  // The Forge of Souls
+        case 649:  return 5;  // Trial of the Crusader
+        case 650:  return 3;  // Trial of the Champion
+        case 658:  return 3;  // Pit of Saron
+        case 668:  return 4;  // Halls of Reflection
+        case 724:  return 4;  // The Ruby Sanctum
+        default:   return 4;  // Default fallback
+    }
 }
 

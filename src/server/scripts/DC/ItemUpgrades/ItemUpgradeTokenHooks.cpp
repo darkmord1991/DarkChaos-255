@@ -20,6 +20,7 @@
 #include "Log.h"
 #include "Chat.h"
 #include "ItemUpgradeManager.h"
+#include "MythicPlusRunManager.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -295,7 +296,7 @@ namespace DarkChaos
                     return;
 
                 // Don't award tokens in Mythic+ dungeons (they have their own token system)
-                if (DarkChaos::MythicPlus::MythicPlusRunManager::Instance()->IsPlayerInActiveRun(player->GetGUID()))
+                if (MythicPlusRunManager::instance()->IsPlayerInActiveRun(player->GetGUID()))
                     return;
 
                 // Don't award tokens for trivial kills (very low level creatures)
