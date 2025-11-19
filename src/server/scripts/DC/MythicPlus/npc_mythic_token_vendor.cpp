@@ -272,15 +272,15 @@ private:
             if (Item* item = player->StoreNewItem(dest, itemId, true))
             {
                 player->SendNewItem(item, 1, true, false);
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Success:|r Purchased [%s] for %u tokens!", 
-                                                                  itemTemplate->Name1.c_str(), cost);
+                std::string successMsg = "|cff00ff00Success:|r Purchased [" + std::string(itemTemplate->Name1) + "] for " + std::to_string(cost) + " tokens!";
+                ChatHandler(player->GetSession()).SendSysMessage(successMsg.c_str());
             }
         }
         else
         {
             player->SendItemRetrievalMail(itemId, 1);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Success:|r Inventory full. [%s] mailed!", 
-                                                              itemTemplate->Name1.c_str());
+            std::string mailMsg = "|cff00ff00Success:|r Inventory full. [" + std::string(itemTemplate->Name1) + "] mailed!";
+            ChatHandler(player->GetSession()).SendSysMessage(mailMsg.c_str());
         }
 
         CloseGossipMenuFor(player);

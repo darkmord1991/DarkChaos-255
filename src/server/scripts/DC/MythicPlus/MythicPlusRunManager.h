@@ -52,6 +52,7 @@ public:
         uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
         uint32 bossesKilled = 0;       // Boss creatures killed
         uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
+        std::vector<uint64> bossDeathTimes; // Timestamps of boss deaths for statistics
         uint8 upgradeLevel = 0;        // New keystone level after upgrade
         bool failed = false;
         bool completed = false;
@@ -164,7 +165,6 @@ private:
     std::string GetAffixName(uint32 affixId) const;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
-        std::unordered_map<uint32, std::unordered_set<uint32>> _finalBossEntries;
 };
 
 inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)

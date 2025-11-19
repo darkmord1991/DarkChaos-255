@@ -102,7 +102,7 @@ public:
         handler->PSendSysMessage("  Entry: %u", entry);
         handler->PSendSysMessage("  Item Level: %u", itemLevel);
         handler->PSendSysMessage("  Base Tokens: %u", baseTokens);
-        handler->PSendSysMessage("  Difficulty Name: %s", creature->GetName().c_str());
+        handler->SendSysMessage(("  Difficulty Name: " + creature->GetName()).c_str());
         
         return true;
     }

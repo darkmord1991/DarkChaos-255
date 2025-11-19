@@ -2058,12 +2058,12 @@ Prestige.AnnounceWorld = 1
 # -------------------------------------------------------------------------
 
 #
-#    ChallengeMode.Enable
+#    ChallengeModes.Enable
 #        Description: Master toggle for all challenge modes
 #        Default:     1 (Enabled)
 #                     0 (Disabled - challenge shrine does nothing)
 #
-ChallengeMode.Enable = 1
+ChallengeModes.Enable = 1
 
 #
 #    ChallengeMode.ShrineEntry

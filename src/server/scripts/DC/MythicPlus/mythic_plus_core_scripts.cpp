@@ -281,17 +281,21 @@ public:
         // Get dungeon name
         std::string dungeonName = profile ? profile->name : "Unknown Dungeon";
 
-        // Send announcement
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
-        ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
-        ChatHandler(player->GetSession()).SendSysMessage(("Difficulty: " + diffName).c_str());
-        ChatHandler(player->GetSession()).SendSysMessage(("Scaling: |cffaaaaaa" + scaling + "|r").c_str());
-        
-        // Show keystone level if Mythic+
+        // Check if this is a Mythic+ run
         uint8 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
         if (keystoneLevel > 0)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("Keystone Level: |cffff8000+%u|r", keystoneLevel);
+            // Mythic+ run - show simplified message
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
+            ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000Keystone Level: |r|cffff8000+%u|r", keystoneLevel);
+            
+            // Show M+ specific scaling (multiplicative on top of Mythic base)
+            float mplusHpMult = 1.0f;
+            float mplusDamageMult = 1.0f;
+            sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, mplusHpMult, mplusDamageMult);
+            std::string mplusScaling = FormatScalingText(mplusHpMult, mplusDamageMult);
+            ChatHandler(player->GetSession()).SendSysMessage(("M+ Multiplier (×Mythic base): |cffaaaaaa" + mplusScaling + "|r").c_str());
             
             // Show active affixes
             auto activeAffixes = sAffixMgr->GetActiveAffixes(map);
@@ -301,6 +305,46 @@ public:
                 // TODO: Display affix names
             }
         }
+        else
+        {
+            // Regular difficulty - show full message with scaling info
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
+            ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
+            ChatHandler(player->GetSession()).SendSysMessage(("Difficulty: " + diffName).c_str());
+            ChatHandler(player->GetSession()).SendSysMessage(("Scaling: |cffaaaaaa" + scaling + "|r").c_str());
+        }
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!player)
+            return;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        // Player leaving during an active Mythic+ run
+        sMythicRuns->InitiateCancellation(map);
+        
+        LOG_INFO("mythic.run", "Player {} logged out during active run on map {} instance {}",
+                 player->GetName(), map->GetId(), map->GetInstanceId());
+    }
+
+    void OnPlayerLeaveWorld(Player* player) override
+    {
+        if (!player)
+            return;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return;
+
+        // Player leaving during an active Mythic+ run (teleport/zone change)
+        sMythicRuns->InitiateCancellation(map);
+        
+        LOG_INFO("mythic.run", "Player {} left world during active run on map {} instance {}",
+                 player->GetName(), map->GetId(), map->GetInstanceId());
     }
 };
 

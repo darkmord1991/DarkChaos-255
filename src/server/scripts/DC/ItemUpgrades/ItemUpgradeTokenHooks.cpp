@@ -182,7 +182,8 @@ namespace DarkChaos
                 LogTokenTransaction(killer->GetGUID().GetCounter(), "reward", reason.str().c_str(), reward, 0);
 
                 // Send notification
-                    ChatHandler(killer->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (PvP Kill)", reward);
+                std::string pvpMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (PvP Kill)";
+                ChatHandler(killer->GetSession()).SendSysMessage(pvpMsg.c_str());
 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}",
             killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
@@ -221,7 +222,9 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), reward, 0);
 
                 // Send notification
-                ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00+%u Upgrade Tokens|r (Quest Complete: %s)", reward, quest->GetTitle().c_str());
+                std::string questMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (Quest Complete: " + 
+                                      std::string(quest->GetTitle()) + ")";
+                ChatHandler(player->GetSession()).SendSysMessage(questMsg.c_str());
 
         LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})",
             player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
@@ -265,7 +268,9 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), 0, essence_reward);
 
                 // Send notification
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff9900+%u Artifact Essence|r (Achievement: %s)", essence_reward, achName.c_str());
+                std::string achieveMsg = "|cffff9900+" + std::to_string(essence_reward) + " Artifact Essence|r (Achievement: " + 
+                                        achName + ")";
+                ChatHandler(player->GetSession()).SendSysMessage(achieveMsg.c_str());
 
                 LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
                     player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);

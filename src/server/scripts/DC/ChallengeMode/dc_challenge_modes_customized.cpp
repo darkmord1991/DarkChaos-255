@@ -890,8 +890,8 @@ void HandleHardcoreDeath(Player* victim, std::string killerName)
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000   HARDCORE CHARACTER - DECEASED   |r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");
-    ChatHandler(victim->GetSession()).PSendSysMessage("Final Level: %u", (uint32)victim->GetLevel());
-    ChatHandler(victim->GetSession()).PSendSysMessage("Killed by: %s", killerName.c_str());
+    ChatHandler(victim->GetSession()).PSendSysMessage("|cffFFFF00Final Level: |cffFF0000%u", (uint32)victim->GetLevel());
+    ChatHandler(victim->GetSession()).PSendSysMessage("|cffFFFF00Killed by: |cffFF0000%s", killerName.c_str());
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000This character is now PERMANENTLY LOCKED.|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000You will not be able to log in with this character anymore.|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");

@@ -70,7 +70,7 @@ public:
             return true;
         }
 
-        // Offer starter keystone (M+2)
+        // Header
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
             "|cffff8000=== Mythic+ Keystone Vendor ===|r", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
@@ -78,9 +78,28 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
 
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, 
-            "|cff00ff00Receive Mythic Keystone +2|r", 
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START);
+        // GMs get access to all keystone levels
+        if (player->GetSession()->GetSecurity() > SEC_PLAYER)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|cffff00ff[GM] Select Keystone Level:|r", 
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
+            
+            for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
+            {
+                std::ostringstream ss;
+                ss << "|cff00ff00Receive Mythic Keystone +" << static_cast<uint32>(level) << "|r";
+                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, ss.str(), 
+                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START + level - MIN_KEYSTONE_LEVEL);
+            }
+        }
+        else
+        {
+            // Regular players get starter keystone (M+2)
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, 
+                "|cff00ff00Receive Mythic Keystone +2|r", 
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_START);
+        }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_INFO);
@@ -105,13 +124,34 @@ public:
             return true;
         }
 
-        // Handle starter keystone request (action = 1 from SQL)
-        if (action == 1)
+        // Handle keystone request
+        if (action >= GOSSIP_ACTION_KEYSTONE_START)
         {
-            LOG_INFO("mythic.keystone", "Player {} requesting keystone", player->GetName());
+            // Calculate which keystone level was requested
+            uint8 keystoneLevel = MIN_KEYSTONE_LEVEL + (action - GOSSIP_ACTION_KEYSTONE_START);
             
-            // Give M+2 keystone (item 190001)
-            uint32 keystoneItemId = 190001; // M+2 keystone
+            // Validate level range
+            if (keystoneLevel < MIN_KEYSTONE_LEVEL || keystoneLevel > MAX_KEYSTONE_LEVEL)
+            {
+                LOG_ERROR("mythic.keystone", "Invalid keystone level {} requested by player {}", keystoneLevel, player->GetName());
+                CloseGossipMenuFor(player);
+                return true;
+            }
+            
+            // Non-GMs can only get M+2
+            if (player->GetSession()->GetSecurity() == SEC_PLAYER && keystoneLevel != MIN_KEYSTONE_LEVEL)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cffff0000Error:|r You can only receive a Mythic Keystone +2!");
+                LOG_WARN("mythic.keystone", "Player {} (non-GM) attempted to get M+{} keystone", player->GetName(), keystoneLevel);
+                CloseGossipMenuFor(player);
+                return true;
+            }
+            
+            LOG_INFO("mythic.keystone", "Player {} requesting M+{} keystone", player->GetName(), keystoneLevel);
+            
+            // Get the item ID for this keystone level
+            uint32 keystoneItemId = GetItemIdFromKeystoneLevel(keystoneLevel);
 
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1);
@@ -121,9 +161,11 @@ public:
                 Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
                 if (keystoneItem)
                 {
-                    ChatHandler(player->GetSession()).PSendSysMessage(
-                        "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +2|r! Use it in any dungeon to begin your journey.");
-                    LOG_INFO("mythic.keystone", "Player {} received M+2 keystone successfully", player->GetName());
+                    std::ostringstream ss;
+                    ss << "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +" 
+                       << static_cast<uint32>(keystoneLevel) << "|r! Use it in any dungeon to begin your journey.";
+                    ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str());
+                    LOG_INFO("mythic.keystone", "Player {} received M+{} keystone successfully", player->GetName(), keystoneLevel);
                 }
                 else
                 {

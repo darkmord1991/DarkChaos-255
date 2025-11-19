@@ -122,27 +122,26 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
     return req;
 }
 
-// Teleport player to dungeon entrance using dc_dungeon_entrances table
-void TeleportToDungeonEntrance(Player* player, uint32 mapId)
+// Teleport player to dungeon using teleporter entry from eluna_teleporter table
+void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
 {
     if (!player)
         return;
     
-    // Query entrance coordinates from database
+    // Query teleporter coordinates from eluna_teleporter table
     QueryResult result = WorldDatabase.Query(
-        "SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o "
-        "FROM dc_dungeon_entrances WHERE dungeon_map = {}", mapId);
+        "SELECT map, x, y, z, o FROM eluna_teleporter WHERE id = {}", teleporterEntryId);
 
     if (!result)
     {
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "Error: Dungeon entrance coordinates not found in database.");
-        LOG_ERROR("mythic.portal", "No entrance found for dungeon map {}", mapId);
+            "Error: Teleporter coordinates not found in database.");
+        LOG_ERROR("mythic.portal", "No teleporter entry found for ID {}", teleporterEntryId);
         return;
     }
 
     Field* fields = result->Fetch();
-    uint32 entranceMap = fields[0].Get<uint32>();
+    uint32 mapId = fields[0].Get<uint32>();
     float x = fields[1].Get<float>();
     float y = fields[2].Get<float>();
     float z = fields[3].Get<float>();
@@ -151,19 +150,19 @@ void TeleportToDungeonEntrance(Player* player, uint32 mapId)
     z += GetDungeonZOffset(mapId);
 
     // Teleport player to entrance
-    if (player->TeleportTo(entranceMap, x, y, z, o))
+    if (player->TeleportTo(mapId, x, y, z, o))
     {
         ChatHandler(player->GetSession()).PSendSysMessage(
             "|cff00ff00Teleporting to dungeon entrance...|r");
-        LOG_INFO("mythic.portal", "Player {} teleported to dungeon {} entrance",
-            player->GetName(), mapId);
+        LOG_INFO("mythic.portal", "Player {} teleported via teleporter entry {}",
+            player->GetName(), teleporterEntryId);
     }
     else
     {
         ChatHandler(player->GetSession()).PSendSysMessage(
             "Error: Failed to teleport to dungeon entrance.");
-        LOG_ERROR("mythic.portal", "Failed to teleport player {} to dungeon {}",
-            player->GetName(), mapId);
+        LOG_ERROR("mythic.portal", "Failed to teleport player {} via entry {}",
+            player->GetName(), teleporterEntryId);
     }
 }
 
@@ -173,6 +172,23 @@ class npc_dungeon_portal_selector : public CreatureScript
 public:
     npc_dungeon_portal_selector() : CreatureScript("npc_dungeon_portal_selector") { }
 
+    struct npc_dungeon_portal_selectorAI : public ScriptedAI
+    {
+        npc_dungeon_portal_selectorAI(Creature* creature) : ScriptedAI(creature) { }
+
+        void Reset() override
+        {
+            // Ensure portal is always visible regardless of difficulty
+            // Portals spawn in the world (not in dungeons) so they should always be visible
+            me->SetPhaseMask(1, true);
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_dungeon_portal_selectorAI(creature);
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         if (!player || !creature)
@@ -180,24 +196,24 @@ public:
 
         ClearGossipMenuFor(player);
         
-        // Show dungeon selection menu - using map IDs as action values
+        // Show dungeon selection menu - using teleporter entry IDs
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffff8000=== Select Dungeon ===|r", 
+            "|cffff8000=== Select Mythic+ Dungeon ===|r", 
             GOSSIP_SENDER_MAIN, 0);
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, 0);
         
-        // WotLK Dungeons - use mapId as action
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Keep", GOSSIP_SENDER_MAIN, 574);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Pinnacle", GOSSIP_SENDER_MAIN, 575);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "The Nexus", GOSSIP_SENDER_MAIN, 576);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Azjol-Nerub", GOSSIP_SENDER_MAIN, 601);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Ahn'kahet", GOSSIP_SENDER_MAIN, 619);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Drak'Tharon Keep", GOSSIP_SENDER_MAIN, 600);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Stone", GOSSIP_SENDER_MAIN, 599);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Lightning", GOSSIP_SENDER_MAIN, 602);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "The Culling of Stratholme", GOSSIP_SENDER_MAIN, 595);
+        // WotLK Dungeons - use teleporter entry IDs from eluna_teleporter table
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Lightning", GOSSIP_SENDER_MAIN, 151);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Tower", GOSSIP_SENDER_MAIN, 152);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Stone", GOSSIP_SENDER_MAIN, 153);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Violet Citadel", GOSSIP_SENDER_MAIN, 155);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "AhnKahet", GOSSIP_SENDER_MAIN, 157);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Azjol Nerub", GOSSIP_SENDER_MAIN, 158);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Keep", GOSSIP_SENDER_MAIN, 160);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Drak Tharon", GOSSIP_SENDER_MAIN, 162);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Culling of Stratholme", GOSSIP_SENDER_MAIN, 163);
         
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
@@ -217,10 +233,12 @@ public:
             return true;
         }
 
-        // If sender is 0, this is dungeon selection - show difficulty menu
-        if (sender == GOSSIP_SENDER_MAIN && action >= 574)
+        // If sender is MAIN, this is dungeon selection - show difficulty menu
+        if (sender == GOSSIP_SENDER_MAIN && (action == 151 || action == 152 || action == 153 || 
+                                             action == 155 || action == 157 || action == 158 || 
+                                             action == 160 || action == 162 || action == 163))
         {
-            // Store selected dungeon map in sender for next step
+            // Store selected teleporter entry in sender for next step
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|cffff8000=== Select Difficulty ===|r", 
                 action, 0);
@@ -243,8 +261,8 @@ public:
             return true;
         }
 
-        // Sender now contains the dungeon mapId, action is the difficulty
-        uint32 dungeonMapId = sender;
+        // Sender now contains the teleporter entry ID, action is the difficulty
+        uint32 teleporterEntryId = sender;
         
         Difficulty selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
         const char* difficultyLabel = "|cffffffffNormal|r";
@@ -268,10 +286,11 @@ public:
         }
 
         player->SetDungeonDifficulty(selectedDifficulty);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Dungeon Portal]|r Teleporting to %s entrance...", difficultyLabel);
+        std::string message = "|cff00ff00[Dungeon Portal]|r Teleporting to " + std::string(difficultyLabel) + " entrance...";
+        ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
         
         // Teleport player after setting difficulty
-        TeleportToDungeonEntrance(player, dungeonMapId);
+        TeleportToDungeonEntrance(player, teleporterEntryId);
         
         CloseGossipMenuFor(player);
         return true;

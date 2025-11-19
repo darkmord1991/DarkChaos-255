@@ -197,7 +197,8 @@ public:
                 {
                     ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
                     std::string itemName = itemTemplate ? std::string(itemTemplate->Name1) : "Item";
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Great Vault:|r Claimed %s successfully!", itemName.c_str());
+                    std::string message = "|cff00ff00Great Vault:|r Claimed " + itemName + " successfully!";
+                    ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
                 }
             }
             else

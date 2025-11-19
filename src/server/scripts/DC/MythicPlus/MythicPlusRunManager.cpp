@@ -42,22 +42,7 @@ MythicPlusRunManager* MythicPlusRunManager::instance()
 void MythicPlusRunManager::Reset()
 {
     _instanceStates.clear();
-    _finalBossEntries.clear();
-
-    uint32 count = 0;
-    if (QueryResult result = WorldDatabase.Query("SELECT map_id, boss_entry FROM dc_mplus_final_bosses"))
-    {
-        do
-        {
-            Field* fields = result->Fetch();
-            uint32 mapId = fields[0].Get<uint32>();
-            uint32 bossEntry = fields[1].Get<uint32>();
-            _finalBossEntries[mapId].insert(bossEntry);
-            ++count;
-        } while (result->NextRow());
-    }
-
-    LOG_INFO("mythic.run", "Loaded {} Mythic+ final boss records", count);
+    LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
 }
 
 bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
@@ -866,11 +851,20 @@ void MythicPlusRunManager::SendGenericError(Player* player, std::string_view tex
 
 bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 {
-    auto itr = _finalBossEntries.find(mapId);
-    if (itr == _finalBossEntries.end())
-        return false;
-
-    return itr->second.find(bossEntry) != itr->second.end();
+    // Check instance_encounters table for final boss flag
+    QueryResult result = WorldDatabase.Query(
+        "SELECT lastEncounterDungeon FROM instance_encounters "
+        "WHERE map = {} AND creditEntry = {} LIMIT 1",
+        mapId, bossEntry);
+    
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        uint8 isLastEncounter = fields[0].Get<uint8>();
+        return isLastEncounter == 1;
+    }
+    
+    return false;
 }
 
 bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
@@ -1130,7 +1124,7 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     if (MapEntry const* mapEntry = sMapStore.LookupEntry(state->mapId))
         dungeonName = mapEntry->name[0];
     
-    handler.PSendSysMessage("|cffffd700Dungeon:|r %s", dungeonName.c_str());
+    handler.SendSysMessage(("|cffffd700Dungeon:|r " + dungeonName).c_str());
     handler.PSendSysMessage("|cffffd700Keystone Level:|r +%u", state->keystoneLevel);
     handler.PSendSysMessage("|cffffd700Duration:|r %u min %u sec", minutes, seconds);
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
@@ -1560,17 +1554,21 @@ uint32 MythicPlusRunManager::GetItemLevelForKeystoneLevel(uint8 keystoneLevel) c
 
 uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
 {
-    // Query instance_encounters table (use core DB table as user requested)
-    QueryResult result = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM instance_encounters WHERE mapId = {}", mapId);
-    
-    if (result)
+    // Use ObjectMgr to get encounters from DBC data
+    // Try both normal and heroic difficulties
+    DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_NORMAL);
+    if (encounters && !encounters->empty())
     {
-        Field* fields = result->Fetch();
-        return fields[0].Get<uint32>();
+        return encounters->size();
     }
     
-    // Fallback to hardcoded values if table is empty
+    encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_HEROIC);
+    if (encounters && !encounters->empty())
+    {
+        return encounters->size();
+    }
+    
+    // Fallback to hardcoded values if no DBC data
     switch (mapId)
     {
         case 33:   return 5;  // Shadowfang Keep

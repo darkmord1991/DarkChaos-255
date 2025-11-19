@@ -41,15 +41,9 @@ public:
         else
             keystoneLevel = 2; // Default fallback
 
-        // Calculate scaling values
-        float hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
-        float dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
+        // Calculate scaling values (done in OnGossipSelect when needed)
         
-        // Calculate item level reward
-        uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
-        uint32 itemLevel = (keystoneLevel <= 10) 
-            ? baseItemLevel + (keystoneLevel * 3)
-            : baseItemLevel + 30 + ((keystoneLevel - 10) * 4);
+        // Calculate item level reward (done in OnGossipSelect when needed)
 
         ClearGossipMenuFor(player);
         
@@ -85,14 +79,14 @@ public:
             "|cffaaaaaa[Close]|r",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
         
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
-        return true;
+        SendGossipMenuFor(player, item->GetEntry(), item->GetGUID());
+        return false; // Return false to prevent item consumption
     }
     
-    bool OnGossipSelect(Player* player, Item* item, uint32 /*sender*/, uint32 action)
+    void OnGossipSelect(Player* player, Item* item, uint32 /*sender*/, uint32 action) override
     {
         if (!player || !item)
-            return false;
+            return;
         
         // Calculate keystone level
         uint32 itemId = item->GetEntry();
@@ -108,7 +102,7 @@ public:
         if (action == GOSSIP_ACTION_CLOSE)
         {
             CloseGossipMenuFor(player);
-            return true;
+            return;
         }
         
         // Calculate values
@@ -213,7 +207,6 @@ public:
         }
         
         CloseGossipMenuFor(player);
-        return true;
     }
 };
 

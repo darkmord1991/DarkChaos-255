@@ -21,12 +21,8 @@
 #include <random>
 #include <vector>
 
-namespace DarkChaos
-{
-    namespace MythicPlus
-    {
-        // Helper: Get player's current talent spec
-        std::string GetPlayerSpecForLoot(Player* player)
+// Helper: Get player's current talent spec
+std::string GetPlayerSpecForLoot(Player* player)
         {
             if (!player)
                 return "Unknown";
@@ -81,8 +77,8 @@ namespace DarkChaos
             }
         }
 
-        // Helper: Get player's armor type
-        std::string GetPlayerArmorTypeForLoot(Player* player)
+// Helper: Get player's armor type
+std::string GetPlayerArmorTypeForLoot(Player* player)
         {
             if (!player)
                 return "Misc";
@@ -108,8 +104,8 @@ namespace DarkChaos
             }
         }
 
-        // Helper: Get role mask for player
-        uint8 GetPlayerRoleMask(Player* player)
+// Helper: Get role mask for player
+uint8 GetPlayerRoleMask(Player* player)
         {
             if (!player)
                 return 7; // Universal
@@ -149,7 +145,8 @@ namespace DarkChaos
             }
         }
 
-        void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceState* state)
+// MythicPlusRunManager is at global scope, not in a namespace
+void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceState* state)
         {
             if (!boss || !map || !state)
                 return;
@@ -228,7 +225,7 @@ namespace DarkChaos
                 }
 
                 // Create loot item
-                LootStoreItem storeItem(itemId, 0, 100.0f, 0, 1, 1, 1);
+                LootStoreItem storeItem(itemId, 0, 100.0f, false, 1, 1, 1, 1);
                 boss->loot.AddItem(storeItem);
                 
                 // Set item level on the generated item
@@ -240,14 +237,11 @@ namespace DarkChaos
                     itemId, itemTemplate->Name1, player->GetName(), targetItemLevel);
 
                 // Send notification to player
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Mythic+]|r %s dropped: |cff0070dd[%s]|r (ilvl %u)", 
-                    boss->GetName().c_str(), itemTemplate->Name1, targetItemLevel);
+                std::string lootMessage = "|cff00ff00[Mythic+]|r " + boss->GetName() + " dropped: |cff0070dd[" + 
+                                         std::string(itemTemplate->Name1) + "]|r (ilvl " + std::to_string(targetItemLevel) + ")";
+                ChatHandler(player->GetSession()).SendSysMessage(lootMessage.c_str());
             }
 
             LOG_INFO("mythic.loot", "Generated {} items for boss {} (requested: {})",
                 itemsGenerated, boss->GetName(), itemsToGenerate);
         }
-
-    } // namespace MythicPlus
-} // namespace DarkChaos

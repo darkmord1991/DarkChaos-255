@@ -259,7 +259,7 @@ private:
         uint32 tokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
         uint32 essence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
 
-        handler->PSendSysMessage("=== Token Info for %s ===", player->GetName().c_str());
+        handler->SendSysMessage(("=== Token Info for " + player->GetName() + " ===").c_str());
         handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
         handler->PSendSysMessage("Artifact Essence: %u", essence);
 
@@ -289,7 +289,8 @@ private:
                 continue;
 
             ItemTemplate const* proto = item->GetTemplate();
-            handler->PSendSysMessage("  Slot %u: %s (iLvL: %u)", slot, proto->Name1, proto->ItemLevel);
+            std::string slotMsg = "  Slot " + std::to_string(slot) + ": " + std::string(proto->Name1) + " (iLvL: " + std::to_string(proto->ItemLevel) + ")";
+            handler->SendSysMessage(slotMsg.c_str());
             count++;
         }
 
@@ -326,8 +327,10 @@ private:
 
             if (currentTier < 5)
             {
-                handler->PSendSysMessage("  [Slot %u] %s (Tier %u -> Tier %u, iLvL: %u)",
-                    slot, proto->Name1, currentTier, currentTier + 1, proto->ItemLevel);
+                std::string upgradeMsg = "  [Slot " + std::to_string(slot) + "] " + std::string(proto->Name1) + 
+                                        " (Tier " + std::to_string(currentTier) + " -> Tier " + std::to_string(currentTier + 1) + 
+                                        ", iLvL: " + std::to_string(proto->ItemLevel) + ")";
+                handler->SendSysMessage(upgradeMsg.c_str());
                 upgradeCount++;
             }
         }
@@ -364,7 +367,7 @@ private:
         }
 
         handler->PSendSysMessage("=== Item Info ===");
-        handler->PSendSysMessage("Item: %s", itemTemplate->Name1);
+        handler->SendSysMessage(("Item: " + std::string(itemTemplate->Name1)).c_str());
         handler->PSendSysMessage("Item Level: %u", itemTemplate->ItemLevel);
         handler->PSendSysMessage("This is a placeholder. Full upgrade info coming in Phase 3B.");
 

@@ -145,7 +145,10 @@ public:
             {
                 ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
                 if (itemTemplate)
-                    handler->PSendSysMessage("  - [%s] (ilvl %u)", itemTemplate->Name1.c_str(), itemLevel);
+                {
+                    std::string rewardMsg = "  - [" + std::string(itemTemplate->Name1) + "] (ilvl " + std::to_string(itemLevel) + ")";
+                    handler->SendSysMessage(rewardMsg.c_str());
+                }
             }
             
             return true;
