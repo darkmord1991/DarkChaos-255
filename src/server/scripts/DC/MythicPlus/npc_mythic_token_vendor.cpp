@@ -503,7 +503,7 @@ private:
                     break;
                 case CLASS_ROGUE:
                     allowedTypes = {ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
-                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON};
+                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST};
                     break;
                 case CLASS_DRUID:
                     allowedTypes = {ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
@@ -513,7 +513,7 @@ private:
                 case CLASS_SHAMAN:
                     allowedTypes = {ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
                                    ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
-                                   ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST_WEAPON};
+                                   ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST};
                     break;
                 case CLASS_MAGE:
                 case CLASS_PRIEST:
