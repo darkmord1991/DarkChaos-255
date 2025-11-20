@@ -969,10 +969,20 @@ bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
 {
     QueryResult result = WorldDatabase.Query(
-        "SELECT 1 FROM dc_mplus_featured_dungeons WHERE season_id = {} AND map_id = {}",
-        seasonId, mapId);
-    
-    return result != nullptr;
+        "SELECT is_unlocked, mythic_plus_enabled, IFNULL(season_lock, 0) "
+        "FROM dc_dungeon_setup WHERE map_id = {}",
+        mapId);
+
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    bool isUnlocked = fields[0].Get<bool>();
+    bool mythicPlusEnabled = fields[1].Get<bool>();
+    uint32 requiredSeason = fields[2].Get<uint32>();
+
+    bool seasonMatches = requiredSeason == 0 || requiredSeason == seasonId;
+    return isUnlocked && mythicPlusEnabled && seasonMatches;
 }
 
 std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) const

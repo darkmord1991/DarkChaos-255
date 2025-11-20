@@ -14,9 +14,37 @@
 #include "Map.h"
 #include "Log.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
+#include <algorithm>
+#include <array>
 
 namespace
 {
+struct DungeonTeleporterOption
+{
+    uint32 entryId;
+    char const* label;
+};
+
+constexpr std::array<DungeonTeleporterOption, 11> kDungeonTeleporterOptions = {{
+    {151, "Halls of Lightning"},
+    {152, "Utgarde Tower"},
+    {153, "Halls of Stone"},
+    {155, "Violet Citadel"},
+    {157, "AhnKahet"},
+    {158, "Azjol Nerub"},
+    {160, "Utgarde Keep"},
+    {162, "Drak Tharon"},
+    {163, "Culling of Stratholme"},
+    {164, "Frozen Halls"},
+    {165, "Trial of the Champion"}
+}};
+
+bool IsMythicDungeonTeleporter(uint32 entryId)
+{
+    return std::any_of(kDungeonTeleporterOptions.begin(), kDungeonTeleporterOptions.end(),
+        [entryId](DungeonTeleporterOption const& option) { return option.entryId == entryId; });
+}
+
 float GetDungeonZOffset(uint32 dungeonMapId)
 {
     switch (dungeonMapId)
@@ -205,15 +233,8 @@ public:
             GOSSIP_SENDER_MAIN, 0);
         
         // WotLK Dungeons - use teleporter entry IDs from eluna_teleporter table
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Lightning", GOSSIP_SENDER_MAIN, 151);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Tower", GOSSIP_SENDER_MAIN, 152);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Halls of Stone", GOSSIP_SENDER_MAIN, 153);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Violet Citadel", GOSSIP_SENDER_MAIN, 155);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "AhnKahet", GOSSIP_SENDER_MAIN, 157);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Azjol Nerub", GOSSIP_SENDER_MAIN, 158);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Utgarde Keep", GOSSIP_SENDER_MAIN, 160);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Drak Tharon", GOSSIP_SENDER_MAIN, 162);
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Culling of Stratholme", GOSSIP_SENDER_MAIN, 163);
+        for (auto const& option : kDungeonTeleporterOptions)
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, option.label, GOSSIP_SENDER_MAIN, option.entryId);
         
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
@@ -234,9 +255,7 @@ public:
         }
 
         // If sender is MAIN, this is dungeon selection - show difficulty menu
-        if (sender == GOSSIP_SENDER_MAIN && (action == 151 || action == 152 || action == 153 || 
-                                             action == 155 || action == 157 || action == 158 || 
-                                             action == 160 || action == 162 || action == 163))
+        if (sender == GOSSIP_SENDER_MAIN && IsMythicDungeonTeleporter(action))
         {
             // Store selected teleporter entry in sender for next step
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
