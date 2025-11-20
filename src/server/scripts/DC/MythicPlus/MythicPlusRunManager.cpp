@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "MapMgr.h"
 #include "MythicDifficultyScaling.h"
+#include "MythicPlusConstants.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -32,6 +33,7 @@ constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
 constexpr uint32 COUNTDOWN_ROOT_SPELL = 33786;  // Cyclone - roots but allows spell casting/eating/drinking
+
 }
 
 MythicPlusRunManager* MythicPlusRunManager::instance()
@@ -505,7 +507,7 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
     else
     {
         player->SendItemRetrievalMail(tokenEntry, tokenCount);
-        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Inventory full, tokens mailed.");
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Tokens could not be added to your bags and were mailed instead.");
     }
 
     // Mark the weekly vault as claimed
@@ -854,7 +856,7 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         else
         {
             player->SendItemRetrievalMail(tokenEntry, tokenCount);
-            ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Inventory full, tokens mailed.");
+            ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Tokens could not be added to your bags and were mailed instead.");
         }
 
         InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
@@ -1125,16 +1127,17 @@ uint8 MythicPlusRunManager::GetPlayerKeystoneLevel(ObjectGuid::LowType playerGui
         return result->Fetch()->Get<uint8>();
     }
     
-    return 2;  // Default to M+2
+    return MythicPlusConstants::MIN_KEYSTONE_LEVEL;  // Default to M+2
 }
 
 bool MythicPlusRunManager::GiveKeystoneToPlayer(Player* player, uint8 keystoneLevel)
 {
-    if (!player || keystoneLevel < 2 || keystoneLevel > 10)
+    if (!player || keystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL || keystoneLevel > MythicPlusConstants::MAX_KEYSTONE_LEVEL)
         return false;
 
-    // Keystone item IDs: 190001-190009 for M+2-M+10
-    uint32 keystoneItemId = 190000 + keystoneLevel - 1;
+    uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(keystoneLevel);
+    if (!keystoneItemId)
+        return false;
 
     // Give player the keystone item
     ItemPosCountVec dest;
@@ -1175,7 +1178,7 @@ void MythicPlusRunManager::CompleteRun(Map* map, bool successful)
 void MythicPlusRunManager::UpgradeKeystone(ObjectGuid::LowType playerGuid)
 {
     uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
-    uint8 newLevel = std::min(static_cast<uint8>(10), static_cast<uint8>(currentLevel + 1));
+    uint8 newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 1));
 
     // Update database
     CharacterDatabase.Execute(
@@ -1189,7 +1192,7 @@ void MythicPlusRunManager::UpgradeKeystone(ObjectGuid::LowType playerGuid)
 void MythicPlusRunManager::DowngradeKeystone(ObjectGuid::LowType playerGuid)
 {
     uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
-    uint8 newLevel = std::max(static_cast<uint8>(2), static_cast<uint8>(currentLevel - 1));
+    uint8 newLevel = std::max<uint8>(MythicPlusConstants::MIN_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel - 1));
 
     // Update database
     CharacterDatabase.Execute(
@@ -1202,11 +1205,12 @@ void MythicPlusRunManager::DowngradeKeystone(ObjectGuid::LowType playerGuid)
 
 void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level)
 {
-    if (level < 2 || level > 10)
+    if (level < MythicPlusConstants::MIN_KEYSTONE_LEVEL || level > MythicPlusConstants::MAX_KEYSTONE_LEVEL)
         return;
 
-    // Keystone item IDs: 190001-190009 for M+2-M+10
-    uint32 keystoneItemId = 190000 + level - 1;
+    uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(level);
+    if (!keystoneItemId)
+        return;
 
     // Get player from guid
     Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid));
@@ -1317,13 +1321,13 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
     uint8 newLevel = currentLevel;
     
     if (state->deaths <= 5)
-        newLevel = std::min<uint8>(10, currentLevel + 2);
+        newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 2));
     else if (state->deaths <= 10)
-        newLevel = std::min<uint8>(10, currentLevel + 1);
+        newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 1));
     else if (state->deaths <= 14)
         newLevel = currentLevel; // Maintain same level
     else
-        newLevel = std::max<uint8>(2, currentLevel - 1); // Downgrade
+        newLevel = std::max<uint8>(MythicPlusConstants::MIN_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel - 1)); // Downgrade
     
     state->upgradeLevel = newLevel;
     state->keystoneUpgraded = true;

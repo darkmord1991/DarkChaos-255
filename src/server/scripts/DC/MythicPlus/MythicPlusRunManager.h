@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "GameObject.h"
 #include "MythicDifficultyScaling.h"
+#include "MythicPlusConstants.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "SharedDefines.h"

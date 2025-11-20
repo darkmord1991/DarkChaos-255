@@ -22,6 +22,7 @@
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <algorithm>
+#include <array>
 #include <random>
 #include <vector>
 
@@ -169,6 +170,64 @@ bool GivePersonalLoot(Player* player, uint32 itemId, uint32 count = 1)
     ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Inventory full, loot mailed.");
     return true;
 }
+
+struct LootQueryStage
+{
+    bool filterClass;
+    bool filterSpec;
+    bool filterArmor;
+    bool filterRole;
+};
+
+bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId)
+{
+    if (!player)
+        return false;
+
+    uint8 classId = player->getClass();
+    if (classId == 0)
+        return false;
+
+    uint32 classMask = 1u << (classId - 1);
+    std::string spec = GetPlayerSpecForLoot(player);
+    std::string armor = GetPlayerArmorTypeForLoot(player);
+    uint8 roleMask = GetPlayerRoleMask(player);
+
+    WorldDatabase.EscapeString(spec);
+    WorldDatabase.EscapeString(armor);
+
+    static constexpr std::array<LootQueryStage, 5> stages = {{
+        { true,  true,  true,  true  },
+        { true,  false, true,  true  },
+        { true,  false, false, true  },
+        { true,  false, false, false },
+        { false, false, false, false }
+    }};
+
+    for (const LootQueryStage& stage : stages)
+    {
+        std::string sql = "SELECT item_id FROM dc_vault_loot_table WHERE 1=1";
+
+        if (stage.filterClass)
+            sql += Acore::StringFormat(" AND ((class_mask & {}) OR class_mask = 1023)", classMask);
+        if (stage.filterSpec)
+            sql += Acore::StringFormat(" AND (spec_name = '{}' OR spec_name IS NULL)", spec);
+        if (stage.filterArmor)
+            sql += Acore::StringFormat(" AND (armor_type = '{}' OR armor_type = 'Misc')", armor);
+        if (stage.filterRole)
+            sql += Acore::StringFormat(" AND ((role_mask & {}) OR role_mask = 7)", roleMask);
+
+        sql += Acore::StringFormat(" AND item_level_min <= {} AND item_level_max >= {} ORDER BY RAND() LIMIT 1", targetItemLevel);
+
+        if (QueryResult result = WorldDatabase.Query(sql))
+        {
+            outItemId = result->Fetch()[0].Get<uint32>();
+            return true;
+        }
+    }
+
+    return false;
+}
 }
 
 // MythicPlusRunManager is at global scope, not in a namespace
@@ -237,7 +296,9 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     std::mt19937 gen(rd());
     std::shuffle(shuffled.begin(), shuffled.end(), gen);
 
-    uint32 itemsRequested = std::min<uint32>(2, shuffled.size());
+    uint32 desiredCount = sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2);
+    desiredCount = std::max<uint32>(1, std::min<uint32>(desiredCount, 5));
+    uint32 itemsRequested = std::min<uint32>(desiredCount, shuffled.size());
     uint32 itemsGenerated = 0;
 
     LOG_INFO("mythic.loot", "Final boss {} dropping {} spec-tailored items (M+{}). Eligible players: {}", boss->GetName(), itemsRequested, state->keystoneLevel, participants.size());
@@ -250,29 +311,12 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         if (!player)
             continue;
 
-        std::string playerSpec = GetPlayerSpecForLoot(player);
-        std::string armorType = GetPlayerArmorTypeForLoot(player);
-        uint8 classId = player->getClass();
-        uint8 roleMask = GetPlayerRoleMask(player);
-
-        QueryResult result = WorldDatabase.Query(
-            "SELECT item_id FROM dc_vault_loot_table "
-            "WHERE ((class_mask & {}) OR class_mask = 1023) "
-            "AND (spec_name = '{}' OR spec_name IS NULL) "
-            "AND (armor_type = '{}' OR armor_type = 'Misc') "
-            "AND ((role_mask & {}) OR role_mask = 7) "
-            "AND item_level_min <= {} AND item_level_max >= {} "
-            "ORDER BY RAND() LIMIT 1",
-            (1u << (classId - 1)), playerSpec, armorType, roleMask, targetItemLevel, targetItemLevel);
-
-        if (!result)
+        uint32 itemId = 0;
+        if (!TrySelectLootItem(player, targetItemLevel, itemId))
         {
-            LOG_WARN("mythic.loot", "No eligible items found for {} (class {}, spec {}, armor {}, role {}, ilvl {})", player->GetName(), classId, playerSpec, armorType, roleMask, targetItemLevel);
+            LOG_WARN("mythic.loot", "No eligible items found for {} (class {}, ilvl {})", player->GetName(), player->getClass(), targetItemLevel);
             continue;
         }
-
-        Field* fields = result->Fetch();
-        uint32 itemId = fields[0].Get<uint32>();
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
         if (!itemTemplate)
         {
@@ -288,7 +332,7 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
         ++itemsGenerated;
 
-        LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (spec {}, ilvl {})", itemId, itemTemplate->Name1, player->GetName(), playerSpec, targetItemLevel);
+        LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (ilvl {})", itemId, itemTemplate->Name1, player->GetName(), targetItemLevel);
 
         ChatHandler(player->GetSession()).SendSysMessage(
             Acore::StringFormat("|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[{}]|r (ilvl {})",
