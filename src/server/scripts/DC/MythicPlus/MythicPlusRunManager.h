@@ -86,6 +86,8 @@ public:
     void HandleBossDeath(Creature* creature, Unit* killer);
     void HandleCreatureKill(Creature* creature, Unit* killer);
     void HandleInstanceReset(Map* map);
+    bool IsBossCreature(const Creature* creature) const;
+    bool IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const;
 
     // Weekly vault + statistics NPC support
     void BuildVaultMenu(Player* player, Creature* creature);
@@ -145,6 +147,7 @@ private:
     bool IsDeathBudgetEnabled() const;
     bool IsWipeBudgetEnabled() const;
     bool IsKeystoneRequirementEnabled() const;
+    void CacheBossMetadata();
     void RecordRunResult(const InstanceState* state, bool success, uint32 bossEntry);
     void AwardTokens(InstanceState* state, uint32 bossEntry);
     void UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds);
@@ -173,6 +176,8 @@ private:
     std::string GetAffixName(uint32 affixId) const;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
+    std::unordered_map<uint32, std::unordered_set<uint32>> _mapBossEntries;
+    std::unordered_map<uint32, std::unordered_set<uint32>> _mapFinalBossEntries;
 };
 
 inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)

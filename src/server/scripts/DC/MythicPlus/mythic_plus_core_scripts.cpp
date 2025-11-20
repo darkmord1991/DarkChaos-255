@@ -445,7 +445,7 @@ public:
         sMythicRuns->HandleCreatureKill(creature, killer);
 
         // Handle boss-specific logic
-        if (creature->IsDungeonBoss())
+        if (sMythicRuns->IsBossCreature(creature))
         {
             sMythicRuns->HandleBossDeath(creature, killer);
             sAffixMgr->OnCreatureDeath(creature, killer);
@@ -465,7 +465,7 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
-        if (!creature->IsDungeonBoss())
+        if (!sMythicRuns->IsBossCreature(creature))
             return;
 
         sMythicRuns->HandleBossEvade(creature);

@@ -4,6 +4,7 @@
  */
 
 #include "MythicPlusAffixes.h"
+#include "MythicPlusRunManager.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"
@@ -37,7 +38,7 @@ public:
     
     void OnCreatureDeath(Creature* creature, Unit* /*killer*/) override
     {
-        if (!creature || creature->IsDungeonBoss())
+        if (!creature || sMythicRuns->IsBossCreature(creature))
             return;
             
         // Find nearby non-boss creatures and bolster them
@@ -48,7 +49,7 @@ public:
         
         for (Creature* ally : nearbyCreatures)
         {
-            if (!ally || ally == creature || ally->IsDungeonBoss() || ally->isDead())
+            if (!ally || ally == creature || sMythicRuns->IsBossCreature(ally) || ally->isDead())
                 continue;
                 
             if (!ally->IsHostileTo(creature))
@@ -246,7 +247,7 @@ public:
     
     void OnCreatureDamageDone(Creature* attacker, Unit* /*victim*/, uint32& damage) override
     {
-        if (!attacker || !attacker->IsDungeonBoss())
+        if (!attacker || !sMythicRuns->IsBossCreature(attacker))
             return;
             
         // +15% damage
@@ -258,7 +259,7 @@ public:
     
     void OnCreatureSelectLevel(Creature* creature) override
     {
-        if (!creature || !creature->IsDungeonBoss())
+        if (!creature || !sMythicRuns->IsBossCreature(creature))
             return;
             
         // +40% HP for bosses
@@ -292,7 +293,7 @@ public:
     
     void OnCreatureDamageDone(Creature* attacker, Unit* /*victim*/, uint32& damage) override
     {
-        if (!attacker || attacker->IsDungeonBoss())
+        if (!attacker || sMythicRuns->IsBossCreature(attacker))
             return;
             
         // +30% damage for non-bosses
@@ -304,7 +305,7 @@ public:
     
     void OnCreatureSelectLevel(Creature* creature) override
     {
-        if (!creature || creature->IsDungeonBoss())
+        if (!creature || sMythicRuns->IsBossCreature(creature))
             return;
             
         // +20% HP for non-bosses

@@ -17,6 +17,7 @@
 #include "MapMgr.h"
 #include "MythicDifficultyScaling.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "StringFormat.h"
 #include "World.h"
@@ -42,7 +43,75 @@ MythicPlusRunManager* MythicPlusRunManager::instance()
 void MythicPlusRunManager::Reset()
 {
     _instanceStates.clear();
+    CacheBossMetadata();
     LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
+}
+
+void MythicPlusRunManager::CacheBossMetadata()
+{
+    _mapBossEntries.clear();
+    _mapFinalBossEntries.clear();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT de.MapID, ie.creditEntry, ie.lastEncounterDungeon "
+        "FROM instance_encounters ie "
+        "INNER JOIN dungeonencounter_dbc de ON ie.entry = de.ID");
+
+    if (!result)
+    {
+        LOG_WARN("mythic.run", "Boss metadata query returned no rows; defaulting to creature flags only");
+        return;
+    }
+
+    uint32 bossEntries = 0;
+    uint32 finalEntries = 0;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 mapId = fields[0].Get<uint32>();
+        uint32 bossEntry = fields[1].Get<uint32>();
+        uint16 lastEncounterDungeon = fields[2].Get<uint16>();
+
+        auto& bossSet = _mapBossEntries[mapId];
+        if (bossSet.insert(bossEntry).second)
+            ++bossEntries;
+
+        if (lastEncounterDungeon > 0)
+        {
+            auto& finalSet = _mapFinalBossEntries[mapId];
+            if (finalSet.insert(bossEntry).second)
+                ++finalEntries;
+        }
+    }
+    while (result->NextRow());
+
+    LOG_INFO("mythic.run", "Cached {} boss entries ({} marked final) across {} maps for Mythic+ detection",
+             bossEntries, finalEntries, _mapBossEntries.size());
+}
+
+bool MythicPlusRunManager::IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const
+{
+    auto itr = _mapBossEntries.find(mapId);
+    if (itr == _mapBossEntries.end())
+        return false;
+
+    return itr->second.find(bossEntry) != itr->second.end();
+}
+
+bool MythicPlusRunManager::IsBossCreature(const Creature* creature) const
+{
+    if (!creature)
+        return false;
+
+    if (creature->IsDungeonBoss())
+        return true;
+
+    Map const* map = creature->GetMap();
+    if (!map)
+        return false;
+
+    return IsRecognizedBoss(map->GetId(), creature->GetEntry());
 }
 
 bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
@@ -216,6 +285,9 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
     if (!map || !map->IsDungeon())
         return;
 
+    if (!IsBossCreature(creature))
+        return;
+
     InstanceState* state = GetState(map);
     if (!state || state->completed)
         return;
@@ -251,7 +323,7 @@ void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer
     if (!creature->IsHostileToPlayers() || creature->IsPet() || creature->IsTotem())
         return;
 
-    if (creature->IsDungeonBoss())
+    if (IsBossCreature(creature))
         return; // Boss-specific handling occurs in HandleBossDeath
 
     ++state->npcsKilled;
@@ -270,7 +342,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     if (!state || state->completed || state->failed)
         return;
 
-    if (!creature->IsDungeonBoss())
+    if (!IsBossCreature(creature))
         return;
 
     ++state->bossesKilled;
@@ -887,23 +959,11 @@ void MythicPlusRunManager::SendGenericError(Player* player, std::string_view tex
 
 bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 {
-    // Check instance_encounters table for final boss flag
-    // Join with dungeonencounter_dbc to filter by map
-    QueryResult result = WorldDatabase.Query(
-        "SELECT ie.lastEncounterDungeon FROM instance_encounters ie "
-        "INNER JOIN dungeonencounter_dbc de ON ie.entry = de.ID "
-        "WHERE de.MapID = {} AND ie.creditEntry = {} AND ie.lastEncounterDungeon > 0 "
-        "LIMIT 1",
-        mapId, bossEntry);
-    
-    if (result)
-    {
-        Field* fields = result->Fetch();
-        uint16 lastEncounterDungeon = fields[0].Get<uint16>();
-        return lastEncounterDungeon > 0;
-    }
-    
-    return false;
+    auto itr = _mapFinalBossEntries.find(mapId);
+    if (itr == _mapFinalBossEntries.end())
+        return false;
+
+    return itr->second.find(bossEntry) != itr->second.end();
 }
 
 bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
@@ -1607,19 +1667,19 @@ uint32 MythicPlusRunManager::GetItemLevelForKeystoneLevel(uint8 keystoneLevel) c
 
 uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
 {
-    // Use ObjectMgr to get encounters from DBC data
+    auto cached = _mapBossEntries.find(mapId);
+    if (cached != _mapBossEntries.end() && !cached->second.empty())
+        return cached->second.size();
+
+    // Use ObjectMgr to get encounters from DBC data as fallback
     // Try both normal and heroic difficulties
     DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_NORMAL);
     if (encounters && !encounters->empty())
-    {
         return encounters->size();
-    }
-    
+
     encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_HEROIC);
     if (encounters && !encounters->empty())
-    {
         return encounters->size();
-    }
     
     // Fallback to hardcoded values if no DBC data
     switch (mapId)
@@ -1689,7 +1749,7 @@ bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, cons
     if (IsFinalBoss(state->mapId, creature->GetEntry()))
         return true;
 
-    if (!creature->IsDungeonBoss())
+    if (!IsBossCreature(creature))
         return false;
 
     uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
