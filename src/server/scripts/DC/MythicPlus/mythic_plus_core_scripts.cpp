@@ -346,6 +346,21 @@ public:
         LOG_INFO("mythic.run", "Player {} left world during active run on map {} instance {}",
                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
+
+    void OnPlayerGiveReputation(Player* player, int32 /*factionID*/, float& amount, ReputationSource repSource) override
+    {
+        if (!player || amount <= 0.0f)
+            return;
+
+        if (repSource != REPUTATION_SOURCE_KILL)
+            return;
+
+        if (sMythicRuns->ShouldSuppressReputation(player))
+        {
+            amount = 0.0f;
+            LOG_DEBUG("mythic.run", "Suppressed reputation gain for {} during active Mythic+ run", player->GetName());
+        }
+    }
 };
 
 // Additional update hook for affix periodic effects
@@ -418,6 +433,13 @@ public:
         Creature* creature = unit->ToCreature();
         if (!creature)
             return;
+
+        if (sMythicRuns->ShouldSuppressLoot(creature))
+        {
+            creature->loot.clear();
+            creature->loot.gold = 0;
+            creature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+        }
 
         // Track all creature kills for statistics
         sMythicRuns->HandleCreatureKill(creature, killer);

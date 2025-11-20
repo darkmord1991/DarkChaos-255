@@ -123,6 +123,9 @@ public:
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
+    bool IsMythicPlusActive(Map* map) const;
+    bool ShouldSuppressLoot(Creature* creature) const;
+    bool ShouldSuppressReputation(Player* player) const;
 
 private:
     MythicPlusRunManager() = default;
@@ -130,6 +133,7 @@ private:
     uint64 MakeInstanceKey(const Map* map) const;
     InstanceState* GetOrCreateState(Map* map);
     InstanceState* GetState(Map* map);
+    InstanceState const* GetState(Map* map) const;
     void RegisterGroupMembers(Player* activator, InstanceState* state);
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
     void ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow);
@@ -159,6 +163,7 @@ private:
     void TeleportGroupToEntrance(Player* activator, Map* map);
     void TeleportPlayerToEntrance(Player* player, Map* map);
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
+    bool IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const;
     
     // Seasonal validation and affix system (NEW)
     bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;

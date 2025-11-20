@@ -160,7 +160,15 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     if (!sConfigMgr->GetOption<bool>("MythicPlus.BossLoot.Enabled", true))
         return;
 
-    bool isFinalBoss = IsFinalBoss(state->mapId, boss->GetEntry());
+    if (ShouldSuppressLoot(boss))
+    {
+        boss->loot.clear();
+        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+        LOG_DEBUG("mythic.loot", "Loot suppressed for {} (entry {}) in Mythic+ run {} until completion", boss->GetName(), boss->GetEntry(), state->instanceId);
+        return;
+    }
+
+    bool isFinalBoss = IsFinalBossEncounter(state, boss);
     if (!isFinalBoss)
     {
         boss->loot.clear();

@@ -248,11 +248,13 @@ void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer
     if (!state || state->completed || state->failed)
         return;
 
-    // Only count hostile creatures that give XP (exclude pets, totems, etc.)
-    if (creature->IsHostileToPlayers() && !creature->IsPet() && !creature->IsTotem())
-    {
-        ++state->npcsKilled;
-    }
+    if (!creature->IsHostileToPlayers() || creature->IsPet() || creature->IsTotem())
+        return;
+
+    if (creature->IsDungeonBoss())
+        return; // Boss-specific handling occurs in HandleBossDeath
+
+    ++state->npcsKilled;
 }
 
 void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
@@ -265,26 +267,28 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         return;
 
     InstanceState* state = GetState(map);
-    if (!state || state->completed)
+    if (!state || state->completed || state->failed)
         return;
 
-    // Count boss kill
-    if (creature->isWorldBoss() || creature->IsDungeonBoss())
-    {
-        ++state->bossesKilled;
-        
-        // Record boss death time for statistics
-        state->bossDeathTimes.push_back(GameTime::GetGameTime().count());
-        
-        // Generate retail-like spec-based loot for the boss
-        GenerateBossLoot(creature, map, state);
-        
-        // Announce boss kill to the group
-        std::string bossName = creature->GetName();
-        AnnounceToInstance(map, "|cffff8000[Mythic+]|r Boss defeated: |cff00ff00" + bossName + "|r (" + std::to_string(state->bossesKilled) + "/" + std::to_string(GetTotalBossesForDungeon(state->mapId)) + ")");
-    }
+    if (!creature->IsDungeonBoss())
+        return;
 
-    if (!IsFinalBoss(state->mapId, creature->GetEntry()))
+    ++state->bossesKilled;
+
+    // Record boss death time for statistics
+    state->bossDeathTimes.push_back(GameTime::GetGameTime().count());
+
+    // Determine if this encounter should be treated as the final boss
+    bool isFinalEncounter = IsFinalBossEncounter(state, creature);
+
+    // Generate retail-like spec-based loot for the boss
+    GenerateBossLoot(creature, map, state);
+
+    // Announce boss kill to the group
+    std::string bossName = creature->GetName();
+    AnnounceToInstance(map, "|cffff8000[Mythic+]|r Boss defeated: |cff00ff00" + bossName + "|r (" + std::to_string(state->bossesKilled) + "/" + std::to_string(GetTotalBossesForDungeon(state->mapId)) + ")");
+
+    if (!isFinalEncounter)
         return;
 
     state->completed = true;
@@ -292,7 +296,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     AwardTokens(state, creature->GetEntry());
     RecordRunResult(state, true, creature->GetEntry());
-    
+
     // Automate keystone upgrade
     AutoUpgradeKeystone(state);
 
@@ -456,6 +460,18 @@ MythicPlusRunManager::InstanceState* MythicPlusRunManager::GetOrCreateState(Map*
 }
 
 MythicPlusRunManager::InstanceState* MythicPlusRunManager::GetState(Map* map)
+{
+    if (!map)
+        return nullptr;
+
+    auto itr = _instanceStates.find(MakeInstanceKey(map));
+    if (itr == _instanceStates.end())
+        return nullptr;
+
+    return &itr->second;
+}
+
+MythicPlusRunManager::InstanceState const* MythicPlusRunManager::GetState(Map* map) const
 {
     if (!map)
         return nullptr;
@@ -1546,6 +1562,17 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     state->startedAt = GameTime::GetGameTime().count();
     state->countdownActive = false;
     
+    // Remove root spell from all players to allow movement
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        Player* player = ref.GetSource();
+        if (player)
+        {
+            player->RemoveAurasDueToSpell(COUNTDOWN_ROOT_SPELL);
+        }
+    }
+    
     // Apply scaling and barriers
     ApplyKeystoneScaling(map, state->keystoneLevel);
     ApplyEntryBarrier(map);
@@ -1647,5 +1674,80 @@ uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
         case 724:  return 4;  // The Ruby Sanctum
         default:   return 4;  // Default fallback
     }
+}
+
+bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const
+{
+    if (!state || !creature)
+        return false;
+
+    if (IsFinalBoss(state->mapId, creature->GetEntry()))
+        return true;
+
+    if (!creature->IsDungeonBoss())
+        return false;
+
+    uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+    if (totalBosses == 0)
+        return false;
+
+    return state->bossesKilled >= totalBosses;
+}
+
+bool MythicPlusRunManager::IsMythicPlusActive(Map* map) const
+{
+    InstanceState const* state = GetState(map);
+    if (!state)
+        return false;
+
+    return state->keystoneLevel > 0 && !state->completed && !state->failed;
+}
+
+bool MythicPlusRunManager::ShouldSuppressLoot(Creature* creature) const
+{
+    if (!creature || !creature->GetMap())
+        return false;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.SuppressTrashLoot", true))
+        return false;
+
+    Map* map = creature->GetMap();
+    if (!map->IsDungeon())
+        return false;
+
+    InstanceState const* state = GetState(map);
+    if (!state || state->keystoneLevel == 0)
+        return false;
+
+    if (state->completed || state->failed)
+        return false;
+
+    // Always allow final boss loot handling to proceed through GenerateBossLoot
+    if (IsFinalBossEncounter(state, creature))
+        return false;
+
+    return true;
+}
+
+bool MythicPlusRunManager::ShouldSuppressReputation(Player* player) const
+{
+    if (!player)
+        return false;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.SuppressTrashLoot", true))
+        return false;
+
+    Map* map = player->GetMap();
+    if (!map || !map->IsDungeon())
+        return false;
+
+    InstanceState const* state = GetState(map);
+    if (!state || state->keystoneLevel == 0)
+        return false;
+
+    if (state->completed || state->failed)
+        return false;
+
+    return true;
 }
 
