@@ -1380,6 +1380,11 @@ void MythicPlusRunManager::ProcessCountdowns()
             state.countdownActive = false;
             continue;
         }
+
+        // The activation routine already announces the initial countdown duration.
+        // Skip re-broadcasting the same value so the 10-second warning is not duplicated.
+        if (remaining == countdownDuration)
+            continue;
         
         // Announce at specific intervals: 10, 5, 4, 3, 2, 1
         if ((remaining == 10 || (remaining > 0 && remaining <= 5)) && 

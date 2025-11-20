@@ -20,6 +20,7 @@
 #include "Log.h"
 #include "Chat.h"
 #include "ItemUpgradeManager.h"
+#include "Common.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -118,11 +119,17 @@ namespace DarkChaos
             // Determine currency type based on what changed
             const char* currency_type = (essence_change != 0) ? "artifact_essence" : "upgrade_token";
             uint32 amount = (essence_change != 0) ? std::abs(essence_change) : std::abs(token_change);
+
+            // Copy and sanitize free-form strings before embedding into SQL
+            std::string safeTransaction = transaction_type ? transaction_type : "";
+            std::string safeReason = reason ? reason : "";
+            CleanStringForMysqlQuery(safeTransaction);
+            CleanStringForMysqlQuery(safeReason);
             
             CharacterDatabase.Execute(
                 "INSERT INTO dc_token_transaction_log (player_guid, currency_type, amount, transaction_type, reason) "
                 "VALUES ({}, '{}', {}, '{}', '{}')",
-                player_guid, currency_type, amount, transaction_type, reason);
+                player_guid, currency_type, amount, safeTransaction, safeReason);
         }
 
         // Check if player is at weekly token cap

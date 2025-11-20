@@ -1273,6 +1273,22 @@ MythicPlus.CacheProfiles = 1
 #
 MythicPlus.OptimizeHooks = 1
 
+###########################################################################
+#
+#    SECTION 9: ITEM UPGRADE SYSTEM
+#
+#    Allows players to upgrade gear progressively using currency.
+#
+###########################################################################
+
+#
+#    ItemUpgrade.DebugToSay
+#        Description: Enable debug messages to say channel
+#        Default:     0 (Disabled)
+#                     1 (Enabled)
+#
+ItemUpgrade.DebugToSay = 0
+
 # -------------------------------------------------------------------------
 # Extended Features (Loot Suppression, Cancellation, Countdown, Teleportation)
 # -------------------------------------------------------------------------
@@ -2074,6 +2090,183 @@ ChallengeModes.Enable = 1
 #        Note:        Must exist in gameobject_template
 #
 ChallengeMode.ShrineEntry = 190010
+
+# -------------------------------------------------------------------------
+# Legacy Challenge Mode Compatibility Settings
+# -------------------------------------------------------------------------
+# These settings use the shorter naming convention for backward compatibility
+# with older challenge mode implementations. The full ChallengeMode.* settings
+# below take precedence, but these are required by some module configurations.
+
+#
+#    Hardcore.Enable
+#        Description: Master toggle for Hardcore challenge mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+Hardcore.Enable = 1
+
+#
+#    Hardcore.XPMultiplier
+#        Description: XP multiplier for Hardcore mode (legacy setting)
+#                     1 = normal XP, 2 = double XP, etc.
+#        Default:     1
+#
+Hardcore.XPMultiplier = 1
+
+#
+#    Hardcore.DisableLevel
+#        Description: Level at which Hardcore XP bonus stops (legacy setting)
+#                     0 = never disable
+#        Default:     0
+#
+Hardcore.DisableLevel = 0
+
+#
+#    Hardcore.ItemRewardAmount
+#        Description: Item reward quantity for Hardcore milestones (legacy setting)
+#        Default:     1
+#
+Hardcore.ItemRewardAmount = 1
+
+#
+#    SemiHardcore.Enable
+#        Description: Master toggle for Semi-Hardcore mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+SemiHardcore.Enable = 1
+
+#
+#    SemiHardcore.XPMultiplier
+#        Description: XP multiplier for Semi-Hardcore mode (legacy setting)
+#        Default:     1
+#
+SemiHardcore.XPMultiplier = 1
+
+#
+#    SemiHardcore.DisableLevel
+#        Description: Level at which Semi-Hardcore XP bonus stops (legacy setting)
+#        Default:     0
+#
+SemiHardcore.DisableLevel = 0
+
+#
+#    SemiHardcore.ItemRewardAmount
+#        Description: Item reward quantity for Semi-Hardcore milestones (legacy setting)
+#        Default:     1
+#
+SemiHardcore.ItemRewardAmount = 1
+
+#
+#    SelfCrafted.Enable
+#        Description: Master toggle for Self-Crafted mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+SelfCrafted.Enable = 1
+
+#
+#    SelfCrafted.XPMultiplier
+#        Description: XP multiplier for Self-Crafted mode (legacy setting)
+#        Default:     1
+#
+SelfCrafted.XPMultiplier = 1
+
+#
+#    SelfCrafted.DisableLevel
+#        Description: Level at which Self-Crafted XP bonus stops (legacy setting)
+#        Default:     0
+#
+SelfCrafted.DisableLevel = 0
+
+#
+#    SelfCrafted.ItemRewardAmount
+#        Description: Item reward quantity for Self-Crafted milestones (legacy setting)
+#        Default:     1
+#
+SelfCrafted.ItemRewardAmount = 1
+
+#
+#    ItemQualityLevel.Enable
+#        Description: Master toggle for Item Quality Level mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+ItemQualityLevel.Enable = 1
+
+#
+#    ItemQualityLevel.XPMultiplier
+#        Description: XP multiplier for Item Quality Level mode (legacy setting)
+#        Default:     1
+#
+ItemQualityLevel.XPMultiplier = 1
+
+#
+#    ItemQualityLevel.DisableLevel
+#        Description: Level at which Item Quality Level XP bonus stops (legacy setting)
+#        Default:     0
+#
+ItemQualityLevel.DisableLevel = 0
+
+#
+#    ItemQualityLevel.ItemRewardAmount
+#        Description: Item reward quantity for Item Quality Level milestones (legacy setting)
+#        Default:     1
+#
+ItemQualityLevel.ItemRewardAmount = 1
+
+#
+#    QuestXpOnly.Enable
+#        Description: Master toggle for Quest XP Only mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+QuestXpOnly.Enable = 1
+
+#
+#    QuestXpOnly.XPMultiplier
+#        Description: XP multiplier for Quest XP Only mode (legacy setting)
+#        Default:     1
+#
+QuestXpOnly.XPMultiplier = 1
+
+#
+#    QuestXpOnly.DisableLevel
+#        Description: Level at which Quest XP Only bonus stops (legacy setting)
+#        Default:     0
+#
+QuestXpOnly.DisableLevel = 0
+
+#
+#    QuestXpOnly.ItemRewardAmount
+#        Description: Item reward quantity for Quest XP Only milestones (legacy setting)
+#        Default:     1
+#
+QuestXpOnly.ItemRewardAmount = 1
+
+#
+#    IronMan.Enable
+#        Description: Master toggle for Iron Man mode (legacy setting)
+#        Default:     1 (Enabled)
+#
+IronMan.Enable = 1
+
+#
+#    IronMan.XPMultiplier
+#        Description: XP multiplier for Iron Man mode (legacy setting)
+#        Default:     1
+#
+IronMan.XPMultiplier = 1
+
+#
+#    IronMan.DisableLevel
+#        Description: Level at which Iron Man XP bonus stops (legacy setting)
+#        Default:     0
+#
+IronMan.DisableLevel = 0
+
+#
+#    IronMan.ItemRewardAmount
+#        Description: Item reward quantity for Iron Man milestones (legacy setting)
+#        Default:     1
+#
+IronMan.ItemRewardAmount = 1
 
 # -------------------------------------------------------------------------
 # Alt-Friendly XP Bonus System
