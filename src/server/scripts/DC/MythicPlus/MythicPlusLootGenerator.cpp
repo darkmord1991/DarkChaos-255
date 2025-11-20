@@ -275,7 +275,8 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
         LOG_INFO("mythic.loot", "Queued loot item {} ({}) for player {} (spec {}, ilvl {})", itemId, itemTemplate->Name1, player->GetName(), playerSpec, targetItemLevel);
 
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[%s]|r (ilvl %u)", itemTemplate->Name1, targetItemLevel);
+        std::string lootMsg = "|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[" + std::string(itemTemplate->Name1) + "]|r (ilvl " + std::to_string(targetItemLevel) + ")";
+        ChatHandler(player->GetSession()).SendSysMessage(lootMsg.c_str());
     }
 
     if (!itemsGenerated)

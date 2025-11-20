@@ -135,6 +135,7 @@ private:
     void ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow);
     void AnnounceToInstance(Map* map, std::string_view message) const;
     void ApplyEntryBarrier(Map* map) const;
+    void ApplyCountdownRoot(Map* map) const;
     void ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) const;
     void HandleFailState(InstanceState* state, std::string_view reason, bool downgradeKeystone);
     bool IsDeathBudgetEnabled() const;

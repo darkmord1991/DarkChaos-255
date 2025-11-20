@@ -30,7 +30,7 @@ constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
 constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
-constexpr uint32 ENTRY_BARRIER_SPELL = 33786;
+constexpr uint32 COUNTDOWN_ROOT_SPELL = 33786;  // Cyclone - roots but allows spell casting/eating/drinking
 }
 
 MythicPlusRunManager* MythicPlusRunManager::instance()
@@ -117,6 +117,9 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     // Teleport all players to entrance
     TeleportGroupToEntrance(player, map);
 
+    // Apply root to all players during countdown
+    ApplyCountdownRoot(map);
+
     // Start countdown before activating run
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
     state->countdownStarted = GameTime::GetGameTime().count();
@@ -126,16 +129,17 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     float hpMult = 0.0f, damageMult = 0.0f;
     sMythicScaling->CalculateMythicPlusMultipliers(descriptor.level, hpMult, damageMult);
     
-    AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds... (Scaling: {:.2f}x vs Mythic)", 
-        descriptor.level, profile->name, countdownDuration, hpMult));
+    // Announce keystone activation with proper formatting
+    AnnounceToInstance(map, "|cff00ff00=== Keystone Activated ===");
+    AnnounceToInstance(map, ("Dungeon: |cffffffff" + profile->name + "|r").c_str());
+    AnnounceToInstance(map, Acore::StringFormat("Keystone Level: |cffff8000+{}|r", descriptor.level));
+    AnnounceToInstance(map, Acore::StringFormat("M+ Multiplier: |cffaaaaaa+{:.0f}% HP, +{:.0f}% Damage|r", 
+        (hpMult - 1.0f) * 100.0f, (damageMult - 1.0f) * 100.0f));
+    AnnounceToInstance(map, Acore::StringFormat("Starting in: |cffffff00{} seconds...|r", countdownDuration));
     
     // Mark countdown as active and store start time
     state->countdownActive = true;
     state->countdownStarted = GameTime::GetGameTime().count();
-    
-    // Announce immediately if countdown is 10 seconds
-    if (countdownDuration >= 10)
-        AnnounceToInstance(map, "|cffff8000Mythic+ starting in 10...|r");
 
     return true;
 }
@@ -548,7 +552,23 @@ void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
     if (!map || sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
         return;
 
-    static constexpr uint8 COUNTDOWN_POINTS[] = { 10, 5, 4, 3, 2, 1 };
+    // This is now handled during countdown - just apply the physical barrier spell
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        Player* player = ref.GetSource();
+        if (!player || !player->GetSession())
+            continue;
+
+        // Remove any existing root from countdown
+        player->RemoveAurasDueToSpell(COUNTDOWN_ROOT_SPELL);
+    }
+}
+
+void MythicPlusRunManager::ApplyCountdownRoot(Map* map) const
+{
+    if (!map)
+        return;
 
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
@@ -557,14 +577,10 @@ void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
         if (!player || !player->GetSession())
             continue;
 
-        ChatHandler handler(player->GetSession());
-        handler.PSendSysMessage("|cffff8000[Mythic+ Activated]|r Entry barrier activated!");
-        handler.PSendSysMessage("|cffffa500You cannot move for 10 seconds.|r");
-
-        player->CastSpell(player, ENTRY_BARRIER_SPELL, true);
-
-        for (uint8 seconds : COUNTDOWN_POINTS)
-            handler.SendSysMessage(Acore::StringFormat("|cffff0000{}|r seconds", uint32(seconds)).c_str());
+        // Apply root that allows casting/eating/drinking but prevents movement
+        player->CastSpell(player, COUNTDOWN_ROOT_SPELL, true);
+        
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffffff00[Countdown]|r You are rooted for 10 seconds. You may cast spells, eat, or drink.");
     }
 }
 
@@ -1349,14 +1365,12 @@ void MythicPlusRunManager::ProcessCountdowns()
             continue;
         }
         
-        // Announce at specific intervals: 5, 4, 3, 2, 1
-        if (remaining > 0 && remaining <= 5)
+        // Announce at specific intervals: 10, 5, 4, 3, 2, 1
+        if ((remaining == 10 || (remaining > 0 && remaining <= 5)) && 
+            announcedIntervals[key].find(remaining) == announcedIntervals[key].end())
         {
-            if (announcedIntervals[key].find(remaining) == announcedIntervals[key].end())
-            {
-                AnnounceToInstance(map, Acore::StringFormat("|cffff8000Mythic+ starting in {}...|r", remaining));
-                announcedIntervals[key].insert(remaining);
-            }
+            AnnounceToInstance(map, Acore::StringFormat("Starting in: |cffffff00{}...|r", remaining));
+            announcedIntervals[key].insert(remaining);
         }
         
         // Start the run when countdown completes
