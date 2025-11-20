@@ -10,6 +10,7 @@
 #include "MythicPlusAffixes.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicPlusConstants.h"
+#include "StringFormat.h"
 
 using namespace Acore::ChatCommands;
 
@@ -50,14 +51,14 @@ public:
         uint8 keystoneLevel = level.value_or(2);
         if (keystoneLevel < 2 || keystoneLevel > 30)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 30.");
+            handler->SendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 30.");
             return false;
         }
 
         Map* map = player->GetMap();
         if (!map || !map->IsDungeon())
         {
-            handler->PSendSysMessage("|cffff0000Error:|r You must be inside a dungeon.");
+            handler->SendSysMessage("|cffff0000Error:|r You must be inside a dungeon.");
             return false;
         }
 
@@ -70,13 +71,13 @@ public:
         
         sAffixMgr->ActivateAffixes(map, affixes, keystoneLevel);
         
-        handler->PSendSysMessage("|cff00ff00Mythic+|r: Activated Keystone Level |cffff8000+%u|r with affixes:", keystoneLevel);
-        handler->PSendSysMessage("  - %s", affixes.size() >= 1 ? "Tyrannical" : "");
-        handler->PSendSysMessage("  - %s", affixes.size() >= 2 ? "Bolstering" : "");
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Activated Keystone Level |cffff8000+{}|r with affixes:", keystoneLevel));
+        handler->SendSysMessage(Acore::StringFormat("  - {}", affixes.size() >= 1 ? "Tyrannical" : ""));
+        handler->SendSysMessage(Acore::StringFormat("  - {}", affixes.size() >= 2 ? "Bolstering" : ""));
         if (affixes.size() >= 3)
-            handler->PSendSysMessage("  - Necrotic");
+            handler->SendSysMessage("  - Necrotic");
         if (affixes.size() >= 4)
-            handler->PSendSysMessage("  - Grievous");
+            handler->SendSysMessage("  - Grievous");
 
         return true;
     }
@@ -91,15 +92,15 @@ public:
         uint8 keystoneLevel = level.value_or(MythicPlusConstants::MIN_KEYSTONE_LEVEL);
         if (keystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL || keystoneLevel > MythicPlusConstants::MAX_KEYSTONE_LEVEL)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between %u and %u.",
-                MythicPlusConstants::MIN_KEYSTONE_LEVEL, MythicPlusConstants::MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000Error:|r Keystone level must be between {} and {}.",
+                MythicPlusConstants::MIN_KEYSTONE_LEVEL, MythicPlusConstants::MAX_KEYSTONE_LEVEL));
             return false;
         }
 
         uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(keystoneLevel);
         if (!keystoneItemId)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Unable to resolve keystone item for level %u.", keystoneLevel);
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000Error:|r Unable to resolve keystone item for level {}.", keystoneLevel));
             return false;
         }
 
@@ -111,12 +112,12 @@ public:
             if (keystoneItem)
             {
                 player->SendNewItem(keystoneItem, 1, true, false);
-                handler->PSendSysMessage("|cff00ff00Mythic+:|r Generated Mythic Keystone +%u", keystoneLevel);
+                handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+:|r Generated Mythic Keystone +{}", keystoneLevel));
                 return true;
             }
         }
         
-        handler->PSendSysMessage("|cffff0000Error:|r Could not create keystone. Inventory may be full.");
+        handler->SendSysMessage("|cffff0000Error:|r Could not create keystone. Inventory may be full.");
         return false;
     }
 
@@ -132,7 +133,7 @@ public:
         uint8 level = keystoneLevel.value_or(10);
         if (level < 2 || level > 30)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 30.");
+            handler->SendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 30.");
             return false;
         }
 
@@ -143,7 +144,7 @@ public:
         // Generate vault reward pool
         if (sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart, level))
         {
-            handler->PSendSysMessage("|cff00ff00Mythic+|r: Generated vault rewards for M+%u", level);
+            handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Generated vault rewards for M+{}", level));
             
             // Show available rewards
             auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
@@ -160,7 +161,7 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("|cffff0000Error:|r Failed to generate vault rewards.");
+        handler->SendSysMessage("|cffff0000Error:|r Failed to generate vault rewards.");
         return false;
     }
 
@@ -174,7 +175,7 @@ public:
         Map* map = player->GetMap();
         if (!map || !map->IsDungeon())
         {
-            handler->PSendSysMessage("|cffff0000Error:|r You must be inside a dungeon.");
+            handler->SendSysMessage("|cffff0000Error:|r You must be inside a dungeon.");
             return false;
         }
 
@@ -183,7 +184,7 @@ public:
         
         sAffixMgr->ActivateAffixes(map, affixes, 10);
         
-        handler->PSendSysMessage("|cff00ff00Mythic+|r: Activated affix type %u", static_cast<uint8>(type));
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Activated affix type {}", static_cast<uint8>(type)));
         return true;
     }
 
@@ -193,7 +194,7 @@ public:
         uint8 keystoneLevel = level.value_or(10);
         if (keystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL || keystoneLevel > 30)
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Keystone level must be between %u and 30.", MythicPlusConstants::MIN_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000Error:|r Keystone level must be between {} and 30.", MythicPlusConstants::MIN_KEYSTONE_LEVEL));
             return false;
         }
 
@@ -203,10 +204,10 @@ public:
 
         uint32 itemLevel = MythicPlusConstants::GetItemLevelForKeystoneLevel(keystoneLevel);
 
-        handler->PSendSysMessage("|cff00ff00Mythic+ Scaling Info for Level +%u:|r", keystoneLevel);
-        handler->PSendSysMessage("  HP Multiplier: |cffffffff%.2fx|r (+%.0f%%)", hpMult, (hpMult - 1.0f) * 100.0f);
-        handler->PSendSysMessage("  Damage Multiplier: |cffffffff%.2fx|r (+%.0f%%)", damageMult, (damageMult - 1.0f) * 100.0f);
-        handler->PSendSysMessage("  Reward Item Level: |cffff8000%u|r", itemLevel);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+ Scaling Info for Level +{}:|r", keystoneLevel));
+        handler->SendSysMessage(Acore::StringFormat("  HP Multiplier: |cffffffff{:.2f}x|r (+{:.0f}%)", hpMult, (hpMult - 1.0f) * 100.0f));
+        handler->SendSysMessage(Acore::StringFormat("  Damage Multiplier: |cffffffff{:.2f}x|r (+{:.0f}%)", damageMult, (damageMult - 1.0f) * 100.0f));
+        handler->SendSysMessage(Acore::StringFormat("  Reward Item Level: |cffff8000{}|r", itemLevel));
 
         return true;
     }
@@ -217,13 +218,13 @@ public:
         if (!seasonId)
         {
             uint32 current = sMythicRuns->GetCurrentSeasonId();
-            handler->PSendSysMessage("|cff00ff00Current Mythic+ Season:|r %u", current);
+            handler->SendSysMessage(Acore::StringFormat("|cff00ff00Current Mythic+ Season:|r {}", current));
             return true;
         }
 
         // Note: You'll need to add a SetCurrentSeasonId method to MythicPlusRunManager
-        handler->PSendSysMessage("|cff00ff00Mythic+|r: Season ID set to %u", *seasonId);
-        handler->PSendSysMessage("Note: Restart server for season changes to take full effect.");
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Season ID set to {}", *seasonId));
+        handler->SendSysMessage("Note: Restart server for season changes to take full effect.");
         return true;
     }
 
@@ -237,7 +238,7 @@ public:
         Map* map = player->GetMap();
         if (!map || !map->IsDungeon())
         {
-            handler->PSendSysMessage("You are not in a dungeon.");
+            handler->SendSysMessage("You are not in a dungeon.");
             return true;
         }
 
@@ -245,21 +246,21 @@ public:
         uint8 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
         auto affixes = sAffixMgr->GetActiveAffixes(map);
 
-        handler->PSendSysMessage("|cff00ff00=== Mythic+ Dungeon Info ===");
+        handler->SendSysMessage("|cff00ff00=== Mythic+ Dungeon Info ===");
         
         if (profile)
-            handler->PSendSysMessage("Dungeon: |cffffffff%s|r", profile->name.c_str());
+            handler->SendSysMessage(Acore::StringFormat("Dungeon: |cffffffff{}|r", profile->name));
         
-        handler->PSendSysMessage("Map ID: |cffffffff%u|r", map->GetId());
-        handler->PSendSysMessage("Difficulty: |cffffffff%u|r", static_cast<uint32>(sMythicScaling->ResolveDungeonDifficulty(map)));
+        handler->SendSysMessage(Acore::StringFormat("Map ID: |cffffffff{}|r", map->GetId()));
+        handler->SendSysMessage(Acore::StringFormat("Difficulty: |cffffffff{}|r", static_cast<uint32>(sMythicScaling->ResolveDungeonDifficulty(map))));
         
         if (keystoneLevel > 0)
         {
-            handler->PSendSysMessage("Keystone Level: |cffff8000+%u|r", keystoneLevel);
+            handler->SendSysMessage(Acore::StringFormat("Keystone Level: |cffff8000+{}|r", keystoneLevel));
             
             if (!affixes.empty())
             {
-                handler->PSendSysMessage("Active Affixes: |cffffffff%u|r", static_cast<uint32>(affixes.size()));
+                handler->SendSysMessage(Acore::StringFormat("Active Affixes: |cffffffff{}|r", static_cast<uint32>(affixes.size())));
                 // TODO: Display affix names
             }
         }
@@ -277,13 +278,13 @@ public:
         Map* map = player->GetMap();
         if (!map || !map->IsDungeon())
         {
-            handler->PSendSysMessage("|cffff0000Error:|r You must be inside a dungeon to cancel a Mythic+ run.");
+            handler->SendSysMessage("|cffff0000Error:|r You must be inside a dungeon to cancel a Mythic+ run.");
             return false;
         }
 
         if (!sConfigMgr->GetOption<bool>("MythicPlus.AllowManualCancellation", true))
         {
-            handler->PSendSysMessage("|cffff0000Error:|r Manual cancellation is disabled on this server.");
+            handler->SendSysMessage("|cffff0000Error:|r Manual cancellation is disabled on this server.");
             return false;
         }
 

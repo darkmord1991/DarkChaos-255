@@ -11,6 +11,7 @@
 #include "DatabaseEnv.h"
 #include "MythicPlusRunManager.h"
 #include "MythicPlusConstants.h"
+#include "StringFormat.h"
 
 using namespace Acore::ChatCommands;
 using namespace MythicPlusConstants;
@@ -38,14 +39,14 @@ public:
     {
         if (!*args)
         {
-            handler->PSendSysMessage("Usage: .keystone spawn <M+%u-M+%u>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("Usage: .keystone spawn <M+{}-M+{}>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             return false;
         }
 
         uint8 level = atoi(args);
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             return false;
         }
 
@@ -67,7 +68,7 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("|cff00ff00Keystone Spawn:|r Created M+%d keystone NPC at your location.", level);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Keystone Spawn:|r Created M+{} keystone NPC at your location.", level));
         return true;
     }
 
@@ -96,11 +97,11 @@ public:
         uint32 itemLevel = GetItemLevelForKeystoneLevel(level);
         uint32 baseTokens = GetTokenRewardForKeystoneLevel(level);
 
-        handler->PSendSysMessage("|cffff8000Keystone Information:|r");
-        handler->PSendSysMessage("  Level: M+%d", level);
-        handler->PSendSysMessage("  Entry: %u", entry);
-        handler->PSendSysMessage("  Item Level: %u", itemLevel);
-        handler->PSendSysMessage("  Base Tokens: %u", baseTokens);
+        handler->SendSysMessage("|cffff8000Keystone Information:|r");
+        handler->SendSysMessage(Acore::StringFormat("  Level: M+{}", level));
+        handler->SendSysMessage(Acore::StringFormat("  Entry: {}", entry));
+        handler->SendSysMessage(Acore::StringFormat("  Item Level: {}", itemLevel));
+        handler->SendSysMessage(Acore::StringFormat("  Base Tokens: {}", baseTokens));
         handler->SendSysMessage(("  Difficulty Name: " + creature->GetName()).c_str());
         
         return true;
@@ -112,7 +113,7 @@ public:
         if (!*args)
         {
             // Show all keystones
-            handler->PSendSysMessage("|cffff8000Mythic+ Keystone Rewards (M+%u to M+%u):|r", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("|cffff8000Mythic+ Keystone Rewards (M+{} to M+{}):|r", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             handler->SendSysMessage("Level | Item Level | Base Tokens");
             handler->SendSysMessage("------|------------|------------");
             
@@ -120,7 +121,7 @@ public:
             {
                 uint32 ilvl = GetItemLevelForKeystoneLevel(level);
                 uint32 tokens = GetTokenRewardForKeystoneLevel(level);
-                handler->PSendSysMessage("M+%-2u | %-10u | %u", level, ilvl, tokens);
+                handler->SendSysMessage(Acore::StringFormat("M+{:<2} | {:<10} | {}", level, ilvl, tokens));
             }
             return true;
         }
@@ -128,17 +129,17 @@ public:
         uint8 level = atoi(args);
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             return false;
         }
 
         uint32 ilvl = GetItemLevelForKeystoneLevel(level);
         uint32 tokens = GetTokenRewardForKeystoneLevel(level);
 
-        handler->PSendSysMessage("|cffff8000Keystone M+%d Rewards:|r", level);
-        handler->PSendSysMessage("  Item Level: %u", ilvl);
-        handler->PSendSysMessage("  Base Tokens: %u", tokens);
-        handler->PSendSysMessage("  Entry: %u", 100000 + (level * 100));
+        handler->SendSysMessage(Acore::StringFormat("|cffff8000Keystone M+{} Rewards:|r", level));
+        handler->SendSysMessage(Acore::StringFormat("  Item Level: {}", ilvl));
+        handler->SendSysMessage(Acore::StringFormat("  Base Tokens: {}", tokens));
+        handler->SendSysMessage(Acore::StringFormat("  Entry: {}", 100000 + (level * 100)));
         
         return true;
     }
@@ -148,14 +149,14 @@ public:
     {
         if (!*args)
         {
-            handler->PSendSysMessage("Usage: .keystone start <M+%u-M+%u>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("Usage: .keystone start <M+{}-M+{}>", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             return false;
         }
 
         uint8 level = atoi(args);
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
-            handler->PSendSysMessage("Invalid keystone level. Must be between %u and %u.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL);
+            handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             return false;
         }
 
@@ -172,7 +173,7 @@ public:
 
         // Start the run
         // Note: Run is activated when entering dungeon with active keystone
-        handler->PSendSysMessage("|cff00ff00Keystone Started:|r M+%d run is ready. Enter the dungeon to activate.", level);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Keystone Started:|r M+{} run is ready. Enter the dungeon to activate.", level));
         return true;
     }
 };

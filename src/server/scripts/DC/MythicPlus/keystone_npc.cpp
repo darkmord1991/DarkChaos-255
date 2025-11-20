@@ -14,6 +14,7 @@
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
+#include "StringFormat.h"
 
 using namespace MythicPlusConstants;
 
@@ -139,7 +140,7 @@ public:
             // Non-GMs can only get M+2
             if (player->GetSession()->GetSecurity() == SEC_PLAYER && keystoneLevel != MIN_KEYSTONE_LEVEL)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage(
+                ChatHandler(player->GetSession()).SendSysMessage(
                     "|cffff0000Error:|r You can only receive a Mythic Keystone +2!");
                 LOG_WARN("mythic.keystone", "Player {} (non-GM) attempted to get M+{} keystone", player->GetName(), keystoneLevel);
                 CloseGossipMenuFor(player);
@@ -162,19 +163,19 @@ public:
                     std::ostringstream ss;
                     ss << "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +" 
                        << static_cast<uint32>(keystoneLevel) << "|r! Use it in any dungeon to begin your journey.";
-                    ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str());
+                    ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
                     LOG_INFO("mythic.keystone", "Player {} received M+{} keystone successfully", player->GetName(), keystoneLevel);
                 }
                 else
                 {
-                    ChatHandler(player->GetSession()).PSendSysMessage(
+                    ChatHandler(player->GetSession()).SendSysMessage(
                         "|cffff0000Error:|r Failed to store keystone item!");
                     LOG_ERROR("mythic.keystone", "Failed to store keystone for player {} - StoreNewItem returned null", player->GetName());
                 }
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage(
+                ChatHandler(player->GetSession()).SendSysMessage(
                     "|cffff0000Error:|r Not enough inventory space!");
                 LOG_WARN("mythic.keystone", "No inventory space for player {} - error code {}", player->GetName(), msg);
             }

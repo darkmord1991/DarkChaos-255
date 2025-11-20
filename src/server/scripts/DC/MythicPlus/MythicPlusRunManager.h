@@ -67,6 +67,7 @@ public:
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
         std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot seeding per encounter
         bool finalBossLootGranted = false;
+        std::unordered_map<uint32, uint64> recentBossEvades; // Tracks per-boss reset timestamps
     };
 
     // Public methods
@@ -126,6 +127,7 @@ public:
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
     bool IsMythicPlusActive(Map* map) const;
+    bool IsMythicPlusDungeon(uint32 mapId) const;
     bool ShouldSuppressLoot(Creature* creature) const;
     bool ShouldSuppressReputation(Player* player) const;
 

@@ -162,7 +162,7 @@ void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
 
     if (!result)
     {
-        ChatHandler(player->GetSession()).PSendSysMessage(
+        ChatHandler(player->GetSession()).SendSysMessage(
             "Error: Teleporter coordinates not found in database.");
         LOG_ERROR("mythic.portal", "No teleporter entry found for ID {}", teleporterEntryId);
         return;
@@ -180,14 +180,14 @@ void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
     // Teleport player to entrance
     if (player->TeleportTo(mapId, x, y, z, o))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage(
+        ChatHandler(player->GetSession()).SendSysMessage(
             "|cff00ff00Teleporting to dungeon entrance...|r");
         LOG_INFO("mythic.portal", "Player {} teleported via teleporter entry {}",
             player->GetName(), teleporterEntryId);
     }
     else
     {
-        ChatHandler(player->GetSession()).PSendSysMessage(
+        ChatHandler(player->GetSession()).SendSysMessage(
             "Error: Failed to teleport to dungeon entrance.");
         LOG_ERROR("mythic.portal", "Failed to teleport player {} via entry {}",
             player->GetName(), teleporterEntryId);

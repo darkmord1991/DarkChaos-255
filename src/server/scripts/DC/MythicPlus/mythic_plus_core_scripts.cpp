@@ -12,9 +12,11 @@
 #include "Unit.h"
 #include "Creature.h"
 #include "Map.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "Player.h"
 #include "Chat.h"
+#include "StringFormat.h"
 #include <cmath>
 #include <sstream>
 
@@ -223,6 +225,26 @@ class MythicPlusPlayerScript : public PlayerScript
 public:
     MythicPlusPlayerScript() : PlayerScript("MythicPlusPlayerScript") { }
 
+    bool OnPlayerNotAvoidSatisfy(Player* player, DungeonProgressionRequirements const* ar, uint32 targetMap, bool /*report*/) override
+    {
+        if (!player || !ar)
+            return true;
+
+        if (!sMythicRuns->IsMythicPlusDungeon(targetMap))
+            return true;
+
+        MapEntry const* mapEntry = sMapStore.LookupEntry(targetMap);
+        if (!mapEntry || mapEntry->IsRaid())
+            return true;
+
+        Difficulty intendedDifficulty = player->GetDifficulty(mapEntry->IsRaid());
+        if (intendedDifficulty != DUNGEON_DIFFICULTY_EPIC)
+            return true;
+
+        LOG_DEBUG("mythic.run", "Bypassing dungeon_access_template for Mythic+ dungeon {} (player {})", targetMap, player->GetName());
+        return false;
+    }
+
     void OnPlayerMapChanged(Player* player) override
     {
         if (!player)
@@ -286,9 +308,9 @@ public:
         if (keystoneLevel > 0)
         {
             // Mythic+ run - show simplified message
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
+                ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00=== Dungeon Entered ===");
             ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000Keystone Level: |r|cffff8000+%u|r", keystoneLevel);
+                ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff8000Keystone Level: |r|cffff8000+{}|r", keystoneLevel));
             
             // Show M+ specific scaling (multiplicative on top of Mythic base)
             float mplusHpMult = 1.0f;

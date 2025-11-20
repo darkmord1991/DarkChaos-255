@@ -14,6 +14,7 @@
 #include "MythicPlusRunManager.h"
 #include "MythicPlusConstants.h"
 #include "MythicDifficultyScaling.h"
+#include "StringFormat.h"
 
 namespace
 {
@@ -119,7 +120,7 @@ public:
         if (action == GOSSIP_ACTION_INFO)
         {
             handler.SendSysMessage("|cff00ff00========================================|r");
-            handler.PSendSysMessage("|cffff8000    HOW TO USE KEYSTONE +%u|r", keystoneLevel);
+            handler.SendSysMessage(Acore::StringFormat("|cffff8000    HOW TO USE KEYSTONE +{}|r", keystoneLevel));
             handler.SendSysMessage("|cff00ff00========================================|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd7001. Enter a Dungeon|r");
@@ -147,20 +148,20 @@ public:
         else if (action == GOSSIP_ACTION_SCALING)
         {
             handler.SendSysMessage("|cff00ff00========================================|r");
-            handler.PSendSysMessage("|cffff8000    MYTHIC+ SCALING (Level +%u)|r", keystoneLevel);
+            handler.SendSysMessage(Acore::StringFormat("|cffff8000    MYTHIC+ SCALING (Level +{})|r", keystoneLevel));
             handler.SendSysMessage("|cff00ff00========================================|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Enemy Difficulty:|r");
-            handler.PSendSysMessage("|cffffffff  Health: |cffff8000+%.0f%%|r (%.1fx multiplier)", 
-                (hpMultiplier - 1.0f) * 100.0f, hpMultiplier);
-            handler.PSendSysMessage("|cffffffff  Damage: |cffff8000+%.0f%%|r (%.1fx multiplier)", 
-                (dmgMultiplier - 1.0f) * 100.0f, dmgMultiplier);
+            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Health: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)", 
+                (hpMultiplier - 1.0f) * 100.0f, hpMultiplier));
+            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Damage: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)", 
+                (dmgMultiplier - 1.0f) * 100.0f, dmgMultiplier));
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Scaling Formula:|r");
             handler.SendSysMessage("|cffffffff  Base Mythic: 2.0x multiplier|r");
             handler.SendSysMessage("|cffffffff  Each +1 level: +0.25x multiplier|r");
-            handler.PSendSysMessage("|cffffffff  Your M+%u: 2.0 + (%u × 0.25) = %.1fx|r",
-                keystoneLevel, keystoneLevel, hpMultiplier);
+            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Your M+{}: 2.0 + ({} × 0.25) = {:.1f}x|r",
+                keystoneLevel, keystoneLevel, hpMultiplier));
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Death Budget:|r");
             handler.SendSysMessage("|cffff0000  Maximum: 15 deaths|r");
@@ -168,7 +169,7 @@ public:
             handler.SendSysMessage("|cffffffff  15th death = instant run failure|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Loot Item Level:|r");
-            handler.PSendSysMessage("|cff00ff00  Boss drops: %u ilvl gear|r", itemLevel);
+            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  Boss drops: {} ilvl gear|r", itemLevel));
             handler.SendSysMessage("|cffffffff  Formula: Base + (Level × 3) up to +10|r");
             handler.SendSysMessage("|cffffffff  Then: Base + 30 + ((Level-10) × 4)|r");
             handler.SendSysMessage(" ");
@@ -177,17 +178,17 @@ public:
         else if (action == GOSSIP_ACTION_REWARDS)
         {
             handler.SendSysMessage("|cff00ff00========================================|r");
-            handler.PSendSysMessage("|cffff8000    REWARDS & UPGRADES (M+%u)|r", keystoneLevel);
+            handler.SendSysMessage(Acore::StringFormat("|cffff8000    REWARDS & UPGRADES (M+{})|r", keystoneLevel));
             handler.SendSysMessage("|cff00ff00========================================|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Boss Loot (Spec-Based):|r");
-            handler.PSendSysMessage("|cff00ff00  Item Level: %u|r", itemLevel);
+            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  Item Level: {}|r", itemLevel));
             handler.SendSysMessage("|cffffffff  1 item per normal boss|r");
             handler.SendSysMessage("|cffffffff  2 items from final boss|r");
             handler.SendSysMessage("|cffffffff  Filtered by your class/spec/role|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Token Rewards:|r");
-            handler.PSendSysMessage("|cff00ff00  Estimated: ~%u tokens|r", estimatedTokens);
+            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  Estimated: ~{} tokens|r", estimatedTokens));
             handler.SendSysMessage("|cffffffff  Awarded at final boss kill|r");
             handler.SendSysMessage("|cffffffff  Used for gear upgrades|r");
             handler.SendSysMessage(" ");

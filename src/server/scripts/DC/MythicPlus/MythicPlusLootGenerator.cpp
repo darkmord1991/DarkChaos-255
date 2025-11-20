@@ -20,6 +20,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "SharedDefines.h"
+#include "StringFormat.h"
 #include <algorithm>
 #include <random>
 #include <vector>
@@ -148,6 +149,28 @@ uint8 GetPlayerRoleMask(Player* player)
             }
         }
 
+namespace
+{
+bool GivePersonalLoot(Player* player, uint32 itemId, uint32 count = 1)
+{
+    if (!player)
+        return false;
+
+    ItemPosCountVec dest;
+    InventoryResult storeResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count);
+    if (storeResult == EQUIP_ERR_OK)
+    {
+        if (Item* item = player->StoreNewItem(dest, itemId, true))
+            player->SendNewItem(item, count, true, false);
+        return true;
+    }
+
+    player->SendItemRetrievalMail(itemId, count);
+    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Inventory full, loot mailed.");
+    return true;
+}
+}
+
 // MythicPlusRunManager is at global scope, not in a namespace
 void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceState* state)
 {
@@ -205,22 +228,8 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
     uint32 targetItemLevel = GetItemLevelForKeystoneLevel(state->keystoneLevel);
 
-    // Prepare loot container so the standard loot pipeline (FFA/master/etc.) is honored
     boss->loot.clear();
-    boss->loot.sourceWorldObjectGUID = boss->GetGUID();
-    boss->loot.containerGUID = boss->GetGUID();
-    boss->loot.loot_type = LOOT_CORPSE;
-    boss->loot.gold = 0;
-
-    Player* owner = ObjectAccessor::FindPlayer(state->ownerGuid);
-    if (!owner || owner->GetMap() != map)
-        owner = participants.front();
-    boss->loot.lootOwnerGUID = owner->GetGUID();
-
-    for (Player* participant : participants)
-        boss->loot.AddLooter(participant->GetGUID());
-
-    boss->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+    boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
 
     // Randomize selection order so winners are unpredictable
     std::vector<Player*> shuffled = participants;
@@ -271,25 +280,23 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
             continue;
         }
 
-        LootStoreItem storeItem(itemId, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1);
-        boss->loot.AddItem(storeItem);
-        if (!boss->loot.items.empty())
+        if (!GivePersonalLoot(player, itemId))
         {
-            LootItem& lootItem = boss->loot.items.back();
-            lootItem.follow_loot_rules = true;
+            LOG_WARN("mythic.loot", "Failed to deliver loot item {} to player {}", itemId, player->GetName());
+            continue;
         }
 
         ++itemsGenerated;
 
-        LOG_INFO("mythic.loot", "Queued loot item {} ({}) for player {} (spec {}, ilvl {})", itemId, itemTemplate->Name1, player->GetName(), playerSpec, targetItemLevel);
+        LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (spec {}, ilvl {})", itemId, itemTemplate->Name1, player->GetName(), playerSpec, targetItemLevel);
 
-        std::string lootMsg = "|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[" + std::string(itemTemplate->Name1) + "]|r (ilvl " + std::to_string(targetItemLevel) + ")";
-        ChatHandler(player->GetSession()).SendSysMessage(lootMsg.c_str());
+        ChatHandler(player->GetSession()).SendSysMessage(
+            Acore::StringFormat("|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[{}]|r (ilvl {})",
+                                 itemTemplate->Name1, targetItemLevel));
     }
 
     if (!itemsGenerated)
     {
         LOG_WARN("mythic.loot", "Final boss {} generated no loot for map {} instance {}", boss->GetName(), state->mapId, state->instanceId);
-        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
     }
 }

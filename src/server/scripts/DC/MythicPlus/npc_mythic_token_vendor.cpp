@@ -14,6 +14,7 @@
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
 #include "SharedDefines.h"
+#include "StringFormat.h"
 #include <map>
 #include <vector>
 #include <sstream>
@@ -352,7 +353,7 @@ private:
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
         if (!itemTemplate)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r Item template not found.");
+            ChatHandler(player->GetSession()).SendSysMessage("|cffff0000Error:|r Item template not found.");
             CloseGossipMenuFor(player);
             return;
         }
@@ -363,7 +364,7 @@ private:
         // Check if player has enough tokens
         if (tokenCount < cost)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r You need %u tokens but only have %u.", cost, tokenCount);
+            ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff0000Error:|r You need {} tokens but only have {}.", cost, tokenCount));
             CloseGossipMenuFor(player);
             return;
         }

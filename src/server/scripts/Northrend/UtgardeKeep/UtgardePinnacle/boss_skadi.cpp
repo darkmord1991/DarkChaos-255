@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Chat.h"
 #include "CombatAI.h"
 #include "CreatureScript.h"
 #include "GameObjectScript.h"
@@ -22,6 +23,7 @@
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "Vehicle.h"
+#include "MythicPlusRunManager.h"
 #include "utgarde_pinnacle.h"
 
 enum Misc
@@ -496,6 +498,16 @@ public:
 
     bool OnGossipHello(Player* pPlayer, GameObject* go) override
     {
+        if (Map* map = go->GetMap())
+        {
+            if (sMythicRuns->IsMythicPlusActive(map))
+            {
+                if (pPlayer && pPlayer->GetSession())
+                    ChatHandler(pPlayer->GetSession()).SendSysMessage("|cffff0000Mythic+|r: Harpoon cannons are disabled in this mode.");
+                return true;
+            }
+        }
+
         InstanceScript* m_pInstance = go->GetInstanceScript();
         if (m_pInstance && m_pInstance->GetData(DATA_SKADI_THE_RUTHLESS) == IN_PROGRESS)
             if (m_pInstance->GetData(SKADI_IN_RANGE) == 1)
