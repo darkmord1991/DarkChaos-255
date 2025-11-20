@@ -122,8 +122,12 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->countdownStarted = GameTime::GetGameTime().count();
     state->countdownActive = true;
 
-    AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds...", 
-        descriptor.level, profile->name, countdownDuration));
+    // Calculate scaling multiplier for display
+    float hpMult = 0.0f, damageMult = 0.0f;
+    sMythicScaling->CalculateMythicPlusMultipliers(descriptor.level, hpMult, damageMult);
+    
+    AnnounceToInstance(map, Acore::StringFormat("|cffff8000Keystone Activated|r: +{} {} - Starting in {} seconds... (Scaling: {:.2f}x vs Mythic)", 
+        descriptor.level, profile->name, countdownDuration, hpMult));
     
     // Mark countdown as active and store start time
     state->countdownActive = true;
