@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: DC-MythicPlus HUD
+## Notes: Provides a lightweight HUD for DarkChaos Mythic+ runs
+## Author: DarkChaos-255
+## Version: 0.1.0
+## Dependencies: AIO_Client
+## LoadAfter: AIO_Client
+## SavedVariables: DCMythicPlusHUDDB
+
+Core.lua

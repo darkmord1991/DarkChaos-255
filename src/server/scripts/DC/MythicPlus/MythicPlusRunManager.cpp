@@ -341,6 +341,9 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
 
     InitializeHud(state, map);
 
+    // Push an immediate HUD snapshot so clients pop the frame as soon as the countdown begins
+    UpdateHud(state, map, true, "countdown_start");
+
     return true;
 }
 

@@ -1,0 +1,16 @@
+## Interface: 30300
+## Title: DC Hotspot Tracker
+## Notes: Shows active DarkChaos XP hotspots on the world map and minimap.
+## Author: DarkChaos Team
+## Version: 1.0.0
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## SavedVariables: DCHotspotDB
+## OptionalDeps: AIO
+
+Libs\DC_DebugUtils.lua
+Libs\HotspotDisplay_Astrolabe.lua
+Pins.lua
+UI.lua
+Options.lua
+Core.lua

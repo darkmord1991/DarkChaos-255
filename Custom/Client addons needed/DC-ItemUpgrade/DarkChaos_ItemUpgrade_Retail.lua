@@ -203,11 +203,10 @@ function DarkChaos_ItemUpgrade_UpdateTierIndicator(tier)
 				[4] = "Mythic Gear",
 				[5] = "Artifact Gear"
 			};
-			local tierName = tierNames[tier] or "Unknown Tier";
-			local maxLevels = {15, 15, 15, 8, 12};
-			local maxLevel = maxLevels[tier] or 15;
+		local tierName = tierNames[tier] or "Unknown Tier";
+		local maxLevel = DC.GetMaxUpgradeLevelForTier(tier);
 
-			GameTooltip:SetText(tierName, 1, 1, 1);
+	GameTooltip:SetText(tierName, 1, 1, 1);
 			GameTooltip:AddLine(string.format("Tier %d - Max Level %d", tier, maxLevel), 0.8, 0.8, 0.8);
 			GameTooltip:Show();
 		end);
@@ -1221,9 +1220,9 @@ DC.TIER_NAMES = DC.TIER_NAMES or {
 DC.MAX_UPGRADE_LEVELS_BY_TIER = {
 	[1] = 6,   -- Veteran: 6 upgrades
 	[2] = 15,  -- Adventurer: 15 upgrades (full upgrades)
-	[3] = 0,   -- Champion: Not implemented yet
-	[4] = 0,   -- Hero: Not implemented yet
-	[5] = 0,   -- Legendary: Not implemented yet
+	[3] = 15,  -- Champion: 15 upgrades (heirloom tier)
+	[4] = 8,   -- Hero: 8 upgrades (mythic tier)
+	[5] = 12,  -- Legendary: 12 upgrades (artifact tier)
 };
 
 -- Runtime state defaults
