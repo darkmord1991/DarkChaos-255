@@ -203,11 +203,16 @@ private:
     void ClearHudSnapshot(InstanceState* state);
     int32 GetBossIndex(InstanceState const* state, uint32 bossEntry) const;
     void MarkBossKilled(InstanceState* state, Map* map, uint32 bossEntry);
+    std::string GetMapDisplayName(uint32 mapId) const;
+    uint32 GetBestRunDuration(uint32 mapId, uint8 keystoneLevel);
+    void UpdateBestRunDuration(uint32 mapId, uint8 keystoneLevel, uint32 durationSeconds);
+    uint64 MakeBestRunCacheKey(uint32 mapId, uint8 keystoneLevel) const;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapBossEntries;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapFinalBossEntries;
     bool _hudCacheReady = false;
+    std::unordered_map<uint64, uint32> _bestRunDurationCache;
 };
 
 inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)

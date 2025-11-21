@@ -640,6 +640,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
 
+    PrepareStatement(CHAR_SEL_MPLUS_BEST_TIME,
+        "SELECT COALESCE(MIN(completion_time), 0) FROM dc_mplus_runs WHERE map_id = ? AND keystone_level = ? AND success = 1",
+        CONNECTION_SYNCH);
+
     PrepareStatement(CHAR_INS_MPLUS_SCORE,
         "INSERT INTO dc_mplus_scores (character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs) "
         "VALUES (?, ?, ?, ?, ?, UNIX_TIMESTAMP(), 1) "

@@ -43,6 +43,38 @@ constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 constexpr char const* HUD_CACHE_TABLE = "dc_mythicplus_hud_cache";
 
+std::string EscapeJson(std::string_view input)
+{
+    std::string escaped;
+    escaped.reserve(input.size());
+    for (char c : input)
+    {
+        switch (c)
+        {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20)
+                {
+                    escaped += "\\u";
+                    constexpr char hex[] = "0123456789ABCDEF";
+                    uint8_t uc = static_cast<uint8_t>(c);
+                    escaped.push_back(hex[(uc >> 4) & 0xF]);
+                    escaped.push_back(hex[uc & 0xF]);
+                }
+                else
+                {
+                    escaped.push_back(c);
+                }
+                break;
+        }
+    }
+    return escaped;
+}
+
 }
 
 MythicPlusRunManager* MythicPlusRunManager::instance()
@@ -918,6 +950,9 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
             UpdateWeeklyVault(guidLow, seasonId, state->mapId, state->keystoneLevel, success, state->deaths, state->wipes, duration);
     }
 
+    if (success && duration > 0)
+        UpdateBestRunDuration(state->mapId, state->keystoneLevel, duration);
+
     LOG_INFO("mythic.run", "Mythic+ run {} for map {} instance {} (boss {})", success ? "completed" : "failed", state->mapId, state->instanceId, bossEntry);
 }
 
@@ -1245,6 +1280,61 @@ std::string MythicPlusRunManager::SerializeParticipants(const InstanceState* sta
     return stream.str();
 }
 
+std::string MythicPlusRunManager::GetMapDisplayName(uint32 mapId) const
+{
+    if (DungeonProfile* profile = sMythicScaling->GetDungeonProfile(mapId))
+    {
+        if (!profile->name.empty())
+            return profile->name;
+    }
+
+    if (MapEntry const* entry = sMapStore.LookupEntry(mapId))
+    {
+        if (entry->name && entry->name[0])
+            return entry->name[0];
+    }
+
+    return Acore::StringFormat("Map {}", mapId);
+}
+
+uint64 MythicPlusRunManager::MakeBestRunCacheKey(uint32 mapId, uint8 keystoneLevel) const
+{
+    return (static_cast<uint64>(mapId) << 8) | keystoneLevel;
+}
+
+uint32 MythicPlusRunManager::GetBestRunDuration(uint32 mapId, uint8 keystoneLevel)
+{
+    uint64 key = MakeBestRunCacheKey(mapId, keystoneLevel);
+    auto itr = _bestRunDurationCache.find(key);
+    if (itr != _bestRunDurationCache.end())
+        return itr->second;
+
+    uint32 duration = 0;
+    if (PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_BEST_TIME))
+    {
+        stmt->SetData(0, mapId);
+        stmt->SetData(1, static_cast<uint32>(keystoneLevel));
+        if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
+        {
+            duration = result->Fetch()->Get<uint32>();
+        }
+    }
+
+    _bestRunDurationCache[key] = duration;
+    return duration;
+}
+
+void MythicPlusRunManager::UpdateBestRunDuration(uint32 mapId, uint8 keystoneLevel, uint32 durationSeconds)
+{
+    if (durationSeconds == 0)
+        return;
+
+    uint64 key = MakeBestRunCacheKey(mapId, keystoneLevel);
+    auto itr = _bestRunDurationCache.find(key);
+    if (itr == _bestRunDurationCache.end() || itr->second == 0 || durationSeconds < itr->second)
+        _bestRunDurationCache[key] = durationSeconds;
+}
+
 // ============================================================
 // Keystone Item Management Methods (NEW)
 // ============================================================
@@ -1398,7 +1488,7 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     handler.SendSysMessage(Acore::StringFormat("|cffffffff  Bosses Killed:|r {}", state->bossesKilled));
     handler.SendSysMessage(Acore::StringFormat("|cffffffff  Enemies Killed:|r {}", state->npcsKilled));
     handler.SendSysMessage(Acore::StringFormat("|cffffffff  Total Deaths:|r {}", state->deaths));
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Group Wipes:|r {}", state->wipes));
+    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Boss Resets:|r {}", state->wipes));
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
     
     // Rewards
@@ -2096,12 +2186,15 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     }
 
     uint32 totalBosses = state->bossOrder.empty() ? GetTotalBossesForDungeon(state->mapId) : static_cast<uint32>(state->bossOrder.size());
+    uint32 bestTime = GetBestRunDuration(state->mapId, state->keystoneLevel);
+    std::string mapName = GetMapDisplayName(state->mapId);
 
     std::ostringstream payload;
     payload << '{';
     payload << "\"op\":\"hud\",";
     payload << "\"run\":" << state->instanceKey << ',';
     payload << "\"map\":" << state->mapId << ',';
+    payload << "\"mapName\":\"" << EscapeJson(mapName) << "\",";
     payload << "\"instance\":" << state->instanceId << ',';
     payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
     payload << "\"owner\":" << state->ownerGuid.GetCounter() << ',';
@@ -2112,11 +2205,14 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << "\"countdown\":" << countdown << ',';
     payload << "\"deaths\":" << uint32(state->deaths) << ',';
     payload << "\"wipes\":" << uint32(state->wipes) << ',';
+    payload << "\"resets\":" << uint32(state->wipes) << ',';
+    payload << "\"enemiesKilled\":" << state->npcsKilled << ',';
     payload << "\"bossesKilled\":" << state->bossesKilled << ',';
     payload << "\"bossesTotal\":" << totalBosses << ',';
     payload << "\"completed\":" << (state->completed ? 1 : 0) << ',';
     payload << "\"failed\":" << (state->failed ? 1 : 0) << ',';
-    payload << "\"reason\":\"" << reason << "\",";
+    payload << "\"reason\":\"" << EscapeJson(std::string(reason)) << "\",";
+    payload << "\"bestTime\":" << bestTime << ',';
 
     payload << "\"affixes\":[";
     for (size_t i = 0; i < state->activeAffixes.size(); ++i)
