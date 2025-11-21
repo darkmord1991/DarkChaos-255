@@ -155,6 +155,34 @@ namespace MythicPlusConstants
     {
         return entry == GO_FONT_OF_POWER;
     }
+
+    namespace Hud
+    {
+        constexpr uint32 WORLD_STATE_BASE      = 0x6100;
+        constexpr uint32 ACTIVE                = WORLD_STATE_BASE + 0;
+        constexpr uint32 TIMER_REMAINING       = WORLD_STATE_BASE + 1;
+        constexpr uint32 TIMER_ELAPSED         = WORLD_STATE_BASE + 2;
+        constexpr uint32 BOSSES_TOTAL          = WORLD_STATE_BASE + 3;
+        constexpr uint32 BOSSES_KILLED         = WORLD_STATE_BASE + 4;
+        constexpr uint32 DEATHS                = WORLD_STATE_BASE + 5;
+        constexpr uint32 WIPES                 = WORLD_STATE_BASE + 6;
+        constexpr uint32 KEYSTONE_LEVEL        = WORLD_STATE_BASE + 7;
+        constexpr uint32 DUNGEON_ID            = WORLD_STATE_BASE + 8;
+        constexpr uint32 RESULT                = WORLD_STATE_BASE + 9;
+        constexpr uint32 AFFIX_ONE             = WORLD_STATE_BASE + 10;
+        constexpr uint32 AFFIX_TWO             = WORLD_STATE_BASE + 11;
+        constexpr uint32 CHEST_TIER            = WORLD_STATE_BASE + 12;
+        constexpr uint32 OWNER_GUID_LOW        = WORLD_STATE_BASE + 13;
+        constexpr uint32 TIMER_DURATION        = WORLD_STATE_BASE + 14;
+        constexpr uint32 COUNTDOWN_REMAINING   = WORLD_STATE_BASE + 15;
+
+        constexpr uint32 BOSS_ENTRY_BASE       = WORLD_STATE_BASE + 32;
+        constexpr uint32 BOSS_KILLTIME_BASE    = WORLD_STATE_BASE + 64;
+        constexpr uint32 MAX_TRACKED_BOSSES    = 12;
+
+        constexpr char const* AIO_ADDON_NAME   = "DCMythicPlusHUD";
+        constexpr char const* AIO_MSG_UPDATE   = "HUD";
+    }
 }
 
 #endif // MYTHIC_PLUS_CONSTANTS_H

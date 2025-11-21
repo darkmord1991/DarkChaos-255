@@ -23,6 +23,7 @@
 #include "StringFormat.h"
 #include <algorithm>
 #include <array>
+#include <array>
 #include <random>
 #include <vector>
 
@@ -217,7 +218,7 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
         if (stage.filterRole)
             sql += Acore::StringFormat(" AND ((role_mask & {}) OR role_mask = 7)", roleMask);
 
-        sql += Acore::StringFormat(" AND item_level_min <= {} AND item_level_max >= {} ORDER BY RAND() LIMIT 1", targetItemLevel);
+        sql += Acore::StringFormat(" AND item_level_min <= {} AND item_level_max >= {} ORDER BY RAND() LIMIT 1", targetItemLevel, targetItemLevel);
 
         if (QueryResult result = WorldDatabase.Query(sql))
         {

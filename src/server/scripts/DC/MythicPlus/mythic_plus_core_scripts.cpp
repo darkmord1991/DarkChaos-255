@@ -408,6 +408,7 @@ public:
             sMythicRuns->ProcessCancellationTimers();
             sMythicRuns->ProcessCancellationVotes();
             sMythicRuns->ProcessCountdowns();
+            sMythicRuns->ProcessHudUpdates();
             _cancellationUpdateTimer = 0;
         }
             

@@ -17,6 +17,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 class Creature;
 class GameObject;
@@ -69,6 +70,16 @@ public:
         std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot seeding per encounter
         bool finalBossLootGranted = false;
         std::unordered_map<uint32, uint64> recentBossEvades; // Tracks per-boss reset timestamps
+        uint64 timerEndsAt = 0;
+        uint64 lastHudBroadcast = 0;
+        uint64 lastAioBroadcast = 0;
+        uint32 hudTimerDuration = 0;
+        bool hudInitialized = false;
+        std::unordered_map<uint32, uint32> hudWorldStates;
+        std::vector<uint32> bossOrder;
+        std::unordered_map<uint32, uint8> bossIndexLookup;
+        std::unordered_map<uint32, uint64> bossKillStamps;
+        std::vector<uint32> activeAffixes;
     };
 
     // Public methods
@@ -119,6 +130,7 @@ public:
     void InitiateCancellation(Map* map);
     void ProcessCancellationTimers();
     void ProcessCountdowns();
+    void ProcessHudUpdates();
     bool VoteToCancelRun(Player* player, Map* map);
     void ProcessCancellationVotes();
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
@@ -177,6 +189,16 @@ private:
     void ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel);
     void AnnounceAffixes(Player* player, const std::vector<uint32>& affixes);
     std::string GetAffixName(uint32 affixId) const;
+    void InitializeHud(InstanceState* state, Map* map);
+    void BuildBossTracking(InstanceState* state);
+    void SetHudWorldState(InstanceState* state, Map* map, uint32 worldStateId, uint32 value);
+    void SyncHudToPlayer(InstanceState* state, Player* player) const;
+    void UpdateHud(InstanceState* state, Map* map, bool forceBroadcast, std::string_view reason = {});
+    void ProcessHudUpdatesInternal(InstanceState* state, Map* map);
+    uint32 GetHudTimerDuration(uint32 mapId, uint8 keystoneLevel) const;
+    void MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason);
+    int32 GetBossIndex(InstanceState const* state, uint32 bossEntry) const;
+    void MarkBossKilled(InstanceState* state, Map* map, uint32 bossEntry);
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapBossEntries;

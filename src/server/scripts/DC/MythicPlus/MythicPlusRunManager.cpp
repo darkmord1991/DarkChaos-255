@@ -22,6 +22,9 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "World.h"
+#ifdef HAS_AIO
+#include "AIO.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -33,6 +36,11 @@ constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
 constexpr uint32 COUNTDOWN_ROOT_SPELL = 33786;  // Cyclone - roots but allows spell casting/eating/drinking
+constexpr uint32 DEFAULT_HUD_TIMER_SECONDS = 2400; // 40 minutes baseline
+constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over baseline
+constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
+
+constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 
 }
 
@@ -160,6 +168,18 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->countdownStarted = 0;
     state->participants.clear();
     state->recentBossEvades.clear();
+    state->bossDeathTimes.clear();
+    state->bossKillStamps.clear();
+    state->bossOrder.clear();
+    state->bossIndexLookup.clear();
+    state->activeAffixes.clear();
+    state->hudWorldStates.clear();
+    state->hudInitialized = false;
+    state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
+    state->timerEndsAt = 0;
+    state->lastHudBroadcast = 0;
+    state->lastAioBroadcast = 0;
+    BuildBossTracking(state);
     RegisterGroupMembers(player, state);
 
     // Seasonal validation - check if dungeon is featured this season
@@ -213,6 +233,8 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
     state->countdownActive = true;
     state->countdownStarted = GameTime::GetGameTime().count();
 
+    InitializeHud(state, map);
+
     return true;
 }
 
@@ -242,6 +264,8 @@ void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
         return;
 
     state->participants.insert(player->GetGUID().GetCounter());
+
+    SyncHudToPlayer(state, player);
 }
 
 void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*/)
@@ -259,6 +283,9 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*
 
     state->participants.insert(player->GetGUID().GetCounter());
     ++state->deaths;
+
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
+    UpdateHud(state, map, true, "death");
 
     if (!IsDeathBudgetEnabled())
         return;
@@ -315,6 +342,9 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
 
     ++state->wipes;
 
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::WIPES, state->wipes);
+    UpdateHud(state, map, true, "wipe");
+
     if (IsWipeBudgetEnabled())
     {
         DungeonProfile* profile = sMythicScaling->GetDungeonProfile(state->mapId);
@@ -370,6 +400,9 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     // Record boss death time for statistics
     state->bossDeathTimes.push_back(GameTime::GetGameTime().count());
+    MarkBossKilled(state, map, creature->GetEntry());
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_KILLED, state->bossesKilled);
+    UpdateHud(state, map, true, "boss_kill");
 
     // Determine if this encounter should be treated as the final boss
     bool isFinalEncounter = IsFinalBossEncounter(state, creature);
@@ -386,6 +419,10 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     state->completed = true;
     state->failed = false;
+
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 1);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
+    UpdateHud(state, map, true, "complete");
 
     AwardTokens(state, creature->GetEntry());
     RecordRunResult(state, true, creature->GetEntry());
@@ -741,6 +778,9 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
         std::ostringstream ss;
         ss << "|cffff0000Mythic+ Failed|r: " << reason;
         AnnounceToInstance(map, ss.str());
+        SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 2);
+        SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
+        UpdateHud(state, map, true, "failed");
     }
 
     RecordRunResult(state, false, 0);
@@ -1044,6 +1084,17 @@ void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& 
     InstanceState* state = GetState(map);
     if (state)
     {
+        state->activeAffixes = affixes;
+
+        if (Map* liveMap = sMapMgr->FindMap(state->mapId, state->instanceId))
+        {
+            uint32 affixOne = !affixes.empty() ? affixes[0] : 0;
+            uint32 affixTwo = affixes.size() > 1 ? affixes[1] : 0;
+            SetHudWorldState(state, liveMap, MythicPlusConstants::Hud::AFFIX_ONE, affixOne);
+            SetHudWorldState(state, liveMap, MythicPlusConstants::Hud::AFFIX_TWO, affixTwo);
+            UpdateHud(state, liveMap, true, "affix");
+        }
+
         // Apply affix scaling multipliers to creatures
         // This would typically be handled by the MythicDifficultyScaling system
         LOG_INFO("mythic.affix", "Activated {} affixes for keystone level {} in map {}",
@@ -1341,6 +1392,13 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
     
     // Generate new keystone for owner
     GenerateNewKeystone(ownerGuidLow, newLevel);
+
+    if (Map* map = sMapMgr->FindMap(state->mapId, state->instanceId))
+    {
+        uint32 chestTier = newLevel > currentLevel ? static_cast<uint32>(newLevel - currentLevel) : 0;
+        SetHudWorldState(state, map, MythicPlusConstants::Hud::CHEST_TIER, chestTier);
+        UpdateHud(state, map, true, "upgrade");
+    }
     
     LOG_INFO("mythic.run", "Auto-upgraded keystone for player {} from +{} to +{} (deaths: {})",
              ownerGuidLow, currentLevel, newLevel, state->deaths);
@@ -1473,6 +1531,9 @@ void MythicPlusRunManager::ProcessCountdowns()
             state.countdownActive = false;
             continue;
         }
+
+        SetHudWorldState(&state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, remaining);
+        UpdateHud(&state, map, false, "countdown");
 
         // The activation routine already announces the initial countdown duration.
         // Skip re-broadcasting the same value so the 10-second warning is not duplicated.
@@ -1659,6 +1720,9 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     // Mark run as officially started
     state->startedAt = GameTime::GetGameTime().count();
     state->countdownActive = false;
+    if (state->hudTimerDuration == 0)
+        state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
+    state->timerEndsAt = state->hudTimerDuration ? state->startedAt + state->hudTimerDuration : 0;
     
     // Remove root spell from all players to allow movement
     Map::PlayerList const& players = map->GetPlayers();
@@ -1674,11 +1738,358 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     // Apply scaling and barriers
     ApplyKeystoneScaling(map, state->keystoneLevel);
     ApplyEntryBarrier(map);
+
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_DURATION, state->hudTimerDuration);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 1);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::OWNER_GUID_LOW, state->ownerGuid.GetCounter());
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::KEYSTONE_LEVEL, state->keystoneLevel);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
+    UpdateHud(state, map, true, "start");
     
     AnnounceToInstance(map, "|cff00ff00Mythic+ timer started! Good luck!|r");
     
     LOG_INFO("mythic.run", "Started Mythic+ run for instance {} (map {}) at keystone level +{}",
              state->instanceId, state->mapId, state->keystoneLevel);
+}
+
+// ============================================================
+// Mythic+ HUD and AIO helpers
+// ============================================================
+
+uint32 MythicPlusRunManager::GetHudTimerDuration(uint32 mapId, uint8 keystoneLevel) const
+{
+    uint32 base = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Timer.DefaultSeconds", DEFAULT_HUD_TIMER_SECONDS);
+    uint32 perBoss = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Timer.PerBossBonus", DEFAULT_HUD_PER_BOSS);
+    uint32 minSeconds = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Timer.MinimumSeconds", 600u);
+    uint32 perLevelPenalty = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Timer.PerLevelPenalty", 0u);
+
+    uint32 totalBosses = GetTotalBossesForDungeon(mapId);
+    if (totalBosses > 3 && perBoss > 0)
+        base += (totalBosses - 3) * perBoss;
+
+    if (perLevelPenalty > 0 && keystoneLevel > MythicPlusConstants::MIN_KEYSTONE_LEVEL)
+    {
+        uint32 delta = keystoneLevel - MythicPlusConstants::MIN_KEYSTONE_LEVEL;
+        uint32 penalty = delta * perLevelPenalty;
+        base = penalty >= base ? minSeconds : std::max(minSeconds, base - penalty);
+    }
+    else
+    {
+        base = std::max(base, minSeconds);
+    }
+
+    return base;
+}
+
+void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
+{
+    if (!state)
+        return;
+
+    state->bossOrder.clear();
+    state->bossIndexLookup.clear();
+
+    auto pushBoss = [&](uint32 entry)
+    {
+        if (!entry)
+            return;
+        if (state->bossIndexLookup.find(entry) != state->bossIndexLookup.end())
+            return;
+        if (state->bossOrder.size() >= MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
+            return;
+        uint8 index = static_cast<uint8>(state->bossOrder.size());
+        state->bossIndexLookup.emplace(entry, index);
+        state->bossOrder.push_back(entry);
+    };
+
+    if (DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(state->mapId, DUNGEON_DIFFICULTY_EPIC))
+    {
+        for (DungeonEncounterEntry const* encounter : *encounters)
+            pushBoss(encounter->creditEntry);
+    }
+
+    if (state->bossOrder.size() < MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
+    {
+        if (auto itr = _mapBossEntries.find(state->mapId); itr != _mapBossEntries.end())
+        {
+            for (uint32 entry : itr->second)
+            {
+                pushBoss(entry);
+                if (state->bossOrder.size() >= MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
+                    break;
+            }
+        }
+    }
+}
+
+void MythicPlusRunManager::InitializeHud(InstanceState* state, Map* map)
+{
+    if (!state || !map)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true))
+        return;
+
+    state->hudInitialized = true;
+    state->hudWorldStates.clear();
+
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::KEYSTONE_LEVEL, state->keystoneLevel);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_KILLED, state->bossesKilled);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::WIPES, state->wipes);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10));
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::CHEST_TIER, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_DURATION, state->hudTimerDuration);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::OWNER_GUID_LOW, state->ownerGuid.GetCounter());
+
+    uint32 affixOne = !state->activeAffixes.empty() ? state->activeAffixes[0] : 0;
+    uint32 affixTwo = state->activeAffixes.size() > 1 ? state->activeAffixes[1] : 0;
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::AFFIX_ONE, affixOne);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::AFFIX_TWO, affixTwo);
+
+    for (size_t i = 0; i < state->bossOrder.size() && i < MythicPlusConstants::Hud::MAX_TRACKED_BOSSES; ++i)
+    {
+        uint32 worldStateId = MythicPlusConstants::Hud::BOSS_ENTRY_BASE + static_cast<uint32>(i);
+        SetHudWorldState(state, map, worldStateId, state->bossOrder[i]);
+        SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSS_KILLTIME_BASE + static_cast<uint32>(i), 0);
+    }
+}
+
+void MythicPlusRunManager::SetHudWorldState(InstanceState* state, Map* map, uint32 worldStateId, uint32 value)
+{
+    if (!state || !map)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true))
+        return;
+
+    auto [itr, inserted] = state->hudWorldStates.try_emplace(worldStateId, value);
+    if (!inserted && itr->second == value)
+        return;
+
+    itr->second = value;
+
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        if (Player* player = ref.GetSource())
+            player->SendUpdateWorldState(worldStateId, value);
+    }
+}
+
+void MythicPlusRunManager::SyncHudToPlayer(InstanceState* state, Player* player) const
+{
+    if (!state || !player)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true))
+        return;
+
+    for (auto const& pair : state->hudWorldStates)
+        player->SendUpdateWorldState(pair.first, pair.second);
+}
+
+void MythicPlusRunManager::ProcessHudUpdates()
+{
+    bool hudEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true);
+    bool aioEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true);
+    if (!hudEnabled && !aioEnabled)
+        return;
+
+    for (auto& [key, state] : _instanceStates)
+    {
+        if (state.keystoneLevel == 0)
+            continue;
+
+        if (!state.countdownActive && state.startedAt == 0)
+            continue;
+
+        Map* map = sMapMgr->FindMap(state.mapId, state.instanceId);
+        if (!map)
+            continue;
+
+        ProcessHudUpdatesInternal(&state, map);
+    }
+}
+
+void MythicPlusRunManager::ProcessHudUpdatesInternal(InstanceState* state, Map* map)
+{
+    if (!state || !map)
+        return;
+
+    UpdateHud(state, map, false, HUD_REASON_PERIODIC);
+}
+
+void MythicPlusRunManager::UpdateHud(InstanceState* state, Map* map, bool forceBroadcast, std::string_view reason)
+{
+    if (!state || !map)
+        return;
+
+    bool hudEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true);
+    if (hudEnabled)
+    {
+        uint64 now = GameTime::GetGameTime().count();
+        uint32 interval = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.UpdateInterval", DEFAULT_HUD_UPDATE_INTERVAL);
+        if (forceBroadcast || interval == 0 || now >= state->lastHudBroadcast + interval)
+        {
+            state->lastHudBroadcast = now;
+
+            uint32 timerRemaining = 0;
+            uint32 timerElapsed = 0;
+            if (state->startedAt && state->hudTimerDuration > 0)
+            {
+                timerElapsed = now >= state->startedAt ? static_cast<uint32>(now - state->startedAt) : 0;
+                if (state->timerEndsAt > now)
+                    timerRemaining = static_cast<uint32>(state->timerEndsAt - now);
+            }
+
+            SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_ELAPSED, timerElapsed);
+            SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_REMAINING, timerRemaining);
+        }
+    }
+
+    MaybeSendAioSnapshot(state, map, reason);
+}
+
+int32 MythicPlusRunManager::GetBossIndex(InstanceState const* state, uint32 bossEntry) const
+{
+    if (!state)
+        return -1;
+
+    auto itr = state->bossIndexLookup.find(bossEntry);
+    if (itr == state->bossIndexLookup.end())
+        return -1;
+
+    return itr->second;
+}
+
+void MythicPlusRunManager::MarkBossKilled(InstanceState* state, Map* map, uint32 bossEntry)
+{
+    if (!state || !map)
+        return;
+
+    int32 idx = GetBossIndex(state, bossEntry);
+    if (idx < 0)
+        return;
+
+    uint64 now = GameTime::GetGameTime().count();
+    state->bossKillStamps[bossEntry] = now;
+    uint32 killAt = (state->startedAt && now >= state->startedAt) ? static_cast<uint32>(now - state->startedAt) : 0;
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSS_KILLTIME_BASE + static_cast<uint32>(idx), killAt);
+}
+
+void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason)
+{
+#ifndef HAS_AIO
+    (void)state;
+    (void)map;
+    (void)reason;
+    return;
+#else
+    if (!state || !map)
+        return;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true))
+        return;
+
+    uint32 intervalMs = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Aio.IntervalMS", 1500u);
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    bool force = !reason.empty();
+    if (!force && intervalMs > 0 && nowMs < state->lastAioBroadcast + intervalMs)
+        return;
+
+    state->lastAioBroadcast = nowMs;
+
+    uint64 now = GameTime::GetGameTime().count();
+    uint32 remaining = (state->timerEndsAt > now) ? static_cast<uint32>(state->timerEndsAt - now) : 0;
+    uint32 elapsed = (state->startedAt && now >= state->startedAt) ? static_cast<uint32>(now - state->startedAt) : 0;
+    uint32 countdown = 0;
+    if (state->countdownActive)
+    {
+        uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
+        uint64 countdownEnd = state->countdownStarted + countdownDuration;
+        countdown = countdownEnd > now ? static_cast<uint32>(countdownEnd - now) : 0;
+    }
+
+    uint32 totalBosses = state->bossOrder.empty() ? GetTotalBossesForDungeon(state->mapId) : static_cast<uint32>(state->bossOrder.size());
+
+    std::ostringstream payload;
+    payload << '{';
+    payload << "\"op\":\"hud\",";
+    payload << "\"run\":" << state->instanceKey << ',';
+    payload << "\"map\":" << state->mapId << ',';
+    payload << "\"instance\":" << state->instanceId << ',';
+    payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
+    payload << "\"owner\":" << state->ownerGuid.GetCounter() << ',';
+    payload << "\"started\":" << state->startedAt << ',';
+    payload << "\"duration\":" << state->hudTimerDuration << ',';
+    payload << "\"remaining\":" << remaining << ',';
+    payload << "\"elapsed\":" << elapsed << ',';
+    payload << "\"countdown\":" << countdown << ',';
+    payload << "\"deaths\":" << uint32(state->deaths) << ',';
+    payload << "\"wipes\":" << uint32(state->wipes) << ',';
+    payload << "\"bossesKilled\":" << state->bossesKilled << ',';
+    payload << "\"bossesTotal\":" << totalBosses << ',';
+    payload << "\"completed\":" << (state->completed ? 1 : 0) << ',';
+    payload << "\"failed\":" << (state->failed ? 1 : 0) << ',';
+    payload << "\"reason\":\"" << reason << "\",";
+
+    payload << "\"affixes\":[";
+    for (size_t i = 0; i < state->activeAffixes.size(); ++i)
+    {
+        if (i > 0)
+            payload << ',';
+        payload << state->activeAffixes[i];
+    }
+    payload << "],";
+
+    payload << "\"bosses\":[";
+    for (size_t i = 0; i < state->bossOrder.size(); ++i)
+    {
+        if (i > 0)
+            payload << ',';
+        uint32 entry = state->bossOrder[i];
+        payload << '{';
+        payload << "\"entry\":" << entry << ',';
+        bool killed = state->bossKillStamps.find(entry) != state->bossKillStamps.end();
+        payload << "\"killed\":" << (killed ? 1 : 0);
+        if (killed && state->startedAt)
+        {
+            uint64 killedAt = state->bossKillStamps[entry];
+            uint32 killSeconds = killedAt > state->startedAt ? static_cast<uint32>(killedAt - state->startedAt) : 0;
+            payload << ",\"at\":" << killSeconds;
+        }
+        payload << '}';
+    }
+    payload << "],";
+
+    payload << "\"participants\":[";
+    bool first = true;
+    for (ObjectGuid::LowType guid : state->participants)
+    {
+        if (!first)
+            payload << ',';
+        payload << guid;
+        first = false;
+    }
+    payload << ']';
+
+    payload << '}';
+
+    std::string data = payload.str();
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        if (Player* player = ref.GetSource())
+            AIO().Msg(player, MythicPlusConstants::Hud::AIO_ADDON_NAME, MythicPlusConstants::Hud::AIO_MSG_UPDATE, data);
+    }
+#endif
 }
 
 // ============================================================
