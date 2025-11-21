@@ -80,6 +80,7 @@ public:
         std::unordered_map<uint32, uint8> bossIndexLookup;
         std::unordered_map<uint32, uint64> bossKillStamps;
         std::vector<uint32> activeAffixes;
+        std::string lastHudPayload;
     };
 
     // Public methods
@@ -197,12 +198,16 @@ private:
     void ProcessHudUpdatesInternal(InstanceState* state, Map* map);
     uint32 GetHudTimerDuration(uint32 mapId, uint8 keystoneLevel) const;
     void MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason);
+    void EnsureHudCacheTable();
+    void PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate);
+    void ClearHudSnapshot(InstanceState* state);
     int32 GetBossIndex(InstanceState const* state, uint32 bossEntry) const;
     void MarkBossKilled(InstanceState* state, Map* map, uint32 bossEntry);
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapBossEntries;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapFinalBossEntries;
+    bool _hudCacheReady = false;
 };
 
 inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)

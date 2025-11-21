@@ -32,8 +32,8 @@ void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixTy
 {
     if (!map)
         return;
-        
-        uint64 key = MakeInstanceKey(map);
+
+    uint64 key = MakeInstanceKey(map);
     auto& state = _instanceStates[key];
     state.activeAffixes = affixes;
     state.keystoneLevel = keystoneLevel;
@@ -54,8 +54,8 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
 {
     if (!map)
         return;
-        
-        uint64 key = MakeInstanceKey(map);
+
+    uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     if (itr == _instanceStates.end())
         return;
@@ -184,8 +184,8 @@ std::vector<AffixType> MythicPlusAffixManager::GetActiveAffixes(Map* map) const
 {
     if (!map)
         return {};
-        
-        uint64 key = MakeInstanceKey(map);
+
+    uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? itr->second.activeAffixes : std::vector<AffixType>{};
 }

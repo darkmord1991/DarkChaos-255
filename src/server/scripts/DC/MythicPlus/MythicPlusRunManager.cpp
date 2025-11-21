@@ -41,6 +41,7 @@ constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over ba
 constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
 
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
+constexpr char const* HUD_CACHE_TABLE = "dc_mythicplus_hud_cache";
 
 }
 
@@ -54,6 +55,8 @@ void MythicPlusRunManager::Reset()
 {
     _instanceStates.clear();
     CacheBossMetadata();
+    EnsureHudCacheTable();
+    CharacterDatabase.DirectExecute("DELETE FROM `{}`", HUD_CACHE_TABLE);
     LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
 }
 
@@ -98,6 +101,76 @@ void MythicPlusRunManager::CacheBossMetadata()
 
     LOG_INFO("mythic.run", "Cached {} boss entries ({} marked final) across {} maps for Mythic+ detection",
              bossEntries, finalEntries, _mapBossEntries.size());
+}
+
+void MythicPlusRunManager::EnsureHudCacheTable()
+{
+    if (_hudCacheReady)
+        return;
+
+    CharacterDatabase.DirectExecute(
+        "CREATE TABLE IF NOT EXISTS `{}` ("
+        "`instance_key` BIGINT UNSIGNED NOT NULL,"
+        "`map_id` INT UNSIGNED NOT NULL,"
+        "`instance_id` INT UNSIGNED NOT NULL,"
+        "`owner_guid` INT UNSIGNED NOT NULL,"
+        "`keystone_level` TINYINT UNSIGNED NOT NULL,"
+        "`season_id` INT UNSIGNED NOT NULL,"
+        "`payload` LONGTEXT NOT NULL,"
+        "`updated_at` BIGINT UNSIGNED NOT NULL,"
+        "PRIMARY KEY (`instance_key`)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        HUD_CACHE_TABLE);
+
+    _hudCacheReady = true;
+    LOG_INFO("mythic.hud", "Ensured Mythic+ HUD cache table `{}` exists", HUD_CACHE_TABLE);
+}
+
+void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate)
+{
+    if (!state || state->instanceKey == 0)
+        return;
+
+    std::string serialized(payload);
+    if (!forceUpdate && state->lastHudPayload == serialized)
+        return;
+
+    EnsureHudCacheTable();
+
+    state->lastHudPayload = serialized;
+
+    std::string escapedPayload = serialized;
+    CharacterDatabase.EscapeString(escapedPayload);
+
+    uint64 updatedAt = GameTime::GetGameTime().count();
+    CharacterDatabase.DirectExecute(
+        "INSERT INTO `{}` (`instance_key`, `map_id`, `instance_id`, `owner_guid`, `keystone_level`, `season_id`, `payload`, `updated_at`) "
+        "VALUES ({}, {}, {}, {}, {}, {}, '{}', {}) "
+        "ON DUPLICATE KEY UPDATE `map_id` = VALUES(`map_id`), `instance_id` = VALUES(`instance_id`), "
+        "`owner_guid` = VALUES(`owner_guid`), `keystone_level` = VALUES(`keystone_level`), "
+        "`season_id` = VALUES(`season_id`), `payload` = VALUES(`payload`), `updated_at` = VALUES(`updated_at`)",
+        HUD_CACHE_TABLE,
+        state->instanceKey,
+        state->mapId,
+        state->instanceId,
+        state->ownerGuid.GetCounter(),
+        uint32(state->keystoneLevel),
+        state->seasonId,
+        escapedPayload,
+        updatedAt);
+}
+
+void MythicPlusRunManager::ClearHudSnapshot(InstanceState* state)
+{
+    if (!state || state->instanceKey == 0)
+        return;
+
+    state->lastHudPayload.clear();
+    EnsureHudCacheTable();
+    CharacterDatabase.DirectExecute(
+        "DELETE FROM `{}` WHERE `instance_key` = {}",
+        HUD_CACHE_TABLE,
+        state->instanceKey);
 }
 
 bool MythicPlusRunManager::IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const
@@ -188,6 +261,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
         if (!IsDungeonFeaturedThisSeason(map->GetId(), state->seasonId))
         {
             SendGenericError(player, "This dungeon is not featured in the current Mythic+ season.");
+            ClearHudSnapshot(state);
             _instanceStates.erase(state->instanceKey);
             return false;
         }
@@ -444,6 +518,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         }
     }
 
+    ClearHudSnapshot(state);
     _instanceStates.erase(state->instanceKey);
 }
 
@@ -453,7 +528,12 @@ void MythicPlusRunManager::HandleInstanceReset(Map* map)
         return;
 
     uint64 key = MakeInstanceKey(map);
-    _instanceStates.erase(key);
+    auto itr = _instanceStates.find(key);
+    if (itr != _instanceStates.end())
+    {
+        ClearHudSnapshot(&itr->second);
+        _instanceStates.erase(itr);
+    }
 }
 
 void MythicPlusRunManager::BuildVaultMenu(Player* /*player*/, Creature* /*creature*/)
@@ -784,6 +864,7 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
     }
 
     RecordRunResult(state, false, 0);
+    ClearHudSnapshot(state);
     _instanceStates.erase(state->instanceKey);
 
     if (downgradeKeystone && state->ownerGuid)
@@ -1806,8 +1887,11 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
 
     if (DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(state->mapId, DUNGEON_DIFFICULTY_EPIC))
     {
-        for (DungeonEncounterEntry const* encounter : *encounters)
-            pushBoss(encounter->creditEntry);
+        for (DungeonEncounter const* encounter : *encounters)
+        {
+            if (encounter)
+                pushBoss(encounter->creditEntry);
+        }
     }
 
     if (state->bossOrder.size() < MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
@@ -1986,12 +2070,6 @@ void MythicPlusRunManager::MarkBossKilled(InstanceState* state, Map* map, uint32
 
 void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason)
 {
-#ifndef HAS_AIO
-    (void)state;
-    (void)map;
-    (void)reason;
-    return;
-#else
     if (!state || !map)
         return;
 
@@ -2083,6 +2161,11 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << '}';
 
     std::string data = payload.str();
+    PersistHudSnapshot(state, data, force);
+
+#ifndef HAS_AIO
+    (void)map;
+#else
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
     {
