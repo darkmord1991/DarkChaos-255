@@ -1290,7 +1290,7 @@ std::string MythicPlusRunManager::GetMapDisplayName(uint32 mapId) const
 
     if (MapEntry const* entry = sMapStore.LookupEntry(mapId))
     {
-        if (entry->name && entry->name[0])
+        if (entry->name[0] && entry->name[0][0] != '\0')
             return entry->name[0];
     }
 
@@ -1310,7 +1310,7 @@ uint32 MythicPlusRunManager::GetBestRunDuration(uint32 mapId, uint8 keystoneLeve
         return itr->second;
 
     uint32 duration = 0;
-    if (PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_BEST_TIME))
+    if (CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_BEST_TIME))
     {
         stmt->SetData(0, mapId);
         stmt->SetData(1, static_cast<uint32>(keystoneLevel));
@@ -2211,7 +2211,7 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << "\"bossesTotal\":" << totalBosses << ',';
     payload << "\"completed\":" << (state->completed ? 1 : 0) << ',';
     payload << "\"failed\":" << (state->failed ? 1 : 0) << ',';
-    payload << "\"reason\":\"" << EscapeJson(std::string(reason)) << "\",";
+    payload << "\"reason\":\"" << EscapeJson(reason) << "\",";
     payload << "\"bestTime\":" << bestTime << ',';
 
     payload << "\"affixes\":[";
