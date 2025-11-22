@@ -431,7 +431,7 @@ public:
     {
         static Acore::ChatCommands::ChatCommandTable commandTable =
         {
-            Acore::ChatCommands::ChatCommandBuilder("checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            Acore::ChatCommands::ChatCommandBuilder("checkachievements", HandleCheckAchievements, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No)
         };
         return commandTable;
     }

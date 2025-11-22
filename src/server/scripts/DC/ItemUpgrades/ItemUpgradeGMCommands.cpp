@@ -34,7 +34,7 @@ public:
             ChatCommandBuilder("add", HandleTokenAdd, 3, Console::Yes),
             ChatCommandBuilder("remove", HandleTokenRemove, 3, Console::Yes),
             ChatCommandBuilder("set", HandleTokenSet, 3, Console::Yes),
-            ChatCommandBuilder("info", HandleTokenInfo, 1, Console::Yes),
+            ChatCommandBuilder("info", HandleTokenInfo, 1, Console::Yes)
         };
 
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> upgradeSubCommands =
@@ -42,12 +42,12 @@ public:
             ChatCommandBuilder("status", HandleUpgradeStatus, 0, Console::Yes),
             ChatCommandBuilder("list", HandleUpgradeList, 0, Console::Yes),
             ChatCommandBuilder("info", HandleUpgradeInfo, 0, Console::Yes),
-            ChatCommandBuilder("token", tokenSubCommands),
+            ChatCommandBuilder("token", tokenSubCommands)
         };
 
         static const std::vector<Acore::ChatCommands::ChatCommandBuilder> commandTable =
         {
-            ChatCommandBuilder("upgrade", upgradeSubCommands),
+            ChatCommandBuilder("upgrade", upgradeSubCommands)
         };
 
         return commandTable;

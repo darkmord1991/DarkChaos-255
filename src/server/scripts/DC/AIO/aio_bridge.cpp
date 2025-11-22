@@ -95,7 +95,7 @@ public:
     ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable subTable = {
-            { "ping", HandleAioPing, SEC_PLAYER, Console::No },
+            { "ping", HandleAioPing, SEC_PLAYER, Console::No }
         };
 
         static ChatCommandTable root = {
