@@ -421,7 +421,7 @@ public:
             { "unlocktier", HandleUnlockTierCommand,    SEC_GAMEMASTER, Console::No },
             { "weekcap",    HandleWeekCapCommand,       SEC_PLAYER, Console::No },
             { "tiercap",    HandleTierCapCommand,       SEC_GAMEMASTER, Console::No },
-            { "testset",    HandleTestSetCommand,       SEC_GAMEMASTER, Console::No },
+            { "testset",    HandleTestSetCommand,       SEC_GAMEMASTER, Console::No }
         };
 
         static ChatCommandTable commandTable =

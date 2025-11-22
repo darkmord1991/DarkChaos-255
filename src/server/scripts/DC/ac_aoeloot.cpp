@@ -497,7 +497,7 @@ public:
             ChatCommandBuilder("reload", HandleReload, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("stats",  HandleStats,  SEC_GAMEMASTER,    Console::No),
             ChatCommandBuilder("top",    HandleTop,    SEC_PLAYER,        Console::No),
-            ChatCommandBuilder("force",  HandleForce,  SEC_GAMEMASTER,    Console::No),
+            ChatCommandBuilder("force",  HandleForce,  SEC_GAMEMASTER,    Console::No)
         };
 
         static ChatCommandTable commandTable =

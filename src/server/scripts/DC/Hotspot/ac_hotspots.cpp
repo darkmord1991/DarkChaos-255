@@ -2130,7 +2130,7 @@ public:
             ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
             ChatCommandBuilder("forcebuff", HandleHotspotsForceBuffCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No),
+            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No)
         };
 
         static ChatCommandTable commandTable =

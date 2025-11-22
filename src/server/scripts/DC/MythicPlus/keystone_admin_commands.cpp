@@ -28,7 +28,7 @@ public:
             { "spawn",      HandleKeystoneSpawn,      SEC_GAMEMASTER,     Console::No  },
             { "info",       HandleKeystoneInfo,       SEC_GAMEMASTER,     Console::No  },
             { "reward",     HandleKeystoneReward,     SEC_GAMEMASTER,     Console::No  },
-            { "start",      HandleKeystoneStart,      SEC_GAMEMASTER,     Console::No  },
+            { "start",      HandleKeystoneStart,      SEC_GAMEMASTER,     Console::No  }
         };
 
         return commandTable;

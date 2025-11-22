@@ -33,17 +33,17 @@ public:
             ChatCommandBuilder("cost", HandleCostCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("stats", HandleStatsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("ilvl", HandleILvLCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("reset", HandleResetCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("reset", HandleResetCommand, SEC_ADMINISTRATOR, Console::No)
         };
 
         static ChatCommandTable mechCommandTable =
         {
-            ChatCommandBuilder("mech", upgradeCommandTable),
+            ChatCommandBuilder("mech", upgradeCommandTable)
         };
 
         static ChatCommandTable commandTable =
         {
-            ChatCommandBuilder("upgrade", mechCommandTable),
+            ChatCommandBuilder("upgrade", mechCommandTable)
         };
 
         return commandTable;

@@ -74,7 +74,7 @@ public:
     ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable liveSub = {
-            { "native", HandleHLBGLiveNativeCommand, SEC_GAMEMASTER, Console::No },
+            { "native", HandleHLBGLiveNativeCommand, SEC_GAMEMASTER, Console::No }
         };
 
         // Only expose a separate root to avoid conflicts with other HLBG command trees
