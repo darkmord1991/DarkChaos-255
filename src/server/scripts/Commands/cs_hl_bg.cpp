@@ -78,7 +78,7 @@ public:
             { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
             { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
             { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No }
         };
 
         static ChatCommandTable hlbgCommandTable =

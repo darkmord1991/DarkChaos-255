@@ -583,7 +583,7 @@ public:
             { "reset",        DC_DungeonQuests::HandleDCQuestsReset,       SEC_ADMINISTRATOR, Console::No },
             { "debug",        DC_DungeonQuests::HandleDCQuestsDebug,       SEC_ADMINISTRATOR, Console::No },
             { "achievement",  DC_DungeonQuests::HandleDCQuestsAchievement, SEC_ADMINISTRATOR, Console::No },
-            { "title",        DC_DungeonQuests::HandleDCQuestsTitle,       SEC_ADMINISTRATOR, Console::No },
+            { "title",        DC_DungeonQuests::HandleDCQuestsTitle,       SEC_ADMINISTRATOR, Console::No }
         };
 
         static ChatCommandTable commandTable =
