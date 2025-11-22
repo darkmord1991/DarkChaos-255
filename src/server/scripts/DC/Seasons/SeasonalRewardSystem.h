@@ -36,8 +36,8 @@ namespace DarkChaos
         {
             bool enabled = true;
             uint32 activeSeason = 1;
-            uint32 tokenItemId = DEFAULT_TOKEN_ITEM_ID;
-            uint32 essenceItemId = DEFAULT_ESSENCE_ITEM_ID;
+            uint32 tokenItemId = 49426;                     // Default token item ID
+            uint32 essenceItemId = 47241;                   // Default essence item ID
             uint32 weeklyTokenCap = 0;                      // 0 = unlimited
             uint32 weeklyEssenceCap = 0;                    // 0 = unlimited
             float questMultiplier = 1.0f;

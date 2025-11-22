@@ -897,7 +897,7 @@ namespace DarkChaos
             LOG_INFO("module", ">> [SeasonalRewards] Player {} season transition complete", player_guid);
         }
         
-        bool SeasonalRewardManager::ValidateSeasonTransition(uint32 player_guid, uint32 season_id)
+        bool SeasonalRewardManager::ValidateSeasonTransition(uint32 /*player_guid*/, uint32 /*season_id*/)
         {
             // No special validation needed for reward system
             // Players can transition freely

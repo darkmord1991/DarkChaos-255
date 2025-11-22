@@ -14,7 +14,7 @@
 #include "ObjectAccessor.h"
 
 using namespace DarkChaos::SeasonalRewards;
-using namespace ChatCommands;
+using namespace Acore::ChatCommands;
 
 class SeasonalRewardCommands : public CommandScript
 {
@@ -78,7 +78,7 @@ public:
     // .season stats [player]
     static bool HandleSeasonStatsCommand(ChatHandler* handler, Optional<PlayerIdentifier> target)
     {
-        Player* player = target ? target->GetConnectedPlayer() : handler->GetSelectedPlayerOrSelf();
+        Player* player = target ? target->GetConnectedPlayer() : handler->getSelectedPlayerOrSelf();
         
         if (!player)
         {

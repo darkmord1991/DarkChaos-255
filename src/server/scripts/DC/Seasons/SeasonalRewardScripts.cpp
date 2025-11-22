@@ -11,7 +11,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Creature.h"
-#include "Quest.h"
+#include "QuestDef.h"
 #include "Group.h"
 
 using namespace DarkChaos::SeasonalRewards;
@@ -26,7 +26,7 @@ public:
     SeasonalRewardPlayerScript() : PlayerScript("SeasonalRewardPlayerScript") {}
     
     // Check weekly reset on login
-    void OnLogin(Player* player) override
+    void OnLogin(Player* player)
     {
         if (!sSeasonalRewards->GetConfig().enabled)
             return;
@@ -45,14 +45,8 @@ public:
         }
     }
     
-    // Award rewards on quest completion
-    void OnQuestRewardItem(Player* player, Item* /*item*/, uint32 /*count*/) override
-    {
-        // Quest reward is handled in OnQuestComplete
-    }
-    
     // Process quest rewards
-    void OnQuestComplete(Player* player, Quest const* quest) override
+    void OnQuestComplete(Player* player, Quest const* quest)
     {
         if (!sSeasonalRewards->GetConfig().enabled)
             return;
@@ -61,7 +55,7 @@ public:
     }
     
     // Process creature kills
-    void OnCreatureKill(Player* player, Creature* creature) override
+    void OnCreatureKill(Player* player, Creature* creature)
     {
         if (!sSeasonalRewards->GetConfig().enabled)
             return;

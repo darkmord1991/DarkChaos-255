@@ -465,7 +465,7 @@ namespace DarkChaos
             void LoadActiveSeason()
             {
                 QueryResult result = CharacterDatabase.Query(
-                    "SELECT season_id FROM dc_seasons WHERE season_state = ? ORDER BY season_id DESC LIMIT 1",
+                    "SELECT season_id FROM dc_seasons WHERE season_state = {} ORDER BY season_id DESC LIMIT 1",
                     (int)SEASON_STATE_ACTIVE);
 
                 if (result)

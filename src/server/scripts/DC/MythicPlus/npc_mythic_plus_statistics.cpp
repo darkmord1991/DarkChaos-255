@@ -247,7 +247,7 @@ private:
             Field* fields = result->Fetch();
             uint32 mapId = fields[0].Get<uint32>();
             uint8 bestLevel = fields[1].Get<uint8>();
-            uint32 bestScore = fields[2].Get<uint32>();
+            // uint32 bestScore = fields[2].Get<uint32>();  // Reserved for future score display
             uint32 totalRuns = fields[3].Get<uint32>();
             
             // Get dungeon name from MapEntry
