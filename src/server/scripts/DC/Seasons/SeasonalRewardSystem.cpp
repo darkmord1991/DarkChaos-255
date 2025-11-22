@@ -129,7 +129,7 @@ namespace DarkChaos
             }
             
             // Load quest rewards
-            QueryResult questResult = WorldDatabase.Query("SELECT quest_id, token_reward, essence_reward FROM dc_seasonal_quest_rewards WHERE season_id = {}", config_.activeSeason);
+            QueryResult questResult = WorldDatabase.Query("SELECT quest_id, base_token_amount, base_essence_amount FROM dc_seasonal_quest_rewards WHERE season_id = {}", config_.activeSeason);
             if (questResult)
             {
                 uint32 questCount = 0;
@@ -146,7 +146,7 @@ namespace DarkChaos
             }
             
             // Load creature rewards
-            QueryResult creatureResult = WorldDatabase.Query("SELECT creature_entry, token_reward, essence_reward FROM dc_seasonal_creature_rewards WHERE season_id = {}", config_.activeSeason);
+            QueryResult creatureResult = WorldDatabase.Query("SELECT creature_id, base_token_amount, base_essence_amount FROM dc_seasonal_creature_rewards WHERE season_id = {}", config_.activeSeason);
             if (creatureResult)
             {
                 uint32 creatureCount = 0;
