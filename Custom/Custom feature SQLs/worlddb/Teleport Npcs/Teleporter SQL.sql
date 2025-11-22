@@ -1,242 +1,155 @@
--- ----------------------------
--- Table structure for `eluna_teleporter`
--- ----------------------------
-DROP TABLE IF EXISTS `eluna_teleporter`;
-CREATE TABLE `eluna_teleporter` (
-  `id` int(5) NOT NULL AUTO_INCREMENT,
-  `parent` int(5) NOT NULL DEFAULT '0',
-  `type` int(1) NOT NULL DEFAULT '1',
-  `faction` int(2) NOT NULL DEFAULT '-1',
-  `icon` int(2) NOT NULL DEFAULT '0',
+-- --------------------------------------------------------
+-- Host:                         192.168.178.45
+-- Server-Version:               8.0.44-0ubuntu0.24.04.1 - (Ubuntu)
+-- Server-Betriebssystem:        Linux
+-- HeidiSQL Version:             12.13.0.7157
+-- --------------------------------------------------------
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET NAMES utf8 */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+-- Exportiere Struktur von Tabelle acore_world.eluna_teleporter
+CREATE TABLE IF NOT EXISTS `eluna_teleporter` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `parent` int NOT NULL DEFAULT '0',
+  `type` int NOT NULL DEFAULT '1',
+  `faction` int NOT NULL DEFAULT '-1',
+  `icon` int NOT NULL DEFAULT '0',
   `name` char(255) NOT NULL DEFAULT '',
-  `map` int(5) DEFAULT NULL,
+  `map` int DEFAULT NULL,
   `x` decimal(10,3) DEFAULT NULL,
   `y` decimal(10,3) DEFAULT NULL,
   `z` decimal(10,3) DEFAULT NULL,
   `o` decimal(10,3) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=712 DEFAULT CHARSET=latin1;
 
--- ----------------------------
--- Records of eluna_teleporter
--- ----------------------------
-DELETE FROM `eluna_teleporter` WHERE `id`=1;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (1, 0, 1, 1, 0, 'Horde Cities', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=2;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (2, 0, 1, 0, 0, 'Alliance Cities', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=3;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (3, 0, 1, -1, 0, 'Outlands Locations', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=4;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (4, 0, 1, -1, 0, 'Northrend Locations', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=5;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (5, 0, 1, -1, 0, 'PvP Locations', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=6;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (6, 1, 2, 1, 2, 'Orgrimmar', 1, 1503.000, -4415.500, 22.000, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=7;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (7, 1, 2, 1, 2, 'Undercity', 0, 1831.000, 238.500, 61.600, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=8;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (8, 1, 2, 1, 2, 'Thunderbluff', 1, -1278.000, 122.000, 132.000, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=9;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (9, 1, 2, 1, 2, 'Silvermoon', 530, 9484.000, -7294.000, 15.000, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=10;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (10, 2, 2, 0, 2, 'Stormwind', 0, -8905.000, 560.000, 94.000, 0.660);
-DELETE FROM `eluna_teleporter` WHERE `id`=11;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (11, 2, 2, 0, 2, 'Ironforge', 0, -4795.000, -1117.000, 499.000, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=12;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (12, 2, 2, 0, 2, 'Darnassus', 1, 9952.000, 2280.500, 1342.000, 1.600);
-DELETE FROM `eluna_teleporter` WHERE `id`=13;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (13, 2, 2, 0, 2, 'The Exodar', 530, -3863.000, -11736.000, -106.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=14;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (14, 3, 2, -1, 2, 'Blade\'s Edge Mountains', 530, 1481.000, 6829.000, 107.000, 6.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=15;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (15, 3, 2, -1, 2, 'Hellfire Peninsula', 530, -249.000, 947.000, 85.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=16;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (16, 3, 2, -1, 2, 'Nagrand', 530, -1769.000, 7150.000, -9.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=17;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (17, 3, 2, -1, 2, 'Netherstorm', 530, 3043.000, 3645.000, 143.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=18;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (18, 3, 2, -1, 2, 'Shadowmoon Valley', 530, -3034.000, 2937.000, 87.000, 5.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=19;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (19, 3, 2, -1, 2, 'Terokkar Forest', 530, -1942.000, 4689.000, -2.000, 5.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=20;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (20, 3, 2, -1, 2, 'Zangarmarsh', 530, -217.000, 5488.000, 23.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=21;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (21, 3, 2, -1, 2, 'Shattrath', 530, -1822.000, 5417.000, 1.000, 3.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=22;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (22, 4, 2, -1, 2, 'Borean Tundra', 571, 3230.000, 5279.000, 47.000, 3.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=23;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (23, 4, 2, -1, 2, 'Crystalsong Forest', 571, 5732.000, 1016.000, 175.000, 3.600);
-DELETE FROM `eluna_teleporter` WHERE `id`=24;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (24, 4, 2, -1, 2, 'Dragonblight', 571, 3547.000, 274.000, 46.000, 1.600);
-DELETE FROM `eluna_teleporter` WHERE `id`=25;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (25, 4, 2, -1, 2, 'Grizzly Hills', 571, 3759.000, -2672.000, 177.000, 3.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=26;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (26, 4, 2, -1, 2, 'Howling Fjord', 571, 772.000, -2905.000, 7.000, 5.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=27;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (27, 4, 2, -1, 2, 'Icecrown Glaicer', 571, 8517.000, 676.000, 559.000, 4.700);
-DELETE FROM `eluna_teleporter` WHERE `id`=28;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (28, 4, 2, -1, 2, 'Sholazar Basin', 571, 5571.000, 5739.000, -75.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=29;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (29, 4, 2, -1, 2, 'Storm Peaks', 571, 6121.000, -1025.000, 409.000, 4.700);
-DELETE FROM `eluna_teleporter` WHERE `id`=30;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (30, 4, 2, -1, 2, 'Wintergrasp', 571, 5135.000, 2840.000, 408.000, 3.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=31;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (31, 4, 2, -1, 2, 'Zul\'Drak', 571, 5761.000, -3547.000, 387.000, 5.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=32;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (32, 4, 2, -1, 2, 'Dalaran', 571, 5826.000, 470.000, 659.000, 1.400);
-DELETE FROM `eluna_teleporter` WHERE `id`=33;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (33, 4, 2, -1, 2, 'Argent Tournament', 571, 8385.920, 793.193, 547.293, 1.821);
-DELETE FROM `eluna_teleporter` WHERE `id`=34;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (34, 5, 2, -1, 2, 'Gurubashi Arena', 0, -13229.000, 226.000, 33.000, 1.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=35;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (35, 5, 2, -1, 2, 'Dire Maul Arena', 1, -3669.000, 1094.000, 160.000, 3.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=36;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (36, 5, 2, -1, 2, 'Nagrand Arena', 530, -1983.000, 6562.000, 12.000, 2.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=37;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (37, 5, 2, -1, 2, 'Blade\'s Edge Arena', 530, 2910.000, 5976.000, 2.000, 4.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=80;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (80, 0, 1, -1, 0, 'Dungeons Classic', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=82;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (82, 80, 2, -1, 2, 'Stratholme', 1, -8648.950, -4387.760, -207.950, 3.505);
-DELETE FROM `eluna_teleporter` WHERE `id`=83;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (83, 80, 2, -1, 2, 'Wailing Caverns', 1, -722.530, -2226.300, 16.940, 2.710);
-DELETE FROM `eluna_teleporter` WHERE `id`=84;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (84, 80, 2, -1, 2, 'Deathmines', 0, -11212.040, 1658.580, 25.670, 1.450);
-DELETE FROM `eluna_teleporter` WHERE `id`=85;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (85, 80, 2, -1, 2, 'Shadowfang Keep', 0, -254.470, 1524.680, 76.890, 1.560);
-DELETE FROM `eluna_teleporter` WHERE `id`=86;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (86, 80, 2, -1, 2, 'Blackrockdepths', 1, 4254.580, 664.740, -29.040, 1.970);
-DELETE FROM `eluna_teleporter` WHERE `id`=87;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (87, 80, 2, -1, 2, 'Razorfen Kraul', 1, -4484.040, -1739.400, 86.470, 1.230);
-DELETE FROM `eluna_teleporter` WHERE `id`=88;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (88, 80, 2, -1, 2, 'Razorfen Depths', 1, -4645.080, -2470.850, 85.530, 4.390);
-DELETE FROM `eluna_teleporter` WHERE `id`=89;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (89, 80, 2, -1, 2, 'Scarlet Monastery', 0, 42843.890, -693.740, 139.320, 5.110);
-DELETE FROM `eluna_teleporter` WHERE `id`=90;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (90, 80, 2, -1, 2, 'Uldaman', 1, -6119.700, -2957.300, 204.110, 0.030);
-DELETE FROM `eluna_teleporter` WHERE `id`=92;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (92, 80, 2, -1, 2, 'Mauradon', 1, -1433.330, 2955.340, 96.210, 4.820);
-DELETE FROM `eluna_teleporter` WHERE `id`=93;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (93, 80, 2, -1, 2, 'Sunken Temple', 1, -10346.920, -3851.900, -43.410, 6.090);
-DELETE FROM `eluna_teleporter` WHERE `id`=94;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (94, 80, 2, -1, 2, 'Duesterbruch', 1, -3982.470, 1127.790, 161.020, 0.050);
-DELETE FROM `eluna_teleporter` WHERE `id`=95;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (95, 80, 2, -1, 2, 'Scholomance', 0, 1219.010, -2604.660, 85.610, 0.500);
-DELETE FROM `eluna_teleporter` WHERE `id`=100;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (100, 0, 1, -1, 0, 'Dungeons TBC', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=101;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (101, 100, 2, -1, 2, 'Magisters Terrace', 585, 7.090, -0.450, -2.800, 0.050);
-DELETE FROM `eluna_teleporter` WHERE `id`=102;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (102, 100, 2, -1, 2, 'Hellfirecitadell', 530, -305.816, 3056.402, -2.473, 2.010);
-DELETE FROM `eluna_teleporter` WHERE `id`=103;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (103, 100, 2, -1, 2, 'Coilfang Reservoir', 530, 517.288, 6976.280, 32.007, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=104;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (104, 100, 2, -1, 2, 'Caverns of Time', 1, -8173.660, -4746.360, 33.842, 4.940);
-DELETE FROM `eluna_teleporter` WHERE `id`=150;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (150, 0, 1, -1, 0, 'Dungeons WOTLK', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=151;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (151, 150, 2, -1, 2, 'Halls of Lightning', 571, 9105.720, -1319.860, 1058.390, 5.650);
-DELETE FROM `eluna_teleporter` WHERE `id`=152;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (152, 150, 2, -1, 2, 'Utgarde Tower', 571, 1256.960, -4852.940, 215.550, 3.447);
-DELETE FROM `eluna_teleporter` WHERE `id`=153;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (153, 150, 2, -1, 2, 'Halls of Stone', 571, 8922.450, -1012.960, 1039.590, 1.563);
-DELETE FROM `eluna_teleporter` WHERE `id`=155;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (155, 150, 2, -1, 2, 'Violet Citadel', 571, 5705.190, 517.960, 649.780, 4.031);
-DELETE FROM `eluna_teleporter` WHERE `id`=157;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (157, 150, 2, -1, 2, 'AhnKahet', 571, 3700.870, 2152.580, 36.044, 3.596);
-DELETE FROM `eluna_teleporter` WHERE `id`=158;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (158, 150, 2, -1, 2, 'Azjol Nerub', 571, 3700.870, 2152.580, 36.044, 3.596);
-DELETE FROM `eluna_teleporter` WHERE `id`=160;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (160, 150, 2, -1, 2, 'Utgarde Keep', 571, 1206.940, -4868.050, 41.249, 0.280);
-DELETE FROM `eluna_teleporter` WHERE `id`=161;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (161, 150, 2, -1, 2, 'Utgarde Castle', 571, 1206.940, -4868.050, 41.249, 0.280);
-DELETE FROM `eluna_teleporter` WHERE `id`=200;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (200, 0, 1, -1, 0, 'Raids Classic', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=201;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (201, 200, 2, -1, 2, 'Onyxia', 1, -4707.440, -3726.820, 54.672, 3.800);
-DELETE FROM `eluna_teleporter` WHERE `id`=202;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (202, 200, 2, -1, 2, 'Molten Core', 230, 1121.451, -454.317, -101.330, 3.500);
-DELETE FROM `eluna_teleporter` WHERE `id`=203;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (203, 200, 2, -1, 2, 'Blackwing Lair', 469, -7665.550, -1102.490, 400.679, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=204;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (204, 200, 2, -1, 2, 'RuinsAhn Qiraj', 1, -8409.032, 1498.831, 27.362, 2.498);
-DELETE FROM `eluna_teleporter` WHERE `id`=205;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (205, 200, 2, -1, 2, 'Temple of Ahn Qiraj', 1, -8245.838, 1983.736, 129.072, 0.936);
-DELETE FROM `eluna_teleporter` WHERE `id`=206;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (206, 200, 2, -1, 2, 'Zul Gurub', 0, -11916.700, -1212.820, 92.287, 4.610);
-DELETE FROM `eluna_teleporter` WHERE `id`=250;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (250, 0, 1, -1, 0, 'Raids TBC', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=251;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (251, 250, 2, -1, 2, 'Karazhan', 0, -11118.800, -2010.840, 47.081, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=252;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (252, 250, 2, -1, 2, 'Gruul', 530, 3539.008, 5082.358, 1.691, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=253;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (253, 250, 2, -1, 2, 'The Eye', 530, 3089.579, 1399.047, 187.653, 4.794);
-DELETE FROM `eluna_teleporter` WHERE `id`=255;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (255, 250, 2, -1, 2, 'Black Temple', 530, -3610.719, 324.988, 37.400, 3.283);
-DELETE FROM `eluna_teleporter` WHERE `id`=256;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (256, 250, 2, -1, 2, 'Sun Well', 580, -1790.650, 925.670, 15.150, 3.100);
-DELETE FROM `eluna_teleporter` WHERE `id`=257;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (257, 250, 2, -1, 2, 'Eye of Eternity', 571, 3860.620, 6989.150, 152.042, 5.746);
-DELETE FROM `eluna_teleporter` WHERE `id`=300;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (300, 0, 1, -1, 0, 'Raids WOTLK', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=301;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (301, 300, 2, -1, 2, 'Naxxramas', 571, 3668.711, -1262.582, 243.519, 4.785);
-DELETE FROM `eluna_teleporter` WHERE `id`=302;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (302, 300, 2, -1, 2, 'Obsidian Sanctum', 571, 3483.540, 265.605, -120.144, 3.239);
-DELETE FROM `eluna_teleporter` WHERE `id`=303;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (303, 300, 2, -1, 2, 'Archavons Vault', 571, 5406.720, 2816.980, 418.675, 1.070);
-DELETE FROM `eluna_teleporter` WHERE `id`=304;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (304, 300, 2, -1, 2, 'Ulduar', 571, 9019.790, -1111.280, 1165.280, 6.266);
-DELETE FROM `eluna_teleporter` WHERE `id`=305;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (305, 300, 2, -1, 2, 'ICC', 571, 5796.235, 2074.461, 636.065, 3.577);
-DELETE FROM `eluna_teleporter` WHERE `id`=306;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (306, 300, 2, -1, 2, 'Obsidian Sanctum', 571, 3483.540, 265.605, -120.144, 3.239);
-DELETE FROM `eluna_teleporter` WHERE `id`=400;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (400, 0, 1, -1, 2, 'Level Areas', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=401;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (401, 400, 2, -1, 2, 'Ashzara Crater 1 - 80', 37, 131.000, 1012.000, 295.000, 5.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=410;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (410, 400, 1, -1, 2, 'Hyjal 80 - 130', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=411;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (411, 410, 2, -1, 2, 'Hyjal Start', 1, 4625.877, -3840.538, 943.760, 1.145);
-DELETE FROM `eluna_teleporter` WHERE `id`=420;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (420, 400, 1, -1, 2, 'Strathholme Outside 130 - 160', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=421;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (421, 420, 2, -1, 2, 'Strathholme Start', 329, 3138.680, -3710.410, 133.630, 4.435);
-DELETE FROM `eluna_teleporter` WHERE `id`=500;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (500, 0, 1, -1, 2, 'Custom Locations', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=501;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (501, 500, 2, -1, 2, 'Profession trainers', 37, 43.905, 1172.420, 367.342, 2.560);
-DELETE FROM `eluna_teleporter` WHERE `id`=502;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (502, 500, 2, -1, 2, 'T Vendor Jail - T 11+', 1, 16224.900, 16403.500, -64.379, 6.265);
-DELETE FROM `eluna_teleporter` WHERE `id`=600;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (600, 0, 1, -1, 2, 'Hinterland BG', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=601;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (601, 600, 2, 1, 2, 'Hinterland Outdoor BG Horde', 0, -581.244, -4577.710, 10.215, 0.548);
-DELETE FROM `eluna_teleporter` WHERE `id`=602;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (602, 600, 2, 0, 2, 'Hinterland Outdoor BG Alliance', 0, 62.083, -4714.990, 11.794, 2.508);
-DELETE FROM `eluna_teleporter` WHERE `id`=700;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (700, 0, 1, -1, 2, 'Custom Dungeons', NULL, NULL, NULL, NULL, NULL);
-DELETE FROM `eluna_teleporter` WHERE `id`=701;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (701, 700, 2, -1, 2, 'Nexus - Level 100', 571, 3876.240, 6985.000, 75.680, 0.010);
-DELETE FROM `eluna_teleporter` WHERE `id`=702;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (702, 700, 2, -1, 2, 'The Oculus - Level 100', 571, 3780.600, 6955.630, 104.890, 0.368);
-DELETE FROM `eluna_teleporter` WHERE `id`=703;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (703, 700, 2, -1, 2, 'Gundrak - Level 130', 571, 6936.080, -4436.540, 450.510, 0.770);
-DELETE FROM `eluna_teleporter` WHERE `id`=704;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (704, 700, 2, -1, 2, 'DrakTharon  - Level 130', 571, 4774.320, -2036.680, 229.380, 1.567);
-DELETE FROM `eluna_teleporter` WHERE `id`=705;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (705, 700, 2, -1, 2, 'Auchenai Crypts - Level 160', 530, -3362.536, 5220.664, -101.040, 1.480);
-DELETE FROM `eluna_teleporter` WHERE `id`=706;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (706, 700, 2, -1, 2, 'Mana Tombs - Level 160', 530, -3104.180, 4945.520, -101.507, 6.223);
-DELETE FROM `eluna_teleporter` WHERE `id`=707;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (707, 700, 2, -1, 2, 'Sethekk Halls - Level 160', 530, -3362.200, 4667.120, -101.049, 4.661);
-DELETE FROM `eluna_teleporter` WHERE `id`=708;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (708, 700, 2, -1, 2, 'Shadow Labyrinth - Level 160', 530, -3535.625, 4942.570, -101.400, 0.000);
-DELETE FROM `eluna_teleporter` WHERE `id`=709;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (709, 700, 2, -1, 2, 'Zul`Farrak - Level 190', 1, -6839.390, -2911.030, 8.870, 0.410);
-DELETE FROM `eluna_teleporter` WHERE `id`=710;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (710, 700, 2, -1, 2, 'Zul Aman - Level 220', 530, 6846.950, -7954.500, 170.028, 4.615);
-DELETE FROM `eluna_teleporter` WHERE `id`=711;
-INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES (711, 700, 2, -1, 2, 'Karazhan - Level 250', 0, -11118.800, -2010.840, 47.081, 0.000);
+-- Exportiere Daten aus Tabelle acore_world.eluna_teleporter: ~115 rows (ungefähr)
+INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name`, `map`, `x`, `y`, `z`, `o`) VALUES
+	(1, 0, 1, 1, 0, 'Horde Cities', NULL, NULL, NULL, NULL, NULL),
+	(2, 0, 1, 0, 0, 'Alliance Cities', NULL, NULL, NULL, NULL, NULL),
+	(3, 0, 1, -1, 0, 'Outlands Locations', NULL, NULL, NULL, NULL, NULL),
+	(4, 0, 1, -1, 0, 'Northrend Locations', NULL, NULL, NULL, NULL, NULL),
+	(5, 0, 1, -1, 0, 'PvP Locations', NULL, NULL, NULL, NULL, NULL),
+	(6, 1, 2, 1, 2, 'Orgrimmar', 1, 1503.000, -4415.500, 22.000, 0.000),
+	(7, 1, 2, 1, 2, 'Undercity', 0, 1831.000, 238.500, 61.600, 0.000),
+	(8, 1, 2, 1, 2, 'Thunderbluff', 1, -1278.000, 122.000, 132.000, 0.000),
+	(9, 1, 2, 1, 2, 'Silvermoon', 530, 9484.000, -7294.000, 15.000, 0.000),
+	(10, 2, 2, 0, 2, 'Stormwind', 0, -8905.000, 560.000, 94.000, 0.660),
+	(11, 2, 2, 0, 2, 'Ironforge', 0, -4795.000, -1117.000, 499.000, 0.000),
+	(12, 2, 2, 0, 2, 'Darnassus', 1, 9952.000, 2280.500, 1342.000, 1.600),
+	(13, 2, 2, 0, 2, 'The Exodar', 530, -3863.000, -11736.000, -106.000, 2.000),
+	(14, 3, 2, -1, 2, 'Blade\'s Edge Mountains', 530, 1481.000, 6829.000, 107.000, 6.000),
+	(15, 3, 2, -1, 2, 'Hellfire Peninsula', 530, -249.000, 947.000, 85.000, 2.000),
+	(16, 3, 2, -1, 2, 'Nagrand', 530, -1769.000, 7150.000, -9.000, 2.000),
+	(17, 3, 2, -1, 2, 'Netherstorm', 530, 3043.000, 3645.000, 143.000, 2.000),
+	(18, 3, 2, -1, 2, 'Shadowmoon Valley', 530, -3034.000, 2937.000, 87.000, 5.000),
+	(19, 3, 2, -1, 2, 'Terokkar Forest', 530, -1942.000, 4689.000, -2.000, 5.000),
+	(20, 3, 2, -1, 2, 'Zangarmarsh', 530, -217.000, 5488.000, 23.000, 2.000),
+	(21, 3, 2, -1, 2, 'Shattrath', 530, -1822.000, 5417.000, 1.000, 3.000),
+	(22, 4, 2, -1, 2, 'Borean Tundra', 571, 3230.000, 5279.000, 47.000, 3.000),
+	(23, 4, 2, -1, 2, 'Crystalsong Forest', 571, 5732.000, 1016.000, 175.000, 3.600),
+	(24, 4, 2, -1, 2, 'Dragonblight', 571, 3547.000, 274.000, 46.000, 1.600),
+	(25, 4, 2, -1, 2, 'Grizzly Hills', 571, 3759.000, -2672.000, 177.000, 3.000),
+	(26, 4, 2, -1, 2, 'Howling Fjord', 571, 772.000, -2905.000, 7.000, 5.000),
+	(27, 4, 2, -1, 2, 'Icecrown Glaicer', 571, 8517.000, 676.000, 559.000, 4.700),
+	(28, 4, 2, -1, 2, 'Sholazar Basin', 571, 5571.000, 5739.000, -75.000, 2.000),
+	(29, 4, 2, -1, 2, 'Storm Peaks', 571, 6121.000, -1025.000, 409.000, 4.700),
+	(30, 4, 2, -1, 2, 'Wintergrasp', 571, 5135.000, 2840.000, 408.000, 3.000),
+	(31, 4, 2, -1, 2, 'Zul\'Drak', 571, 5761.000, -3547.000, 387.000, 5.000),
+	(32, 4, 2, -1, 2, 'Dalaran', 571, 5826.000, 470.000, 659.000, 1.400),
+	(33, 4, 2, -1, 2, 'Argent Tournament', 571, 8385.920, 793.193, 547.293, 1.821),
+	(34, 5, 2, -1, 2, 'Gurubashi Arena', 0, -13229.000, 226.000, 33.000, 1.000),
+	(35, 5, 2, -1, 2, 'Dire Maul Arena', 1, -3669.000, 1094.000, 160.000, 3.000),
+	(36, 5, 2, -1, 2, 'Nagrand Arena', 530, -1983.000, 6562.000, 12.000, 2.000),
+	(37, 5, 2, -1, 2, 'Blade\'s Edge Arena', 530, 2910.000, 5976.000, 2.000, 4.000),
+	(80, 0, 1, -1, 0, 'Dungeons Classic', NULL, NULL, NULL, NULL, NULL),
+	(82, 80, 2, -1, 2, 'Stratholme', 1, -8648.950, -4387.760, -207.950, 3.505),
+	(83, 80, 2, -1, 2, 'Wailing Caverns', 1, -722.530, -2226.300, 16.940, 2.710),
+	(84, 80, 2, -1, 2, 'Deathmines', 0, -11212.040, 1658.580, 25.670, 1.450),
+	(85, 80, 2, -1, 2, 'Shadowfang Keep', 0, -254.470, 1524.680, 76.890, 1.560),
+	(86, 80, 2, -1, 2, 'Blackrockdepths', 1, 4254.580, 664.740, -29.040, 1.970),
+	(87, 80, 2, -1, 2, 'Razorfen Kraul', 1, -4484.040, -1739.400, 86.470, 1.230),
+	(88, 80, 2, -1, 2, 'Razorfen Depths', 1, -4645.080, -2470.850, 85.530, 4.390),
+	(89, 80, 2, -1, 2, 'Scarlet Monastery', 0, 42843.890, -693.740, 139.320, 5.110),
+	(90, 80, 2, -1, 2, 'Uldaman', 1, -6119.700, -2957.300, 204.110, 0.030),
+	(92, 80, 2, -1, 2, 'Mauradon', 1, -1433.330, 2955.340, 96.210, 4.820),
+	(93, 80, 2, -1, 2, 'Sunken Temple', 1, -10346.920, -3851.900, -43.410, 6.090),
+	(94, 80, 2, -1, 2, 'Duesterbruch', 1, -3982.470, 1127.790, 161.020, 0.050),
+	(95, 80, 2, -1, 2, 'Scholomance', 0, 1219.010, -2604.660, 85.610, 0.500),
+	(96, 80, 2, -1, 2, 'Zul`Farrak', 1, -6839.390, -2911.030, 8.870, 0.410),
+	(100, 0, 1, -1, 0, 'Dungeons TBC', NULL, NULL, NULL, NULL, NULL),
+	(101, 100, 2, -1, 2, 'Magisters Terrace', 585, 7.090, -0.450, -2.800, 0.050),
+	(102, 100, 2, -1, 2, 'Hellfirecitadell', 530, -305.816, 3056.402, -2.473, 2.010),
+	(103, 100, 2, -1, 2, 'Coilfang Reservoir', 530, 517.288, 6976.280, 32.007, 0.000),
+	(104, 100, 2, -1, 2, 'Caverns of Time', 1, -8173.660, -4746.360, 33.842, 4.940),
+	(105, 100, 2, -1, 2, 'Auchenai Crypts', 530, -3362.536, 5220.664, -101.040, 1.480),
+	(106, 100, 2, -1, 2, 'Mana Tombs', 530, -3104.180, 4945.520, -101.507, 6.223),
+	(107, 100, 2, -1, 2, 'Sethekk Halls', 530, -3362.200, 4667.120, -101.049, 4.661),
+	(108, 100, 2, -1, 2, 'Shadow Labyrinth', 530, -3535.625, 4942.570, -101.400, 0.000),
+	(150, 0, 1, -1, 0, 'Dungeons WOTLK', NULL, NULL, NULL, NULL, NULL),
+	(151, 150, 2, -1, 2, 'Halls of Lightning', 571, 9105.720, -1319.860, 1058.390, 5.650),
+	(152, 150, 2, -1, 2, 'Utgarde Tower', 571, 1256.960, -4852.940, 215.550, 3.447),
+	(153, 150, 2, -1, 2, 'Halls of Stone', 571, 8922.450, -1012.960, 1039.590, 1.563),
+	(155, 150, 2, -1, 2, 'Violet Citadel', 571, 5705.190, 517.960, 649.780, 4.031),
+	(157, 150, 2, -1, 2, 'AhnKahet', 571, 3700.870, 2152.580, 36.044, 3.596),
+	(158, 150, 2, -1, 2, 'Azjol Nerub', 571, 3700.870, 2152.580, 36.044, 3.596),
+	(160, 150, 2, -1, 2, 'Utgarde Keep', 571, 1206.940, -4868.050, 41.249, 0.280),
+	(162, 150, 2, -1, 2, 'Drak Tharon', 571, 4774.259, -2034.602, 229.383, 1.531),
+	(163, 150, 2, -1, 2, 'Culling of Stratholme', 1, -8755.200, -4452.684, -199.923, 4.585),
+	(164, 150, 2, -1, 2, 'Frozen Halls', 571, 5635.780, 2043.861, 798.271, 4.634),
+	(165, 150, 2, -1, 2, 'Trial of the crusader', 571, 8526.346, 735.109, 558.551, 3.476),
+	(166, 150, 2, -1, 2, 'The Nexus', 571, 3876.240, 6985.000, 75.680, 0.010),
+	(167, 150, 2, -1, 2, 'The Oculus', 571, 3780.600, 6955.630, 104.890, 0.368),
+	(168, 150, 2, -1, 2, 'Gundrak', 571, 6936.080, -4436.540, 450.510, 0.770),
+	(169, 150, 2, -1, 2, 'DrakTharon', 571, 4774.320, -2036.680, 229.380, 1.567),
+	(200, 0, 1, -1, 0, 'Raids Classic', NULL, NULL, NULL, NULL, NULL),
+	(201, 200, 2, -1, 2, 'Onyxia', 1, -4707.440, -3726.820, 54.672, 3.800),
+	(202, 200, 2, -1, 2, 'Molten Core', 230, 1121.451, -454.317, -101.330, 3.500),
+	(203, 200, 2, -1, 2, 'Blackwing Lair', 469, -7665.550, -1102.490, 400.679, 0.000),
+	(204, 200, 2, -1, 2, 'RuinsAhn Qiraj', 1, -8409.032, 1498.831, 27.362, 2.498),
+	(205, 200, 2, -1, 2, 'Temple of Ahn Qiraj', 1, -8245.838, 1983.736, 129.072, 0.936),
+	(206, 200, 2, -1, 2, 'Zul Gurub', 0, -11916.700, -1212.820, 92.287, 4.610),
+	(250, 0, 1, -1, 0, 'Raids TBC', NULL, NULL, NULL, NULL, NULL),
+	(251, 250, 2, -1, 2, 'Karazhan', 0, -11118.800, -2010.840, 47.081, 0.000),
+	(252, 250, 2, -1, 2, 'Gruul', 530, 3539.008, 5082.358, 1.691, 0.000),
+	(253, 250, 2, -1, 2, 'The Eye', 530, 3089.579, 1399.047, 187.653, 4.794),
+	(255, 250, 2, -1, 2, 'Black Temple', 530, -3610.719, 324.988, 37.400, 3.283),
+	(256, 250, 2, -1, 2, 'Sun Well', 580, -1790.650, 925.670, 15.150, 3.100),
+	(257, 250, 2, -1, 2, 'Eye of Eternity', 571, 3860.620, 6989.150, 152.042, 5.746),
+	(258, 250, 2, -1, 2, 'Zul Aman', 530, 6846.950, -7954.500, 170.028, 4.615),
+	(259, 250, 2, -1, 2, 'Karazhan', 0, -11118.800, -2010.840, 47.081, 0.000),
+	(300, 0, 1, -1, 0, 'Raids WOTLK', NULL, NULL, NULL, NULL, NULL),
+	(301, 300, 2, -1, 2, 'Naxxramas', 571, 3668.711, -1262.582, 243.519, 4.785),
+	(302, 300, 2, -1, 2, 'Obsidian Sanctum', 571, 3483.540, 265.605, -120.144, 3.239),
+	(303, 300, 2, -1, 2, 'Archavons Vault', 571, 5406.720, 2816.980, 418.675, 1.070),
+	(304, 300, 2, -1, 2, 'Ulduar', 571, 9019.790, -1111.280, 1165.280, 6.266),
+	(305, 300, 2, -1, 2, 'ICC', 571, 5796.235, 2074.461, 636.065, 3.577),
+	(306, 300, 2, -1, 2, 'Obsidian Sanctum', 571, 3483.540, 265.605, -120.144, 3.239),
+	(400, 0, 1, -1, 2, 'Level Areas', NULL, NULL, NULL, NULL, NULL),
+	(401, 400, 2, -1, 2, 'Ashzara Crater 1 - 80', 37, 131.000, 1012.000, 295.000, 5.000),
+	(410, 400, 1, -1, 2, 'Hyjal 80 - 130', NULL, NULL, NULL, NULL, NULL),
+	(411, 410, 2, -1, 2, 'Hyjal Start', 1, 4625.877, -3840.538, 943.760, 1.145),
+	(420, 400, 1, -1, 2, 'Strathholme Outside 130 - 160', NULL, NULL, NULL, NULL, NULL),
+	(421, 420, 2, -1, 2, 'Strathholme Start', 329, 3138.680, -3710.410, 133.630, 4.435),
+	(500, 0, 1, -1, 2, 'Custom Locations', NULL, NULL, NULL, NULL, NULL),
+	(501, 500, 2, -1, 2, 'Profession trainers', 37, 43.905, 1172.420, 367.342, 2.560),
+	(502, 500, 2, -1, 2, 'Jail center', 1, 16224.900, 16403.500, -64.379, 6.265),
+	(503, 500, 2, -1, 2, 'Expisland', 1405, 6010.440, 1518.270, 36.525, 1.714),
+	(504, 500, 2, -1, 2, 'Jadeforest', 745, 900.498, -2649.940, 185.017, 1.289),
+	(600, 0, 1, -1, 2, 'Hinterland BG', NULL, NULL, NULL, NULL, NULL),
+	(601, 600, 2, 1, 2, 'Hinterland Outdoor BG Horde', 0, -628.484, -4684.510, 5.144, 1.125),
+	(602, 600, 2, 0, 2, 'Hinterland Outdoor BG Alliance', 0, 62.083, -4714.990, 11.794, 2.508),
+	(700, 0, 1, -1, 2, 'Custom Dungeons', NULL, NULL, NULL, NULL, NULL);
+
+/*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
+/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
+/*!40014 SET FOREIGN_KEY_CHECKS=IFNULL(@OLD_FOREIGN_KEY_CHECKS, 1) */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40111 SET SQL_NOTES=IFNULL(@OLD_SQL_NOTES, 1) */;
