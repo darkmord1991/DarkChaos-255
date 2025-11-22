@@ -100,7 +100,7 @@ public:
             { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
 
             // Nested 'queue' subtable for player queue actions
-            { "queue", queueSubTable },
+            { "queue", queueSubTable }
         };
 
         static ChatCommandTable commandTable =
