@@ -459,7 +459,7 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            { "season", upgradeSeasonalCommandTable }
+            { "upgradeseason", upgradeSeasonalCommandTable }
         };
 
         return commandTable;
