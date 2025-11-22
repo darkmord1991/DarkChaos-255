@@ -18,12 +18,12 @@ public:
         // named statics instead of temporary initializer lists to avoid dangling references.
         static ChatCommandTable flighthelperSubTable =
         {
-            { "path", HandlePathCommand, SEC_GAMEMASTER, Console::Yes },
+            { "path", HandlePathCommand, SEC_GAMEMASTER, Console::Yes }
         };
 
         static ChatCommandTable table =
         {
-            { "flighthelper", flighthelperSubTable },
+            { "flighthelper", flighthelperSubTable }
         };
         return table;
     }

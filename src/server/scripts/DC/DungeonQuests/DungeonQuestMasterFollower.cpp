@@ -258,7 +258,7 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            { "dcquest", dcquestCommandTable },
+            { "dcquest", dcquestCommandTable }
         };
 
         return commandTable;

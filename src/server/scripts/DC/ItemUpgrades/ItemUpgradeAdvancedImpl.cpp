@@ -549,7 +549,7 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            { "upgradeadv", upgradeAdvancedCommandTable },
+            { "upgradeadv", upgradeAdvancedCommandTable }
         };
 
         return commandTable;

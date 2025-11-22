@@ -79,7 +79,7 @@ public:
 
         // Only expose a separate root to avoid conflicts with other HLBG command trees
         static ChatCommandTable root = {
-            { "hlbglive", liveSub },
+            { "hlbglive", liveSub }
         };
         return root;
     }

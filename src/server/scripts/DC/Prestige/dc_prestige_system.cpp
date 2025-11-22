@@ -805,7 +805,7 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            ChatCommandBuilder("prestige", prestigeCommandTable),
+            ChatCommandBuilder("prestige", prestigeCommandTable)
         };
 
         return commandTable;

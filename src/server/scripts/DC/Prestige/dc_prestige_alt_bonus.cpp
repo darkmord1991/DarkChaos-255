@@ -281,17 +281,17 @@ namespace
         {
             static Acore::ChatCommands::ChatCommandTable altBonusCommandTable =
             {
-                { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Acore::ChatCommands::Console::No },
+                { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Acore::ChatCommands::Console::No }
             };
             
             static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
-                { "altbonus", altBonusCommandTable },
+                { "altbonus", altBonusCommandTable }
             };
             
             static Acore::ChatCommands::ChatCommandTable commandTable =
             {
-                { "prestige", prestigeCommandTable },
+                { "prestige", prestigeCommandTable }
             };
             
             return commandTable;

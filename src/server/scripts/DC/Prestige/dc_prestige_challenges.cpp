@@ -525,17 +525,17 @@ namespace
             {
                 { "start",  HandleChallengeStartCommand,  SEC_PLAYER, Acore::ChatCommands::Console::No },
                 { "status", HandleChallengeStatusCommand, SEC_PLAYER, Acore::ChatCommands::Console::No },
-                { "list",   HandleChallengeListCommand,   SEC_PLAYER, Acore::ChatCommands::Console::No },
+                { "list",   HandleChallengeListCommand,   SEC_PLAYER, Acore::ChatCommands::Console::No }
             };
             
             static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
-                { "challenge", challengeCommandTable },
+                { "challenge", challengeCommandTable }
             };
             
             static Acore::ChatCommands::ChatCommandTable commandTable =
             {
-                { "prestige", prestigeCommandTable },
+                { "prestige", prestigeCommandTable }
             };
             
             return commandTable;
