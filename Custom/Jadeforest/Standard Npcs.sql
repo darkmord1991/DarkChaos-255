@@ -27,11 +27,18 @@ INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `Exte
 -- Panda Bruiser, Guard
 DELETE FROM `creature_template` WHERE (`entry` = 800021);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800021, 0, 0, 0, 0, 0, 'Panda Bruiser', 'DC-WoW', NULL, NULL, 255, 255, 1, 475, 1, 1.2, 1.42857, 1, 1, 18, 1, 0, 0, 10, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 1, 1, 20, 1, 10, 1, 0, 144, 1, 0, 0, 98304, 'jadeforest_guard', 12340);
+(800021, 0, 0, 0, 0, 0, 'Panda Bruiser', 'DC-WoW', NULL, 60000, 255, 255, 1, 475, 1, 1.2, 1.42857, 1, 1, 18, 1, 0, 0, 10, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 1, 1, 20, 1, 10, 1, 0, 144, 1, 0, 0, 98304, 'jadeforest_guard', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800021) AND (`Idx` IN (0));
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (800021, 0, 30414, 2, 1, 12340);
+
+-- Add gossip menu entry
+DELETE FROM `gossip_menu` WHERE `MenuID` = 60000;
+INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES (60000, 160000);
+
+DELETE FROM `npc_text` WHERE `ID` = 160000;
+INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES (160000, 'Greetings, $N!');
 
 -- flightmaster Jadeforest
 DELETE FROM `creature_template` WHERE (`entry` = 800022);

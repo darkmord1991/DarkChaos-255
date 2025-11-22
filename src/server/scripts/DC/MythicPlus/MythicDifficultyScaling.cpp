@@ -13,6 +13,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
+#include "DC/Seasons/SeasonalSystem.h"
 #include <string>
 #include <cmath>
 #include <unordered_set>
@@ -108,14 +109,28 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
 
     LoadScalingMultipliers();
 
+    // Try generic seasonal system first
+    if (DarkChaos::Seasonal::GetSeasonalManager())
+    {
+        auto* activeSeason = DarkChaos::Seasonal::GetSeasonalManager()->GetActiveSeason();
+        if (activeSeason)
+        {
+            _activeSeasonId = activeSeason->season_id;
+            LOG_INFO("server.loading", ">> Active Mythic+ season from generic system (ID {})", _activeSeasonId);
+            return;
+        }
+    }
+
+    // Fallback to M+ specific table (backward compatibility)
     if (QueryResult season = WorldDatabase.Query("SELECT season_id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY start_ts DESC LIMIT 1"))
     {
         _activeSeasonId = (*season)[0].Get<uint32>();
-        LOG_INFO("server.loading", ">> Active Mythic+ season detected (ID {})", _activeSeasonId);
+        LOG_INFO("server.loading", ">> Active Mythic+ season from dc_mplus_seasons (ID {})", _activeSeasonId);
     }
     else
     {
-        LOG_WARN("server.loading", ">> No active Mythic+ season found in dc_mplus_seasons");
+        LOG_WARN("server.loading", ">> No active Mythic+ season found - using default (ID 1)");
+        _activeSeasonId = 1;
     }
 }
 

@@ -144,12 +144,21 @@ set(SCRIPTS_DC_SeasonalSystem
     Seasons/HLBGSeasonalParticipant.cpp
 )
 
+# DC Seasonal Reward System - C++ Core Implementation
+set(SCRIPTS_DC_SeasonalRewards
+    Seasons/SeasonalRewardSystem.h
+    Seasons/SeasonalRewardSystem.cpp
+    Seasons/SeasonalRewardScripts.cpp
+    Seasons/SeasonalRewardCommands.cpp
+)
+
 # DC Mythic+ System - Dungeon Scaling & Keystone System
 set(SCRIPTS_DC_MythicPlus
     MythicPlus/MythicDifficultyScaling.h
     MythicPlus/MythicDifficultyScaling.cpp
     MythicPlus/MythicPlusRunManager.h
     MythicPlus/MythicPlusRunManager.cpp
+    MythicPlus/MythicPlusSeasonalIntegration.cpp
     MythicPlus/go_mythic_plus_font_of_power.cpp
     MythicPlus/npc_mythic_plus_great_vault.cpp
     MythicPlus/mythic_plus_core_scripts.cpp
@@ -166,6 +175,7 @@ set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase4E}
     ${SCRIPTS_DC_ItemUpgrade_Phase4F}
     ${SCRIPTS_DC_SeasonalSystem}
+    ${SCRIPTS_DC_SeasonalRewards}
 )
 
 # Add sources to AzerothCore scripts

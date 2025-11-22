@@ -17,6 +17,8 @@
 #include "DatabaseEnv.h"
 #include "WorldSession.h"
 #include "StringFormat.h"
+#include "Config.h"
+#include "../Seasons/SeasonalSystem.h"
 #include <cmath>
 
 namespace
@@ -325,7 +327,16 @@ bool ItemUpgradeState::SaveToDatabase() const
 
 [[maybe_unused]] static uint32 Mechanics_GetCurrentSeason()
 {
-    return 1; // TODO: wire to seasons DB
+    // Wire to generic seasonal system if available
+    if (DarkChaos::Seasonal::GetSeasonalManager())
+    {
+        auto* activeSeason = DarkChaos::Seasonal::GetSeasonalManager()->GetActiveSeason();
+        if (activeSeason)
+            return activeSeason->season_id;
+    }
+    
+    // Fallback to config or default
+    return sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
 }
 
 // (Do not define a global GetUpgradeManager here; use DarkChaos::ItemUpgrade::GetUpgradeManager())

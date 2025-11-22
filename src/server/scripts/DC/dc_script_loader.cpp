@@ -66,6 +66,8 @@ void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpg
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddMythicPlusScripts(); // location: scripts\DC\MythicPlus\mythic_plus_loader.cpp
+void AddSC_SeasonalRewardScripts(); // location: scripts\DC\Seasons\SeasonalRewardScripts.cpp
+void AddSC_SeasonalRewardCommands(); // location: scripts\DC\Seasons\SeasonalRewardCommands.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -328,5 +330,39 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Mythic+ System");
     }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // Seasonal Reward System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> DC Seasonal Reward System (C++ Core)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">>   Core Features:");
+    LOG_INFO("scripts", ">>     • Token & Essence Rewards (Quest/Creature/Boss)");
+    LOG_INFO("scripts", ">>     • Weekly Cap System (Configurable Limits)");
+    LOG_INFO("scripts", ">>     • Weekly Chest Rewards (3-Slot M+ Vault)");
+    LOG_INFO("scripts", ">>     • Achievement Auto-Tracking");
+    LOG_INFO("scripts", ">>     • AIO Client Communication (Eluna Bridge)");
+    LOG_INFO("scripts", ">>     • Admin Commands (.season)");
+    LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
+    try {
+        AddSC_SeasonalRewardScripts();
+        LOG_INFO("scripts", ">>   ✓ Seasonal reward hooks and player scripts loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal scripts: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal scripts");
+    }
+    try {
+        AddSC_SeasonalRewardCommands();
+        LOG_INFO("scripts", ">>   ✓ Seasonal admin commands loaded (.season)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal commands: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal commands");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Seasonal Reward System: All modules loaded successfully");
+    LOG_INFO("scripts", ">> Client Addon: DC-Seasons (Interface/AddOns/DC-Seasons/)");
+    LOG_INFO("scripts", ">> Eluna Bridge: Custom/Eluna scripts/DC_Seasons_AIO.lua");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }
