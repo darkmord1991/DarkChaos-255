@@ -454,7 +454,7 @@ public:
             { "info",       HandleSeasonInfoCommand,    SEC_PLAYER, Console::No },
             { "leaderboard", HandleLeaderboardCommand,   SEC_PLAYER, Console::No },
             { "history",    HandleHistoryCommand,       SEC_PLAYER, Console::No },
-            { "reset",      HandleSeasonResetCommand,   SEC_ADMINISTRATOR, Console::No },
+            { "reset",      HandleSeasonResetCommand,   SEC_ADMINISTRATOR, Console::No }
         };
 
         static ChatCommandTable commandTable =

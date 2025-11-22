@@ -253,7 +253,7 @@ public:
         static ChatCommandTable dcquestCommandTable =
         {
             { "summon",   HandleSummonQuestMasterCommand,   SEC_PLAYER, Console::No },
-            { "dismiss",  HandleDismissQuestMasterCommand,  SEC_PLAYER, Console::No },
+            { "dismiss",  HandleDismissQuestMasterCommand,  SEC_PLAYER, Console::No }
         };
 
         static ChatCommandTable commandTable =

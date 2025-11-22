@@ -544,7 +544,7 @@ public:
         {
             { "respec",       HandleRespecCommand,      SEC_PLAYER, Console::No },
             { "achievements", HandleAchievementsCommand, SEC_PLAYER, Console::No },
-            { "guild",        HandleGuildStatsCommand,   SEC_PLAYER, Console::No },
+            { "guild",        HandleGuildStatsCommand,   SEC_PLAYER, Console::No }
         };
 
         static ChatCommandTable commandTable =
