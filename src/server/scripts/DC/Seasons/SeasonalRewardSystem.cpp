@@ -83,10 +83,10 @@ namespace DarkChaos
         
         void SeasonalRewardManager::LoadPlayerStats()
         {
-            QueryResult result = CharacterDatabase.Query("SELECT player_guid, season_id, seasonal_tokens_earned, "
-                "seasonal_essence_earned, weekly_tokens_earned, weekly_essence_earned, quests_completed, "
-                "creatures_killed, dungeon_bosses_killed, world_bosses_killed, prestige_level, last_weekly_reset, "
-                "last_updated FROM dc_player_seasonal_stats WHERE season_id = {}", config_.activeSeason);
+            QueryResult result = CharacterDatabase.Query("SELECT player_guid, season_id, total_tokens_earned, "
+                "total_essence_earned, weekly_tokens_earned, weekly_essence_earned, quests_completed, "
+                "bosses_killed, 0, 0, 0, weekly_reset_at, "
+                "last_activity_at FROM dc_player_seasonal_stats WHERE season_id = {}", config_.activeSeason);
             
             if (!result)
             {
@@ -646,7 +646,7 @@ namespace DarkChaos
         void SeasonalRewardManager::SavePlayerStats(const PlayerSeasonStats& stats)
         {
             CharacterDatabase.Execute("REPLACE INTO dc_player_seasonal_stats "
-                "(player_guid, season_id, seasonal_tokens_earned, seasonal_essence_earned, "
+                "(player_guid, season_id, total_tokens_earned, total_essence_earned, "
                 "weekly_tokens_earned, weekly_essence_earned, quests_completed, creatures_killed, "
                 "dungeon_bosses_killed, world_bosses_killed, prestige_level, last_weekly_reset, last_updated) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
