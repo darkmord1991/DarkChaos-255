@@ -23,6 +23,12 @@ set(SCRIPTS_DC_Hotspot
     Hotspot/spell_hotspot_xp_buff.cpp
 )
 
+# Jadeforest Zone scripts
+set(SCRIPTS_DC_Jadeforest
+    Jadeforest/jadeforest_flightmaster.cpp
+    Jadeforest/jadeforest_guards.cpp
+)
+
 # Main AC scripts
 set(SCRIPTS_DC_AC
     AC/ac_guard_npc.cpp
@@ -175,6 +181,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_ItemUpgrade}
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_DungeonEnhancement}
+    ${SCRIPTS_DC_Jadeforest}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

@@ -18,6 +18,8 @@
 
 void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp (C++ linkage)
 void AddSC_flighthelper_test(); // location: scripts\DC\AC\cs_flighthelper_test.cpp
+void AddSC_jadeforest_flightmaster(); // location: scripts\DC\Jadeforest\jadeforest_flightmaster.cpp
+void AddSC_jadeforest_guards(); // location: scripts\DC\Jadeforest\jadeforest_guards.cpp
 void AddSC_npc_thrall_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
 void AddSC_hlbg_commandscript(); // location: scripts\DC\HinterlandBG\hlbg_commandscript.cpp (C++ linkage)
@@ -74,6 +76,20 @@ void AddDCScripts()
     AddSC_flighthelper_test();
     AddSC_dc_login_announce();
     AddSC_ac_quest_npc_800009();
+
+    // Jadeforest Zone
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Jadeforest Zone Scripts");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_jadeforest_flightmaster();
+        AddSC_jadeforest_guards();
+        LOG_INFO("scripts", ">>   ✓ Jadeforest NPCs loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Jadeforest: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Jadeforest");
+    }
     AddSC_aio_bridge();
     AddSC_flightmasters();
     AddSC_ac_aoeloot();
