@@ -179,18 +179,26 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_tiers` (
   `tier_id` tinyint unsigned NOT NULL,
   `tier_name` varchar(100) NOT NULL,
   `description` varchar(255),
-  `min_item_level` smallint unsigned DEFAULT 0,
-  `max_item_level` smallint unsigned DEFAULT 0,
+  `min_ilvl` smallint unsigned DEFAULT 0,
+  `max_ilvl` smallint unsigned DEFAULT 0,
+  `max_upgrade_level` tinyint unsigned NOT NULL DEFAULT 15,
+  `stat_multiplier_max` float NOT NULL DEFAULT 1.5,
+  `upgrade_cost_per_level` int unsigned NOT NULL DEFAULT 100,
+  `source_content` varchar(100) DEFAULT NULL,
+  `is_artifact` tinyint(1) NOT NULL DEFAULT 0,
+  `season` tinyint unsigned NOT NULL DEFAULT 1,
   `is_active` tinyint(1) DEFAULT 1,
-  PRIMARY KEY (`tier_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  PRIMARY KEY (`tier_id`, `season`),
+  KEY `idx_season` (`season`),
+  KEY `idx_active_tiers` (`season`, `is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tier definitions for item upgrade system';
 
-INSERT IGNORE INTO `dc_item_upgrade_tiers` VALUES
-(1, 'Tier 1 - Basic Upgrade', 'Entry-level item upgrades (60 levels)', 0, 9999, 1),
-(2, 'Tier 2 - Advanced Upgrade', 'Advanced item upgrades (15 levels)', 0, 9999, 1),
-(3, 'Tier 3 - Premium Upgrade', 'Premium item upgrades (Reserved)', 0, 9999, 0),
-(4, 'Tier 4 - Expert Upgrade', 'Expert item upgrades (Reserved)', 0, 9999, 0),
-(5, 'Tier 5 - Legendary Upgrade', 'Legendary item upgrades (Reserved)', 0, 9999, 0);
+INSERT IGNORE INTO `dc_item_upgrade_tiers` 
+(`tier_id`, `tier_name`, `description`, `min_ilvl`, `max_ilvl`, `max_upgrade_level`, `stat_multiplier_max`, `upgrade_cost_per_level`, `source_content`, `is_artifact`, `season`, `is_active`) 
+VALUES
+(1, 'Leveling', 'Quest and leveling gear - 6 upgrade levels', 1, 212, 6, 2.0, 50, 'Vanilla/TBC/WotLK', 0, 1, 1),
+(2, 'Heroic', 'Heroic dungeon gear - 15 upgrade levels', 213, 226, 15, 1.5, 100, 'All Content', 0, 1, 1),
+(3, 'Heirloom', 'Heirloom items - 80 upgrade levels (one per player level)', 1, 500, 80, 2.5, 200, 'Heirlooms', 1, 1, 1);
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 5. ITEM TEMPLATES UPGRADE TABLE

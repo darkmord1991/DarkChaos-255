@@ -16,6 +16,8 @@ CREATE TABLE dc_player_keystones (
     last_completed_level TINYINT UNSIGNED DEFAULT 0,
     best_run_level TINYINT UNSIGNED DEFAULT 0,
     last_keystone_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_on BIGINT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp when keystone expires',
+    last_updated INT UNSIGNED DEFAULT 0 COMMENT 'Unix timestamp of last keystone update',
     runs_completed INT UNSIGNED DEFAULT 0,
     runs_failed INT UNSIGNED DEFAULT 0,
     INDEX idx_account (account_id),

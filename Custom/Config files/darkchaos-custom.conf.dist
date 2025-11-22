@@ -1379,6 +1379,244 @@ MythicPlus.OptimizeHooks = 1
 #
 ItemUpgrade.DebugToSay = 0
 
+###########################################################################
+#
+#    SECTION 10: UNIFIED SEASONAL SYSTEM
+#
+#    All seasonal systems (Rewards, M+, Item Upgrades, HLBG) use a unified
+#    season management framework. This ensures all systems transition together
+#    and maintain consistent seasonal progression.
+#
+#    Subsystems:
+#    - Seasonal Rewards: Token/essence rewards from activities
+#    - Mythic+: Seasonal affixes and dungeons
+#    - Item Upgrades: Season-based upgrade paths
+#    - Hinterland BG: Seasonal statistics and rankings
+#
+###########################################################################
+
+#
+#    DarkChaos.ActiveSeasonID
+#        Description: Global active season ID for all seasonal systems
+#                     When changed, ALL systems transition to the new season together.
+#                     This is the single source of truth for season management.
+#                     
+#                     NOTE: Individual systems may override this for backward
+#                     compatibility, but it's recommended to use this unified setting.
+#        Default:     1 (Season 1)
+#        Range:       1 - 99
+#
+DarkChaos.ActiveSeasonID = 1
+
+# -------------------------------------------------------------------------
+# Seasonal Reward System
+# -------------------------------------------------------------------------
+
+#
+#    SeasonalRewards.Enable
+#        Description: Master toggle for the Seasonal Reward system
+#        Default:     1 (Enabled)
+#                     0 (Disabled - no seasonal rewards awarded)
+#
+SeasonalRewards.Enable = 1
+
+#
+#    SeasonalRewards.ActiveSeasonID
+#        Description: [DEPRECATED] Use DarkChaos.ActiveSeasonID instead.
+#                     This setting is maintained for backward compatibility only.
+#                     The system will automatically use DarkChaos.ActiveSeasonID
+#                     if SeasonalManager is available.
+#        Default:     1 (Season 1)
+#        Range:       1 - 99
+#
+SeasonalRewards.ActiveSeasonID = 1
+
+#
+#    SeasonalRewards.TokenItemID
+#        Description: Item ID for Seasonal Tokens (primary currency)
+#                     Players receive this item when earning seasonal tokens.
+#                     Must be a valid item_template entry.
+#        Default:     49426 (Emblem of Frost placeholder)
+#        Range:       Any valid item ID
+#
+SeasonalRewards.TokenItemID = 49426
+
+#
+#    SeasonalRewards.EssenceItemID
+#        Description: Item ID for Seasonal Essence (secondary currency)
+#                     Used for prestige rewards and high-tier upgrades.
+#                     Must be a valid item_template entry.
+#        Default:     47241 (Emblem of Triumph placeholder)
+#        Range:       Any valid item ID
+#
+SeasonalRewards.EssenceItemID = 47241
+
+#
+#    SeasonalRewards.CacheRefreshMinutes
+#        Description: Minutes between reward configuration cache refreshes
+#                     Lower values = more responsive to database changes
+#                     Higher values = better performance
+#        Default:     5 (5 minutes)
+#        Range:       1 - 60
+#
+SeasonalRewards.CacheRefreshMinutes = 5
+
+#
+#    SeasonalRewards.GroupRewardRange
+#        Description: Maximum distance in yards for group reward eligibility
+#                     Group members within this range share creature kill rewards.
+#                     Only applies to group-eligible rewards (group_split_tokens = TRUE).
+#        Default:     100.0 (100 yards)
+#        Range:       40.0 - 200.0
+#
+SeasonalRewards.GroupRewardRange = 100.0
+
+#
+#    SeasonalRewards.AnnounceRewards
+#        Description: Send reward notifications to players
+#                     Shows amount of tokens/essence earned per action.
+#        Default:     1 (Enabled - show reward messages)
+#                     0 (Disabled - silent rewards)
+#
+SeasonalRewards.AnnounceRewards = 1
+
+#
+#    SeasonalRewards.LogTransactions
+#        Description: Enable transaction logging to dc_reward_transactions table
+#                     Tracks all reward grants for auditing and analytics.
+#                     Logs: character_guid, season_id, reward_type, source_type,
+#                           source_id, token_amount, essence_amount, timestamp
+#        Default:     1 (Enabled - full audit trail)
+#                     0 (Disabled - no transaction logging, better performance)
+#
+SeasonalRewards.LogTransactions = 1
+
+#
+#    SeasonalRewards.QuestMultiplier
+#        Description: Global multiplier for quest rewards
+#                     Multiplies base_token_amount and base_essence_amount from
+#                     dc_seasonal_quest_rewards after seasonal_multiplier applied.
+#                     Useful for bonus events or testing.
+#        Default:     1.0 (no bonus)
+#        Range:       0.5 - 10.0 (50% to 10x rewards)
+#
+SeasonalRewards.QuestMultiplier = 1.0
+
+#
+#    SeasonalRewards.CreatureMultiplier
+#        Description: Global multiplier for creature kill rewards
+#                     Multiplies base_token_amount and base_essence_amount from
+#                     dc_seasonal_creature_rewards after seasonal_multiplier applied.
+#        Default:     1.0 (no bonus)
+#        Range:       0.5 - 10.0 (50% to 10x rewards)
+#
+SeasonalRewards.CreatureMultiplier = 1.0
+
+#
+#    SeasonalRewards.WorldBossBonus
+#        Description: Additional bonus multiplier for world bosses (rank 3)
+#                     Applied on top of CreatureMultiplier.
+#                     Encourages world boss participation.
+#        Default:     1.5 (50% bonus)
+#        Range:       1.0 - 5.0 (no bonus to 5x)
+#
+SeasonalRewards.WorldBossBonus = 1.5
+
+#
+#    SeasonalRewards.EventBossBonus
+#        Description: Additional bonus multiplier for seasonal event bosses
+#                     (Ahune, Coren Direbrew, Headless Horseman, Crown Chemical Co.)
+#                     Applied on top of CreatureMultiplier.
+#        Default:     1.25 (25% bonus)
+#        Range:       1.0 - 3.0 (no bonus to 3x)
+#
+SeasonalRewards.EventBossBonus = 1.25
+
+#
+#    SeasonalRewards.DebugMode
+#        Description: Enable verbose debug logging for reward system
+#                     Logs cache operations, reward calculations, and database queries.
+#                     WARNING: Very verbose, causes log spam!
+#        Default:     0 (Disabled - production mode)
+#                     1 (Enabled - debug logging)
+#
+SeasonalRewards.DebugMode = 0
+
+#
+#    SeasonalRewards.MinLevelForRewards
+#        Description: Minimum player level required to receive seasonal rewards
+#                     Players below this level will not earn tokens/essence.
+#                     Prevents low-level exploitation.
+#        Default:     70 (WotLK pre-endgame)
+#        Range:       1 - 255
+#
+SeasonalRewards.MinLevelForRewards = 70
+
+#
+#    SeasonalRewards.MaxTokensPerWeek
+#        Description: Weekly token earning cap per character
+#                     0 = no cap (unlimited earning)
+#                     Prevents excessive grinding and maintains economy balance.
+#                     Reset happens during weekly maintenance (Tuesday 3:00 PM server time).
+#        Default:     0 (No cap - unlimited earning)
+#        Suggested:   5000 (balanced cap for active players)
+#        Range:       0 - 50000 (0 = unlimited)
+#
+SeasonalRewards.MaxTokensPerWeek = 0
+
+#
+#    SeasonalRewards.MaxEssencePerWeek
+#        Description: Weekly essence earning cap per character
+#                     0 = no cap (unlimited earning)
+#                     Essence is more valuable than tokens, typically has lower cap.
+#                     Reset happens during weekly maintenance (Tuesday 3:00 PM server time).
+#        Default:     0 (No cap - unlimited earning)
+#        Suggested:   2500 (balanced cap for active players)
+#        Range:       0 - 10000 (0 = unlimited)
+#
+SeasonalRewards.MaxEssencePerWeek = 0
+
+#
+#    SeasonalRewards.AchievementTracking
+#        Description: Enable achievement progress tracking for seasonal activities
+#                     Updates dc_achievements criteria when enabled.
+#                     Required for seasonal achievement system (IDs 11000-11092).
+#        Default:     1 (Enabled - track achievements)
+#                     0 (Disabled - no achievement integration)
+#
+SeasonalRewards.AchievementTracking = 1
+
+#
+#    SeasonalRewards.AIO.UpdateInterval
+#        Description: Seconds between AIO client UI updates (if AIO enabled)
+#                     Lower values = smoother UI updates, higher server load.
+#                     Only applies if Rochet2 AIO framework is installed.
+#        Default:     2 (2 seconds)
+#        Range:       1 - 10
+#
+SeasonalRewards.AIO.UpdateInterval = 2
+
+#
+#    SeasonalRewards.VaultIntegration
+#        Description: Enable integration with Mythic+ Great Vault system
+#                     Seasonal tokens contribute to weekly vault reward calculations.
+#                     Requires MythicPlus.Vault.Enabled = 1
+#        Default:     1 (Enabled - vault integration active)
+#                     0 (Disabled - seasonal rewards independent from vault)
+#
+SeasonalRewards.VaultIntegration = 1
+
+#
+#    SeasonalRewards.SeasonEndBehavior
+#        Description: How to handle rewards when season ends
+#                     0 = Keep all rewards (no penalty)
+#                     1 = Convert to legacy currency at 50% rate
+#                     2 = Delete all seasonal currency (hard reset)
+#        Default:     0 (Keep rewards - player-friendly)
+#        Range:       0 - 2
+#
+SeasonalRewards.SeasonEndBehavior = 0
+
 # -------------------------------------------------------------------------
 # Extended Features (Loot Suppression, Cancellation, Countdown, Teleportation)
 # -------------------------------------------------------------------------

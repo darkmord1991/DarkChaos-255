@@ -1,8 +1,8 @@
 -- --------------------------------------------------------
 -- Host:                         192.168.178.45
--- Server-Version:               8.0.43-0ubuntu0.24.04.2 - (Ubuntu)
+-- Server-Version:               8.0.44-0ubuntu0.24.04.1 - (Ubuntu)
 -- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.13.0.7152
+-- HeidiSQL Version:             12.13.0.7157
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -1033,7 +1033,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=9000079 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9000127 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1704,6 +1704,28 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_npc_mapping` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_dungeon_setup
+CREATE TABLE IF NOT EXISTS `dc_dungeon_setup` (
+  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
+  `dungeon_name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Display name',
+  `expansion` tinyint unsigned NOT NULL DEFAULT '2' COMMENT 'Expansion identifier (0=Vanilla, 1=TBC, 2=WotLK, ...)',
+  `is_unlocked` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Global unlock gate',
+  `normal_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Allow Normal queue/teleport',
+  `heroic_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Allow Heroic difficulty',
+  `heroic_scaling_mode` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Profile default, 1=Custom scaling, 2=No scaling overrides',
+  `mythic_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Allow Mythic (non keystone)',
+  `mythic_plus_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Allow Mythic+ keystones',
+  `season_lock` int unsigned DEFAULT NULL COMMENT 'Optional season requirement (NULL = always)',
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional admin notes',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`map_id`),
+  KEY `season_lock` (`season_lock`),
+  CONSTRAINT `dc_dungeon_setup_ibfk_1` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE,
+  CONSTRAINT `dc_dungeon_setup_ibfk_2` FOREIGN KEY (`season_lock`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified dungeon availability toggles for Normal/Heroic/Mythic/Mythic+';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_hotspots_active
 CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
   `id` int unsigned NOT NULL COMMENT 'Unique hotspot ID',
@@ -1773,15 +1795,17 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_clones` (
 
 -- Exportiere Struktur von Tabelle acore_world.dc_item_upgrade_costs
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
-  `cost_id` int unsigned NOT NULL AUTO_INCREMENT,
   `tier_id` tinyint unsigned NOT NULL,
   `upgrade_level` tinyint unsigned NOT NULL,
   `token_cost` int unsigned NOT NULL,
   `essence_cost` int unsigned NOT NULL,
+  `ilvl_increase` smallint unsigned DEFAULT '0',
+  `stat_increase_percent` float DEFAULT '0',
+  `season` int unsigned NOT NULL DEFAULT '1',
   `gold_cost` int unsigned DEFAULT '0',
-  PRIMARY KEY (`cost_id`),
+  PRIMARY KEY (`tier_id`,`upgrade_level`,`season`),
   UNIQUE KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB AUTO_INCREMENT=173 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1864,11 +1888,19 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_tiers` (
   `tier_id` tinyint unsigned NOT NULL,
   `tier_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `min_item_level` smallint unsigned DEFAULT '0',
-  `max_item_level` smallint unsigned DEFAULT '0',
+  `min_ilvl` smallint unsigned DEFAULT '0',
+  `max_ilvl` smallint unsigned DEFAULT '0',
+  `max_upgrade_level` tinyint unsigned NOT NULL DEFAULT '15',
+  `stat_multiplier_max` float NOT NULL DEFAULT '1.5',
+  `upgrade_cost_per_level` int unsigned NOT NULL DEFAULT '100',
+  `source_content` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_artifact` tinyint(1) NOT NULL DEFAULT '0',
+  `season` tinyint unsigned NOT NULL DEFAULT '1',
   `is_active` tinyint(1) DEFAULT '1',
-  PRIMARY KEY (`tier_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  PRIMARY KEY (`tier_id`,`season`),
+  KEY `idx_season` (`season`),
+  KEY `idx_active_tiers` (`season`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tier definitions for item upgrade system';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1915,20 +1947,13 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
   `season_id` int unsigned NOT NULL COMMENT 'Season from dc_mplus_seasons',
   `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
   `sort_order` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Display order in UI',
+  `dungeon_name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Display name for UI/GM tools',
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional comments (e.g., rotation theme)',
   PRIMARY KEY (`season_id`,`map_id`),
   KEY `map_id` (`map_id`),
   CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE CASCADE,
   CONSTRAINT `dc_mplus_featured_dungeons_ibfk_2` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Featured dungeons per season for Mythic+ rotation';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_mplus_final_bosses
-CREATE TABLE IF NOT EXISTS `dc_mplus_final_bosses` (
-  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
-  `boss_entry` int unsigned NOT NULL COMMENT 'Creature entry for the final boss variant',
-  PRIMARY KEY (`map_id`,`boss_entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Final boss lookups for Mythic+ token rewards';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2063,6 +2088,27 @@ CREATE TABLE IF NOT EXISTS `dc_upgrade_tracks` (
   KEY `k_active` (`active`),
   KEY `k_season` (`season`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Upgrade track definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_vault_loot_table
+CREATE TABLE IF NOT EXISTS `dc_vault_loot_table` (
+  `item_id` int unsigned NOT NULL COMMENT 'Item entry ID from item_template',
+  `item_level_min` smallint unsigned NOT NULL DEFAULT '190' COMMENT 'Minimum ilvl this item can appear at',
+  `item_level_max` smallint unsigned NOT NULL DEFAULT '300' COMMENT 'Maximum ilvl this item can appear at',
+  `class_mask` int unsigned NOT NULL DEFAULT '0' COMMENT 'Class mask: 1=Warrior, 2=Paladin, 4=Hunter, 8=Rogue, 16=Priest, 32=DK, 64=Shaman, 128=Druid, 256=Mage, 512=Warlock',
+  `spec_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Specific spec name (Arms, Fury, Protection, etc.) or NULL for all specs',
+  `armor_type` enum('Cloth','Leather','Mail','Plate','Misc') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Armor proficiency requirement',
+  `slot_type` enum('Head','Neck','Shoulder','Back','Chest','Wrist','Hands','Waist','Legs','Feet','Finger','Trinket','Weapon','Shield','Offhand','Ranged') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Equipment slot',
+  `role_mask` tinyint unsigned NOT NULL DEFAULT '7' COMMENT 'Role mask: 1=Tank, 2=Healer, 4=DPS, 7=All',
+  `weight` smallint unsigned NOT NULL DEFAULT '100' COMMENT 'Selection weight for random picking (higher = more likely)',
+  `source` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Item source description (ICC, RS, ToC, etc.)',
+  PRIMARY KEY (`item_id`),
+  KEY `idx_class_spec` (`class_mask`,`spec_name`),
+  KEY `idx_armor_slot` (`armor_type`,`slot_type`),
+  KEY `idx_role` (`role_mask`),
+  KEY `idx_ilvl` (`item_level_min`,`item_level_max`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mythic+ Great Vault loot table for spec-based rewards';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2660,7 +2706,7 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `VerifiedBuild` int DEFAULT NULL,
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=5530874 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
+) ENGINE=InnoDB AUTO_INCREMENT=5531135 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

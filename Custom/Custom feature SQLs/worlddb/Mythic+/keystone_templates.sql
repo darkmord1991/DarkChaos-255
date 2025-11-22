@@ -187,7 +187,7 @@ INSERT INTO gameobject_template (entry, type, displayId, name, IconName, castBar
     ScriptName, VerifiedBuild)
 VALUES (300200, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 0, 0, 0, 0, 0, 0, 0, 0, 
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 
-    'go_keystone_pedestal', 0);
+    'go_mythic_plus_font_of_power', 0);
 
 -- ============================================================
 -- PLACEMENT NOTES

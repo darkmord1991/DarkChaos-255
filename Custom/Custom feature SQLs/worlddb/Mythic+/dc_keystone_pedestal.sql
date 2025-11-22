@@ -17,7 +17,7 @@ INSERT INTO gameobject_template (entry, `type`, displayId, name, IconName, castB
     AIName, ScriptName, VerifiedBuild)
 VALUES (300200, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 1.0, 0, 0, 0, 0, 0, 0, 0, 
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 
-    'go_keystone_pedestal', 0);
+    'go_mythic_plus_font_of_power', 0);
 
 -- ============================================================
 -- PLACEMENT NOTES
@@ -28,7 +28,7 @@ VALUES (300200, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 1.0, 0, 0, 0,
  * 1. Use admin command: .gobject add 300200 <x> <y> <z> [map]
  * 2. Example: .gobject add 300200 1234.5 5678.9 12.3 1481  (Siege of Boralus)
  * 
- * The pedestal script (go_keystone_pedestal) handles:
+ * The pedestal script (go_mythic_plus_font_of_power) handles:
  * - Item consumption from player inventory
  * - Run activation and initialization
  * - Keystone timer and difficulty scaling
