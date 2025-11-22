@@ -125,7 +125,7 @@ public:
                 return sSeasonalRewards->ValidateSeasonTransition(player_guid, season_id);
             };
             
-            registration.initialize_player_data = [](uint32 player_guid, uint32 season_id) {
+            registration.initialize_player_data = [](uint32 /*player_guid*/, uint32 /*season_id*/) {
                 // Player stats are auto-initialized on first access
             };
             

@@ -32,7 +32,7 @@ public:
             { "reset",      HandleSeasonResetCommand,       SEC_ADMINISTRATOR, Console::No },
             { "setseason",  HandleSeasonSetSeasonCommand,   SEC_ADMINISTRATOR, Console::No },
             { "multiplier", HandleSeasonMultiplierCommand,  SEC_ADMINISTRATOR, Console::No },
-            { "chest",      HandleSeasonChestCommand,       SEC_PLAYER,        Console::No },
+            { "chest",      HandleSeasonChestCommand,       SEC_PLAYER,        Console::No }
         };
         
         static ChatCommandTable commandTable =
