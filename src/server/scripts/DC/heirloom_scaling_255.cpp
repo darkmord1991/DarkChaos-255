@@ -35,38 +35,12 @@
  *   and extrapolates it with linear scaling for levels 81-255
  * - Maintains proper stat scaling ratios while extending the level range
  * - For bags: increases ContainerSlots based on player level
- * - Queries dc_item_upgrades table to check for secondary stat bonuses
  */
 
 namespace {
-    // Helper to get item upgrade info from database
-    struct HeirloomUpgradeInfo {
-        uint8 upgradeLevel = 0;
-        uint8 tier = 3; // Default to tier 3 for heirlooms
-        bool hasUpgrade = false;
-    };
-
-    constexpr uint32 HEIRLOOM_BAG_MIN_SLOTS   = 12;
+    constexpr uint32 HEIRLOOM_BAG_MIN_SLOTS   = 16;
     constexpr uint32 HEIRLOOM_BAG_MAX_SLOTS   = 36; // Client hard cap
     constexpr uint32 HEIRLOOM_BAG_MAX_LEVEL   = 130;
-
-    HeirloomUpgradeInfo GetHeirloomUpgradeInfo(uint32 itemGUID) {
-        HeirloomUpgradeInfo info;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT upgrade_level, tier_id FROM dc_item_upgrades WHERE item_guid = {}",
-            itemGUID
-        );
-
-        if (result) {
-            Field* fields = result->Fetch();
-            info.upgradeLevel = fields[0].Get<uint8>();
-            info.tier = fields[1].Get<uint8>();
-            info.hasUpgrade = true;
-        }
-
-        return info;
-    }
 
     uint32 CalculateHeirloomBagSlots(uint32 playerLevel)
     {
@@ -264,8 +238,6 @@ public:
         if (!bag)
             return;
 
-        uint32 playerLevel = player->GetLevel();
-        
         ApplyHeirloomBagScaling(player, bag);
     }
 
