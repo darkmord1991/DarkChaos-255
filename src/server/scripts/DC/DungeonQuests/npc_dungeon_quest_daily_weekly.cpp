@@ -39,7 +39,8 @@ private:
     void CheckDailyQuestReset(Player* player)
     {
         // Query player's daily quest progress (use UNIX_TIMESTAMP for consistency)
-    QueryResult result = CharacterDatabase.Query("SELECT daily_quest_entry, completed_today, UNIX_TIMESTAMP(last_completed) FROM dc_player_daily_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
+        std::string sql = Acore::StringFormat("SELECT daily_quest_entry, completed_today, UNIX_TIMESTAMP(last_completed) FROM dc_player_daily_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         if (result)
         {
@@ -68,7 +69,8 @@ private:
     void CheckWeeklyQuestReset(Player* player)
     {
         // Query player's weekly quest progress
-    QueryResult result = CharacterDatabase.Query("SELECT weekly_quest_entry, completed_this_week, UNIX_TIMESTAMP(week_reset_date) FROM dc_player_weekly_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
+        std::string sql = Acore::StringFormat("SELECT weekly_quest_entry, completed_this_week, UNIX_TIMESTAMP(week_reset_date) FROM dc_player_weekly_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         if (result)
         {
@@ -92,10 +94,11 @@ private:
     void ResetDailyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}", 
             player->GetGUID().GetCounter(), questId
         );
+        CharacterDatabase.Execute(sql.c_str());
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A daily dungeon quest is now available!");
@@ -104,10 +107,11 @@ private:
     void ResetWeeklyQuest(Player* player, uint32 questId)
     {
         // Update database: mark not completed
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}", 
             player->GetGUID().GetCounter(), questId
         );
+        CharacterDatabase.Execute(sql.c_str());
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A weekly dungeon quest is now available!");
@@ -116,10 +120,11 @@ private:
     void SaveQuestProgress(Player* player)
     {
         // Update last activity timestamp in player_dungeon_completion_stats
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}", 
             uint32(time(nullptr)), player->GetGUID().GetCounter()
         );
+        CharacterDatabase.Execute(sql.c_str());
     }
 };
 

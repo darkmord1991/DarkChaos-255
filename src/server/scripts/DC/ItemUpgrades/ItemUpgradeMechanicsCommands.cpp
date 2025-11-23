@@ -240,8 +240,10 @@ public:
         uint32 player_guid = target->GetGUID().GetCounter();
 
         // Count items to reset
-        QueryResult result = CharacterDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT COUNT(*) FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
+        
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         uint32 count = 0;
         if (result)
@@ -261,7 +263,8 @@ public:
         // For safety, require second confirmation
         // In a real implementation, would use player session flag
 
-    CharacterDatabase.Execute("DELETE FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
+        std::string deleteSql = Acore::StringFormat("DELETE FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
+        CharacterDatabase.Execute(deleteSql.c_str());
 
         handler->PSendSysMessage("|cff00ff00Successfully reset %u items for %s|r",
             count, target->GetName().c_str());

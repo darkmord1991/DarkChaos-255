@@ -43,7 +43,7 @@ INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES (160000, 'Greetings, $N!');
 -- flightmaster Jadeforest
 DELETE FROM `creature_template` WHERE (`entry` = 800022);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800022, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'acflightmaster0', 12340);
+(800022, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'jadeforest_flightmaster', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800022);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -65,9 +65,9 @@ INSERT INTO creature_template_movement (CreatureId, Ground, Swim, Flight, Rooted
 VALUES (800023, 0, 0, 1, 0, 0, 0);
 
 -- flightmaster Jadeforest 2
-DELETE FROM `creature_template` WHERE (`entry` = 800024);
+DELETE FROM `creature_template` WHERE (`entry` = 800022);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800024, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'acflightmaster0', 12340);
+(800024, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'jadeforest_flightmaster', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800024);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -76,9 +76,9 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (800024, 2, 7104, 1, 1, 12340);
 
 -- flightmaster Jadeforest 3
-DELETE FROM `creature_template` WHERE (`entry` = 800025);
+DELETE FROM `creature_template` WHERE (`entry` = 800022);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800025, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'acflightmaster0', 12340);
+(800025, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'jadeforest_flightmaster', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800025);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -87,9 +87,9 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (800025, 2, 7104, 1, 1, 12340);
 
 -- flightmaster Jadeforest 4
-DELETE FROM `creature_template` WHERE (`entry` = 800026);
+DELETE FROM `creature_template` WHERE (`entry` = 800022);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800026, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'acflightmaster0', 12340);
+(800026, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'jadeforest_flightmaster', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800026);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -98,9 +98,9 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (800026, 2, 7104, 1, 1, 12340);
 
 -- flightmaster Jadeforest 5
-DELETE FROM `creature_template` WHERE (`entry` = 800027);
+DELETE FROM `creature_template` WHERE (`entry` = 800022);
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(800027, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'acflightmaster0', 12340);
+(800027, 0, 0, 0, 0, 0, 'Flightmaster', 'Jadeforest 1', 'Directions', 0, 255, 255, 0, 121, 1, 1, 1.42857, 1, 1, 18, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4624, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 144, 1, 0, 0, 65536, 'jadeforest_flightmaster', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 800027);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES

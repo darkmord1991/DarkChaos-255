@@ -1577,6 +1577,24 @@ SeasonalRewards.MaxTokensPerWeek = 0
 SeasonalRewards.MaxEssencePerWeek = 0
 
 #
+#    SeasonalRewards.WeeklyResetDay
+#        Description: Day of week for weekly reset (0=Sunday, 1=Monday, 2=Tuesday, etc.)
+#                     Weekly caps, quest counters, and vault tracking reset on this day.
+#        Default:     2 (Tuesday - Blizzard-like schedule)
+#        Range:       0 - 6 (Sunday through Saturday)
+#
+SeasonalRewards.WeeklyResetDay = 2
+
+#
+#    SeasonalRewards.WeeklyResetHour
+#        Description: Hour of day for weekly reset (server local time)
+#                     Use 24-hour format: 0-23
+#        Default:     15 (3:00 PM server time)
+#        Range:       0 - 23
+#
+SeasonalRewards.WeeklyResetHour = 15
+
+#
 #    SeasonalRewards.AchievementTracking
 #        Description: Enable achievement progress tracking for seasonal activities
 #                     Updates dc_achievements criteria when enabled.

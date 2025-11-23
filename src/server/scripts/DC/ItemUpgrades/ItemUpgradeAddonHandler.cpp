@@ -176,11 +176,12 @@ private:
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
-            QueryResult result = CharacterDatabase.Query(
+            std::string sql = Acore::StringFormat(
                 "SELECT upgrade_level, tier_id, stat_multiplier "
                 "FROM {} WHERE item_guid = {}",
                 ITEM_UPGRADES_TABLE, itemGUID
             );
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
 
             uint32 upgradeLevel = 0;
             uint32 tier = 1;
@@ -231,9 +232,10 @@ private:
             uint32 baseEntry = currentEntry;
 
             // Always check if current item is a clone (not just when upgradeLevel > 0)
-            if (QueryResult baseResult = WorldDatabase.Query(
+            std::string baseSql = Acore::StringFormat(
                     "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                    currentEntry))
+                    currentEntry);
+            if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
             {
                 baseEntry = (*baseResult)[0].Get<uint32>();
                 uint32 detectedLevel = (*baseResult)[1].Get<uint32>();
@@ -250,9 +252,10 @@ private:
             std::map<uint32, uint32> cloneEntries;
             cloneEntries[0] = baseEntry;
 
-            if (QueryResult cloneResult = WorldDatabase.Query(
+            std::string cloneSql = Acore::StringFormat(
                     "SELECT upgrade_level, clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {}",
-                    baseEntry, tier))
+                    baseEntry, tier);
+            if (QueryResult cloneResult = WorldDatabase.Query(cloneSql.c_str()))
             {
                 do
                 {
@@ -341,11 +344,12 @@ private:
                 uint32 itemGUID = item->GetGUID().GetCounter();
                 uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
 
-                QueryResult result = CharacterDatabase.Query(
+                std::string sql = Acore::StringFormat(
                     "SELECT upgrade_level, tier_id, stat_multiplier "
                     "FROM {} WHERE item_guid = {}",
                     ITEM_UPGRADES_TABLE, itemGUID
                 );
+                QueryResult result = CharacterDatabase.Query(sql.c_str());
 
                 uint32 upgradeLevel = 0;
                 uint32 tier = 1;
@@ -385,9 +389,10 @@ private:
 
                 if (upgradeLevel > 0)
                 {
-                    if (QueryResult baseResult = WorldDatabase.Query(
+                    std::string baseSql = Acore::StringFormat(
                             "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                            currentEntry))
+                            currentEntry);
+                    if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
                     {
                         baseEntry = (*baseResult)[0].Get<uint32>();
                     }
@@ -396,9 +401,10 @@ private:
                 std::map<uint32, uint32> cloneEntries;
                 cloneEntries[0] = baseEntry;
 
-                if (QueryResult cloneResult = WorldDatabase.Query(
+                std::string cloneSql = Acore::StringFormat(
                         "SELECT upgrade_level, clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {}",
-                        baseEntry, tier))
+                        baseEntry, tier);
+                if (QueryResult cloneResult = WorldDatabase.Query(cloneSql.c_str()))
                 {
                     do
                     {
@@ -473,10 +479,11 @@ private:
             std::string baseItemNameRaw = item->GetTemplate()->Name1;
 
             // Get current upgrade state
-            QueryResult stateResult = CharacterDatabase.Query(
+            std::string stateSql = Acore::StringFormat(
                 "SELECT upgrade_level, tier_id FROM {} WHERE item_guid = {}",
                 ITEM_UPGRADES_TABLE, itemGUID
             );
+            QueryResult stateResult = CharacterDatabase.Query(stateSql.c_str());
 
             uint32 currentLevel = 0;
             uint32 tier = 1;
@@ -504,10 +511,11 @@ private:
 
             // Check tier-specific max level from database
             uint32 tierMaxLevel = 15; // default fallback
-            QueryResult tierResult = WorldDatabase.Query(
+            std::string tierSql = Acore::StringFormat(
                 "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
                 tier
             );
+            QueryResult tierResult = WorldDatabase.Query(tierSql.c_str());
             if (tierResult)
             {
                 tierMaxLevel = (*tierResult)[0].Get<uint32>();
@@ -542,11 +550,12 @@ private:
                     baseItemLevel, static_cast<uint8>(currentLevel), static_cast<uint8>(tier));
 
             uint32 nextLevel = currentLevel + 1;
-            QueryResult costResult = WorldDatabase.Query(
+            std::string costSql = Acore::StringFormat(
                 "SELECT SUM(token_cost) AS total_tokens, SUM(essence_cost) AS total_essence "
                 "FROM dc_item_upgrade_costs WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
                 tier, nextLevel, targetLevel
             );
+            QueryResult costResult = WorldDatabase.Query(costSql.c_str());
 
             uint32 tokensNeeded = 0;
             uint32 essenceNeeded = 0;
@@ -605,13 +614,15 @@ private:
             uint32 baseEntry = currentEntry;
             if (currentLevel > 0)
             {
-                QueryResult baseResult = WorldDatabase.Query("SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
+                std::string baseSql = Acore::StringFormat("SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
+                QueryResult baseResult = WorldDatabase.Query(baseSql.c_str());
                 if (baseResult)
                     baseEntry = (*baseResult)[0].Get<uint32>();
             }
 
             // Get clone entry for target level
-            QueryResult cloneResult = WorldDatabase.Query("SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}", baseEntry, tier, targetLevel);
+            std::string cloneSql = Acore::StringFormat("SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}", baseEntry, tier, targetLevel);
+            QueryResult cloneResult = WorldDatabase.Query(cloneSql.c_str());
             if (!cloneResult)
             {
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Clone item not found");
@@ -698,7 +709,7 @@ private:
                 }
             }
 
-            CharacterDatabase.Execute(
+            std::string logSql = Acore::StringFormat(
                 "INSERT INTO {} (player_guid, item_guid, item_id, upgrade_from, upgrade_to, essence_cost, token_cost, "
                 "base_ilvl, old_ilvl, new_ilvl, old_stat_multiplier, new_stat_multiplier, timestamp, season_id) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {:.6f}, {:.6f}, {}, {})",
@@ -709,6 +720,7 @@ private:
                 static_cast<double>(oldStatMultiplier), static_cast<double>(statMultiplier),
                 static_cast<uint32>(now), season
             );
+            CharacterDatabase.Execute(logSql.c_str());
 
             // Send success response via SYSTEM chat
             std::ostringstream successMsg;

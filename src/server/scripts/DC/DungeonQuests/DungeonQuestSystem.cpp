@@ -34,7 +34,8 @@ public:
     // Get token rewards for a daily quest
     static uint32 GetDailyQuestTokenReward(uint32 questId)
     {
-        QueryResult result = WorldDatabase.Query("SELECT token_amount FROM dc_daily_quest_token_rewards WHERE quest_id = {}", questId);
+        std::string sql = Acore::StringFormat("SELECT token_amount FROM dc_daily_quest_token_rewards WHERE quest_id = {}", questId);
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         if (result)
         {
             Field* fields = result->Fetch();
@@ -46,7 +47,8 @@ public:
     // Get token rewards for a weekly quest
     static uint32 GetWeeklyQuestTokenReward(uint32 questId)
     {
-        QueryResult result = WorldDatabase.Query("SELECT token_amount FROM dc_weekly_quest_token_rewards WHERE quest_id = {}", questId);
+        std::string sql = Acore::StringFormat("SELECT token_amount FROM dc_weekly_quest_token_rewards WHERE quest_id = {}", questId);
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         if (result)
         {
             Field* fields = result->Fetch();
@@ -70,9 +72,10 @@ public:
     // v4.0: Get difficulty from quest ID
     static QuestDifficulty GetQuestDifficulty(uint32 questId)
     {
-        QueryResult result = WorldDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
         );
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         
         if (result)
         {
@@ -87,10 +90,11 @@ public:
     // v4.0: Get difficulty configuration
     static float GetDifficultyTokenMultiplier(QuestDifficulty difficulty)
     {
-        QueryResult result = WorldDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
             static_cast<uint32>(difficulty)
         );
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         
         if (result)
         {
@@ -103,10 +107,11 @@ public:
     
     static float GetDifficultyGoldMultiplier(QuestDifficulty difficulty)
     {
-        QueryResult result = WorldDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
             static_cast<uint32>(difficulty)
         );
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         
         if (result)
         {
@@ -148,9 +153,10 @@ public:
     // v4.0: Get dungeon ID from quest ID
     static uint32 GetDungeonIdFromQuest(uint32 questId)
     {
-        QueryResult result = WorldDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT dungeon_id FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
         );
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         
         if (result)
         {
@@ -177,7 +183,7 @@ public:
         }
         
         // Update completion tracking
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "INSERT INTO dc_character_difficulty_completions "
             "(guid, dungeon_id, difficulty, total_completions, last_completion_date) "
             "VALUES ({}, {}, '{}', 1, NOW()) "
@@ -188,6 +194,7 @@ public:
             dungeonId,
             difficultyStr
         );
+        CharacterDatabase.Execute(sql.c_str());
     }
 
     // Update dungeon progress
@@ -196,11 +203,12 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "INSERT INTO dc_character_dungeon_progress (guid, dungeon_id, quest_id, completion_count, last_update) "
             "VALUES ({}, {}, {}, 1, NOW()) "
             "ON DUPLICATE KEY UPDATE completion_count = completion_count + 1, last_update = NOW()",
             player->GetGUID().GetCounter(), dungeonId, questId);
+        CharacterDatabase.Execute(sql.c_str());
     }
 
     // Log quest completion
@@ -209,10 +217,11 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "INSERT INTO dc_character_dungeon_quests_completed (guid, quest_id, completion_time) "
             "VALUES ({}, {}, NOW())",
             player->GetGUID().GetCounter(), questId);
+        CharacterDatabase.Execute(sql.c_str());
     }
 
     // Update statistics
@@ -221,11 +230,12 @@ public:
         if (!player)
             return;
 
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "INSERT INTO dc_character_dungeon_statistics (guid, stat_name, stat_value, last_update) "
             "VALUES ({}, '{}', {}, NOW()) "
             "ON DUPLICATE KEY UPDATE stat_value = stat_value + {}, last_update = NOW()",
             player->GetGUID().GetCounter(), stat_name, value, value);
+        CharacterDatabase.Execute(sql.c_str());
     }
 
     // Get statistic value
@@ -234,9 +244,10 @@ public:
         if (!player)
             return 0;
 
-        QueryResult result = CharacterDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = '{}'",
             player->GetGUID().GetCounter(), stat_name);
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         if (result)
         {
@@ -252,9 +263,10 @@ public:
         if (!player)
             return 0;
 
-        QueryResult result = CharacterDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {}",
             player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         if (result)
         {
@@ -563,7 +575,8 @@ private:
 
         for (const auto& tableName : charTables)
         {
-            QueryResult result = CharacterDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
+            std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
             if (!result)
             {
                 LOG_ERROR("server.loading", "DungeonQuest: Missing character table: {}", tableName);
@@ -580,7 +593,8 @@ private:
 
         for (const auto& tableName : worldTables)
         {
-            QueryResult result = WorldDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
+            std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
+            QueryResult result = WorldDatabase.Query(sql.c_str());
             if (!result)
             {
                 LOG_ERROR("server.loading", "DungeonQuest: Missing world table: {}", tableName);

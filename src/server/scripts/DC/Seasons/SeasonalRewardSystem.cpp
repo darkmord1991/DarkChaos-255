@@ -83,10 +83,12 @@ namespace DarkChaos
         
         void SeasonalRewardManager::LoadPlayerStats()
         {
-            QueryResult result = CharacterDatabase.Query("SELECT player_guid, season_id, total_tokens_earned, "
+            std::string sql = Acore::StringFormat("SELECT player_guid, season_id, total_tokens_earned, "
                 "total_essence_earned, weekly_tokens_earned, weekly_essence_earned, quests_completed, "
                 "bosses_killed, 0, 0, 0, weekly_reset_at, "
                 "last_activity_at FROM dc_player_seasonal_stats WHERE season_id = {}", config_.activeSeason);
+            
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
             
             if (!result)
             {
@@ -129,7 +131,8 @@ namespace DarkChaos
             }
             
             // Load quest rewards
-            QueryResult questResult = WorldDatabase.Query("SELECT quest_id, base_token_amount, base_essence_amount FROM dc_seasonal_quest_rewards WHERE season_id = {}", config_.activeSeason);
+            std::string questSql = Acore::StringFormat("SELECT quest_id, base_token_amount, base_essence_amount FROM dc_seasonal_quest_rewards WHERE season_id = {}", config_.activeSeason);
+            QueryResult questResult = WorldDatabase.Query(questSql.c_str());
             if (questResult)
             {
                 uint32 questCount = 0;
@@ -146,7 +149,8 @@ namespace DarkChaos
             }
             
             // Load creature rewards
-            QueryResult creatureResult = WorldDatabase.Query("SELECT creature_id, base_token_amount, base_essence_amount FROM dc_seasonal_creature_rewards WHERE season_id = {}", config_.activeSeason);
+            std::string creatureSql = Acore::StringFormat("SELECT creature_id, base_token_amount, base_essence_amount FROM dc_seasonal_creature_rewards WHERE season_id = {}", config_.activeSeason);
+            QueryResult creatureResult = WorldDatabase.Query(creatureSql.c_str());
             if (creatureResult)
             {
                 uint32 creatureCount = 0;
@@ -448,11 +452,12 @@ namespace DarkChaos
             PlayerSeasonStats* stats = GetOrCreatePlayerStats(player);
             
             // Archive previous week
-            CharacterDatabase.Execute("INSERT INTO dc_player_weekly_cap_snapshot "
+            std::string sql = Acore::StringFormat("INSERT INTO dc_player_weekly_cap_snapshot "
                 "(player_guid, season_id, week_timestamp, tokens_earned, essence_earned, dungeons_completed) "
                 "VALUES ({}, {}, {}, {}, {}, {})",
                 stats->playerGuid, stats->seasonId, stats->lastWeeklyReset,
                 stats->weeklyTokensEarned, stats->weeklyEssenceEarned, stats->dungeonBossesKilled);
+            CharacterDatabase.Execute(sql.c_str());
             
             // Generate weekly chest before reset
             GenerateWeeklyChest(player);
@@ -518,13 +523,14 @@ namespace DarkChaos
             }
             
             // Save to database
-            CharacterDatabase.Execute("INSERT INTO dc_player_seasonal_chests "
+            std::string sql = Acore::StringFormat("INSERT INTO dc_player_seasonal_chests "
                 "(player_guid, season_id, week_timestamp, slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, "
                 "slot3_tokens, slot3_essence, slots_unlocked, collected) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, 0)",
                 chest.playerGuid, chest.seasonId, chest.weekTimestamp,
                 chest.slot1Tokens, chest.slot1Essence, chest.slot2Tokens, chest.slot2Essence,
                 chest.slot3Tokens, chest.slot3Essence, chest.slotsUnlocked);
+            CharacterDatabase.Execute(sql.c_str());
             
             weeklyChests_[chest.playerGuid] = chest;
             
@@ -550,9 +556,10 @@ namespace DarkChaos
             
             // Mark as collected
             chest->collected = true;
-            CharacterDatabase.Execute("UPDATE dc_player_seasonal_chests SET collected = 1 "
+            std::string sql = Acore::StringFormat("UPDATE dc_player_seasonal_chests SET collected = 1 "
                 "WHERE player_guid = {} AND season_id = {} AND week_timestamp = {}",
                 chest->playerGuid, chest->seasonId, chest->weekTimestamp);
+            CharacterDatabase.Execute(sql.c_str());
             
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Weekly chest collected! Received {} tokens and {} essence.|r",
                 totalTokens, totalEssence);
@@ -571,11 +578,13 @@ namespace DarkChaos
                 return &it->second;
             
             // Load from database
-            QueryResult result = CharacterDatabase.Query("SELECT week_timestamp, slot1_tokens, slot1_essence, "
+            std::string sql = Acore::StringFormat("SELECT week_timestamp, slot1_tokens, slot1_essence, "
                 "slot2_tokens, slot2_essence, slot3_tokens, slot3_essence, slots_unlocked, collected "
                 "FROM dc_player_seasonal_chests WHERE player_guid = {} AND season_id = {} AND collected = 0 "
                 "ORDER BY week_timestamp DESC LIMIT 1",
                 playerGuid, config_.activeSeason);
+            
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
             
             if (!result)
                 return nullptr;
@@ -645,7 +654,7 @@ namespace DarkChaos
         
         void SeasonalRewardManager::SavePlayerStats(const PlayerSeasonStats& stats)
         {
-            CharacterDatabase.Execute("REPLACE INTO dc_player_seasonal_stats "
+            std::string sql = Acore::StringFormat("REPLACE INTO dc_player_seasonal_stats "
                 "(player_guid, season_id, total_tokens_earned, total_essence_earned, "
                 "weekly_tokens_earned, weekly_essence_earned, quests_completed, creatures_killed, "
                 "dungeon_bosses_killed, world_bosses_killed, prestige_level, last_weekly_reset, last_updated) "
@@ -654,6 +663,7 @@ namespace DarkChaos
                 stats.weeklyTokensEarned, stats.weeklyEssenceEarned, stats.questsCompleted, stats.creaturesKilled,
                 stats.dungeonBossesKilled, stats.worldBossesKilled, stats.prestigeLevel,
                 stats.lastWeeklyReset, stats.lastUpdated);
+            CharacterDatabase.Execute(sql.c_str());
         }
         
         // =====================================================================
@@ -715,13 +725,15 @@ namespace DarkChaos
             uint32 playerGuid = player->GetGUID().GetCounter();
             
             // Archive to history
-            CharacterDatabase.Execute("INSERT INTO dc_player_seasonal_stats_history "
+            std::string archiveSql = Acore::StringFormat("INSERT INTO dc_player_seasonal_stats_history "
                 "SELECT * FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
                 playerGuid, config_.activeSeason);
+            CharacterDatabase.Execute(archiveSql.c_str());
             
             // Delete current stats
-            CharacterDatabase.Execute("DELETE FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
+            std::string deleteSql = Acore::StringFormat("DELETE FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
                 playerGuid, config_.activeSeason);
+            CharacterDatabase.Execute(deleteSql.c_str());
             
             // Remove from cache
             playerStats_.erase(playerGuid);
@@ -797,22 +809,25 @@ namespace DarkChaos
         
         void SeasonalRewardManager::LogTransaction(const RewardTransaction& transaction)
         {
-            CharacterDatabase.Execute("INSERT INTO dc_reward_transactions "
+            std::string sql = Acore::StringFormat("INSERT INTO dc_reward_transactions "
                 "(player_guid, season_id, source, source_id, tokens_awarded, essence_awarded, timestamp) "
                 "VALUES ({}, {}, '{}', {}, {}, {}, {})",
                 transaction.playerGuid, transaction.seasonId, transaction.source,
                 transaction.sourceId, transaction.tokensAwarded, transaction.essenceAwarded,
                 transaction.timestamp);
+            CharacterDatabase.Execute(sql.c_str());
         }
         
         std::vector<RewardTransaction> SeasonalRewardManager::GetPlayerTransactions(uint32 playerGuid, uint32 limit)
         {
             std::vector<RewardTransaction> transactions;
             
-            QueryResult result = CharacterDatabase.Query("SELECT season_id, source, source_id, tokens_awarded, "
+            std::string sql = Acore::StringFormat("SELECT season_id, source, source_id, tokens_awarded, "
                 "essence_awarded, timestamp FROM dc_reward_transactions WHERE player_guid = {} "
                 "ORDER BY timestamp DESC LIMIT {}",
                 playerGuid, limit);
+            
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
             
             if (!result)
                 return transactions;
@@ -914,9 +929,10 @@ namespace DarkChaos
             questRewards_.clear();
             creatureRewards_.clear();
             
-            QueryResult questResult = WorldDatabase.Query(
+            std::string questSql = Acore::StringFormat(
                 "SELECT quest_id, token_reward, essence_reward FROM dc_seasonal_quest_rewards WHERE season_id = {}", 
                 season_id);
+            QueryResult questResult = WorldDatabase.Query(questSql.c_str());
             if (questResult)
             {
                 uint32 count = 0;
@@ -929,9 +945,10 @@ namespace DarkChaos
                 LOG_INFO("module", ">> [SeasonalRewards] Loaded {} quest rewards for season {}", count, season_id);
             }
             
-            QueryResult creatureResult = WorldDatabase.Query(
+            std::string creatureSql = Acore::StringFormat(
                 "SELECT creature_entry, token_reward, essence_reward FROM dc_seasonal_creature_rewards WHERE season_id = {}", 
                 season_id);
+            QueryResult creatureResult = WorldDatabase.Query(creatureSql.c_str());
             if (creatureResult)
             {
                 uint32 count = 0;

@@ -315,6 +315,14 @@ namespace HLBGAddon
         stmt->SetData(index++, per);
         stmt->SetData(index++, offset);
         
+        // Get total count for pagination
+        std::string countQuery = "SELECT COUNT(*) FROM hlbg_winner_history h";
+        if (season > 0) countQuery += " WHERE h.season=" + std::to_string(season);
+        
+        uint32 totalRows = 0;
+        QueryResult countRes = CharacterDatabase.Query(countQuery);
+        if (countRes) totalRows = countRes->Fetch()[0].Get<uint32>();
+
         PreparedQueryResult rs = CharacterDatabase.Query(stmt);
         if (!rs)
         {
@@ -323,7 +331,7 @@ namespace HLBGAddon
             return true;
         }
         std::string tsv = HLBGAddon::BuildHistoryTsv(rs);
-        std::string msg = std::string("[HLBG_HISTORY_TSV] ") + tsv;
+        std::string msg = std::string("[HLBG_HISTORY_TSV] TOTAL=") + std::to_string(totalRows) + "||" + tsv;
         ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
         return true;
     }

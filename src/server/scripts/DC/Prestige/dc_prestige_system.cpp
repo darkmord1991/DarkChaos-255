@@ -171,7 +171,8 @@ public:
             return it->second;
 
         // Query from database - guid is uint32 so SQL injection is not possible
-        QueryResult result = CharacterDatabase.Query("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        std::string sql = Acore::StringFormat("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
         uint32 level = 0;
         if (result)
         {
@@ -190,9 +191,10 @@ public:
         uint32 guid = player->GetGUID().GetCounter();
         
         // All parameters are uint32 so SQL injection is not possible with StringFormat
-        CharacterDatabase.Execute(
+        std::string sql = Acore::StringFormat(
             "REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())", 
             guid, level, level);
+        CharacterDatabase.Execute(sql.c_str());
         
         prestigeCache[guid] = level;
     }
@@ -311,10 +313,11 @@ public:
         // Log to database
         try
         {
-            CharacterDatabase.Execute(
+            std::string sql = Acore::StringFormat(
                 "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
                 player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
             );
+            CharacterDatabase.Execute(sql.c_str());
         }
         catch (...)
         {
@@ -337,10 +340,11 @@ public:
         float x = 0, y = 0, z = 0, o = 0;
         
         // Get starting location from playercreateinfo table based on race AND class
-        QueryResult result = WorldDatabase.Query(
+        std::string sql = Acore::StringFormat(
             "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} AND class = {} LIMIT 1", 
             player->getRace(), player->getClass()
         );
+        QueryResult result = WorldDatabase.Query(sql.c_str());
         
         if (result)
         {
@@ -354,10 +358,11 @@ public:
         else
         {
             // Try to find any entry for this race as fallback
-            result = WorldDatabase.Query(
+            std::string sql = Acore::StringFormat(
                 "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} LIMIT 1", 
                 player->getRace()
             );
+            result = WorldDatabase.Query(sql.c_str());
             
             if (result)
             {
