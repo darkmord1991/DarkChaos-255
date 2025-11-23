@@ -11,6 +11,7 @@
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "DatabaseEnv.h"
+#include "Chat.h"
 
 /*
  * Heirloom Scaling Extension to Level 255
@@ -73,10 +74,19 @@ namespace {
             return;
 
         uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
-        if (bag->GetBagSize() == desiredSlots)
+        uint32 currentSlots = bag->GetBagSize();
+        
+        if (currentSlots == desiredSlots)
             return;
 
+        // Update the bag slot count
         bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, desiredSlots);
+        
+        // Save the updated bag to database
+        bag->SaveToDB(nullptr);
+        
+        // Force update the player's inventory to reflect changes
+        player->SetUInt32Value(PLAYER_FIELD_NUM_RESPECS, player->GetUInt32Value(PLAYER_FIELD_NUM_RESPECS));
     }
 
     void ApplyHeirloomBagScaling(Player* player)
@@ -265,6 +275,23 @@ public:
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
         ApplyHeirloomBagScaling(player);
+        
+        // Send a message to player about bag slots update (if changed)
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        {
+            if (Bag* bag = player->GetBagByPos(slot))
+            {
+                ItemTemplate const* proto = bag->GetTemplate();
+                if (proto && proto->Quality == ITEM_QUALITY_HEIRLOOM && proto->Class == ITEM_CLASS_CONTAINER)
+                {
+                    uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
+                    if (bag->GetBagSize() != desiredSlots)
+                    {
+                        ChatHandler(player->GetSession()).PSendSysMessage("Your heirloom bag has been upgraded! Relog or re-equip to see the new slots.");
+                    }
+                }
+            }
+        }
     }
 
     void OnPlayerLogin(Player* player) override
