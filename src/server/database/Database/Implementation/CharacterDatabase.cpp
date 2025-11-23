@@ -669,10 +669,16 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "INSERT INTO dc_token_rewards_log (character_guid, map_id, difficulty, keystone_level, player_level, tokens_awarded, boss_entry) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
-        
+
     PrepareStatement(CHAR_SEL_MPLUS_VAULT_REWARDS,
         "SELECT item_id, item_level FROM dc_vault_reward_pool WHERE character_guid = ? AND season_id = ? AND week_start = ? ORDER BY slot_index",
         CONNECTION_SYNCH);
+
+    // Hinterland Battleground (HLBG)
+    PrepareStatement(CHAR_INS_HLBG_WINNER_HISTORY,
+        "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

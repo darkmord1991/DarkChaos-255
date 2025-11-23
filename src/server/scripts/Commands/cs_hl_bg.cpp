@@ -302,20 +302,6 @@ public:
         {
             if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
             {
-                // Before resetting, persist a 'manual' reset entry (no winner, capture current scores)
-                uint32 a = hl->GetResources(TEAM_ALLIANCE);
-                uint32 h = hl->GetResources(TEAM_HORDE);
-                uint32 mapId = 0;
-                if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-                    if (Map* m = admin->GetMap()) mapId = m->GetId();
-                uint32 dur = hl->GetCurrentMatchDurationSeconds();
-                uint32 season = hl->GetSeason();
-                    // Column order: zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds
-                    // Ensure placeholders align so win_reason receives the quoted string 'manual'
-                    std::string sql = Acore::StringFormat("INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) VALUES({}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
-                        OutdoorPvPHLBuffZones[0], mapId, season, uint8(TEAM_NEUTRAL), a, h, "manual", 0, 0, 0.0f, dur);
-                    CharacterDatabase.Execute(sql.c_str());
-
                 hl->ForceReset();
                 // Teleport players back to start positions configured in the OutdoorPvP script
                 hl->TeleportPlayersToStart();

@@ -12,8 +12,97 @@
     Date: November 22, 2025
 ]]--
 
-local AIO = AIO or require("AIO")
-local DC_Seasons = AIO.AddAddon()
+local okAIO, AIO = pcall(function()
+    return AIO or require("AIO")
+end)
+
+if not okAIO or not AIO then
+    local candidates = {
+        "AIO.lua",
+        "Custom/Eluna scripts/AIO.lua",
+        "Custom/RochetAio/AIO-master/AIO.lua",
+        "../AIO.lua"
+    }
+    for _, path in ipairs(candidates) do
+        local ok = pcall(dofile, path)
+        if ok and _G.AIO then
+            AIO = _G.AIO
+            break
+        end
+    end
+end
+
+if not AIO or type(AIO.AddHandlers) ~= "function" then
+    print("[DC-Seasons AIO] ERROR: Rochet2 AIO not available; bridge disabled")
+    return
+end
+
+local IS_SERVER = AIO.IsServer and AIO.IsServer()
+if not IS_SERVER or type(RegisterPlayerEvent) ~= "function" then
+    print("[DC-Seasons AIO] INFO: Client context detected; skipping server bridge load")
+    return
+end
+
+local function NormalizePath(path)
+    return path and path:gsub("\\", "/") or nil
+end
+
+local function ResolveAddonPath()
+    local info = debug.getinfo(1, "S")
+    local src = info and info.source or ""
+    if src:sub(1, 1) == "@" then
+        src = src:sub(2)
+    end
+    src = NormalizePath(src)
+    local baseDir = src and src:match("(.*/)") or ""
+    local candidateRoots = {
+        baseDir,
+        baseDir .. "../",
+        baseDir .. "../../",
+        "",
+        "lua_scripts/",
+        "./",
+    }
+    local relativeTargets = {
+        "DC-Seasons.lua",
+        "DC-Seasons/DC-Seasons.lua",
+        "Client addons needed/DC-Seasons/DC-Seasons.lua",
+        "Custom/Client addons needed/DC-Seasons/DC-Seasons.lua",
+        "Interface/AddOns/DC-Seasons/DC-Seasons.lua",
+        "addons/DC-Seasons/DC-Seasons.lua"
+    }
+    local checked = {}
+    for _, root in ipairs(candidateRoots) do
+        for _, target in ipairs(relativeTargets) do
+            local candidate = NormalizePath(root .. target)
+            if candidate and not checked[candidate] then
+                checked[candidate] = true
+                local file = io.open(candidate, "r")
+                if file then
+                    file:close()
+                    return candidate
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local ADDON_NAME = "DC-Seasons"
+local HANDLER_NAME = "DC_Seasons"
+local ADDON_PATH = ResolveAddonPath()
+
+-- Register this file as an addon payload so clients receive the code (server only)
+if AIO.AddAddon then
+    if ADDON_PATH then
+        AIO.AddAddon(ADDON_PATH, ADDON_NAME)
+        print(string.format("[DC-Seasons AIO] Addon payload registered from '%s'", ADDON_PATH))
+    else
+        print("[DC-Seasons AIO] WARNING: Unable to locate DC-Seasons addon payload; AIO clients will not receive UI code")
+    end
+end
+
+local DC_Seasons = AIO.AddHandlers(HANDLER_NAME, {}) or {}
 
 -- =====================================================================
 -- Configuration
@@ -32,6 +121,57 @@ local function DebugLog(msg)
     if CONFIG.DEBUG then
         print("[DC-Seasons AIO] " .. msg)
     end
+end
+
+local function SafeSendToClient(player, handler, ...)
+    if not player or type(AIO.Handle) ~= "function" then
+        return
+    end
+    local ok, err = pcall(AIO.Handle, player, HANDLER_NAME, handler, ...)
+    if not ok then
+        print(string.format("[DC-Seasons AIO] ERROR sending '%s' to %s: %s", handler, player and player:GetName() or "<nil>", err))
+    end
+end
+
+local function ClampStats(stats)
+    stats = stats or {}
+    return {
+        weeklyTokens = stats.weeklyTokens or 0,
+        weeklyEssence = stats.weeklyEssence or 0,
+        weeklyTokenCap = stats.weeklyTokenCap or 0,
+        weeklyEssenceCap = stats.weeklyEssenceCap or 0,
+        quests = stats.quests or 0,
+        worldBosses = stats.worldBosses or 0,
+        dungeonBosses = stats.dungeonBosses or 0,
+    }
+end
+
+-- =====================================================================
+-- Outbound Client Messaging Helpers
+-- =====================================================================
+
+function DC_Seasons.SendRewardNotification(player, tokens, essence, source)
+    SafeSendToClient(player, "OnRewardEarned", tokens or 0, essence or 0, source or "Unknown")
+end
+
+function DC_Seasons.SendStatsUpdate(player, stats)
+    SafeSendToClient(player, "UpdateStats", ClampStats(stats))
+end
+
+function DC_Seasons.SendWeeklyReset(player)
+    SafeSendToClient(player, "OnWeeklyReset")
+end
+
+function DC_Seasons.SendChestAvailable(player, chestData)
+    SafeSendToClient(player, "OnWeeklyChest", chestData or {})
+end
+
+function DC_Seasons.SendInitialData(player)
+    local payload = {
+        version = AIO.GetVersion() or "unknown",
+        serverTime = os.time(),
+    }
+    SafeSendToClient(player, "OnInitialData", payload)
 end
 
 -- =====================================================================
