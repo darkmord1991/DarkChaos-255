@@ -47,6 +47,6 @@ INSERT INTO gossip_menu_option (MenuID, OptionID, OptionIcon, OptionText, Option
  * 1. Use admin command: .npc add 100100  (at your cursor location)
  * 2. Example location: Main city hub or dungeon entrance area
  * 
- * The vendor will offer gossip menu to distribute keystone items (190001-190009)
+ * The vendor will offer gossip menu to distribute keystone items (300313-300321)
  * based on the player's current keystone level stored in the database
  */
