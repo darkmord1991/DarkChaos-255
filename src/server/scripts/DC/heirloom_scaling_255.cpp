@@ -295,7 +295,7 @@ public:
         ApplyHeirloomBagScaling(player);
     }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         ApplyHeirloomBagScaling(player);
     }
