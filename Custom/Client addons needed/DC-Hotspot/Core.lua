@@ -249,6 +249,30 @@ local function ParsePayloadString(payload)
     return nil
 end
 
+local function IsHotspotPayloadCandidate(payload)
+    if not payload or payload == "" then
+        return false
+    end
+
+    if payload:find("HOTSPOT", 1, true) or payload:find("Hotspot", 1, true) then
+        return true
+    end
+
+    if payload:find("ID:", 1, true) and payload:find("Zone:", 1, true) and payload:find("Pos:", 1, true) then
+        return true
+    end
+
+    if payload:match("Active Hotspots:%s*%d+") then
+        return true
+    end
+
+    if payload:match("Hotspot%s+%d+") then
+        return true
+    end
+
+    return false
+end
+
 function Core:UpsertHotspot(record)
     if not record or not record.id then return end
     local existing = state.hotspots[record.id]
@@ -347,11 +371,17 @@ function Core:HandlePayloadString(payload)
 end
 
 function Core:CHAT_MSG_SYSTEM(message)
+    if not IsHotspotPayloadCandidate(message) then
+        return
+    end
     self:HandlePayloadString(message)
 end
 
 function Core:CHAT_MSG_ADDON(prefix, message)
     if prefix ~= "HOTSPOT" then
+        return
+    end
+    if not IsHotspotPayloadCandidate(message) then
         return
     end
     self:HandlePayloadString(message)

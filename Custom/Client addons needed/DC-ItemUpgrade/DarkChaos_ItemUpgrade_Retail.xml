@@ -846,7 +846,7 @@
         </Scripts>
     </Frame>
 
-    <!-- Character Frame Button -->
+    <!-- Character Frame Button (Standard) -->
     <Button name="DC_ItemUpgrade_CharFrameButton" parent="CharacterFrame" hidden="false">
         <Size x="32" y="32"/>
         <Anchors>
@@ -854,7 +854,7 @@
         </Anchors>
         <Layers>
             <Layer level="BACKGROUND">
-                <Texture name="$parentIcon" file="Interface\LFGFrame\UI-LFG-ICON-REWARDS">
+                <Texture name="$parentIcon" file="Interface\Icons\Trade_Engineering">
                     <Size x="28" y="28"/>
                     <Anchors>
                         <Anchor point="CENTER"/>
@@ -881,7 +881,7 @@
             <OnEnter>
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
                 GameTooltip:SetText("Item Upgrade", 1, 1, 1);
-                GameTooltip:AddLine("Open the Item Upgrade interface", 0.8, 0.8, 0.8, true);
+                GameTooltip:AddLine("Open the Standard Item Upgrade interface", 0.8, 0.8, 0.8, true);
                 GameTooltip:Show();
             </OnEnter>
             <OnLeave>
@@ -890,16 +890,16 @@
         </Scripts>
     </Button>
 
-    <!-- Bag Frame Button -->
-    <Button name="DC_ItemUpgrade_BagFrameButton" parent="UIParent" hidden="false">
-        <Size x="36" y="36"/>
+    <!-- Character Frame Button (Heirloom) -->
+    <Button name="DC_ItemUpgrade_HeirloomButton" parent="CharacterFrame" hidden="false">
+        <Size x="32" y="32"/>
         <Anchors>
-            <Anchor point="RIGHT" relativeTo="MainMenuBarBackpackButton" relativePoint="LEFT" x="-2" y="0"/>
+            <Anchor point="TOP" relativeTo="DC_ItemUpgrade_CharFrameButton" relativePoint="BOTTOM" x="0" y="-5"/>
         </Anchors>
         <Layers>
             <Layer level="BACKGROUND">
-                <Texture name="$parentIcon" file="Interface\LFGFrame\UI-LFG-ICON-REWARDS">
-                    <Size x="32" y="32"/>
+                <Texture name="$parentIcon" file="Interface\Icons\INV_Misc_Book_09">
+                    <Size x="28" y="28"/>
                     <Anchors>
                         <Anchor point="CENTER"/>
                     </Anchors>
@@ -917,15 +917,15 @@
         <HighlightTexture file="Interface\Buttons\ButtonHilight-Square" alphaMode="ADD"/>
         <Scripts>
             <OnLoad>
-                DC_ItemUpgrade_BagFrameButton_OnLoad(self);
+                DC_ItemUpgrade_HeirloomButton_OnLoad(self);
             </OnLoad>
             <OnClick>
-                DC_ItemUpgrade_BagFrameButton_OnClick(self);
+                DC_ItemUpgrade_HeirloomButton_OnClick(self);
             </OnClick>
             <OnEnter>
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
-                GameTooltip:SetText("Item Upgrade", 1, 1, 1);
-                GameTooltip:AddLine("Open the Item Upgrade interface", 0.8, 0.8, 0.8, true);
+                GameTooltip:SetText("Heirloom Upgrade", 1, 0.82, 0);
+                GameTooltip:AddLine("Open the Heirloom Upgrade interface", 0.8, 0.8, 0.8, true);
                 GameTooltip:Show();
             </OnEnter>
             <OnLeave>

@@ -185,23 +185,34 @@ if type(HLBG._ensureUI) ~= 'function' then
         return HLBG.UI[name] ~= nil
     end
 end
+-- Centralized debug flag helper
+function HLBG.IsDebugEnabled()
+    if HLBG._debugOverride ~= nil then
+        return HLBG._debugOverride and true or false
+    end
+    if HLBG._devMode then return true end
+    if type(DCHLBGDB) == 'table' then
+        if DCHLBGDB.debugLogging then return true end
+        if DCHLBGDB.devMode then return true end
+    end
+    if HLBG.debugLogging or HLBG.devMode then return true end
+    return false
+end
 -- Centralized debug logging with deduplication
 function HLBG.Debug(...)
-    -- Check if DC_DebugUtils is available
+    local enabled = HLBG.IsDebugEnabled and HLBG.IsDebugEnabled()
     if _G.DC_DebugUtils and type(_G.DC_DebugUtils.PrintMulti) == 'function' then
-        local isEnabled = (DCHLBGDB and DCHLBGDB.devMode) or (HLBG._devMode)
-        _G.DC_DebugUtils:PrintMulti("HLBG", isEnabled, ...)
-    else
-        -- Fallback to old method if DC_DebugUtils not loaded
-        if not (DCHLBGDB and DCHLBGDB.devMode) and not HLBG._devMode then return end
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            local msg = ""
-            for i = 1, select('#', ...) do
-                if i > 1 then msg = msg .. " " end
-                msg = msg .. tostring(select(i, ...))
-            end
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r " .. msg)
+        _G.DC_DebugUtils:PrintMulti("HLBG", enabled, ...)
+        return
+    end
+    if not enabled then return end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        local msg = ""
+        for i = 1, select('#', ...) do
+            if i > 1 then msg = msg .. " " end
+            msg = msg .. tostring(select(i, ...))
         end
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r " .. msg)
     end
 end
 

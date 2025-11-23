@@ -15,6 +15,7 @@ HLBG.DefaultSettings = {
     notifyMatchStart = true,     -- Show notification when match starts
     notifyMatchEnd = true,       -- Show notification when match ends
     devMode = false,             -- Developer mode for debugging
+    debugLogging = false,        -- Verbose debug logging in chat
     season = 0                   -- Season filter (0 = all/current)
 }
 -- Load saved settings or apply defaults
@@ -222,7 +223,9 @@ function HLBG.UpdateSettings()
             title = "Advanced",
             options = {
                 {type = "checkbox", text = "Developer Mode", setting = "devMode",
-                 desc = "Enable additional debug features and logging"}
+                 desc = "Enable experimental developer tools"},
+                {type = "checkbox", text = "Verbose Debug Logging", setting = "debugLogging",
+                 desc = "Print HLBG Debug details in the chat frame"}
             }
         }
     }
@@ -348,6 +351,8 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         makeCheck("DCHLBG_Opt_ChatUpdates", "Show Chat Updates", "chatUpdates")
         -- Developer mode
         makeCheck("DCHLBG_Opt_DevMode", "Developer Mode", "devMode")
+        -- Debug logging toggle
+        makeCheck("DCHLBG_Opt_DebugLogging", "Verbose Debug Logging", "debugLogging")
         -- HUD Scale slider
         local hudScale = CreateFrame("Slider", "DCHLBG_Opt_HUDScale", panel, "OptionsSliderTemplate")
         hudScale:SetPoint("TOPLEFT", 24, y)

@@ -11,6 +11,11 @@ local function ensure_ui()
     HLBG.UI.History = HLBG.UI.History or {}
     return HLBG.UI.History
 end
+local function DebugPrint(...)
+    if HLBG and type(HLBG.Debug) == 'function' then
+        HLBG.Debug(...)
+    end
+end
 -- Helper: sanitize and preserve valid UTF-8; adapted from prior implementation
 local function keep_valid_utf8(s)
     if type(s) ~= 'string' then return s end
@@ -51,6 +56,8 @@ end
 -- Main History renderer
 HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir)
     local ui = ensure_ui()
+    local debugEnabled = HLBG.IsDebugEnabled and HLBG.IsDebugEnabled()
+    local maxLoggedRows = 3
     if type(rows) ~= 'table' then rows = {} end
     ui.page = tonumber(page) or ui.page or 1
     ui.per  = tonumber(per)  or ui.per  or 25
@@ -109,8 +116,8 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
     local cont = ui.Content
     if not cont then
         -- UI content not yet created; leave lastRows stored and return so UI can pick it up later
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFFF3333HLBG Debug|r History.Content missing! UI=%s History=%s',
+        if debugEnabled then
+            DebugPrint(string.format('|cFFFF3333HLBG Debug|r History.Content missing! UI=%s History=%s',
                 tostring(HLBG.UI ~= nil), tostring(HLBG.UI and HLBG.UI.History ~= nil)))
         end
         -- Dev: schedule a one-shot retry to render if UI appears shortly after
@@ -121,8 +128,8 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
                 if HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.Content and HLBG.UI.History.lastRows then
                     -- Re-invoke with preserved lastRows
                     pcall(HLBG.History, HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
-                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r Deferred history render invoked')
+                    if debugEnabled then
+                        DebugPrint('|cFF33FF99HLBG Debug|r Deferred history render invoked')
                     end
                 end
             end)
@@ -130,12 +137,12 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         return
     end
     -- EXTENSIVE DEBUG: Log Content frame state
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+    if debugEnabled then
         local isShown = cont:IsShown() and "YES" or "NO"
         local width, height = cont:GetSize()
         local parent = cont:GetParent()
         local parentName = parent and parent:GetName() or "nil"
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Content]|r Shown=%s Size=%.0fx%.0f Parent=%s',
+        DebugPrint(string.format('|cFFAA00FF[History Content]|r Shown=%s Size=%.0fx%.0f Parent=%s',
             isShown, width, height, parentName))
     end
     ui.rows = ui.rows or {}
@@ -174,20 +181,20 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         return r
     end
     local y = -10  -- Start slightly below top using negative coordinates (standard ScrollFrame)
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
+    if debugEnabled then
+        DebugPrint(string.format('|cFF33FF99HLBG Debug|r Starting to render %d rows, Content=%s', #rows, tostring(cont ~= nil)))
     end
     for i,row in ipairs(rows) do
         local r = Row(i)
         r:ClearAllPoints(); r:SetPoint('TOPLEFT', cont,'TOPLEFT',5,y)
         r.rowData=row; r.rowIndex=i
         -- EXTENSIVE DEBUG: Log row frame state
-        if i == 1 and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        if debugEnabled and i == 1 then
             local rShown = r:IsShown() and "YES" or "NO"
             local rWidth, rHeight = r:GetSize()
             local rParent = r:GetParent()
             local rParentName = rParent and rParent:GetName() or "nil"
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFFAA00FF[History Row1]|r Shown=%s Size=%.0fx%.0f Parent=%s Y=%d',
+            DebugPrint(string.format('|cFFAA00FF[History Row1]|r Shown=%s Size=%.0fx%.0f Parent=%s Y=%d',
                 rShown, rWidth, rHeight, rParentName, y))
         end
         if i % 2 == 0 then
@@ -213,14 +220,14 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         local dur = tonumber(row.dur) or 0; r.dur:SetText(dur>0 and SecondsToTime(dur) or '-')
         r.rea:SetText(row.reason or '-')
         -- Debug: print row text
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d text: id=%s sea=%s ts=%s win=%s aff=%s dur=%s rea=%s',
+        if debugEnabled and i <= maxLoggedRows then
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Row %d text: id=%s sea=%s ts=%s win=%s aff=%s dur=%s rea=%s',
                 i, tostring(row.id or '-'), tostring(row.season or row.seasonName or '-'), tsText, winTxt, tostring(row.affix or '-'), tostring(dur>0 and SecondsToTime(dur) or '-'), tostring(row.reason or '-')))
         end
         r:Show()
         y = y - 22  -- Move down for next row (more negative = further down in TOPLEFT anchor)
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y))
+        if debugEnabled and i <= maxLoggedRows then
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Row %d: created and shown at y=%d', i, y))
         end
     end
     cont:SetHeight(math.max(120, (#rows*22)+40))  -- Extra padding
@@ -239,8 +246,8 @@ HLBG.History = HLBG.History or function(rows, page, per, total, sortKey, sortDir
         end
     end
     -- Debug success message
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully! Content height set to %.0f', #rows, cont:GetHeight()))
+    if debugEnabled then
+        DebugPrint(string.format('|cFF00FF33HLBG Debug|r History rendered %d rows successfully! Content height set to %.0f', #rows, cont:GetHeight()))
     end
     -- Pager display
     local maxPage = math.max(1, math.ceil((ui.total or #rows)/ui.per))
@@ -256,36 +263,34 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
     if type(a)=='string' then tsv,page,per,total,col,dir = a,b,c,d,e,f else tsv,page,per,total,col,dir = b,c,d,e,f,g end
     local rows = {}
     local reportedTotal = tonumber(total or 0) or 0
+    local debugEnabled = HLBG.IsDebugEnabled and HLBG.IsDebugEnabled()
     if type(tsv)=='string' and tsv~='' then
         tsv = sanitize_tsv(tsv)
         HLBG._lastSanitizedTSV = tsv
         pcall(function()
-            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
-            if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                local cnt = 0
-                local preview = {}
-                for line in tsv:gmatch('[^\n]+') do
-                    cnt = cnt + 1
-                    if cnt <= 5 then table.insert(preview, line) end
-                end
-                local spreview = table.concat(preview, ' | ')
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', cnt, (spreview or '[none]')))
+            if not debugEnabled then return end
+            local cnt = 0
+            local preview = {}
+            for line in tsv:gmatch('[^\n]+') do
+                cnt = cnt + 1
+                if cnt <= 5 then table.insert(preview, line) end
             end
+            local spreview = table.concat(preview, ' | ')
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', cnt, (spreview or '[none]')))
         end)
         pcall(function()
-            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             local escN = 0; tsv, escN = tsv:gsub('\\n', '\n')
             local escT = 0; tsv, escT = tsv:gsub('\\t', '\t')
-            if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (escN > 0 or escT > 0) then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr converted escaped seqs: \n=%d \t=%d', escN, escT))
+            if debugEnabled and (escN > 0 or escT > 0) then
+                DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr converted escaped seqs: \n=%d \t=%d', escN, escT))
             end
             local pipeCount = 0; for _ in tsv:gmatch('%|') do pipeCount = pipeCount + 1 end
             local hasNewline = tsv:find('\n') and true or false
             if pipeCount > 0 and not hasNewline then
                 tsv = tsv:gsub('%s*%|%s*', '\n')
                 HLBG._lastSanitizedTSV = tsv
-                if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr fallback: converted %d pipes into newlines', pipeCount))
+                if debugEnabled then
+                    DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr fallback: converted %d pipes into newlines', pipeCount))
                 end
             end
             HLBG._lastSanitizedTSV = tsv
@@ -394,7 +399,5 @@ if not HLBG.HistoryApplySort then
     end
 end
 -- Debug announce
-if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))
-end
+DebugPrint(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))
 

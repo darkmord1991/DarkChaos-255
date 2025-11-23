@@ -1,0 +1,137 @@
+<Ui	xmlns="http://www.blizzard.com/wow/ui/"	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"	xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<Script	file="MetaMapBKP.lua"/>
+
+	<Frame name="BKP_BackUpFrame" toplevel="true" parent="MetaMap_DialogFrame" hidden="true">
+		<Size><AbsDimension	x="500"	y="100"	/></Size>
+		<Anchors>
+			<Anchor	point="BOTTOM">
+			 <Offset><AbsDimension x="0" y="65"/></Offset>
+			</Anchor>
+		</Anchors>
+		<Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
+			<BackgroundInsets>
+				<AbsInset left="4" right="4" top="4" bottom="4" />
+			</BackgroundInsets>
+			<TileSize>
+				<AbsValue val="16" />
+			</TileSize>
+			<EdgeSize>
+				<AbsValue val="16" />
+			</EdgeSize>
+		</Backdrop>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString	name="BKP_ConfirmationHeader"	inherits="GameFontHighlight"	wraponspaces="true"	text="Select the data you wish to Backup or Restore">
+					<Size><AbsDimension	x="360"	y="0"	/></Size>
+					<Anchors>
+						<Anchor	point="TOP">
+						 <Offset><AbsDimension x="0" y="-10"/></Offset>
+						</Anchor>
+					 </Anchors>
+				 </FontString>
+			 </Layer>
+		</Layers>
+		<Frames>
+			<CheckButton name="BKP_Check_NoteData" inherits="MetaMap_CheckButtonTemplate">
+				<Anchors>
+					<Anchor	point="TOPLEFT">
+						<Offset><AbsDimension	x="20" y="-30" /></Offset>
+					</Anchor>
+				</Anchors>
+				<Scripts>
+					<OnShow>
+						this:SetChecked(0);
+						getglobal(this:GetName().."Text"):SetText("MetaMap Notes");
+					</OnShow>
+				</Scripts>
+			</CheckButton>
+			<CheckButton name="BKP_Check_WKBdata" inherits="MetaMap_CheckButtonTemplate">
+				<Anchors>
+					<Anchor	point="TOPLEFT" relativeTo="BKP_Check_NoteData">
+						<Offset><AbsDimension	x="120"	y="0" /></Offset>
+					</Anchor>
+				</Anchors>
+				<Scripts>
+					<OnShow>
+						this:SetChecked(0);
+						getglobal(this:GetName().."Text"):SetText("MetaMapWKB");
+					</OnShow>
+				</Scripts>
+			</CheckButton>
+			<CheckButton name="BKP_Check_QSTdata" inherits="MetaMap_CheckButtonTemplate">
+				<Anchors>
+					<Anchor	point="TOPLEFT" relativeTo="BKP_Check_WKBdata">
+						<Offset><AbsDimension	x="120"	y="0" /></Offset>
+					</Anchor>
+				</Anchors>
+				<Scripts>
+					<OnShow>
+						this:SetChecked(0);
+						getglobal(this:GetName().."Text"):SetText("MetaMapQST");
+					</OnShow>
+				</Scripts>
+			</CheckButton>
+			<CheckButton name="BKP_Check_TRKdata" inherits="MetaMap_CheckButtonTemplate">
+				<Anchors>
+					<Anchor	point="TOPLEFT" relativeTo="BKP_Check_QSTdata">
+						<Offset><AbsDimension	x="120"	y="0" /></Offset>
+					</Anchor>
+				</Anchors>
+				<Scripts>
+					<OnShow>
+						this:SetChecked(0);
+						getglobal(this:GetName().."Text"):SetText("MetaMapTRK");
+					</OnShow>
+				</Scripts>
+			</CheckButton>
+			<Button	name="BKP_Backup" inherits="UIPanelButtonTemplate2" text="METAMAPBKP_BACKUP">
+				 <Size><AbsDimension x="100" y="18"/></Size>
+				 <Anchors>
+						<Anchor	point="BOTTOM">
+						 <Offset><AbsDimension x="-120" y="10"	/></Offset>
+					 </Anchor>
+				 </Anchors>
+				 <Scripts>
+					<OnClick>
+						BKP_Init("backup");
+					</OnClick>
+				</Scripts>
+			</Button>
+			<Button	name="BKP_Restore" inherits="UIPanelButtonTemplate2" text="METAMAPBKP_RESTORE">
+				 <Size><AbsDimension x="100" y="18"/></Size>
+				 <Anchors>
+						<Anchor	point="BOTTOM">
+						 <Offset><AbsDimension x="0" y="10"	/></Offset>
+					 </Anchor>
+				 </Anchors>
+				 <Scripts>
+					<OnClick>
+						BKP_Init("restore");
+					</OnClick>
+				</Scripts>
+			</Button>
+			<Button	name="BKP_CancelButton" inherits="UIPanelButtonTemplate2" text="METAMAP_CANCEL">
+				 <Size><AbsDimension x="100" y="18"/></Size>
+				 <Anchors>
+						<Anchor	point="BOTTOM">
+						 <Offset><AbsDimension x="120" y="10"	/></Offset>
+					 </Anchor>
+				 </Anchors>
+				 <Scripts>
+					<OnClick>
+						this:GetParent():Hide();
+					</OnClick>
+				</Scripts>
+			</Button>
+		</Frames>
+		<Scripts>
+			<OnLoad>
+				MetaMap_OptionsInfo:SetText(METAMAPBKP_INFO);
+			</OnLoad>
+			<OnShow>
+				BKP_OnShow();
+			</OnShow>
+		</Scripts>
+	</Frame>
+</Ui>

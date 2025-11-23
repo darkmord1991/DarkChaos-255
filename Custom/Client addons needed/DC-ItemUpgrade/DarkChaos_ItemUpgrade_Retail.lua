@@ -901,10 +901,38 @@ function DC_ItemUpgrade_CharFrameButton_OnClick(self)
 		return;
 	end
 	
+	DC.uiMode = "STANDARD";
 	if DarkChaos_ItemUpgradeFrame:IsShown() then
 		DarkChaos_ItemUpgradeFrame:Hide();
 	else
 		DarkChaos_ItemUpgradeFrame:Show();
+		DarkChaos_ItemUpgradeFrame.TitleText:SetText("Item Upgrade");
+	end
+end
+
+-- Heirloom Button Handlers (XML-defined button)
+function DC_ItemUpgrade_HeirloomButton_OnLoad(self)
+	self:RegisterForClicks("LeftButtonUp");
+end
+
+function DC_ItemUpgrade_HeirloomButton_OnClick(self)
+	if UnitAffectingCombat("player") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
+		return;
+	end
+	
+	local inInstance, instanceType = IsInInstance();
+	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+		return;
+	end
+	
+	DC.uiMode = "HEIRLOOM";
+	if DarkChaos_ItemUpgradeFrame:IsShown() then
+		DarkChaos_ItemUpgradeFrame:Hide();
+	else
+		DarkChaos_ItemUpgradeFrame:Show();
+		DarkChaos_ItemUpgradeFrame.TitleText:SetText("Heirloom Upgrade");
 	end
 end
 
@@ -1341,6 +1369,10 @@ function DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, context)
 	-- Start batch timer if not already running
 	if not DC.batchQueryTimer or DC.batchQueryTimer == 0 then
 		DC.batchQueryTimer = DC.batchQueryDelay;
+		-- Ensure OnUpdate is running to process the timer
+		if DarkChaos_ItemUpgradeFrame then
+			DarkChaos_ItemUpgradeFrame:SetScript("OnUpdate", DarkChaos_ItemUpgrade_OnUpdate);
+		end
 	end
 end
 
@@ -1566,6 +1598,23 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 		local requested = DC.targetUpgradeLevel or defaultTarget;
 		DC.targetUpgradeLevel = math.max(defaultTarget, math.min(requested, maxUpgrade));
 	end
+
+	-- Mode Check
+	local modeError = nil;
+	if DC.uiMode == "HEIRLOOM" and item.tier ~= 3 then
+		modeError = "This item is not an Heirloom.";
+	elseif DC.uiMode == "STANDARD" and item.tier == 3 then
+		modeError = "Please use the Heirloom Upgrade interface.";
+	end
+
+	-- Clamp target selection within valid range
+	local validTarget = math.min(math.max(DC.targetUpgradeLevel or (current + 1), current + 1), maxUpgrade);
+	DC.targetUpgradeLevel = validTarget;
+
+	-- Show mode error if applicable
+	if modeError then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000" .. modeError .. "|r");
+	end
 end
 
 local function ResolveInventoryLocation(slot)
@@ -1718,14 +1767,17 @@ local function GetItemTooltipInfo(link, locationKey)
 	local itemLevel = select(4, GetItemInfo(link)) or 0;
 	local upgradeLevel = 0;
 	local maxLevel = DC.MAX_UPGRADE_LEVEL;  -- Fallback for tooltip parsing, tier-specific handled elsewhere
+	local foundUpgrade = false;
 
 	for i = 2, scanTooltip:NumLines() do
 		local text = GetTooltipLine(i);
 		if text then
-			local cur, max = text:match("Upgrade%s*[Ll]evel:?%s*(%d+)%s*/%s*(%d+)");
+			-- Try to match various formats: "Upgrade Level: 0/6", "Upgrade: 0/6", "Upgrade Rank: 0/6"
+			local cur, max = text:match("[Uu]pgrade.-(%d+)%s*/%s*(%d+)");
 			if cur and max then
 				upgradeLevel = tonumber(cur) or upgradeLevel;
 				maxLevel = tonumber(max) or maxLevel;
+				foundUpgrade = true;
 				break;
 			end
 		end
@@ -1735,6 +1787,7 @@ local function GetItemTooltipInfo(link, locationKey)
 		ilevel = itemLevel,
 		upgrade = upgradeLevel,
 		max = maxLevel,
+		found = foundUpgrade,
 		timestamp = now,
 	};
 
@@ -2197,6 +2250,11 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 		end
 		return;
 	end
+
+	if event == "GET_ITEM_INFO_RECEIVED" then
+		RefreshBrowserIfOpen();
+		return;
+	end
 end
 
 function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
@@ -2406,9 +2464,11 @@ function DarkChaos_ItemUpgrade_Dropdown_Initialize()
 	for level = currentUpgrade + 1, maxUpgrade do
 		info.text = "Level " .. level .. " / " .. maxUpgrade;
 		info.value = level;
-		info.arg1 = level;
-		info.func = DarkChaos_ItemUpgrade_Dropdown_OnClick;
-		info.checked = (level == DC.targetUpgradeLevel);
+		info.func = function(self)
+			DC.targetUpgradeLevel = self.value;
+			DarkChaos_ItemUpgrade_UpdateUI();
+		end;
+		info.checked = (DC.targetUpgradeLevel == level);
 		
 		-- Color red if can't afford
 		local cost = DarkChaos_ItemUpgrade_GetCost(DC.currentItem.tier, level);
@@ -2420,28 +2480,6 @@ function DarkChaos_ItemUpgrade_Dropdown_Initialize()
 		
 		UIDropDownMenu_AddButton(info);
 	end
-end
-
-function DarkChaos_ItemUpgrade_Dropdown_OnClick(self, level)
-	local selectedLevel = tonumber(level) or tonumber(self and self.value) or nil;
-	if not selectedLevel then
-		return;
-	end
-
-	if DC.currentItem then
-		local currentUpgrade = DC.currentItem.currentUpgrade or 0;
-		local maxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
-		selectedLevel = math.min(math.max(math.floor(selectedLevel + 0.5), currentUpgrade + 1), maxUpgrade);
-	end
-
-	DC.targetUpgradeLevel = selectedLevel;
-	local dropdown = DarkChaos_ItemUpgradeFrame.DropdownContainer and DarkChaos_ItemUpgradeFrame.DropdownContainer.Dropdown or DarkChaos_ItemUpgradeFrame.Dropdown;
-	if dropdown then
-		UIDropDownMenu_SetSelectedValue(dropdown, selectedLevel);
-	end
-
-	-- Update tooltips and costs
-	DarkChaos_ItemUpgrade_UpdateUI();
 end
 
 --[[=====================================================
@@ -2668,6 +2706,14 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		item.statPerLevel = 0;
 	end
 
+	-- Mode Check
+	local modeError = nil;
+	if DC.uiMode == "HEIRLOOM" and item.tier ~= 3 then
+		modeError = "This item is not an Heirloom.";
+	elseif DC.uiMode == "STANDARD" and item.tier == 3 then
+		modeError = "Please use the Heirloom Upgrade interface.";
+	end
+
 	-- Clamp target selection within valid range
 	local validTarget = math.min(math.max(DC.targetUpgradeLevel or (currentUpgrade + 1), currentUpgrade + 1), maxUpgrade);
 	DC.targetUpgradeLevel = validTarget;
@@ -2692,31 +2738,28 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	frame.ItemInfo.ItemName:SetTextColor(color.r, color.g, color.b);
 
 	if frame.ItemInfo.ItemLevelSummary then
-		frame.ItemInfo.ItemLevelSummary:SetText("");
-		frame.ItemInfo.ItemLevelSummary:Hide();
+		frame.ItemInfo.ItemLevelSummary:Show();
+		if item.ilevelStep > 0 then
+			frame.ItemInfo.ItemLevelSummary:SetText(string.format("Item Level %d |cff00ff00(+%d per upgrade)|r", currentLevel, item.ilevelStep));
+		else
+			frame.ItemInfo.ItemLevelSummary:SetText(string.format("Item Level %d", currentLevel));
+		end
 	end
+
 	if frame.ItemInfo.UpgradeProgress then
-		frame.ItemInfo.UpgradeProgress:SetText("");
-		frame.ItemInfo.UpgradeProgress:Hide();
+		frame.ItemInfo.UpgradeProgress:Show();
+		frame.ItemInfo.UpgradeProgress:SetText(string.format("Upgrade Rank: %d / %d", currentUpgrade, maxUpgrade));
 	end
 
-	-- Update progress bar
-	DarkChaos_ItemUpgrade_UpdateProgressBar(currentUpgrade, maxUpgrade, tier);
+	DarkChaos_ItemUpgrade_UpdateProgressBar(currentUpgrade, maxUpgrade, item.tier);
+	DarkChaos_ItemUpgrade_UpdateTierIndicator(item.tier);
 
-	-- Update tier indicator
-	DarkChaos_ItemUpgrade_UpdateTierIndicator(tier);
-
-	if dropdown then
-		UIDropDownMenu_SetWidth(dropdown, 150);
-		UIDropDownMenu_SetButtonWidth(dropdown, 160);
-	end
-
-	local targetLevel = DC.targetUpgradeLevel or currentUpgrade;
+	local targetItemLevel = ResolveUpgradeItemLevel(item, DC.targetUpgradeLevel, baseLevel);
+	local targetLevel = DC.targetUpgradeLevel;
 	local currentBonus = GetStatBonusPercent(currentUpgrade, item.tier);
 	local targetBonus = GetStatBonusPercent(targetLevel, item.tier);
 	local statGain = targetBonus - currentBonus;
-	local targetItemLevel = ResolveUpgradeItemLevel(item, targetLevel, baseLevel);
-	targetItemLevel = math.max(targetItemLevel, currentLevel);
+
 	local ilevelGain = targetItemLevel - currentLevel;
 	local statComparison = DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel);
 
@@ -2790,7 +2833,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 
 	local canUpgrade = currentUpgrade < maxUpgrade;
 
-	if canUpgrade then
+	if canUpgrade and not modeError then
 		if frame.UpgradeSelector then frame.UpgradeSelector:Show(); end
 		if dropdown then
 			dropdown:Show();
@@ -2869,9 +2912,16 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		DarkChaos_ItemUpgrade_UpdateCost();
 		SetButtonEnabled(frame.UpgradeButton, false);
 		frame.UpgradeButton.Glow:Hide();
-		frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
-		frame.ErrorText:SetText("This item is already at maximum upgrade level.");
-		frame.ErrorText:Show();
+		
+		if modeError then
+			frame.UpgradeButton.disabledTooltip = modeError;
+			frame.ErrorText:SetText(modeError);
+			frame.ErrorText:Show();
+		else
+			frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
+			frame.ErrorText:SetText("This item is already at maximum upgrade level.");
+			frame.ErrorText:Show();
+		end
 	end
 end
 
@@ -3118,15 +3168,26 @@ function DarkChaos_ItemUpgrade_GenerateTooltips()
 	
 	-- Show stat increases if applicable
 	if levels > 0 and bonusIncrease > 0 then
-		tooltip:AddLine(string.format("All Stats: |cff00ff00+%.1f%%|r (from x%.3f to x%.3f)", 
-			bonusIncrease, currentMultiplier, targetMultiplier), 1, 1, 1);
-		tooltip:AddLine("|cff888888Includes:|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Primary Stats (Str/Agi/Sta/Int/Spi)|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Secondary Stats (Crit/Haste/Hit)|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Armor and Resistances|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Weapon Damage (if applicable)|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Spell Power (if applicable)|r", 0.7, 0.7, 0.7);
-		tooltip:AddLine("|cff888888  • Proc Effects (if applicable)|r", 0.7, 0.7, 0.7);
+		if tier == 3 then
+			tooltip:AddLine(string.format("Secondary Stats: |cff00ff00+%.1f%%|r", bonusIncrease));
+			tooltip:AddLine("|cff888888Upgrade bonuses include:|r");
+			tooltip:AddLine(string.format("|cff888888  ✦ Secondary Stats (Crit/Haste/Hit) x%.2f|r", targetMultiplier));
+			tooltip:AddLine(string.format("|cff888888  ✦ Spell Power & Weapon Dmg x%.2f|r", targetMultiplier));
+		else
+			tooltip:AddLine(string.format("All Stats: |cff00ff00+%.1f%%|r", bonusIncrease));
+			tooltip:AddLine("|cff888888Upgrade bonuses include:|r");
+			-- Primary Attributes (core stats that boost everything)
+			tooltip:AddLine(string.format("|cff888888  ★ Primary Stats (Str/Agi/Sta/Int/Spi) x%.2f|r", targetMultiplier));
+			-- Secondary Stats (these are now correctly multiplied via enchant)
+			tooltip:AddLine(string.format("|cff888888  ✦ Secondary Stats (Crit/Haste/Hit) x%.2f|r", targetMultiplier));
+			tooltip:AddLine(string.format("|cff888888  ✦ Defense & Resistance x%.2f|r", targetMultiplier));
+			tooltip:AddLine(string.format("|cff888888  ✦ Dodge/Parry/Block x%.2f|r", targetMultiplier));
+			-- Spell/Weapon damages
+			tooltip:AddLine(string.format("|cff888888  ✦ Spell Power & Weapon Dmg x%.2f|r", targetMultiplier));
+			-- Special effects
+			tooltip:AddLine(string.format("|cff888888  ✦ Armor & Resistances x%.2f|r", targetMultiplier));
+			tooltip:AddLine(string.format("|cff888888  ✦ Proc Rates & Effects x%.2f|r", targetMultiplier));
+		end
 	end
 	
 	-- Set border color (use next quality if available)
@@ -3137,6 +3198,37 @@ function DarkChaos_ItemUpgrade_GenerateTooltips()
 	end
 	
 	tooltip:Show();
+end
+
+-- Helper function to find item location by entry ID.
+local function FindItemLocationByEntry(entryID)
+	if not entryID then return nil, nil; end
+	
+	-- Check equipped items
+	for _, slotID in ipairs(EQUIPMENT_SLOTS) do
+		local link = GetInventoryItemLink("player", slotID);
+		if link then
+			local id = tonumber(string.match(link, "item:(%d+)"));
+			if id == entryID then
+				return BAG_EQUIPPED, slotID;
+			end
+		end
+	end
+	
+	-- Check bags
+	for bag = BAG_BACKPACK, NUM_BAG_SLOTS do
+		for slot = 1, GetContainerNumSlots(bag) do
+			local link = GetContainerItemLink(bag, slot);
+			if link then
+				local id = tonumber(string.match(link, "item:(%d+)"));
+				if id == entryID then
+					return bag, slot;
+				end
+			end
+		end
+	end
+	
+	return nil, nil;
 end
 
 --[[=====================================================
@@ -3275,6 +3367,11 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			DarkChaos_ItemUpgrade_UpdateUI();
 		end
 
+		-- Refresh browser if open to show newly cached item
+		if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
+			DarkChaos_ItemBrowser_Update();
+		end
+
 		if request then
 			for _, context in ipairs(request.contexts) do
 				if context.type == "tooltip" then
@@ -3315,7 +3412,23 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			DC.currentItem.statMultiplier = GetStatMultiplierForLevel(newUpgrade, tierId);
 			DC.currentItem.statPerLevel = GetStatBonusPercent(newUpgrade + 1, tierId) - GetStatBonusPercent(newUpgrade, tierId);
 
+			local currentCloneEntry = GetCloneEntryForLevel(DC.currentItem, newUpgrade);
 			local refreshedLink = GetItemLinkForLocation(DC.currentItem.bag, DC.currentItem.slot);
+
+			-- If item is missing from original slot, search for it (it may have moved during replacement)
+			if not refreshedLink and currentCloneEntry then
+				local newBag, newSlot = FindItemLocationByEntry(currentCloneEntry);
+				if newBag and newSlot then
+					DC.Debug(string.format("Item moved from %d:%d to %d:%d", DC.currentItem.bag, DC.currentItem.slot, newBag, newSlot));
+					DC.currentItem.bag = newBag;
+					DC.currentItem.slot = newSlot;
+					DC.currentItem.serverBag = GetServerBagFromClient(newBag);
+					DC.currentItem.serverSlot = GetServerSlotFromClient(newBag, newSlot);
+					DC.currentItem.locationKey = BuildLocationKey(DC.currentItem.serverBag, DC.currentItem.serverSlot);
+					refreshedLink = GetItemLinkForLocation(newBag, newSlot);
+				end
+			end
+
 			if refreshedLink then
 				DC.currentItem.link = refreshedLink;
 				local newEntry = tonumber(string.match(refreshedLink, "item:(%d+)"));
@@ -3330,7 +3443,6 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				end
 			end
 			local resolvedItemLevel = fallbackItemLevel;
-			local currentCloneEntry = GetCloneEntryForLevel(DC.currentItem, newUpgrade);
 			if currentCloneEntry then
 				local infoLevel = select(4, GetItemInfo(currentCloneEntry));
 				if infoLevel then
@@ -3396,7 +3508,8 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 		if request then
 			DC.Debug("Query error received: " .. tostring(errorMsg));
 			if errorMsg == "Item not found" and DC.currentItem then
-				DarkChaos_ItemUpgrade_RequestItemInfo();
+				-- DarkChaos_ItemUpgrade_RequestItemInfo(); -- Prevent infinite loop
+				DC.Debug("Item not found on server, stopping retry loop.");
 			end
 		else
 			print("|cffff0000Upgrade failed:|r " .. (errorMsg or "Unknown error"));
@@ -3646,13 +3759,85 @@ function DarkChaos_ItemBrowser_OnShow(self)
 end
 
 function DarkChaos_ItemBrowser_Update()
+	-- Ensure mode is initialized
+	if not DC.uiMode then DC.uiMode = "STANDARD"; end
+
 	-- Use optimized scanning with caching
 	local scannedItems = DC.GetScannedItems();
 	
 	-- Convert to array format for sorting and display
 	itemBrowserList = {};
 	for _, item in pairs(scannedItems) do
-		table.insert(itemBrowserList, item);
+		local keep = true;
+
+		-- 1. Equippable Check
+		local equipLoc = select(9, GetItemInfo(item.link));
+		if not equipLoc or equipLoc == "" then
+			keep = false;
+		end
+
+		-- 2. Upgradable Check
+		if keep then
+			local locationKey = BuildLocationKey(item.serverBag, item.serverSlot);
+			local info = GetItemTooltipInfo(item.link, locationKey);
+			
+			-- If we have cached info, use it to filter
+			if info and info.found then
+				-- Item is confirmed upgradable via tooltip
+			else
+				-- Item is not confirmed upgradable via tooltip.
+				
+				-- Check if we have cached server data
+				local cachedData = DarkChaos_ItemUpgrade_GetCachedDataForLocation(item.serverBag, item.serverSlot);
+				if cachedData then
+					-- We have data!
+					-- If maxUpgrade > 0, it's upgradable.
+					if (cachedData.maxUpgrade or 0) <= 0 then
+						keep = false;
+					end
+				else
+					-- We don't have data.
+					
+					-- Check if the item matches the current mode's quality requirement BEFORE querying.
+					-- This prevents querying Heirlooms when in Standard mode, and vice versa.
+					local isHeirloom = (item.quality == 7);
+					local modeMatch = false;
+					if DC.uiMode == "HEIRLOOM" and isHeirloom then
+						modeMatch = true;
+					elseif DC.uiMode == "STANDARD" and not isHeirloom then
+						modeMatch = true;
+					end
+
+					if modeMatch then
+						DarkChaos_ItemUpgrade_QueueQuery(item.serverBag, item.serverSlot, {
+							type = "browser",
+							clientBag = item.bag,
+							clientSlot = item.slot,
+							serverBag = item.serverBag,
+							serverSlot = item.serverSlot,
+							itemLink = item.link,
+							locationKey = locationKey,
+						});
+					end
+					
+					keep = false; -- Hide until loaded
+				end
+			end
+		end
+
+		-- 3. Menu Specific Check
+		if keep then
+			local isHeirloom = (item.quality == 7);
+			if DC.uiMode == "HEIRLOOM" then
+				if not isHeirloom then keep = false; end
+			elseif DC.uiMode == "STANDARD" then
+				if isHeirloom then keep = false; end
+			end
+		end
+
+		if keep then
+			table.insert(itemBrowserList, item);
+		end
 	end
 	
 	-- Sort by quality (descending), then by equipped status, then by name
@@ -3680,6 +3865,7 @@ function DarkChaos_ItemBrowser_Update()
 			local texture = GetItemTextureForLocation(item.bag, item.slot, item.link);
 			local locationKey = BuildLocationKey(item.serverBag, item.serverSlot);
 			local info = GetItemTooltipInfo(item.link, locationKey);
+			local cachedData = DarkChaos_ItemUpgrade_GetCachedDataForLocation(item.serverBag, item.serverSlot);
 			
 			SetItemButtonTexture(button, texture);
 			SetItemButtonQuality_335(button, item.quality);
@@ -3689,7 +3875,9 @@ function DarkChaos_ItemBrowser_Update()
 			button.name:SetTextColor(color.r, color.g, color.b);
 			
 			local detailPrefix = item.isEquipped and "(Equipped) " or "";
-			if info then
+			if cachedData then
+				button.detail:SetText(string.format("%sItem Level %d   Upgrade %d/%d", detailPrefix, cachedData.upgradedItemLevel or (info and info.ilevel) or 0, cachedData.currentUpgrade or 0, cachedData.maxUpgrade or DC.GetMaxUpgradeLevelForTier(cachedData.tier or 1)));
+			elseif info then
 				button.detail:SetText(string.format("%sItem Level %d   Upgrade %d/%d", detailPrefix, info.ilevel or 0, info.upgrade or 0, info.max or DC.GetMaxUpgradeLevelForTier(1)));
 			else
 				button.detail:SetText(string.format("%sItem Level --   Upgrade --", detailPrefix));
@@ -3741,6 +3929,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	self:RegisterEvent("BAG_UPDATE");
 	self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
 	self:RegisterEvent("UNIT_INVENTORY_CHANGED");
+	self:RegisterEvent("GET_ITEM_INFO_RECEIVED");
 	self:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Combat start event
 
 	self:SetMovable(true);
@@ -3754,7 +3943,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	end);
 
 	if self.portrait then
-		self.portrait:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-REWARDS");
+		self.portrait:SetTexture("Interface\\Icons\\Trade_Engineering");
 	end
 
 	local dropdown = self.DropdownContainer and self.DropdownContainer.Dropdown or self.Dropdown;
@@ -3785,7 +3974,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		end);
 		debugFrame:SetScript("OnDragStop", function(frame)
 			frame:StopMovingOrSizing();
-		end);
+	end);
 		if not DC_ItemUpgrade_Settings.debug then
 			debugFrame:Hide();
 		else
@@ -3880,6 +4069,7 @@ end
 
 function DarkChaos_ItemUpgrade_OnShow(self)
 	DC.PlaySound("igCharacterInfoOpen");
+	if not DC.uiMode then DC.uiMode = "STANDARD"; end
 	DC.arrowAnimationTime = 0;
 	DC.glowAnimationTime = 0;
 
@@ -3891,3 +4081,4 @@ function DarkChaos_ItemUpgrade_OnShow(self)
 	DarkChaos_ItemUpgrade_RequestCurrencies();
 	DarkChaos_ItemUpgrade_UpdateUI();
 end
+

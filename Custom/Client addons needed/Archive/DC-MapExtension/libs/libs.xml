@@ -1,0 +1,17 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<!-- LibStub -->
+	<Script file="Ace3\LibStub\LibStub.lua"/>
+	
+	<!-- CallbackHandler -->
+	<Include file="Ace3\CallbackHandler-1.0\CallbackHandler-1.0.xml"/>
+	
+	<!-- Ace3 Core -->
+	<Include file="Ace3\AceAddon-3.0\AceAddon-3.0.xml"/>
+	<Include file="Ace3\AceEvent-3.0\AceEvent-3.0.xml"/>
+	<Include file="Ace3\AceDB-3.0\AceDB-3.0.xml"/>
+	<Include file="Ace3\AceDBOptions-3.0\AceDBOptions-3.0.xml"/>
+	<Include file="Ace3\AceConsole-3.0\AceConsole-3.0.xml"/>
+	<Include file="Ace3\AceGUI-3.0\AceGUI-3.0.xml"/>
+	<Include file="Ace3\AceConfig-3.0\AceConfig-3.0.xml"/>
+</Ui>

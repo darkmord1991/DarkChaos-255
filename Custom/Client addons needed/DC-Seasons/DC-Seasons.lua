@@ -8,7 +8,35 @@
     Date: November 22, 2025
 ]]--
 
+local ADDON_NAME = "DC-Seasons"
 local DCSeasons = {}
+
+local DEFAULT_SETTINGS = {
+    autoShowTracker = true,
+    enableSounds = true
+}
+
+local function ApplyDefaultSettings()
+    DCSeasons_Settings = DCSeasons_Settings or {}
+    for key, value in pairs(DEFAULT_SETTINGS) do
+        if DCSeasons_Settings[key] == nil then
+            DCSeasons_Settings[key] = value
+        end
+    end
+end
+
+ApplyDefaultSettings()
+
+function DCSeasons:GetSetting(key)
+    if not key then return nil end
+    return DCSeasons_Settings and DCSeasons_Settings[key]
+end
+
+function DCSeasons:SetSetting(key, value)
+    if not key then return end
+    ApplyDefaultSettings()
+    DCSeasons_Settings[key] = value and true or false
+end
 
 -- Configuration
 DCSeasons.Config = {
@@ -36,6 +64,25 @@ DCSeasons.Data = {
     worldBosses = 0,
     dungeonBosses = 0
 }
+
+local function ScheduleAfter(delay, callback)
+    if type(callback) ~= "function" or (delay or 0) < 0 then
+        return
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(delay, callback)
+        return
+    end
+    local ticker = CreateFrame("Frame")
+    ticker.elapsed = 0
+    ticker:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed >= delay then
+            self:SetScript("OnUpdate", nil)
+            pcall(callback)
+        end
+    end)
+end
 
 -- =====================================================================
 -- REWARD POPUP FRAME
@@ -131,15 +178,16 @@ function DCSeasons:ShowRewardPopup(tokens, essence, source)
     UIFrameFadeIn(frame, self.Config.SLIDE_DURATION, 0, 1)
     
     -- Auto-hide after delay
-    C_Timer.After(self.Config.FADE_DURATION + self.Config.SLIDE_DURATION, function()
+    ScheduleAfter(self.Config.FADE_DURATION + self.Config.SLIDE_DURATION, function()
         UIFrameFadeOut(frame, self.Config.SLIDE_DURATION, 1, 0)
-        C_Timer.After(self.Config.SLIDE_DURATION, function()
+        ScheduleAfter(self.Config.SLIDE_DURATION, function()
             frame:Hide()
         end)
     end)
     
-    -- Play sound
-    PlaySound("LOOTWINDOWCOINSOUND")
+    if DCSeasons:GetSetting("enableSounds") then
+        PlaySound("LOOTWINDOWCOINSOUND")
+    end
 end
 
 -- =====================================================================
@@ -164,7 +212,8 @@ function DCSeasons:CreateProgressTracker()
     -- Background
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetTexture(0, 0, 0, 0.6)
+    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
+    bg:SetVertexColor(0, 0, 0, 0.85)
     
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -223,6 +272,7 @@ function DCSeasons:CreateProgressTracker()
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
+    frame:Hide()
     self.Frames.progressTracker = frame
     return frame
 end
@@ -264,7 +314,7 @@ end
 
 SLASH_DCSEASONS1 = "/seasonal"
 SLASH_DCSEASONS2 = "/season"
-SLASH_DCSEASONS3 = "/dcseasons"ons"
+SLASH_DCSEASONS3 = "/dcseasons"
 
 SlashCmdList["DCSEASONS"] = function(msg)
     local cmd = string.lower(msg or "")
@@ -281,11 +331,17 @@ SlashCmdList["DCSEASONS"] = function(msg)
         DCSeasons.Data.weeklyTokens = DCSeasons.Data.weeklyTokens + 150
         DCSeasons.Data.weeklyEssence = DCSeasons.Data.weeklyEssence + 75
         DCSeasons:UpdateProgressTracker()
+    elseif cmd == "options" or cmd == "config" or cmd == "settings" then
+        if InterfaceOptionsFrame_OpenToCategory and DCSeasons.OptionsPanel then
+            InterfaceOptionsFrame_OpenToCategory(DCSeasons.OptionsPanel)
+            InterfaceOptionsFrame_OpenToCategory(DCSeasons.OptionsPanel)
+        end
     else
         print("|cff00ff00[Seasonal]|r Commands:")
         print("  /seasonal show - Toggle progress tracker")
         print("  /seasonal hide - Hide progress tracker")
         print("  /seasonal test - Test reward popup")
+        print("  /seasonal options - Open the addon settings panel")
     end
 end
 
@@ -293,29 +349,123 @@ end
 -- AIO MESSAGE HANDLERS
 -- =====================================================================
 
--- if AIO then
---     local SeasonalAIO = AIO.AddAddon()
---     
---     -- Handle reward notification from server
---     function SeasonalAIO.OnRewardEarned(player, tokens, essence, source)
---         SeasonalUI:ShowRewardPopup(tokens, essence, source)
---         SeasonalUI.Data.weeklyTokens = SeasonalUI.Data.weeklyTokens + tokens
---         SeasonalUI.Data.weeklyEssence = SeasonalUI.Data.weeklyEssence + essence
---         SeasonalUI:UpdateProgressTracker()
---     end
---     
---     -- Handle stats update from server
---     function SeasonalAIO.UpdateStats(player, stats)
---         SeasonalUI.Data.weeklyTokens = stats.weeklyTokens or 0
---         SeasonalUI.Data.weeklyEssence = stats.weeklyEssence or 0
---         SeasonalUI.Data.weeklyTokenCap = stats.weeklyTokenCap or 5000
---         SeasonalUI.Data.weeklyEssenceCap = stats.weeklyEssenceCap or 2500
---         SeasonalUI.Data.quests = stats.quests or 0
---         SeasonalUI.Data.worldBosses = stats.worldBosses or 0
---         SeasonalUI.Data.dungeonBosses = stats.dungeonBosses or 0
---         SeasonalUI:UpdateProgressTracker()
---     end
--- end
+if AIO and AIO.AddHandlers then
+    local SeasonalAIO = AIO.AddHandlers("DC_Seasons", {})
+    
+    -- Handle reward notification from server
+    function SeasonalAIO.OnRewardEarned(player, tokens, essence, source)
+        DCSeasons:ShowRewardPopup(tokens, essence, source)
+        DCSeasons.Data.weeklyTokens = DCSeasons.Data.weeklyTokens + tokens
+        DCSeasons.Data.weeklyEssence = DCSeasons.Data.weeklyEssence + essence
+        DCSeasons:UpdateProgressTracker()
+    end
+    
+    -- Handle stats update from server
+    function SeasonalAIO.UpdateStats(player, stats)
+        DCSeasons.Data.weeklyTokens = stats.weeklyTokens or 0
+        DCSeasons.Data.weeklyEssence = stats.weeklyEssence or 0
+        DCSeasons.Data.weeklyTokenCap = stats.weeklyTokenCap or 5000
+        DCSeasons.Data.weeklyEssenceCap = stats.weeklyEssenceCap or 2500
+        DCSeasons.Data.quests = stats.quests or 0
+        DCSeasons.Data.worldBosses = stats.worldBosses or 0
+        DCSeasons.Data.dungeonBosses = stats.dungeonBosses or 0
+        DCSeasons:UpdateProgressTracker()
+    end
+
+    function SeasonalAIO.OnWeeklyReset(player)
+        DCSeasons.Data.weeklyTokens = 0
+        DCSeasons.Data.weeklyEssence = 0
+        DCSeasons.Data.quests = 0
+        DCSeasons.Data.worldBosses = 0
+        DCSeasons.Data.dungeonBosses = 0
+        DCSeasons:UpdateProgressTracker()
+        print("|cff00ff00[DC-Seasons]|r Weekly stats have been reset.")
+    end
+
+    function SeasonalAIO.OnWeeklyChest(player, chestData)
+        -- TODO: Implement chest UI
+        print("|cff00ff00[DC-Seasons]|r Weekly Chest is available!")
+    end
+
+    function SeasonalAIO.OnInitialData(player, data)
+        -- Initial sync
+    end
+end
+
+-- =====================================================================
+-- OPTIONS PANEL
+-- =====================================================================
+
+local function CreateCheckbox(parent, label, description, anchorTo, offsetY, settingKey)
+    local checkbox = CreateFrame("CheckButton", "DCSeasonsOption" .. settingKey, parent, "InterfaceOptionsCheckButtonTemplate")
+    local textRegion = checkbox.Text or _G[checkbox:GetName() .. "Text"]
+    if not textRegion then
+        textRegion = checkbox:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        textRegion:SetPoint("LEFT", checkbox, "RIGHT", 4, 0)
+    end
+    checkbox.Text = textRegion
+    checkbox.Text:SetText(label)
+    checkbox.tooltipText = description
+    checkbox:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", 0, offsetY)
+    checkbox:SetScript("OnClick", function(self)
+        DCSeasons:SetSetting(settingKey, self:GetChecked())
+        if settingKey == "autoShowTracker" and self:GetChecked() then
+            DCSeasons:CreateProgressTracker():Show()
+            DCSeasons:UpdateProgressTracker()
+        end
+    end)
+    return checkbox
+end
+
+local function RefreshOptionsPanel(panel)
+    if not panel then return end
+    if panel.autoShowCheck then
+        panel.autoShowCheck:SetChecked(DCSeasons:GetSetting("autoShowTracker"))
+    end
+    if panel.soundCheck then
+        panel.soundCheck:SetChecked(DCSeasons:GetSetting("enableSounds"))
+    end
+end
+
+local function BuildOptionsPanel()
+    local parentContainer = InterfaceOptionsFramePanelContainer or UIParent
+    local panel = CreateFrame("Frame", "DCSeasonsOptionsPanel", parentContainer)
+    panel.name = ADDON_NAME
+    panel:Hide()
+    
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("DC-Seasons")
+    panel.title = title
+    
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetWidth(500)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Configure the Seasonal reward UI. All settings are saved per account.")
+    panel.desc = desc
+    
+    panel.autoShowCheck = CreateCheckbox(panel, "Show tracker on login", "Automatically display the progress tracker every time you log in.", desc, -16, "autoShowTracker")
+    panel.soundCheck = CreateCheckbox(panel, "Play reward sounds", "Play a coin sound whenever a reward popup is shown.", panel.autoShowCheck, -8, "enableSounds")
+    
+    panel:SetScript("OnShow", function(self)
+        RefreshOptionsPanel(self)
+    end)
+    panel.default = function()
+        for key, value in pairs(DEFAULT_SETTINGS) do
+            DCSeasons_Settings[key] = value
+        end
+        RefreshOptionsPanel(panel)
+    end
+    panel.refresh = RefreshOptionsPanel
+    
+    if InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+    end
+    return panel
+end
+
+DCSeasons.OptionsPanel = BuildOptionsPanel()
 
 -- =====================================================================
 -- INITIALIZATION
@@ -324,9 +474,13 @@ end
 local function Initialize()
     print("|cff00ff00[DC-Seasons]|r Loaded! Type /seasonal for commands.")
     
-    -- Auto-show progress tracker on login (optional)
-    -- DCSeasons:CreateProgressTracker()
-    -- DCSeasons.Frames.progressTracker:Show()
+    if DCSeasons:GetSetting("autoShowTracker") then
+        DCSeasons:CreateProgressTracker()
+        if DCSeasons.Frames.progressTracker then
+            DCSeasons.Frames.progressTracker:Show()
+            DCSeasons:UpdateProgressTracker()
+        end
+    end
 end
 
 -- Initialize after UI loads

@@ -1,5 +1,10 @@
 ﻿-- HLBG_Handlers.lua
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+local function DebugPrint(...)
+    if HLBG and type(HLBG.Debug) == 'function' then
+        HLBG.Debug(...)
+    end
+end
 -- Shared live resources state. Initialize to avoid nil indexing when STATUS messages arrive.
 RES = RES or {}
 HLBG.RES = HLBG.RES or RES
@@ -152,14 +157,36 @@ end)
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
-    if not _pvp or _G["PVPFrameTabHLBG"] then return end
+    if not _pvp then return end
+    if _G["PVPFrameTabHLBG"] then return end -- Already exists
+
     local baseName = _pvp:GetName() or "PVPFrame"
     local lastIdx = _pvp.numTabs or 2
-    local lastTab = _G[baseName.."Tab"..lastIdx]
+    
+    -- Try to find the real last tab if numTabs is unreliable
+    local realLastTab = _G[baseName.."Tab"..lastIdx]
+    if not realLastTab then
+        -- Search backwards
+        for i = lastIdx, 1, -1 do
+            local t = _G[baseName.."Tab"..i]
+            if t and t:IsShown() then
+                realLastTab = t
+                lastIdx = i
+                break
+            end
+        end
+    end
+
     local tab = CreateFrame("Button", "PVPFrameTabHLBG", _pvp, "CharacterFrameTabButtonTemplate")
     tab:SetText("HLBG")
     tab:SetID((lastIdx or 2) + 1)
-    if lastTab then tab:SetPoint("LEFT", lastTab, "RIGHT", -15, 0) else tab:SetPoint("TOPLEFT", _pvp, "BOTTOMLEFT", 10, 7) end
+    
+    if realLastTab then 
+        tab:SetPoint("LEFT", realLastTab, "RIGHT", -5, 0) 
+    else 
+        tab:SetPoint("TOPLEFT", _pvp, "BOTTOMLEFT", 10, 7) 
+    end
+    
     tab:SetScript("OnClick", function()
         if PVPFrameLeft then PVPFrameLeft:Hide() end
         if PVPFrameRight then PVPFrameRight:Hide() end
@@ -285,7 +312,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local preview = (type(msg)=='string' and (msg:sub(1,180) .. ( #msg>180 and '...[truncated]' or '' )) ) or tostring(msg)
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Received AIO msg prefix=%s len=%d preview=%s', tostring(prefix), (type(msg)=='string' and #msg) or 0, preview))
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Received AIO msg prefix=%s len=%d preview=%s', tostring(prefix), (type(msg)=='string' and #msg) or 0, preview))
         end
     end)
     -- Forward a compact raw sample of incoming addon messages to the server-side log (throttled)
@@ -315,7 +342,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
         local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
         -- EXTENSIVE DEBUG: Log parsed values
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS PARSED]|r A=%d H=%d END=%d LOCK=%d", A, H, ENDt, LOCK))
         end
         RES.A = A; RES.H = H; RES.END = ENDt; RES.LOCK = LOCK
@@ -330,7 +357,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         HLBG._lastStatus.END = ENDt  -- Store END time for HUD visibility check
         HLBG._lastStatusTime = GetTime()  -- Track when we last received a STATUS message
         -- EXTENSIVE DEBUG: Confirm storage
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS STORED]|r _lastStatus.A=%s RES.A=%s", tostring(HLBG._lastStatus.A), tostring(RES.A)))
         end
         -- Update HUD visibility since we just received a STATUS message (we're definitely in BG now)
@@ -339,12 +366,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         end
         -- EXTENSIVE DEBUG: Check UpdateHUD exists and call it
         if type(HLBG.UpdateHUD) == 'function' then
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
                 DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFF[HLBG STATUS]|r Calling UpdateHUD...")
             end
             pcall(HLBG.UpdateHUD)
         else
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
                 DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[HLBG STATUS ERROR]|r UpdateHUD not found! Type: " .. type(HLBG.UpdateHUD))
             end
         end
@@ -401,7 +428,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundPipe = htsv:find('%|') and true or false
             local foundNl = htsv:find('\n') and true or false
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Handler sanitized: foundPipe=%s foundNewline=%s', tostring(foundPipe), tostring(foundNl)))
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Handler sanitized: foundPipe=%s foundNewline=%s', tostring(foundPipe), tostring(foundNl)))
         end
     end)
     if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|', '\n') end
@@ -499,7 +526,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
             for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler before conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler before conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
         end
     end)
     htsv = htsv:gsub('%|%|','\n')
@@ -511,7 +538,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
             for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler after conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler after conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
         end
     end)
         local hasTabs = htsv:find('\t') and true or false
@@ -519,15 +546,15 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         pcall(function()
             local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv))
+                DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv))
             end
         end)
         pcall(function()
-            DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
+            DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
         end)
         if hasTabs and type(HLBG.HistoryStr) == 'function' then
             pcall(function()
-                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r About to call HistoryStr')
+                DebugPrint('|cFF33FF99HLBG Debug|r About to call HistoryStr')
             end)
             -- Store the sanitized TSV for debugging
             HLBG._lastSanitizedTSV = htsv
@@ -538,16 +565,16 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 end
             end
             pcall(function()
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
+                DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
             end)
             local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             if ok then
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug|r HistoryStr call succeeded!')
+                    DebugPrint('|cFF33FF99HLBG Debug|r HistoryStr call succeeded!')
                 end)
             else
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug|r HistoryStr error: '..tostring(err))
+                    DebugPrint('|cFFFF5555HLBG Debug|r HistoryStr error: '..tostring(err))
                 end)
             end
         else
@@ -572,7 +599,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
         pcall(function()
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Processing STATS_JSON, length: ' .. #sj)
+            DebugPrint('|cFF33FF99HLBG Debug:|r Processing STATS_JSON, length: ' .. #sj)
         end)
         local ok, decoded = pcall(function()
             -- First try built-in JSON decoder if available
@@ -617,7 +644,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             end
             local totalBattles = tonumber(decoded.total) or (allianceWins + hordeWins + draws)
             pcall(function()
-                DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles))
+                DebugPrint(string.format('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles))
             end)
             -- Store total if present
             if decoded.total and HLBG.UI and HLBG.UI.History then
@@ -636,13 +663,13 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             if type(HLBG.Stats) == 'function' then
                 pcall(HLBG.Stats, normalizedStats)
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with normalized data')
+                    DebugPrint('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with normalized data')
                 end)
             end
             if type(HLBG.OnServerStats) == 'function' then
                 pcall(HLBG.OnServerStats, normalizedStats)
                 pcall(function()
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with normalized data')
+                    DebugPrint('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with normalized data')
                 end)
             end
             -- Force update stats display if UI exists
@@ -705,12 +732,12 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                     end
                     table.insert(lines, "|cFFAAAA00Click 'Refresh' to update statistics|r")
                     HLBG.UI.Stats.Text:SetText(table.concat(lines, "\n"))
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Updated Stats UI with improved formatted layout')
+                    DebugPrint('|cFF33FF99HLBG Debug:|r Updated Stats UI with improved formatted layout')
                 end)
             end
         else
             pcall(function()
-                DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Debug:|r JSON decode failed: ' .. tostring(decoded))
+                DebugPrint('|cFFFF5555HLBG Debug:|r JSON decode failed: ' .. tostring(decoded))
             end)
         end
         return
@@ -721,11 +748,11 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             if type(HLBG.HandleQueueStatus) == 'function' then
                 HLBG.HandleQueueStatus(msg)
                 if DEFAULT_CHAT_FRAME then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Queue status received and processed')
+                    DebugPrint('|cFF33FF99HLBG Debug:|r Queue status received and processed')
                 end
             else
                 if DEFAULT_CHAT_FRAME then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG Debug:|r HandleQueueStatus function not available (will be loaded from HLBG_Queue_Client.lua)')
+                    DebugPrint('|cFFFFAA00HLBG Debug:|r HandleQueueStatus function not available (will be loaded from HLBG_Queue_Client.lua)')
                 end
             end
         end)
@@ -738,11 +765,11 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             if type(HLBG.ParseConfigInfo) == 'function' then
                 HLBG.ParseConfigInfo(msg)
                 if DEFAULT_CHAT_FRAME then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Debug:|r Config info received and processed')
+                    DebugPrint('|cFF33FF99HLBG Debug:|r Config info received and processed')
                 end
             else
                 if DEFAULT_CHAT_FRAME then
-                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG Debug:|r ParseConfigInfo function not available (will be loaded from HLBG_Info.lua)')
+                    DebugPrint('|cFFFFAA00HLBG Debug:|r ParseConfigInfo function not available (will be loaded from HLBG_Info.lua)')
                 end
             end
         end)

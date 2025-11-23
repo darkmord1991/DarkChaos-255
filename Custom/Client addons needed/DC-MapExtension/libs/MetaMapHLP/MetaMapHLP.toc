@@ -1,7 +1,0 @@
-## Interface: 30300
-## Title: MetaMapHLP
-## Author: MetaHawk
-## Notes: Help module for MetaMap.
-## Dependencies: MetaMap
-## LoadOnDemand: 1
-MetaMapHLP.xml

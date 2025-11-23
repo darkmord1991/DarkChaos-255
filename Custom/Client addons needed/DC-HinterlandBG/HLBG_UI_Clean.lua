@@ -280,9 +280,9 @@ if not HLBG.UI.Stats.Content then
     statsText:SetJustifyH("LEFT")
     statsText:SetText([[|cFFFFD700Hinterland BG Statistics|r
 |cFFFFFFFFTotal records:|r --
-|cFFFFFFFFAlliance wins:|r --  |cFFAAAA(losses:|r --)|r
-|cFFFFFFFFHorde wins:|r --  |cFFAAAA(losses:|r --)|r
-|cFFFFFFFFDraws:|r --  |cFFAAAAManual resets:|r --|r
+|cFFFFFFFFAlliance wins:|r --  |cFFAAAAAA(losses:|r --)|r
+|cFFFFFFFFHorde wins:|r --  |cFFAAAAAA(losses:|r --)|r
+|cFFFFFFFFDraws:|r --  |cFFAAAAAAManual resets:|r --|r
 |cFFFFFFFFWin reasons:|r depletion --, tiebreaker --
 |cFFFFFFFFCurrent streak:|r --
 |cFFFFFFFFLongest streak:|r --
@@ -345,33 +345,29 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
     addLine(string.format("  Draws: |cFFAAAA88%d|r", statsData.draws or 0))
     
     -- Win Reasons
-    if statsData.depletionWins or statsData.tiebreakerWins or statsData.manualResets then
-        addSection("Win Reasons")
-        addLine(string.format("  Depletion: |cFFFFFFFF%d|r", statsData.depletionWins or 0))
-        addLine(string.format("  Tiebreaker: |cFFFFFFFF%d|r", statsData.tiebreakerWins or 0))
-        addLine(string.format("  Manual Resets: |cFFFFFFFF%d|r", statsData.manualResets or 0))
-    end
+    addSection("Win Reasons")
+    addLine(string.format("  Depletion: |cFFFFFFFF%d|r", statsData.depletionWins or 0))
+    addLine(string.format("  Tiebreaker: |cFFFFFFFF%d|r", statsData.tiebreakerWins or 0))
+    addLine(string.format("  Manual Resets: |cFFFFFFFF%d|r", statsData.manualResets or 0))
     
     -- Streaks
-    if statsData.currentStreak or statsData.longestStreak then
-        addSection("Streaks")
-        local currStreak = statsData.currentStreak or {}
-        local longStreak = statsData.longestStreak or {}
-        
-        local currTeam = currStreak.team or "None"
-        local currCount = currStreak.count or 0
-        local currColor = currTeam == "Alliance" and "0080FF" or (currTeam == "Horde" and "FF4040" or "AAAAAA")
-        addLine(string.format("  Current: |cFF%s%s x%d|r", currColor, currTeam, currCount))
-        
-        local longTeam = longStreak.team or "None"
-        local longCount = longStreak.count or 0
-        local longColor = longTeam == "Alliance" and "0080FF" or (longTeam == "Horde" and "FF4040" or "AAAAAA")
-        addLine(string.format("  Longest: |cFF%s%s x%d|r", longColor, longTeam, longCount))
-    end
+    addSection("Streaks")
+    local currStreak = statsData.currentStreak or {}
+    local longStreak = statsData.longestStreak or {}
+    
+    local currTeam = currStreak.team or "None"
+    local currCount = currStreak.count or 0
+    local currColor = currTeam == "Alliance" and "0080FF" or (currTeam == "Horde" and "FF4040" or "AAAAAA")
+    addLine(string.format("  Current: |cFF%s%s x%d|r", currColor, currTeam, currCount))
+    
+    local longTeam = longStreak.team or "None"
+    local longCount = longStreak.count or 0
+    local longColor = longTeam == "Alliance" and "0080FF" or (longTeam == "Horde" and "FF4040" or "AAAAAA")
+    addLine(string.format("  Longest: |cFF%s%s x%d|r", longColor, longTeam, longCount))
     
     -- Largest Margin
+    addSection("Largest Margin Victory")
     if statsData.largestMargin then
-        addSection("Largest Margin Victory")
         local lm = statsData.largestMargin
         local team = lm.team or "Unknown"
         local margin = lm.margin or 0
@@ -381,6 +377,8 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
         local color = team == "Alliance" and "0080FF" or "FF4040"
         addLine(string.format("  |cFF%s%s|r by |cFFFFFFFF%d|r points", color, team, margin))
         addLine(string.format("  Score: A:%d H:%d  |cFFAAAA88(%s)|r", scoreA, scoreH, date))
+    else
+        addLine("  No data available")
     end
     
     -- Top Winners by Affix
@@ -500,7 +498,11 @@ HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
 
     -- Resize scroll child so text height remains consistent after refresh
     if HLBG.UI.Stats.ScrollChild and HLBG.UI.Stats.Text then
+        -- Ensure width is set before measuring height
+        HLBG.UI.Stats.Text:SetWidth(540)
         local textHeight = HLBG.UI.Stats.Text:GetStringHeight()
+        -- If height is 0 (frame hidden), use a safe default or try to estimate
+        if textHeight == 0 then textHeight = 1200 end
         local targetHeight = math.max(400, (textHeight or 0) + 32)
         HLBG.UI.Stats.ScrollChild:SetHeight(targetHeight)
     end
@@ -594,7 +596,7 @@ if not HLBG.UI.Queue.Content then
     statusText:SetPoint("TOP", HLBG.UI.Queue.Content, "TOP", 0, -60)
     statusText:SetWidth(560)
     statusText:SetJustifyH("CENTER")
-    statusText:SetText("|cFFAAAAANot in queue|r\n\nUse the button below to join")
+    statusText:SetText("|cFFAAAAAANot in queue|r\n\nUse the button below to join")
     HLBG.UI.Queue.StatusText = statusText
     -- Join/Leave Queue button
     local queueBtn = CreateFrame("Button", nil, HLBG.UI.Queue.Content, "UIPanelButtonTemplate")

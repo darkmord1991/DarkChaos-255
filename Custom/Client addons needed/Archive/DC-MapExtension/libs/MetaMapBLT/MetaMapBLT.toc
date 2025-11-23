@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: MetaMapBLT
+## Notes: Adds Boss Loot Tables to MetaMap, based on AtlasLoot Enhanced by Daviesh
+## Dependencies: MetaMap
+## LoadOnDemand: 1
+## SavedVariables:
+MetaMapBLT.xml

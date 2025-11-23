@@ -1,0 +1,30 @@
+## Interface: 30300
+## Title: DC-MapExtension
+## Notes: DarkChaos world map enhancements (custom maps, hotspots, POIs).
+## Author: DarkChaos Team
+## Version: 0.1.0-dev
+## SavedVariables: DCMapExtensionDB
+## SavedVariablesPerCharacter: DCMapExtensionCharDB
+## OptionalDeps: Ace3, Mapster, WDM, GatherMate, ZoneLevelInfo, Atlas, AtlasLoot, !Astrolabe, LibMapData-1.0
+## X-Category: Map
+## X-Website: https://github.com/darkmord1991/DarkChaos-255
+
+# Utility
+utils\DC_DebugUtils.lua
+
+# Static data
+data\MapBounds.lua
+data\CustomMaps.lua
+data\POIData.lua
+data\HotspotIcons.lua
+
+# Core
+Core.lua
+
+# Modules
+modules\TextureController.lua
+modules\AtlasManager.lua
+modules\POIManager.lua
+modules\HotspotOverlay.lua
+modules\DungeonAtlas.lua
+modules\ZoneInfo.lua

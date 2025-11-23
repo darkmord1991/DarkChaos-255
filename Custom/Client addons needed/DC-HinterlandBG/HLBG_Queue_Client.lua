@@ -71,7 +71,7 @@ end
 function HLBG.HandleQueueStatus(statusString)
     if type(statusString) ~= 'string' then return end
     -- Debug: Show what we received
-    if DEFAULT_CHAT_FRAME then
+    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
     end
     -- Parse status packet - support multiple formats:
@@ -221,7 +221,7 @@ end
 --     return
 -- end
 -- Debug announce
-if DEFAULT_CHAT_FRAME then
+if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG Debug:|r Queue client functions loaded. Type /hlbgq for commands.")
 end
 
