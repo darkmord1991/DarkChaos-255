@@ -84,9 +84,6 @@ namespace {
         
         // Save the updated bag to database
         bag->SaveToDB(nullptr);
-        
-        // Force update the player's inventory to reflect changes
-        player->SetUInt32Value(PLAYER_FIELD_NUM_RESPECS, player->GetUInt32Value(PLAYER_FIELD_NUM_RESPECS));
     }
 
     void ApplyHeirloomBagScaling(Player* player)
