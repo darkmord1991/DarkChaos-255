@@ -108,7 +108,7 @@ namespace HLBGAddon
     }
 
     // Build TSV string for history rows (id\tseason\tseasonName\tts\twinner\taffix\treason) with lines joined by "||" for safe transport
-    static std::string BuildHistoryTsv(PreparedQueryResult& rs)
+    static std::string BuildHistoryTsv(QueryResult& rs)
     {
         std::ostringstream ss;
         bool first = true;
@@ -304,16 +304,9 @@ namespace HLBGAddon
         
         std::string query = "SELECT h.id, h.season, s.name AS seasonName, h.occurred_at, h.winner_tid, h.win_reason, h.affix FROM hlbg_winner_history h LEFT JOIN hlbg_seasons s ON h.season=s.season";
         if (season > 0)
-            query += " WHERE h.season=?";
+            query += " WHERE h.season=" + std::to_string(season);
         query += " ORDER BY " + sortCol + " " + odir;
-        query += " LIMIT ? OFFSET ?";
-        
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_HLBG_HISTORY);
-        uint8 index = 0;
-        if (season > 0)
-            stmt->SetData(index++, season);
-        stmt->SetData(index++, per);
-        stmt->SetData(index++, offset);
+        query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
         
         // Get total count for pagination
         std::string countQuery = "SELECT COUNT(*) FROM hlbg_winner_history h";
@@ -323,7 +316,7 @@ namespace HLBGAddon
         QueryResult countRes = CharacterDatabase.Query(countQuery);
         if (countRes) totalRows = countRes->Fetch()[0].Get<uint32>();
 
-        PreparedQueryResult rs = CharacterDatabase.Query(stmt);
+        QueryResult rs = CharacterDatabase.Query(query);
         if (!rs)
         {
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_HISTORY_TSV] ");

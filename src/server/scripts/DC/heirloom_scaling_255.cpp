@@ -45,23 +45,80 @@ namespace {
         uint8 tier = 3; // Default to tier 3 for heirlooms
         bool hasUpgrade = false;
     };
-    
+
+    constexpr uint32 HEIRLOOM_BAG_MIN_SLOTS   = 12;
+    constexpr uint32 HEIRLOOM_BAG_MAX_SLOTS   = 36; // Client hard cap
+    constexpr uint32 HEIRLOOM_BAG_MAX_LEVEL   = 130;
+
     HeirloomUpgradeInfo GetHeirloomUpgradeInfo(uint32 itemGUID) {
         HeirloomUpgradeInfo info;
-        
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT upgrade_level, tier_id FROM dc_item_upgrades WHERE item_guid = {}",
             itemGUID
         );
-        
+
         if (result) {
             Field* fields = result->Fetch();
             info.upgradeLevel = fields[0].Get<uint8>();
             info.tier = fields[1].Get<uint8>();
             info.hasUpgrade = true;
         }
-        
+
         return info;
+    }
+
+    uint32 CalculateHeirloomBagSlots(uint32 playerLevel)
+    {
+        if (playerLevel <= 1)
+            return HEIRLOOM_BAG_MIN_SLOTS;
+
+        if (playerLevel >= HEIRLOOM_BAG_MAX_LEVEL)
+            return HEIRLOOM_BAG_MAX_SLOTS;
+
+        float progression = float(playerLevel - 1) / float(HEIRLOOM_BAG_MAX_LEVEL - 1);
+        float slotGain = float(HEIRLOOM_BAG_MAX_SLOTS - HEIRLOOM_BAG_MIN_SLOTS);
+        uint32 scaledSlots = HEIRLOOM_BAG_MIN_SLOTS + uint32(progression * slotGain);
+
+        if (scaledSlots > HEIRLOOM_BAG_MAX_SLOTS)
+            return HEIRLOOM_BAG_MAX_SLOTS;
+
+        if (scaledSlots < HEIRLOOM_BAG_MIN_SLOTS)
+            return HEIRLOOM_BAG_MIN_SLOTS;
+
+        return scaledSlots;
+    }
+
+    void ApplyHeirloomBagScaling(Player* player, Bag* bag)
+    {
+        if (!player || !bag)
+            return;
+
+        ItemTemplate const* proto = bag->GetTemplate();
+        if (!proto || proto->Quality != ITEM_QUALITY_HEIRLOOM || proto->Class != ITEM_CLASS_CONTAINER)
+            return;
+
+        uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
+        if (bag->GetBagSize() == desiredSlots)
+            return;
+
+        bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, desiredSlots);
+    }
+
+    void ApplyHeirloomBagScaling(Player* player)
+    {
+        if (!player)
+            return;
+
+        auto updateRange = [player](uint8 startSlot, uint8 endSlot)
+        {
+            for (uint8 slot = startSlot; slot < endSlot; ++slot)
+                if (Bag* bag = player->GetBagByPos(slot))
+                    ApplyHeirloomBagScaling(player, bag);
+        };
+
+        updateRange(INVENTORY_SLOT_BAG_START, INVENTORY_SLOT_BAG_END);
+        updateRange(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
     }
 }
 
@@ -209,34 +266,7 @@ public:
 
         uint32 playerLevel = player->GetLevel();
         
-        // Heirloom bag scaling: 12 slots at level 1, scaling to 36 slots at level 130
-        // Linear progression: slots = 12 + (level - 1) * (36 - 12) / (130 - 1)
-        // Simplified: slots = 12 + (level - 1) * 24 / 129
-        
-        const uint32 MIN_SLOTS = 12;      // Starting slots at level 1
-        const uint32 MAX_SLOTS = 36;      // Maximum slots at level 130 (also WoW client hard cap)
-        const uint32 MAX_SCALE_LEVEL = 130; // Level at which bag reaches max size
-        
-        uint32 scaledSlots = MIN_SLOTS;
-        
-        if (playerLevel >= MAX_SCALE_LEVEL)
-        {
-            // At or above level 130, use max slots
-            scaledSlots = MAX_SLOTS;
-        }
-        else if (playerLevel > 1)
-        {
-            // Linear scaling from level 1 to 130
-            // Formula: MIN_SLOTS + (current_level - 1) * (MAX_SLOTS - MIN_SLOTS) / (MAX_SCALE_LEVEL - 1)
-            float progression = float(playerLevel - 1) / float(MAX_SCALE_LEVEL - 1);
-            scaledSlots = MIN_SLOTS + uint32(progression * float(MAX_SLOTS - MIN_SLOTS));
-        }
-
-        // Update bag size
-        if (scaledSlots >= MIN_SLOTS && scaledSlots <= MAX_SLOTS)
-        {
-            bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, scaledSlots);
-        }
+        ApplyHeirloomBagScaling(player, bag);
     }
 
     // Hook to bypass level requirements for heirloom items
@@ -258,6 +288,16 @@ public:
         }
 
         return true;
+    }
+
+    void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
+    {
+        ApplyHeirloomBagScaling(player);
+    }
+
+    void OnLogin(Player* player) override
+    {
+        ApplyHeirloomBagScaling(player);
     }
 };
 

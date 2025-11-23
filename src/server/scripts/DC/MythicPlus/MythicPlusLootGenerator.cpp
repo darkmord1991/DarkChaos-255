@@ -168,7 +168,7 @@ bool GivePersonalLoot(Player* player, uint32 itemId, uint32 count = 1)
     }
 
     player->SendItemRetrievalMail(itemId, count);
-    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Inventory full, loot mailed.");
+    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Inventory full, loot mailed.");
     return true;
 }
 
@@ -243,31 +243,38 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     if (!sConfigMgr->GetOption<bool>("MythicPlus.BossLoot.Enabled", true))
         return;
 
-    if (ShouldSuppressLoot(boss))
+    bool suppressNativeLoot = ShouldSuppressLoot(boss);
+    boss->loot.clear();
+    boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+
+    if (suppressNativeLoot)
     {
-        boss->loot.clear();
-        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-        LOG_DEBUG("mythic.loot", "Loot suppressed for {} (entry {}) in Mythic+ run {} until completion", boss->GetName(), boss->GetEntry(), state->instanceId);
-        return;
+        LOG_DEBUG("mythic.loot", "Suppressed native loot for {} (entry {}) in Mythic+ run {}", boss->GetName(), boss->GetEntry(), state->instanceId);
     }
 
     bool isFinalBoss = IsFinalBossEncounter(state, boss);
-    if (!isFinalBoss)
+    if (isFinalBoss)
     {
-        boss->loot.clear();
-        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-        LOG_DEBUG("mythic.loot", "Skipping loot for non-final boss {} (entry {}) in Mythic+ run {}", boss->GetName(), boss->GetEntry(), state->instanceId);
+        if (state->finalBossLootGranted)
+        {
+            LOG_DEBUG("mythic.loot", "Final boss loot already granted for instance {}", state->instanceId);
+            return;
+        }
+    }
+
+    uint32 lootTrackingId = boss->GetSpawnId();
+    if (!lootTrackingId)
+        lootTrackingId = boss->GetEntry();
+
+    if (!state->lootGrantedBosses.insert(lootTrackingId).second)
+    {
+        LOG_DEBUG("mythic.loot", "Loot already generated for boss {} (entry {}) in instance {}",
+                  boss->GetName(), boss->GetEntry(), state->instanceId);
         return;
     }
 
-    if (state->finalBossLootGranted)
-    {
-        LOG_DEBUG("mythic.loot", "Final boss loot already granted for instance {}", state->instanceId);
-        return;
-    }
-
-    state->finalBossLootGranted = true;
-    state->lootGrantedBosses.insert(boss->GetEntry());
+    if (isFinalBoss)
+        state->finalBossLootGranted = true;
 
     std::vector<Player*> participants;
     Map::PlayerList const& players = map->GetPlayers();
@@ -288,21 +295,21 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
     uint32 targetItemLevel = GetItemLevelForKeystoneLevel(state->keystoneLevel);
 
-    boss->loot.clear();
-    boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-
     // Randomize selection order so winners are unpredictable
     std::vector<Player*> shuffled = participants;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::shuffle(shuffled.begin(), shuffled.end(), gen);
 
-    uint32 desiredCount = sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2);
+    uint32 desiredCount = isFinalBoss
+        ? sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2)
+        : sConfigMgr->GetOption<uint32>("MythicPlus.BossItems", 1);
     desiredCount = std::max<uint32>(1, std::min<uint32>(desiredCount, 5));
     uint32 itemsRequested = std::min<uint32>(desiredCount, shuffled.size());
     uint32 itemsGenerated = 0;
 
-    LOG_INFO("mythic.loot", "Final boss {} dropping {} spec-tailored items (M+{}). Eligible players: {}", boss->GetName(), itemsRequested, state->keystoneLevel, participants.size());
+    LOG_INFO("mythic.loot", "Boss {} dropping {} spec-tailored items (M+{}, final: {}). Eligible players: {}",
+             boss->GetName(), itemsRequested, state->keystoneLevel, isFinalBoss ? "yes" : "no", participants.size());
 
     for (Player* player : shuffled)
     {

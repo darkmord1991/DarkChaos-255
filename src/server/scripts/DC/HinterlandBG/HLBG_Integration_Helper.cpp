@@ -12,17 +12,20 @@ class HinterlandBattlegroundIntegration
 public:
 	static void OnBattlegroundStart(uint32 instanceId, uint32 affixId)
 	{
+		/* Legacy DB call - table removed
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_BATTLE_START);
 		stmt->SetData(0, affixId);
 		stmt->SetData(1, instanceId);
 		// Execute prepared statement (CharacterDatabase::Execute returns void)
 		CharacterDatabase.Execute(stmt);
+		*/
 		BroadcastBattleStart(affixId);
 		LOG_INFO("hlbg", "Hinterland BG started - Instance: {}, Affix: {}", instanceId, affixId);
 	}
 
 	static void OnBattlegroundEnd(uint32 instanceId, const std::string& winner, uint32 allianceResources, uint32 hordeResources, uint32 duration, uint32 affixId)
 	{
+		/* Legacy DB calls - table removed
 		CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_BATTLE_END);
 		stmt->SetData(0, winner);
 		stmt->SetData(1, duration);
@@ -40,6 +43,9 @@ public:
 		stmt2->SetData(1, hordePlayers);
 		stmt2->SetData(2, instanceId);
 		CharacterDatabase.Execute(stmt2);
+		*/
+		uint32 alliancePlayers = GetPlayerCountInBG(instanceId, ALLIANCE);
+		uint32 hordePlayers = GetPlayerCountInBG(instanceId, HORDE);
 
 		HLBGAIOHandlers::UpdateBattleResults(winner, duration, affixId, allianceResources, hordeResources, alliancePlayers, hordePlayers);
 		UpdatePlayerStatistics(instanceId, winner);
@@ -106,8 +112,10 @@ public:
 		stmt2->SetData(0, victimGuid);
 		CharacterDatabase.Execute(stmt2);
 
+		/* Legacy DB call
 		CharacterDatabasePreparedStatement* stmt3 = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_STATISTICS_KILLS);
 		CharacterDatabase.Execute(stmt3);
+		*/
 		// instanceId not used in this integration shim; mark explicitly to avoid warnings
 		(void)instanceId;
 	}
@@ -145,6 +153,7 @@ private:
 
 	static void UpdatePlayerStatistics(uint32 instanceId, const std::string& winner)
 	{
+		/* Legacy DB calls - table removed
 		if (winner == "Alliance")
 		{
 			CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_HLBG_ALLIANCE_WINS);
@@ -172,6 +181,7 @@ private:
 		{
 			LOG_ERROR("hlbg", "Failed to query participant count for instance {}", instanceId);
 		}
+		*/
 	}
 
 	static void SendBattleStatusToPlayer(Player* player, uint32 instanceId)

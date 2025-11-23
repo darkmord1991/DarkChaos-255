@@ -411,7 +411,7 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*
     {
         uint8 remaining = profile->deathBudget > state->deaths ? profile->deathBudget - state->deaths : 0;
         if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
-            ChatHandler(owner->GetSession()).SendSysMessage(Acore::StringFormat("|cffff8000Mythic+|r: Death recorded. {} remaining.", remaining));
+            ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. %u remaining.", remaining);
     }
 }
 
@@ -442,7 +442,7 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
         uint64& lastReset = state->recentBossEvades[creature->GetEntry()];
         if (lastReset != 0 && now >= lastReset && now - lastReset < graceWindow)
         {
-            AnnounceToInstance(map, "|cffffa500Mythic+|r: Ignoring duplicate boss reset (grace window active).");
+            AnnounceToInstance(map, "|cffffa500[Mythic+]|r Ignoring duplicate boss reset (grace window active).");
             return;
         }
 
@@ -464,7 +464,7 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
         }
     }
 
-    AnnounceToInstance(map, "|cffff0000Mythic+|r: Boss reset detected. Prepare for another pull!");
+    AnnounceToInstance(map, "|cffff0000[Mythic+]|r Boss reset detected. Prepare for another pull!");
 }
 
 void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer*/)
@@ -659,7 +659,7 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
     else
     {
         player->SendItemRetrievalMail(tokenEntry, tokenCount);
-        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Tokens could not be added to your bags and were mailed instead.");
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Tokens could not be added to your bags and were mailed instead.");
     }
 
     // Mark the weekly vault as claimed
@@ -667,7 +667,7 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
                                     slot, tokenCount, guidLow, seasonId, weekStart);
 
     InsertTokenLog(guidLow, 0, DUNGEON_DIFFICULTY_EPIC, 0, player->GetLevel(), 0, tokenCount);
-    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: You claimed Slot {} and received {} tokens.", slot, tokenCount));
+    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed slot %u and received %u tokens.", slot, tokenCount);
     return true;
 }
 
@@ -1015,11 +1015,11 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         else
         {
             player->SendItemRetrievalMail(tokenEntry, tokenCount);
-            ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Mythic+|r: Tokens could not be added to your bags and were mailed instead.");
+            ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Tokens could not be added to your bags and were mailed instead.");
         }
 
         InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
-        ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Awarded {} tokens.", tokenCount));
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded %u tokens.", tokenCount);
         
         // Track tokens for run summary (only for keystone owner)
         if (player->GetGUID() == state->ownerGuid)
@@ -1448,8 +1448,8 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
             Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
             if (keystoneItem)
             {
-                ChatHandler(player->GetSession()).SendSysMessage(
-                    Acore::StringFormat("|cff00ff00Mythic+:|r New keystone generated (M+{})", level));
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cff00ff00[Mythic+]|r New keystone generated (M+%u)", level);
             }
         }
     }
@@ -1481,22 +1481,22 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     if (MapEntry const* mapEntry = sMapStore.LookupEntry(state->mapId))
         dungeonName = mapEntry->name[0];
     
-    handler.SendSysMessage(("|cffffd700Dungeon:|r " + dungeonName).c_str());
-    handler.SendSysMessage(Acore::StringFormat("|cffffd700Keystone Level:|r +{}", state->keystoneLevel));
-    handler.SendSysMessage(Acore::StringFormat("|cffffd700Duration:|r {} min {} sec", minutes, seconds));
+    handler.PSendSysMessage("|cffffd700Dungeon:|r %s", dungeonName.c_str());
+    handler.PSendSysMessage("|cffffd700Keystone Level:|r +%u", state->keystoneLevel);
+    handler.PSendSysMessage("|cffffd700Duration:|r %u min %u sec", minutes, seconds);
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
     
     // Combat statistics
     handler.SendSysMessage("|cffff8000Combat Statistics:|r");
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Bosses Killed:|r {}", state->bossesKilled));
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Enemies Killed:|r {}", state->npcsKilled));
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Total Deaths:|r {}", state->deaths));
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Boss Resets:|r {}", state->wipes));
+    handler.PSendSysMessage("|cffffffff  Bosses Killed:|r %u", state->bossesKilled);
+    handler.PSendSysMessage("|cffffffff  Enemies Killed:|r %u", state->npcsKilled);
+    handler.PSendSysMessage("|cffffffff  Total Deaths:|r %u", state->deaths);
+    handler.PSendSysMessage("|cffffffff  Group Wipes:|r %u", state->wipes);
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
     
     // Rewards
     handler.SendSysMessage("|cffff8000Rewards:|r");
-    handler.SendSysMessage(Acore::StringFormat("|cffffffff  Tokens Awarded:|r {}", state->tokensAwarded));
+    handler.PSendSysMessage("|cffffffff  Tokens Awarded:|r %u", state->tokensAwarded);
     
     if (state->keystoneUpgraded)
     {
@@ -1505,11 +1505,11 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
         int8 levelChange = static_cast<int8>(newLevel) - static_cast<int8>(oldLevel);
         
         if (levelChange > 0)
-            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  Keystone:|r Upgraded from +{} to |cff00ff00+{}|r (+{})", oldLevel, newLevel, levelChange));
+            handler.PSendSysMessage("|cff00ff00  Keystone:|r Upgraded from +%u to |cff00ff00+%u|r (+%d)", oldLevel, newLevel, levelChange);
         else if (levelChange < 0)
-            handler.SendSysMessage(Acore::StringFormat("|cffffaa00  Keystone:|r Downgraded from +{} to |cffffaa00+{}|r ({})", oldLevel, newLevel, levelChange));
+            handler.PSendSysMessage("|cffffaa00  Keystone:|r Downgraded from +%u to |cffffaa00+%u|r (%d)", oldLevel, newLevel, levelChange);
         else
-            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Keystone:|r Maintained at +{}", newLevel));
+            handler.PSendSysMessage("|cffffffff  Keystone:|r Maintained at +%u", newLevel);
     }
     else if (player->GetGUID() == state->ownerGuid)
     {

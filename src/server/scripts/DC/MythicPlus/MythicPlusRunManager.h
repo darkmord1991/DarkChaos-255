@@ -67,7 +67,7 @@ public:
         std::unordered_set<ObjectGuid::LowType> participants;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
-        std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot seeding per encounter
+        std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot generation per boss (spawnId fallback to entry)
         bool finalBossLootGranted = false;
         std::unordered_map<uint32, uint64> recentBossEvades; // Tracks per-boss reset timestamps
         uint64 timerEndsAt = 0;

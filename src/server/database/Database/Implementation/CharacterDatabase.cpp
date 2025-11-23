@@ -679,6 +679,15 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "INSERT INTO hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
+
+    // HLBG Player Stats
+    PrepareStatement(CHAR_INS_HLBG_PLAYER_ENTER, "INSERT INTO hlbg_player_stats (player_guid, player_name, faction, battles_participated, last_participation) VALUES (?, ?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE battles_participated = battles_participated + 1, last_participation = NOW(), player_name = VALUES(player_name), faction = VALUES(faction)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_UPD_HLBG_PLAYER_KILLS, "UPDATE hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_UPD_HLBG_PLAYER_DEATHS, "UPDATE hlbg_player_stats SET total_deaths = total_deaths + 1 WHERE player_guid = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_UPD_HLBG_PLAYER_RESOURCES, "UPDATE hlbg_player_stats SET resources_captured = resources_captured + ? WHERE player_guid = ?", CONNECTION_ASYNC);
+
+    // HLBG Scoreboard
+    PrepareStatement(CHAR_SEL_HLBG_HISTORY_PAGE, "SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix FROM hlbg_winner_history ORDER BY id DESC LIMIT ? OFFSET ?", CONNECTION_SYNCH);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

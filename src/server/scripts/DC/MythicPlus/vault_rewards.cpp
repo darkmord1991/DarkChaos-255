@@ -303,7 +303,7 @@ bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint
                 "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND item_id = {}",
                 guidLow, seasonId, weekStart, itemId);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: You claimed %u tokens (ilvl %u equivalent).", tokenCount, itemLevel);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed %u tokens (ilvl %u equivalent).", tokenCount, itemLevel);
             LOG_INFO("mythic.vault", "Player {} claimed vault reward: {} tokens (ilvl {}) for season {}, week {}",
                      guidLow, tokenCount, itemLevel, seasonId, weekStart);
             
@@ -325,7 +325,7 @@ bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint
             "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND item_id = {}",
             guidLow, seasonId, weekStart, itemId);
         
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Mythic+|r: Inventory full, %u tokens mailed (ilvl %u equivalent).", tokenCount, itemLevel);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Inventory full, %u tokens mailed (ilvl %u equivalent).", tokenCount, itemLevel);
         LOG_INFO("mythic.vault", "Player {} claimed vault reward (mailed): {} tokens (ilvl {}) for season {}, week {}",
                  guidLow, tokenCount, itemLevel, seasonId, weekStart);
         return true;
