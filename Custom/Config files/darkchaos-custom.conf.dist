@@ -3475,19 +3475,19 @@ ItemUpgrade.MaxUpgradeLevel = 15
 
 #
 #    ItemUpgrade.Currency.EssenceId
-#        Description: Item ID for Upgrade Essence (primary currency)
-#        Default:     100998 (Custom item: Upgrade Essence)
+#        Description: Item ID for Upgrade Essence (secondary currency)
+#        Default:     300312 (Custom item: Upgrade Essence)
 #        Range:       Any valid item_template entry
 #
-ItemUpgrade.Currency.EssenceId = 100998
+ItemUpgrade.Currency.EssenceId = 300312
 
 #
 #    ItemUpgrade.Currency.TokenId
-#        Description: Item ID for Upgrade Tokens (secondary currency)
-#        Default:     100999 (Custom item: Upgrade Token)
+#        Description: Item ID for Upgrade Tokens (primary currency)
+#        Default:     300311 (Custom item: Upgrade Token)
 #        Range:       Any valid item_template entry
 #
-ItemUpgrade.Currency.TokenId = 100999
+ItemUpgrade.Currency.TokenId = 300311
 
 #
 #    ItemUpgrade.Cost.BaseCostEssence

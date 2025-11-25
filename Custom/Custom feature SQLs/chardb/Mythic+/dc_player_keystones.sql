@@ -72,7 +72,7 @@ CREATE TABLE dc_mythic_party_members (
 /*
  * When a player receives a keystone from the NPC:
  * 1. Check dc_player_keystones for their current level (default M+2)
- * 2. Give keystone item (190001-190009) matching their level
+ * 2. Give keystone item (300313-300321) matching their level
  * 
  * When player uses keystone on pedestal:
  * 1. Verify keystone item exists in inventory

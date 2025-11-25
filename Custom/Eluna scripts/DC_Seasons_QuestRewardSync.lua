@@ -18,10 +18,21 @@ if not AIO or type(AIO.Handle) ~= "function" then
     return
 end
 
--- Check if DC_Seasons handler exists
-if not AIO.GetHandlers or not AIO.GetHandlers()["DC_Seasons"] then
-    print("[DC-Seasons Sync] ERROR: DC_Seasons AIO handler not loaded; skipping quest reward sync")
-    return
+-- Check if DC_Seasons handler exists (check global export from DC_Seasons_AIO.lua)
+local DC_Seasons_Handler = _G.DC_Seasons_Handler
+if not DC_Seasons_Handler then
+    -- Try AIO.GetHandlers as fallback
+    if AIO.GetHandlers then
+        local handlers = AIO.GetHandlers()
+        if handlers then
+            DC_Seasons_Handler = handlers["DC_Seasons"]
+        end
+    end
+end
+
+if not DC_Seasons_Handler then
+    print("[DC-Seasons Sync] WARNING: DC_Seasons AIO handler not found; will use direct AIO.Handle calls")
+    -- Don't return - we can still send AIO messages directly
 end
 
 -- Configuration
@@ -66,7 +77,7 @@ end
 -- Helper: Query player's current token balance
 local function GetPlayerTokens(playerGuid, season)
     season = season or CONFIG.SEASON
-    local query = CharacterDatabaseQuery(string.format(
+    local query = CharDBQuery(string.format(
         "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = %d AND currency_type = 'upgrade_token' AND season = %d",
         playerGuid, season
     ))

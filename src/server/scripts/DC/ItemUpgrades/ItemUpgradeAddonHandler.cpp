@@ -140,7 +140,7 @@ private:
 
             // Send response via SYSTEM chat (addon listens to CHAT_MSG_SYSTEM)
             std::ostringstream ss;
-            ss << "DCUPGRADE_INIT:" << tokens << ":" << essence;
+            ss << "DCUPGRADE_INIT:" << tokens << ":" << essence << ":" << tokenId << ":" << essenceId;
             SendAddonResponse(player, ss.str());
             return true;
         }
@@ -175,6 +175,19 @@ private:
 
             uint32 itemGUID = item->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
+            uint32 currentEntry = item->GetEntry();
+            uint32 baseEntry = currentEntry;
+
+            // FIRST: Check if current item is a clone - we need baseEntry for tier lookup
+            std::string baseSql = Acore::StringFormat(
+                    "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                    currentEntry);
+            uint32 cloneDetectedLevel = 0;
+            if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
+            {
+                baseEntry = (*baseResult)[0].Get<uint32>();
+                cloneDetectedLevel = (*baseResult)[1].Get<uint32>();
+            }
 
             std::string sql = Acore::StringFormat(
                 "SELECT upgrade_level, tier_id, stat_multiplier "
@@ -189,18 +202,18 @@ private:
             uint16 upgradedIlvl = baseItemLevel;
             float statMultiplier = 1.0f;
 
+            // Get tier from database mapping using BASE ENTRY (not clone entry)
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                tier = mgr->GetItemTier(baseEntry);
+            else
+                tier = 1; // fallback if manager not available
+
             if (result)
             {
                 Field* fields = result->Fetch();
                 upgradeLevel = fields[0].Get<uint32>();
-                // NOTE: Don't trust stored tier - recalculate it based on current item level
-                // tier = fields[1].Get<uint32>();  // DISABLED - calculate instead
-                
-                // Get tier from database mapping instead of item level ranges
-                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                    tier = mgr->GetItemTier(item->GetEntry());
-                else
-                    tier = 1; // fallback if manager not available
+                // NOTE: Don't trust stored tier - we already calculated it above using baseEntry
+                // tier = fields[1].Get<uint32>();  // DISABLED - calculated above
                 
                 // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
                 // storedBaseIlvl remains baseItemLevel from template
@@ -212,11 +225,9 @@ private:
             }
             else
             {
-                // Get tier from database mapping instead of item level ranges
-                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                    tier = mgr->GetItemTier(item->GetEntry());
-                else
-                    tier = 1; // fallback if manager not available
+                // If no database record exists but clone mapping detected a level, use it
+                if (cloneDetectedLevel > 0)
+                    upgradeLevel = cloneDetectedLevel;
 
                 storedBaseIlvl = baseItemLevel;
                 upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
@@ -227,27 +238,6 @@ private:
 
             if (upgradedIlvl < storedBaseIlvl)
                 upgradedIlvl = storedBaseIlvl;
-
-            uint32 currentEntry = item->GetEntry();
-            uint32 baseEntry = currentEntry;
-
-            // Always check if current item is a clone (not just when upgradeLevel > 0)
-            std::string baseSql = Acore::StringFormat(
-                    "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                    currentEntry);
-            if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
-            {
-                baseEntry = (*baseResult)[0].Get<uint32>();
-                uint32 detectedLevel = (*baseResult)[1].Get<uint32>();
-                
-                // If no database record exists, use the detected level from clone mapping
-                if (upgradeLevel == 0 && detectedLevel > 0)
-                {
-                    upgradeLevel = detectedLevel;
-                    statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-                        static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
-                }
-            }
 
             std::map<uint32, uint32> cloneEntries;
             cloneEntries[0] = baseEntry;
@@ -343,6 +333,19 @@ private:
 
                 uint32 itemGUID = item->GetGUID().GetCounter();
                 uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
+                uint32 currentEntry = item->GetEntry();
+                uint32 baseEntry = currentEntry;
+
+                // FIRST: Check if current item is a clone - we need baseEntry for tier lookup
+                std::string baseSql = Acore::StringFormat(
+                        "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                        currentEntry);
+                uint32 cloneDetectedLevel = 0;
+                if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
+                {
+                    baseEntry = (*baseResult)[0].Get<uint32>();
+                    cloneDetectedLevel = (*baseResult)[1].Get<uint32>();
+                }
 
                 std::string sql = Acore::StringFormat(
                     "SELECT upgrade_level, tier_id, stat_multiplier "
@@ -357,22 +360,26 @@ private:
                 uint16 upgradedIlvl = baseItemLevel;
                 float statMultiplier = 1.0f;
 
+                // Get tier from database mapping using BASE ENTRY (not clone entry)
+                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                    tier = mgr->GetItemTier(baseEntry);
+                else
+                    tier = 1; // fallback if manager not available
+
                 if (result)
                 {
                     Field* fields = result->Fetch();
                     upgradeLevel = fields[0].Get<uint32>();
-                    tier = fields[1].Get<uint32>();
+                    // NOTE: tier already calculated above using baseEntry
 
                     statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                         static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
                 }
                 else
                 {
-                    // Get tier from database mapping instead of item level ranges
-                    if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                        tier = mgr->GetItemTier(item->GetEntry());
-                    else
-                        tier = 1; // fallback if manager not available
+                    // If no database record exists but clone mapping detected a level, use it
+                    if (cloneDetectedLevel > 0)
+                        upgradeLevel = cloneDetectedLevel;
 
                     storedBaseIlvl = baseItemLevel;
                     upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
@@ -383,20 +390,6 @@ private:
 
                 if (upgradedIlvl < storedBaseIlvl)
                     upgradedIlvl = storedBaseIlvl;
-
-                uint32 currentEntry = item->GetEntry();
-                uint32 baseEntry = currentEntry;
-
-                if (upgradeLevel > 0)
-                {
-                    std::string baseSql = Acore::StringFormat(
-                            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                            currentEntry);
-                    if (QueryResult baseResult = WorldDatabase.Query(baseSql.c_str()))
-                    {
-                        baseEntry = (*baseResult)[0].Get<uint32>();
-                    }
-                }
 
                 std::map<uint32, uint32> cloneEntries;
                 cloneEntries[0] = baseEntry;
@@ -477,6 +470,16 @@ private:
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
             std::string baseItemNameRaw = item->GetTemplate()->Name1;
+            
+            // FIRST: Determine base entry - we need it for tier lookup
+            uint32 currentEntry = item->GetEntry();
+            uint32 baseEntry = currentEntry;
+            
+            std::string baseLookupSql = Acore::StringFormat(
+                "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
+                currentEntry);
+            if (QueryResult baseResult = WorldDatabase.Query(baseLookupSql.c_str()))
+                baseEntry = (*baseResult)[0].Get<uint32>();
 
             // Get current upgrade state
             std::string stateSql = Acore::StringFormat(
@@ -487,26 +490,17 @@ private:
 
             uint32 currentLevel = 0;
             uint32 tier = 1;
+            
+            // Get tier from database mapping using BASE ENTRY (not clone entry)
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                tier = mgr->GetItemTier(baseEntry);
+            else
+                tier = 1; // fallback if manager not available
 
             if (stateResult)
             {
                 currentLevel = (*stateResult)[0].Get<uint32>();
-                // NOTE: Don't trust stored tier - recalculate it based on current item level
-                // tier = (*stateResult)[1].Get<uint32>();  // DISABLED - calculate instead
-                
-                // Get tier from database mapping instead of item level ranges
-                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                    tier = mgr->GetItemTier(item->GetEntry());
-                else
-                    tier = 1; // fallback if manager not available
-            }
-            else
-            {
-                // Get tier from database mapping instead of item level ranges
-                if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                    tier = mgr->GetItemTier(item->GetEntry());
-                else
-                    tier = 1; // fallback if manager not available
+                // NOTE: tier already calculated above using baseEntry
             }
 
             // Check tier-specific max level from database
@@ -609,16 +603,7 @@ private:
             if (essenceNeeded > 0)
                 player->DestroyItemCount(essenceId, essenceNeeded, true);
 
-            // Determine base entry
-            uint32 currentEntry = item->GetEntry();
-            uint32 baseEntry = currentEntry;
-            if (currentLevel > 0)
-            {
-                std::string baseSql = Acore::StringFormat("SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
-                QueryResult baseResult = WorldDatabase.Query(baseSql.c_str());
-                if (baseResult)
-                    baseEntry = (*baseResult)[0].Get<uint32>();
-            }
+            // baseEntry was already determined at the start of the perform handler
 
             // Get clone entry for target level
             std::string cloneSql = Acore::StringFormat("SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}", baseEntry, tier, targetLevel);

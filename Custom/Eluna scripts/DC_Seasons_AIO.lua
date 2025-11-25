@@ -43,66 +43,15 @@ if not IS_SERVER or type(RegisterPlayerEvent) ~= "function" then
     return
 end
 
-local function NormalizePath(path)
-    return path and path:gsub("\\", "/") or nil
-end
+-- AIO communication works via the WoW client addon installed by players
+-- No need to locate/send addon files - players install DC-Seasons addon manually
 
-local function ResolveAddonPath()
-    local info = debug.getinfo(1, "S")
-    local src = info and info.source or ""
-    if src:sub(1, 1) == "@" then
-        src = src:sub(2)
-    end
-    src = NormalizePath(src)
-    local baseDir = src and src:match("(.*/)") or ""
-    local candidateRoots = {
-        baseDir,
-        baseDir .. "../",
-        baseDir .. "../../",
-        "",
-        "lua_scripts/",
-        "./",
-    }
-    local relativeTargets = {
-        "DC-Seasons.lua",
-        "DC-Seasons/DC-Seasons.lua",
-        "Client addons needed/DC-Seasons/DC-Seasons.lua",
-        "Custom/Client addons needed/DC-Seasons/DC-Seasons.lua",
-        "Interface/AddOns/DC-Seasons/DC-Seasons.lua",
-        "addons/DC-Seasons/DC-Seasons.lua"
-    }
-    local checked = {}
-    for _, root in ipairs(candidateRoots) do
-        for _, target in ipairs(relativeTargets) do
-            local candidate = NormalizePath(root .. target)
-            if candidate and not checked[candidate] then
-                checked[candidate] = true
-                local file = io.open(candidate, "r")
-                if file then
-                    file:close()
-                    return candidate
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local ADDON_NAME = "DC-Seasons"
 local HANDLER_NAME = "DC_Seasons"
-local ADDON_PATH = ResolveAddonPath()
-
--- Register this file as an addon payload so clients receive the code (server only)
-if AIO.AddAddon then
-    if ADDON_PATH then
-        AIO.AddAddon(ADDON_PATH, ADDON_NAME)
-        print(string.format("[DC-Seasons AIO] Addon payload registered from '%s'", ADDON_PATH))
-    else
-        print("[DC-Seasons AIO] WARNING: Unable to locate DC-Seasons addon payload; AIO clients will not receive UI code")
-    end
-end
 
 local DC_Seasons = AIO.AddHandlers(HANDLER_NAME, {}) or {}
+
+-- Export globally so other Eluna scripts can access it
+_G.DC_Seasons_Handler = DC_Seasons
 
 -- =====================================================================
 -- Configuration
