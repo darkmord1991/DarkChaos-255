@@ -750,10 +750,10 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     if (!player)
         return false;
 
-    // Check player inventory for keystone items (190001-190019 for M+2-M+20)
+    // Check player inventory for keystone items (300313-300331 for M+2-M+20)
     for (uint8 i = 0; i < 19; ++i)
     {
-        uint32 keystoneItemId = 190001 + i;
+        uint32 keystoneItemId = MythicPlusConstants::KEYSTONE_ITEM_IDS[i];
         
         // Check if player has this keystone in inventory
         if (player->HasItemCount(keystoneItemId, 1, false))
@@ -783,7 +783,7 @@ void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidL
     // Remove keystone item from player inventory (check all M+2-M+20 keystones)
     for (uint8 i = 0; i < 19; ++i)
     {
-        uint32 keystoneItemId = 190001 + i;
+        uint32 keystoneItemId = MythicPlusConstants::KEYSTONE_ITEM_IDS[i];
         
         if (player->HasItemCount(keystoneItemId, 1, false))
         {

@@ -6,12 +6,12 @@
  *
  * LEADING NPC FOR HEIRLOOM/ARTIFACT SYSTEM:
  * This is the primary interface for players to:
- *   - View discovered artifacts and heirlooms (items 191101-191135)
+ *   - View discovered artifacts and heirlooms (items 300332-300366)
  *   - Check artifact essence balance
  *   - Learn about artifact/heirloom mechanics
  *   - Access cosmetic features (Phase 4B)
  *
- * NOTE: ID changed from 190002 to 191002 to avoid conflict with M+ Keystone items
+ * NOTE: This NPC now uses entry 191002 to avoid conflicting with Mythic+ keystone items
  *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025

@@ -4,7 +4,7 @@
  * This file implements the Item Upgrade Vendor NPC (ID: 191001)
  * who provides item upgrade services and token exchange
  *
- * NOTE: ID changed from 190001 to 191001 to avoid conflict with M+ Keystone items
+ * NOTE: This NPC now uses entry 191001 to avoid conflict with Mythic+ keystone items
  *
  * Author: DarkChaos Development Team
  * Date: November 4, 2025

@@ -2,7 +2,7 @@
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  * 
- * Item Script: Mythic Keystone Items (190001-190019 for M+2-M+20)
+ * Item Script: Mythic Keystone Items (300313-300331 for M+2-M+20)
  * Shows information about Mythic+ system when used
  */
 
@@ -211,7 +211,7 @@ public:
     }
 };
 
-// Register keystones for M+2 through M+20 (items 190001-190019)
+// Register keystones for M+2 through M+20 (items 300313-300331)
 void AddSC_item_mythic_keystone()
 {
     new item_mythic_keystone();

@@ -16,10 +16,10 @@ namespace MythicPlusConstants
 {
     // Keystone item IDs (M+2 through M+20)
     constexpr uint32 KEYSTONE_ITEM_IDS[19] = {
-        190001, 190002, 190003, 190004, 190005, // M+2 to M+6
-        190006, 190007, 190008, 190009, 190010, // M+7 to M+11
-        190011, 190012, 190013, 190014, 190015, // M+12 to M+16
-        190016, 190017, 190018, 190019          // M+17 to M+20
+        300313, 300314, 300315, 300316, 300317, // M+2 to M+6
+        300318, 300319, 300320, 300321, 300322, // M+7 to M+11
+        300323, 300324, 300325, 300326, 300327, // M+12 to M+16
+        300328, 300329, 300330, 300331          // M+17 to M+20
     };
     
     constexpr uint8 MIN_KEYSTONE_LEVEL = 2;
@@ -31,7 +31,7 @@ namespace MythicPlusConstants
     constexpr uint32 NPC_PORTAL_SELECTOR = 100101;
     constexpr uint32 NPC_GREAT_VAULT = 100050;
     constexpr uint32 NPC_STATISTICS = 100060;
-    constexpr uint32 NPC_TOKEN_VENDOR = 190005;
+    constexpr uint32 NPC_TOKEN_VENDOR = 300317;
     
     // GameObject entries
     constexpr uint32 GO_FONT_OF_POWER = 300200;  // Keystone activation pedestal
@@ -39,7 +39,7 @@ namespace MythicPlusConstants
     
     // Token items
     constexpr uint32 ITEM_MYTHIC_TOKEN = 101000;
-    constexpr uint32 ITEM_UPGRADE_TOKEN = 100999;
+    constexpr uint32 ITEM_UPGRADE_TOKEN = 300311;
     
     /**
      * Get keystone level from item ID

@@ -619,7 +619,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
 
-        SendGossipMenuFor(player, 70001, player->GetGUID());
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
         return true;
     }
 

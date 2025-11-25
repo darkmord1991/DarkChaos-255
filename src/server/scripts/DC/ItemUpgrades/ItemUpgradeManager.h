@@ -46,9 +46,9 @@ namespace DarkChaos
         static const float STAT_MULTIPLIER_MAX_HEIRLOOM = 1.35f;   // Tier 3: 1.05x → 1.35x
         static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.5f;
         
-        // Heirloom item ID range (191101-191133)
-        inline constexpr uint32 HEIRLOOM_ITEM_ID_MIN = 191101;
-        inline constexpr uint32 HEIRLOOM_ITEM_ID_MAX = 191133;
+        // Heirloom item ID range (300332-300364)
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MIN = 300332;
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MAX = 300364;
 
         // Centralize backing table name so SQL stays consistent with the deployed schema
         inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";

@@ -20,7 +20,7 @@
 #include <sstream>
 
 // Token item ID (DC Item Upgrade Token)
-constexpr uint32 MYTHIC_TOKEN_ITEM = 100999;
+constexpr uint32 MYTHIC_TOKEN_ITEM = 300311;
 
 // Gear slot categories
 enum TokenGearSlot : uint8

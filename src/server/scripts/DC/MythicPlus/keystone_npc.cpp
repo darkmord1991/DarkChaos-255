@@ -1,7 +1,7 @@
 /*
  * Mythic+ Keystone Vendor NPC Script
  * Single vendor NPC that distributes keystone items via gossip
- * Keystones are item objects (190001-190009) for M+2 through M+10
+ * Keystones are item objects (300313-300321) for M+2 through M+10
  * Players receive keystones and use them on the pedestal in dungeons
  * Entry: 100100
  */
