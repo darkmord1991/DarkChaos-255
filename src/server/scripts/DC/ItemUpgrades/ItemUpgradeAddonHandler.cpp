@@ -179,7 +179,56 @@ private:
             uint32 currentEntry = item->GetEntry();
             uint32 baseEntry = currentEntry;
 
-            // FIRST: Check if current item is a clone - we need baseEntry for tier lookup
+            // SPECIAL CASE: Heirloom Adventurer's Shirt (300365)
+            // This item uses the heirloom stat package system, not the clone-based upgrade system
+            constexpr uint32 HEIRLOOM_SHIRT_ENTRY = 300365;
+            if (currentEntry == HEIRLOOM_SHIRT_ENTRY)
+            {
+                // Query heirloom upgrade state from dc_heirloom_upgrades table
+                std::string heirloomSql = Acore::StringFormat(
+                    "SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}",
+                    itemGUID
+                );
+                QueryResult heirloomResult = CharacterDatabase.Query(heirloomSql.c_str());
+
+                uint32 upgradeLevel = 0;
+                uint32 packageId = 0;
+                constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;
+                constexpr uint32 HEIRLOOM_TIER = 3;
+
+                if (heirloomResult)
+                {
+                    Field* fields = heirloomResult->Fetch();
+                    upgradeLevel = fields[0].Get<uint32>();
+                    packageId = fields[1].Get<uint32>();
+                }
+
+                float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                    static_cast<uint8>(upgradeLevel), static_cast<uint8>(HEIRLOOM_TIER));
+
+                // Build clone map with all 15 levels (heirloom doesn't use clones, but addon expects this format)
+                std::ostringstream cloneMapStream;
+                for (uint32 lvl = 0; lvl <= HEIRLOOM_MAX_LEVEL; ++lvl)
+                {
+                    if (lvl > 0)
+                        cloneMapStream << ',';
+                    cloneMapStream << lvl << '-' << HEIRLOOM_SHIRT_ENTRY;  // Same entry for all levels
+                }
+
+                // Send heirloom-specific response
+                std::ostringstream ss;
+                ss.setf(std::ios::fixed);
+                ss << std::setprecision(3);
+                ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << HEIRLOOM_TIER 
+                   << ":" << baseItemLevel << ":" << baseItemLevel << ":" << statMultiplier 
+                   << ':' << HEIRLOOM_SHIRT_ENTRY << ':' << HEIRLOOM_SHIRT_ENTRY
+                   << ':' << cloneMapStream.str();
+
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            // NORMAL ITEMS: Check if current item is a clone - we need baseEntry for tier lookup
             std::string baseSql = Acore::StringFormat(
                     "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
                     currentEntry);
