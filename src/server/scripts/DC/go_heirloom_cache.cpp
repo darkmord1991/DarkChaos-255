@@ -52,9 +52,9 @@ public:
 
         // Process loot items - add directly to inventory with class checks
         uint32 itemsAdded = 0;
-        for (auto const& lootItem : loot.GetLootItemsForLooting())
+        for (auto const& lootItem : loot.items)
         {
-            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(lootItem->itemid);
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(lootItem.itemid);
             if (!itemTemplate)
                 continue;
 
@@ -70,30 +70,30 @@ public:
 
             // Add item to inventory
             ItemPosCountVec dest;
-            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, lootItem->itemid, lootItem->count);
+            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, lootItem.itemid, lootItem.count);
             
             if (msg == EQUIP_ERR_OK)
             {
-                Item* newItem = player->StoreNewItem(dest, lootItem->itemid, true, lootItem->randomPropertyId);
+                Item* newItem = player->StoreNewItem(dest, lootItem.itemid, true, lootItem.randomPropertyId);
                 if (newItem)
                 {
-                    player->SendNewItem(newItem, lootItem->count, true, false);
+                    player->SendNewItem(newItem, lootItem.count, true, false);
                     itemsAdded++;
                     LOG_DEBUG("scripts", "go_heirloom_cache: Added {} x{} to player {} inventory", 
-                        itemTemplate->Name1, lootItem->count, player->GetName());
+                        itemTemplate->Name1, lootItem.count, player->GetName());
                 }
             }
             else
             {
                 // Inventory full
-                player->SendEquipError(msg, nullptr, nullptr, lootItem->itemid);
+                player->SendEquipError(msg, nullptr, nullptr, lootItem.itemid);
                 LOG_DEBUG("scripts", "go_heirloom_cache: Could not add {} to {} - inventory full (error: {})", 
                     itemTemplate->Name1, player->GetName(), msg);
             }
         }
 
         // Process money
-        uint32 money = loot.GetMoneyAmount();
+        uint32 money = loot.gold;
         if (money > 0)
         {
             player->ModifyMoney(money);
