@@ -252,6 +252,29 @@ static void BuildMapBoundsFromDBC()
 // Forward declarations for database functions
 static void DeleteHotspotFromDB(uint32 hotspotId);
 
+// Database: Ensure the hotspots table exists (auto-create if missing)
+static void EnsureHotspotTableExists()
+{
+    // Create table if it doesn't exist
+    WorldDatabase.Execute(
+        "CREATE TABLE IF NOT EXISTS `dc_hotspots_active` ("
+        "  `id` INT UNSIGNED NOT NULL COMMENT 'Unique hotspot ID',"
+        "  `map_id` SMALLINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Map ID where hotspot is located',"
+        "  `zone_id` SMALLINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Zone ID where hotspot is located',"
+        "  `x` FLOAT NOT NULL DEFAULT 0 COMMENT 'X coordinate',"
+        "  `y` FLOAT NOT NULL DEFAULT 0 COMMENT 'Y coordinate',"
+        "  `z` FLOAT NOT NULL DEFAULT 0 COMMENT 'Z coordinate',"
+        "  `spawn_time` BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix timestamp when hotspot was spawned',"
+        "  `expire_time` BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix timestamp when hotspot expires',"
+        "  `gameobject_guid` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'GUID of visual marker GameObject',"
+        "  PRIMARY KEY (`id`),"
+        "  KEY `idx_expire_time` (`expire_time`),"
+        "  KEY `idx_map_zone` (`map_id`, `zone_id`)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    LOG_INFO("scripts", "Hotspots: Database table dc_hotspots_active verified/created");
+}
+
 // Database: Save hotspot to database
 static void SaveHotspotToDB(Hotspot const& hotspot)
 {
@@ -1363,6 +1386,15 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
                         if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
                         {
+                            // Skip positions in or under water
+                            constexpr float DEFAULT_COLLISION_HEIGHT = 2.0f; // approximate player height
+                            if (map->IsInWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT) ||
+                                map->IsUnderWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT))
+                            {
+                                LOG_DEBUG("scripts", "GetRandomHotspotPosition: skipping water position at ({:.1f},{:.1f},{:.1f}) on map {}", candX, candY, groundZ, candidateMapId);
+                                continue;
+                            }
+
                             // Resolve zone id for sampled point
                             uint32 resolvedZone = sMapMgr->GetZoneId(PHASEMASK_NORMAL, candidateMapId, candX, candY, groundZ);
                             LOG_DEBUG("scripts", "GetRandomHotspotPosition: sampled point resolved to zone {} on map {}", resolvedZone, candidateMapId);
@@ -1421,6 +1453,15 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 
                 if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
                 {
+                    // Skip positions in or under water
+                    constexpr float DEFAULT_COLLISION_HEIGHT = 2.0f; // approximate player height
+                    if (map->IsInWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT) ||
+                        map->IsUnderWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT))
+                    {
+                        LOG_DEBUG("scripts", "GetRandomHotspotPosition: skipping water position at ({:.1f},{:.1f},{:.1f}) on map {}", candX, candY, groundZ, candidateMapId);
+                        continue;
+                    }
+
                     outMapId = candidateMapId;
                     outX = candX;
                     outY = candY;
@@ -1855,6 +1896,9 @@ public:
             // Build DBC-derived map bounds used for normalized coordinates
             BuildMapBoundsFromDBC();
 
+            // Ensure database table exists (auto-create if missing)
+            EnsureHotspotTableExists();
+
             // Load persistent hotspots from database
             LoadHotspotsFromDB();
 
@@ -1929,6 +1973,9 @@ public:
             // Ensure we at least reach minActive
             toSpawn = std::max<uint32>(toSpawn, sHotspotsConfig.minActive);
             
+            LOG_INFO("scripts", "Hotspots: Startup population config: initialPopulateCount={}, maxActive={}, minActive={}, target={}",
+                     sHotspotsConfig.initialPopulateCount, sHotspotsConfig.maxActive, sHotspotsConfig.minActive, toSpawn);
+            
             // Recreate visual markers for any hotspots loaded from database
             RecreateHotspotVisualMarkers();
             
@@ -1937,13 +1984,22 @@ public:
             if (currentCount < toSpawn)
             {
                 uint32 needToSpawn = toSpawn - currentCount;
-                LOG_INFO("scripts", "Hotspots: Need to spawn {} hotspot(s) to reach target of {} (current: {})", 
-                         needToSpawn, toSpawn, currentCount);
+                LOG_INFO("scripts", "Hotspots: Need to spawn {} hotspot(s) to reach target of {} (current: {}, minActive: {})", 
+                         needToSpawn, toSpawn, currentCount, sHotspotsConfig.minActive);
+                uint32 spawned = 0;
                 for (uint32 i = 0; i < needToSpawn; ++i)
                 {
-                    if (!SpawnHotspot())
-                        LOG_DEBUG("scripts", "SpawnHotspot() returned false during initial population (i={})", i);
+                    if (SpawnHotspot())
+                    {
+                        spawned++;
+                    }
+                    else
+                    {
+                        LOG_WARN("scripts", "SpawnHotspot() returned false during initial population (attempt {}/{})", i + 1, needToSpawn);
+                    }
                 }
+                LOG_INFO("scripts", "Hotspots: Startup spawning complete - spawned {}/{} hotspots, total active now: {}",
+                         spawned, needToSpawn, sActiveHotspots.size());
             }
             else
             {

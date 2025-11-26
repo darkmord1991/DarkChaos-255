@@ -6,8 +6,8 @@
  * - ID 191002: Artifact Curator (LEADING NPC for heirloom/artifact system)
  * - ID 191003: Item Upgrader (Main upgrade interface)
  * 
- * NOTE: IDs changed from 190001-190003 to 191001-191003 to avoid conflict
- *       with Mythic+ Keystone items (190001-190009)
+ * NOTE: IDs changed from 300313-300315 to 191001-191003 to avoid conflict
+ *       with Mythic+ Keystone items (300313-300321)
  * 
  * This file must be executed BEFORE npc_spawns.sql
  */

@@ -35,6 +35,7 @@ void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_spell_hotspot_buff_800001(); // location: scripts\DC\Hotspot\spell_hotspot_buff_800001.cpp
 void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
 void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.cpp
+void AddSC_go_heirloom_cache(); // location: scripts\DC\go_heirloom_cache.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
 // GPS broadcaster removed - Using Eluna instead (Custom/Eluna scripts/DC_MapGPS.lua)
 void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
@@ -96,6 +97,7 @@ void AddDCScripts()
     AddSC_flightmasters();
     AddSC_ac_aoeloot();
     AddSC_heirloom_scaling_255();
+    AddSC_go_heirloom_cache();
     AddBattleForGilneasScripts();
     AddSC_cs_gps_test();
     AddSC_PlayerScript_MapExtension();
