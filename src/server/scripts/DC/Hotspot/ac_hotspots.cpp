@@ -249,6 +249,9 @@ static void BuildMapBoundsFromDBC()
     LOG_INFO("scripts", "Loaded {} DBC-derived map bounds entries", loaded);
 }
 
+// Forward declarations for database functions
+static void DeleteHotspotFromDB(uint32 hotspotId);
+
 // Database: Save hotspot to database
 static void SaveHotspotToDB(Hotspot const& hotspot)
 {
