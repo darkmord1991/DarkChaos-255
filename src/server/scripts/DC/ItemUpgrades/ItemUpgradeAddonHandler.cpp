@@ -42,7 +42,8 @@ public:
     {
         static const std::vector<ChatCommandBuilder> dcupgradeCommandTable =
         {
-            ChatCommandBuilder("dcupgrade", HandleDCUpgradeCommand, 0, Console::No)
+            ChatCommandBuilder("dcupgrade", HandleDCUpgradeCommand, 0, Console::No),
+            ChatCommandBuilder("dcheirloom", HandleDCHeirloomCommand, 0, Console::No)
         };
         return dcupgradeCommandTable;
     }
@@ -715,6 +716,375 @@ private:
             return true;
         }
 
+        return false;
+    }
+
+    /*
+     * HandleDCHeirloomCommand - Heirloom Stat Package Upgrade Handler
+     *
+     * This handler manages heirloom-specific upgrades that apply stat packages
+     * to item 300365 (Heirloom Adventurer's Shirt).
+     *
+     * Subcommands:
+     * - query <bag> <slot>: Get current heirloom upgrade state and available packages
+     * - upgrade <bag> <slot> <level> <packageId>: Apply stat package enchantment
+     * - packages: List all available stat packages
+     *
+     * Enchantment ID Formula: 900000 + (packageId * 100) + level
+     * Example: Package 1 (Fury) Level 15 = 900000 + (1 * 100) + 15 = 900115
+     *
+     * Date: 2025
+     */
+    static bool HandleDCHeirloomCommand(ChatHandler* handler, const char* args)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        // Check if system is enabled
+        if (!sConfigMgr->GetOption<bool>("ItemUpgrade.Enable", true))
+        {
+            SendAddonResponse(player, "DCHEIRLOOM_ERROR:System disabled");
+            return true;
+        }
+
+        // Constants for heirloom upgrades
+        constexpr uint32 HEIRLOOM_SHIRT_ENTRY = 300365;
+        constexpr uint32 MAX_PACKAGE_ID = 12;
+        constexpr uint32 MAX_UPGRADE_LEVEL = 15;
+        constexpr uint32 ENCHANT_BASE_ID = 900000;
+
+        // Parse arguments
+        std::string argStr = args ? args : "";
+        std::string::size_type spacePos = argStr.find(' ');
+        std::string subcommand = spacePos != std::string::npos ? argStr.substr(0, spacePos) : argStr;
+
+        if (subcommand.empty())
+        {
+            SendAddonResponse(player, "DCHEIRLOOM_ERROR:No command specified");
+            return true;
+        }
+
+        auto TranslateAddonBagSlot = [](uint32 extBag, uint32 extSlot, uint8& bagOut, uint8& slotOut) -> bool
+        {
+            if (extSlot > std::numeric_limits<uint8>::max())
+                return false;
+
+            if (extBag == INVENTORY_SLOT_BAG_0 ||
+                (extBag >= INVENTORY_SLOT_BAG_START && extBag < INVENTORY_SLOT_BAG_END) ||
+                (extBag >= BANK_SLOT_BAG_START && extBag < BANK_SLOT_BAG_END))
+            {
+                bagOut = static_cast<uint8>(extBag);
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            if (extBag == 0)
+            {
+                uint32 const backpackSlots = INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START;
+                if (extSlot >= backpackSlots)
+                    return false;
+
+                bagOut = INVENTORY_SLOT_BAG_0;
+                slotOut = static_cast<uint8>(INVENTORY_SLOT_ITEM_START + extSlot);
+                return true;
+            }
+
+            if (extBag >= 1 && extBag <= 4)
+            {
+                bagOut = static_cast<uint8>(INVENTORY_SLOT_BAG_START + (extBag - 1));
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            if (extBag >= 5 && extBag <= 11)
+            {
+                bagOut = static_cast<uint8>(BANK_SLOT_BAG_START + (extBag - 5));
+                slotOut = static_cast<uint8>(extSlot);
+                return true;
+            }
+
+            return false;
+        };
+
+        // PACKAGES: List all available stat packages
+        if (subcommand == "packages")
+        {
+            // Send package list to addon
+            // Format: DCHEIRLOOM_PACKAGES:count:id1|name1|stats1:id2|name2|stats2:...
+            std::ostringstream ss;
+            ss << "DCHEIRLOOM_PACKAGES:12";
+            ss << ":1|Fury|Crit,Haste";
+            ss << ":2|Precision|Hit,Expertise";
+            ss << ":3|Devastation|Crit,ArmorPen";
+            ss << ":4|Swiftblade|Haste,ArmorPen";
+            ss << ":5|Spellfire|Crit,Haste,SpellPower";
+            ss << ":6|Arcane|Hit,Haste,SpellPower";
+            ss << ":7|Bulwark|Dodge,Parry,Block";
+            ss << ":8|Fortress|Defense,Block,Stamina";
+            ss << ":9|Survivor|Dodge,Stamina";
+            ss << ":10|Gladiator|Resilience,Crit";
+            ss << ":11|Warlord|Resilience,Stamina";
+            ss << ":12|Balanced|Crit,Hit,Haste";
+            SendAddonResponse(player, ss.str());
+            return true;
+        }
+
+        // QUERY: Get heirloom item state and current package
+        else if (subcommand == "query")
+        {
+            std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
+            std::istringstream iss(remainingArgs);
+            uint32 extBag, extSlot;
+
+            if (!(iss >> extBag >> extSlot))
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid parameters");
+                return true;
+            }
+
+            uint8 bag = 0;
+            uint8 slot = 0;
+            if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
+                return true;
+            }
+
+            Item* item = player->GetItemByPos(bag, slot);
+            if (!item)
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
+                return true;
+            }
+
+            // Verify it's the heirloom shirt
+            if (item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Not a valid heirloom item");
+                return true;
+            }
+
+            uint32 itemGUID = item->GetGUID().GetCounter();
+
+            // Query current state from database
+            std::string sql = Acore::StringFormat(
+                "SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}",
+                itemGUID
+            );
+            QueryResult result = CharacterDatabase.Query(sql.c_str());
+
+            uint32 currentLevel = 0;
+            uint32 currentPackageId = 0;
+
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                currentLevel = fields[0].Get<uint32>();
+                currentPackageId = fields[1].Get<uint32>();
+            }
+
+            // Response format: DCHEIRLOOM_QUERY:itemGUID:level:packageId:maxLevel:maxPackages
+            std::ostringstream ss;
+            ss << "DCHEIRLOOM_QUERY:" << itemGUID << ":" << currentLevel << ":" << currentPackageId
+               << ":" << MAX_UPGRADE_LEVEL << ":" << MAX_PACKAGE_ID;
+            SendAddonResponse(player, ss.str());
+            return true;
+        }
+
+        // UPGRADE: Apply stat package to heirloom item
+        else if (subcommand == "upgrade")
+        {
+            std::string remainingArgs = spacePos != std::string::npos ? argStr.substr(spacePos + 1) : "";
+            std::istringstream iss(remainingArgs);
+            uint32 extBag, extSlot, targetLevel, packageId;
+
+            if (!(iss >> extBag >> extSlot >> targetLevel >> packageId))
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid parameters (usage: upgrade bag slot level packageId)");
+                return true;
+            }
+
+            // Validate package ID
+            if (packageId < 1 || packageId > MAX_PACKAGE_ID)
+            {
+                std::ostringstream ss;
+                ss << "DCHEIRLOOM_ERROR:Invalid package ID (must be 1-" << MAX_PACKAGE_ID << ")";
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            // Validate target level
+            if (targetLevel < 1 || targetLevel > MAX_UPGRADE_LEVEL)
+            {
+                std::ostringstream ss;
+                ss << "DCHEIRLOOM_ERROR:Invalid level (must be 1-" << MAX_UPGRADE_LEVEL << ")";
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            uint8 bag = 0;
+            uint8 slot = 0;
+            if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
+                return true;
+            }
+
+            Item* item = player->GetItemByPos(bag, slot);
+            if (!item)
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
+                return true;
+            }
+
+            // Verify it's the heirloom shirt
+            if (item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+            {
+                SendAddonResponse(player, "DCHEIRLOOM_ERROR:Not a valid heirloom item");
+                return true;
+            }
+
+            uint32 itemGUID = item->GetGUID().GetCounter();
+            uint32 playerGuid = player->GetGUID().GetCounter();
+
+            // Get current state
+            std::string stateSql = Acore::StringFormat(
+                "SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}",
+                itemGUID
+            );
+            QueryResult stateResult = CharacterDatabase.Query(stateSql.c_str());
+
+            uint32 currentLevel = 0;
+            uint32 currentPackageId = 0;
+
+            if (stateResult)
+            {
+                Field* fields = stateResult->Fetch();
+                currentLevel = fields[0].Get<uint32>();
+                currentPackageId = fields[1].Get<uint32>();
+
+                // Check if already at target level with same package
+                if (currentLevel == targetLevel && currentPackageId == packageId)
+                {
+                    SendAddonResponse(player, "DCHEIRLOOM_ERROR:Already at this level with this package");
+                    return true;
+                }
+
+                // If package is different and level > 0, that's a package change
+                if (currentPackageId != 0 && currentPackageId != packageId && currentLevel > 0)
+                {
+                    // Allow package change - will apply new enchantment
+                    LOG_INFO("scripts", "DCHeirloom: Player {} changing package from {} to {} on item {}",
+                        player->GetName(), currentPackageId, packageId, itemGUID);
+                }
+            }
+
+            // Calculate upgrade cost from database
+            std::string costSql = Acore::StringFormat(
+                "SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE upgrade_level BETWEEN {} AND {}",
+                currentLevel + 1, targetLevel
+            );
+            QueryResult costResult = WorldDatabase.Query(costSql.c_str());
+
+            uint32 tokensNeeded = 0;
+            uint32 essenceNeeded = 0;
+
+            if (costResult)
+            {
+                Field* costFields = costResult->Fetch();
+                if (!costFields[0].IsNull())
+                    tokensNeeded = costFields[0].Get<uint32>();
+                if (!costFields[1].IsNull())
+                    essenceNeeded = costFields[1].Get<uint32>();
+            }
+
+            // Get currency item IDs from config
+            uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+            uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+
+            // Check if player has enough currency
+            uint32 currentTokens = player->GetItemCount(tokenId);
+            uint32 currentEssence = player->GetItemCount(essenceId);
+
+            if (currentTokens < tokensNeeded)
+            {
+                std::ostringstream ss;
+                ss << "DCHEIRLOOM_ERROR:Need " << tokensNeeded << " tokens, have " << currentTokens;
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            if (essenceNeeded > 0 && currentEssence < essenceNeeded)
+            {
+                std::ostringstream ss;
+                ss << "DCHEIRLOOM_ERROR:Need " << essenceNeeded << " essence, have " << currentEssence;
+                SendAddonResponse(player, ss.str());
+                return true;
+            }
+
+            // Deduct currency
+            if (tokensNeeded > 0)
+                player->DestroyItemCount(tokenId, tokensNeeded, true);
+            if (essenceNeeded > 0)
+                player->DestroyItemCount(essenceId, essenceNeeded, true);
+
+            // Calculate enchantment ID: 900000 + (packageId * 100) + level
+            uint32 enchantId = ENCHANT_BASE_ID + (packageId * 100) + targetLevel;
+
+            // Apply enchantment to item (using PERM_ENCHANTMENT_SLOT)
+            // Slot 0 = PERM_ENCHANTMENT_SLOT for permanent enchants
+            item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0);
+
+            // Mark item as changed and save
+            item->SetState(ITEM_CHANGED, player);
+
+            // Update database
+            uint64 now = static_cast<uint64>(std::time(nullptr));
+
+            if (stateResult)
+            {
+                // Update existing record
+                std::string updateSql = Acore::StringFormat(
+                    "UPDATE dc_heirloom_upgrades SET upgrade_level = {}, package_id = {}, enchant_id = {}, "
+                    "last_upgraded_at = FROM_UNIXTIME({}) WHERE item_guid = {}",
+                    targetLevel, packageId, enchantId, now, itemGUID
+                );
+                CharacterDatabase.Execute(updateSql.c_str());
+            }
+            else
+            {
+                // Insert new record
+                std::string insertSql = Acore::StringFormat(
+                    "INSERT INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, "
+                    "enchant_id, first_upgraded_at, last_upgraded_at) VALUES ({}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({}))",
+                    playerGuid, itemGUID, HEIRLOOM_SHIRT_ENTRY, targetLevel, packageId, enchantId, now, now
+                );
+                CharacterDatabase.Execute(insertSql.c_str());
+            }
+
+            // Log the upgrade
+            std::string logSql = Acore::StringFormat(
+                "INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, "
+                "from_package, to_package, enchant_id, token_cost, essence_cost, timestamp) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}))",
+                playerGuid, itemGUID, HEIRLOOM_SHIRT_ENTRY, currentLevel, targetLevel,
+                currentPackageId, packageId, enchantId, tokensNeeded, essenceNeeded, now
+            );
+            CharacterDatabase.Execute(logSql.c_str());
+
+            LOG_INFO("scripts", "DCHeirloom: Player {} upgraded heirloom {} to level {} with package {} (enchant {})",
+                player->GetName(), itemGUID, targetLevel, packageId, enchantId);
+
+            // Send success response
+            std::ostringstream successMsg;
+            successMsg << "DCHEIRLOOM_SUCCESS:" << itemGUID << ":" << targetLevel << ":" << packageId << ":" << enchantId;
+            SendAddonResponse(player, successMsg.str());
+
+            return true;
+        }
+
+        SendAddonResponse(player, "DCHEIRLOOM_ERROR:Unknown subcommand");
         return false;
     }
 };
