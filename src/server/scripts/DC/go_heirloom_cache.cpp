@@ -70,7 +70,7 @@ public:
 
             // Add item to inventory
             ItemPosCountVec dest;
-            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, lootItem.itemid, lootItem.count);
+            InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, lootItem.itemid, lootItem.count);
             
             if (msg == EQUIP_ERR_OK)
             {
