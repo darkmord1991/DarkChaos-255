@@ -1387,9 +1387,9 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                         if (groundZ > MIN_HEIGHT && std::isfinite(groundZ))
                         {
                             // Skip positions in or under water
-                            constexpr float DEFAULT_COLLISION_HEIGHT = 2.0f; // approximate player height
-                            if (map->IsInWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT) ||
-                                map->IsUnderWater(PHASEMASK_NORMAL, candX, candY, groundZ, DEFAULT_COLLISION_HEIGHT))
+                            constexpr float PLAYER_HEIGHT_APPROX = 2.0f; // approximate player height
+                            if (map->IsInWater(PHASEMASK_NORMAL, candX, candY, groundZ, PLAYER_HEIGHT_APPROX) ||
+                                map->IsUnderWater(PHASEMASK_NORMAL, candX, candY, groundZ, PLAYER_HEIGHT_APPROX))
                             {
                                 LOG_DEBUG("scripts", "GetRandomHotspotPosition: skipping water position at ({:.1f},{:.1f},{:.1f}) on map {}", candX, candY, groundZ, candidateMapId);
                                 continue;
