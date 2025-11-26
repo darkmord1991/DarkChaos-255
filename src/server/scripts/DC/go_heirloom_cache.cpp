@@ -35,7 +35,7 @@ public:
         }
 
         // Check if already looted
-        if (go->GetLootState() == GO_ACTIVATED || go->GetLootState() == GO_JUST_DEACTIVATED)
+        if (go->getLootState() == GO_ACTIVATED || go->getLootState() == GO_JUST_DEACTIVATED)
         {
             // Already being looted or already looted
             return false;

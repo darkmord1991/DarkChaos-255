@@ -1,0 +1,47 @@
+{
+  "ActiveProfile": "b8b8e93b-d2c7-465a-b5c0-483a6daa9861",
+  "Profiles": [
+    {
+      "Id": "b8b8e93b-d2c7-465a-b5c0-483a6daa9861",
+      "Name": "Default",
+      "Settings": {
+        "OutputDirectory": "K:\\Dark-Chaos\\M2Mod_9.0.0\\output",
+        "WorkingDirectory": "K:\\Dark-Chaos\\M2Mod_9.0.0\\working",
+        "MappingsDirectory": "K:\\Dark-Chaos\\M2Mod_9.0.0",
+        "ForceLoadExpansion": -1,
+        "CustomFilesStartIndex": 0,
+        "MergeBones": true,
+        "MergeAttachments": true,
+        "MergeCameras": true,
+        "FixSeams": false,
+        "FixEdgeNormals": true,
+        "IgnoreOriginalMeshIndexes": false,
+        "FixAnimationsTest": false
+      },
+      "Configuration": {
+        "InputM2Exp": "",
+        "OutputM2I": "",
+        "InputM2Imp": "",
+        "InputM2I": "",
+        "ReplaceM2": "",
+        "ReplaceM2Checked": false,
+        "OldCompareM2": null,
+        "NewCompareM2": null,
+        "CompareWeightThreshold": 0.0,
+        "CompareSourceScale": 0.0,
+        "PredictScale": false,
+        "NormalizationConfig": {
+          "UseAdvanced": false,
+          "Simple": {
+            "AlignFacials": false,
+            "AlignHair": false,
+            "Data": ""
+          },
+          "Advanced": {
+            "Rules": []
+          }
+        }
+      }
+    }
+  ]
+}
