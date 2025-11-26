@@ -2695,9 +2695,14 @@ local function IsUpgradeableItem(link)
 	-- Check for heirloom quality (7) for tier filtering
 	local isHeirloom = (quality == 7);
 	
-	-- In HEIRLOOM mode, only show heirlooms (tier 3)
+	-- In HEIRLOOM mode, only show item 300365 (the only upgradeable heirloom)
 	if DC.uiMode == "HEIRLOOM" then
-		return isHeirloom;
+		if not isHeirloom then
+			return false;
+		end
+		-- Extract item ID from link and only allow 300365
+		local itemID = tonumber(link:match("item:(%d+)"));
+		return (itemID == 300365);
 	end
 	
 	-- In STANDARD mode, exclude heirlooms (show tier 1/2 only)

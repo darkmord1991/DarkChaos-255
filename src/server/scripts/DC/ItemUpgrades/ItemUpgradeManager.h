@@ -46,9 +46,10 @@ namespace DarkChaos
         static const float STAT_MULTIPLIER_MAX_HEIRLOOM = 1.35f;   // Tier 3: 1.05x → 1.35x
         static const float STAT_MULTIPLIER_MAX_ARTIFACT = 1.5f;
         
-        // Heirloom item ID range (300332-300364)
-        inline constexpr uint32 HEIRLOOM_ITEM_ID_MIN = 300332;
-        inline constexpr uint32 HEIRLOOM_ITEM_ID_MAX = 300364;
+        // Heirloom item ID range - ONLY item 300365 (Heirloom Shirt) can be upgraded
+        // Items 300332-300364 are auto-scaling heirlooms that don't use this upgrade system
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MIN = 300365;
+        inline constexpr uint32 HEIRLOOM_ITEM_ID_MAX = 300365;
 
         // Centralize backing table name so SQL stays consistent with the deployed schema
         inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";
