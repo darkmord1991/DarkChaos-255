@@ -12,7 +12,6 @@
 #include "GameObjectScript.h"
 #include "Player.h"
 #include "GameObject.h"
-#include "Loot.h"
 #include "LootMgr.h"
 #include "Log.h"
 
