@@ -97,8 +97,7 @@ public:
         if (money > 0)
         {
             player->ModifyMoney(money);
-            player->SendDisplayedMoney(money);
-            LOG_DEBUG("scripts", "go_heirloom_cache: Added {} copper to player {} ", money, player->GetName());
+            LOG_DEBUG("scripts", "go_heirloom_cache: Added {} copper to player {}", money, player->GetName());
         }
 
         if (itemsAdded == 0 && money == 0)
