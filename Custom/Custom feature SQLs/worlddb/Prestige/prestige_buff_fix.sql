@@ -16,6 +16,7 @@
 -- =====================================================================
 
 DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;
+DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800040 AND 800044;
 
 -- =====================================================================
 -- Step 1.5: Clear Equipment Requirements for Custom Spells
@@ -37,12 +38,15 @@ DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;
 -- Attributes: 0x10 (treat as ability so the aura remains visible and cancellable)
 -- =====================================================================
 
+-- CRITICAL: SpellIconID must match client Spell.dbc for buff icon to display!
+-- ImplicitTargetA_1: 1 = TARGET_UNIT_CASTER (self) - MUST match client
+-- DurationIndex: 42 = matches client (not 21!)
 INSERT INTO `spell_dbc` 
 (`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
- `SchoolMask`, `Name_Lang_enUS`)
+ `SpellIconID`, `SchoolMask`, `Name_Lang_enUS`)
 VALUES
-(800001, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Hotspot - XP Buff 100%');
+(800001, 0x10010, 1, 42, 1, 6, 59, 0, 1, 4, 4124, 1, 'DC Hotspot - XP Buff 100%');
 
 -- =====================================================================
 -- Step 3: Create Prestige Bonus Aura Spells
@@ -119,6 +123,32 @@ VALUES
 (800027, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Iron Man Mode - Hardcore + Self-Crafted + Item Restrictions'),
 -- Challenge Combinations (800028)
 (800028, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Challenge Mode Active - Multiple Challenges Enabled');
+
+-- =====================================================================
+-- Step 5: Create Alt XP Bonus Aura Spells
+-- =====================================================================
+-- Spell IDs: 800040-800044 (Alt XP Bonus - 5% to 25%)
+-- Purpose: Visual auras showing XP bonus from having max-level alts
+-- Aura Type: 4 (SPELL_AURA_DUMMY - marker only, visual buff for players)
+-- Effect: 6 (SPELL_EFFECT_APPLY_AURA)
+-- DurationIndex: 21 (permanent)
+-- =====================================================================
+
+INSERT INTO `spell_dbc` 
+(`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
+ `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
+ `SchoolMask`, `Name_Lang_enUS`)
+VALUES
+-- 5% Alt XP Bonus (1 max-level alt)
+(800040, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 5% XP (1 Max-Level Alt)'),
+-- 10% Alt XP Bonus (2 max-level alts)
+(800041, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 10% XP (2 Max-Level Alts)'),
+-- 15% Alt XP Bonus (3 max-level alts)
+(800042, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 15% XP (3 Max-Level Alts)'),
+-- 20% Alt XP Bonus (4 max-level alts)
+(800043, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 20% XP (4 Max-Level Alts)'),
+-- 25% Alt XP Bonus (5+ max-level alts)
+(800044, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 25% XP (5+ Max-Level Alts)');
 
 -- =====================================================================
 -- Integration Instructions
@@ -269,3 +299,53 @@ SELECT `ID`, `Name_Lang_enUS`, `EffectAura_1` FROM `spell_dbc` WHERE `ID` = 8000
 
 -- Verify challenge mode spells (should all have aura type 4):
 SELECT `ID`, `Name_Lang_enUS`, `EffectAura_1` FROM `spell_dbc` WHERE `ID` BETWEEN 800020 AND 800028;
+
+-- =====================================================================
+-- Step 5: Register Spell Script Names
+-- =====================================================================
+-- CRITICAL: Without these entries, the C++ scripts will NOT be called!
+-- The spell_script_names table links spell IDs to their C++ script handlers.
+-- =====================================================================
+
+-- Clear existing entries
+DELETE FROM `spell_script_names` WHERE `spell_id` BETWEEN 800001 AND 800044;
+
+-- Hotspot XP Buff Script
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(800001, 'spell_hotspot_buff_800001_aura');
+
+-- Prestige Bonus Scripts (800010-800019)
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(800010, 'spell_prestige_bonus_1'),
+(800011, 'spell_prestige_bonus_2'),
+(800012, 'spell_prestige_bonus_3'),
+(800013, 'spell_prestige_bonus_4'),
+(800014, 'spell_prestige_bonus_5'),
+(800015, 'spell_prestige_bonus_6'),
+(800016, 'spell_prestige_bonus_7'),
+(800017, 'spell_prestige_bonus_8'),
+(800018, 'spell_prestige_bonus_9'),
+(800019, 'spell_prestige_bonus_10');
+
+-- Challenge Mode Scripts (800020-800028)
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(800020, 'spell_challenge_hardcore_800020'),
+(800021, 'spell_challenge_semi_hardcore_800021'),
+(800022, 'spell_challenge_self_crafted_800022'),
+(800023, 'spell_challenge_item_quality_800023'),
+(800024, 'spell_challenge_slow_xp_800024'),
+(800025, 'spell_challenge_very_slow_xp_800025'),
+(800026, 'spell_challenge_quest_xp_only_800026'),
+(800027, 'spell_challenge_iron_man_800027'),
+(800028, 'spell_challenge_combination_800028');
+
+-- Alt Bonus Scripts (using 800040-800044 for 5%, 10%, 15%, 20%, 25%)
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(800040, 'spell_alt_bonus_5'),
+(800041, 'spell_alt_bonus_10'),
+(800042, 'spell_alt_bonus_15'),
+(800043, 'spell_alt_bonus_20'),
+(800044, 'spell_alt_bonus_25');
+
+-- Verify spell_script_names registration:
+SELECT spell_id, ScriptName FROM `spell_script_names` WHERE spell_id BETWEEN 800001 AND 800050 ORDER BY spell_id;

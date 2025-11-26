@@ -66,6 +66,8 @@ struct HotspotsConfig
     uint32 experienceBonus = 100;            // percentage
     float radius = 150.0f;                   // yards
     uint32 maxActive = 5;
+    uint32 minActive = 1;                    // minimum hotspots to maintain (crash persistence)
+    uint32 maxPerZone = 2;                   // max hotspots allowed in same zone (0 = unlimited)
     uint32 respawnDelay = 30;                // minutes
     uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
     uint32 auraSpell = 800001;               // Custom hotspot XP buff spell
@@ -275,6 +277,7 @@ static void LoadHotspotsFromDB()
     }
     
     uint32 count = 0;
+    uint32 expired = 0;
     time_t now = GameTime::GetGameTime().count();
     
     do
@@ -291,16 +294,16 @@ static void LoadHotspotsFromDB()
         hotspot.spawnTime = fields[6].Get<int64>();
         hotspot.expireTime = fields[7].Get<int64>();
         
-        uint64 goGuid = fields[8].Get<uint64>();
-        if (goGuid != 0)
-        {
-            hotspot.gameObjectGuid = ObjectGuid::Create<HighGuid::GameObject>(0, goGuid);
-        }
+        // We ignore the stored gameobject_guid since GameObjects don't persist across restarts
+        // Visual markers will be recreated below
         
-        // Skip expired hotspots
+        // Skip expired hotspots and delete them from DB
         if (hotspot.expireTime <= now)
         {
-            LOG_DEBUG("scripts", "Skipping expired hotspot #{} from database", hotspot.id);
+            LOG_DEBUG("scripts", "Deleting expired hotspot #{} from database (expired {}s ago)", 
+                     hotspot.id, now - hotspot.expireTime);
+            DeleteHotspotFromDB(hotspot.id);
+            expired++;
             continue;
         }
         
@@ -311,12 +314,76 @@ static void LoadHotspotsFromDB()
         if (hotspot.id >= sNextHotspotId)
             sNextHotspotId = hotspot.id + 1;
             
-        LOG_DEBUG("scripts", "Loaded hotspot #{} from database (map {}, expires in {}s)", 
-                  hotspot.id, hotspot.mapId, hotspot.expireTime - now);
+        LOG_DEBUG("scripts", "Loaded hotspot #{} from database (map {}, zone {}, expires in {}s)", 
+                  hotspot.id, hotspot.mapId, hotspot.zoneId, hotspot.expireTime - now);
         
     } while (result->NextRow());
     
-    LOG_INFO("scripts", "Loaded {} hotspots from database", count);
+    LOG_INFO("scripts", "Loaded {} hotspots from database ({} expired and deleted)", count, expired);
+}
+
+// Database: Recreate visual markers for loaded hotspots (call after maps are ready)
+static void RecreateHotspotVisualMarkers()
+{
+    if (!sHotspotsConfig.spawnVisualMarker)
+        return;
+        
+    uint32 created = 0;
+    time_t now = GameTime::GetGameTime().count();
+    
+    for (auto& hotspot : sActiveHotspots)
+    {
+        // Skip if already has a marker or is expired
+        if (!hotspot.gameObjectGuid.IsEmpty() || hotspot.expireTime <= now)
+            continue;
+            
+        Map* map = GetBaseMapSafe(hotspot.mapId);
+        if (!map)
+        {
+            LOG_WARN("scripts", "RecreateHotspotVisualMarkers: Could not get map {} for hotspot #{}", 
+                     hotspot.mapId, hotspot.id);
+            continue;
+        }
+        
+        if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+        {
+            GameObject* go = new GameObject();
+            float ang = 0.0f;
+            uint32 phaseMask = 0;
+            
+            // Calculate remaining time for respawn timer
+            time_t remaining = hotspot.expireTime - now;
+            
+            uint32 lowGuid = map->GenerateLowGuid<HighGuid::GameObject>();
+            if (go->Create(lowGuid, sHotspotsConfig.markerGameObjectEntry,
+                          map, phaseMask, hotspot.x, hotspot.y, hotspot.z, ang, G3D::Quat(), 255, GO_STATE_READY))
+            {
+                go->SetRespawnTime(static_cast<int32>(remaining));
+                if (map->AddToMap(go))
+                {
+                    hotspot.gameObjectGuid = go->GetGUID();
+                    // Update DB with new GO guid
+                    SaveHotspotToDB(hotspot);
+                    created++;
+                    LOG_DEBUG("scripts", "Recreated visual marker for hotspot #{} (GUID: {})", 
+                              hotspot.id, go->GetGUID().ToString());
+                }
+                else
+                {
+                    delete go;
+                    LOG_ERROR("scripts", "RecreateHotspotVisualMarkers: AddToMap failed for hotspot #{}", hotspot.id);
+                }
+            }
+            else
+            {
+                delete go;
+                LOG_ERROR("scripts", "RecreateHotspotVisualMarkers: Create failed for hotspot #{}", hotspot.id);
+            }
+        }
+    }
+    
+    if (created > 0)
+        LOG_INFO("scripts", "Recreated {} visual markers for persistent hotspots", created);
 }
 
 // Database: Delete hotspot from database
@@ -962,6 +1029,8 @@ static void LoadHotspotsConfig()
     sHotspotsConfig.experienceBonus = sConfigMgr->GetOption<uint32>("Hotspots.ExperienceBonus", 100);
     sHotspotsConfig.radius = sConfigMgr->GetOption<float>("Hotspots.Radius", 150.0f);
     sHotspotsConfig.maxActive = sConfigMgr->GetOption<uint32>("Hotspots.MaxActive", 5);
+    sHotspotsConfig.minActive = sConfigMgr->GetOption<uint32>("Hotspots.MinActive", 1);
+    sHotspotsConfig.maxPerZone = sConfigMgr->GetOption<uint32>("Hotspots.MaxPerZone", 2);
     sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 30);
     sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 800001);
     sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 800001);
@@ -1047,6 +1116,14 @@ static void LoadHotspotsConfig()
         LOG_WARN("config", "Hotspots.MaxActive is 0, no hotspots will spawn! Consider setting to 1 or more.");
     }
     
+    if (sHotspotsConfig.minActive > sHotspotsConfig.maxActive)
+    {
+        LOG_ERROR("config", "Hotspots.MinActive ({}) > Hotspots.MaxActive ({}), clamping to maxActive", 
+                  sHotspotsConfig.minActive, sHotspotsConfig.maxActive);
+        sHotspotsConfig.minActive = sHotspotsConfig.maxActive;
+        hasError = true;
+    }
+    
     if (sHotspotsConfig.experienceBonus > 10000)
     {
         LOG_WARN("config", "Hotspots.ExperienceBonus ({}) is extremely high (>10000%), this may cause overflow issues", sHotspotsConfig.experienceBonus);
@@ -1103,6 +1180,29 @@ static bool IsZoneAllowed(uint32 mapId, uint32 zoneId)
     // Otherwise check if zone is in enabled list
     return std::find(sHotspotsConfig.enabledZones.begin(), sHotspotsConfig.enabledZones.end(), zoneId)
         != sHotspotsConfig.enabledZones.end();
+}
+
+// Helper: count active hotspots in a specific zone
+static uint32 GetHotspotCountInZone(uint32 zoneId)
+{
+    uint32 count = 0;
+    for (auto const& hotspot : sActiveHotspots)
+    {
+        if (hotspot.zoneId == zoneId && hotspot.IsActive())
+            ++count;
+    }
+    return count;
+}
+
+// Helper: check if zone can accept another hotspot (respects maxPerZone limit)
+static bool CanSpawnInZone(uint32 zoneId)
+{
+    // If maxPerZone is 0, unlimited hotspots per zone allowed
+    if (sHotspotsConfig.maxPerZone == 0)
+        return true;
+    
+    uint32 currentCount = GetHotspotCountInZone(zoneId);
+    return currentCount < sHotspotsConfig.maxPerZone;
 }
 
 // Helper: get random position in enabled zone
@@ -1189,11 +1289,11 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
             continue;
         }
 
-        // Filter by allowed zones
+        // Filter by allowed zones and maxPerZone limit
         std::vector<MapCoords> allowedCoords;
         for (auto const& coord : coords)
         {
-            if (IsZoneAllowed(candidateMapId, coord.zoneId))
+            if (IsZoneAllowed(candidateMapId, coord.zoneId) && CanSpawnInZone(coord.zoneId))
                 allowedCoords.push_back(coord);
         }
 
@@ -1263,8 +1363,8 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                             // Resolve zone id for sampled point
                             uint32 resolvedZone = sMapMgr->GetZoneId(PHASEMASK_NORMAL, candidateMapId, candX, candY, groundZ);
                             LOG_DEBUG("scripts", "GetRandomHotspotPosition: sampled point resolved to zone {} on map {}", resolvedZone, candidateMapId);
-                            // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all)
-                            if (IsZoneAllowed(candidateMapId, resolvedZone))
+                            // Only accept sampled point if zone is allowed by per-map config (respecting zone 0 = all) and respects maxPerZone
+                            if (IsZoneAllowed(candidateMapId, resolvedZone) && CanSpawnInZone(resolvedZone))
                             {
                                 outMapId = candidateMapId;
                                 outX = candX;
@@ -1615,6 +1715,27 @@ static void CleanupExpiredHotspots()
         else
             ++itr;
     }
+
+    // Maintain minimum active hotspots: if we've fallen below minActive, spawn new ones immediately
+    if (sHotspotsConfig.minActive > 0)
+    {
+        uint32 currentActive = static_cast<uint32>(sActiveHotspots.size());
+        if (currentActive < sHotspotsConfig.minActive)
+        {
+            uint32 toSpawn = sHotspotsConfig.minActive - currentActive;
+            LOG_INFO("scripts", "CleanupExpiredHotspots: Active hotspots ({}) below minimum ({}), spawning {} new hotspot(s)",
+                     currentActive, sHotspotsConfig.minActive, toSpawn);
+            
+            for (uint32 i = 0; i < toSpawn; ++i)
+            {
+                if (!SpawnHotspot())
+                {
+                    LOG_WARN("scripts", "CleanupExpiredHotspots: Failed to spawn replacement hotspot ({}/{})", i + 1, toSpawn);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // Check if player is in any hotspot
@@ -1708,7 +1829,10 @@ public:
             LOG_INFO("server.loading", ">> - Duration: {} minutes", sHotspotsConfig.duration);
             LOG_INFO("server.loading", ">> - XP Bonus: +{}%", sHotspotsConfig.experienceBonus);
             LOG_INFO("server.loading", ">> - Max Active: {}", sHotspotsConfig.maxActive);
+            LOG_INFO("server.loading", ">> - Min Active: {}", sHotspotsConfig.minActive);
+            LOG_INFO("server.loading", ">> - Max Per Zone: {} {}", sHotspotsConfig.maxPerZone, sHotspotsConfig.maxPerZone == 0 ? "(unlimited)" : "");
             LOG_INFO("server.loading", ">> - Enabled Maps: {}", sHotspotsConfig.enabledMaps.size());
+            LOG_INFO("server.loading", ">> - Database Persistence: Enabled");
             LOG_INFO("server.loading", ">> - Anti-Camping: {}", sHotspotsConfig.antiCampingEnabled ? "Enabled" : "Disabled");
             if (sHotspotsConfig.antiCampingEnabled)
             {
@@ -1796,20 +1920,32 @@ public:
                 }
             }
 
-            // If initialPopulateCount is 0, populate up to maxActive
+            // If initialPopulateCount is 0, populate up to maxActive (respecting minActive as a floor)
             uint32 toSpawn = sHotspotsConfig.initialPopulateCount == 0 ? sHotspotsConfig.maxActive : sHotspotsConfig.initialPopulateCount;
             toSpawn = std::min<uint32>(toSpawn, sHotspotsConfig.maxActive);
+            // Ensure we at least reach minActive
+            toSpawn = std::max<uint32>(toSpawn, sHotspotsConfig.minActive);
+            
+            // Recreate visual markers for any hotspots loaded from database
+            RecreateHotspotVisualMarkers();
             
             // Only spawn if we have fewer hotspots than target (after loading from DB)
             uint32 currentCount = static_cast<uint32>(sActiveHotspots.size());
             if (currentCount < toSpawn)
             {
                 uint32 needToSpawn = toSpawn - currentCount;
+                LOG_INFO("scripts", "Hotspots: Need to spawn {} hotspot(s) to reach target of {} (current: {})", 
+                         needToSpawn, toSpawn, currentCount);
                 for (uint32 i = 0; i < needToSpawn; ++i)
                 {
                     if (!SpawnHotspot())
                         LOG_DEBUG("scripts", "SpawnHotspot() returned false during initial population (i={})", i);
                 }
+            }
+            else
+            {
+                LOG_INFO("scripts", "Hotspots: {} hotspot(s) already active (target: {}), no additional spawning needed", 
+                         currentCount, toSpawn);
             }
         }
     }
@@ -2544,10 +2680,42 @@ public:
 
     static bool HandleHotspotsClearCommand(ChatHandler* handler, char const* /*args*/)
     {
+        // Clean up visual markers before clearing
+        for (auto const& hotspot : sActiveHotspots)
+        {
+            if (!hotspot.gameObjectGuid.IsEmpty())
+            {
+                if (Map* m = GetBaseMapSafe(hotspot.mapId))
+                {
+                    if (GameObject* go = m->GetGameObject(hotspot.gameObjectGuid))
+                    {
+                        go->SetRespawnTime(0);
+                        go->Delete();
+                    }
+                }
+            }
+        }
+        
         size_t count = sActiveHotspots.size();
         sActiveHotspots.clear();
         ClearHotspotsDB();
         handler->PSendSysMessage("Cleared {} hotspot(s) from memory and database.", count);
+        
+        // Immediately spawn minimum hotspots if configured
+        if (sHotspotsConfig.minActive > 0)
+        {
+            handler->PSendSysMessage("Respawning {} minimum hotspot(s)...", sHotspotsConfig.minActive);
+            for (uint32 i = 0; i < sHotspotsConfig.minActive; ++i)
+            {
+                if (!SpawnHotspot())
+                {
+                    handler->PSendSysMessage("Failed to spawn hotspot {}/{}", i + 1, sHotspotsConfig.minActive);
+                    break;
+                }
+            }
+            handler->PSendSysMessage("Active hotspots after respawn: {}", sActiveHotspots.size());
+        }
+        
         return true;
     }
 
@@ -2561,6 +2729,39 @@ public:
     static bool HandleHotspotsDumpCommand(ChatHandler* handler, char const* /*args*/)
     {
         handler->SendSysMessage("--- Hotspots debug dump ---");
+
+        // Dump configuration values
+        handler->SendSysMessage("Configuration:");
+        handler->PSendSysMessage("  enabled={} maxActive={} minActive={} maxPerZone={}",
+                                sHotspotsConfig.enabled ? "YES" : "NO",
+                                sHotspotsConfig.maxActive,
+                                sHotspotsConfig.minActive,
+                                sHotspotsConfig.maxPerZone);
+        handler->PSendSysMessage("  duration={}min radius={:.1f} respawnDelay={}min",
+                                sHotspotsConfig.duration,
+                                sHotspotsConfig.radius,
+                                sHotspotsConfig.respawnDelay);
+        handler->PSendSysMessage("  Active hotspots: {} (db persistence enabled)", sActiveHotspots.size());
+
+        // Dump per-zone hotspot counts
+        handler->SendSysMessage("Per-zone hotspot counts:");
+        std::unordered_map<uint32, uint32> zoneCounts;
+        for (auto const& hotspot : sActiveHotspots)
+        {
+            zoneCounts[hotspot.zoneId]++;
+        }
+        if (zoneCounts.empty())
+        {
+            handler->SendSysMessage("  (no active hotspots)");
+        }
+        else
+        {
+            for (auto const& kv : zoneCounts)
+            {
+                std::string zoneName = GetSafeZoneName(kv.first);
+                handler->PSendSysMessage("  zone {} ({}): {} hotspot(s)", kv.first, zoneName, kv.second);
+            }
+        }
 
         // Dump sMapBounds
         handler->SendSysMessage("sMapBounds entries:");

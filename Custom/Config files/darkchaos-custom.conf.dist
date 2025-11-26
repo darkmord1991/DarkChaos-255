@@ -248,6 +248,27 @@ Hotspots.Radius = 150.0
 Hotspots.MaxActive = 15
 
 #
+#    Hotspots.MinActive
+#        Description: Minimum number of hotspots to maintain at all times
+#                     When hotspots expire and count falls below this, new ones spawn immediately.
+#                     Provides crash persistence - hotspots are restored after server restart.
+#                     Set to 0 to disable minimum enforcement.
+#        Default:     1
+#        Range:       0 - MaxActive
+#
+Hotspots.MinActive = 12
+
+#
+#    Hotspots.MaxPerZone
+#        Description: Maximum number of hotspots allowed in the same zone
+#                     Prevents clustering of multiple hotspots in popular zones.
+#                     Set to 0 for unlimited hotspots per zone.
+#        Default:     2
+#        Range:       0 - 10 (0 = unlimited)
+#
+Hotspots.MaxPerZone = 2
+
+#
 #    Hotspots.RespawnDelay
 #        Description: Delay in minutes between hotspot spawns
 #                     When a hotspot expires, the system waits this long before

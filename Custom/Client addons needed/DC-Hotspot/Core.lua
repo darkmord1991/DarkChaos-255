@@ -43,7 +43,7 @@ local defaults = {
     debug = false,
     cache = {},
     lockWorldMap = true,
-    pinIconStyle = "spell",
+    pinIconStyle = "xp",  -- Default to golden orb (XP themed)
     customIconTexture = "",
 }
 
@@ -191,7 +191,25 @@ local function ParsePayloadString(payload)
         end
     end
     
-    -- Format 2: "ID: 31 | Map: 0 | Zone: Duskwood (10) | Pos: (-4739.6, -2212.5, 534.1) | Time Left: 30m"
+    -- Format 2: Teleport confirmation message
+    -- "Teleported to Hotspot ID 45 on map 1 (zone Ashenvale) at (-2892.9, -4884.0, -53.8)"
+    local teleportId, teleportMap, teleportZone, teleportX, teleportY, teleportZ = 
+        payload:match("Teleported to Hotspot ID (%d+) on map (%d+) %(zone ([^%)]+)%) at %(([%-%d%.]+), ([%-%d%.]+), ([%-%d%.]+)%)")
+    if teleportId then
+        local data = {
+            raw = payload,
+            id = teleportId,
+            map = teleportMap,
+            zone = teleportZone, -- This is the zone name, not ID - may need lookup
+            x = teleportX,
+            y = teleportY,
+            z = teleportZ,
+            teleported = true -- Mark this as a teleport confirmation
+        }
+        return data
+    end
+    
+    -- Format 3: "ID: 31 | Map: 0 | Zone: Duskwood (10) | Pos: (-4739.6, -2212.5, 534.1) | Time Left: 30m"
     -- This is the list format from your server
     local id = payload:match("ID:%s*(%d+)")
     if id then

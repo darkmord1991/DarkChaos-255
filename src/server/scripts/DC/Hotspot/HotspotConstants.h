@@ -34,6 +34,8 @@ namespace HotspotConstants
 
     // Limits and thresholds
     constexpr uint32 DEFAULT_MAX_ACTIVE_HOTSPOTS = 5;
+    constexpr uint32 DEFAULT_MIN_ACTIVE_HOTSPOTS = 1;
+    constexpr uint32 DEFAULT_MAX_PER_ZONE = 2;          // 0 = unlimited
     constexpr uint32 DEFAULT_EXPERIENCE_BONUS_PERCENT = 100;
     constexpr size_t MAX_ADDON_PAYLOAD_BYTES = 512;
     constexpr int BUFF_APPLY_MAX_RETRIES = 3;

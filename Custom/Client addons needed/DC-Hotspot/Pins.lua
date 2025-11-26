@@ -47,26 +47,132 @@ local function ActiveWorldMapId()
     return nil
 end
 
+-- Custom zone map ID to zone ID mapping
+-- Some custom zones report different map IDs than their zone IDs
+-- IMPORTANT: Must be defined before HotspotMatchesMap function
+local CUSTOM_ZONE_MAPPING = {
+    [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
+    -- Add more custom zones here as needed
+}
+
+-- WoW 3.3.5 Map ID to Zone ID mapping
+-- WoW's internal map IDs (GetCurrentMapAreaID) don't match server zone IDs
+-- This maps WoW map IDs -> server zone IDs
+-- NOTE: In WoW 3.3.5, GetCurrentMapAreaID returns the MapAreaID which is 
+-- NOT the same as AreaID/ZoneID that the server uses!
+local MAP_TO_ZONE = {
+    -- Kalimdor (MapAreaID -> AreaID)
+    [41] = 141,   -- Teldrassil (MapAreaID 41 -> AreaID 141)
+    [42] = 148,   -- Darkshore
+    [43] = 331,   -- Ashenvale  
+    [61] = 405,   -- Desolace
+    [81] = 400,   -- Thousand Needles
+    [101] = 15,   -- Dustwallow Marsh
+    [181] = 215,  -- Mulgore
+    [321] = 493,  -- Moonglade
+    [141] = 16,   -- Azshara
+    [161] = 14,   -- Durotar
+    [362] = 17,   -- The Barrens (MapAreaID might be different)
+    [11] = 17,    -- The Barrens alternate
+    [12] = 17,    -- The Barrens (you saw map 12 in logs)
+    [14] = 33,    -- Stranglethorn Vale (you saw map 14 in logs)
+    [182] = 1637, -- Orgrimmar
+    [201] = 357,  -- Feralas
+    [241] = 490,  -- Un'Goro Crater
+    [261] = 361,  -- Felwood
+    [281] = 1377, -- Silithus
+    [301] = 440,  -- Tanaris
+    [341] = 618,  -- Winterspring
+    [381] = 1657, -- Darnassus
+    [382] = 406,  -- Stonetalon Mountains
+    [9] = 1638,   -- Thunder Bluff
+    
+    -- Eastern Kingdoms (MapAreaID -> AreaID)
+    [1] = 1,      -- Dun Morogh
+    [2] = 1537,   -- Ironforge
+    [4] = 12,     -- Elwynn Forest
+    [5] = 1519,   -- Stormwind City
+    [19] = 38,    -- Loch Modan
+    [15] = 44,    -- Redridge Mountains
+    [13] = 10,    -- Duskwood
+    [16] = 40,    -- Westfall
+    [17] = 11,    -- Wetlands
+    [20] = 85,    -- Tirisfal Glades
+    [21] = 130,   -- Silverpine Forest
+    [22] = 36,    -- Alterac Mountains
+    [23] = 267,   -- Hillsbrad Foothills
+    [24] = 47,    -- The Hinterlands
+    [26] = 45,    -- Arathi Highlands
+    [27] = 3,     -- Badlands
+    [28] = 8,     -- Swamp of Sorrows
+    [29] = 51,    -- Searing Gorge
+    [30] = 46,    -- Burning Steppes
+    [32] = 4,     -- Blasted Lands
+    [34] = 28,    -- Western Plaguelands
+    [35] = 139,   -- Eastern Plaguelands
+    [36] = 41,    -- Deadwind Pass
+    [37] = 1497,  -- Undercity
+    [39] = 1584,  -- Blackrock Mountain
+    
+    -- Blood Elf / Draenei starting zones
+    [462] = 3430, -- Eversong Woods
+    [463] = 3433, -- Ghostlands
+    [464] = 3487, -- Silvermoon City
+    [465] = 3525, -- Bloodmyst Isle
+    [466] = 3524, -- Azuremyst Isle
+    [467] = 3557, -- The Exodar
+    
+    -- Outland (MapAreaID -> AreaID)
+    [465] = 3483, -- Hellfire Peninsula
+    [467] = 3518, -- Nagrand
+    [478] = 3519, -- Terokkar Forest
+    [473] = 3520, -- Shadowmoon Valley
+    [466] = 3521, -- Zangarmarsh
+    [475] = 3522, -- Blade's Edge Mountains
+    [479] = 3523, -- Netherstorm
+    [481] = 3703, -- Shattrath City
+    
+    -- Northrend (MapAreaID -> AreaID)
+    [486] = 3537, -- Borean Tundra
+    [488] = 65,   -- Dragonblight
+    [490] = 394,  -- Grizzly Hills
+    [491] = 495,  -- Howling Fjord
+    [492] = 210,  -- Icecrown
+    [493] = 3711, -- Sholazar Basin
+    [495] = 67,   -- Storm Peaks
+    [496] = 66,   -- Zul'Drak
+    [504] = 4395, -- Dalaran
+    [541] = 4197, -- Wintergrasp
+    
+    -- Azshara Crater (custom)
+    [614] = 268,  -- Azshara Crater
+}
+
+-- Reverse mapping: Server zone ID -> WoW map ID (for lookup)
+local ZONE_TO_MAP = {}
+for mapId, zoneId in pairs(MAP_TO_ZONE) do
+    ZONE_TO_MAP[zoneId] = mapId
+end
+
+-- Continent map IDs in WoW 3.3.5 (these are the MapAreaIDs for continent-level views)
+-- IMPORTANT: GetCurrentMapAreaID returns different IDs than server continent IDs!
+-- When viewing the world map at continent level (zoomed out), these are the MapAreaIDs:
+local CONTINENT_MAP_IDS = {
+    -- WoW 3.3.5 continent view MapAreaIDs
+    [-1] = true,   -- Cosmic/World view
+    [0] = true,    -- Azeroth (if used)
+    [13] = true,   -- Kalimdor continent view (GetCurrentMapAreaID when zoomed out)
+    [14] = true,   -- Eastern Kingdoms continent view
+    [466] = true,  -- Outland continent view
+    [485] = true,  -- Northrend continent view
+    -- Also include raw server continent IDs as fallback
+    [1] = true,    -- Kalimdor server ID
+    [530] = true,  -- Outland server ID  
+    [571] = true,  -- Northrend server ID
+}
+
 local function HotspotMatchesMap(hotspot, mapId, showAll)
     if not hotspot then return false end
-    
-    -- Debug: Log matching logic (first time only)
-    if not _G.DC_HOTSPOT_MATCH_LOGGED then
-        print("|cffffff00[DC-Hotspot] HotspotMatchesMap check:|r")
-        print("  Current mapId: " .. tostring(mapId))
-        print("  showAll: " .. tostring(showAll))
-        if hotspot then
-            print("  Example hotspot.map (continent): " .. tostring(hotspot.map))
-            print("  Example hotspot.zoneId: " .. tostring(hotspot.zoneId))
-        end
-        _G.DC_HOTSPOT_MATCH_LOGGED = true
-    end
-    
-    -- If "show all" is enabled, always show
-    if showAll then
-        DebugPrint("Showing hotspot - showAll enabled")
-        return true
-    end
     
     -- If no valid map ID, don't show any pins
     if not mapId or mapId == 0 then
@@ -74,74 +180,82 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
         return false
     end
     
-    -- Resolve custom zone mappings
-    -- Some zones report different map IDs than zone IDs (e.g., Azshara Crater = map 614, zone 268)
-    local resolvedZoneId = CUSTOM_ZONE_MAPPING[mapId] or mapId
-    
-    -- Check if hotspot has data
-    local hotspotMap = tonumber(hotspot.map)      -- Continent ID (0, 1, 530, 571, 37)
-    local hotspotZone = tonumber(hotspot.zoneId)  -- Zone ID from server
-    
-    if not hotspotZone and not hotspotMap then
-        DebugPrint("Hotspot has no zone/map data - hiding")
+    -- IMPORTANT: Hide pins when viewing continent map (zoomed out)
+    -- This check is here as a safety backup - main check is in UpdateWorldPinsInternal
+    if CONTINENT_MAP_IDS[mapId] then
         return false
     end
     
-    -- Strategy: Match by continent
-    -- Since WoW map IDs ≠ zone IDs, show all hotspots from same continent
-    if hotspotMap and hotspotMap == mapId then
-        -- Direct continent match
+    -- If showAll is enabled and we're in a zone view, show all hotspots
+    if showAll then
+        DebugPrint("Showing hotspot - showAll enabled")
         return true
     end
     
-    -- Eastern Kingdoms (continent 0): map IDs 0-99
-    if hotspotMap == 0 and mapId >= 0 and mapId < 100 then
+    -- Check if hotspot has data
+    local hotspotZone = tonumber(hotspot.zoneId)  -- Zone ID from server
+    local hotspotContinent = tonumber(hotspot.map) -- Continent ID from server (0, 1, 530, 571, 37)
+    
+    if not hotspotZone then
+        DebugPrint("Hotspot has no zone data - hiding")
+        return false
+    end
+    
+    -- Strategy 1: Convert WoW map ID to zone ID and compare
+    local expectedZone = MAP_TO_ZONE[mapId]
+    if expectedZone and expectedZone == hotspotZone then
+        DebugPrint("Match via MAP_TO_ZONE: map", mapId, "-> zone", expectedZone)
         return true
     end
     
-    -- Kalimdor (continent 1): map IDs 1-99
-    if hotspotMap == 1 and mapId >= 1 and mapId < 100 then
+    -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater)
+    local resolvedZoneId = CUSTOM_ZONE_MAPPING[mapId] or mapId
+    if hotspotZone == resolvedZoneId then
+        DebugPrint("Match via custom mapping: map", mapId, "-> zone", resolvedZoneId)
         return true
     end
     
-    -- Outland (continent 530): map IDs 465-480
-    if hotspotMap == 530 and mapId >= 465 and mapId <= 480 then
+    -- Strategy 3: Direct match (fallback - some zones might use same ID)
+    if hotspotZone == mapId then
+        DebugPrint("Direct match: map", mapId, "== zone", hotspotZone)
         return true
     end
     
-    -- Northrend (continent 571): map IDs 485-550
-    if hotspotMap == 571 and mapId >= 485 and mapId <= 550 then
-        return true
-    end
-    
-    -- Azshara Crater (continent 37)
-    if hotspotMap == 37 and (resolvedZoneId == 268 or mapId == 614) then
-        return true
-    end
-    
+    -- Don't show pins that don't match - removed the aggressive continent matching
+    -- that was showing pins everywhere
     return false
 end
 
--- Custom zone map ID to zone ID mapping
--- Some custom zones report different map IDs than their zone IDs
-local CUSTOM_ZONE_MAPPING = {
-    [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
-    -- Add more custom zones here as needed
-}
-
 local function ResolveTexture(state, hotspot)
     local db = state and state.db
-    local style = db and db.pinIconStyle or "spell"
+    local style = db and db.pinIconStyle or "xp"
     local custom = db and db.customIconTexture
     if style == "custom" and custom and custom ~= "" then
         return custom
     end
-    if style == "target" then
+    if style == "xp" then
+        -- Experience/bonus themed icons
+        return "Interface\\Icons\\Spell_Holy_SurgeOfLight"  -- Golden glowing orb
+    elseif style == "star" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1"  -- Yellow star
+    elseif style == "diamond" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_3"  -- Purple diamond
+    elseif style == "circle" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_2"  -- Orange circle
+    elseif style == "treasure" then
+        return "Interface\\Icons\\INV_Misc_Bag_10"  -- Treasure bag
+    elseif style == "flame" then
+        return "Interface\\Icons\\Spell_Fire_Fire"  -- Fire icon
+    elseif style == "arcane" then
+        return "Interface\\Icons\\Spell_Arcane_Arcane01"  -- Arcane energy
+    elseif style == "target" then
         return "Interface\\Minimap\\Minimap-target"
     elseif style == "skull" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8"
     elseif style == "map" then
         return "Interface\\Icons\\INV_Misc_Map_01"
+    elseif style == "quest" then
+        return "Interface\\Icons\\INV_Misc_Note_01"  -- Quest note
     end
     if hotspot.tex and hotspot.tex ~= "" then
         return hotspot.tex
@@ -154,7 +268,7 @@ local function ResolveTexture(state, hotspot)
         local tex = GetSpellTexture(hotspot.icon)
         if tex then return tex end
     end
-    return "Interface\\Icons\\INV_Misc_Map_01"
+    return "Interface\\Icons\\Spell_Holy_SurgeOfLight"  -- Default to golden orb
 end
 
 local function CopyTable(tbl)
@@ -304,6 +418,9 @@ function Pins:Init(state)
     self.worldPins = {}
     self.minimapPins = {}
     self.minimapUpdate = 0
+    self.worldPinUpdate = 0  -- Debounce for world pins
+    self.pendingWorldUpdate = false  -- Flag for pending update
+    self.lastMapId = nil  -- Track last map to avoid redundant updates
     
     -- Check Astrolabe status
     local Astrolabe = _G.HotspotDisplay_Astrolabe
@@ -323,30 +440,56 @@ function Pins:Init(state)
     end
 
     if WorldMapFrame then
-        WorldMapFrame:HookScript("OnShow", function() self:UpdateWorldPins() end)
-        WorldMapFrame:HookScript("OnSizeChanged", function() self:UpdateWorldPins() end)
+        WorldMapFrame:HookScript("OnShow", function() self:ScheduleWorldPinUpdate() end)
+        WorldMapFrame:HookScript("OnSizeChanged", function() self:ScheduleWorldPinUpdate() end)
     end
 
     self.worldMapWatcher = CreateFrame("Frame")
     self.worldMapWatcher:RegisterEvent("WORLD_MAP_UPDATE")
     self.worldMapWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self.worldMapWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
-    self.worldMapWatcher:SetScript("OnEvent", function()
-        self:UpdateWorldPins()
+    self.worldMapWatcher:SetScript("OnEvent", function(_, event)
+        DebugPrint("Event:", event)
+        self:ScheduleWorldPinUpdate()
     end)
 
+    -- Single update frame for both minimap and world map debouncing
     local ticker = CreateFrame("Frame")
     ticker:SetScript("OnUpdate", function(_, elapsed)
+        -- Minimap updates
         self.minimapUpdate = self.minimapUpdate + elapsed
         if self.minimapUpdate >= 0.3 then
             self.minimapUpdate = 0
             self:UpdateMinimapPins()
         end
+        
+        -- World pin debounced updates
+        if self.pendingWorldUpdate then
+            self.worldPinUpdate = self.worldPinUpdate + elapsed
+            if self.worldPinUpdate >= 0.1 then  -- 100ms debounce
+                self.worldPinUpdate = 0
+                self.pendingWorldUpdate = false
+                self:UpdateWorldPinsInternal()
+            end
+        end
     end)
 end
 
+-- Schedule a world pin update with debouncing
+function Pins:ScheduleWorldPinUpdate()
+    self.pendingWorldUpdate = true
+    self.worldPinUpdate = 0  -- Reset timer
+end
+
+-- Public method that schedules update (for external calls)
+function Pins:UpdateWorldPins()
+    self:ScheduleWorldPinUpdate()
+end
+
 function Pins:Refresh()
-    self:UpdateWorldPins()
+    self.forceUpdate = true  -- Force update even if map hasn't changed
+    self.lastMapId = nil  -- Clear cached map ID
+    self:ScheduleWorldPinUpdate()
     self:UpdateMinimapPins()
 end
 
@@ -432,37 +575,45 @@ function Pins:AcquireMinimapPin(id, data)
     return pin
 end
 
-function Pins:UpdateWorldPins()
+-- Internal function that actually updates the pins (called via debounce)
+function Pins:UpdateWorldPinsInternal()
     local db = self.state.db
     if not db or not db.showWorldPins or not WorldMapFrame then
-        for id in pairs(self.worldPins) do self:DestroyPin(self.worldPins, id) end
+        -- Hide all pins if world pins are disabled
+        for id, pin in pairs(self.worldPins) do
+            pin:Hide()
+        end
         return
     end
 
     local activeMapId = ActiveWorldMapId()
+    
+    -- Skip redundant updates if map hasn't changed
+    if activeMapId == self.lastMapId and not self.forceUpdate then
+        return
+    end
+    self.lastMapId = activeMapId
+    self.forceUpdate = nil
+    
     local seen = {}
     local visibleCount = 0
     local showAll = db and db.showAllMaps
     
-    if not _G.DC_HOTSPOT_SHOWALL_LOGGED then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[DC-Hotspot] UpdateWorldPins settings:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  db.showAllMaps = " .. tostring(db and db.showAllMaps))
-        DEFAULT_CHAT_FRAME:AddMessage("  showAll = " .. tostring(showAll))
-        DEFAULT_CHAT_FRAME:AddMessage("  activeMapId = " .. tostring(activeMapId))
-        _G.DC_HOTSPOT_SHOWALL_LOGGED = true
-    end
-    
     DebugPrint("UpdateWorldPins: Processing", self:CountHotspots(), "hotspots for map", activeMapId)
+    
+    -- Check if we're in continent view - hide all pins
+    if CONTINENT_MAP_IDS[activeMapId] then
+        DebugPrint("Continent view detected (mapId", activeMapId, ") - hiding all pins")
+        for id, pin in pairs(self.worldPins) do
+            pin:Hide()
+        end
+        return
+    end
     
     for id, hotspot in pairs(self.state.hotspots) do
         local pin = self:AcquireWorldPin(id, hotspot)
         if pin then
             local matches = HotspotMatchesMap(hotspot, activeMapId, showAll)
-            if not _G.DC_HOTSPOT_FIRST_MATCH_LOGGED then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[DC-Hotspot] First match check: hotspot %s (zone %s) vs map %s = %s|r", 
-                    tostring(id), tostring(hotspot.zoneId), tostring(activeMapId), tostring(matches)))
-                _G.DC_HOTSPOT_FIRST_MATCH_LOGGED = true
-            end
             
             if not matches then
                 pin:Hide()

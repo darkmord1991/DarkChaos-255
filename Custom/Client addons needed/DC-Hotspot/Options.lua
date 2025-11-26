@@ -5,11 +5,19 @@ local Options = {}
 addonTable.Options = Options
 
 local ICON_CHOICES = {
-    { value = "spell",  label = "Server/Spell Texture" },
-    { value = "map",    label = "Classic Map Icon" },
-    { value = "target", label = "Target Reticle" },
-    { value = "skull",  label = "Raid Skull" },
-    { value = "custom", label = "Custom Texture Path" },
+    { value = "xp",      label = "Golden Orb (XP Bonus)" },
+    { value = "star",    label = "Yellow Star" },
+    { value = "diamond", label = "Purple Diamond" },
+    { value = "circle",  label = "Orange Circle" },
+    { value = "flame",   label = "Fire" },
+    { value = "arcane",  label = "Arcane Energy" },
+    { value = "treasure",label = "Treasure Bag" },
+    { value = "quest",   label = "Quest Note" },
+    { value = "map",     label = "Classic Map Icon" },
+    { value = "target",  label = "Target Reticle" },
+    { value = "skull",   label = "Raid Skull" },
+    { value = "spell",   label = "Server/Spell Texture" },
+    { value = "custom",  label = "Custom Texture Path" },
 }
 
 local CHECKBOXES = {

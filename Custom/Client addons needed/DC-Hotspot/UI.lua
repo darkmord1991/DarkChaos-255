@@ -3,6 +3,10 @@ addonTable = addonTable or {}
 local UI = {}
 addonTable.UI = UI
 
+-- Track whether player is currently in a hotspot (based on server messages)
+local playerInHotspot = false
+local currentHotspotBonus = 100
+
 local function SafePlaySound(sound)
     if not sound then return end
     local ok = pcall(PlaySound, sound)
@@ -27,10 +31,103 @@ local function FormatHotspotLine(id, info)
     return string.format("#%d  %s  %s  %ss", id, zone, bonus, remain)
 end
 
+-- Create the hotspot active indicator (shows when player is IN a hotspot)
+local function CreateHotspotIndicator()
+    local frame = CreateFrame("Frame", "DCHotspotActiveIndicator", UIParent)
+    frame:SetSize(80, 80)
+    frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -200, -20)
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    
+    -- Background glow
+    frame.glow = frame:CreateTexture(nil, "BACKGROUND")
+    frame.glow:SetSize(90, 90)
+    frame.glow:SetPoint("CENTER")
+    frame.glow:SetTexture("Interface\\Buttons\\CheckButtonGlow")
+    frame.glow:SetVertexColor(1, 0.84, 0, 0.8)
+    
+    -- Icon
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetSize(48, 48)
+    frame.icon:SetPoint("TOP", frame, "TOP", 0, -4)
+    frame.icon:SetTexture("Interface\\Icons\\Spell_Holy_SurgeOfLight")
+    
+    -- Border around icon
+    frame.border = frame:CreateTexture(nil, "OVERLAY")
+    frame.border:SetSize(52, 52)
+    frame.border:SetPoint("CENTER", frame.icon, "CENTER")
+    frame.border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    frame.border:SetBlendMode("ADD")
+    frame.border:SetVertexColor(1, 0.84, 0, 0.8)
+    
+    -- Bonus text
+    frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.text:SetPoint("BOTTOM", frame, "BOTTOM", 0, 2)
+    frame.text:SetText("|cFFFFD700+100% XP|r")
+    frame.text:SetShadowColor(0, 0, 0, 1)
+    frame.text:SetShadowOffset(1, -1)
+    
+    -- Tooltip
+    frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("|cFFFFD700XP Hotspot Active|r", 1, 0.84, 0)
+        GameTooltip:AddLine("You are inside an XP Hotspot zone!", 1, 1, 1)
+        GameTooltip:AddLine(string.format("All XP gains are increased by %d%%", currentHotspotBonus), 0, 1, 0)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Drag to move this indicator", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    
+    -- Pulsing animation
+    frame.pulseTime = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.pulseTime = self.pulseTime + elapsed
+        local alpha = 0.5 + 0.3 * math.sin(self.pulseTime * 2)
+        self.glow:SetAlpha(alpha)
+    end)
+    
+    frame:Hide()
+    return frame
+end
+
+-- Parse server messages to detect hotspot entry/exit
+local function ParseHotspotMessages(message)
+    -- Check for entry message: "[Hotspot] You have entered an XP Hotspot! +X% experience from kills!"
+    local bonus = message:match("%[Hotspot%].*%+(%d+)%% experience")
+    if bonus then
+        return "enter", tonumber(bonus)
+    end
+    
+    -- Also check for debug message that indicates entry
+    local debugBonus = message:match("%[Hotspot DEBUG%].*applied buff")
+    if debugBonus then
+        return "enter", currentHotspotBonus
+    end
+    
+    -- Check for exit message: "[Hotspot Notice] You have left the XP Hotspot zone"
+    if message:match("%[Hotspot.*%] You have left") then
+        return "exit", 0
+    end
+    
+    -- Check for XP gain message to confirm we're in hotspot
+    local xpBonus = message:match("%[Hotspot XP%].*%+(%d+) XP")
+    if xpBonus then
+        return "xpgain", currentHotspotBonus
+    end
+    
+    return nil, nil
+end
+
 function UI:Init(state)
     self.state = state
     self:EnsurePopup()
     self:EnsureListFrame()
+    self:EnsureHotspotIndicator()
+    self:SetupMessageListener()
 
     SLASH_DCHOTSPOT1 = "/dchotspot"
     SLASH_DCHOTSPOT2 = "/dchs"
@@ -53,6 +150,7 @@ function UI:Init(state)
             end
             print("|cffFFD700[DC-Hotspot] Diagnostic:|r")
             print(string.format("  Active hotspots: %d", count))
+            print(string.format("  In hotspot: %s", tostring(playerInHotspot)))
             print(string.format("  Settings loaded: %s", tostring(UI.state and UI.state.db ~= nil)))
             if UI.state and UI.state.db then
                 print(string.format("  Show world pins: %s", tostring(UI.state.db.showWorldPins)))
@@ -73,6 +171,19 @@ function UI:Init(state)
             end
             return
         end
+        if command == "indicator" or command == "buff" then
+            -- Toggle indicator visibility
+            if self.indicator then
+                if self.indicator:IsShown() then
+                    self.indicator:Hide()
+                    print("|cffFFD700[DC-Hotspot]|r Indicator hidden")
+                else
+                    self.indicator:Show()
+                    print("|cffFFD700[DC-Hotspot]|r Indicator shown (for testing)")
+                end
+            end
+            return
+        end
         if self.listFrame:IsShown() then
             self.listFrame:Hide()
         else
@@ -80,6 +191,60 @@ function UI:Init(state)
             self:RefreshList()
         end
     end
+end
+
+-- Setup listener for server messages to detect hotspot entry/exit
+function UI:SetupMessageListener()
+    local messageFrame = CreateFrame("Frame")
+    messageFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+    messageFrame:SetScript("OnEvent", function(self, event, message)
+        if event == "CHAT_MSG_SYSTEM" then
+            local action, bonus = ParseHotspotMessages(message)
+            if action == "enter" then
+                playerInHotspot = true
+                currentHotspotBonus = bonus or 100
+                UI:ShowHotspotIndicator(bonus)
+            elseif action == "exit" then
+                playerInHotspot = false
+                UI:HideHotspotIndicator()
+            elseif action == "xpgain" and not playerInHotspot then
+                -- We got XP bonus but weren't tracking - sync state
+                playerInHotspot = true
+                UI:ShowHotspotIndicator(currentHotspotBonus)
+            end
+        end
+    end)
+end
+
+-- Ensure the hotspot indicator frame exists
+function UI:EnsureHotspotIndicator()
+    if self.indicator then return end
+    self.indicator = CreateHotspotIndicator()
+end
+
+-- Show the hotspot indicator when player enters a hotspot
+function UI:ShowHotspotIndicator(bonus)
+    if not self.indicator then
+        self:EnsureHotspotIndicator()
+    end
+    currentHotspotBonus = bonus or 100
+    self.indicator.text:SetText(string.format("|cFFFFD700+%d%% XP|r", currentHotspotBonus))
+    self.indicator:Show()
+    
+    -- Play a subtle sound
+    SafePlaySound(SOUNDKIT and SOUNDKIT.UI_GARRISON_MISSION_COMPLETE or "PVPFLAGTAKEN")
+end
+
+-- Hide the hotspot indicator when player leaves a hotspot
+function UI:HideHotspotIndicator()
+    if self.indicator then
+        self.indicator:Hide()
+    end
+end
+
+-- Check if player is in hotspot (for external queries)
+function UI:IsPlayerInHotspot()
+    return playerInHotspot
 end
 
 function UI:EnsurePopup()
