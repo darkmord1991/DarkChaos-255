@@ -385,13 +385,74 @@ function Core:HandlePayloadString(payload)
         return
     end
     DebugPrint("  Created hotspot record:", record.id)
+    
+    -- Track this ID as part of current list response
+    if self.pendingListIds then
+        self.pendingListIds[record.id] = true
+    end
+    
     self:UpsertHotspot(record)
+end
+
+-- Handle the "Active Hotspots: X" header to start tracking a new list
+function Core:HandleListHeader(count)
+    DebugPrint("List header received, expecting", count, "hotspots")
+    
+    -- Start tracking which IDs we receive in this list
+    self.pendingListIds = {}
+    self.expectedListCount = count
+    self.receivedListCount = 0
+    
+    -- Set a timer to finalize the list after all entries are received
+    -- (in case some messages are delayed or count is 0)
+    if self.listFinalizeFrame then
+        self.listFinalizeFrame:SetScript("OnUpdate", nil)
+    end
+    
+    self.listFinalizeFrame = self.listFinalizeFrame or CreateFrame("Frame")
+    self.listFinalizeFrame.elapsed = 0
+    self.listFinalizeFrame:SetScript("OnUpdate", function(frame, elapsed)
+        frame.elapsed = frame.elapsed + elapsed
+        if frame.elapsed >= 2 then  -- Wait 2 seconds after header for all entries
+            frame:SetScript("OnUpdate", nil)
+            Core:FinalizeListResponse()
+        end
+    end)
+end
+
+-- Finalize list response - remove hotspots not in the new list
+function Core:FinalizeListResponse()
+    if not self.pendingListIds then return end
+    
+    local toRemove = {}
+    for id in pairs(state.hotspots) do
+        if not self.pendingListIds[id] then
+            table.insert(toRemove, id)
+        end
+    end
+    
+    for _, id in ipairs(toRemove) do
+        DebugPrint("Removing stale hotspot", id, "(not in server list)")
+        self:RemoveHotspot(id, "server_removed")
+    end
+    
+    self.pendingListIds = nil
+    self.expectedListCount = nil
+    self.receivedListCount = nil
 end
 
 function Core:CHAT_MSG_SYSTEM(message)
     if not IsHotspotPayloadCandidate(message) then
         return
     end
+    
+    -- Check for list header "Active Hotspots: X"
+    local count = message:match("Active Hotspots:%s*(%d+)")
+    if count then
+        self:HandleListHeader(tonumber(count))
+        return
+    end
+    
     self:HandlePayloadString(message)
 end
 
@@ -440,6 +501,81 @@ function Core:PLAYER_LOGIN()
             UI:RefreshList()
         end
     end
+    
+    -- Hook world map for auto-refresh
+    self:HookWorldMap()
+    
+    -- Automatically request hotspot list on login (after a short delay for server connection)
+    C_Timer = C_Timer or {}
+    if C_Timer.After then
+        C_Timer.After(2, function()
+            Core:RequestHotspotList()
+        end)
+    else
+        -- Fallback for 3.3.5 client without C_Timer
+        local loginFrame = CreateFrame("Frame")
+        loginFrame.elapsed = 0
+        loginFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = self.elapsed + elapsed
+            if self.elapsed >= 2 then
+                self:SetScript("OnUpdate", nil)
+                Core:RequestHotspotList()
+            end
+        end)
+    end
+end
+
+-- Request hotspot list from server
+function Core:RequestHotspotList()
+    self.lastHotspotRequest = GetTime()
+    DebugPrint("Requesting hotspot list from server")
+    SendChatMessage(".hotspot list", "SAY")
+end
+
+-- Track zone changes to refresh hotspots
+function Core:ZONE_CHANGED_NEW_AREA()
+    -- Only request if we have no hotspots cached OR it's been a while since last request
+    local now = GetTime()
+    local lastRequest = self.lastHotspotRequest or 0
+    local timeSinceRequest = now - lastRequest
+    
+    -- Don't spam - wait at least 60 seconds between zone-change requests
+    if timeSinceRequest < 60 then
+        return
+    end
+    
+    -- Use a small delay to avoid spamming
+    if self.zoneChangeTimer then return end
+    
+    self.zoneChangeTimer = true
+    local zoneFrame = CreateFrame("Frame")
+    zoneFrame.elapsed = 0
+    zoneFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed >= 1 then
+            self:SetScript("OnUpdate", nil)
+            Core.zoneChangeTimer = nil
+            Core:RequestHotspotList()
+        end
+    end)
+end
+
+-- Hook world map to refresh hotspots when opened
+function Core:HookWorldMap()
+    if self.worldMapHooked then return end
+    self.worldMapHooked = true
+    
+    if WorldMapFrame then
+        WorldMapFrame:HookScript("OnShow", function()
+            -- Only request if it's been a while since last request (30 sec cooldown)
+            local now = GetTime()
+            local lastRequest = Core.lastHotspotRequest or 0
+            if (now - lastRequest) >= 30 then
+                Core:RequestHotspotList()
+            end
+        end)
+        DebugPrint("WorldMap OnShow hook installed")
+    end
 end
 
 function Core:PLAYER_LOGOUT()
@@ -452,6 +588,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_LOGOUT")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if Core[event] then
@@ -470,6 +607,13 @@ eventFrame:SetScript("OnUpdate", function(_, elapsed)
     end
     Core.elapsed = 0
     Core:PruneExpiredHotspots()
+    
+    -- Periodic refresh: re-request hotspot list every 3 minutes to catch server-side removals
+    Core.refreshElapsed = (Core.refreshElapsed or 0) + 1
+    if Core.refreshElapsed >= 180 then  -- 180 seconds = 3 minutes
+        Core.refreshElapsed = 0
+        Core:RequestHotspotList()
+    end
 end)
 
 return Core

@@ -54,6 +54,8 @@ DCSeasons.Frames = {
 
 -- Data cache
 DCSeasons.Data = {
+    seasonNumber = 1,
+    seasonName = "Season of Discovery",
     tokens = 0,
     essence = 0,
     weeklyTokens = 0,
@@ -200,7 +202,7 @@ function DCSeasons:CreateProgressTracker()
     end
     
     local frame = CreateFrame("Frame", "SeasonalProgressTracker", UIParent)
-    frame:SetSize(250, 120)
+    frame:SetSize(250, 115)  -- Compact height
     frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -10, -150)
     frame:SetFrameStrata("MEDIUM")
     frame:SetMovable(true)
@@ -215,16 +217,22 @@ function DCSeasons:CreateProgressTracker()
     bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
     bg:SetVertexColor(0, 0, 0, 0.85)
     
-    -- Title
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", frame, "TOP", 0, -5)
-    title:SetText("|cff00ff00Seasonal Progress|r")
-    frame.title = title
+    -- Season Title (number and name)
+    local seasonTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    seasonTitle:SetPoint("TOP", frame, "TOP", 0, -5)
+    seasonTitle:SetText("|cffFFD700Season 1|r")
+    frame.seasonTitle = seasonTitle
+    
+    -- Season Name subtitle
+    local seasonName = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    seasonName:SetPoint("TOP", seasonTitle, "BOTTOM", 0, -2)
+    seasonName:SetText("|cff00ff00Season of Discovery|r")
+    frame.seasonName = seasonName
     
     -- Token progress bar
     local tokenBar = CreateFrame("StatusBar", nil, frame)
     tokenBar:SetSize(220, 18)
-    tokenBar:SetPoint("TOP", title, "BOTTOM", 0, -5)
+    tokenBar:SetPoint("TOP", seasonName, "BOTTOM", 0, -8)
     tokenBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     tokenBar:SetStatusBarColor(1, 0.82, 0)  -- Gold
     tokenBar:SetMinMaxValues(0, 1)
@@ -280,6 +288,14 @@ end
 function DCSeasons:UpdateProgressTracker()
     local frame = self.Frames.progressTracker
     if not frame then return end
+    
+    -- Update season title and name
+    if frame.seasonTitle then
+        frame.seasonTitle:SetText(string.format("|cffFFD700Season %d|r", self.Data.seasonNumber or 1))
+    end
+    if frame.seasonName then
+        frame.seasonName:SetText(string.format("|cff00ff00%s|r", self.Data.seasonName or ""))
+    end
     
     -- Update token bar
     local tokenPercent = self.Data.weeklyTokens / math.max(self.Data.weeklyTokenCap, 1)
@@ -362,6 +378,8 @@ if AIO and AIO.AddHandlers then
     
     -- Handle stats update from server
     function SeasonalAIO.UpdateStats(player, stats)
+        DCSeasons.Data.seasonNumber = stats.seasonNumber or 1
+        DCSeasons.Data.seasonName = stats.seasonName or "Season of Discovery"
         DCSeasons.Data.weeklyTokens = stats.weeklyTokens or 0
         DCSeasons.Data.weeklyEssence = stats.weeklyEssence or 0
         DCSeasons.Data.weeklyTokenCap = stats.weeklyTokenCap or 5000

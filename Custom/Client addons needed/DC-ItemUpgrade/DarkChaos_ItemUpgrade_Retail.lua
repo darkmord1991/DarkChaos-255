@@ -4,9 +4,79 @@
 	Adapted for: AzerothCore 3.3.5a with Eluna server communication
 --]]
 
--- Global namespace
-DarkChaos_ItemUpgrade = {};
+-- Global namespace - use existing table from Core.lua, don't overwrite it!
+DarkChaos_ItemUpgrade = DarkChaos_ItemUpgrade or {};
 local DC = DarkChaos_ItemUpgrade;
+
+--[[=====================================================
+	QUALITY COLOR FIX & ITEM ID TOOLTIPS
+	Fixes "attempt to index local 'color' (a nil value)" for quality 7+ items
+	Also adds Item ID display to all item tooltips
+=======================================================]]
+
+-- Add missing ITEM_QUALITY_COLORS entries for quality 7+ (Heirloom, Artifact, etc.)
+-- This fixes the LootFrame.lua error when looting quality 7 items
+if ITEM_QUALITY_COLORS then
+	-- Quality 7 = Heirloom (cyan/light blue - same as Blizzard uses in later expansions)
+	if not ITEM_QUALITY_COLORS[7] then
+		ITEM_QUALITY_COLORS[7] = { r = 0.0, g = 0.8, b = 1.0, hex = "|cff00ccff" };
+	end
+	-- Quality 8 = Artifact (orange, same as legendary for future compatibility)
+	if not ITEM_QUALITY_COLORS[8] then
+		ITEM_QUALITY_COLORS[8] = { r = 1.0, g = 0.5, b = 0.0, hex = "|cffff8000" };
+	end
+	-- Quality 9+ fallback (white)
+	for i = 9, 15 do
+		if not ITEM_QUALITY_COLORS[i] then
+			ITEM_QUALITY_COLORS[i] = { r = 1.0, g = 1.0, b = 1.0, hex = "|cffffffff" };
+		end
+	end
+end
+
+-- Setting for showing Item IDs in tooltips (default: true)
+DC.showItemIDsInTooltips = true;
+
+--[[=====================================================
+	ITEM ID TOOLTIP HELPER
+	Shows item ID on all item tooltips regardless of upgrade status
+=======================================================]]
+
+-- Helper function to add item ID line to any tooltip
+-- This is called before upgrade info, so we check if we already added it
+local function DC_AddItemIDToTooltip(tooltip, itemId, itemLink)
+	if not tooltip or not DC.showItemIDsInTooltips then
+		return false;
+	end
+	
+	-- If no itemId provided, try to get it from the tooltip's item
+	if not itemId and not itemLink then
+		local _, link = tooltip:GetItem();
+		if link then
+			itemLink = link;
+			itemId = tonumber(string.match(link, "item:(%d+)"));
+		end
+	elseif itemLink and not itemId then
+		itemId = tonumber(string.match(itemLink, "item:(%d+)"));
+	end
+	
+	if not itemId then
+		return false;
+	end
+	
+	-- Mark that we've added item ID to this tooltip to prevent duplicates
+	if tooltip.__dcItemIDAdded == itemId then
+		return false;
+	end
+	tooltip.__dcItemIDAdded = itemId;
+	
+	-- Add item ID line (gray, subtle)
+	tooltip:AddLine(string.format("|cff888888Item ID: %d|r", itemId));
+	tooltip:Show();
+	return true;
+end
+
+-- Make it accessible globally
+DC.AddItemIDToTooltip = DC_AddItemIDToTooltip;
 
 -- Item IDs for currency icons (set these to your actual item IDs)
 DC.TOKEN_ITEM_ID = nil; -- Set to your Token Item ID (e.g. 49426)
@@ -51,6 +121,20 @@ DC.COST_COLORS = {
 	expensive = { r = 0.8, g = 0.2, b = 0.2 },  -- Red (expensive)
 };
 
+--[[=====================================================
+	HEIRLOOM STAT PACKAGES
+	For item 300365 (Heirloom Adventurer's Shirt) only.
+	Players select a stat package to determine secondary stats.
+	Package stats scale with upgrade levels (1-15).
+	
+	NOTE: DC.STAT_PACKAGES and DC.STAT_PACKAGE_LEVEL_VALUES are defined in Heirloom.lua
+	      which loads first. Do not redefine them here!
+=======================================================]]
+
+-- Currently selected stat package (saved per character)
+DC.selectedStatPackage = nil;
+
+-- Use value from Heirloom.lua or default
 DC.STAT_PERCENT_PER_LEVEL = DC.STAT_PERCENT_PER_LEVEL or 2.5;
 
 local BASE_STAT_INCREMENT = 0.025; -- 2.5% per level baseline
@@ -735,10 +819,13 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== DC ItemUpgrade Commands ===|r");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu|r - Open upgrade window");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu heirloom|r - Open heirloom upgrade window");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu packages|r - List available stat packages");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu package <id>|r - Select stat package (1-12)");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu settings|r - Open settings panel");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu debug|r - Toggle debug mode");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu sound|r - Toggle sound effects");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu tooltip|r - Toggle tooltip info");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu itemid|r - Toggle item ID display");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu celebrate|r - Toggle celebration effects");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu autoequip|r - Toggle auto-equip");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu status|r - Show current settings status");
@@ -757,6 +844,29 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 			DarkChaos_ItemUpgradeFrame:Show();
 			DarkChaos_ItemUpgradeFrame.TitleText:SetText("Heirloom Upgrade");
 		end
+		
+	elseif subcmd == "packages" or subcmd == "pkgs" then
+		-- List all stat packages
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Heirloom Stat Packages ===|r");
+		for i = 1, 12 do
+			local pkg = DC.STAT_PACKAGES[i];
+			if pkg then
+				local selected = (DC.selectedStatPackage == i) and " |cff00ff00[SELECTED]|r" or "";
+				local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
+				DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffffcc00%d.|r |cff%s%s|r - %s%s", 
+					i, colorHex, pkg.name, table.concat(pkg.stats, ", "), selected));
+			end
+		end
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888Use /dcu package <number> to select a package.|r");
+		
+	elseif subcmd == "package" or subcmd == "pkg" then
+		-- Select a stat package by ID
+		local pkgId = tonumber(args[2]);
+		if not pkgId or pkgId < 1 or pkgId > 12 then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Invalid package ID. Use 1-12. Type /dcu packages for list.|r");
+			return;
+		end
+		DarkChaos_ItemUpgrade_SelectStatPackage(pkgId);
 		
 	elseif subcmd == "settings" or subcmd == "config" or subcmd == "options" then
 		-- Open settings panel
@@ -789,6 +899,12 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		local status = DC_ItemUpgrade_Settings.showTooltips and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r";
 		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Tooltip info " .. status);
 		
+	elseif subcmd == "itemid" or subcmd == "itemids" or subcmd == "id" then
+		-- Toggle item ID display in tooltips
+		DC.showItemIDsInTooltips = not DC.showItemIDsInTooltips;
+		local status = DC.showItemIDsInTooltips and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r";
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Item ID display " .. status);
+		
 	elseif subcmd == "celebrate" or subcmd == "celebration" then
 		-- Toggle celebration effects
 		DC_ItemUpgrade_Settings.showCelebration = not DC_ItemUpgrade_Settings.showCelebration;
@@ -808,11 +924,20 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("Debug Mode: " .. statusColor(DC_ItemUpgrade_Settings.debug));
 		DEFAULT_CHAT_FRAME:AddMessage("Sound Effects: " .. statusColor(DC_ItemUpgrade_Settings.playSounds));
 		DEFAULT_CHAT_FRAME:AddMessage("Tooltip Info: " .. statusColor(DC_ItemUpgrade_Settings.showTooltips));
+		DEFAULT_CHAT_FRAME:AddMessage("Item ID Display: " .. statusColor(DC.showItemIDsInTooltips));
 		DEFAULT_CHAT_FRAME:AddMessage("Celebration: " .. statusColor(DC_ItemUpgrade_Settings.showCelebration));
 		DEFAULT_CHAT_FRAME:AddMessage("Auto-Equip: " .. statusColor(DC_ItemUpgrade_Settings.autoEquip));
 		DEFAULT_CHAT_FRAME:AddMessage("Batch Delay: |cffffcc00" .. string.format("%.2fs", DC_ItemUpgrade_Settings.batchQueryDelay or 0.1) .. "|r");
 		DEFAULT_CHAT_FRAME:AddMessage("Cache Lifetime: |cffffcc00" .. (DC_ItemUpgrade_Settings.itemScanCacheLifetime or 5) .. "s|r");
 		DEFAULT_CHAT_FRAME:AddMessage("Tokens: |cffffcc00" .. (DC.playerTokens or 0) .. "|r | Essence: |cffffcc00" .. (DC.playerEssence or 0) .. "|r");
+		-- Show selected stat package
+		if DC.selectedStatPackage and DC.STAT_PACKAGES[DC.selectedStatPackage] then
+			local pkg = DC.STAT_PACKAGES[DC.selectedStatPackage];
+			local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
+			DEFAULT_CHAT_FRAME:AddMessage(string.format("Stat Package: |cff%s%s|r (%s)", colorHex, pkg.name, table.concat(pkg.stats, ", ")));
+		else
+			DEFAULT_CHAT_FRAME:AddMessage("Stat Package: |cff888888None selected|r");
+		end
 		
 	elseif subcmd == "reset" then
 		-- Reset to defaults
@@ -1029,11 +1154,14 @@ function DC_ItemUpgrade_HeirloomButton_OnClick(self)
 	end
 	
 	DC.uiMode = "HEIRLOOM";
+	
 	if DarkChaos_ItemUpgradeFrame:IsShown() then
 		DarkChaos_ItemUpgradeFrame:Hide();
 	else
 		DarkChaos_ItemUpgradeFrame:Show();
 		DarkChaos_ItemUpgradeFrame.TitleText:SetText("Heirloom Upgrade");
+		-- Auto-find and select the heirloom shirt
+		DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt();
 	end
 end
 
@@ -1111,6 +1239,14 @@ local function IsEquippedBag(bag)
 end
 
 local function GetServerSlotFromClient(bag, slot)
+	-- For equipped items (bag 255), convert from client 1-indexed to server 0-indexed
+	-- Client: HEAD=1, NECK=2, SHOULDERS=3, BODY=4, CHEST=5, etc.
+	-- Server: HEAD=0, NECK=1, SHOULDERS=2, BODY=3, CHEST=4, etc.
+	if IsEquippedBag(bag) then
+		return math.max(0, (slot or 1) - 1);  -- Subtract 1 to convert to 0-indexed
+	end
+	
+	-- For bag items, subtract 1 to convert from 1-indexed to 0-indexed
 	local normalizedSlot = math.max(0, (slot or 1) - 1);
 	if bag == BAG_BANK then
 		return BANK_SLOT_ITEM_START + normalizedSlot;
@@ -1177,9 +1313,14 @@ function DC.ProcessBatchQueries()
 	end
 
 	DC.batchQueryQueue = {};
+	
+	DC.Debug("ProcessBatchQueries: Queue now has " .. #DC.queryQueueList .. " items");
 
 	if not DC.queryInFlight then
+		DC.Debug("ProcessBatchQueries: Starting query processing");
 		DarkChaos_ItemUpgrade_StartNextQuery();
+	else
+		DC.Debug("ProcessBatchQueries: Query already in flight, will continue after response");
 	end
 end
 
@@ -1428,10 +1569,12 @@ function DarkChaos_ItemUpgrade_StartNextQuery()
 	local nextRequest = table.remove(DC.queryQueueList, 1);
 	if not nextRequest then
 		DC.queryInFlight = nil;
+		DC.Debug("StartNextQuery: No more queries in queue");
 		return;
 	end
 
 	DC.queryInFlight = nextRequest;
+	DC.Debug("StartNextQuery: Sending query - " .. nextRequest.command);
 	SendChatMessage(nextRequest.command, "SAY");
 end
 
@@ -1550,6 +1693,8 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	local totalBonus = (statMultiplier - 1.0) * 100;
 	local currentEntry = data.currentEntry or data.baseEntry or 0;
 	local tier = data.tier or 0;
+	local HEIRLOOM_SHIRT_ENTRY = 300365;
+	local isHeirloom = (currentEntry == HEIRLOOM_SHIRT_ENTRY) or (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
 
 	tooltip.__dcUpgradeProcessing = true;
 	tooltip:AddLine(" ");
@@ -1570,9 +1715,32 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		if totalBonus > 0 then
 			tooltip:AddLine(string.format("|cff00ff00+%.1f%% All Stats|r", totalBonus));
 		end
+		
+		-- For heirlooms, show the installed stat package
+		if isHeirloom then
+			local packageId = data.heirloomPackageId or DC.selectedStatPackage;
+			if packageId and packageId > 0 and DC.STAT_PACKAGES and DC.STAT_PACKAGES[packageId] then
+				local pkg = DC.STAT_PACKAGES[packageId];
+				local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
+				tooltip:AddLine(string.format("|cff%s-- %s Package --|r", colorHex, pkg.name));
+				
+				-- Show package stats at current level
+				local stats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, current);
+				if stats then
+					for _, stat in ipairs(stats) do
+						tooltip:AddLine(string.format("|cff00ff00+%d %s|r", stat.value, stat.name));
+					end
+				end
+			end
+		end
 	elseif maxUpgrade > 0 then
 		-- Show that item is upgradeable but not upgraded yet
 		tooltip:AddLine(string.format("|cff888888Upgrade Level 0 / %d|r", maxUpgrade));
+		
+		-- For unupgraded heirlooms, show hint about package selection
+		if isHeirloom then
+			tooltip:AddLine("|cff888888Select a stat package to upgrade|r");
+		end
 	end
 	
 	tooltip:Show();
@@ -1612,9 +1780,23 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 		return;
 	end
 
-	item.tier = data.tier or item.tier or 1;
+	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
+	-- Force tier 3 (HEIRLOOM) and 15 max levels regardless of server response
+	local HEIRLOOM_SHIRT_ENTRY = 300365;
+	local isHeirloomShirt = (item.itemID == HEIRLOOM_SHIRT_ENTRY) or 
+	                        (item.baseEntry == HEIRLOOM_SHIRT_ENTRY) or
+	                        (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
+	
+	if isHeirloomShirt then
+		item.tier = 3;  -- TIER_HEIRLOOM
+		item.maxUpgrade = 15;
+		DC.Debug("ApplyQueryData: Forced HEIRLOOM tier for item 300365");
+	else
+		item.tier = data.tier or item.tier or 1;
+		item.maxUpgrade = data.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
+	end
+	
 	item.currentUpgrade = data.currentUpgrade or 0;
-	item.maxUpgrade = data.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
 	DC.Debug("ApplyQueryData: data.maxUpgrade=" .. tostring(data.maxUpgrade) .. ", item.tier=" .. tostring(item.tier) .. ", final item.maxUpgrade=" .. tostring(item.maxUpgrade));
 	item.baseLevel = data.baseItemLevel or item.baseLevel or 0;
 	local calculatedLevel = data.upgradedItemLevel or GetUpgradedItemLevel(item.baseLevel, item.currentUpgrade, item.tier);
@@ -1839,7 +2021,7 @@ end
 	TOOLTIP HOOKS
 =======================================================]]
 
--- Hook GameTooltip to show upgrade information
+-- Hook GameTooltip to show upgrade information AND item IDs
 function DarkChaos_ItemUpgrade_HookTooltips()
 	if DC.tooltipsHooked then return; end
 	DC.tooltipsHooked = true;
@@ -1848,11 +2030,23 @@ function DarkChaos_ItemUpgrade_HookTooltips()
 	if hooksecurefunc then
 		-- Hook SetBagItem (items in bags)
 		hooksecurefunc(GameTooltip, "SetBagItem", function(self, bag, slot)
+			-- Always show item ID if enabled
+			local link = GetContainerItemLink(bag, slot);
+			if link and DC.showItemIDsInTooltips then
+				DC.AddItemIDToTooltip(self, nil, link);
+			end
+			-- Then handle upgrade info
 			DarkChaos_ItemUpgrade_OnTooltipSetBagItem(self, bag, slot);
 		end);
 		
 		-- Hook SetInventoryItem (equipped items and inspection)
 		hooksecurefunc(GameTooltip, "SetInventoryItem", function(self, unit, slot)
+			-- Always show item ID if enabled
+			local link = GetInventoryItemLink(unit, slot);
+			if link and DC.showItemIDsInTooltips then
+				DC.AddItemIDToTooltip(self, nil, link);
+			end
+			-- Then handle upgrade info
 			if unit == "player" then
 				DarkChaos_ItemUpgrade_OnTooltipSetInventoryItem(self, unit, slot);
 			else
@@ -1863,12 +2057,141 @@ function DarkChaos_ItemUpgrade_HookTooltips()
 		-- Hook for item links in chat, etc.
 		hooksecurefunc(GameTooltip, "SetHyperlink", function(self, link)
 			if link and type(link) == "string" and string.find(link, "item:") then
+				-- Always show item ID if enabled
+				if DC.showItemIDsInTooltips then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+				-- Then handle upgrade info
 				DarkChaos_ItemUpgrade_OnTooltipSetHyperlink(self, link);
 			end
 		end);
+		
+		-- Hook SetMerchantItem (vendor items)
+		hooksecurefunc(GameTooltip, "SetMerchantItem", function(self, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetMerchantItemLink(index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetLootItem (loot window items)
+		hooksecurefunc(GameTooltip, "SetLootItem", function(self, slot)
+			if DC.showItemIDsInTooltips then
+				local link = GetLootSlotLink(slot);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetQuestItem (quest reward items)
+		hooksecurefunc(GameTooltip, "SetQuestItem", function(self, type, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetQuestItemLink(type, index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetQuestLogItem (quest log reward items)
+		hooksecurefunc(GameTooltip, "SetQuestLogItem", function(self, type, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetQuestLogItemLink(type, index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetAuctionItem (auction house items)
+		hooksecurefunc(GameTooltip, "SetAuctionItem", function(self, type, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetAuctionItemLink(type, index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetAuctionSellItem (auction sell item slot)
+		hooksecurefunc(GameTooltip, "SetAuctionSellItem", function(self)
+			if DC.showItemIDsInTooltips then
+				local name, texture, count, quality, canUse, price = GetAuctionSellItemInfo();
+				if name then
+					-- Try to get the link from cursor or bag
+					local _, link = self:GetItem();
+					if link then
+						DC.AddItemIDToTooltip(self, nil, link);
+					end
+				end
+			end
+		end);
+		
+		-- Hook SetTradePlayerItem (trade window - your items)
+		hooksecurefunc(GameTooltip, "SetTradePlayerItem", function(self, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetTradePlayerItemLink(index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetTradeTargetItem (trade window - their items)
+		hooksecurefunc(GameTooltip, "SetTradeTargetItem", function(self, index)
+			if DC.showItemIDsInTooltips then
+				local link = GetTradeTargetItemLink(index);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetGuildBankItem (guild bank items)
+		if GetGuildBankItemLink then
+			hooksecurefunc(GameTooltip, "SetGuildBankItem", function(self, tab, slot)
+				if DC.showItemIDsInTooltips then
+					local link = GetGuildBankItemLink(tab, slot);
+					if link then
+						DC.AddItemIDToTooltip(self, nil, link);
+					end
+				end
+			end);
+		end
+		
+		-- Hook SetInboxItem (mailbox items)
+		hooksecurefunc(GameTooltip, "SetInboxItem", function(self, mailIndex, attachmentIndex)
+			if DC.showItemIDsInTooltips then
+				local link = GetInboxItemLink(mailIndex, attachmentIndex or 1);
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook SetSendMailItem (sending mail attachment)
+		hooksecurefunc(GameTooltip, "SetSendMailItem", function(self, index)
+			if DC.showItemIDsInTooltips then
+				-- GetSendMailItem returns name, icon, count, quality
+				-- GetSendMailItemLink is not a standard API, try GetItem on tooltip
+				local _, link = self:GetItem();
+				if link then
+					DC.AddItemIDToTooltip(self, nil, link);
+				end
+			end
+		end);
+		
+		-- Hook OnTooltipCleared to reset our tracking
+		GameTooltip:HookScript("OnTooltipCleared", function(self)
+			self.__dcItemIDAdded = nil;
+			self.__dcUpgradeProcessing = nil;
+		end);
 	end
 	
-	DC.Debug("Tooltip hooks installed");
+	DC.Debug("Tooltip hooks installed (including Item ID display)");
 end
 
 -- Handle inspecting other players' items
@@ -2343,6 +2666,18 @@ end
 
 function DarkChaos_ItemUpgrade_OnLoad(self)
 	self:RegisterForDrag("LeftButton");
+	self:SetMovable(true);
+	self:EnableMouse(true);
+	self:SetClampedToScreen(true);
+	
+	-- Set up drag handlers for moving the frame
+	self:SetScript("OnDragStart", function(frame)
+		frame:StartMoving();
+	end);
+	self:SetScript("OnDragStop", function(frame)
+		frame:StopMovingOrSizing();
+	end);
+	
 	-- SetPortraitToTexture(self.portrait, "Interface\\Icons\\Trade_BlackSmithing"); -- Removed as portrait is not used
 	self:RegisterEvent("PLAYER_LOGIN");
 	
@@ -2401,6 +2736,9 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	end);
 	settingsBtn:Show();
 	
+	-- Create Stat Package Selector for Heirloom mode (hidden by default)
+	DarkChaos_ItemUpgrade_CreateStatPackageSelector(self);
+	
 	tinsert(UISpecialFrames, self:GetName());
 end
 
@@ -2449,6 +2787,15 @@ function DarkChaos_ItemUpgrade_OnHide(self)
 		GameTooltip:Hide();
 	end
 
+	-- Reset package selection mode when closing
+	DC.inPackageSelectionMode = false;
+	DC.isChangingPackage = false;
+	
+	-- Hide stat package selector
+	if self.StatPackageSelector then
+		self.StatPackageSelector:Hide();
+	end
+
 	DC.pendingUpgrade = nil;
 end
 
@@ -2495,6 +2842,8 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 		end
 		-- Hook tooltip functions for upgrade info display
 		DarkChaos_ItemUpgrade_HookTooltips();
+		-- Load per-character settings
+		DarkChaos_ItemUpgrade_LoadCharSettings();
 		return;
 	end
 	
@@ -2515,8 +2864,15 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 
 	if event == "CHAT_MSG_SYSTEM" then
 		local message = ...;
-		if type(message) == "string" and string.find(message, "^DCUPGRADE_") then
-			DarkChaos_ItemUpgrade_OnChatMessage(message, UnitName("player"));
+		-- Debug: Log raw system messages that might be ours
+		if type(message) == "string" and (string.find(message, "DCUPGRADE_") or string.find(message, "DCHEIRLOOM_")) then
+			DC.Debug("CHAT_MSG_SYSTEM raw: " .. string.sub(message, 1, 80));
+		end
+		if type(message) == "string" then
+			-- Handle both DCUPGRADE_ and DCHEIRLOOM_ messages
+			if string.find(message, "^DCUPGRADE_") or string.find(message, "^DCHEIRLOOM_") then
+				DarkChaos_ItemUpgrade_OnChatMessage(message, UnitName("player"));
+			end
 		end
 		return;
 	end
@@ -2556,6 +2912,44 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 	if event == "GET_ITEM_INFO_RECEIVED" then
 		RefreshBrowserIfOpen();
 		return;
+	end
+end
+
+--[[=====================================================
+    PER-CHARACTER SETTINGS SAVE/LOAD
+=====================================================]]--
+
+function DarkChaos_ItemUpgrade_LoadCharSettings()
+	-- Initialize saved variables table if not exists
+	if not DC_ItemUpgrade_CharSettings then
+		DC_ItemUpgrade_CharSettings = {};
+	end
+	
+	-- Load saved stat package selection
+	if DC_ItemUpgrade_CharSettings.selectedStatPackage then
+		local savedPackage = DC_ItemUpgrade_CharSettings.selectedStatPackage;
+		-- Validate it's a valid package ID (1-12)
+		if type(savedPackage) == "number" and savedPackage >= 1 and savedPackage <= 12 and DC.STAT_PACKAGES and DC.STAT_PACKAGES[savedPackage] then
+			DC.selectedStatPackage = savedPackage;
+			local pkg = DC.STAT_PACKAGES[savedPackage];
+			DC.Debug("Loaded saved stat package: " .. pkg.name .. " (ID: " .. savedPackage .. ")");
+		else
+			DC.Debug("Invalid saved package ID, resetting: " .. tostring(savedPackage));
+			DC_ItemUpgrade_CharSettings.selectedStatPackage = nil;
+		end
+	end
+end
+
+function DarkChaos_ItemUpgrade_SaveCharSettings()
+	-- Initialize saved variables table if not exists
+	if not DC_ItemUpgrade_CharSettings then
+		DC_ItemUpgrade_CharSettings = {};
+	end
+	
+	-- Save current stat package selection
+	if DC.selectedStatPackage then
+		DC_ItemUpgrade_CharSettings.selectedStatPackage = DC.selectedStatPackage;
+		DC.Debug("Saved stat package selection: " .. DC.selectedStatPackage);
 	end
 end
 
@@ -2620,29 +3014,65 @@ function DarkChaos_ItemBrowser_OnLoad(self)
 	self:RegisterForDrag("LeftButton");
 	
 	-- Create buttons for scroll frame
+	-- In WoW 3.3.5a, FauxScrollFrame buttons must be parented to the frame containing the scroll frame
+	-- and positioned relative to the scroll frame's position, not as children of it
 	local scrollFrame = self.ScrollFrame;
 	scrollFrame.buttons = {};
+	
 	for i = 1, 10 do
-		local button = CreateFrame("Button", "$parentButton"..i, scrollFrame);
-		button:SetWidth(270);
+		-- Parent to the main browser frame, not the scroll frame
+		local button = CreateFrame("Button", "DarkChaos_ItemBrowserButton"..i, self);
+		button:SetWidth(250);
 		button:SetHeight(32);
-		button:SetPoint("TOPLEFT", 8, -(i-1)*32 - 5);
 		
+		-- Position relative to the scroll frame's position in the parent
+		button:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0, -(i-1)*32);
+		
+		-- Create background texture for visibility
+		button.Background = button:CreateTexture(nil, "BACKGROUND");
+		button.Background:SetAllPoints();
+		button.Background:SetTexture("Interface\\Buttons\\WHITE8X8");
+		button.Background:SetVertexColor(0.1, 0.1, 0.1, 0.3);
+		
+		-- Item icon
 		button.Icon = button:CreateTexture(nil, "ARTWORK");
 		button.Icon:SetWidth(28);
 		button.Icon:SetHeight(28);
 		button.Icon:SetPoint("LEFT", 2, 0);
+		button.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); -- Slight inset to avoid icon borders
 		
+		-- Item name text
 		button.Name = button:CreateFontString(nil, "ARTWORK", "GameFontNormal");
-		button.Name:SetPoint("LEFT", button.Icon, "RIGHT", 5, 0);
+		button.Name:SetPoint("LEFT", button.Icon, "RIGHT", 6, 0);
+		button.Name:SetPoint("RIGHT", button, "RIGHT", -4, 0);
+		button.Name:SetJustifyH("LEFT");
+		button.Name:SetWordWrap(false);
 		
+		-- Highlight texture
 		button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight");
 		button:GetHighlightTexture():SetBlendMode("ADD");
 		
+		-- Make clickable
+		button:EnableMouse(true);
 		button:SetScript("OnClick", DarkChaos_ItemBrowserButton_OnClick);
+		button:SetScript("OnEnter", function(self)
+			if self.item and self.item.link then
+				GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
+				GameTooltip:SetHyperlink(self.item.link);
+				GameTooltip:Show();
+			end
+		end);
+		button:SetScript("OnLeave", function(self)
+			GameTooltip:Hide();
+		end);
+		
+		-- Initially hidden
+		button:Hide();
 		
 		scrollFrame.buttons[i] = button;
 	end
+	
+	print("[DC-ItemUpgrade] ItemBrowser_OnLoad: Created " .. #scrollFrame.buttons .. " buttons");
 end
 
 function DarkChaos_ItemBrowser_OnShow(self)
@@ -2654,6 +3084,7 @@ local UPGRADEABLE_EQUIP_LOCS = {
 	["INVTYPE_HEAD"] = true,
 	["INVTYPE_NECK"] = true,
 	["INVTYPE_SHOULDER"] = true,
+	["INVTYPE_BODY"] = true,       -- Shirt slot (for Heirloom Adventurer's Shirt 300365)
 	["INVTYPE_CHEST"] = true,
 	["INVTYPE_ROBE"] = true,
 	["INVTYPE_WAIST"] = true,
@@ -2677,6 +3108,7 @@ local UPGRADEABLE_EQUIP_LOCS = {
 };
 
 -- Check if an item is a valid upgradeable equipment piece
+-- Filters based on current UI mode (STANDARD vs HEIRLOOM)
 local function IsUpgradeableItem(link)
 	if not link then return false end
 	
@@ -2692,44 +3124,56 @@ local function IsUpgradeableItem(link)
 		return false;
 	end
 	
-	-- Check for heirloom quality (7) for tier filtering
-	local isHeirloom = (quality == 7);
+	-- Parse item ID from link
+	local itemId = tonumber(string.match(link, "item:(%d+)"));
 	
-	-- In HEIRLOOM mode, only show item 300365 (the only upgradeable heirloom)
-	if DC.uiMode == "HEIRLOOM" then
-		if not isHeirloom then
+	-- Filter based on UI mode
+	local isHeirloomMode = (DC.uiMode == "HEIRLOOM");
+	
+	-- The specific heirloom item that can be upgraded via Heirloom UI
+	local HEIRLOOM_UPGRADE_ITEM = 300365; -- Heirloom Adventurer's Shirt
+	
+	-- Check if item is an heirloom (quality 7) or the specific heirloom upgrade item
+	local isHeirloomQuality = (quality == 7);
+	local isHeirloomUpgradeItem = (itemId == HEIRLOOM_UPGRADE_ITEM);
+	
+	if isHeirloomMode then
+		-- In Heirloom mode, only show the specific heirloom upgrade item (300365)
+		return isHeirloomUpgradeItem;
+	else
+		-- In Standard mode, exclude ALL heirloom quality items AND the specific heirloom item
+		if isHeirloomQuality or isHeirloomUpgradeItem then
 			return false;
 		end
-		-- Extract item ID from link and only allow 300365
-		local itemID = tonumber(link:match("item:(%d+)"));
-		return (itemID == 300365);
+		return true;
 	end
-	
-	-- In STANDARD mode, exclude heirlooms (show tier 1/2 only)
-	if DC.uiMode == "STANDARD" then
-		return not isHeirloom;
-	end
-	
-	return true;
 end
 
 function DarkChaos_ItemBrowser_Update()
 	local items = {};
 	
+	print("[DC-ItemUpgrade] ItemBrowser_Update called");
+	
 	-- Collect items from bags
 	for bag = 0, 4 do
-		for slot = 1, GetContainerNumSlots(bag) do
+		local numSlots = GetContainerNumSlots(bag);
+		for slot = 1, numSlots do
 			local link = GetContainerItemLink(bag, slot);
-			if link and IsUpgradeableItem(link) then
-				local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
-				tinsert(items, {
-					bag = bag,
-					slot = slot,
-					link = link,
-					name = name,
-					quality = quality,
-					texture = texture
-				});
+			if link then
+				local isUpgradeable = IsUpgradeableItem(link);
+				if isUpgradeable then
+					local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
+					if name then
+						tinsert(items, {
+							bag = bag,
+							slot = slot,
+							link = link,
+							name = name,
+							quality = quality,
+							texture = texture
+						});
+					end
+				end
 			end
 		end
 	end
@@ -2737,34 +3181,75 @@ function DarkChaos_ItemBrowser_Update()
 	-- Collect equipped items
 	for _, slot in ipairs(EQUIPMENT_SLOTS) do
 		local link = GetInventoryItemLink("player", slot);
-		if link and IsUpgradeableItem(link) then
-			local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
-			tinsert(items, {
-				bag = BAG_EQUIPPED,
-				slot = slot,
-				link = link,
-				name = name,
-				quality = quality,
-				texture = texture
-			});
+		if link then
+			local isUpgradeable = IsUpgradeableItem(link);
+			if isUpgradeable then
+				local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
+				if name then
+					tinsert(items, {
+						bag = BAG_EQUIPPED,
+						slot = slot,
+						link = link,
+						name = name,
+						quality = quality,
+						texture = texture
+					});
+				end
+			end
 		end
 	end
 	
+	print("[DC-ItemUpgrade] Found " .. #items .. " items");
+	
 	local scrollFrame = DarkChaos_ItemBrowserFrame.ScrollFrame;
+	if not scrollFrame then
+		print("[DC-ItemUpgrade] ERROR: ScrollFrame is nil!");
+		return;
+	end
+	if not scrollFrame.buttons then
+		print("[DC-ItemUpgrade] ERROR: ScrollFrame.buttons is nil!");
+		return;
+	end
+	
+	print("[DC-ItemUpgrade] ScrollFrame OK, buttons count: " .. #scrollFrame.buttons);
+	
 	FauxScrollFrame_Update(scrollFrame, #items, 10, 32);
 	
 	local offset = FauxScrollFrame_GetOffset(scrollFrame);
+	print("[DC-ItemUpgrade] Offset: " .. offset);
+	
 	for i = 1, 10 do
 		local index = offset + i;
 		local button = scrollFrame.buttons[i];
-		if index <= #items then
-			local item = items[index];
-			button.Icon:SetTexture(item.texture);
-			button.Name:SetText(item.link);
-			button.item = item;
-			button:Show();
+		if button then
+			if index <= #items then
+				local item = items[index];
+				print("[DC-ItemUpgrade] Button " .. i .. ": showing item " .. tostring(item.name));
+				
+				-- Set icon
+				if button.Icon then
+					button.Icon:SetTexture(item.texture);
+				end
+				
+				-- Set name with quality color
+				if button.Name then
+					local color = ITEM_QUALITY_COLORS[item.quality];
+					if color then
+						button.Name:SetTextColor(color.r, color.g, color.b);
+					else
+						button.Name:SetTextColor(1, 1, 1);
+					end
+					button.Name:SetText(item.name);
+				end
+				
+				-- Store item data and show
+				button.item = item;
+				button:Show();
+			else
+				button:Hide();
+			end
 		else
-			button:Hide();
+			print("[DC-ItemUpgrade] Button " .. i .. " is nil!");
 		end
 	end
 end
@@ -2846,6 +3331,21 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 		return;
 	end
 
+	-- Check if stat package is required for heirloom shirt
+	local isHeirloomShirt = false;
+	local packageId = 0;
+	if DC.uiMode == "HEIRLOOM" and DC.currentItem.link then
+		local itemID = tonumber(DC.currentItem.link:match("item:(%d+)"));
+		if itemID == 300365 then
+			isHeirloomShirt = true;
+			if not DC.selectedStatPackage or DC.selectedStatPackage <= 0 then
+				print("|cffff0000Please select a stat package first!|r");
+				return;
+			end
+			packageId = DC.selectedStatPackage;
+		end
+	end
+
 	local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentUpgrade, targetLevel);
 	local singleCost = DarkChaos_ItemUpgrade_GetCost(tier, targetLevel);
 	if (totals.tokens or 0) <= 0 and not singleCost then
@@ -2867,7 +3367,15 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 
 	local serverBag = DC.currentItem.serverBag or DC.currentItem.bag;
 	local serverSlot = DC.currentItem.serverSlot or math.max(0, (DC.currentItem.slot or 1) - 1);
-	local command = string.format(".dcupgrade perform %d %d %d", serverBag, serverSlot, targetLevel);
+	local command;
+	
+	-- Use different command for heirloom shirt upgrades (includes package ID)
+	if isHeirloomShirt then
+		command = string.format(".dcheirloom upgrade %d %d %d %d", serverBag, serverSlot, targetLevel, packageId);
+	else
+		command = string.format(".dcupgrade perform %d %d %d", serverBag, serverSlot, targetLevel);
+	end
+	
 	DC.pendingUpgrade = {
 		target = targetLevel,
 		startLevel = currentUpgrade,
@@ -2875,6 +3383,8 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 		slot = DC.currentItem.slot,
 		serverSlot = serverSlot,
 		tier = tier,
+		packageId = packageId,
+		isHeirloom = isHeirloomShirt,
 		cost = {
 			tokens = totals.tokens or requiredTokens,
 		},
@@ -2883,6 +3393,12 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	local itemLabel = DC.currentItem.link or DC.currentItem.name or "item";
 	local projectedTokens = (totals.tokens or 0) > 0 and totals.tokens or requiredTokens;
 	print(string.format("|cff00ff00Upgrading %s to level %d/%d...|r", itemLabel, targetLevel, maxUpgrade));
+	if isHeirloomShirt then
+		local pkg = DC.STAT_PACKAGES[packageId];
+		if pkg then
+			print(string.format("|cff00ccff[Stat Package]|r %s - %s", pkg.name, table.concat(pkg.stats, ", ")));
+		end
+	end
 	if projectedTokens > 0 then
 		print(string.format("|cff00ff00Projected total to reach level %d:|r %d Tokens", targetLevel, projectedTokens));
 	end
@@ -3043,6 +3559,7 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	
 	DC.currentItem = pooledItem;
 	DC.targetUpgradeLevel = 1;
+	
 	if cached then
 		DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, cached);
 		if cached.guid then
@@ -3055,7 +3572,15 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 		type = "selection",
 		locationKey = locationKey,
 	});
-
+	
+	-- For heirloom items, also send a heirloom-specific query
+	local HEIRLOOM_SHIRT_ID = 300365;
+	if itemID == HEIRLOOM_SHIRT_ID then
+		DC.Debug("SelectItemBySlot: Sending heirloom query for item 300365");
+		local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
+		SendChatMessage(heirloomCmd, "SAY");
+	end
+	
 	DarkChaos_ItemUpgrade_UpdateUI();
 
 	if DarkChaos_ItemBrowserFrame:IsShown() then
@@ -3073,6 +3598,41 @@ function DarkChaos_ItemUpgrade_ClearItem()
 	DC.targetUpgradeLevel = 1;
 	DC.pendingUpgrade = nil;
 	DarkChaos_ItemUpgrade_UpdateUI();
+end
+
+-- Auto-find and select the Heirloom Adventurer's Shirt (item 300365)
+function DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt()
+	local HEIRLOOM_SHIRT_ID = 300365;
+	
+	-- First check if wearing it (body slot = 4)
+	local equippedLink = GetInventoryItemLink("player", 4);
+	if equippedLink then
+		local itemID = tonumber(equippedLink:match("item:(%d+)"));
+		if itemID == HEIRLOOM_SHIRT_ID then
+			DC.Debug("AutoSelectHeirloomShirt: Found equipped at slot 4");
+			DarkChaos_ItemUpgrade_SelectItemBySlot(BAG_EQUIPPED, 4);
+			return true;
+		end
+	end
+	
+	-- Check bags
+	for bag = 0, 4 do
+		for slot = 1, GetContainerNumSlots(bag) do
+			local link = GetContainerItemLink(bag, slot);
+			if link then
+				local itemID = tonumber(link:match("item:(%d+)"));
+				if itemID == HEIRLOOM_SHIRT_ID then
+					DC.Debug(string.format("AutoSelectHeirloomShirt: Found in bag %d slot %d", bag, slot));
+					DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot);
+					return true;
+				end
+			end
+		end
+	end
+	
+	-- Not found
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[DC-ItemUpgrade]|r Heirloom Adventurer's Shirt not found. Please equip or place it in your bags.");
+	return false;
 end
 
 function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
@@ -3111,6 +3671,11 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	-- Clear celebration overlay when idle
 	if frame.RightTooltip and frame.RightTooltip.UpgradeGlow and DC.upgradeAnimationTime <= 0 then
 		frame.RightTooltip.UpgradeGlow:Hide();
+	end
+	
+	-- If in package selection mode, don't update the main UI elements
+	if DC.inPackageSelectionMode then
+		return;
 	end
 
 	if not DC.currentItem then
@@ -3151,6 +3716,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		frame.ErrorText:Hide();
 		frame.MissingDescription:Show();
 		if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
+		if frame.StatPackageSelector then frame.StatPackageSelector:Hide(); end
+		if frame.PackageIndicator then frame.PackageIndicator:Hide(); end
+		if frame.ChangePackageButton then frame.ChangePackageButton:Hide(); end
 		SetButtonEnabled(frame.UpgradeButton, false);
 		frame.UpgradeButton.Glow:Hide();
 		frame.UpgradeButton.disabledTooltip = nil;
@@ -3214,6 +3782,30 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 
 	-- Update Panels
 	local comparison = DarkChaos_ItemUpgrade_BuildStatComparison(item, DC.targetUpgradeLevel);
+	
+	-- Check if this is the heirloom shirt for special package stat display
+	local isHeirloomShirt = false;
+	if DC.uiMode == "HEIRLOOM" and item.link then
+		local itemID = tonumber(item.link:match("item:(%d+)"));
+		isHeirloomShirt = (itemID == 300365);
+	end
+	
+	-- Create or update package indicator for heirloom mode
+	if not frame.PackageIndicator then
+		local indicator = frame:CreateFontString("DarkChaos_PackageIndicator", "ARTWORK", "GameFontNormal");
+		indicator:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -50, -15);
+		indicator:SetJustifyH("RIGHT");
+		frame.PackageIndicator = indicator;
+	end
+	
+	if isHeirloomShirt and DC.selectedStatPackage and DC.STAT_PACKAGES[DC.selectedStatPackage] then
+		local pkg = DC.STAT_PACKAGES[DC.selectedStatPackage];
+		local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
+		frame.PackageIndicator:SetText(string.format("|cff888888Package:|r |cff%s%s|r", colorHex, pkg.name));
+		frame.PackageIndicator:Show();
+	else
+		frame.PackageIndicator:Hide();
+	end
 
 	if frame.CurrentPanel then
 		frame.CurrentPanel:Show();
@@ -3229,6 +3821,18 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			else
 				text = "|cff808080No stats available|r";
 			end
+			
+			-- Add current package stats for heirloom shirt
+			if isHeirloomShirt and DC.selectedStatPackage and currentUpgrade > 0 then
+				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
+				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, currentUpgrade);
+				if pkgStats then
+					for _, pstat in ipairs(pkgStats) do
+						text = text .. string.format("|cffffffff%s: %d|r|n", pstat.name, pstat.value);
+					end
+				end
+			end
+			
 			frame.CurrentPanel.StatsText:SetText(text);
 		end
 	end
@@ -3247,6 +3851,31 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			else
 				text = "|cff808080No preview available|r";
 			end
+			
+			-- Add preview package stats for heirloom shirt
+			if isHeirloomShirt and DC.selectedStatPackage then
+				local targetLevel = DC.targetUpgradeLevel or (currentUpgrade + 1);
+				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
+				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, targetLevel);
+				local currentPkgStats = (currentUpgrade > 0) and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, currentUpgrade) or nil;
+				
+				if pkgStats then
+					for i, pstat in ipairs(pkgStats) do
+						local currentVal = (currentPkgStats and currentPkgStats[i]) and currentPkgStats[i].value or 0;
+						local diff = pstat.value - currentVal;
+						local diffStr = "";
+						if diff > 0 then
+							diffStr = string.format(" |cff00ff00(+%d)|r", diff);
+						elseif diff < 0 then
+							diffStr = string.format(" |cffff0000(%d)|r", diff);
+						end
+						text = text .. string.format("|cff00ff00%s: %d%s|r|n", pstat.name, pstat.value, diffStr);
+					end
+				end
+			elseif isHeirloomShirt and not DC.selectedStatPackage then
+				text = text .. "|n|cffff8800Select a stat package above|r|n";
+			end
+			
 			frame.UpgradePanel.StatsText:SetText(text);
 		end
 	end
@@ -3264,23 +3893,44 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		canAfford = false;
 	end
 	
-	if canUpgrade and canAfford then
+	-- Check if stat package is required (heirloom shirt item 300365)
+	local needsPackage = false;
+	local hasPackage = true;
+	if DC.uiMode == "HEIRLOOM" and item.link then
+		local itemID = tonumber(item.link:match("item:(%d+)"));
+		if itemID == 300365 then
+			needsPackage = true;
+			hasPackage = (DC.selectedStatPackage ~= nil and DC.selectedStatPackage > 0);
+		end
+	end
+	
+	if canUpgrade and canAfford and (not needsPackage or hasPackage) then
 		SetButtonEnabled(frame.UpgradeButton, true);
 		frame.UpgradeButton.disabledTooltip = nil;
 	else
 		SetButtonEnabled(frame.UpgradeButton, false);
 		if not canUpgrade then
 			frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
+		elseif needsPackage and not hasPackage then
+			frame.UpgradeButton.disabledTooltip = "Select a stat package first.";
 		else
 			frame.UpgradeButton.disabledTooltip = "Not enough currency.";
 		end
 	end
+	
+	-- Update stat package selector for heirloom mode
+	DarkChaos_ItemUpgrade_UpdateStatPackageSelector();
 	
 	DarkChaos_ItemUpgrade_UpdateCost();
 end
 
 function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 	if not message then return end
+	
+	-- Debug: Log all incoming messages that might be ours
+	if string.find(message, "^DCUPGRADE_") or string.find(message, "^DCHEIRLOOM_") then
+		DC.Debug("OnChatMessage received: " .. string.sub(message, 1, 80) .. "...");
+	end
 	
 	-- Handle initialization message
 	-- Format (new): DCUPGRADE_INIT:tokens:essence:tokenItemId:essenceItemId
@@ -3346,6 +3996,8 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			local cloneEntries = {};
 			local currentUpgrade = 0;
 			local maxUpgrade = 0;
+			local HEIRLOOM_SHIRT_ENTRY = 300365;
+			local isHeirloom = (baseEntry == HEIRLOOM_SHIRT_ENTRY);
 			
 			if cloneMapStr and cloneMapStr ~= "" then
 				for pair in string.gmatch(cloneMapStr, "[^,]+") do
@@ -3357,12 +4009,19 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 						if level > maxUpgrade then
 							maxUpgrade = level;
 						end
-						-- Current upgrade is the level where the entry matches currentEntry
-						if entry == currentEntry then
+						-- For heirlooms, all entries are the same, so use serverUpgradeLevel instead
+						-- For normal items, current upgrade is the level where the entry matches currentEntry
+						if not isHeirloom and entry == currentEntry then
 							currentUpgrade = level;
 						end
 					end
 				end
+			end
+			
+			-- For heirlooms, always use the serverUpgradeLevel since clone entries are all the same
+			if isHeirloom then
+				currentUpgrade = serverUpgradeLevel or 0;
+				DC.Debug("Heirloom: Using serverUpgradeLevel as currentUpgrade: " .. tostring(currentUpgrade));
 			end
 			
 			DC.Debug(string.format("ParseQueryResponse: guid=%d, tier=%d, currentUpgrade=%d, maxUpgrade=%d, baseEntry=%d, currentEntry=%d, serverUpgradeLevel=%d",
@@ -3389,47 +4048,509 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				timestamp = GetTime and GetTime() or 0,
 			};
 			
+			-- For heirlooms, include the selected package ID (will be updated by DCHEIRLOOM_QUERY later)
+			if isHeirloom then
+				data.heirloomPackageId = DC.selectedStatPackage or 0;
+			end
+			
 			-- Store in cache
 			DC.itemUpgradeCache[guid] = data;
 			
-			-- Find the location key for this response (from the in-flight query)
-			-- Match by checking if we have an in-flight query (we only allow one at a time)
+			-- Try to match this response to the correct location
+			-- First, check if we have an in-flight query AND it matches this item
+			local matchedInFlight = false;
+			
+			DC.Debug(string.format("Processing DCUPGRADE_QUERY: guid=%d, baseEntry=%d, currentEntry=%d", 
+				guid, baseEntry, currentEntry));
+			
 			if DC.queryInFlight then
 				local locationKey = DC.queryInFlight.key;
-				DC.itemLocationCache[locationKey] = guid;
+				-- Get the item at this location and check if it matches the response
+				local bagStr, slotStr = string.match(locationKey, "(%d+):(%d+)");
+				local queryBag = tonumber(bagStr);
+				local querySlot = tonumber(slotStr);
+				local queryLink = nil;
 				
-				-- Apply to current item if it matches
-				if DC.currentItem and DC.currentItem.locationKey == locationKey then
-					DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
-					-- Set target upgrade level based on server data
-					local current = DC.currentItem.currentUpgrade or 0;
-					local itemMaxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
-					DC.Debug(string.format("After ApplyQueryData: tier=%d, currentUpgrade=%d, maxUpgrade=%d", 
-						DC.currentItem.tier or 0, current, itemMaxUpgrade));
-					if itemMaxUpgrade > 0 and current < itemMaxUpgrade then
-						DC.targetUpgradeLevel = current + 1;
-					else
-						DC.targetUpgradeLevel = math.max(current, 1);
-					end
-					DC.Debug("Set targetUpgradeLevel to: " .. tostring(DC.targetUpgradeLevel));
-					DarkChaos_ItemUpgrade_UpdateUI();
+				DC.Debug("In-flight query for location: " .. locationKey .. " (bag=" .. tostring(queryBag) .. ", slot=" .. tostring(querySlot) .. ")");
+				
+				if queryBag == 255 then
+					-- Equipped item (slot is 0-indexed, need to add 1 for API)
+					queryLink = GetInventoryItemLink("player", querySlot + 1);
+				else
+					-- Bag item (slot is 0-indexed, need to add 1 for API)
+					queryLink = GetContainerItemLink(queryBag, querySlot + 1);
 				end
 				
-				-- Notify any waiting contexts
-				local finished = DarkChaos_ItemUpgrade_CompleteQuery();
-				if finished and finished.contexts then
-					for _, ctx in ipairs(finished.contexts) do
-						if ctx.callback then
-							ctx.callback(data);
+				if queryLink then
+					local queryItemId = tonumber(string.match(queryLink, "item:(%d+)"));
+					DC.Debug("Query location has item: " .. tostring(queryItemId) .. ", response has: " .. tostring(currentEntry) .. "/" .. tostring(baseEntry));
+					
+					-- Check if the queried item matches the response (by entry ID)
+					if queryItemId == currentEntry or queryItemId == baseEntry then
+						-- This response IS for our in-flight query
+						DC.itemLocationCache[locationKey] = guid;
+						DC.Debug("In-flight query matched: " .. locationKey .. " -> guid " .. tostring(guid));
+						matchedInFlight = true;
+						
+						-- Apply to current item if it matches
+						if DC.currentItem and DC.currentItem.locationKey == locationKey then
+							DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
+							local current = DC.currentItem.currentUpgrade or 0;
+							local itemMaxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
+							DC.Debug(string.format("After ApplyQueryData: tier=%d, currentUpgrade=%d, maxUpgrade=%d", 
+								DC.currentItem.tier or 0, current, itemMaxUpgrade));
+							if itemMaxUpgrade > 0 and current < itemMaxUpgrade then
+								DC.targetUpgradeLevel = current + 1;
+							else
+								DC.targetUpgradeLevel = math.max(current, 1);
+							end
+							DC.Debug("Set targetUpgradeLevel to: " .. tostring(DC.targetUpgradeLevel));
+							DarkChaos_ItemUpgrade_UpdateUI();
+						end
+						
+						-- Notify any waiting contexts and start next query
+						local finished = DarkChaos_ItemUpgrade_CompleteQuery();
+						if finished and finished.contexts then
+							for _, ctx in ipairs(finished.contexts) do
+								if ctx.callback then
+									ctx.callback(data);
+								end
+							end
+						end
+					else
+						DC.Debug("In-flight query does NOT match response: queryItemId=" .. tostring(queryItemId) .. 
+							", responseEntry=" .. tostring(currentEntry) .. "/" .. tostring(baseEntry));
+					end
+				end
+			end
+			
+			-- If we didn't match an in-flight query, try to match by scanning items
+			if not matchedInFlight then
+				DC.Debug("No in-flight match, scanning items for entry: " .. tostring(currentEntry) .. " or base: " .. tostring(baseEntry));
+				local matched = false;
+				
+				-- Scan equipped items to find which slot has this entry
+				for slotID = 1, 19 do
+					local link = GetInventoryItemLink("player", slotID);
+					if link then
+						local itemId = tonumber(string.match(link, "item:(%d+)"));
+						DC.Debug("  Slot " .. slotID .. " has itemId: " .. tostring(itemId));
+						if itemId == currentEntry or itemId == baseEntry then
+							-- Found matching slot!
+							local serverBag = 255;
+							local serverSlot = slotID - 1;
+							local locationKey = serverBag .. ":" .. serverSlot;
+							DC.itemLocationCache[locationKey] = guid;
+							DC.Debug("Matched entry " .. tostring(currentEntry) .. " to slot " .. slotID .. " (key: " .. locationKey .. ")");
+							matched = true;
+							break;
 						end
 					end
 				end
-			else
-				-- No in-flight query, just store in cache
-				DC.Debug("No in-flight query to match response to");
+				
+				-- Also scan bags
+				if not matched then
+					for bag = 0, 4 do
+						local numSlots = GetContainerNumSlots(bag);
+						for slot = 1, numSlots do
+							local link = GetContainerItemLink(bag, slot);
+							if link then
+								local itemId = tonumber(string.match(link, "item:(%d+)"));
+								if itemId == currentEntry or itemId == baseEntry then
+									local serverSlot = slot - 1;
+									local locationKey = bag .. ":" .. serverSlot;
+									DC.itemLocationCache[locationKey] = guid;
+									DC.Debug("Matched entry " .. tostring(currentEntry) .. " to bag " .. bag .. " slot " .. slot .. " (key: " .. locationKey .. ")");
+									matched = true;
+									break;
+								end
+							end
+						end
+						if matched then break; end
+					end
+				end
+				
+				if not matched then
+					DC.Debug("Could not match entry to any location");
+				end
+				
+				-- If we have an in-flight query that didn't match, DON'T consume it
+				-- The query is still waiting for its response
 			end
 		end
 		return;
 	end
+
+	-- ═══════════════════════════════════════════════════════════════════════════════
+	-- HEIRLOOM STAT PACKAGE HANDLERS
+	-- ═══════════════════════════════════════════════════════════════════════════════
+
+	-- Handle heirloom upgrade success
+	-- Format: DCHEIRLOOM_SUCCESS:itemGUID:level:packageId:enchantId
+	if string.find(message, "^DCHEIRLOOM_SUCCESS") then
+		local _, _, guidStr, levelStr, packageIdStr, enchantIdStr = string.find(message, "^DCHEIRLOOM_SUCCESS:(%d+):(%d+):(%d+):(%d+)");
+		
+		if guidStr then
+			local itemGUID = tonumber(guidStr);
+			local newLevel = tonumber(levelStr);
+			local packageId = tonumber(packageIdStr);
+			local enchantId = tonumber(enchantIdStr);
+			
+			DC.Debug(string.format("DCHEIRLOOM_SUCCESS: guid=%d, level=%d, package=%d, enchant=%d",
+				itemGUID, newLevel, packageId, enchantId));
+			
+			-- Get package info for display
+			local pkg = DC.STAT_PACKAGES[packageId];
+			local packageName = pkg and pkg.name or "Unknown";
+			local packageStats = pkg and table.concat(pkg.stats, ", ") or "";
+			
+			-- Update player currencies (refresh from server)
+			SendChatMessage(".dcupgrade init", "SAY");
+			
+			-- Clear pending upgrade
+			local pending = DC.pendingUpgrade;
+			DC.pendingUpgrade = nil;
+			
+			-- Show success message
+			print(string.format("|cff00ff00[Heirloom Upgrade Success!]|r Level %d with |cff00ccff%s|r package", newLevel, packageName));
+			if packageStats ~= "" then
+				print(string.format("|cff888888Stats: %s|r", packageStats));
+			end
+			
+			-- Play success sound
+			if DC.Settings and DC.Settings.enableSounds then
+				PlaySound(888); -- SOUNDKIT.LEVEL_UP
+			end
+			
+			-- Trigger celebration animation
+			if DC.Settings and DC.Settings.enableCelebration then
+				DC.upgradeAnimationTime = 2.0;
+			end
+			
+			-- Update UI
+			if DC.currentItem then
+				DC.currentItem.currentUpgrade = newLevel;
+				DC.currentItem.heirloomPackageId = packageId;
+				DC.currentItem.heirloomPackageLevel = newLevel;
+				DC.targetUpgradeLevel = math.min(newLevel + 1, DC.currentItem.maxUpgrade or 15);
+			end
+			
+			-- Re-enable upgrade button
+			local mainFrame = DarkChaos_ItemUpgradeFrame;
+			if mainFrame and mainFrame.UpgradeButton then
+				SetButtonEnabled(mainFrame.UpgradeButton, true);
+			end
+			
+			-- Refresh display
+			InvalidateCachedItemData();
+			DarkChaos_ItemUpgrade_UpdateUI();
+		end
+		return;
+	end
+
+	-- Handle heirloom error
+	-- Format: DCHEIRLOOM_ERROR:<message>
+	if string.find(message, "^DCHEIRLOOM_ERROR") then
+		local _, _, errorMsg = string.find(message, "^DCHEIRLOOM_ERROR:(.+)$");
+		
+		errorMsg = errorMsg or "Unknown error";
+		DC.Debug("DCHEIRLOOM_ERROR: " .. errorMsg);
+		
+		-- Show error message
+		print(string.format("|cffff0000[Heirloom Upgrade Error]|r %s", errorMsg));
+		
+		-- Play error sound
+		if DC.Settings and DC.Settings.enableSounds then
+			PlaySound(847); -- SOUNDKIT.IG_QUEST_LOG_ABANDON_QUEST
+		end
+		
+		-- Clear pending upgrade
+		DC.pendingUpgrade = nil;
+		
+		-- Re-enable upgrade button
+		local mainFrame = DarkChaos_ItemUpgradeFrame;
+		if mainFrame and mainFrame.UpgradeButton then
+			SetButtonEnabled(mainFrame.UpgradeButton, true);
+		end
+		
+		return;
+	end
+
+	-- Handle heirloom query response
+	-- Format: DCHEIRLOOM_QUERY:itemGUID:level:packageId:maxLevel:maxPackages
+	if string.find(message, "^DCHEIRLOOM_QUERY") then
+		local _, _, guidStr, levelStr, packageIdStr, maxLevelStr, maxPkgStr = string.find(message, "^DCHEIRLOOM_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+)");
+		
+		if guidStr then
+			local itemGUID = tonumber(guidStr);
+			local currentLevel = tonumber(levelStr);
+			local packageId = tonumber(packageIdStr);
+			local maxLevel = tonumber(maxLevelStr);
+			local maxPackages = tonumber(maxPkgStr);
+			
+			DC.Debug(string.format("DCHEIRLOOM_QUERY: guid=%d, level=%d, package=%d, maxLevel=%d, maxPkg=%d",
+				itemGUID, currentLevel, packageId, maxLevel, maxPackages));
+			
+			-- Update cache with heirloom package data
+			if DC.itemUpgradeCache[itemGUID] then
+				DC.itemUpgradeCache[itemGUID].heirloomPackageId = packageId;
+				DC.itemUpgradeCache[itemGUID].currentUpgrade = currentLevel;
+				DC.itemUpgradeCache[itemGUID].maxUpgrade = maxLevel;
+			end
+			
+			-- Update current item with heirloom data
+			if DC.currentItem then
+				DC.currentItem.guid = itemGUID;
+				DC.currentItem.heirloomPackageId = packageId;
+				DC.currentItem.heirloomPackageLevel = currentLevel;
+				DC.currentItem.currentUpgrade = currentLevel;
+				DC.currentItem.maxUpgrade = maxLevel;
+				
+				-- Update selected package in UI
+				if packageId > 0 then
+					DC.selectedStatPackage = packageId;
+					-- Save to character settings
+					if DarkChaos_ItemUpgrade_SaveCharSettings then
+						DarkChaos_ItemUpgrade_SaveCharSettings();
+					end
+				end
+				
+				-- Set target level
+				if currentLevel < maxLevel then
+					DC.targetUpgradeLevel = currentLevel + 1;
+				else
+					DC.targetUpgradeLevel = maxLevel;
+				end
+				
+				-- Refresh UI
+				DarkChaos_ItemUpgrade_UpdateUI();
+			end
+		end
+		return;
+	end
+
+	-- Handle heirloom packages list response
+	-- Format: DCHEIRLOOM_PACKAGES:count:id1|name1|stats1:id2|name2|stats2:...
+	if string.find(message, "^DCHEIRLOOM_PACKAGES") then
+		DC.Debug("Received DCHEIRLOOM_PACKAGES from server (using local definitions)");
+		-- We use local DC.STAT_PACKAGES definitions, but log that server confirmed availability
+		return;
+	end
 end
 
+--[[=====================================================
+	STAT PACKAGE SELECTOR UI
+	For Heirloom mode (item 300365) - allows selecting secondary stat packages
+	NOTE: CreateStatPackageSelector is defined in Heirloom.lua
+=======================================================]]
+
+-- Show package info in the info frame
+function DarkChaos_ItemUpgrade_ShowPackageInfo(packageId)
+	local selector = DC.StatPackageSelector;
+	if not selector then return end
+	
+	if not packageId or not DC.STAT_PACKAGES[packageId] then
+		selector.InfoIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark");
+		selector.InfoName:SetText("Select a Package");
+		selector.InfoDesc:SetText("Click on a package to select it. Stats will be applied when you upgrade.");
+		selector.InfoStats:SetText("");
+		return;
+	end
+	
+	local pkg = DC.STAT_PACKAGES[packageId];
+	selector.InfoIcon:SetTexture(pkg.icon);
+	selector.InfoName:SetText(string.format("|cff%.2x%.2x%.2x%s|r", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255, pkg.name));
+	selector.InfoDesc:SetText(pkg.description);
+	
+	-- Build stats string
+	local statsStr = "|cff00ff00Stats:|r " .. table.concat(pkg.stats, ", ");
+	selector.InfoStats:SetText(statsStr);
+end
+
+-- Select a stat package
+function DarkChaos_ItemUpgrade_SelectStatPackage(packageId)
+	if not packageId or not DC.STAT_PACKAGES[packageId] then
+		return;
+	end
+	
+	local oldPackage = DC.selectedStatPackage;
+	DC.selectedStatPackage = packageId;
+	
+	-- Update button highlights
+	local selector = DC.StatPackageSelector;
+	if selector and selector.buttons then
+		for i, btn in ipairs(selector.buttons) do
+			if i == packageId then
+				btn.SelectedHighlight:Show();
+				btn.Background:SetVertexColor(0.1, 0.2, 0.3, 1.0);
+			else
+				btn.SelectedHighlight:Hide();
+				btn.Background:SetVertexColor(0.15, 0.15, 0.2, 0.9);
+			end
+		end
+	end
+	
+	-- Update info display
+	DarkChaos_ItemUpgrade_ShowPackageInfo(packageId);
+	
+	-- Notify user
+	local pkg = DC.STAT_PACKAGES[packageId];
+	DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[DC-ItemUpgrade]|r Selected |cff%.2x%.2x%.2x%s|r package.", 
+		pkg.color.r*255, pkg.color.g*255, pkg.color.b*255, pkg.name));
+	
+	-- Save the selection to per-character settings
+	DarkChaos_ItemUpgrade_SaveCharSettings();
+	
+	-- Send package selection to server via addon message
+	DarkChaos_ItemUpgrade_SendPackageSelection(packageId);
+	
+	-- Play sound
+	DC.PlaySound("igMainMenuOptionCheckBoxOn");
+end
+
+-- Send package selection to server
+function DarkChaos_ItemUpgrade_SendPackageSelection(packageId)
+	if not packageId then return end
+	
+	-- Send addon message to server with package selection
+	-- Format: DCUPGRADE:PACKAGE:<packageId>
+	local message = string.format("DCUPGRADE:PACKAGE:%d", packageId);
+	
+	-- Try sending via addon message channel
+	if ChatThrottleLib then
+		ChatThrottleLib:SendAddonMessage("NORMAL", "DCUPGRADE", message, "WHISPER", UnitName("player"));
+	else
+		SendAddonMessage("DCUPGRADE", message, "WHISPER", UnitName("player"));
+	end
+	
+	DC.Debug("Sent package selection to server: " .. message);
+end
+
+-- NOTE: UpdateStatPackageSelector and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel 
+-- are now defined in Heirloom.lua which loads first.
+
+--[[=====================================================
+	EARLY TOOLTIP INITIALIZATION & BACKGROUND QUERY PROCESSOR
+	Hooks tooltips immediately on addon load so Item IDs
+	are visible even before opening the upgrade window.
+	Also scans equipped items when CharacterFrame opens.
+=======================================================]]
+
+-- Create a background frame for processing queries even when upgrade frame isn't open
+local DC_BackgroundQueryFrame = CreateFrame("Frame");
+DC_BackgroundQueryFrame.elapsed = 0;
+DC_BackgroundQueryFrame:SetScript("OnUpdate", function(self, elapsed)
+	self.elapsed = self.elapsed + elapsed;
+	
+	-- Process batch queries periodically (every 0.1 seconds)
+	if self.elapsed >= 0.1 then
+		self.elapsed = 0;
+		
+		-- Process batch query timer
+		if DC.batchQueryTimer and DC.batchQueryTimer > 0 then
+			DC.batchQueryTimer = DC.batchQueryTimer - 0.1;
+			if DC.batchQueryTimer <= 0 then
+				DC.batchQueryTimer = 0;
+				if DC.ProcessBatchQueries then
+					DC.ProcessBatchQueries();
+				end
+			end
+		end
+	end
+end);
+
+-- Scan all equipped items and query their upgrade status
+-- This function directly sends commands to avoid dependency on local functions
+local function DC_ScanEquippedItems()
+	DC.Debug("DC_ScanEquippedItems: Starting scan...");
+	
+	-- We don't actually need to query - the server sends DCUPGRADE_QUERY responses automatically
+	-- Just make sure our caches are initialized
+	DC.itemLocationCache = DC.itemLocationCache or {};
+	DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+	
+	-- Count how many items we have cached upgrade data for
+	local cachedCount = 0;
+	local equippedCount = 0;
+	
+	for slotID = 1, 19 do
+		local link = GetInventoryItemLink("player", slotID);
+		if link then
+			equippedCount = equippedCount + 1;
+			local serverBag = 255;
+			local serverSlot = slotID - 1;
+			local locationKey = serverBag .. ":" .. serverSlot;
+			if DC.itemLocationCache[locationKey] then
+				cachedCount = cachedCount + 1;
+			end
+		end
+	end
+	
+	DC.Debug("DC_ScanEquippedItems: " .. cachedCount .. "/" .. equippedCount .. " equipped items have cached upgrade data");
+end
+
+-- Make it accessible
+DC.ScanEquippedItems = DC_ScanEquippedItems;
+
+-- Create a hidden frame for early initialization AND persistent chat message handling
+local DC_EarlyInitFrame = CreateFrame("Frame");
+DC_EarlyInitFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
+DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_SYSTEM");
+DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_SAY");
+DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_WHISPER");
+DC_EarlyInitFrame:SetScript("OnEvent", function(self, event, ...)
+	if event == "PLAYER_ENTERING_WORLD" then
+		self:UnregisterEvent("PLAYER_ENTERING_WORLD");
+		-- Hook tooltips immediately so Item IDs work right away
+		if DarkChaos_ItemUpgrade_HookTooltips and not DC.tooltipsHooked then
+			DarkChaos_ItemUpgrade_HookTooltips();
+			DC.Debug("Early tooltip hooks installed on PLAYER_ENTERING_WORLD");
+		end
+		
+		-- Hook CharacterFrame to scan items when opened
+		if CharacterFrame then
+			CharacterFrame:HookScript("OnShow", function()
+				DC.Debug("CharacterFrame OnShow triggered - scanning items");
+				-- Scan equipped items to pre-cache upgrade data
+				DC_ScanEquippedItems();
+			end);
+			DC.Debug("CharacterFrame OnShow hook installed");
+		end
+		
+		-- Also scan on first login after a short delay (to let server connection establish)
+		local scanFrame = CreateFrame("Frame");
+		scanFrame.elapsed = 0;
+		scanFrame:SetScript("OnUpdate", function(self, elapsed)
+			self.elapsed = self.elapsed + elapsed;
+			if self.elapsed >= 2 then
+				self:SetScript("OnUpdate", nil);
+				DC.Debug("Initial login scan triggered");
+				DC_ScanEquippedItems();
+			end
+		end);
+		return;
+	end
+	
+	-- Handle chat messages persistently (even when upgrade frame is closed)
+	if event == "CHAT_MSG_SYSTEM" then
+		local message = ...;
+		if type(message) == "string" then
+			if string.find(message, "DCUPGRADE_") or string.find(message, "DCHEIRLOOM_") then
+				DC.Debug("EarlyInit CHAT_MSG_SYSTEM: " .. string.sub(message, 1, 60));
+				if string.find(message, "^DCUPGRADE_") or string.find(message, "^DCHEIRLOOM_") then
+					DarkChaos_ItemUpgrade_OnChatMessage(message, UnitName("player"));
+				end
+			end
+		end
+		return;
+	end
+	
+	if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_WHISPER" then
+		local message, sender = ...;
+		if type(message) == "string" and (string.find(message, "DCUPGRADE_") or string.find(message, "DCHEIRLOOM_")) then
+			DC.Debug("EarlyInit " .. event .. ": " .. string.sub(message, 1, 60));
+			DarkChaos_ItemUpgrade_OnChatMessage(message, sender);
+		end
+		return;
+	end
+end);
