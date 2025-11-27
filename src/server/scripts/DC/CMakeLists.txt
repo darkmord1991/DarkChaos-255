@@ -29,13 +29,23 @@ set(SCRIPTS_DC_Jadeforest
     Jadeforest/jadeforest_guards.cpp
 )
 
+# AoE Loot System (Base + Extensions)
+set(SCRIPTS_DC_AoELoot
+    ac_aoeloot.cpp
+    dc_aoeloot_extensions.cpp
+)
+
+# Phased Duels System
+set(SCRIPTS_DC_PhasedDuels
+    PhasedDuels/dc_phased_duels.cpp
+)
+
 # Main AC scripts
 set(SCRIPTS_DC_AC
     AC/ac_guard_npc.cpp
     AC/cs_flighthelper_test.cpp
     heirloom_scaling_255.cpp
     dc_login_announce.cpp
-    ac_aoeloot.cpp
     AC/ac_flightmasters.cpp
     AC/ac_flightmasters_data.cpp
     AC/ac_flightmasters_path.cpp
@@ -152,7 +162,7 @@ set(SCRIPTS_DC_SeasonalRewards
     Seasons/SeasonalRewardCommands.cpp
 )
 
-# DC Mythic+ System - Dungeon Scaling & Keystone System
+# DC Mythic+ System - Dungeon Scaling, Keystone System & Spectator
 set(SCRIPTS_DC_MythicPlus
     MythicPlus/MythicDifficultyScaling.h
     MythicPlus/MythicDifficultyScaling.cpp
@@ -164,6 +174,7 @@ set(SCRIPTS_DC_MythicPlus
     MythicPlus/mythic_plus_core_scripts.cpp
     MythicPlus/mythic_plus_loader.cpp
     MythicPlus/npc_dungeon_portal_selector.cpp
+    MythicPlus/dc_mythic_spectator.cpp
 )
 
 set(SCRIPTS_DC_ItemUpgrade
@@ -184,6 +195,8 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Prestige}
     ${SCRIPTS_DC_ChallengeMode}
     ${SCRIPTS_DC_Hotspot}
+    ${SCRIPTS_DC_AoELoot}
+    ${SCRIPTS_DC_PhasedDuels}
     ${SCRIPTS_DC_AC}
     ${SCRIPTS_DC_HinterlandBG}
     ${SCRIPTS_DC_Gilneas}

@@ -5,15 +5,18 @@
 # DarkChaos-255 private server (WoW 3.3.5a - Level 255 progression)
 #
 # Systems included:
-#   1. AoE Loot System - Collect loot from multiple nearby corpses
-#   2. Hotspots System - Random XP bonus zones across the world
-#   3. Hinterland Battleground - Custom 25v25 PvP battleground with affixes
-#   4. Mythic+ Dungeon System - Scaled dungeon difficulties with keystones
-#   5. Prestige System - Reset level 255 players with permanent bonuses
-#   6. Challenge Modes System - Hardcore and specialized challenge modes
-#   7. Item Upgrade System - Progressive gear upgrade with currency
-#   8. AzerothCore Module Configurations - Various gameplay modules
-#   9. Map Extension System - GPS tracking for custom zones
+#   1.  AoE Loot System - Collect loot from multiple corpses + DC Extensions
+#   2.  Hotspots System - Random XP bonus zones across the world
+#   3.  Hinterland Battleground - Custom 25v25 PvP battleground with affixes
+#   4.  Mythic+ Dungeon System - Scaled dungeons, keystones & spectating
+#   5.  Prestige System - Reset level 255 players with permanent bonuses
+#   6.  Challenge Modes System - Hardcore and specialized challenge modes
+#   7.  Dungeon Quest NPC System - Daily/Weekly dungeon quests
+#   8.  Item Upgrade System - Progressive gear upgrade with currency
+#   9.  Unified Seasonal System - Season management for all systems
+#   10. AzerothCore Module Configurations - Various gameplay modules
+#   11. Map Extension System - GPS tracking for custom zones
+#   12. Phased Dueling System - Isolated phase duels with stat tracking
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -26,6 +29,9 @@
 #    Allows players to collect loot from multiple nearby corpses with a
 #    single interaction, significantly improving gameplay flow in areas
 #    with high mob density.
+#
+#    DC Extensions add: quality filtering, profession integration (auto-skin,
+#    auto-mine, auto-herb), smart loot preferences, and Mythic+ bonuses.
 #
 ###########################################################################
 
@@ -189,6 +195,132 @@ AoELoot.MaxMergeSlots = 15
 #                     0 (Disabled - gold stays in loot window)
 #
 AoELoot.AutoCreditGold = 1
+
+# -------------------------------------------------------------------------
+# DC AoE Loot Extensions
+# -------------------------------------------------------------------------
+# These DC-specific features extend the base AoE Loot system with quality
+# filtering, profession integration, smart loot preferences, and M+ bonuses.
+
+#
+#    AoELoot.Extensions.Enable
+#        Description: Master toggle for AoE Loot Extensions
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.Enable = 1
+
+#
+#    AoELoot.Extensions.QualityFilter.Enable
+#        Description: Enable quality-based loot filtering
+#        Default:     0 (Disabled - loot all qualities)
+#
+AoELoot.Extensions.QualityFilter.Enable = 0
+
+#
+#    AoELoot.Extensions.QualityFilter.MinQuality
+#        Description: Minimum item quality to loot
+#                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
+#        Default:     0 (Poor)
+#
+AoELoot.Extensions.QualityFilter.MinQuality = 0
+
+#
+#    AoELoot.Extensions.QualityFilter.MaxQuality
+#        Description: Maximum item quality to loot
+#        Default:     6 (Artifact)
+#
+AoELoot.Extensions.QualityFilter.MaxQuality = 6
+
+#
+#    AoELoot.Extensions.QualityFilter.AutoVendorPoor
+#        Description: Automatically vendor Poor quality items
+#        Default:     0 (Disabled)
+#
+AoELoot.Extensions.QualityFilter.AutoVendorPoor = 0
+
+#
+#    AoELoot.Extensions.Profession.AutoSkin
+#        Description: Automatically skin creatures after looting
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.Profession.AutoSkin = 1
+
+#
+#    AoELoot.Extensions.Profession.AutoMine
+#        Description: Automatically mine ore deposits after looting nearby corpses
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.Profession.AutoMine = 1
+
+#
+#    AoELoot.Extensions.Profession.AutoHerb
+#        Description: Automatically herb nodes after looting nearby corpses
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.Profession.AutoHerb = 1
+
+#
+#    AoELoot.Extensions.Profession.Range
+#        Description: Range for auto-profession gathering
+#        Default:     10.0
+#
+AoELoot.Extensions.Profession.Range = 10.0
+
+#
+#    AoELoot.Extensions.SmartLoot.PreferCurrentSpec
+#        Description: Prioritize items usable by current spec
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.SmartLoot.PreferCurrentSpec = 1
+
+#
+#    AoELoot.Extensions.SmartLoot.PreferEquippable
+#        Description: Prioritize equippable items
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.SmartLoot.PreferEquippable = 1
+
+#
+#    AoELoot.Extensions.SmartLoot.PrioritizeUpgrades
+#        Description: Highlight items that are upgrades for the player
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.SmartLoot.PrioritizeUpgrades = 1
+
+#
+#    AoELoot.Extensions.MythicPlus.Bonus
+#        Description: Apply bonus range/features in Mythic+ dungeons
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.MythicPlus.Bonus = 1
+
+#
+#    AoELoot.Extensions.MythicPlus.RangeMultiplier
+#        Description: Multiply AoE loot range in Mythic+ dungeons
+#        Default:     1.5 (50% increased range)
+#
+AoELoot.Extensions.MythicPlus.RangeMultiplier = 1.5
+
+#
+#    AoELoot.Extensions.Raid.Enable
+#        Description: Enable enhanced AoE looting in raids
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.Raid.Enable = 1
+
+#
+#    AoELoot.Extensions.Raid.MaxCorpses
+#        Description: Maximum corpses to loot in raid environments
+#        Default:     25
+#
+AoELoot.Extensions.Raid.MaxCorpses = 25
+
+#
+#    AoELoot.Extensions.TrackDetailedStats
+#        Description: Track detailed loot statistics per player
+#        Default:     1 (Enabled)
+#
+AoELoot.Extensions.TrackDetailedStats = 1
 
 
 ###########################################################################
@@ -723,6 +855,7 @@ HinterlandBG.Expiry.Tiebreaker = 1
 #    - Weekly vault system for rewards tracking
 #    - Seasonal rotation with affix modifiers
 #    - Leaderboards and statistics tracking
+#    - Spectator mode for watching live runs
 #
 ###########################################################################
 
@@ -1393,25 +1526,132 @@ MythicPlus.CacheProfiles = 1
 #
 MythicPlus.OptimizeHooks = 1
 
+# -------------------------------------------------------------------------
+# M+ Spectator System
+# -------------------------------------------------------------------------
+# Allows players to spectate ongoing Mythic+ dungeon runs. Includes live
+# run listings, stream mode for anonymous viewing, and integration with
+# the Mythic+ run manager.
+
+#
+#    MythicSpectator.Enable
+#        Description: Master toggle for the M+ Spectator system
+#        Default:     1 (Enabled)
+#
+MythicSpectator.Enable = 1
+
+#
+#    MythicSpectator.AllowWhileInProgress
+#        Description: Allow spectators to join runs that are already in progress
+#        Default:     1 (Enabled)
+#
+MythicSpectator.AllowWhileInProgress = 1
+
+#
+#    MythicSpectator.RequireSameRealm
+#        Description: Only allow spectating players from the same realm
+#                     (For cross-realm setups)
+#        Default:     0 (Disabled)
+#
+MythicSpectator.RequireSameRealm = 0
+
+#
+#    MythicSpectator.AnnounceNewSpectators
+#        Description: Notify run participants when spectators join
+#        Default:     1 (Enabled)
+#
+MythicSpectator.AnnounceNewSpectators = 1
+
+#
+#    MythicSpectator.MaxSpectatorsPerRun
+#        Description: Maximum number of spectators per M+ run
+#        Default:     50
+#
+MythicSpectator.MaxSpectatorsPerRun = 50
+
+#
+#    MythicSpectator.UpdateIntervalMs
+#        Description: How often to broadcast updates to spectators (milliseconds)
+#        Default:     1000 (1 second)
+#
+MythicSpectator.UpdateIntervalMs = 1000
+
+#
+#    MythicSpectator.MinKeystoneLevel
+#        Description: Minimum keystone level for runs to be spectateable
+#        Default:     2 (Only +2 and higher)
+#
+MythicSpectator.MinKeystoneLevel = 2
+
+#
+#    MythicSpectator.AllowPublicListing
+#        Description: Allow runs to appear in the public spectate list
+#        Default:     1 (Enabled)
+#
+MythicSpectator.AllowPublicListing = 1
+
+#
+#    MythicSpectator.StreamModeEnabled
+#        Description: Allow spectators to use stream mode (anonymous viewing)
+#        Default:     1 (Enabled)
+#
+MythicSpectator.StreamModeEnabled = 1
+
+#
+#    MythicSpectator.DefaultStreamMode
+#        Description: Default stream mode for new spectators
+#                     0 = Normal (names visible)
+#                     1 = Names hidden (players shown as "Player 1", "Player 2")
+#                     2 = Full anonymous (class icons only)
+#        Default:     0 (Normal)
+#
+MythicSpectator.DefaultStreamMode = 0
+
+
 ###########################################################################
 #
-#    SECTION 9: ITEM UPGRADE SYSTEM
+#    SECTION 5: PRESTIGE SYSTEM
+#
+#    Allows level 255 players to reset and gain permanent bonuses. Features
+#    include prestige levels, alt bonuses, challenges, and special rewards.
+#    (Full configuration in dedicated section below)
+#
+###########################################################################
+
+
+###########################################################################
+#
+#    SECTION 6: CHALLENGE MODES SYSTEM
+#
+#    Hardcore and specialized challenge modes for extreme gameplay.
+#    (Full configuration in dedicated section below)
+#
+###########################################################################
+
+
+###########################################################################
+#
+#    SECTION 7: DUNGEON QUEST NPC SYSTEM
+#
+#    Daily and weekly dungeon quests with NPC quest givers.
+#    (Full configuration in dedicated section below)
+#
+###########################################################################
+
+
+###########################################################################
+#
+#    SECTION 8: ITEM UPGRADE SYSTEM
 #
 #    Allows players to upgrade gear progressively using currency.
+#    (Full configuration in dedicated section below)
 #
 ###########################################################################
 
-#
-#    ItemUpgrade.DebugToSay
-#        Description: Enable debug messages to say channel
-#        Default:     0 (Disabled)
-#                     1 (Enabled)
-#
-ItemUpgrade.DebugToSay = 0
 
 ###########################################################################
 #
-#    SECTION 10: UNIFIED SEASONAL SYSTEM
+#    SECTION 9: UNIFIED SEASONAL SYSTEM
 #
 #    All seasonal systems (Rewards, M+, Item Upgrades, HLBG) use a unified
 #    season management framework. This ensures all systems transition together
@@ -2231,7 +2471,7 @@ HinterlandBG.Affix.WeatherIntensity.6 = 0.0
 
 ###########################################################################
 #
-#    SECTION 5: PRESTIGE SYSTEM
+#    PRESTIGE SYSTEM - DETAILED CONFIGURATION
 #
 #    Allows level 255 players to reset to level 1 with permanent stat
 #    bonuses and exclusive rewards. Up to 10 prestige levels with
@@ -2430,7 +2670,7 @@ Prestige.AnnounceWorld = 1
 
 ###########################################################################
 #
-#    SECTION 6: CHALLENGE MODES SYSTEM
+#    CHALLENGE MODES SYSTEM - DETAILED CONFIGURATION
 #
 #    Hardcore and specialized challenge modes inspired by Project Ascension
 #    and WoW Classic Season of Mastery. Players activate challenge modes at
@@ -3083,7 +3323,7 @@ ChallengeMode.MaxLevel = 10
 
 ###########################################################################
 #
-#    SECTION 6: DUNGEON QUEST NPC SYSTEM
+#    DUNGEON QUEST NPC SYSTEM - DETAILED CONFIGURATION
 #
 #    Allows players to undertake quests in dungeons across all expansions
 #    with token-based rewards, daily/weekly challenges, and achievement
@@ -3450,7 +3690,7 @@ DungeonQuest.Debug.LogFile = "logs/dungeon_quest_system.log"
 
 ###########################################################################
 #
-#    SECTION 7: ITEM UPGRADE SYSTEM
+#    ITEM UPGRADE SYSTEM - DETAILED CONFIGURATION
 #
 #    Advanced item progression system allowing players to upgrade Epic and
 #    Legendary items with currency-based mechanics. Includes artifact mastery
@@ -3927,7 +4167,7 @@ ItemUpgrade.Test.TokensGrant = 2500
 
 ###########################################################################
 #
-#    SECTION 8: AZEROTHCORE MODULE CONFIGURATIONS
+#    AZEROTHCORE MODULE CONFIGURATIONS - SECTION 10
 #
 #    Configuration for various AzerothCore gameplay modules that provide
 #    different difficulty modes and progression systems.
@@ -4275,7 +4515,7 @@ Hardcore.TalentRewards = ""
 
 ###########################################################################
 #
-#    SECTION 9: MAP EXTENSION SYSTEM (GPS TRACKING)
+#    MAP EXTENSION SYSTEM (GPS TRACKING) - SECTION 11
 #
 #    Provides real-time GPS coordinate tracking for players in custom zones
 #    via AIO (Addon I/O) integration. Automatically sends player position,
@@ -4422,6 +4662,102 @@ Hardcore.TitleRewards = ""
 #        Default:     "" (empty - no item rewards)
 #
 Hardcore.ItemRewards = ""
+
+###########################################################################
+#
+#    SECTION 12: PHASED DUELING SYSTEM
+#
+#    Creates isolated phases for dueling players, preventing interference
+#    from bystanders. Includes automatic HP/mana/cooldown reset and
+#    comprehensive duel statistics tracking.
+#
+###########################################################################
+
+#
+#    PhasedDuels.Enable
+#        Description: Master toggle for the Phased Duels system
+#        Default:     1 (Enabled)
+#
+PhasedDuels.Enable = 1
+
+#
+#    PhasedDuels.AnnounceOnLogin
+#        Description: Notify players about phased duels on login
+#        Default:     1 (Enabled)
+#
+PhasedDuels.AnnounceOnLogin = 1
+
+#
+#    PhasedDuels.ResetHealth
+#        Description: Reset players to full health after duel ends
+#        Default:     1 (Enabled)
+#
+PhasedDuels.ResetHealth = 1
+
+#
+#    PhasedDuels.ResetCooldowns
+#        Description: Reset all spell cooldowns after duel ends
+#        Default:     1 (Enabled)
+#
+PhasedDuels.ResetCooldowns = 1
+
+#
+#    PhasedDuels.RestorePower
+#        Description: Restore mana/energy/rage/runic power after duel ends
+#        Default:     1 (Enabled)
+#
+PhasedDuels.RestorePower = 1
+
+#
+#    PhasedDuels.RestorePetHealth
+#        Description: Restore pet health after duel ends
+#        Default:     1 (Enabled)
+#
+PhasedDuels.RestorePetHealth = 1
+
+#
+#    PhasedDuels.ExcludeRogueWarriorPower
+#        Description: Don't restore energy/rage for rogues/warriors
+#                     Some servers prefer resource classes to start fresh
+#        Default:     0 (Disabled - restore all power types)
+#
+PhasedDuels.ExcludeRogueWarriorPower = 0
+
+#
+#    PhasedDuels.TrackStatistics
+#        Description: Track and persist duel wins/losses/stats to database
+#        Default:     1 (Enabled)
+#
+PhasedDuels.TrackStatistics = 1
+
+#
+#    PhasedDuels.AllowInDungeons
+#        Description: Allow phased dueling inside dungeons
+#        Default:     0 (Disabled)
+#
+PhasedDuels.AllowInDungeons = 0
+
+#
+#    PhasedDuels.ArenaZoneId
+#        Description: If set, phased duels only occur in this zone ID
+#                     Set to 0 to allow phased duels everywhere
+#        Default:     0 (Allow everywhere)
+#
+PhasedDuels.ArenaZoneId = 0
+
+#
+#    PhasedDuels.PhaseRadius
+#        Description: Radius in yards to check for occupied phases
+#        Default:     100.0
+#
+PhasedDuels.PhaseRadius = 100.0
+
+#
+#    PhasedDuels.MaxPhaseId
+#        Description: Maximum phase ID to use for duels
+#        Default:     0x7FFFFFFF (maximum safe value)
+#
+PhasedDuels.MaxPhaseId = 2147483647
 
 ###########################################################################
 # END OF CONFIGURATION FILE

@@ -33,7 +33,8 @@ void AddSC_npc_hinterlands_battlemaster(); // location: scripts\DC\HinterlandBG\
 // HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
 void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
 void AddSC_spell_hotspot_buff_800001(); // location: scripts\DC\Hotspot\spell_hotspot_buff_800001.cpp
-void AddSC_ac_aoeloot(); // location: scripts\DC\AC\ac_aoeloot.cpp
+void AddSC_ac_aoeloot(); // location: scripts\DC\ac_aoeloot.cpp
+void AddSC_dc_aoeloot_extensions(); // location: scripts\DC\dc_aoeloot_extensions.cpp
 void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache(); // location: scripts\DC\go_heirloom_cache.cpp
 void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
@@ -67,6 +68,8 @@ void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpg
 void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddMythicPlusScripts(); // location: scripts\DC\MythicPlus\mythic_plus_loader.cpp
+void AddSC_dc_mythic_spectator(); // location: scripts\DC\MythicPlus\dc_mythic_spectator.cpp
+void AddSC_dc_phased_duels(); // location: scripts\DC\PhasedDuels\dc_phased_duels.cpp
 void AddSC_SeasonalRewardScripts(); // location: scripts\DC\Seasons\SeasonalRewardScripts.cpp
 void AddSC_SeasonalRewardCommands(); // location: scripts\DC\Seasons\SeasonalRewardCommands.cpp
 
@@ -95,7 +98,21 @@ void AddDCScripts()
     }
     AddSC_aio_bridge();
     AddSC_flightmasters();
-    AddSC_ac_aoeloot();
+
+    // AoE Loot System (Base + Extensions)
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> AoE Loot System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_ac_aoeloot();
+        AddSC_dc_aoeloot_extensions();
+        LOG_INFO("scripts", ">>   ✓ AoE Loot base and extensions loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in AoE Loot: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in AoE Loot");
+    }
+
     AddSC_heirloom_scaling_255();
     AddSC_go_heirloom_cache();
     AddBattleForGilneasScripts();
@@ -332,6 +349,14 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Mythic+ System");
     }
+    try {
+        AddSC_dc_mythic_spectator();
+        LOG_INFO("scripts", ">>   ✓ Mythic+ Spectator system loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in M+ Spectator: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in M+ Spectator");
+    }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 
     // Seasonal Reward System
@@ -366,5 +391,19 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> Seasonal Reward System: All modules loaded successfully");
     LOG_INFO("scripts", ">> Client Addon: DC-Seasons (Interface/AddOns/DC-Seasons/)");
     LOG_INFO("scripts", ">> Eluna Bridge: Custom/Eluna scripts/DC_Seasons_AIO.lua");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // Phased Duels System
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Phased Duels System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_phased_duels();
+        LOG_INFO("scripts", ">>   ✓ Phased duels isolation and statistics loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Phased Duels: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Phased Duels");
+    }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }
