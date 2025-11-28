@@ -4867,5 +4867,92 @@ PhasedDuels.PhaseRadius = 100.0
 PhasedDuels.MaxPhaseId = 2147483647
 
 ###########################################################################
+#
+#    SECTION 13: ADDON COMMUNICATION PROTOCOL
+#
+#    Handles client-server communication for Dark Chaos custom addons.
+#    This system coexists with Rochet2's AIO (Eluna) without conflict:
+#    - AIO uses SAIO/CAIO prefixes → Handled by Eluna scripts
+#    - DC uses DCAOE/DCSPEC/DCUPG/HLBG prefixes → Handled by C++ here
+#
+#    See TECH_Addon_Communication_Protocol.md for full specification.
+#
+###########################################################################
+
+#
+#    DC.AddonProtocol.AOELoot.Enable
+#        Description: Enable DCAOE prefix handling for AOE Loot addon sync
+#                     When enabled, client addons can toggle loot preferences,
+#                     quality filters, and receive loot statistics in real-time.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.AOELoot.Enable = 1
+
+#
+#    DC.AddonProtocol.Spectator.Enable
+#        Description: Enable DCSPEC prefix handling for Mythic+ Spectator addon
+#                     When enabled, client addons receive real-time M+ run data:
+#                     - Party composition and specs
+#                     - Boss health/ability timers
+#                     - Death counts and timer sync
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Spectator.Enable = 1
+
+#
+#    DC.AddonProtocol.Upgrade.Enable
+#        Description: Enable DCUPG prefix handling for Item Upgrade addon sync
+#                     When enabled, client addons can request upgrade info,
+#                     view upgrade costs, and receive upgrade result notifications.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Upgrade.Enable = 1
+
+#
+#    DC.AddonProtocol.Debug.Enable
+#        Description: Enable debug logging for all addon protocol messages
+#                     Logs all incoming/outgoing DC addon messages to server log.
+#                     WARNING: Very verbose - use only for debugging!
+#        Default:     0 (Disabled)
+#
+DC.AddonProtocol.Debug.Enable = 0
+
+#
+#    DC.AddonProtocol.MaxMessageSize
+#        Description: Maximum size of a single addon message in bytes
+#                     WoW 3.3.5a client limit is 255 bytes per message.
+#                     Larger messages are automatically chunked.
+#        Default:     255
+#        Range:       64 - 255 (lower values increase message count)
+#
+DC.AddonProtocol.MaxMessageSize = 255
+
+#
+#    DC.AddonProtocol.ChunkTimeout
+#        Description: Timeout in milliseconds for reassembling chunked messages
+#                     If all chunks don't arrive within this time, message is dropped.
+#        Default:     5000 (5 seconds)
+#
+DC.AddonProtocol.ChunkTimeout = 5000
+
+#
+#    DC.AddonProtocol.RateLimit.Messages
+#        Description: Maximum addon messages per player per second
+#                     Prevents addon spam and potential abuse.
+#        Default:     30
+#
+DC.AddonProtocol.RateLimit.Messages = 30
+
+#
+#    DC.AddonProtocol.RateLimit.Action
+#        Description: Action when rate limit is exceeded
+#        Options:     0 = Log warning and drop excess messages
+#                     1 = Disconnect player (anti-cheat mode)
+#                     2 = Temporary mute (no more addon messages for 60s)
+#        Default:     0 (Log and drop)
+#
+DC.AddonProtocol.RateLimit.Action = 0
+
+###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################

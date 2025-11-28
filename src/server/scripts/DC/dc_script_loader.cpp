@@ -110,6 +110,9 @@ void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\DungeonQuestMaste
 void AddSC_npc_dungeon_quest_master();        // DungeonQuests\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 
+// --- Addon Extension System ---
+void AddDCAddonExtensionScripts();            // AddonExtension\dc_addon_extension_loader.cpp
+
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
@@ -499,6 +502,22 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Quest System");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ADDON EXTENSION SYSTEM (Communication Protocol)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Addon Extension System (DC Unified Protocol)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddDCAddonExtensionScripts();
+        LOG_INFO("scripts", ">>   ✓ Addon communication protocol loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Addon Extension: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Addon Extension");
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 

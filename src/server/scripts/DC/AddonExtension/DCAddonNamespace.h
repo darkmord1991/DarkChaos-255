@@ -1,0 +1,619 @@
+/*
+ * Dark Chaos - Unified Addon Communication Namespace
+ * =====================================================
+ * 
+ * This header defines the unified DCAddon namespace for all client-server
+ * addon communication in Dark Chaos.
+ * 
+ * Architecture:
+ * - All DC addon messages use the unified "DC" prefix
+ * - Subsystems are identified by MODULE byte in the message
+ * - Coexists with AIO (SAIO/CAIO) without conflict
+ * 
+ * Message Format:
+ * DC|MODULE|OPCODE|DATA1|DATA2|...
+ * 
+ * Where MODULE is one of:
+ * - AOE  (AOE Loot system)
+ * - SPEC (Mythic+ Spectator)
+ * - UPG  (Item Upgrade)
+ * - HLBG (Hinterland BG)
+ * - DUEL (Phased Duels)
+ * - MPLUS (Mythic+ general)
+ * - PRES (Prestige system)
+ * - SEAS (Seasonal system)
+ * 
+ * Copyright (C) 2024 Dark Chaos Development Team
+ */
+
+#ifndef DC_ADDON_NAMESPACE_H
+#define DC_ADDON_NAMESPACE_H
+
+#include "Player.h"
+#include <string>
+#include <vector>
+#include <functional>
+#include <unordered_map>
+#include <sstream>
+
+namespace DCAddon
+{
+    // ========================================================================
+    // CONSTANTS
+    // ========================================================================
+    
+    // The unified DC addon prefix - ALL DC messages use this
+    constexpr const char* DC_PREFIX = "DC";
+    
+    // Message delimiter
+    constexpr char DELIMITER = '|';
+    
+    // WoW 3.3.5a message limits
+    constexpr uint32 MAX_CLIENT_MSG_SIZE = 255;
+    constexpr uint32 MAX_SERVER_MSG_SIZE = 2560;
+    
+    // Module identifiers (first field after prefix)
+    namespace Module
+    {
+        constexpr const char* AOE_LOOT      = "AOE";
+        constexpr const char* SPECTATOR     = "SPEC";
+        constexpr const char* UPGRADE       = "UPG";
+        constexpr const char* HINTERLAND    = "HLBG";
+        constexpr const char* HINTERLAND_BG = "HLBG";  // Alias
+        constexpr const char* PHASED_DUELS  = "DUEL";
+        constexpr const char* MYTHIC_PLUS   = "MPLUS";
+        constexpr const char* PRESTIGE      = "PRES";
+        constexpr const char* SEASONAL      = "SEAS";
+        constexpr const char* CORE          = "CORE";   // Handshake, version check
+        constexpr const char* HOTSPOT       = "SPOT";   // Hotspot/XP zones
+    }
+    
+    // ========================================================================
+    // OPCODES BY MODULE
+    // ========================================================================
+    
+    namespace Opcode
+    {
+        // Core/Handshake opcodes
+        namespace Core
+        {
+            constexpr uint8 CMSG_HANDSHAKE         = 0x01;  // Client says hello
+            constexpr uint8 CMSG_VERSION_CHECK     = 0x02;  // Client sends version
+            constexpr uint8 CMSG_FEATURE_QUERY     = 0x03;  // Client asks what's enabled
+            
+            constexpr uint8 SMSG_HANDSHAKE_ACK     = 0x10;  // Server acknowledges
+            constexpr uint8 SMSG_VERSION_RESULT    = 0x11;  // Server version check result
+            constexpr uint8 SMSG_FEATURE_LIST      = 0x12;  // Server sends enabled features
+            constexpr uint8 SMSG_RELOAD_UI         = 0x13;  // Server tells client to reload
+        }
+        
+        // AOE Loot opcodes
+        namespace AOE
+        {
+            constexpr uint8 CMSG_TOGGLE_ENABLED    = 0x01;
+            constexpr uint8 CMSG_SET_QUALITY       = 0x02;
+            constexpr uint8 CMSG_GET_STATS         = 0x03;
+            constexpr uint8 CMSG_SET_AUTO_SKIN     = 0x04;
+            constexpr uint8 CMSG_SET_RANGE         = 0x05;
+            constexpr uint8 CMSG_GET_SETTINGS      = 0x06;
+            constexpr uint8 CMSG_IGNORE_ITEM       = 0x07;
+            
+            constexpr uint8 SMSG_STATS             = 0x10;
+            constexpr uint8 SMSG_SETTINGS_SYNC     = 0x11;
+            constexpr uint8 SMSG_LOOT_RESULT       = 0x12;
+            constexpr uint8 SMSG_GOLD_COLLECTED    = 0x13;
+        }
+        
+        // Spectator opcodes
+        namespace Spec
+        {
+            constexpr uint8 CMSG_REQUEST_SPECTATE  = 0x01;
+            constexpr uint8 CMSG_STOP_SPECTATE     = 0x02;
+            constexpr uint8 CMSG_LIST_RUNS         = 0x03;
+            constexpr uint8 CMSG_SET_HUD_OPTION    = 0x04;
+            constexpr uint8 CMSG_SWITCH_TARGET     = 0x05;
+            
+            constexpr uint8 SMSG_SPECTATE_START    = 0x10;
+            constexpr uint8 SMSG_SPECTATE_STOP     = 0x11;
+            constexpr uint8 SMSG_RUN_LIST          = 0x12;
+            constexpr uint8 SMSG_HUD_UPDATE        = 0x13;
+            constexpr uint8 SMSG_PLAYER_STATS      = 0x14;
+            constexpr uint8 SMSG_BOSS_UPDATE       = 0x15;
+            constexpr uint8 SMSG_TIMER_SYNC        = 0x16;
+            constexpr uint8 SMSG_DEATH_COUNT       = 0x17;
+        }
+        
+        // Item Upgrade opcodes
+        namespace Upgrade
+        {
+            constexpr uint8 CMSG_GET_ITEM_INFO     = 0x01;
+            constexpr uint8 CMSG_DO_UPGRADE        = 0x02;
+            constexpr uint8 CMSG_LIST_UPGRADEABLE  = 0x03;
+            constexpr uint8 CMSG_GET_COSTS         = 0x04;
+            
+            constexpr uint8 SMSG_ITEM_INFO         = 0x10;
+            constexpr uint8 SMSG_UPGRADE_RESULT    = 0x11;
+            constexpr uint8 SMSG_UPGRADEABLE_LIST  = 0x12;
+            constexpr uint8 SMSG_COST_INFO         = 0x13;
+            constexpr uint8 SMSG_CURRENCY_UPDATE   = 0x14;
+        }
+        
+        // Phased Duels opcodes
+        namespace Duel
+        {
+            constexpr uint8 CMSG_GET_STATS         = 0x01;
+            constexpr uint8 CMSG_GET_LEADERBOARD   = 0x02;
+            constexpr uint8 CMSG_SPECTATE_DUEL     = 0x03;
+            
+            constexpr uint8 SMSG_STATS             = 0x10;
+            constexpr uint8 SMSG_LEADERBOARD       = 0x11;
+            constexpr uint8 SMSG_DUEL_START        = 0x12;
+            constexpr uint8 SMSG_DUEL_END          = 0x13;
+            constexpr uint8 SMSG_DUEL_UPDATE       = 0x14;
+        }
+        
+        // Mythic+ opcodes
+        namespace MPlus
+        {
+            constexpr uint8 CMSG_GET_KEY_INFO      = 0x01;
+            constexpr uint8 CMSG_GET_AFFIXES       = 0x02;
+            constexpr uint8 CMSG_GET_BEST_RUNS     = 0x03;
+            
+            constexpr uint8 SMSG_KEY_INFO          = 0x10;
+            constexpr uint8 SMSG_AFFIXES           = 0x11;
+            constexpr uint8 SMSG_BEST_RUNS         = 0x12;
+            constexpr uint8 SMSG_RUN_START         = 0x13;
+            constexpr uint8 SMSG_RUN_END           = 0x14;
+            constexpr uint8 SMSG_TIMER_UPDATE      = 0x15;
+            constexpr uint8 SMSG_OBJECTIVE_UPDATE  = 0x16;
+        }
+        
+        // Prestige opcodes
+        namespace Prestige
+        {
+            constexpr uint8 CMSG_GET_INFO          = 0x01;
+            constexpr uint8 CMSG_GET_BONUSES       = 0x02;
+            
+            constexpr uint8 SMSG_INFO              = 0x10;
+            constexpr uint8 SMSG_BONUSES           = 0x11;
+            constexpr uint8 SMSG_LEVEL_UP          = 0x12;
+        }
+        
+        // Seasonal opcodes
+        namespace Season
+        {
+            constexpr uint8 CMSG_GET_CURRENT       = 0x01;
+            constexpr uint8 CMSG_GET_REWARDS       = 0x02;
+            constexpr uint8 CMSG_GET_PROGRESS      = 0x03;
+            
+            constexpr uint8 SMSG_CURRENT_SEASON    = 0x10;
+            constexpr uint8 SMSG_REWARDS           = 0x11;
+            constexpr uint8 SMSG_PROGRESS          = 0x12;
+            constexpr uint8 SMSG_SEASON_END        = 0x13;
+        }
+        
+        // Hotspot opcodes (XP bonus zones)
+        namespace Hotspot
+        {
+            constexpr uint8 CMSG_REQUEST_LIST      = 0x01;
+            constexpr uint8 CMSG_TELEPORT          = 0x02;
+            constexpr uint8 CMSG_TOGGLE_PINS       = 0x03;
+            
+            constexpr uint8 SMSG_LIST              = 0x10;
+            constexpr uint8 SMSG_NEW_HOTSPOT       = 0x11;
+            constexpr uint8 SMSG_HOTSPOT_EXPIRED   = 0x12;
+            constexpr uint8 SMSG_TELEPORT_RESULT   = 0x13;
+            constexpr uint8 SMSG_ENTERED_HOTSPOT   = 0x14;
+            constexpr uint8 SMSG_LEFT_HOTSPOT      = 0x15;
+        }
+        
+        // Hinterland BG opcodes
+        namespace HLBG
+        {
+            constexpr uint8 CMSG_REQUEST_STATUS    = 0x01;
+            constexpr uint8 CMSG_REQUEST_RESOURCES = 0x02;
+            constexpr uint8 CMSG_REQUEST_OBJECTIVE = 0x03;
+            constexpr uint8 CMSG_QUICK_QUEUE       = 0x04;
+            constexpr uint8 CMSG_LEAVE_QUEUE       = 0x05;
+            constexpr uint8 CMSG_REQUEST_STATS     = 0x06;
+            
+            constexpr uint8 SMSG_STATUS            = 0x10;
+            constexpr uint8 SMSG_RESOURCES         = 0x11;
+            constexpr uint8 SMSG_OBJECTIVE         = 0x12;
+            constexpr uint8 SMSG_QUEUE_UPDATE      = 0x13;
+            constexpr uint8 SMSG_TIMER_SYNC        = 0x14;
+            constexpr uint8 SMSG_TEAM_SCORE        = 0x15;
+            constexpr uint8 SMSG_STATS             = 0x16;
+            constexpr uint8 SMSG_AFFIX_INFO        = 0x17;
+            constexpr uint8 SMSG_MATCH_END         = 0x18;
+        }
+    }
+    
+    // ========================================================================
+    // MESSAGE UTILITIES
+    // ========================================================================
+    
+    class Message
+    {
+    public:
+        Message() = default;
+        Message(const std::string& module, uint8 opcode)
+            : _module(module), _opcode(opcode) {}
+        
+        // Build message for sending
+        Message& Add(const std::string& value)
+        {
+            _data.push_back(value);
+            return *this;
+        }
+        
+        Message& Add(int32 value)
+        {
+            _data.push_back(std::to_string(value));
+            return *this;
+        }
+        
+        Message& Add(uint32 value)
+        {
+            _data.push_back(std::to_string(value));
+            return *this;
+        }
+        
+        Message& Add(float value)
+        {
+            _data.push_back(std::to_string(value));
+            return *this;
+        }
+        
+        Message& Add(bool value)
+        {
+            _data.push_back(value ? "1" : "0");
+            return *this;
+        }
+        
+        Message& Add(ObjectGuid guid)
+        {
+            _data.push_back(std::to_string(guid.GetRawValue()));
+            return *this;
+        }
+        
+        // Build final message string
+        std::string Build() const
+        {
+            std::string result = _module;
+            result += DELIMITER;
+            result += std::to_string(_opcode);
+            
+            for (const auto& d : _data)
+            {
+                result += DELIMITER;
+                result += d;
+            }
+            
+            return result;
+        }
+        
+        // Send to player
+        void Send(Player* player) const;
+        
+        // Alias for Send (convenience method)
+        void SendTo(Player* player) const { Send(player); }
+        
+        // Send to multiple players
+        void SendToList(const std::vector<Player*>& players) const
+        {
+            for (Player* p : players)
+            {
+                if (p)
+                    Send(p);
+            }
+        }
+        
+    private:
+        std::string _module;
+        uint8 _opcode;
+        std::vector<std::string> _data;
+    };
+    
+    // Parse incoming message
+    class ParsedMessage
+    {
+    public:
+        ParsedMessage(const std::string& raw)
+        {
+            Parse(raw);
+        }
+        
+        bool IsValid() const { return _valid; }
+        const std::string& GetModule() const { return _module; }
+        uint8 GetOpcode() const { return _opcode; }
+        size_t GetDataCount() const { return _data.size(); }
+        bool HasMore() const { return _currentIndex < _data.size(); }
+        
+        // Get data at index with type conversion
+        std::string GetString(size_t index) const
+        {
+            return (index < _data.size()) ? _data[index] : "";
+        }
+        
+        // Sequential read methods for parser-style access
+        std::string NextString()
+        {
+            return HasMore() ? _data[_currentIndex++] : "";
+        }
+        
+        int32 GetInt32(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stoi(_data[index]) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+        
+        uint32 GetUInt32(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? static_cast<uint32>(std::stoul(_data[index])) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+        
+        float GetFloat(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stof(_data[index]) : 0.0f;
+            } catch (...) {
+                return 0.0f;
+            }
+        }
+        
+        bool GetBool(size_t index) const
+        {
+            return GetString(index) == "1";
+        }
+        
+        uint64 GetUInt64(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stoull(_data[index]) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+        
+    private:
+        void Parse(const std::string& raw)
+        {
+            std::stringstream ss(raw);
+            std::string token;
+            std::vector<std::string> tokens;
+            
+            while (std::getline(ss, token, DELIMITER))
+            {
+                tokens.push_back(token);
+            }
+            
+            if (tokens.size() < 2)
+            {
+                _valid = false;
+                return;
+            }
+            
+            _module = tokens[0];
+            try {
+                _opcode = static_cast<uint8>(std::stoi(tokens[1]));
+            } catch (...) {
+                _valid = false;
+                return;
+            }
+            
+            // Remaining tokens are data
+            for (size_t i = 2; i < tokens.size(); ++i)
+            {
+                _data.push_back(tokens[i]);
+            }
+            
+            _valid = true;
+        }
+        
+        bool _valid = false;
+        std::string _module;
+        uint8 _opcode = 0;
+        std::vector<std::string> _data;
+        mutable size_t _currentIndex = 0;
+    };
+    
+    // Parser - alias for ParsedMessage with sequential read support
+    // Used by module handlers for convenient data extraction
+    class Parser
+    {
+    public:
+        Parser(const ParsedMessage& msg) : _msg(msg), _index(0) {}
+        
+        uint8 GetOpcode() const { return _msg.GetOpcode(); }
+        bool HasMore() const { return _index < _msg.GetDataCount(); }
+        
+        std::string GetString() { return _msg.GetString(_index++); }
+        int32 GetInt32() { return _msg.GetInt32(_index++); }
+        uint32 GetUInt32() { return _msg.GetUInt32(_index++); }
+        float GetFloat() { return _msg.GetFloat(_index++); }
+        bool GetBool() { return _msg.GetBool(_index++); }
+        uint64 GetUInt64() { return _msg.GetUInt64(_index++); }
+        
+        // Peek at next without consuming
+        std::string PeekString() const { return HasMore() ? _msg.GetString(_index) : ""; }
+        
+        // Skip N fields
+        void Skip(size_t count = 1) { _index += count; }
+        
+        // Reset to beginning of data
+        void Reset() { _index = 0; }
+        
+    private:
+        const ParsedMessage& _msg;
+        size_t _index;
+    };
+    
+    // ========================================================================
+    // MESSAGE HANDLER REGISTRATION
+    // ========================================================================
+    
+    using MessageHandler = std::function<void(Player*, const ParsedMessage&)>;
+    
+    class MessageRouter
+    {
+    public:
+        static MessageRouter& Instance()
+        {
+            static MessageRouter instance;
+            return instance;
+        }
+        
+        // Register a handler for a module + opcode combination
+        void RegisterHandler(const std::string& module, uint8 opcode, MessageHandler handler)
+        {
+            std::string key = module + "_" + std::to_string(opcode);
+            _handlers[key] = handler;
+        }
+        
+        // Route an incoming message to the appropriate handler
+        bool Route(Player* player, const std::string& rawMessage)
+        {
+            ParsedMessage msg(rawMessage);
+            if (!msg.IsValid())
+                return false;
+            
+            std::string key = msg.GetModule() + "_" + std::to_string(msg.GetOpcode());
+            auto it = _handlers.find(key);
+            
+            if (it != _handlers.end())
+            {
+                it->second(player, msg);
+                return true;
+            }
+            
+            return false;  // No handler registered
+        }
+        
+        // Check if a module is enabled
+        bool IsModuleEnabled(const std::string& module) const
+        {
+            auto it = _enabledModules.find(module);
+            return (it != _enabledModules.end()) ? it->second : false;
+        }
+        
+        void SetModuleEnabled(const std::string& module, bool enabled)
+        {
+            _enabledModules[module] = enabled;
+        }
+        
+    private:
+        MessageRouter() = default;
+        std::unordered_map<std::string, MessageHandler> _handlers;
+        std::unordered_map<std::string, bool> _enabledModules;
+    };
+    
+    // ========================================================================
+    // HELPER MACROS FOR HANDLER REGISTRATION
+    // ========================================================================
+    
+    #define DC_REGISTER_HANDLER(module, opcode, handler) \
+        DCAddon::MessageRouter::Instance().RegisterHandler(module, opcode, handler)
+    
+    #define DC_SEND_MESSAGE(player, module, opcode) \
+        DCAddon::Message(module, opcode)
+    
+    // ========================================================================
+    // CHUNKING SUPPORT (for messages > 255 bytes)
+    // ========================================================================
+    
+    class ChunkedMessage
+    {
+    public:
+        // Split a large message into chunks
+        static std::vector<std::string> Chunk(const std::string& message, uint32 maxSize = MAX_CLIENT_MSG_SIZE - 10)
+        {
+            std::vector<std::string> chunks;
+            
+            if (message.size() <= maxSize)
+            {
+                // No chunking needed, but mark as single chunk
+                chunks.push_back("0|1|" + message);
+                return chunks;
+            }
+            
+            uint32 totalChunks = (message.size() + maxSize - 1) / maxSize;
+            
+            for (uint32 i = 0; i < totalChunks; ++i)
+            {
+                std::string chunk = std::to_string(i) + "|" + std::to_string(totalChunks) + "|";
+                chunk += message.substr(i * maxSize, maxSize);
+                chunks.push_back(chunk);
+            }
+            
+            return chunks;
+        }
+        
+        // Reassemble chunks (call per incoming chunk, returns complete message when done)
+        bool AddChunk(const std::string& chunk)
+        {
+            // Parse chunk header: INDEX|TOTAL|DATA
+            std::stringstream ss(chunk);
+            std::string indexStr, totalStr;
+            
+            if (!std::getline(ss, indexStr, '|') || !std::getline(ss, totalStr, '|'))
+                return false;
+            
+            uint32 index = std::stoul(indexStr);
+            uint32 total = std::stoul(totalStr);
+            
+            if (_totalChunks == 0)
+            {
+                _totalChunks = total;
+                _chunks.resize(total);
+                _received.resize(total, false);
+            }
+            
+            if (index >= _totalChunks || total != _totalChunks)
+                return false;
+            
+            // Get remaining data after second |
+            std::string data;
+            std::getline(ss, data);
+            
+            _chunks[index] = data;
+            _received[index] = true;
+            _receivedCount++;
+            
+            return _receivedCount == _totalChunks;
+        }
+        
+        std::string GetCompleteMessage() const
+        {
+            std::string result;
+            for (const auto& chunk : _chunks)
+                result += chunk;
+            return result;
+        }
+        
+        bool IsComplete() const { return _receivedCount == _totalChunks; }
+        void Reset()
+        {
+            _chunks.clear();
+            _received.clear();
+            _totalChunks = 0;
+            _receivedCount = 0;
+        }
+        
+    private:
+        std::vector<std::string> _chunks;
+        std::vector<bool> _received;
+        uint32 _totalChunks = 0;
+        uint32 _receivedCount = 0;
+    };
+
+}  // namespace DCAddon
+
+#endif // DC_ADDON_NAMESPACE_H
