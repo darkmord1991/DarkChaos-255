@@ -227,6 +227,21 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // Get player's minimum quality filter early - we need it for single corpse handling too
     uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
 
+    // Check if auto-loot should be used
+    auto shouldAutoLootForPlayer = [&](Player* p) -> bool
+    {
+        if (!p) return false;
+        if (sAoEConfig.autoLoot == 1) return true;
+        if (sAoEConfig.autoLoot == 2)
+        {
+            auto it = sPlayerAutoStoreTimestamp.find(p->GetGUID());
+            if (it == sPlayerAutoStoreTimestamp.end()) return false;
+            uint64 now = GameTime::GetGameTime().count();
+            return (now - it->second) <= sAoEConfig.autoStoreWindowSeconds;
+        }
+        return false;
+    };
+
     if (nearby.empty())
     {
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
@@ -246,7 +261,58 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             LOG_INFO("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain", 
                      playerMinQuality, mainLoot->items.size());
             
-            // Send the filtered loot to the player
+            // If auto-loot is enabled, auto-loot the filtered items
+            if (shouldAutoLootForPlayer(player))
+            {
+                std::vector<std::pair<uint32, uint32>> mailItems;
+                
+                for (auto const& li : mainLoot->items)
+                {
+                    ItemPosCountVec dest;
+                    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
+                    if (msg == EQUIP_ERR_OK)
+                    {
+                        Item* newItem = player->StoreNewItem(dest, li.itemid, true, li.randomPropertyId);
+                        if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
+                    }
+                    else
+                        mailItems.emplace_back(li.itemid, li.count);
+                }
+                
+                // Handle gold
+                if (mainLoot->gold > 0)
+                {
+                    player->ModifyMoney(mainLoot->gold);
+                    player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, mainLoot->gold);
+                }
+                
+                // Mail items that didn't fit
+                if (!mailItems.empty())
+                {
+                    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+                    MailSender sender(mainCreature);
+                    MailDraft draft("Recovered Items", "Some items could not fit in your bags.");
+                    for (auto const& p : mailItems)
+                    {
+                        if (Item* mailItem = Item::CreateItem(p.first, p.second))
+                        {
+                            mailItem->SaveToDB(trans);
+                            draft.AddItem(mailItem);
+                        }
+                    }
+                    draft.SendMailTo(trans, MailReceiver(player), sender);
+                    CharacterDatabase.CommitTransaction(trans);
+                }
+                
+                // Clear the loot and mark corpse as looted
+                mainLoot->clear();
+                mainCreature->AllLootRemovedFromCorpse();
+                mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+                
+                return true; // We handled it
+            }
+            
+            // Not auto-loot, open the filtered loot window
             player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
             return true; // We handled it
         }
@@ -389,19 +455,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         }
     }
 
-    auto shouldAutoLootForPlayer = [&](Player* p) -> bool
-    {
-        if (!p) return false;
-        if (sAoEConfig.autoLoot == 1) return true;
-        if (sAoEConfig.autoLoot == 2)
-        {
-            auto it = sPlayerAutoStoreTimestamp.find(p->GetGUID());
-            if (it == sPlayerAutoStoreTimestamp.end()) return false;
-            uint64 now = GameTime::GetGameTime().count();
-            return (now - it->second) <= sAoEConfig.autoStoreWindowSeconds;
-        }
-        return false;
-    };
+    // shouldAutoLootForPlayer lambda already defined above
 
     if (shouldAutoLootForPlayer(player))
     {
