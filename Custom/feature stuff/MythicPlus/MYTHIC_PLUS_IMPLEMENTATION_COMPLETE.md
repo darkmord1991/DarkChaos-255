@@ -20,14 +20,14 @@ All requested Mythic+ features have been successfully implemented and are ready 
 
 **What Changed**:
 - **Before**: Queried non-existent `dc_mplus_keystones` table
-- **After**: Checks player inventory for items 190001-190019 (M+2-M+20)
+- **After**: Checks player inventory for items 300313-300331 (M+2-M+20)
 
 **Implementation Details**:
 ```cpp
 // Loops through keystone items in inventory
 for (uint8 i = 0; i < 19; ++i)
 {
-    uint32 keystoneItemId = 190001 + i;
+    uint32 keystoneItemId = 300313 + i;
     if (player->HasItemCount(keystoneItemId, 1, false))
     {
         outDescriptor.level = i + 2; // M+2 to M+20
@@ -197,7 +197,7 @@ if (sConfigMgr->GetOption<bool>("MythicPlus.FeaturedOnly", true))
 
 | Feature | Status | Implementation | Config Option |
 |---------|--------|----------------|---------------|
-| Keystone Inventory Check | ✅ Complete | `LoadPlayerKeystone()` checks items 190001-190019 | `MythicPlus.Keystone.Enabled` |
+| Keystone Inventory Check | ✅ Complete | `LoadPlayerKeystone()` checks items 300313-300331 | `MythicPlus.Keystone.Enabled` |
 | Keystone Consumption | ✅ Complete | `ConsumePlayerKeystone()` uses `DestroyItemCount()` | N/A |
 | Portal Teleportation | ✅ Complete | `TeleportToDungeonEntrance()` queries `dc_dungeon_entrances` | N/A |
 | Difficulty Selection | ✅ Complete | Portal NPC sets Normal/Heroic/Mythic | N/A |
@@ -346,7 +346,7 @@ MythicPlus.Leaderboard.Enabled = 1                # Enable leaderboards
 - [ ] Check player difficulty setting: should match selection
 
 ### In-Game Testing - Keystone System
-- [ ] Give player M+5 keystone: `.additem 190005 1`
+- [ ] Give player M+5 keystone: `.additem 300317 1`
 - [ ] Verify keystone appears in inventory (Green quality)
 - [ ] Enter dungeon in Mythic difficulty
 - [ ] Use Font of Power GameObject at entrance
@@ -378,7 +378,7 @@ MythicPlus.Leaderboard.Enabled = 1                # Enable leaderboards
 
 ### In-Game Testing - Full Run Cycle
 - [ ] Form group of 5 players
-- [ ] Give keystone to leader: `.additem 190010 1` (M+10)
+- [ ] Give keystone to leader: `.additem 300322 1` (M+10)
 - [ ] Enter Utgarde Keep in Mythic difficulty
 - [ ] Activate keystone at Font of Power
 - [ ] Verify affixes announced to all group members
@@ -392,7 +392,7 @@ MythicPlus.Leaderboard.Enabled = 1                # Enable leaderboards
 ## Success Criteria
 
 ### ✅ All Features Working
-- [x] Keystone items in inventory (190001-190019)
+- [x] Keystone items in inventory (300313-300331)
 - [x] Portal teleportation to dungeon entrances
 - [x] Weekly affix rotation active
 - [x] Seasonal validation blocking non-featured dungeons
@@ -476,8 +476,8 @@ SELECT * FROM dc_mplus_affix_schedule WHERE season_id = 1;
 ```
 
 ### Issue: Keystone not consumed from inventory
-**Cause**: Keystone item ID not in 190001-190019 range
-**Fix**: Verify item ID matches keystone level (M+2 = 190001, M+20 = 190019)
+**Cause**: Keystone item ID not in 300313-300331 range
+**Fix**: Verify item ID matches keystone level (M+2 = 300313, M+20 = 300331)
 
 ### Issue: Statistics NPC not visible
 **Cause**: NPC not spawned or wrong coordinates

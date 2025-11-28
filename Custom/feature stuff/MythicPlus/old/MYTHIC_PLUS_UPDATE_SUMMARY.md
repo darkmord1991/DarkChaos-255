@@ -89,7 +89,7 @@
 - Added comprehensive keystone acquisition flow:
   - **Method 1:** Complete M+0 dungeon → Receive M+2 keystone (new players)
   - **Method 2:** Weekly vault → Receive keystone at highest level completed last week (existing players)
-  - **Method 3:** Keystone Master NPC (NPC 190006) → Replacement keystone at highest level this season
+  - **Method 3:** Keystone Master NPC (NPC 300318) → Replacement keystone at highest level this season
 - Added Keystone Master NPC gossip menu example
 - Added workflow diagram (M+0 → vault → Keystone Master)
 - Updated item ID list (100000-100008 for M+2 to M+10)
@@ -102,7 +102,7 @@
 **Location:** Lines 50-60 (approx)
 
 **What Changed:**
-- Added NPC 190006: Keystone Master (replacement service)
+- Added NPC 300318: Keystone Master (replacement service)
 - Added NPC 100003: Great Vault (GameObject clarification)
 
 **Why:** Documentation completeness - all NPCs listed

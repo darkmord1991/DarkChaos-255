@@ -152,11 +152,11 @@ set(SCRIPTS_DC_DungeonEnhancement
 
 **All required IDs defined:**
 
-**NPCs (190003-190006):**
-- 190003: Mythic+ Dungeon Teleporter
-- 190004: Mythic Raid Teleporter (unused in Season 1)
-- 190005: Token Vendor (unused - handled by Great Vault)
-- 190006: Keystone Master
+**NPCs (300315-300318):**
+- 300315: Mythic+ Dungeon Teleporter
+- 300316: Mythic Raid Teleporter (unused in Season 1)
+- 300317: Token Vendor (unused - handled by Great Vault)
+- 300318: Keystone Master
 
 **GameObjects (700000-700099):**
 - 700000: Great Vault (weekly rewards)
@@ -307,8 +307,8 @@ SOURCE K:/Dark-Chaos/DarkChaos-255/Custom/Custom feature SQLs/world/dc_dungeon_e
 .mythicplus keystone 2 # Give yourself M+2 keystone
 
 # Check NPC spawns
-.lookup creature 190003  # Dungeon Teleporter
-.lookup creature 190004  # Keystone Master
+.lookup creature 300315  # Dungeon Teleporter
+.lookup creature 300316  # Keystone Master
 
 # Check GameObject spawns
 .lookup object 700000    # Great Vault
@@ -366,8 +366,8 @@ MythicPlus.Scaling.M0.BaseMultiplier = 1.8
 -- Use coordinates from `.gps` command in-game
 -- Example for Stormwind
 INSERT INTO `creature` (`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, `orientation`) VALUES
-(NULL, 190003, 0, -8833.0, 628.0, 94.0, 3.14),  -- Dungeon Teleporter
-(NULL, 190004, 0, -8831.0, 628.0, 94.0, 3.14);  -- Keystone Master
+(NULL, 300315, 0, -8833.0, 628.0, 94.0, 3.14),  -- Dungeon Teleporter
+(NULL, 300316, 0, -8831.0, 628.0, 94.0, 3.14);  -- Keystone Master
 
 INSERT INTO `gameobject` (`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, `orientation`) VALUES
 (NULL, 700000, 0, -8829.0, 628.0, 94.0, 0.0);  -- Great Vault

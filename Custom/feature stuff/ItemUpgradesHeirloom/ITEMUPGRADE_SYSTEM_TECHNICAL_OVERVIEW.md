@@ -199,9 +199,9 @@ CREATE TABLE dc_item_templates_upgrade (
 ```sql
 -- Heirloom items (Tier 6)
 INSERT INTO dc_item_templates_upgrade (item_id, tier_id, season) VALUES
-(191101, 6, 1), -- Heirloom Flamefury Blade
-(191102, 6, 1), -- Heirloom Stormfury
-(191133, 6, 1); -- Last heirloom item
+(300332, 6, 1), -- Heirloom Flamefury Blade
+(300333, 6, 1), -- Heirloom Stormfury
+(300364, 6, 1); -- Last heirloom item
 -- Total: 33 heirloom items
 ```
 
@@ -544,7 +544,7 @@ INSERT INTO gameobject (guid, id, map, zoneId, areaId, position_x, position_y, p
 ```sql
 -- Example: Loot table for weapon rack
 INSERT INTO gameobject_loot_template (Entry, Item, Reference, Chance, QuestRequired, LootMode, GroupId, MinCount, MaxCount) VALUES
-(191001, 191101, 0, 100.0, 1, 1, 0, 1, 1);
+(191001, 300332, 0, 100.0, 1, 1, 0, 1, 1);
 --^      ^        ^  ^      ^  ^  ^  ^  ^
 --|      |        |  |      |  |  |  |  max count (1)
 --|      |        |  |      |  |  |  min count (1)
@@ -553,7 +553,7 @@ INSERT INTO gameobject_loot_template (Entry, Item, Reference, Chance, QuestRequi
 --|      |        |  |      quest required (1=yes)
 --|      |        |  100% drop chance
 --|      |        reference (0=none)
---|      item entry (191101 = Heirloom Flamefury Blade)
+--|      item entry (300332 = Heirloom Flamefury Blade)
 --loot table ID (matches gameobject_template.data0)
 
 -- Total: 24 loot entries (one item per treasure)
@@ -619,16 +619,16 @@ enum UpgradeTier : uint8 {
 
 ### Heirloom Item Design
 
-**Total Items:** 33 (IDs 191101-191133)
+**Total Items:** 33 (IDs 300332-300364)
 
 **Weapons (9):**
-- 191101-191103: Main-hand swords (3 stat variants)
-- 191104: Dagger
-- 191105: Staff
-- 191106: Bow
-- 191107: Wand
-- 191108: Mace
-- 191109: Polearm
+- 300332-300334: Main-hand swords (3 stat variants)
+- 300335: Dagger
+- 300336: Staff
+- 300337: Bow
+- 300338: Wand
+- 300339: Mace
+- 300340: Polearm
 
 **Armor (24):**
 - 8 equipment slots × 3 stat variants each
@@ -643,7 +643,7 @@ INSERT INTO item_template (entry, class, subclass, name, displayid, Quality, bon
     stat_type2, stat_value2,  -- ← MUST BE 0 (no secondary stats)
     stat_type3, stat_value3,  -- ← MUST BE 0
     dmg_min1, dmg_max1, Flags, Flags2, BagFamily, description) VALUES
-(191101, 2, 7, 'Heirloom Flamefury Blade', 45001, 4, 1,
+(300332, 2, 7, 'Heirloom Flamefury Blade', 45001, 4, 1,
     4, 25,        -- STR: 25 (scales with level)
     0, 0,         -- No secondary stats (added by upgrades)
     0, 0,         -- No tertiary stats
@@ -690,7 +690,7 @@ INSERT INTO dc_item_upgrade_costs (tier_id, upgrade_level, token_cost, essence_c
 
 -- Map heirloom items to Tier 6
 INSERT INTO dc_item_templates_upgrade (item_id, tier_id, season) VALUES
-(191101, 6, 1), (191102, 6, 1), /* ... */ (191133, 6, 1);
+(300332, 6, 1), (300333, 6, 1), /* ... */ (300364, 6, 1);
 ```
 
 **2. C++ Code:**
@@ -742,7 +742,7 @@ void ApplyUpgradedStats(Item* item, Player* player) {
 
 **3. DBC Files:**
 ```
-Item.csv: Add 33 entries (191101-191133)
+Item.csv: Add 33 entries (300332-300364)
 ScalingStatDistribution.csv: Add 33 entries with PRIMARY stat scaling only
 ```
 

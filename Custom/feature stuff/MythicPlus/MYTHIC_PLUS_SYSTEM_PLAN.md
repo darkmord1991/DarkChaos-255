@@ -10,7 +10,7 @@ Implement a comprehensive Mythic+ system for DarkChaos that adds challenging end
 **Project Name:** DungeonEnhancement (includes Mythic+, Heroic/Mythic raids, legacy content scaling)
 
 **Integration with Existing Systems:**
-- **NPC Architecture**: Follows patterns from ItemUpgradeCurator (190002) and DungeonQuestMaster
+- **NPC Architecture**: Follows patterns from ItemUpgradeCurator (300314) and DungeonQuestMaster
 - **Database Design**: Uses `dc_*` prefix convention, CharacterDatabase queries
 - **Achievement System**: Integrates with existing dc_achievements.cpp infrastructure
 # Mythic+ System Plan (2026 Refresh)
@@ -482,7 +482,7 @@ This dedicated NPC gives players an in-game place to review performance metrics 
 };
 ```
 
-**NPC 190004: Mythic Raid Teleporter**
+**NPC 300316: Mythic Raid Teleporter**
 - Location: Main cities (Dalaran/Orgrimmar/Stormwind)
 - Pattern: Similar to Dungeon Teleporter, adapted for raids
 - Purpose: Teleport to Mythic raids with 10/25 player scaling options
@@ -693,7 +693,7 @@ Player chooses ONE reward total
 ```
 
 #### **2.7.4 Token Vendor System**
-**Location:** NPC 190005 in main cities
+**Location:** NPC 300317 in main cities
 **Currency:** Mythic Dungeon Tokens (item 100020)
 
 **Vendor Inventory:**
@@ -736,7 +736,7 @@ Boss Loot:
 
 **Raid Token Vendor:**
 ```
-Location: NPC 190006 in main cities
+Location: NPC 300318 in main cities
 Currency: Mythic Raid Tokens (item 100021)
 
 Inventory:
@@ -1733,8 +1733,8 @@ public:
 
 **Creature ID Ranges:**
 - **100000-100099:** Mythic+ System NPCs
-  - 100000: Mythic+ Dungeon Teleporter (replaces 190003)
-  - 100001: Mythic Raid Teleporter (replaces 190004)
+  - 100000: Mythic+ Dungeon Teleporter (replaces 300315)
+  - 100001: Mythic Raid Teleporter (replaces 300316)
   - 100002-100010: Reserved for future NPCs
 
 - **700000-700099:** Mythic+ System GameObjects
@@ -1970,7 +1970,7 @@ Do you have distribution method for players? ────NO──→ Set up laun
 
 **Option A: Via NPC Teleporter (Recommended)**
 ```
-1. Player talks to NPC 190003 (Mythic+ Dungeon Teleporter)
+1. Player talks to NPC 300315 (Mythic+ Dungeon Teleporter)
 2. NPC shows gossip menu:
    ├─ "Browse Mythic Dungeons (M+0)" 
    │   └─ Shows all dungeons, teleports to DIFFICULTY_MYTHIC (4)
@@ -3484,16 +3484,16 @@ CREATE TABLE dc_mythic_tokens_loot (
 
 ### Phase 2: Dungeon System (Week 3-4)
 **Tasks:**
-- [ ] Implement NPC 190003 (Mythic+ Dungeon Teleporter) following Curator pattern
-- [ ] Implement NPC 190004 (Mythic Raid Teleporter) following Curator pattern
+- [ ] Implement NPC 300315 (Mythic+ Dungeon Teleporter) following Curator pattern
+- [ ] Implement NPC 300316 (Mythic Raid Teleporter) following Curator pattern
 - [ ] Create dungeon entry gate/shield system
 - [ ] Implement difficulty selection via Gossip menus
 - [ ] Add difficulty scaling to creature spawning
 - [ ] Implement death counter per run
 
 **Scripts Needed:**
-- `src/server/scripts/DC/DungeonEnhancement/npc_mythic_plus_dungeon_teleporter.cpp` - NPC 190003
-- `src/server/scripts/DC/DungeonEnhancement/npc_mythic_raid_teleporter.cpp` - NPC 190004
+- `src/server/scripts/DC/DungeonEnhancement/npc_mythic_plus_dungeon_teleporter.cpp` - NPC 300315
+- `src/server/scripts/DC/DungeonEnhancement/npc_mythic_raid_teleporter.cpp` - NPC 300316
 - `src/server/scripts/DC/DungeonEnhancement/MythicDifficultyScaling.cpp` - Scaling logic
 - `src/server/scripts/DC/DungeonEnhancement/DungeonEnhancementConstants.h` - Action/quest ID ranges
 - `MythicRunManager.cpp` - Run tracking (M+ dungeons only)
@@ -3501,13 +3501,13 @@ CREATE TABLE dc_mythic_tokens_loot (
 ### Phase 3: Rating & Rewards (Week 5-6)
 **Tasks:**
 - [ ] Implement rating calculation
-- [ ] Create token vendor NPC (190005) following Vendor pattern from ItemUpgrades
+- [ ] Create token vendor NPC (300317) following Vendor pattern from ItemUpgrades
 - [ ] Setup loot tables for Mythic+ (dc_mythic_tokens_loot)
 - [ ] Implement seasonal vault system
 - [ ] Integrate with dc_achievements system for Mythic+ achievements
 
 **Integration with Existing Systems:**
-- Token vendor follows pattern from ItemUpgradeNPC_Vendor (190001)
+- Token vendor follows pattern from ItemUpgradeNPC_Vendor (300313)
 - Achievement tracking uses existing dc_achievements.cpp infrastructure
 - Currency tracking similar to dc_player_upgrade_tokens pattern
 
@@ -3602,7 +3602,7 @@ WHERE dungeon_category IN ('vanilla', 'bc', 'wotlk');
 
 ### 7.3 NPC Dialog Systems (Following DarkChaos Architecture)
 
-**NPC 190003: Mythic+ Dungeon Teleporter**
+**NPC 300315: Mythic+ Dungeon Teleporter**
 ```
 Main Menu:
 ├─ "Browse Mythic Dungeons" → List all Mythic-enabled dungeons
@@ -3628,7 +3628,7 @@ Statistics Display:
 └─ Back
 ```
 
-**NPC 190004: Mythic Raid Teleporter**
+**NPC 300316: Mythic Raid Teleporter**
 ```
 Main Menu:
 ├─ "Browse Mythic Raids"
@@ -4810,7 +4810,7 @@ Cons: Limited formatting, can't show icons/tooltips
 
 #### **Option 3: NPC Dialog Journal**
 ```
-NPC 190007: "Dungeon Chronicler"
+NPC 300319: "Dungeon Chronicler"
 Location: Dalaran
 
 Gossip Menu:
@@ -5576,10 +5576,10 @@ Files to Create:
 │  └─ MythicSeasonManager.cpp/.h         // Season start/end logic
 │
 ├─ src/server/scripts/DC/DungeonEnhancement/NPCs/
-│  ├─ npc_mythic_plus_dungeon_teleporter.cpp  // NPC 190003
-│  ├─ npc_mythic_raid_teleporter.cpp          // NPC 190004
-│  ├─ npc_mythic_token_vendor.cpp             // NPC 190005
-│  └─ npc_keystone_master.cpp                 // NPC 190006
+│  ├─ npc_mythic_plus_dungeon_teleporter.cpp  // NPC 300315
+│  ├─ npc_mythic_raid_teleporter.cpp          // NPC 300316
+│  ├─ npc_mythic_token_vendor.cpp             // NPC 300317
+│  └─ npc_keystone_master.cpp                 // NPC 300318
 │
 ├─ src/server/scripts/DC/DungeonEnhancement/Affixes/
 │  ├─ MythicAffixHandler.cpp/.h          // Base affix class (M+ only)
@@ -5714,7 +5714,7 @@ Reserved IDs:
 ```
 Spell IDs: 70000-70010 (for affix visual effects)
 
-Example: Necrotic (70001)
+Example: Necrotic (300002)
 - SpellName: "Necrotic Wound"
 - Description: "Healing received reduced by 10% per stack"
 - SpellIconID: 136133 (necrotic visual)

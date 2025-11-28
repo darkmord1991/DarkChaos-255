@@ -85,9 +85,9 @@ Note: Code already exists in heirloom_scaling_255.cpp
 2. Worldforged Crown         (ID: 191080) - Cosmetic head piece
 3. Worldforged Bracers       (ID: 191090) - Wrist slot
 4. Worldforged Belt          (ID: 191100) - Waist slot
-5. Worldforged Boots         (ID: 191110) - Feet slot
-6. Worldforged Gloves        (ID: 191120) - Hands slot
-7. Worldforged Leggings      (ID: 191130) - Legs slot
+5. Worldforged Boots         (ID: 300341) - Feet slot
+6. Worldforged Gloves        (ID: 300351) - Hands slot
+7. Worldforged Leggings      (ID: 300361) - Legs slot
 8. Worldforged Mantle        (ID: 191140) - Shoulder slot
 
 Scaling: Cosmetic items (no stat scaling required)
@@ -220,9 +220,9 @@ Chest 12: "Ultimate Vault"
 | 191080 | Worldforged Crown | Head | 25 | Heirloom | Account | Cosmetic crown |
 | 191090 | Worldforged Bracers | Wrist | 15 | Heirloom | Account | Wrist cosmetic |
 | 191100 | Worldforged Belt | Waist | 20 | Heirloom | Account | Belt cosmetic |
-| 191110 | Worldforged Boots | Feet | 18 | Heirloom | Account | Boots cosmetic |
-| 191120 | Worldforged Gloves | Hands | 15 | Heirloom | Account | Gloves cosmetic |
-| 191130 | Worldforged Leggings | Legs | 20 | Heirloom | Account | Legs cosmetic |
+| 300341 | Worldforged Boots | Feet | 18 | Heirloom | Account | Boots cosmetic |
+| 300351 | Worldforged Gloves | Hands | 15 | Heirloom | Account | Gloves cosmetic |
+| 300361 | Worldforged Leggings | Legs | 20 | Heirloom | Account | Legs cosmetic |
 | 191140 | Worldforged Mantle | Shoulder | 22 | Heirloom | Account | Shoulders cosmetic |
 
 **Total Items: 18 (8 core + 10 cosmetic/utility)**

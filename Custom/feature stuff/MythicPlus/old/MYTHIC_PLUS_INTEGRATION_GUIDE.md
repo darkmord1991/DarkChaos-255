@@ -8,13 +8,13 @@ This document outlines how the Mythic+ system integrates with existing DarkChaos
 ## NPC ID Allocation
 
 ### Current DarkChaos NPCs:
-- **190001**: Item Upgrade Vendor (`ItemUpgradeNPC_Vendor.cpp`)
-- **190002**: Artifact Curator (`ItemUpgradeNPC_Curator.cpp`)
+- **300313**: Item Upgrade Vendor (`ItemUpgradeNPC_Vendor.cpp`)
+- **300314**: Artifact Curator (`ItemUpgradeNPC_Curator.cpp`)
 
 ### New Mythic+ NPCs:
-- **190003**: Mythic+ Dungeon Teleporter (Main entry point for dungeon content)
-- **190004**: Mythic Raid Teleporter (Main entry point for raid content)
-- **190005**: Mythic+ Token Vendor (Reward exchange NPC)
+- **300315**: Mythic+ Dungeon Teleporter (Main entry point for dungeon content)
+- **300316**: Mythic Raid Teleporter (Main entry point for raid content)
+- **300317**: Mythic+ Token Vendor (Reward exchange NPC)
 
 **Pattern**: All custom DarkChaos NPCs use 1900xx ID range
 
@@ -312,16 +312,16 @@ void StartNewSeason(uint32 newSeasonId)
 ```
 src/server/scripts/DC/
 ├── ItemUpgrades/
-│   ├── ItemUpgradeNPC_Vendor.cpp       (NPC 190001)
-│   ├── ItemUpgradeNPC_Curator.cpp      (NPC 190002)
+│   ├── ItemUpgradeNPC_Vendor.cpp       (NPC 300313)
+│   ├── ItemUpgradeNPC_Curator.cpp      (NPC 300314)
 │   └── ...
 ├── DungeonQuests/
 │   ├── npc_dungeon_quest_master.cpp
 │   └── ...
 ├── MythicPlus/                          (NEW)
-│   ├── npc_mythic_plus_dungeon_teleporter.cpp  (NPC 190003)
-│   ├── npc_mythic_raid_teleporter.cpp         (NPC 190004)
-│   ├── npc_mythic_plus_token_vendor.cpp       (NPC 190005)
+│   ├── npc_mythic_plus_dungeon_teleporter.cpp  (NPC 300315)
+│   ├── npc_mythic_raid_teleporter.cpp         (NPC 300316)
+│   ├── npc_mythic_plus_token_vendor.cpp       (NPC 300317)
 │   ├── MythicPlusManager.cpp
 │   ├── MythicDifficultyScaling.cpp
 │   ├── MythicPlusConstants.h

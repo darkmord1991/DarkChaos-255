@@ -48,16 +48,16 @@ bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& 
 **System B (Item-based - keystone_npc.cpp & go_keystone_pedestal.cpp):**
 ```cpp
 // keystone_npc.cpp: Lines 32-40
-// Uses item IDs 190001-190009 for M+2-M+10
+// Uses item IDs 300313-300321 for M+2-M+10
 const uint32 KEYSTONE_ITEM_IDS[9] = {
-    190001,  // M+2
-    190002,  // M+3
+    300313,  // M+2
+    300314,  // M+3
     // ...
 };
 ```
 
 **PROBLEM:**
-- `go_keystone_pedestal.cpp` expects item objects (190001-190009)
+- `go_keystone_pedestal.cpp` expects item objects (300313-300321)
 - `MythicPlusRunManager::TryActivateKeystone()` queries database table
 - **These systems DO NOT communicate with each other**
 
@@ -67,7 +67,7 @@ const uint32 KEYSTONE_ITEM_IDS[9] = {
    ```cpp
    bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor)
    {
-       // Check player inventory for keystone items 190001-190009
+       // Check player inventory for keystone items 300313-300321
        for (uint8 i = 0; i < 9; ++i)
        {
            Item* keystoneItem = player->GetItemByEntry(KEYSTONE_ITEM_IDS[i]);
@@ -311,8 +311,8 @@ CREATE TABLE dc_mplus_affix_schedule (
 **BOTH FILES DEFINE:**
 ```cpp
 const uint32 KEYSTONE_ITEM_IDS[9] = {
-    190001, 190002, 190003, 190004, 190005,
-    190006, 190007, 190008, 190009
+    300313, 300314, 300315, 300316, 300317,
+    300318, 300319, 300320, 300321
 **SOLUTION:** Create shared header
 ```cpp
 // File: MythicPlusConstants.h
@@ -322,8 +322,8 @@ const uint32 KEYSTONE_ITEM_IDS[9] = {
 namespace MythicPlusConstants
 {
     constexpr uint32 KEYSTONE_ITEM_IDS[9] = {
-        190001, 190002, 190003, 190004, 190005,
-        190006, 190007, 190008, 190009
+        300313, 300314, 300315, 300316, 300317,
+        300318, 300319, 300320, 300321
     };
     
     constexpr uint8 MIN_KEYSTONE_LEVEL = 2;
@@ -625,13 +625,13 @@ MythicPlus.Cache.KeystoneTTL = 15
 
 | Source | Range |
 |--------|-------|
-| **Plan (§2.3, §3)** | M+2 through M+**20** (19 keystones: 190001-190019) |
-| **Implemented** | M+2 through M+**10** (9 keystones: 190001-190009) |
+| **Plan (§2.3, §3)** | M+2 through M+**20** (19 keystones: 300313-300331) |
+| **Implemented** | M+2 through M+**10** (9 keystones: 300313-300321) |
 
-**Impact:** 10 missing keystone items (190010-190019)
+**Impact:** 10 missing keystone items (300322-300331)
 
 **Fix Required:**
-1. Create item templates for 190010-190019
+1. Create item templates for 300322-300331
 2. Update vendor NPC to show all 19 keystones
 3. Extend multiplier table to keystone level 20
 
@@ -912,7 +912,7 @@ INSERT INTO dc_mythic_scaling_multipliers VALUES
 ### Long-Term (Season 2 Prep)
 
 8. **EXTEND: Keystone Levels to M+20**
-   - Create items 190010-190019
+   - Create items 300322-300331
    - Update vendor UI
    - Extend multiplier table
 

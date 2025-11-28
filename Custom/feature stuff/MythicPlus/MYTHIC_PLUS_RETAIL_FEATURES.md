@@ -6,7 +6,7 @@
 
 ### Core Systems
 1. **Keystone Items (M+2 to M+20)** ✅
-   - Items 190001-190019 represent keystones from +2 to +20
+   - Items 300313-300331 represent keystones from +2 to +20
    - Gossip menu shows detailed information when used
    - Shows scaling, rewards, and usage instructions
 

@@ -293,8 +293,8 @@ ARTIFACT EQUIP → ENCHANT APPLICATION FLOW
                    └─ If upgrade_level > 0
                       │
                       └─→ Calculate enchant ID:
-                          Formula: 80000 + (tier × 100) + level
-                          Example: 80000 + (5 × 100) + 10 = 80510
+                          Formula: 300003 + (tier × 100) + level
+                          Example: 300003 + (5 × 100) + 10 = 80510
                           │
                           └─→ Apply enchant to TEMP_ENCHANTMENT_SLOT
                               │
@@ -467,7 +467,7 @@ UNIQUE ASPECTS OF TIER 5 ARTIFACTS:
         │ Apply Enchant to Item    │
         │ (TEMP_ENCHANTMENT_SLOT)  │
         │                          │
-        ├─ Enchant ID: 80000+level │
+        ├─ Enchant ID: 300003+level │
         ├─ Query spell_bonus_data  │
         └─ Apply multiplier        │
                        │

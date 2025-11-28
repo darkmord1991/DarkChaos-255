@@ -59,7 +59,7 @@
 ┌─ LAYER 2: ENCHANTMENT BONUSES ───────────────┐
 │ Secondary stats buffed via enchantment       │
 │ Applied dynamically on equip                 │
-│ Enchant ID: 80000 + (tier × 100) + level    │
+│ Enchant ID: 300003 + (tier × 100) + level    │
 │ Uses spell_bonus_data multipliers            │
 │ Requires: New script + enchant setup         │
 └──────────────────────────────────────────────┘

@@ -36,7 +36,7 @@
    - Currency: Upgrade Tokens
 
 ✅ TIER 3 (TIER_HEIRLOOM = 6 in code, but uses ID 3 in DB!)
-   - Purpose: Bind-on-Account heirlooms (191101-191133)
+   - Purpose: Bind-on-Account heirlooms (300332-300364)
    - Max Level: 15 upgrades
    - Stat Multiplier: 1.05x → 1.35x (SECONDARY STATS ONLY)
    - Currency: Artifact Essence
@@ -244,7 +244,7 @@ static const uint8 MAX_UPGRADE_LEVEL = 15;
 **Database Says:**
 ```sql
 -- dc_item_upgrade_enchants has:
-Tier 1: 60 enchants (80001-80060)  ← 60 levels!
+Tier 1: 60 enchants (300004-80060)  ← 60 levels!
 Tier 2: 15 enchants (80101-80115)  ← 15 levels
 Tier 3: 16 entries (0-15)          ← 16 levels (0 is base)
 ```
@@ -408,7 +408,7 @@ case TIER_HEIRLOOM: return 15;
 - 15 upgrade levels
 - Uses Artifact Essence (NOT tokens)
 - Stat multiplier: 1.05x → 1.35x (SECONDARY STATS ONLY)
-- For: Bind-on-Account items (191101-191133)
+- For: Bind-on-Account items (300332-300364)
 - Special: Primary stats auto-scale with character level
 
 ### What Your System DOESN'T Do

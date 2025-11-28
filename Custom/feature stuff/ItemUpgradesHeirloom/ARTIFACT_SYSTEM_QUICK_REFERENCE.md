@@ -27,7 +27,7 @@ ARTIFACT = Heirloom Item + Tier 5 Upgrade + Dynamic Enchant
 | Final Stat Bonus | 1.75x | At max upgrade (75% bonus) |
 | Item Quality | 7 | HEIRLOOM (required flag) |
 | Essence Item ID | 200001 | Currency item entry |
-| Base Enchant ID | 80000 | Encodes tier+level |
+| Base Enchant ID | 300003 | Encodes tier+level |
 
 ---
 
@@ -92,7 +92,7 @@ void ArtifactManager::ApplyArtifactEnchant(Player* player, Item* item, uint8 lev
 
 // Calculate enchant ID
 uint32 CalculateUpgradeEnchantId(uint8 tier_id, uint8 level)
-  = 80000 + (tier_id * 100) + level
+  = 300003 + (tier_id * 100) + level
 ```
 
 ### Script Hooks

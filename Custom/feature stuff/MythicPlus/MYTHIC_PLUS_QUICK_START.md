@@ -19,7 +19,7 @@ cd k:/Dark-Chaos/DarkChaos-255
 
 ### 3️⃣ Test In-Game
 - Visit **Portal NPC** → Test teleportation to dungeon
-- Visit **Keystone Vendor** (entry 100100) → Buy M+10 keystone (`.additem 190010 1`)
+- Visit **Keystone Vendor** (entry 100100) → Buy M+10 keystone (`.additem 300322 1`)
 - Activate keystone → Verify affixes announced
 - Visit **Archivist Serah** in Dalaran (Krasus' Landing)
 
@@ -28,7 +28,7 @@ cd k:/Dark-Chaos/DarkChaos-255
 ## 🎯 What's New in v2.0
 
 ### ✅ NEW: Inventory-Based Keystones
-- Keystones are now **physical items** (190001-190019)
+- Keystones are now **physical items** (300313-300331)
 - No database dependency on `dc_mplus_keystones` table
 - Players can see keystones in their bags
 - Consumed automatically on activation
@@ -106,7 +106,7 @@ SELECT COUNT(*) FROM dc_dungeon_entrances;
    - Verify teleportation to entrance
 
 2. **Keystone System**:
-   - `.additem 190010 1` (M+10 keystone)
+   - `.additem 300322 1` (M+10 keystone)
    - Check inventory for green/purple item
    - Enter dungeon, use Font of Power
    - Verify keystone consumed
@@ -191,11 +191,11 @@ SELECT * FROM dc_mplus_affix_schedule WHERE season_id = 1;
 ```
 
 ### Issue: Keystone not consumed
-**Fix**: Verify item ID range (190001-190019)
+**Fix**: Verify item ID range (300313-300331)
 ```
-M+2  = 190001
-M+10 = 190010
-M+20 = 190019
+M+2  = 300313
+M+10 = 300322
+M+20 = 300331
 ```
 
 ---
@@ -214,7 +214,7 @@ M+20 = 190019
 ### 1. Acquire Keystone
 - Buy from Keystone Vendor (entry 100100)
 - Or receive as reward from M+ completion
-- Items 190001-190019 (M+2-M+20)
+- Items 300313-300331 (M+2-M+20)
 
 ### 2. Form Group
 - 5 players recommended

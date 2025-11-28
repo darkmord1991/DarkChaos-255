@@ -39,7 +39,7 @@ ARTIFACT ITEM
     │
     ├─ LAYER 2: Enchantment Application  
     │  └─ Secondary stats applied dynamically on equip
-    │  └─ Enchant ID: 80000 + (tier × 100) + upgrade_level
+    │  └─ Enchant ID: 300003 + (tier × 100) + upgrade_level
     │  └─ Uses TEMP_ENCHANTMENT_SLOT (AzerothCore native)
     │  └─ spell_bonus_data handles multipliers
     │

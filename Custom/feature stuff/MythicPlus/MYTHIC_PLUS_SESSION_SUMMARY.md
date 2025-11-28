@@ -78,8 +78,8 @@ VALUES (100060, 0, 30259, 1.0, 1.0);
 **Solution**: Deleted `dc_keystone_items_extended.sql` file
 
 **Verification**: Confirmed `dc_keystone_items.sql` contains:
-- 190001-190009 (M+2-M+10) 
-- 190010-190019 (M+11-M+20)
+- 300313-300321 (M+2-M+10) 
+- 300322-300331 (M+11-M+20)
 - All 19 keystones complete
 
 ### ✅ 8. Duplicate Config Section Removed
@@ -146,7 +146,7 @@ using namespace MythicPlusConstants;
 **Problem**: LoadPlayerKeystone() used database table that didn't exist
 
 **Solution**: Refactored to check player inventory for keystone items
-- Checks items 190001-190019 (M+2-M+20)
+- Checks items 300313-300331 (M+2-M+20)
 - No database dependency on dc_mplus_keystones
 - ConsumePlayerKeystone() now removes from inventory
 - Uses DestroyItemCount() to consume keystones
@@ -156,7 +156,7 @@ using namespace MythicPlusConstants;
 // Check inventory for keystones
 for (uint8 i = 0; i < 19; ++i)
 {
-    uint32 keystoneItemId = 190001 + i;
+    uint32 keystoneItemId = 300313 + i;
     if (player->HasItemCount(keystoneItemId, 1, false))
     {
         outDescriptor.level = i + 2; // M+2-M+20
@@ -307,7 +307,7 @@ if (sConfigMgr->GetOption<bool>("MythicPlus.FeaturedOnly", true))
 ### ✅ All High Priority Tasks Complete!
 1. **✅ Fix LoadPlayerKeystone()** in MythicPlusRunManager.cpp
    - ✅ Changed from database query to inventory check
-   - ✅ Uses items 190001-190019 (M+2-M+20)
+   - ✅ Uses items 300313-300331 (M+2-M+20)
    - ✅ Removed dependency on dc_mplus_keystones table
 
 2. **✅ Implement Portal Teleportation** in npc_dungeon_portal_selector.cpp
@@ -370,7 +370,7 @@ if (sConfigMgr->GetOption<bool>("MythicPlus.FeaturedOnly", true))
 
 ### ✅ Completed
 - [x] SQL syntax validated (foreign keys fixed)
-- [x] Keystone item range verified (190001-190019 exists)
+- [x] Keystone item range verified (300313-300331 exists)
 - [x] Config file consolidated (no duplicates)
 - [x] DungeonQuest phasing tested (Mythic+ exclusion)
 - [x] Code compilation check (shared constants)
@@ -397,7 +397,7 @@ Custom/Custom feature SQLs/worlddb/Mythic+/
 ├── 00_MISSING_TABLES_FIX.sql           (4 tables + seed data)
 ├── npc_spawn_statistics.sql            (Statistics NPC spawn)
 ├── npc_portal_selector.sql             (Portal NPC - entry 100101)
-├── dc_keystone_items.sql               (190001-190019, all keystones)
+├── dc_keystone_items.sql               (300313-300331, all keystones)
 ├── dc_mythic_dungeons_world.sql        (existing, seasons/affixes)
 └── dc_mythic_scaling_multipliers.sql   (existing, scaling data)
 ```
@@ -483,7 +483,7 @@ All blocking issues from MYTHIC_PLUS_ANALYSIS.md have been resolved.
    - Complete M+5 run - verify vault rewards
 
 5. **Verify All Systems Working**
-   - Inventory-based keystones: Player has item 190015 for M+15
+   - Inventory-based keystones: Player has item 300327 for M+15
    - Portal teleportation: Coordinates from dc_dungeon_entrances
    - Affix activation: Weekly affixes shown on keystone start
    - Seasonal validation: Non-featured dungeons rejected

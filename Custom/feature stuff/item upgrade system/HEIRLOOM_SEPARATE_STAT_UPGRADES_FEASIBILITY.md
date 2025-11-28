@@ -59,7 +59,7 @@ Upgrade cost: 281 Artifact Essence
 
 2. **Secondary Stats** → Added via temporary enchantments
    - Uses `TEMP_ENCHANTMENT_SLOT` (enchantment slot already exists)
-   - Enchant ID formula: `80000 + (tier × 100) + level`
+   - Enchant ID formula: `300003 + (tier × 100) + level`
    - Example: Enhancement Level 8 = Enchant ID 80008
    - Client displays as green bonus stats ("+15 Critical Strike")
    - Already proven working in your ItemUpgrade system
@@ -103,7 +103,7 @@ void ApplyHeirloomEnhancement(Player* player, Item* item, uint8 enhancement_leve
     }
 
     // Apply new enchantment based on enhancement level
-    uint32 enchant_id = 80000 + enhancement_level; // 80001-80015
+    uint32 enchant_id = 300003 + enhancement_level; // 300004-80015
     item->SetEnchantment(TEMP_ENCHANTMENT_SLOT, enchant_id, 0, 0);
     player->ApplyEnchantment(item, TEMP_ENCHANTMENT_SLOT, true);
 
@@ -126,7 +126,7 @@ INSERT INTO item_template (entry, class, subclass, name, displayid, Quality,
     ScalingStatDistribution, ScalingStatValue, -- KEY: These enable heirloom scaling
     -- ... rest of fields
 ) VALUES (
-    191101, 2, 8, 'Heirloom Flamefury Blade', 45001, 7, -- Quality 7 = HEIRLOOM
+    300332, 2, 8, 'Heirloom Flamefury Blade', 45001, 7, -- Quality 7 = HEIRLOOM
     524288, 1, 0, 0, 13, -1, -1,
     1, 1, 0, 0, 1, 1, 0, 1,
     4, 25, -- stat_type1=STR(4), stat_value1=25 (BASE - will be scaled by heirloom)
@@ -138,9 +138,9 @@ INSERT INTO item_template (entry, class, subclass, name, displayid, Quality,
 -- Enhancement enchantments (secondary stats only)
 INSERT INTO spell_item_enchantment_template (ench, chance, description) VALUES
 -- Level 0: 1.05x multiplier (5% bonus)
-(80000, 100, 'Enhancement Level 0 (+5% Secondary Stats)'),
+(300003, 100, 'Enhancement Level 0 (+5% Secondary Stats)'),
 -- Level 1: 1.075x multiplier (7.5% bonus)
-(80001, 100, 'Enhancement Level 1 (+7.5% Secondary Stats)'),
+(300004, 100, 'Enhancement Level 1 (+7.5% Secondary Stats)'),
 -- Level 5: 1.15x multiplier (15% bonus)
 (80005, 100, 'Enhancement Level 5 (+15% Secondary Stats)'),
 -- Level 10: 1.275x multiplier (27.5% bonus)
@@ -206,7 +206,7 @@ INSERT INTO dc_heirloom_enhancement_costs
 
 2. **Secondary Stats** → Use `TEMP_ENCHANTMENT_SLOT` (enchantment slot 1)
    - Apply enchant with formula based on enhancement level
-   - Enchant ID: `80000 + enhancement_level` (e.g., 80005 for level 5)
+   - Enchant ID: `300003 + enhancement_level` (e.g., 80005 for level 5)
    - Grants Crit/Haste/Mastery based on enhancement level
 
 **Client Recognition:**
@@ -461,7 +461,7 @@ Once implemented, verify the following:
 
 ### Q: What happens if a player removes the enchantment manually?
 
-**A:** Add a check in `HandleCancelTempEnchantmentOpcode` to prevent removal of enhancement enchants (IDs 80000-80015).
+**A:** Add a check in `HandleCancelTempEnchantmentOpcode` to prevent removal of enhancement enchants (IDs 300003-80015).
 
 ### Q: Will this conflict with other enchantments (weapon oils, etc)?
 

@@ -92,7 +92,7 @@ Script:
 
 **How it works:**
 - When artifact is equipped, apply dynamic enchant via `TEMP_ENCHANTMENT_SLOT`
-- Enchant ID encodes: tier + upgrade level (e.g., 80000 + tier*100 + level)
+- Enchant ID encodes: tier + upgrade level (e.g., 300003 + tier*100 + level)
 - `spell_bonus_data` table configures multipliers for all stat types
 - Enchant applies percentage-based bonuses to:
   - Crit Rating
@@ -106,8 +106,8 @@ Script:
 **How Enchantment Bonus Works:**
 ```
 Enchant ID Scheme:
-  Base: 80000
-  Formula: 80000 + (tier_id × 100) + upgrade_level
+  Base: 300003
+  Formula: 300003 + (tier_id × 100) + upgrade_level
   
   Examples:
     Tier 1, Level 6 → ID 80106

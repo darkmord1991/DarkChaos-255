@@ -472,10 +472,10 @@ void ArtifactManager::SavePlayerArtifactProgress(uint32 player_guid, uint32 arti
 
 uint32 ArtifactManager::CalculateUpgradeEnchantId(uint8 tier_id, uint8 upgrade_level) const
 {
-    // Enchant ID = 80000 + (tier_id * 100) + upgrade_level
+    // Enchant ID = 300003 + (tier_id * 100) + upgrade_level
     // Tier 5, Level 1 = 80501
     // Tier 5, Level 15 = 80515
-    return 80000 + (tier_id * 100) + upgrade_level;
+    return 300003 + (tier_id * 100) + upgrade_level;
 }
 
 void ArtifactManager::ApplyArtifactEnchant(Player* player, Item* item, uint8 upgrade_level)
@@ -503,7 +503,7 @@ void ArtifactManager::RemoveArtifactEnchant(Player* player, Item* item, uint8 ol
         return;
 
     uint32 old_enchant_id = item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT);
-    if (old_enchant_id >= 80000 && old_enchant_id < 90000)
+    if (old_enchant_id >= 300003 && old_enchant_id < 90000)
     {
         player->ApplyEnchantment(item, TEMP_ENCHANTMENT_SLOT, false);
         item->ClearEnchantment(TEMP_ENCHANTMENT_SLOT);

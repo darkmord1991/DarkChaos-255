@@ -314,9 +314,9 @@ Item 100008 = Mythic Keystone (Level 10)
 - Persists through weekly reset (resets to level 2)
 - Consumed on use (Font of Power activation)
 
-### Token System (100999 + Essence 109998)
+### Token System (300311 + Essence 300312)
 **Mythic+ Tokens:**
-- Item ID: 100999
+- Item ID: 300311
 - Currency for rewards/upgrades
 - Amount scales with keystone level:
   - M+0: 50 tokens

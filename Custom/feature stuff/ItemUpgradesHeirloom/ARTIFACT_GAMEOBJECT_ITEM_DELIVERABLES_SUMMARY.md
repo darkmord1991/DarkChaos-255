@@ -147,9 +147,9 @@
 - 191080: Worldforged Crown (L25)
 - 191090: Worldforged Bracers (L15)
 - 191100: Worldforged Belt (L20)
-- 191110: Worldforged Boots (L18)
-- 191120: Worldforged Gloves (L15)
-- 191130: Worldforged Leggings (L20)
+- 300341: Worldforged Boots (L18)
+- 300351: Worldforged Gloves (L15)
+- 300361: Worldforged Leggings (L20)
 - 191140: Worldforged Mantle (L22)
 
 **Currency (1):**
