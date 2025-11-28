@@ -24,6 +24,7 @@
 #include "Group.h"
 #include "Log.h"
 #include "Item.h"
+#include "StringFormat.h"
 #include "Spell.h"
 #include "DatabaseEnv.h"
 
@@ -617,7 +618,8 @@ public:
         prefs.minQuality = quality;
 
         const char* qualityNames[] = { "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact" };
-        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Minimum quality set to: %s", qualityNames[quality]);
+        std::string msg = Acore::StringFormat("|cff00ff00[Loot Prefs]|r Minimum quality set to: {}", qualityNames[quality]);
+        handler->SendSysMessage(msg.c_str());
         return true;
     }
 
@@ -721,11 +723,11 @@ public:
         const char* qualityNames[] = { "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact" };
 
         handler->SendSysMessage("|cff00ff00========== CURRENT SETTINGS ==========|r");
-        handler->PSendSysMessage("|cffffd700AoE Loot:|r %s", prefs.aoeLootEnabled ? "Enabled" : "Disabled");
-        handler->PSendSysMessage("|cffffd700Show Messages:|r %s", prefs.showMessages ? "Enabled" : "Disabled");
-        handler->PSendSysMessage("|cffffd700Minimum Quality:|r %s", qualityNames[prefs.minQuality]);
-        handler->PSendSysMessage("|cffffd700Auto-Skin:|r %s", prefs.autoSkin ? "Enabled" : "Disabled");
-        handler->PSendSysMessage("|cffffd700Smart Loot:|r %s", prefs.smartLootEnabled ? "Enabled" : "Disabled");
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700AoE Loot:|r {}", prefs.aoeLootEnabled ? "Enabled" : "Disabled").c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Show Messages:|r {}", prefs.showMessages ? "Enabled" : "Disabled").c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Minimum Quality:|r {}", qualityNames[prefs.minQuality]).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Auto-Skin:|r {}", prefs.autoSkin ? "Enabled" : "Disabled").c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Smart Loot:|r {}", prefs.smartLootEnabled ? "Enabled" : "Disabled").c_str());
         handler->SendSysMessage("|cff00ff00======================================|r");
 
         auto it = sDetailedStats.find(player->GetGUID());
@@ -738,20 +740,20 @@ public:
         DetailedLootStats& stats = it->second;
 
         handler->SendSysMessage("|cff00ff00========== LOOT STATISTICS ==========|r");
-        handler->PSendSysMessage("|cffffd700Total Items Looted:|r %u", stats.totalItemsLooted);
-        handler->PSendSysMessage("|cffffd700Total Gold Looted:|r %ug %us %uc",
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Total Items Looted:|r {}", stats.totalItemsLooted).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Total Gold Looted:|r {}g {}s {}c",
                                   stats.totalGoldLooted / 10000,
                                   (stats.totalGoldLooted % 10000) / 100,
-                                  stats.totalGoldLooted % 100);
-        handler->PSendSysMessage("|cffffd700Poor Items Vendored:|r %u", stats.poorItemsVendored);
-        handler->PSendSysMessage("|cffffd700Gold from Vendor:|r %ug %us %uc",
+                                  stats.totalGoldLooted % 100).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Poor Items Vendored:|r {}", stats.poorItemsVendored).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Gold from Vendor:|r {}g {}s {}c",
                                   stats.goldFromVendor / 10000,
                                   (stats.goldFromVendor % 10000) / 100,
-                                  stats.goldFromVendor % 100);
-        handler->PSendSysMessage("|cffffd700Corpses Skinned:|r %u", stats.skinnedCorpses);
-        handler->PSendSysMessage("|cffffd700Nodes Mined:|r %u", stats.minedNodes);
-        handler->PSendSysMessage("|cffffd700Nodes Herbed:|r %u", stats.herbedNodes);
-        handler->PSendSysMessage("|cffffd700Upgrades Found:|r %u", stats.upgradesFound);
+                                  stats.goldFromVendor % 100).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Corpses Skinned:|r {}", stats.skinnedCorpses).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Nodes Mined:|r {}", stats.minedNodes).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Nodes Herbed:|r {}", stats.herbedNodes).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffd700Upgrades Found:|r {}", stats.upgradesFound).c_str());
         handler->SendSysMessage("|cff00ff00======================================|r");
 
         return true;
