@@ -400,11 +400,13 @@ function UI:RefreshList()
     end
 end
 
-function UI:OnHotspotSpawn(id, info)
+function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     if not self.state or not self.state.db then
         return
     end
-    if self.state.db.announce then
+    
+    -- Only announce if explicitly allowed (prevents spam on login)
+    if shouldAnnounce and self.state.db.announce then
         local zone = info.zone or MapName(info.map)
         local bonus = info.bonus or (self.state.config and self.state.config.experienceBonus) or 0
         local message = string.format("|cFFFFD700[Hotspot]|r %s (+%d%% XP)", zone, bonus)
@@ -415,13 +417,16 @@ function UI:OnHotspotSpawn(id, info)
             RaidNotice_AddMessage(RaidWarningFrame, message, ChatTypeInfo["RAID_WARNING"])
         end
         SafePlaySound(self.state.db.spawnSound)
+        
+        -- Only show popup for truly new hotspots (not on login)
+        self:ShowPopup({
+            zone = info.zone or MapName(info.map),
+            map = info.map,
+            expire = info.expire,
+            texture = info.tex and info.tex or (info.icon and GetSpellTexture and GetSpellTexture(info.icon)),
+        })
     end
-    self:ShowPopup({
-        zone = info.zone or MapName(info.map),
-        map = info.map,
-        expire = info.expire,
-        texture = info.tex and info.tex or (info.icon and GetSpellTexture and GetSpellTexture(info.icon)),
-    })
+    
     self:RefreshList()
 end
 

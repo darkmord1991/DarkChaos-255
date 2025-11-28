@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "Chat.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
 #include "GameTime.h"
@@ -33,6 +34,10 @@ namespace DCAoELootExt
 {
     bool GetPlayerShowMessages(ObjectGuid playerGuid);
     void SetPlayerShowMessages(ObjectGuid playerGuid, bool value);
+    bool IsPlayerAoELootEnabled(ObjectGuid playerGuid);
+    void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool value);
+    uint8 GetPlayerMinQuality(ObjectGuid playerGuid);
+    void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality);
 }
 
 // Helper to format copper amount into Gold/Silver/Copper string
@@ -124,6 +129,28 @@ static bool ShouldShowMessage(Player* player)
     return true; // default show
 }
 
+// Helper to get player's minimum quality filter (0-6)
+static uint8 GetPlayerMinQualityFilter(Player* player)
+{
+    if (!player) return 0;
+    try {
+        return DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+    } catch (...) {
+        return 0; // default: loot everything
+    }
+}
+
+// Helper to check if an item meets the player's quality filter
+static bool ItemMeetsQualityFilter(uint32 itemId, uint8 minQuality)
+{
+    if (minQuality == 0) return true; // No filter, accept everything
+    
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+    if (!proto) return false;
+    
+    return proto->Quality >= minQuality;
+}
+
 static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 {
     if (!player || !creature) return false;
@@ -157,6 +184,18 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 static bool PerformAoELoot(Player* player, Creature* mainCreature)
 {
     if (!player || !mainCreature) return false;
+    
+    // Check if player has disabled AoE loot
+    try {
+        if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
+        {
+            LOG_DEBUG("scripts", "AoELoot: player {} has AoE loot disabled, skipping merge", player->GetGUID().ToString());
+            return false; // Let normal loot handling proceed
+        }
+    } catch (...) {
+        // If extensions not available, continue with AoE loot
+    }
+    
     Loot* mainLoot = &mainCreature->loot;
     if (!mainLoot) return false;
 
@@ -206,6 +245,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 
     // Limit merge slots (configurable; default 15 to avoid overflowing client 16-slot window)
     const size_t MAX_MERGE_SLOTS = sAoEConfig.maxMergeSlots;
+    
+    // Get player's minimum quality filter
+    uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
 
     size_t processed = 0;
     for (Creature* corpse : corpses)
@@ -232,6 +274,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         {
             if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
             if (!sAoEConfig.questItems && it.needs_quest) continue;
+            // Apply player's quality filter
+            if (!ItemMeetsQualityFilter(it.itemid, playerMinQuality)) continue;
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= MAX_MERGE_SLOTS) break;
             itemsToAdd.push_back(it);

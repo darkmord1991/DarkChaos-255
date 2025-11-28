@@ -147,6 +147,37 @@ namespace DCAoELootExt
         sPlayerPrefs[playerGuid].showMessages = value;
     }
 
+    // Exported function for ac_aoeloot.cpp to query if player has AoE loot enabled
+    bool IsPlayerAoELootEnabled(ObjectGuid playerGuid)
+    {
+        auto it = sPlayerPrefs.find(playerGuid);
+        if (it != sPlayerPrefs.end())
+            return it->second.aoeLootEnabled;
+        return true; // default: enabled
+    }
+
+    // Exported function to set player's AoE loot enabled preference
+    void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool value)
+    {
+        sPlayerPrefs[playerGuid].aoeLootEnabled = value;
+    }
+
+    // Exported function for ac_aoeloot.cpp to query player's minimum quality filter
+    uint8 GetPlayerMinQuality(ObjectGuid playerGuid)
+    {
+        auto it = sPlayerPrefs.find(playerGuid);
+        if (it != sPlayerPrefs.end())
+            return it->second.minQuality;
+        return 0; // default: loot everything (Poor and above)
+    }
+
+    // Exported function to set player's minimum quality filter
+    void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality)
+    {
+        if (quality > 6) quality = 6;
+        sPlayerPrefs[playerGuid].minQuality = quality;
+    }
+
     // ============================================================
     // Detailed Statistics
     // ============================================================

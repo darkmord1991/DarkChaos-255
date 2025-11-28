@@ -16,6 +16,7 @@ local state = {
     },
     sessionStart = GetTime(),
     lastPlayerPos = nil,
+    suppressAnnouncements = true,  -- Suppress announcements during initial load
 }
 addonTable.state = state
 Core.state = state
@@ -303,11 +304,13 @@ function Core:UpsertHotspot(record)
         Pins:Refresh()
     end
     if UI and UI.OnHotspotSpawn and not existing then
-        UI:OnHotspotSpawn(record.id, record)
+        -- Only announce if not during initial load and not restored from cache
+        local shouldAnnounce = not state.suppressAnnouncements and not record.restoredFromCache
+        UI:OnHotspotSpawn(record.id, record, shouldAnnounce)
     elseif UI and UI.OnHotspotsChanged then
         UI:OnHotspotsChanged()
     end
-    DebugPrint("Updated hotspot", record.id)
+    DebugPrint("Updated hotspot", record.id, existing and "(update)" or "(new)")
 end
 
 function Core:RemoveHotspot(id, reason)
@@ -348,6 +351,7 @@ function Core:RestoreCachedHotspots()
             local remain = data.expireEpoch - nowEpoch
             local restored = CloneTable(data)
             restored.expire = GetTime() + remain
+            restored.restoredFromCache = true  -- Mark as restored, not new
             state.hotspots[id] = restored
             revived = revived + 1
         else
@@ -360,6 +364,7 @@ function Core:RestoreCachedHotspots()
     if revived > 0 and UI and UI.OnHotspotsChanged then
         UI:OnHotspotsChanged()
     end
+    DebugPrint("Restored", revived, "cached hotspots")
 end
 
 function Core:PruneExpiredHotspots()
@@ -530,6 +535,20 @@ function Core:RequestHotspotList()
     self.lastHotspotRequest = GetTime()
     DebugPrint("Requesting hotspot list from server")
     SendChatMessage(".hotspot list", "SAY")
+    
+    -- Enable announcements after initial list load completes (with delay)
+    if state.suppressAnnouncements then
+        local enableFrame = CreateFrame("Frame")
+        enableFrame.elapsed = 0
+        enableFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = self.elapsed + elapsed
+            if self.elapsed >= 5 then  -- Wait 5 seconds after first request
+                self:SetScript("OnUpdate", nil)
+                state.suppressAnnouncements = false
+                DebugPrint("Announcements enabled")
+            end
+        end)
+    end
 end
 
 -- Track zone changes to refresh hotspots
