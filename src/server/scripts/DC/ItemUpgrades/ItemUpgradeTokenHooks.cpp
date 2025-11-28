@@ -245,15 +245,23 @@ namespace DarkChaos
                 // Award essence for achievement
                 uint32 essence_reward = ACHIEVEMENT_ESSENCE_REWARD;
 
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
-                    "WHERE player_guid = {} AND artifact_id = {}",
-                    player->GetGUID().GetCounter(), achievement->ID);
-                if (result && result->Fetch()[0].Get<uint32>() > 0)
+                try
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Achievement {} already claimed by player {}",
-                             achievement->ID, player->GetGUID().GetCounter());
-                    return;  // Already claimed
+                    QueryResult result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
+                        "WHERE player_guid = {} AND artifact_id = {}",
+                        player->GetGUID().GetCounter(), achievement->ID);
+                    if (result && result->Fetch()[0].Get<uint32>() > 0)
+                    {
+                        LOG_DEBUG("scripts", "ItemUpgrade: Achievement {} already claimed by player {}",
+                                 achievement->ID, player->GetGUID().GetCounter());
+                        return;  // Already claimed
+                    }
+                }
+                catch (...)
+                {
+                    // Table may not exist yet - skip artifact discovery check
+                    LOG_DEBUG("scripts", "ItemUpgrade: dc_player_artifact_discoveries table not found, skipping duplicate check");
                 }
 
                 // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
@@ -264,10 +272,18 @@ namespace DarkChaos
                 DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
 
                 // Mark as claimed (using 'event' as discovery_type for achievements)
-                CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
-                    "VALUES ({}, {}, 'event', NOW())",
-                    player->GetGUID().GetCounter(), achievement->ID);
+                try
+                {
+                    CharacterDatabase.Execute(
+                        "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
+                        "VALUES ({}, {}, 'event', NOW())",
+                        player->GetGUID().GetCounter(), achievement->ID);
+                }
+                catch (...)
+                {
+                    // Table may not exist - log but continue
+                    LOG_DEBUG("scripts", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries, table may not exist");
+                }
 
                 // Log transaction
                 std::ostringstream reason;

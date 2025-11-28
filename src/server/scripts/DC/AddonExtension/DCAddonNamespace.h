@@ -31,6 +31,8 @@
 #define DC_ADDON_NAMESPACE_H
 
 #include "Player.h"
+#include "Chat.h"
+#include "WorldPacket.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -903,21 +905,14 @@ namespace DCAddon
         
         void Send(Player* player) const
         {
-            // Use the same send mechanism as Message class
-            Message tempMsg(_module, _opcode);
-            std::string jsonStr = std::string(JSON_MARKER) + std::string(1, DELIMITER) + _json.Encode();
-            // Build manually
+            if (!player || !player->GetSession())
+                return;
+            
             std::string fullMsg = Build();
             
-            WorldPacket data(SMSG_MESSAGECHAT, fullMsg.length() + 50);
-            data << uint8(CHAT_MSG_ADDON);
-            data << int32(LANG_ADDON);
-            data << player->GetGUID();
-            data << uint32(0);
-            data << player->GetGUID();
-            data << uint32(fullMsg.length() + 1);
-            data << fullMsg;
-            data << uint8(0);
+            // Use proper ChatHandler to build addon message packet
+            WorldPacket data;
+            ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
             player->SendDirectMessage(&data);
         }
         

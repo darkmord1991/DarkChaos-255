@@ -644,16 +644,8 @@ void MythicSpectatorManager::SendRunSnapshot(Player* spectator, uint32 instanceI
 
 void MythicSpectatorManager::CreatePacket(WorldPacket& data, std::string const& message)
 {
-    std::size_t len = message.length();
-    data.Initialize(SMSG_MESSAGECHAT, 1 + 4 + 8 + 4 + 8 + 4 + 1 + len + 1);
-    data << uint8(CHAT_MSG_WHISPER);
-    data << uint32(LANG_ADDON);
-    data << uint64(0);
-    data << uint32(0);
-    data << uint64(0);
-    data << uint32(len + 1);
-    data << message;
-    data << uint8(0);
+    // Use proper ChatHandler to build addon message packet
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, nullptr, nullptr, message);
 }
 
 std::string MythicSpectatorManager::FormatRunData(SpectateableRun const& run, uint32 streamMode)

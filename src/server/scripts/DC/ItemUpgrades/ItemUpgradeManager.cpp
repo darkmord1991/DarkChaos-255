@@ -863,10 +863,18 @@ namespace DarkChaos
 
             bool DiscoverArtifact(uint32 player_guid, uint32 artifact_id) override
             {
-                CharacterDatabase.Execute(
-                    "INSERT IGNORE INTO dc_player_artifact_discoveries (player_guid, artifact_id) "
-                    "VALUES ({}, {})",
-                    player_guid, artifact_id);
+                try
+                {
+                    CharacterDatabase.Execute(
+                        "INSERT IGNORE INTO dc_player_artifact_discoveries (player_guid, artifact_id) "
+                        "VALUES ({}, {})",
+                        player_guid, artifact_id);
+                }
+                catch (...)
+                {
+                    LOG_DEBUG("scripts", "ItemUpgrade: dc_player_artifact_discoveries table not found");
+                    return false;
+                }
 
                 return true;
             }

@@ -52,16 +52,9 @@ namespace DCAddon
     
     static void SendRaw(Player* player, const std::string& msg)
     {
-        // Build SMSG_MESSAGECHAT packet for addon message
-        WorldPacket data(SMSG_MESSAGECHAT, msg.length() + 50);
-        data << uint8(CHAT_MSG_ADDON);
-        data << int32(LANG_ADDON);
-        data << player->GetGUID();
-        data << uint32(0);
-        data << player->GetGUID();
-        data << uint32(msg.length() + 1);
-        data << msg;
-        data << uint8(0);
+        // Build addon message using proper CHAT_MSG_WHISPER format
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, msg);
         player->SendDirectMessage(&data);
     }
 

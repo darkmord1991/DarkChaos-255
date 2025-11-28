@@ -490,16 +490,9 @@ private:
         if (!player || !player->GetSession())
             return;
 
-        WorldPacket data(SMSG_MESSAGECHAT, 100);
-        data << uint8(CHAT_MSG_WHISPER);
-        data << uint32(LANG_ADDON);
-        data << player->GetGUID();
-        data << uint32(0);                          // custom chat size
-        data << player->GetGUID();
-        data << uint32(message.size() + 1);
-        data << message;
-        data << uint8(0);
-        player->GetSession()->SendPacket(&data);
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
+        player->SendDirectMessage(&data);
     }
 };
 
