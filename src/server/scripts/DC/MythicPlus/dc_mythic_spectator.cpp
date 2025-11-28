@@ -16,14 +16,18 @@
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
 #include "Map.h"
+#include "MapMgr.h"
 #include "InstanceScript.h"
 #include "Log.h"
 #include "MythicPlusRunManager.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
+#include "Guild.h"
 
 #include <sstream>
 #include <random>
+
+using namespace Acore::ChatCommands;
 
 namespace DCMythicSpectator
 {
@@ -464,7 +468,7 @@ bool MythicSpectatorManager::StartSpectatingPlayer(Player* spectator, std::strin
     if (it == _activeRuns.end())
     {
         // Check via MythicPlusRunManager
-        if (!sMythicPlusRunManager.IsMythicPlusActive(target->GetMap()))
+        if (!sMythicRuns->IsMythicPlusActive(target->GetMap()))
         {
             ChatHandler(spectator->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r That player is not in a Mythic+ run.");
             return false;
@@ -696,13 +700,13 @@ void MythicSpectatorManager::Update(uint32 diff)
             continue;
 
         // Get state from MythicPlusRunManager
-        MythicPlusRunManager::InstanceState const* state = sMythicPlusRunManager.GetState(map);
+        MythicPlusRunManager::InstanceState const* state = sMythicRuns->GetRunState(map);
         if (state)
         {
             uint64 now = GameTime::GetGameTime().count();
             run.timerRemaining = (state->timerEndsAt > now) ? static_cast<uint32>(state->timerEndsAt - now) : 0;
             run.bossesKilled = state->bossesKilled;
-            run.bossesTotal = sMythicPlusRunManager.GetTotalBossesForDungeon(run.mapId);
+            run.bossesTotal = sMythicRuns->GetTotalBossesForDungeon(run.mapId);
             run.deaths = state->deaths;
         }
 
@@ -837,7 +841,7 @@ bool MythicSpectatorManager::ValidateInviteCode(std::string const& code, uint32&
     SpectatorInvite const& invite = it->second;
     
     // Check expiration
-    if (GameTime::GetGameTime().count() > invite.expiresAt)
+    if (static_cast<uint64>(GameTime::GetGameTime().count()) > invite.expiresAt)
         return false;
     
     // Check if run still exists
@@ -967,7 +971,7 @@ void MythicSpectatorManager::SyncHudToSpectator(Player* spectator, uint32 instan
     if (!map)
         return;
 
-    MythicPlusRunManager::InstanceState const* state = sMythicPlusRunManager.GetState(map);
+    MythicPlusRunManager::InstanceState const* state = sMythicRuns->GetRunState(map);
     if (!state)
         return;
 
@@ -1290,7 +1294,7 @@ public:
         if (!player)
             return true;
 
-        sMythicSpectator.JoinViaInviteLink(player, code);
+        sMythicSpectator.StartSpectatingByCode(player, code);
         return true;
     }
 
@@ -1312,7 +1316,7 @@ public:
         uint32 duration = durationMins.value_or(30); // Default 30 mins
         uint32 uses = maxUses.value_or(10); // Default 10 uses
 
-        std::string inviteCode = sMythicSpectator.GenerateInviteLink(instanceId, player->GetGUID().GetCounter(), duration, uses);
+        std::string inviteCode = sMythicSpectator.GenerateInviteCode(player, instanceId, uses);
         
         if (inviteCode.empty())
         {
@@ -1349,7 +1353,7 @@ public:
         uint32 instanceId = player->GetInstanceId();
         
         // Create invite code
-        std::string inviteCode = sMythicSpectator.GenerateInviteLink(instanceId, player->GetGUID().GetCounter(), 60, 50);
+        std::string inviteCode = sMythicSpectator.GenerateInviteCode(player, instanceId, 50);
         
         if (inviteCode.empty())
         {
@@ -1413,7 +1417,7 @@ public:
         }
 
         Field* fields = result->Fetch();
-        uint32 mapId = fields[0].Get<uint32>();
+        // uint32 mapId = fields[0].Get<uint32>(); // Reserved for future replay teleport
         std::string replayData = fields[1].Get<std::string>();
 
         if (replayData.empty())
@@ -1447,24 +1451,14 @@ class DCMythicSpectatorPlayerScript : public PlayerScript
 public:
     DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript") { }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         if (sMythicSpectator.IsSpectating(player))
             sMythicSpectator.StopSpectating(player);
     }
 
-    void OnMapChanged(Player* player) override
-    {
-        // If spectator gets teleported out somehow, clean up
-        if (sMythicSpectator.IsSpectating(player))
-        {
-            auto* state = sMythicSpectator.GetSpectatorState(player->GetGUID());
-            if (state && player->GetMapId() != state->targetMapId)
-            {
-                sMythicSpectator.StopSpectating(player);
-            }
-        }
-    }
+    // Note: Spectator map change cleanup is handled by the spectator system itself
+    // when teleportation occurs via StopSpectating/StartSpectating
 };
 
 // ============================================================

@@ -1607,6 +1607,77 @@ MythicSpectator.StreamModeEnabled = 1
 #
 MythicSpectator.DefaultStreamMode = 0
 
+# -------------------------------------------------------------------------
+# Invite Link System
+# -------------------------------------------------------------------------
+
+#
+#    MythicSpectator.InviteLinks.Enable
+#        Description: Enable invite link system for sharing spectate access
+#                     Players can generate invite codes to share with friends.
+#        Default:     1 (Enabled)
+#
+MythicSpectator.InviteLinks.Enable = 1
+
+#
+#    MythicSpectator.InviteLinks.ExpireSeconds
+#        Description: How long invite codes remain valid (in seconds)
+#        Default:     3600 (1 hour)
+#        Range:       60 - 86400 (1 minute to 24 hours)
+#
+MythicSpectator.InviteLinks.ExpireSeconds = 3600
+
+# -------------------------------------------------------------------------
+# Replay System
+# -------------------------------------------------------------------------
+
+#
+#    MythicSpectator.Replay.Enable
+#        Description: Enable replay recording for completed M+ runs
+#                     Allows players to watch replays of past runs.
+#        Default:     1 (Enabled)
+#
+MythicSpectator.Replay.Enable = 1
+
+#
+#    MythicSpectator.Replay.MaxStoredRuns
+#        Description: Maximum number of replays to store in database
+#                     Older replays are deleted when limit is reached.
+#        Default:     100
+#        Range:       10 - 1000
+#
+MythicSpectator.Replay.MaxStoredRuns = 100
+
+#
+#    MythicSpectator.Replay.RecordPositions
+#        Description: Record player positions during runs (higher storage cost)
+#                     Enables more detailed replay visualization.
+#        Default:     0 (Disabled - saves storage)
+#                     1 (Enabled - full position tracking)
+#
+MythicSpectator.Replay.RecordPositions = 0
+
+#
+#    MythicSpectator.Replay.RecordCombatLog
+#        Description: Record combat log events during runs
+#                     Enables damage/healing breakdown in replays.
+#        Default:     0 (Disabled - saves storage)
+#                     1 (Enabled - full combat log)
+#
+MythicSpectator.Replay.RecordCombatLog = 0
+
+# -------------------------------------------------------------------------
+# HUD Synchronization
+# -------------------------------------------------------------------------
+
+#
+#    MythicSpectator.SyncHudToSpectators
+#        Description: Sync M+ HUD worldstates to spectators
+#                     Spectators see the same timer/boss progress as players.
+#        Default:     1 (Enabled)
+#
+MythicSpectator.SyncHudToSpectators = 1
+
 
 ###########################################################################
 #

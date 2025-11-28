@@ -18,9 +18,12 @@
 #include "Map.h"
 #include "GameObject.h"
 #include "Log.h"
+#include "CommandScript.h"
 
 #include <unordered_map>
 #include <unordered_set>
+
+using namespace Acore::ChatCommands;
 
 namespace DCPhasedDuels
 {
@@ -317,7 +320,7 @@ class DCPhasedDuelsPlayerScript : public PlayerScript
 public:
     DCPhasedDuelsPlayerScript() : PlayerScript("DCPhasedDuelsPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!player || !sConfig.enabled)
             return;
@@ -354,7 +357,7 @@ public:
         }
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         if (player)
         {
@@ -363,7 +366,7 @@ public:
         }
     }
 
-    void OnDuelStart(Player* player1, Player* player2) override
+    void OnPlayerDuelStart(Player* player1, Player* player2) override
     {
         if (!sConfig.enabled || !player1 || !player2)
             return;
@@ -422,7 +425,7 @@ public:
                  player1->GetName(), player2->GetName(), freePhase);
     }
 
-    void OnDuelEnd(Player* winner, Player* loser, DuelCompleteType type) override
+    void OnPlayerDuelEnd(Player* winner, Player* loser, DuelCompleteType type) override
     {
         if (!sConfig.enabled || !winner || !loser)
             return;

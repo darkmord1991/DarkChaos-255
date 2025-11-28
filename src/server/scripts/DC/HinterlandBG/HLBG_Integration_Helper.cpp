@@ -151,7 +151,7 @@ private:
 		}
 	}
 
-	static void UpdatePlayerStatistics(uint32 instanceId, const std::string& winner)
+	static void UpdatePlayerStatistics(uint32 /*instanceId*/, const std::string& /*winner*/)
 	{
 		/* Legacy DB calls - table removed
 		if (winner == "Alliance")

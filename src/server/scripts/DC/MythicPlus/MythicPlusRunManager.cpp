@@ -2385,6 +2385,11 @@ bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, cons
     return state->bossesKilled >= totalBosses;
 }
 
+MythicPlusRunManager::InstanceState const* MythicPlusRunManager::GetRunState(Map* map) const
+{
+    return GetState(map);
+}
+
 bool MythicPlusRunManager::IsMythicPlusActive(Map* map) const
 {
     InstanceState const* state = GetState(map);

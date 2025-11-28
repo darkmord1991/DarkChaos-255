@@ -145,6 +145,9 @@ public:
     bool ShouldSuppressLoot(Creature* creature) const;
     bool ShouldSuppressReputation(Player* player) const;
 
+    // Spectator support - read-only state access
+    InstanceState const* GetRunState(Map* map) const;
+
 private:
     MythicPlusRunManager() = default;
 

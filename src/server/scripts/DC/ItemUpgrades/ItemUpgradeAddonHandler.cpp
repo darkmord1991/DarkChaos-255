@@ -192,7 +192,6 @@ private:
                 QueryResult heirloomResult = CharacterDatabase.Query(heirloomSql.c_str());
 
                 uint32 upgradeLevel = 0;
-                uint32 packageId = 0;
                 constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;
                 constexpr uint32 HEIRLOOM_TIER = 3;
 
@@ -200,7 +199,7 @@ private:
                 {
                     Field* fields = heirloomResult->Fetch();
                     upgradeLevel = fields[0].Get<uint32>();
-                    packageId = fields[1].Get<uint32>();
+                    // packageId from fields[1] no longer used
                 }
 
                 float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(

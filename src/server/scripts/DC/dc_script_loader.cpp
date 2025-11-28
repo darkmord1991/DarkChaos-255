@@ -16,74 +16,117 @@
  */
 
 
-void AddSC_ac_guard_npc(); // location: scripts\DC\AC\ac_guard_npc.cpp (C++ linkage)
-void AddSC_flighthelper_test(); // location: scripts\DC\AC\cs_flighthelper_test.cpp
-void AddSC_jadeforest_flightmaster(); // location: scripts\DC\Jadeforest\jadeforest_flightmaster.cpp
-void AddSC_jadeforest_guards(); // location: scripts\DC\Jadeforest\jadeforest_guards.cpp
-void AddSC_npc_thrall_hinterlandbg(); // location: scripts\DC\HinterlandBG\npc_thrall_warchief.cpp
-void AddSC_hinterlandbg_Varian_wrynn(); // location: scripts\DC\HinterlandBG\npc_Varian_hinterlandbg.cpp
-void AddSC_hlbg_commandscript(); // location: scripts\DC\HinterlandBG\hlbg_commandscript.cpp (C++ linkage)
-void AddSC_dc_login_announce(); // location: scripts\DC\dc_login_announce.cpp
-void AddSC_ac_quest_npc_800009(); // location: scripts\DC\AC\ac_quest_npc_800009.cpp
-void AddSC_aio_bridge(); // location: scripts\DC\AIO\aio_bridge.cpp
-void AddSC_flightmasters(); // location: scripts\DC\AC\ac_flightmasters.cpp
-void AddSC_hl_scoreboard(); // location: scripts\DC\HinterlandBG\HL_ScoreboardNPC.cpp
-void AddSC_hlbg_addon(); // location: scripts\DC\HinterlandBG\hlbg_addon.cpp
-void AddSC_npc_hinterlands_battlemaster(); // location: scripts\DC\HinterlandBG\npc_hinterlands_battlemaster.cpp
-// HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
-void AddSC_ac_hotspots(); // location: scripts\DC\AC\ac_hotspots.cpp
-void AddSC_spell_hotspot_buff_800001(); // location: scripts\DC\Hotspot\spell_hotspot_buff_800001.cpp
-void AddSC_ac_aoeloot(); // location: scripts\DC\ac_aoeloot.cpp
-void AddSC_dc_aoeloot_extensions(); // location: scripts\DC\dc_aoeloot_extensions.cpp
-void AddSC_heirloom_scaling_255(); // location: scripts\DC\heirloom_scaling_255.cpp
-void AddSC_go_heirloom_cache(); // location: scripts\DC\go_heirloom_cache.cpp
-void AddBattleForGilneasScripts(); // location: scripts\DC\Gilneas\BattlegroundBFG.cpp
-// GPS broadcaster removed - Using Eluna instead (Custom/Eluna scripts/DC_MapGPS.lua)
-void AddSC_cs_gps_test(); // location: scripts\DC\MapExtension\cs_gps_test.cpp
-void AddSC_PlayerScript_MapExtension(); // location: scripts\DC\MapExtension\PlayerScript_MapExtension.cpp
-void AddSC_dc_prestige_system(); // location: scripts\DC\dc_prestige_system.cpp
-void AddSC_dc_prestige_spells(); // location: scripts\DC\dc_prestige_spells.cpp
-void AddSC_dc_prestige_alt_bonus(); // location: scripts\DC\Prestige\dc_prestige_alt_bonus.cpp
-void AddSC_dc_prestige_challenges(); // location: scripts\DC\Prestige\dc_prestige_challenges.cpp
-void AddSC_spell_prestige_alt_bonus_aura(); // location: scripts\DC\Prestige\spell_prestige_alt_bonus_aura.cpp
-void AddSC_dc_challenge_modes(); // location: scripts\DC\dc_challenge_modes_customized.cpp
-void AddSC_spell_challenge_mode_auras(); // location: scripts\DC\ChallengeMode\spell_challenge_mode_auras.cpp
-void AddSC_dc_achievements(); // location: scripts\DC\Achievements\dc_achievements.cpp
-void AddSC_DungeonQuestSystem(); // location: scripts\DC\DungeonQuests\DungeonQuestSystem.cpp
-void AddSC_DungeonQuestPhasing(); // location: scripts\DC\DungeonQuests\DungeonQuestPhasing.cpp
-void AddSC_DungeonQuestMasterFollower(); // location: scripts\DC\DungeonQuests\DungeonQuestMasterFollower.cpp
-void AddSC_npc_dungeon_quest_master(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_master.cpp
-void AddSC_npc_dungeon_quest_daily_weekly(); // location: scripts\DC\DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
-void AddItemUpgradeGMCommandScript();  // GM admin commands - renamed from AddItemUpgradeCommandScript
-void AddSC_ItemUpgradeMechanicsImpl(); // Core mechanics implementation (must load FIRST)
-void AddSC_ItemUpgradeAddonHandler();  // Addon communication handler - renamed from AddSC_ItemUpgradeCommands
-// ItemUpgrade addon communication moved to Eluna: Custom/Eluna scripts/itemupgrade_communication.lua
-void AddSC_ItemUpgradeVendor(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
-void AddSC_ItemUpgradeCurator(); // location: scripts\DC\ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeProgression(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProgressionImpl.cpp
-void AddSC_ItemUpgradeSeasonal(); // location: scripts\DC\ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
-void AddSC_ItemUpgradeAdvanced(); // location: scripts\DC\ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
-void AddSC_ItemUpgradeTransmutation(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
-void AddSC_ItemUpgradeTokenHooks(); // location: scripts\DC\ItemUpgrades\ItemUpgradeTokenHooks.cpp
-void AddSC_ItemUpgradeProcScaling(); // location: scripts\DC\ItemUpgrades\ItemUpgradeProcScaling.cpp
-void AddSC_ItemUpgradeStatApplication(); // location: scripts\DC\ItemUpgrades\ItemUpgradeStatApplication.cpp
-void AddMythicPlusScripts(); // location: scripts\DC\MythicPlus\mythic_plus_loader.cpp
-void AddSC_dc_mythic_spectator(); // location: scripts\DC\MythicPlus\dc_mythic_spectator.cpp
-void AddSC_dc_phased_duels(); // location: scripts\DC\PhasedDuels\dc_phased_duels.cpp
-void AddSC_SeasonalRewardScripts(); // location: scripts\DC\Seasons\SeasonalRewardScripts.cpp
-void AddSC_SeasonalRewardCommands(); // location: scripts\DC\Seasons\SeasonalRewardCommands.cpp
+// ═══════════════════════════════════════════════════════════════════════════
+// FORWARD DECLARATIONS - DC Script Functions
+// ═══════════════════════════════════════════════════════════════════════════
+
+// --- Core AC Scripts ---
+void AddSC_ac_guard_npc();                    // AC\ac_guard_npc.cpp
+void AddSC_flighthelper_test();               // AC\cs_flighthelper_test.cpp
+void AddSC_dc_login_announce();               // dc_login_announce.cpp
+void AddSC_ac_quest_npc_800009();             // AC\ac_quest_npc_800009.cpp
+void AddSC_aio_bridge();                      // AIO\aio_bridge.cpp
+void AddSC_flightmasters();                   // AC\ac_flightmasters.cpp
+
+// --- Jadeforest Zone ---
+void AddSC_jadeforest_flightmaster();         // Jadeforest\jadeforest_flightmaster.cpp
+void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cpp
+
+// --- Map Extension ---
+void AddSC_cs_gps_test();                     // MapExtension\cs_gps_test.cpp
+void AddSC_PlayerScript_MapExtension();       // MapExtension\PlayerScript_MapExtension.cpp
+
+// --- Heirloom System ---
+void AddSC_heirloom_scaling_255();            // heirloom_scaling_255.cpp
+void AddSC_go_heirloom_cache();               // go_heirloom_cache.cpp
+
+// --- AoE Loot System ---
+void AddSC_ac_aoeloot();                      // ac_aoeloot.cpp
+void AddSC_dc_aoeloot_extensions();           // dc_aoeloot_extensions.cpp
+
+// --- Hotspots System ---
+void AddSC_ac_hotspots();                     // Hotspot\ac_hotspots.cpp
+void AddSC_spell_hotspot_buff_800001();       // Hotspot\spell_hotspot_buff_800001.cpp
+
+// --- Battle for Gilneas ---
+void AddBattleForGilneasScripts();            // Gilneas\BattlegroundBFG.cpp
+
+// --- Hinterland Battleground System ---
+void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\npc_thrall_warchief.cpp
+void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\npc_Varian_hinterlandbg.cpp
+void AddSC_hlbg_commandscript();              // Commands\cs_hl_bg.cpp (Note: in Commands folder)
+void AddSC_hl_scoreboard();                   // HinterlandBG\HL_ScoreboardNPC.cpp
+void AddSC_hlbg_addon();                      // HinterlandBG\hlbg_addon.cpp
+void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\npc_hinterlands_battlemaster.cpp
+void AddSC_hlbg_native_broadcast();           // HinterlandBG\hlbg_native_broadcast.cpp
+void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_registration.cpp
+// Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
+
+// --- Prestige System ---
+void AddSC_dc_prestige_system();              // Prestige\dc_prestige_system.cpp
+void AddSC_dc_prestige_spells();              // Prestige\dc_prestige_spells.cpp
+void AddSC_dc_prestige_alt_bonus();           // Prestige\dc_prestige_alt_bonus.cpp
+void AddSC_dc_prestige_challenges();          // Prestige\dc_prestige_challenges.cpp
+void AddSC_spell_prestige_alt_bonus_aura();   // Prestige\spell_prestige_alt_bonus_aura.cpp
+
+// --- Challenge Mode System ---
+void AddSC_dc_challenge_modes();              // ChallengeMode\dc_challenge_modes_customized.cpp
+void AddSC_spell_challenge_mode_auras();      // ChallengeMode\spell_challenge_mode_auras.cpp
+
+// --- Custom Achievements ---
+void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
+
+// --- Item Upgrade System ---
+void AddItemUpgradeGMCommandScript();         // ItemUpgrades\ItemUpgradeGMCommands.cpp
+void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
+void AddSC_ItemUpgradeMechanicsCommands();    // ItemUpgrades\ItemUpgradeMechanicsCommands.cpp
+void AddSC_ItemUpgradeAddonHandler();         // ItemUpgrades\ItemUpgradeAddonHandler.cpp
+void AddSC_ItemUpgradeVendor();               // ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
+void AddSC_ItemUpgradeCurator();              // ItemUpgrades\ItemUpgradeNPC_Curator.cpp
+void AddSC_ItemUpgradeProgression();          // ItemUpgrades\ItemUpgradeProgressionImpl.cpp
+void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
+void AddSC_ItemUpgradeAdvanced();             // ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
+void AddSC_ItemUpgradeTransmutation();        // ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
+void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades\ItemUpgradeTokenHooks.cpp
+void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcScaling.cpp
+void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
+void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
+
+// --- Mythic+ Dungeon System ---
+void AddMythicPlusScripts();                  // MythicPlus\mythic_plus_loader.cpp
+void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.cpp
+
+// --- Seasonal Reward System ---
+void AddSC_SeasonalRewardScripts();           // Seasons\SeasonalRewardScripts.cpp
+void AddSC_SeasonalRewardCommands();          // Seasons\SeasonalRewardCommands.cpp
+
+// --- Phased Duels System ---
+void AddSC_dc_phased_duels();                 // PhasedDuels\dc_phased_duels.cpp
+
+// --- Dungeon Quest System (Loaded Last) ---
+void AddSC_DungeonQuestSystem();              // DungeonQuests\DungeonQuestSystem.cpp
+void AddSC_DungeonQuestPhasing();             // DungeonQuests\DungeonQuestPhasing.cpp
+void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\DungeonQuestMasterFollower.cpp
+void AddSC_npc_dungeon_quest_master();        // DungeonQuests\npc_dungeon_quest_master.cpp
+void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
 {
-    // Core AC Scripts
+    // ═══════════════════════════════════════════════════════════════════════
+    // CORE AC SCRIPTS
+    // ═══════════════════════════════════════════════════════════════════════
     AddSC_ac_guard_npc();
     AddSC_flighthelper_test();
     AddSC_dc_login_announce();
     AddSC_ac_quest_npc_800009();
+    AddSC_aio_bridge();
+    AddSC_flightmasters();
 
-    // Jadeforest Zone
+    // ═══════════════════════════════════════════════════════════════════════
+    // JADEFOREST ZONE
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Jadeforest Zone Scripts");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -96,10 +139,22 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Jadeforest");
     }
-    AddSC_aio_bridge();
-    AddSC_flightmasters();
 
-    // AoE Loot System (Base + Extensions)
+    // ═══════════════════════════════════════════════════════════════════════
+    // MAP EXTENSION & GPS
+    // ═══════════════════════════════════════════════════════════════════════
+    AddSC_cs_gps_test();
+    AddSC_PlayerScript_MapExtension();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HEIRLOOM SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
+    AddSC_heirloom_scaling_255();
+    AddSC_go_heirloom_cache();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // AOE LOOT SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> AoE Loot System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -113,13 +168,30 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in AoE Loot");
     }
 
-    AddSC_heirloom_scaling_255();
-    AddSC_go_heirloom_cache();
-    AddBattleForGilneasScripts();
-    AddSC_cs_gps_test();
-    AddSC_PlayerScript_MapExtension();
+    // ═══════════════════════════════════════════════════════════════════════
+    // HOTSPOTS SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Hotspots System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_ac_hotspots();
+        AddSC_spell_hotspot_buff_800001();
+        LOG_INFO("scripts", ">>   ✓ Hotspots detection, markers, and spell buffs loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hotspots System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Hotspots System");
+    }
 
-    // Hinterland BG System
+    // ═══════════════════════════════════════════════════════════════════════
+    // BATTLE FOR GILNEAS
+    // ═══════════════════════════════════════════════════════════════════════
+    AddBattleForGilneasScripts();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HINTERLAND BATTLEGROUND SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Hinterland Battleground System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -130,14 +202,18 @@ void AddDCScripts()
         AddSC_hl_scoreboard();
         AddSC_hlbg_addon();
         AddSC_npc_hinterlands_battlemaster();
-        LOG_INFO("scripts", ">>   ✓ Hinterland BG NPCs and commands loaded");
+        AddSC_hlbg_native_broadcast();
+        AddSC_outdoorpvp_hl_dc();
+        LOG_INFO("scripts", ">>   ✓ Hinterland BG NPCs, commands, and OutdoorPvP loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hinterland BG: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Hinterland BG");
     }
 
-    // Challenge Mode System
+    // ═══════════════════════════════════════════════════════════════════════
+    // CHALLENGE MODE SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Challenge Mode System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -151,7 +227,9 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in Challenge Mode");
     }
 
-    // Prestige System
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRESTIGE SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Prestige System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -168,38 +246,9 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in Prestige System");
     }
 
-    // Dungeon Quest System
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Dungeon Quest System v3.0 (Enhanced UX + AC Standards)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    try {
-        AddSC_DungeonQuestSystem();
-        AddSC_DungeonQuestPhasing();
-        AddSC_DungeonQuestMasterFollower();
-        AddSC_npc_dungeon_quest_master();
-        AddSC_npc_dungeon_quest_daily_weekly();
-        LOG_INFO("scripts", ">>   ✓ Dungeon quest mechanics and NPCs loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Quest System");
-    }
-
-    // Hotspots System
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Hotspots System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    try {
-        AddSC_ac_hotspots();
-        AddSC_spell_hotspot_buff_800001();
-        LOG_INFO("scripts", ">>   ✓ Hotspots detection, markers, and spell buffs loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hotspots System: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in Hotspots System");
-    }
-
-    // Custom Achievements System
+    // ═══════════════════════════════════════════════════════════════════════
+    // CUSTOM ACHIEVEMENTS SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Custom Achievements System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -212,7 +261,9 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in Custom Achievements");
     }
 
-    // Item Upgrade System (Loaded Last)
+    // ═══════════════════════════════════════════════════════════════════════
+    // ITEM UPGRADE SYSTEM v2.0
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> DarkChaos Item Upgrade System v2.0 (Hybrid Scaling)");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -226,7 +277,7 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
 
     try {
-        AddSC_ItemUpgradeMechanicsImpl();     // Core mechanics (MUST load first - provides static functions)
+        AddSC_ItemUpgradeMechanicsImpl();
         LOG_INFO("scripts", ">>   ✓ Core mechanics loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in core mechanics: {}", e.what());
@@ -235,7 +286,16 @@ void AddDCScripts()
     }
 
     try {
-        AddItemUpgradeGMCommandScript();      // GM commands (.upgrade token add/remove/set)
+        AddSC_ItemUpgradeMechanicsCommands();
+        LOG_INFO("scripts", ">>   ✓ Mechanics commands loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics commands: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in mechanics commands");
+    }
+
+    try {
+        AddItemUpgradeGMCommandScript();
         LOG_INFO("scripts", ">>   ✓ GM commands loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GM commands: {}", e.what());
@@ -244,7 +304,7 @@ void AddDCScripts()
     }
 
     try {
-        AddSC_ItemUpgradeAddonHandler();      // Addon communication (.dcupgrade init/query/upgrade)
+        AddSC_ItemUpgradeAddonHandler();
         LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in addon handler: {}", e.what());
@@ -333,11 +393,22 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in stat application");
     }
 
+    try {
+        AddSC_ItemUpgradeQuestRewardHook();
+        LOG_INFO("scripts", ">>   ✓ Quest reward hooks loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in quest reward hooks: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in quest reward hooks");
+    }
+
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Item Upgrade System: All modules loaded successfully");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 
-    // Mythic+ Dungeon System
+    // ═══════════════════════════════════════════════════════════════════════
+    // MYTHIC+ DUNGEON SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Mythic+ Dungeon Scaling System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -349,6 +420,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Mythic+ System");
     }
+
     try {
         AddSC_dc_mythic_spectator();
         LOG_INFO("scripts", ">>   ✓ Mythic+ Spectator system loaded");
@@ -359,7 +431,9 @@ void AddDCScripts()
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 
-    // Seasonal Reward System
+    // ═══════════════════════════════════════════════════════════════════════
+    // SEASONAL REWARD SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> DC Seasonal Reward System (C++ Core)");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -379,6 +453,7 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal scripts");
     }
+
     try {
         AddSC_SeasonalRewardCommands();
         LOG_INFO("scripts", ">>   ✓ Seasonal admin commands loaded (.season)");
@@ -389,11 +464,11 @@ void AddDCScripts()
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Seasonal Reward System: All modules loaded successfully");
-    LOG_INFO("scripts", ">> Client Addon: DC-Seasons (Interface/AddOns/DC-Seasons/)");
-    LOG_INFO("scripts", ">> Eluna Bridge: Custom/Eluna scripts/DC_Seasons_AIO.lua");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 
-    // Phased Duels System
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASED DUELS SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts", ">> Phased Duels System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
@@ -405,5 +480,32 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Phased Duels");
     }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DUNGEON QUEST SYSTEM (Loaded Last)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Dungeon Quest System v3.0 (Enhanced UX + AC Standards)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_DungeonQuestSystem();
+        AddSC_DungeonQuestPhasing();
+        AddSC_DungeonQuestMasterFollower();
+        AddSC_npc_dungeon_quest_master();
+        AddSC_npc_dungeon_quest_daily_weekly();
+        LOG_INFO("scripts", ">>   ✓ Dungeon quest mechanics and NPCs loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Quest System");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ALL DC SCRIPTS LOADED
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> DarkChaos Scripts: All systems loaded successfully");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }

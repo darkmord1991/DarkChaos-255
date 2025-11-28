@@ -16,6 +16,7 @@
 #include "Creature.h"
 #include "Config.h"
 #include "Chat.h"
+#include "CommandScript.h"
 #include "ObjectAccessor.h"
 #include "WorldPacket.h"
 #include "GameTime.h"
@@ -24,9 +25,13 @@
 #include "Log.h"
 #include "Item.h"
 #include "Spell.h"
+#include "DatabaseEnv.h"
 
 #include <unordered_map>
 #include <unordered_set>
+#include <sstream>
+
+using namespace Acore::ChatCommands;
 
 namespace DCAoELootExt
 {
@@ -192,7 +197,7 @@ namespace DCAoELootExt
         return proto->ItemLevel > equipped->GetTemplate()->ItemLevel;
     }
 
-    bool ShouldAutoVendorItem(Player* player, uint32 itemId)
+    bool ShouldAutoVendorItem(Player* /*player*/, uint32 itemId)
     {
         if (!sConfig.autoVendorPoorItems)
             return false;
@@ -296,7 +301,7 @@ class DCAoELootExtPlayerScript : public PlayerScript
 public:
     DCAoELootExtPlayerScript() : PlayerScript("DCAoELootExtPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!player || !sConfig.enabled)
             return;
@@ -352,7 +357,7 @@ public:
         }
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         if (!player)
             return;
@@ -405,98 +410,6 @@ public:
                 sDetailedStats.erase(statsIt);
             }
         }
-    }
-
-    // Handle addon messages from DC_AoELoot_Settings client addon
-    bool OnAddonMessage(Player* player, uint32 type, std::string const& message, 
-                        Player* receiver, std::string const& prefix) override
-    {
-        if (prefix != "DCAOE" || !player)
-            return false;
-
-        // Parse message type and data
-        std::string msgType = message;
-        std::string data;
-        size_t colonPos = message.find(':');
-        if (colonPos != std::string::npos)
-        {
-            msgType = message.substr(0, colonPos);
-            data = message.substr(colonPos + 1);
-        }
-
-        if (msgType == "GET_SETTINGS")
-        {
-            // Send current settings to client
-            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-            std::ostringstream ss;
-            ss << "SETTINGS:" 
-               << (prefs.aoeLootEnabled ? 1 : 0) << ","
-               << uint32(prefs.minQuality) << ","
-               << (prefs.autoSkin ? 1 : 0) << ","
-               << (prefs.smartLootEnabled ? 1 : 0) << ","
-               << (prefs.autoVendorPoor ? 1 : 0) << ","
-               << prefs.lootRange;
-            SendAddonMessage(player, ss.str());
-            return true;
-        }
-        else if (msgType == "SAVE_SETTINGS" && !data.empty())
-        {
-            // Parse: enabled,minQuality,autoSkin,smartLoot,autoVendorPoor,range
-            std::vector<std::string> parts;
-            std::stringstream dataStream(data);
-            std::string part;
-            while (std::getline(dataStream, part, ','))
-                parts.push_back(part);
-
-            if (parts.size() >= 6)
-            {
-                PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-                prefs.aoeLootEnabled = std::stoi(parts[0]) == 1;
-                prefs.minQuality = static_cast<uint8>(std::stoi(parts[1]));
-                prefs.autoSkin = std::stoi(parts[2]) == 1;
-                prefs.smartLootEnabled = std::stoi(parts[3]) == 1;
-                prefs.autoVendorPoor = std::stoi(parts[4]) == 1;
-                prefs.lootRange = static_cast<float>(std::stoi(parts[5]));
-
-                // Save to database immediately
-                CharacterDatabase.Execute(
-                    "REPLACE INTO dc_aoeloot_preferences "
-                    "(player_guid, aoe_enabled, min_quality, auto_skin, smart_loot, auto_vendor_poor) "
-                    "VALUES ({}, {}, {}, {}, {}, {})",
-                    player->GetGUID().GetCounter(),
-                    prefs.aoeLootEnabled ? 1 : 0,
-                    prefs.minQuality,
-                    prefs.autoSkin ? 1 : 0,
-                    prefs.smartLootEnabled ? 1 : 0,
-                    prefs.autoVendorPoor ? 1 : 0);
-
-                SendAddonMessage(player, "SAVED");
-            }
-            return true;
-        }
-        else if (msgType == "GET_STATS")
-        {
-            // Send stats to client
-            auto it = sDetailedStats.find(player->GetGUID());
-            if (it != sDetailedStats.end())
-            {
-                DetailedLootStats& stats = it->second;
-                std::ostringstream ss;
-                ss << "STATS:" 
-                   << stats.totalItemsLooted << ","
-                   << stats.totalGoldLooted << ","
-                   << stats.goldFromVendor << ","
-                   << stats.upgradesFound;
-                SendAddonMessage(player, ss.str());
-            }
-            else
-            {
-                SendAddonMessage(player, "STATS:0,0,0,0");
-            }
-            return true;
-        }
-
-        return false;
     }
 
 private:
