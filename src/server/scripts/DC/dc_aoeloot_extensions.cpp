@@ -168,7 +168,11 @@ namespace DCAoELootExt
     {
         auto it = sPlayerPrefs.find(playerGuid);
         if (it != sPlayerPrefs.end())
+        {
+            LOG_INFO("scripts", "DCAoELootExt: GetPlayerMinQuality for {} returning {}", playerGuid.ToString(), it->second.minQuality);
             return it->second.minQuality;
+        }
+        LOG_INFO("scripts", "DCAoELootExt: GetPlayerMinQuality for {} - no prefs found, returning 0", playerGuid.ToString());
         return 0; // default: loot everything (Poor and above)
     }
 

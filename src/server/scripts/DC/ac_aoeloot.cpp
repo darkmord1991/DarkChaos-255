@@ -224,9 +224,33 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         LOG_DEBUG("scripts", "AoELoot: nearby corpse GUID={} entry={} loot_items={} quest_items={} gold={}", c->GetGUID().ToString(), c->GetEntry(), c->loot.items.size(), c->loot.quest_items.size(), c->loot.gold);
     }
 
+    // Get player's minimum quality filter early - we need it for single corpse handling too
+    uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
+
     if (nearby.empty())
     {
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
+        
+        // If quality filter is active, we must handle the loot ourselves to apply filtering
+        if (playerMinQuality > 0)
+        {
+            // Filter the main loot
+            mainLoot->items.erase(
+                std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
+                    [playerMinQuality](const LootItem& item) {
+                        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.itemid);
+                        return proto && proto->Quality < playerMinQuality;
+                    }),
+                mainLoot->items.end()
+            );
+            LOG_INFO("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain", 
+                     playerMinQuality, mainLoot->items.size());
+            
+            // Send the filtered loot to the player
+            player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+            return true; // We handled it
+        }
+        
         if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
         return false;
@@ -247,19 +271,27 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // Limit merge slots (configurable; default 15 to avoid overflowing client 16-slot window)
     const size_t MAX_MERGE_SLOTS = sAoEConfig.maxMergeSlots;
     
-    // Get player's minimum quality filter
-    uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
+    // playerMinQuality already declared above
+    LOG_INFO("scripts", "AoELoot: Player {} has minQuality filter set to {}", player->GetName(), playerMinQuality);
 
     // Filter main loot items based on quality (remove items below minimum quality)
     if (playerMinQuality > 0)
     {
+        size_t beforeCount = mainLoot->items.size();
         mainLoot->items.erase(
             std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
-                [playerMinQuality](const LootItem& item) {
-                    return !ItemMeetsQualityFilter(item.itemid, playerMinQuality);
+                [playerMinQuality, player](const LootItem& item) {
+                    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.itemid);
+                    bool shouldRemove = proto && proto->Quality < playerMinQuality;
+                    if (shouldRemove) {
+                        LOG_INFO("scripts", "AoELoot: Filtering out item {} (quality {}) for player {} (min quality {})",
+                            item.itemid, proto ? proto->Quality : 0, player->GetName(), playerMinQuality);
+                    }
+                    return shouldRemove;
                 }),
             mainLoot->items.end()
         );
+        LOG_INFO("scripts", "AoELoot: Filtered main loot from {} to {} items", beforeCount, mainLoot->items.size());
     }
 
     size_t processed = 0;
