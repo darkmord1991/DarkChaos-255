@@ -534,7 +534,7 @@ class gobject_challenge_modes : public GameObjectScript
 public:
     gobject_challenge_modes() : GameObjectScript("gobject_challenge_modes") { }
 
-    bool OnGossipHello(Player* player, GameObject* /*go*/) override
+    bool OnGossipHello(Player* player, GameObject* go) override
     {
         if (!sChallengeModes->enabled())
             return false;
@@ -619,7 +619,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
 
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, player->GetGUID());
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
         return true;
     }
 

@@ -3801,6 +3801,16 @@ ItemUpgrade.Enable = 1
 #
 ItemUpgrade.MaxUpgradeLevel = 15
 
+#
+#    ItemUpgrade.DebugToSay
+#        Description: Send debug messages to player via Say channel
+#                     Useful for troubleshooting addon communication.
+#                     When enabled, outputs detailed protocol messages.
+#        Default:     0 (Disabled)
+#                     1 (Enabled - debug messages visible in chat)
+#
+ItemUpgrade.DebugToSay = 0
+
 # -------------------------------------------------------------------------
 # Currency & Cost Configuration
 # -------------------------------------------------------------------------
