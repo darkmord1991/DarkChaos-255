@@ -575,13 +575,69 @@ public:
 
         if (packet.GetOpcode() == CMSG_AUTOSTORE_LOOT_ITEM)
         {
-            if (session->GetPlayer()) 
+            Player* player = session->GetPlayer();
+            if (!player) return true;
+            
+            // Record timestamp for auto-loot detection
+            sPlayerAutoStoreTimestamp[player->GetGUID()] = GameTime::GetGameTime().count();
+            
+            // Check if player has a quality filter active
+            uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
+            if (playerMinQuality > 0)
             {
-                auto guid = session->GetPlayer()->GetGUID();
-                sPlayerAutoStoreTimestamp[guid] = GameTime::GetGameTime().count();
-                LOG_DEBUG("scripts", "AoELoot: recorded autostore opcode for player {}", guid.ToString());
+                // Read the loot slot from the packet
+                packet.rpos(0);
+                uint8 lootSlot;
+                packet >> lootSlot;
+                packet.rpos(0);
+                
+                // Get the player's current loot source
+                Loot* loot = nullptr;
+                ObjectGuid lootGuid = player->GetLootGUID();
+                
+                if (lootGuid.IsCreatureOrVehicle())
+                {
+                    if (Creature* creature = player->GetMap()->GetCreature(lootGuid))
+                        loot = &creature->loot;
+                }
+                else if (lootGuid.IsCorpse())
+                {
+                    if (Corpse* corpse = ObjectAccessor::GetCorpse(*player, lootGuid))
+                        loot = &corpse->loot;
+                }
+                
+                if (loot)
+                {
+                    // Check if it's a regular item or quest item slot
+                    uint32 itemId = 0;
+                    if (lootSlot < loot->items.size())
+                    {
+                        itemId = loot->items[lootSlot].itemid;
+                    }
+                    else
+                    {
+                        // Quest items are after regular items in the slot numbering
+                        uint8 questSlot = lootSlot - loot->items.size();
+                        if (questSlot < loot->quest_items.size())
+                        {
+                            // Quest items bypass quality filter
+                            return true;
+                        }
+                    }
+                    
+                    if (itemId > 0 && !ItemMeetsQualityFilter(itemId, playerMinQuality))
+                    {
+                        // Block this item from being looted - doesn't meet quality filter
+                        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+                        LOG_INFO("scripts", "AoELoot: Blocking loot of item {} '{}' (quality {} < min {}) for player {}", 
+                                 itemId, proto ? proto->Name1 : "Unknown", proto ? proto->Quality : 0, 
+                                 playerMinQuality, player->GetName());
+                        return false; // Block the packet silently - item stays in loot window
+                    }
+                }
             }
-            return true;
+            
+            return true; // Allow the loot
         }
 
         if (packet.GetOpcode() != CMSG_LOOT) return true;

@@ -1033,7 +1033,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=9000127 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9000130 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1601,6 +1601,54 @@ CREATE TABLE IF NOT EXISTS `currencytypes_dbc` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_aoeloot_blacklist
+CREATE TABLE IF NOT EXISTS `dc_aoeloot_blacklist` (
+  `item_id` int unsigned NOT NULL,
+  `reason` varchar(100) NOT NULL DEFAULT 'Blacklisted',
+  PRIMARY KEY (`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Item Blacklist';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_aoeloot_config
+CREATE TABLE IF NOT EXISTS `dc_aoeloot_config` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `config_key` varchar(64) NOT NULL,
+  `config_value` varchar(255) NOT NULL,
+  `description` text,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_key` (`config_key`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Global Configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_aoeloot_smart_categories
+CREATE TABLE IF NOT EXISTS `dc_aoeloot_smart_categories` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category_name` varchar(64) NOT NULL,
+  `stat_primary` varchar(32) NOT NULL COMMENT 'e.g., INTELLECT, STRENGTH, AGILITY',
+  `stat_secondary` varchar(64) DEFAULT NULL COMMENT 'Comma-separated secondary stats',
+  `class_mask` int unsigned NOT NULL DEFAULT '0' COMMENT 'Class bitmask, 0 = all',
+  `spec_id` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0 = any spec',
+  PRIMARY KEY (`id`),
+  KEY `idx_class` (`class_mask`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Smart Loot Categories';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_aoeloot_zone_modifiers
+CREATE TABLE IF NOT EXISTS `dc_aoeloot_zone_modifiers` (
+  `zone_id` int unsigned NOT NULL,
+  `zone_name` varchar(64) NOT NULL,
+  `gold_multiplier` float NOT NULL DEFAULT '1',
+  `item_quality_bonus` tinyint NOT NULL DEFAULT '0' COMMENT 'Added to quality roll',
+  `mythic_bonus_multiplier` float NOT NULL DEFAULT '1',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`zone_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Zone Modifiers';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_chaos_artifact_items
 CREATE TABLE IF NOT EXISTS `dc_chaos_artifact_items` (
   `item_id` int unsigned NOT NULL,
@@ -1646,6 +1694,43 @@ CREATE TABLE IF NOT EXISTS `dc_difficulty_config` (
   PRIMARY KEY (`difficulty_id`),
   UNIQUE KEY `difficulty_name` (`difficulty_name`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='v4.0 - Difficulty tier configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_duel_tournament_npcs
+CREATE TABLE IF NOT EXISTS `dc_duel_tournament_npcs` (
+  `entry` int unsigned NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `subname` varchar(100) DEFAULT 'Tournament Master',
+  `tournament_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Standard, 1=1v1, 2=Class-only',
+  `min_level` tinyint unsigned NOT NULL DEFAULT '80',
+  `entry_fee` int unsigned NOT NULL DEFAULT '0' COMMENT 'In copper',
+  `reward_item` int unsigned NOT NULL DEFAULT '0',
+  `reward_count` int unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Tournament NPCs';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_duel_zones
+CREATE TABLE IF NOT EXISTS `dc_duel_zones` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `zone_id` int unsigned NOT NULL,
+  `area_id` int unsigned NOT NULL DEFAULT '0',
+  `name` varchar(64) NOT NULL,
+  `description` text,
+  `min_level` tinyint unsigned NOT NULL DEFAULT '1',
+  `max_level` tinyint unsigned NOT NULL DEFAULT '255',
+  `allowed_classes` int unsigned NOT NULL DEFAULT '0' COMMENT 'Bitmask, 0 = all classes',
+  `phase_id_start` int unsigned NOT NULL DEFAULT '100000' COMMENT 'Starting phase ID for this zone',
+  `phase_id_end` int unsigned NOT NULL DEFAULT '199999' COMMENT 'Ending phase ID for this zone',
+  `rewards_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `honor_multiplier` float NOT NULL DEFAULT '1',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_zone_area` (`zone_id`,`area_id`),
+  KEY `idx_enabled` (`enabled`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Zone Configuration';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1720,27 +1805,89 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_setup` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`map_id`),
   KEY `season_lock` (`season_lock`),
-  CONSTRAINT `dc_dungeon_setup_ibfk_1` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE,
-  CONSTRAINT `dc_dungeon_setup_ibfk_2` FOREIGN KEY (`season_lock`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE SET NULL
+  CONSTRAINT `dc_dungeon_setup_ibfk_1` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified dungeon availability toggles for Normal/Heroic/Mythic/Mythic+';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_heirloom_enchant_mapping
+CREATE TABLE IF NOT EXISTS `dc_heirloom_enchant_mapping` (
+  `package_id` tinyint unsigned NOT NULL,
+  `level` tinyint unsigned NOT NULL,
+  `enchant_id` int unsigned NOT NULL COMMENT 'SpellItemEnchantment.dbc ID',
+  `stat_1_value` int unsigned NOT NULL,
+  `stat_2_value` int unsigned NOT NULL,
+  `stat_3_value` int unsigned DEFAULT NULL,
+  `display_text` varchar(128) NOT NULL COMMENT 'Tooltip text',
+  PRIMARY KEY (`package_id`,`level`),
+  KEY `idx_enchant` (`enchant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mapping between packages and DBC enchant IDs';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_heirloom_package_levels
+CREATE TABLE IF NOT EXISTS `dc_heirloom_package_levels` (
+  `level` tinyint unsigned NOT NULL,
+  `base_stat_value` int unsigned NOT NULL COMMENT 'Base stat value at this level (before weight)',
+  `essence_cost` int unsigned NOT NULL COMMENT 'Essence cost to upgrade TO this level',
+  `total_essence` int unsigned NOT NULL COMMENT 'Total essence invested at this level',
+  `stat_multiplier` float NOT NULL COMMENT 'Display multiplier for progression feel',
+  `milestone_name` varchar(32) DEFAULT NULL COMMENT 'Special name for milestone levels',
+  PRIMARY KEY (`level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Stat values and costs per upgrade level';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_heirloom_stat_packages
+CREATE TABLE IF NOT EXISTS `dc_heirloom_stat_packages` (
+  `package_id` tinyint unsigned NOT NULL,
+  `package_name` varchar(32) NOT NULL,
+  `package_icon` varchar(64) NOT NULL DEFAULT 'Interface\\Icons\\INV_Misc_QuestionMark' COMMENT 'Icon path for addon',
+  `description` varchar(255) NOT NULL,
+  `stat_type_1` tinyint unsigned NOT NULL COMMENT 'Primary stat type (ItemModType)',
+  `stat_type_2` tinyint unsigned NOT NULL COMMENT 'Secondary stat type (ItemModType)',
+  `stat_type_3` tinyint unsigned DEFAULT NULL COMMENT 'Tertiary stat type (optional)',
+  `stat_weight_1` float NOT NULL DEFAULT '1' COMMENT 'Weight multiplier for stat 1',
+  `stat_weight_2` float NOT NULL DEFAULT '1' COMMENT 'Weight multiplier for stat 2',
+  `stat_weight_3` float NOT NULL DEFAULT '0.5' COMMENT 'Weight multiplier for stat 3 (if exists)',
+  `color_r` tinyint unsigned DEFAULT '255' COMMENT 'Package color red component',
+  `color_g` tinyint unsigned DEFAULT '255' COMMENT 'Package color green component',
+  `color_b` tinyint unsigned DEFAULT '255' COMMENT 'Package color blue component',
+  `recommended_classes` varchar(128) DEFAULT NULL COMMENT 'Recommended class names',
+  `recommended_specs` varchar(128) DEFAULT NULL COMMENT 'Recommended spec names',
+  `sort_order` tinyint unsigned DEFAULT '0' COMMENT 'Display order in addon',
+  `is_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`package_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom secondary stat package definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_heirloom_upgrade_costs
+CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_costs` (
+  `upgrade_level` tinyint unsigned NOT NULL COMMENT 'Target upgrade level (1-15)',
+  `token_cost` int unsigned NOT NULL DEFAULT '0' COMMENT 'Upgrade Tokens required',
+  `essence_cost` int unsigned NOT NULL DEFAULT '0' COMMENT 'Upgrade Essence required',
+  `description` varchar(64) DEFAULT NULL COMMENT 'Level description',
+  PRIMARY KEY (`upgrade_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Costs for heirloom stat package upgrades';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
 -- Exportiere Struktur von Tabelle acore_world.dc_hotspots_active
 CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
   `id` int unsigned NOT NULL COMMENT 'Unique hotspot ID',
-  `map_id` smallint unsigned NOT NULL COMMENT 'Map ID where hotspot is located',
-  `zone_id` smallint unsigned NOT NULL COMMENT 'Zone ID where hotspot is located',
-  `x` float NOT NULL COMMENT 'World X coordinate',
-  `y` float NOT NULL COMMENT 'World Y coordinate',
-  `z` float NOT NULL COMMENT 'World Z coordinate',
-  `spawn_time` bigint NOT NULL COMMENT 'Unix timestamp when hotspot was spawned',
-  `expire_time` bigint NOT NULL COMMENT 'Unix timestamp when hotspot expires',
-  `gameobject_guid` bigint DEFAULT NULL COMMENT 'GUID of the visual marker GameObject (if spawned)',
+  `map_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Map ID where hotspot is located',
+  `zone_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone ID where hotspot is located',
+  `x` float NOT NULL DEFAULT '0' COMMENT 'X coordinate',
+  `y` float NOT NULL DEFAULT '0' COMMENT 'Y coordinate',
+  `z` float NOT NULL DEFAULT '0' COMMENT 'Z coordinate',
+  `spawn_time` bigint NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when hotspot was spawned',
+  `expire_time` bigint NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when hotspot expires',
+  `gameobject_guid` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'GUID of visual marker GameObject (0 if none)',
   PRIMARY KEY (`id`),
-  KEY `idx_map_zone` (`map_id`,`zone_id`),
-  KEY `idx_expire` (`expire_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Active hotspots for XP bonus system';
+  KEY `idx_expire_time` (`expire_time`),
+  KEY `idx_map_zone` (`map_id`,`zone_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='DarkChaos Hotspots - Active hotspots for crash persistence';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1922,8 +2069,7 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_affix_schedule` (
   `week_number` tinyint unsigned NOT NULL COMMENT 'Week of the season (0-51)',
   `affix1` tinyint unsigned NOT NULL COMMENT 'First affix ID (boss-focused)',
   `affix2` tinyint unsigned NOT NULL COMMENT 'Second affix ID (trash-focused)',
-  PRIMARY KEY (`season_id`,`week_number`),
-  CONSTRAINT `dc_mplus_affix_schedule_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE CASCADE
+  PRIMARY KEY (`season_id`,`week_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly affix rotation schedule for Mythic+ seasons';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -1951,26 +2097,9 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
   `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional comments (e.g., rotation theme)',
   PRIMARY KEY (`season_id`,`map_id`),
   KEY `map_id` (`map_id`),
-  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons` (`season_id`) ON DELETE CASCADE,
+  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons_archived_20251122` (`season_id`) ON DELETE CASCADE,
   CONSTRAINT `dc_mplus_featured_dungeons_ibfk_2` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Featured dungeons per season for Mythic+ rotation';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_mplus_seasons
-CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
-  `season_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique season identifier',
-  `label` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Season display name (e.g., "Season 1: Wrath of Winter")',
-  `start_ts` bigint unsigned NOT NULL COMMENT 'Season start timestamp (Unix)',
-  `end_ts` bigint unsigned NOT NULL COMMENT 'Season end timestamp (Unix)',
-  `featured_dungeons` json NOT NULL COMMENT 'Array of featured dungeon map IDs for this season',
-  `affix_schedule` json NOT NULL COMMENT 'Weekly affix rotation: [{week: 1, affixPairId: 1}, ...]',
-  `reward_curve` json NOT NULL COMMENT 'Reward scaling per keystone level: {1: {ilvl: 216, tokens: 30}, ...}',
-  `is_active` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Only one season can be active at a time',
-  PRIMARY KEY (`season_id`),
-  KEY `idx_active` (`is_active`),
-  KEY `idx_time_range` (`start_ts`,`end_ts`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal Mythic+ rotation and configuration';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1995,6 +2124,49 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_scaling_multipliers` (
   PRIMARY KEY (`keystoneLevel`),
   KEY `idx_keystoneLevel` (`keystoneLevel`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature scaling multipliers for each Mythic+ keystone level';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_npcs
+CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_npcs` (
+  `entry` int unsigned NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `subname` varchar(100) DEFAULT 'M+ Spectator',
+  `spawn_map` int unsigned NOT NULL DEFAULT '571' COMMENT 'Dalaran default',
+  `spawn_x` float NOT NULL DEFAULT '5807',
+  `spawn_y` float NOT NULL DEFAULT '588',
+  `spawn_z` float NOT NULL DEFAULT '660',
+  `spawn_o` float NOT NULL DEFAULT '3.14',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - NPC Configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_positions
+CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_positions` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `map_id` int unsigned NOT NULL,
+  `position_name` varchar(64) NOT NULL COMMENT 'e.g., "First Boss", "Entrance", "Final Boss"',
+  `position_x` float NOT NULL,
+  `position_y` float NOT NULL,
+  `position_z` float NOT NULL,
+  `orientation` float NOT NULL DEFAULT '0',
+  `is_default` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Default viewing position for spectators',
+  PRIMARY KEY (`id`),
+  KEY `idx_map` (`map_id`),
+  KEY `idx_default` (`map_id`,`is_default`)
+) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Viewing Positions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_strings
+CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_strings` (
+  `id` int unsigned NOT NULL,
+  `locale` varchar(4) NOT NULL DEFAULT 'enUS',
+  `text` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`,`locale`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Localized Strings';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2027,6 +2199,114 @@ CREATE TABLE IF NOT EXISTS `dc_quest_reward_tokens` (
   PRIMARY KEY (`token_item_id`),
   KEY `token_type` (`token_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom dungeon quest token definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_seasonal_chest_rewards
+CREATE TABLE IF NOT EXISTS `dc_seasonal_chest_rewards` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `season_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_seasons.season_id',
+  `chest_tier` tinyint NOT NULL COMMENT 'Tier: 1=Bronze, 2=Silver, 3=Gold, 4=Legendary',
+  `item_id` int unsigned NOT NULL COMMENT 'Item template ID',
+  `min_drop_ilvl` smallint unsigned DEFAULT '0' COMMENT 'Minimum item level',
+  `max_drop_ilvl` smallint unsigned DEFAULT '0' COMMENT 'Maximum item level',
+  `drop_chance` float NOT NULL DEFAULT '1' COMMENT 'Probability 0.0-1.0',
+  `weight` int unsigned DEFAULT '1' COMMENT 'Selection weight (higher=more likely)',
+  `armor_class` tinyint unsigned DEFAULT NULL COMMENT 'Filter: 1=Cloth, 2=Leather, 3=Mail, 4=Plate',
+  `slot` tinyint unsigned DEFAULT NULL COMMENT 'Equipment slot filter (optional)',
+  `class_restrictions` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Comma-separated class IDs',
+  `spec_restrictions` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Comma-separated spec names',
+  `primary_stat` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Primary stat priority (INT, STR, AGI)',
+  `enabled` tinyint(1) DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_season_tier` (`season_id`,`chest_tier`),
+  KEY `idx_item_id` (`item_id`),
+  KEY `idx_chest_tier` (`chest_tier`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Chest loot pool configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_seasonal_creature_rewards
+CREATE TABLE IF NOT EXISTS `dc_seasonal_creature_rewards` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `season_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_seasons.season_id',
+  `creature_id` int unsigned NOT NULL COMMENT 'Creature template ID',
+  `reward_type` tinyint NOT NULL COMMENT '1=Token, 2=Essence, 3=Both',
+  `base_token_amount` int unsigned DEFAULT '0' COMMENT 'Base tokens per kill',
+  `base_essence_amount` int unsigned DEFAULT '0' COMMENT 'Base essence per kill',
+  `creature_rank` tinyint DEFAULT '0' COMMENT 'Rank: 0=Normal, 1=Rare, 2=Boss, 3=Raid Boss',
+  `content_type` tinyint DEFAULT '1' COMMENT '1=Dungeon, 2=Raid, 3=World',
+  `difficulty_level` tinyint DEFAULT '1' COMMENT 'Content difficulty (1-5)',
+  `seasonal_multiplier` float DEFAULT '1' COMMENT 'Season-specific multiplier',
+  `minimum_players` tinyint unsigned DEFAULT '1' COMMENT 'Minimum group size required',
+  `group_split_tokens` tinyint(1) DEFAULT '1' COMMENT 'Split tokens among group',
+  `enabled` tinyint(1) DEFAULT '1' COMMENT 'Enable/disable rewards',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_season_creature` (`season_id`,`creature_id`),
+  KEY `idx_season_id` (`season_id`),
+  KEY `idx_creature_id` (`creature_id`),
+  KEY `idx_rank_type` (`creature_rank`,`content_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Boss/Rare/Creature kill reward configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_seasonal_quest_rewards
+CREATE TABLE IF NOT EXISTS `dc_seasonal_quest_rewards` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `season_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_seasons.season_id',
+  `quest_id` int unsigned NOT NULL COMMENT 'Quest template ID',
+  `reward_type` tinyint NOT NULL COMMENT '1=Token, 2=Essence, 3=Both',
+  `base_token_amount` int unsigned DEFAULT '0' COMMENT 'Base tokens awarded',
+  `base_essence_amount` int unsigned DEFAULT '0' COMMENT 'Base essence awarded',
+  `min_level` tinyint unsigned DEFAULT '1' COMMENT 'Minimum player level to reward',
+  `quest_difficulty` tinyint DEFAULT '2' COMMENT 'Difficulty tier (0-5, where 2=normal)',
+  `seasonal_multiplier` float DEFAULT '1' COMMENT 'Season-specific multiplier',
+  `is_daily` tinyint(1) DEFAULT '0' COMMENT 'Daily quest flag',
+  `is_weekly` tinyint(1) DEFAULT '0' COMMENT 'Weekly quest flag',
+  `is_repeatable` tinyint(1) DEFAULT '0' COMMENT 'Repeatable quest flag',
+  `enabled` tinyint(1) DEFAULT '1' COMMENT 'Enable/disable rewards for this quest',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_season_quest` (`season_id`,`quest_id`),
+  KEY `idx_season_id` (`season_id`),
+  KEY `idx_quest_id` (`quest_id`),
+  KEY `idx_enabled` (`enabled`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Quest reward configuration per season';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_seasonal_reward_config
+CREATE TABLE IF NOT EXISTS `dc_seasonal_reward_config` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `config_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Configuration key',
+  `config_value` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Configuration value (can be JSON)',
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Human-readable description',
+  `modified_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_config_key` (`config_key`)
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Global configuration for seasonal reward system';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_seasonal_reward_multipliers
+CREATE TABLE IF NOT EXISTS `dc_seasonal_reward_multipliers` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `season_id` int unsigned NOT NULL,
+  `multiplier_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'quest, creature, pvp, achievement, dungeon, raid',
+  `base_multiplier` float DEFAULT '1' COMMENT 'Applied to all rewards of this type',
+  `day_of_week` tinyint DEFAULT '0' COMMENT '0=every day, 1=Monday, 7=Sunday',
+  `hour_start` tinyint DEFAULT '0' COMMENT 'Starting hour (UTC)',
+  `hour_end` tinyint DEFAULT '24' COMMENT 'Ending hour (UTC)',
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Human-readable description',
+  `enabled` tinyint(1) DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_season_type` (`season_id`,`multiplier_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Flexible multiplier overrides for balancing';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2706,7 +2986,7 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `VerifiedBuild` int DEFAULT NULL,
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=5531135 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
+) ENGINE=InnoDB AUTO_INCREMENT=5531185 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2889,6 +3169,71 @@ CREATE TABLE IF NOT EXISTS `gemproperties_dbc` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Prozedur acore_world.GenerateHeirloomEnchantMappings
+DELIMITER //
+CREATE PROCEDURE `GenerateHeirloomEnchantMappings`()
+BEGIN
+    DECLARE pkg_id INT;
+    DECLARE lvl INT;
+    DECLARE base_val INT;
+    DECLARE stat1_type INT;
+    DECLARE stat2_type INT;
+    DECLARE stat3_type INT;
+    DECLARE weight1 FLOAT;
+    DECLARE weight2 FLOAT;
+    DECLARE weight3 FLOAT;
+    DECLARE pkg_name VARCHAR(32);
+    DECLARE stat1_val INT;
+    DECLARE stat2_val INT;
+    DECLARE stat3_val INT;
+    DECLARE enc_id INT;
+    DECLARE display_txt VARCHAR(128);
+    
+    -- Clear existing mappings
+    TRUNCATE TABLE dc_heirloom_enchant_mapping;
+    
+    -- Loop through all packages
+    SET pkg_id = 1;
+    WHILE pkg_id <= 12 DO
+        -- Get package definition
+        SELECT package_name, stat_type_1, stat_type_2, stat_type_3, stat_weight_1, stat_weight_2, stat_weight_3
+        INTO pkg_name, stat1_type, stat2_type, stat3_type, weight1, weight2, weight3
+        FROM dc_heirloom_stat_packages
+        WHERE package_id = pkg_id;
+        
+        -- Loop through all levels
+        SET lvl = 1;
+        WHILE lvl <= 15 DO
+            -- Get base value for this level
+            SELECT base_stat_value INTO base_val
+            FROM dc_heirloom_package_levels
+            WHERE level = lvl;
+            
+            -- Calculate stat values
+            SET stat1_val = ROUND(base_val * weight1);
+            SET stat2_val = ROUND(base_val * weight2);
+            SET stat3_val = IF(stat3_type IS NOT NULL, ROUND(base_val * weight3), NULL);
+            
+            -- Calculate enchant ID: 900000 + (pkg_id * 100) + level
+            SET enc_id = 900000 + (pkg_id * 100) + lvl;
+            
+            -- Build display text
+            SET display_txt = CONCAT(pkg_name, ' ', lvl, '/15');
+            
+            -- Insert mapping
+            INSERT INTO dc_heirloom_enchant_mapping 
+                (package_id, level, enchant_id, stat_1_value, stat_2_value, stat_3_value, display_text)
+            VALUES 
+                (pkg_id, lvl, enc_id, stat1_val, stat2_val, stat3_val, display_txt);
+            
+            SET lvl = lvl + 1;
+        END WHILE;
+        
+        SET pkg_id = pkg_id + 1;
+    END WHILE;
+END//
+DELIMITER ;
 
 -- Exportiere Struktur von Tabelle acore_world.glyphproperties_dbc
 CREATE TABLE IF NOT EXISTS `glyphproperties_dbc` (
@@ -6580,6 +6925,25 @@ CREATE TABLE IF NOT EXISTS `updates_include` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von View acore_world.v_heirloom_packages_detailed
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_heirloom_packages_detailed` (
+	`package_id` TINYINT UNSIGNED NOT NULL,
+	`package_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`package_icon` VARCHAR(1) NOT NULL COMMENT 'Icon path for addon' COLLATE 'utf8mb4_0900_ai_ci',
+	`description` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`stat_type_1` TINYINT UNSIGNED NOT NULL COMMENT 'Primary stat type (ItemModType)',
+	`stat_type_2` TINYINT UNSIGNED NOT NULL COMMENT 'Secondary stat type (ItemModType)',
+	`stat_type_3` TINYINT UNSIGNED NULL COMMENT 'Tertiary stat type (optional)',
+	`stat_1_name` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`stat_2_name` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`stat_3_name` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`color_css` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`recommended_classes` VARCHAR(1) NULL COMMENT 'Recommended class names' COLLATE 'utf8mb4_0900_ai_ci',
+	`recommended_specs` VARCHAR(1) NULL COMMENT 'Recommended spec names' COLLATE 'utf8mb4_0900_ai_ci',
+	`sort_order` TINYINT UNSIGNED NULL COMMENT 'Display order in addon'
+);
+
 -- Exportiere Struktur von Tabelle acore_world.vehicle_accessory
 CREATE TABLE IF NOT EXISTS `vehicle_accessory` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -7039,6 +7403,11 @@ CREATE TABLE IF NOT EXISTS `zone_difficulty_spelloverrides` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_heirloom_packages_detailed`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_world`.`v_heirloom_packages_detailed` AS select `p`.`package_id` AS `package_id`,`p`.`package_name` AS `package_name`,`p`.`package_icon` AS `package_icon`,`p`.`description` AS `description`,`p`.`stat_type_1` AS `stat_type_1`,`p`.`stat_type_2` AS `stat_type_2`,`p`.`stat_type_3` AS `stat_type_3`,(case `p`.`stat_type_1` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_1`) end) AS `stat_1_name`,(case `p`.`stat_type_2` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_2`) end) AS `stat_2_name`,(case `p`.`stat_type_3` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' when NULL then NULL else concat('Stat ',`p`.`stat_type_3`) end) AS `stat_3_name`,concat('rgb(',`p`.`color_r`,',',`p`.`color_g`,',',`p`.`color_b`,')') AS `color_css`,`p`.`recommended_classes` AS `recommended_classes`,`p`.`recommended_specs` AS `recommended_specs`,`p`.`sort_order` AS `sort_order` from `acore_world`.`dc_heirloom_stat_packages` `p` where (`p`.`is_enabled` = true) order by `p`.`sort_order`
+;
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
