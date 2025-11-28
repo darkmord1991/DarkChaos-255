@@ -194,7 +194,7 @@ namespace Seasons
     {
         uint32 seasonId = msg.GetUInt32(0);
         uint32 page = msg.GetUInt32(1);
-        uint32 perPage = msg.GetDataCount() > 2 ? msg.GetUInt32(2) : 10;
+        // uint32 perPage = msg.GetDataCount() > 2 ? msg.GetUInt32(2) : 10;  // For future pagination
 
         // TODO: Query leaderboard from database
         // This typically uses AIO for complex paginated display

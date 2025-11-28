@@ -11,7 +11,8 @@
  * - Coexists with AIO (SAIO/CAIO) without conflict
  * 
  * Message Format:
- * DC|MODULE|OPCODE|DATA1|DATA2|...
+ * Simple: DC|MODULE|OPCODE|DATA1|DATA2|...
+ * JSON:   DC|MODULE|OPCODE|J|{"key":"value",...}
  * 
  * Where MODULE is one of:
  * - AOE  (AOE Loot system)
@@ -35,6 +36,7 @@
 #include <functional>
 #include <unordered_map>
 #include <sstream>
+#include <map>
 
 namespace DCAddon
 {
@@ -613,6 +615,332 @@ namespace DCAddon
         uint32 _totalChunks = 0;
         uint32 _receivedCount = 0;
     };
+    
+    // ========================================================================
+    // JSON SUPPORT
+    // ========================================================================
+    
+    // JSON marker for detecting JSON payloads
+    constexpr const char* JSON_MARKER = "J";
+    
+    // Simple JSON value class for addon communication
+    class JsonValue
+    {
+    public:
+        enum Type { Null, Bool, Number, String, Array, Object };
+        
+        JsonValue() : _type(Null) {}
+        JsonValue(bool v) : _type(Bool), _bool(v) {}
+        JsonValue(int32 v) : _type(Number), _number(static_cast<double>(v)) {}
+        JsonValue(uint32 v) : _type(Number), _number(static_cast<double>(v)) {}
+        JsonValue(double v) : _type(Number), _number(v) {}
+        JsonValue(const std::string& v) : _type(String), _string(v) {}
+        JsonValue(const char* v) : _type(String), _string(v) {}
+        
+        Type GetType() const { return _type; }
+        bool IsNull() const { return _type == Null; }
+        bool IsBool() const { return _type == Bool; }
+        bool IsNumber() const { return _type == Number; }
+        bool IsString() const { return _type == String; }
+        bool IsArray() const { return _type == Array; }
+        bool IsObject() const { return _type == Object; }
+        
+        bool AsBool() const { return _bool; }
+        double AsNumber() const { return _number; }
+        int32 AsInt32() const { return static_cast<int32>(_number); }
+        uint32 AsUInt32() const { return static_cast<uint32>(_number); }
+        const std::string& AsString() const { return _string; }
+        const std::vector<JsonValue>& AsArray() const { return _array; }
+        const std::map<std::string, JsonValue>& AsObject() const { return _object; }
+        
+        // Object access
+        bool HasKey(const std::string& key) const 
+        { 
+            return _type == Object && _object.find(key) != _object.end(); 
+        }
+        
+        const JsonValue& operator[](const std::string& key) const
+        {
+            static JsonValue null;
+            if (_type != Object) return null;
+            auto it = _object.find(key);
+            return (it != _object.end()) ? it->second : null;
+        }
+        
+        // Array access
+        const JsonValue& operator[](size_t index) const
+        {
+            static JsonValue null;
+            return (_type == Array && index < _array.size()) ? _array[index] : null;
+        }
+        
+        size_t Size() const
+        {
+            if (_type == Array) return _array.size();
+            if (_type == Object) return _object.size();
+            return 0;
+        }
+        
+        // Building JSON
+        void SetNull() { _type = Null; }
+        void Set(bool v) { _type = Bool; _bool = v; }
+        void Set(double v) { _type = Number; _number = v; }
+        void Set(const std::string& v) { _type = String; _string = v; }
+        
+        void SetArray() { _type = Array; _array.clear(); }
+        void Push(const JsonValue& v) { if (_type == Array) _array.push_back(v); }
+        
+        void SetObject() { _type = Object; _object.clear(); }
+        void Set(const std::string& key, const JsonValue& v) 
+        { 
+            if (_type == Object) _object[key] = v; 
+        }
+        
+        // Encode to JSON string
+        std::string Encode() const
+        {
+            switch (_type)
+            {
+                case Null: return "null";
+                case Bool: return _bool ? "true" : "false";
+                case Number: {
+                    std::ostringstream ss;
+                    ss << _number;
+                    return ss.str();
+                }
+                case String: {
+                    std::string result = "\"";
+                    for (char c : _string) {
+                        if (c == '"') result += "\\\"";
+                        else if (c == '\\') result += "\\\\";
+                        else if (c == '\n') result += "\\n";
+                        else if (c == '\r') result += "\\r";
+                        else if (c == '\t') result += "\\t";
+                        else result += c;
+                    }
+                    result += "\"";
+                    return result;
+                }
+                case Array: {
+                    std::string result = "[";
+                    for (size_t i = 0; i < _array.size(); ++i) {
+                        if (i > 0) result += ",";
+                        result += _array[i].Encode();
+                    }
+                    result += "]";
+                    return result;
+                }
+                case Object: {
+                    std::string result = "{";
+                    bool first = true;
+                    for (const auto& [k, v] : _object) {
+                        if (!first) result += ",";
+                        first = false;
+                        result += "\"" + k + "\":" + v.Encode();
+                    }
+                    result += "}";
+                    return result;
+                }
+            }
+            return "null";
+        }
+        
+    private:
+        Type _type = Null;
+        bool _bool = false;
+        double _number = 0.0;
+        std::string _string;
+        std::vector<JsonValue> _array;
+        std::map<std::string, JsonValue> _object;
+    };
+    
+    // Simple JSON parser
+    class JsonParser
+    {
+    public:
+        static JsonValue Parse(const std::string& json)
+        {
+            size_t pos = 0;
+            return ParseValue(json, pos);
+        }
+        
+    private:
+        static void SkipWhitespace(const std::string& s, size_t& pos)
+        {
+            while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\n' || s[pos] == '\r'))
+                ++pos;
+        }
+        
+        static JsonValue ParseValue(const std::string& s, size_t& pos)
+        {
+            SkipWhitespace(s, pos);
+            if (pos >= s.size()) return JsonValue();
+            
+            char c = s[pos];
+            if (c == '"') return ParseString(s, pos);
+            if (c == '{') return ParseObject(s, pos);
+            if (c == '[') return ParseArray(s, pos);
+            if (c == 't' && s.substr(pos, 4) == "true") { pos += 4; return JsonValue(true); }
+            if (c == 'f' && s.substr(pos, 5) == "false") { pos += 5; return JsonValue(false); }
+            if (c == 'n' && s.substr(pos, 4) == "null") { pos += 4; return JsonValue(); }
+            if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber(s, pos);
+            
+            return JsonValue();
+        }
+        
+        static JsonValue ParseString(const std::string& s, size_t& pos)
+        {
+            if (s[pos] != '"') return JsonValue();
+            ++pos;
+            std::string result;
+            while (pos < s.size() && s[pos] != '"') {
+                if (s[pos] == '\\' && pos + 1 < s.size()) {
+                    ++pos;
+                    char esc = s[pos];
+                    if (esc == '"') result += '"';
+                    else if (esc == '\\') result += '\\';
+                    else if (esc == 'n') result += '\n';
+                    else if (esc == 'r') result += '\r';
+                    else if (esc == 't') result += '\t';
+                    else if (esc == 'u') { pos += 4; result += '?'; }  // Skip unicode
+                    ++pos;
+                } else {
+                    result += s[pos++];
+                }
+            }
+            if (pos < s.size()) ++pos;  // Skip closing "
+            return JsonValue(result);
+        }
+        
+        static JsonValue ParseNumber(const std::string& s, size_t& pos)
+        {
+            size_t start = pos;
+            if (s[pos] == '-') ++pos;
+            while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+            if (pos < s.size() && s[pos] == '.') {
+                ++pos;
+                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+            }
+            if (pos < s.size() && (s[pos] == 'e' || s[pos] == 'E')) {
+                ++pos;
+                if (pos < s.size() && (s[pos] == '+' || s[pos] == '-')) ++pos;
+                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+            }
+            return JsonValue(std::stod(s.substr(start, pos - start)));
+        }
+        
+        static JsonValue ParseArray(const std::string& s, size_t& pos)
+        {
+            if (s[pos] != '[') return JsonValue();
+            ++pos;
+            JsonValue arr;
+            arr.SetArray();
+            SkipWhitespace(s, pos);
+            if (pos < s.size() && s[pos] == ']') { ++pos; return arr; }
+            while (pos < s.size()) {
+                arr.Push(ParseValue(s, pos));
+                SkipWhitespace(s, pos);
+                if (pos >= s.size()) break;
+                if (s[pos] == ']') { ++pos; break; }
+                if (s[pos] == ',') ++pos;
+            }
+            return arr;
+        }
+        
+        static JsonValue ParseObject(const std::string& s, size_t& pos)
+        {
+            if (s[pos] != '{') return JsonValue();
+            ++pos;
+            JsonValue obj;
+            obj.SetObject();
+            SkipWhitespace(s, pos);
+            if (pos < s.size() && s[pos] == '}') { ++pos; return obj; }
+            while (pos < s.size()) {
+                SkipWhitespace(s, pos);
+                JsonValue keyVal = ParseString(s, pos);
+                if (!keyVal.IsString()) break;
+                SkipWhitespace(s, pos);
+                if (pos >= s.size() || s[pos] != ':') break;
+                ++pos;
+                obj.Set(keyVal.AsString(), ParseValue(s, pos));
+                SkipWhitespace(s, pos);
+                if (pos >= s.size()) break;
+                if (s[pos] == '}') { ++pos; break; }
+                if (s[pos] == ',') ++pos;
+            }
+            return obj;
+        }
+    };
+    
+    // JSON Message builder
+    class JsonMessage
+    {
+    public:
+        JsonMessage(const std::string& module, uint8 opcode)
+            : _module(module), _opcode(opcode) 
+        {
+            _json.SetObject();
+        }
+        
+        JsonMessage& Set(const std::string& key, bool v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, int32 v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, uint32 v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, double v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, const std::string& v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, const char* v) { _json.Set(key, JsonValue(v)); return *this; }
+        
+        std::string Build() const
+        {
+            std::string result = _module;
+            result += DELIMITER;
+            result += std::to_string(_opcode);
+            result += DELIMITER;
+            result += JSON_MARKER;
+            result += DELIMITER;
+            result += _json.Encode();
+            return result;
+        }
+        
+        void Send(Player* player) const
+        {
+            // Use the same send mechanism as Message class
+            Message tempMsg(_module, _opcode);
+            std::string jsonStr = std::string(JSON_MARKER) + std::string(1, DELIMITER) + _json.Encode();
+            // Build manually
+            std::string fullMsg = Build();
+            
+            WorldPacket data(SMSG_MESSAGECHAT, fullMsg.length() + 50);
+            data << uint8(CHAT_MSG_ADDON);
+            data << int32(LANG_ADDON);
+            data << player->GetGUID();
+            data << uint32(0);
+            data << player->GetGUID();
+            data << uint32(fullMsg.length() + 1);
+            data << fullMsg;
+            data << uint8(0);
+            player->SendDirectMessage(&data);
+        }
+        
+    private:
+        std::string _module;
+        uint8 _opcode;
+        JsonValue _json;
+    };
+    
+    // Check if a parsed message contains JSON
+    inline bool IsJsonMessage(const ParsedMessage& msg)
+    {
+        return msg.GetDataCount() > 0 && msg.GetString(0) == JSON_MARKER;
+    }
+    
+    // Get JSON data from a message (returns empty JsonValue if not JSON)
+    inline JsonValue GetJsonData(const ParsedMessage& msg)
+    {
+        if (!IsJsonMessage(msg) || msg.GetDataCount() < 2)
+            return JsonValue();
+        
+        return JsonParser::Parse(msg.GetString(1));
+    }
 
 }  // namespace DCAddon
 

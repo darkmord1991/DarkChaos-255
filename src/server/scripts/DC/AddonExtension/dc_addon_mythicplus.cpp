@@ -14,7 +14,8 @@
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include "Log.h"
-#include "MythicPlusRunManager.h"
+// Note: MythicPlusRunManager.h not available - using database queries directly
+// #include "MythicPlusRunManager.h"
 
 namespace DCAddon
 {
@@ -156,9 +157,9 @@ namespace MythicPlus
     }
     
     // Broadcast run update to all party members
-    void BroadcastRunUpdate(uint32 runId, uint32 elapsed, uint32 remaining, 
-                           uint32 deaths, uint32 bossesKilled, uint32 bossesTotal,
-                           uint32 enemiesKilled, bool failed, bool completed)
+    void BroadcastRunUpdate(uint32 /*runId*/, uint32 /*elapsed*/, uint32 /*remaining*/, 
+                           uint32 /*deaths*/, uint32 /*bossesKilled*/, uint32 /*bossesTotal*/,
+                           uint32 /*enemiesKilled*/, bool /*failed*/, bool /*completed*/)
     {
         // This would be called from MythicPlusRunManager
         // Get all players in the run and send updates

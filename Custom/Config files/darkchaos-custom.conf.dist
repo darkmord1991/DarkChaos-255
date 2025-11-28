@@ -4880,6 +4880,15 @@ PhasedDuels.MaxPhaseId = 2147483647
 ###########################################################################
 
 #
+#    DC.AddonProtocol.Core.Enable
+#        Description: Master toggle for DC Addon Protocol system
+#                     When disabled, ALL DC addon communication is blocked.
+#                     Individual module toggles below have no effect when this is off.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Core.Enable = 1
+
+#
 #    DC.AddonProtocol.AOELoot.Enable
 #        Description: Enable DCAOE prefix handling for AOE Loot addon sync
 #                     When enabled, client addons can toggle loot preferences,
@@ -4907,6 +4916,56 @@ DC.AddonProtocol.Spectator.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Upgrade.Enable = 1
+
+#
+#    DC.AddonProtocol.Duels.Enable
+#        Description: Enable DC addon protocol for Phased Dueling system
+#                     When enabled, client addons can receive duel invites,
+#                     phase changes, and duel statistics.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Duels.Enable = 1
+
+#
+#    DC.AddonProtocol.MythicPlus.Enable
+#        Description: Enable DC addon protocol for Mythic+ system
+#                     When enabled, client addons receive real-time M+ run data:
+#                     - Timer sync, boss progress, death counts
+#                     - Keystone level and affix information
+#                     - Run completion notifications
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.MythicPlus.Enable = 1
+
+#
+#    DC.AddonProtocol.Prestige.Enable
+#        Description: Enable DC addon protocol for Prestige system
+#                     When enabled, client addons can display prestige level,
+#                     available resets, and prestige bonuses.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Prestige.Enable = 1
+
+#
+#    DC.AddonProtocol.Seasonal.Enable
+#        Description: Enable DC addon protocol for Seasonal system
+#                     When enabled, client addons receive season information:
+#                     - Current season name and end date
+#                     - Season-specific rewards and progress
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Seasonal.Enable = 1
+
+#
+#    DC.AddonProtocol.HinterlandBG.Enable
+#        Description: Enable DC addon protocol for Hinterland Battleground
+#                     When enabled, client addons receive BG status:
+#                     - Queue position and estimated time
+#                     - Match scores and resource counts
+#                     - Weather affix notifications
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.HinterlandBG.Enable = 1
 
 #
 #    DC.AddonProtocol.Debug.Enable

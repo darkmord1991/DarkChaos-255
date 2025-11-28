@@ -25,6 +25,9 @@ namespace DCAddon
     // MESSAGE SENDING IMPLEMENTATION
     // ========================================================================
     
+    // Forward declaration
+    static void SendRaw(Player* player, const std::string& msg);
+    
     void Message::Send(Player* player) const
     {
         if (!player || !player->GetSession())
@@ -139,6 +142,7 @@ struct PlayerMessageTracker
 
 static std::unordered_map<uint32, PlayerMessageTracker> s_MessageTrackers;
 
+[[maybe_unused]]
 static bool CheckRateLimit(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
@@ -261,6 +265,7 @@ static void RegisterCoreHandlers()
 static std::unordered_map<uint32, DCAddon::ChunkedMessage> s_ChunkedMessages;
 static std::unordered_map<uint32, uint32> s_ChunkStartTimes;
 
+[[maybe_unused]]
 static void CleanupExpiredChunks()
 {
     uint32 now = GameTime::GetGameTime().count() * 1000;  // Convert to ms
@@ -292,6 +297,7 @@ public:
     
     void OnPlayerLogin(Player* player) override
     {
+        (void)player;  // Unused for now
         // Could send initial sync here if client addon is already known to be present
         // For now, we wait for client handshake
     }
@@ -311,12 +317,9 @@ class DCAddonMessageRouterScript : public PlayerScript
 public:
     DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript") {}
     
-    // Hook into addon messages
-    void OnBeforeSendChatMessage(Player* player, uint32& type, uint32& /*lang*/, std::string& msg) override
-    {
-        // This isn't the right hook - we need the addon message hook
-        // Leaving this as placeholder - actual implementation depends on AC hooks available
-    }
+    // Note: AzerothCore PlayerScript doesn't have OnBeforeSendChatMessage
+    // Addon message handling is done via OnChat hooks or custom implementation
+    // This script is a placeholder for future expansion
 };
 
 class DCAddonWorldScript : public WorldScript
@@ -344,21 +347,9 @@ public:
         LOG_INFO("dc.addon", "===========================================");
     }
     
-    void OnConfigLoad(bool /*reload*/) override
+    void OnAfterConfigLoad(bool /*reload*/) override
     {
         LoadAddonConfig();
-    }
-    
-    void OnUpdate(uint32 /*diff*/) override
-    {
-        // Periodic cleanup of expired chunks (every ~5 seconds)
-        static uint32 s_CleanupTimer = 0;
-        s_CleanupTimer += 1;  // Approximate, actual diff would be better
-        if (s_CleanupTimer > 5000)
-        {
-            CleanupExpiredChunks();
-            s_CleanupTimer = 0;
-        }
     }
 };
 

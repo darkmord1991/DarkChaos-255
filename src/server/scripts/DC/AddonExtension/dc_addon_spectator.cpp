@@ -45,8 +45,8 @@ namespace Spectator
         uint32 dungeonId = (*result)[0].Get<uint32>();
         uint32 keystoneLevel = (*result)[1].Get<uint32>();
         
-        // Check if player is allowed to spectate
-        bool canSpectate = true;
+        // Check if player is allowed to spectate (currently always allowed if not in combat)
+        // Future: Add more restrictions here
         
         // Option: Only allow spectating if not in combat
         if (player->IsInCombat())
@@ -199,8 +199,8 @@ namespace Spectator
     }
     
     // Send HUD update to all spectators of a run
-    void BroadcastHUDUpdate(uint32 runId, uint32 elapsed, uint32 remaining,
-                           uint32 deaths, float progress, const std::string& bossInfo)
+    void BroadcastHUDUpdate(uint32 runId, uint32 /*elapsed*/, uint32 /*remaining*/,
+                           uint32 /*deaths*/, float /*progress*/, const std::string& /*bossInfo*/)
     {
         for (const auto& [spectatorGuid, watchingRunId] : s_ActiveSpectators)
         {

@@ -336,16 +336,16 @@ void MythicDifficultyScaling::ApplyMultipliers(Creature* creature, float hpMult,
     creature->SetHealth(newHealth);
     
     // Apply damage multiplier
-    float baseDamage = creature->GetModifierValue(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE);
+    float baseDamage = creature->GetFlatModifierValue(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE);
     float newDamage = baseDamage * damageMult;
-    creature->SetModifierValue(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE, newDamage);
+    creature->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE, newDamage);
     
     // Also scale off-hand if exists
-    float baseOffhandDamage = creature->GetModifierValue(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE);
+    float baseOffhandDamage = creature->GetFlatModifierValue(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE);
     if (baseOffhandDamage > 0.0f)
     {
         float newOffhandDamage = baseOffhandDamage * damageMult;
-        creature->SetModifierValue(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE, newOffhandDamage);
+        creature->SetStatFlatModifier(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE, newOffhandDamage);
     }
 }
 

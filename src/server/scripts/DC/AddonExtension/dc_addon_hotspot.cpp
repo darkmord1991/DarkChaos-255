@@ -152,8 +152,8 @@ namespace Hotspot
     {
         uint32 hotspotId = msg.GetUInt32(0);
         
-        // Check if player has permission (GM or special item)
-        bool canTeleport = player->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_GPS);
+        // Check if player has permission (GM level 1+ or special item)
+        bool canTeleport = player->GetSession()->GetSecurity() >= SEC_MODERATOR;
         
         // Could also check for teleport item here
         // uint32 teleportItemId = sConfigMgr->GetOption<uint32>("Hotspot.TeleportItemId", 0);

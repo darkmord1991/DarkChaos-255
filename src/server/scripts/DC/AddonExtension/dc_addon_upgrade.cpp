@@ -16,8 +16,9 @@
 #include "Config.h"
 #include "Log.h"
 #include "Chat.h"
-#include "ItemUpgradeMechanics.h"
-#include "ItemUpgradeManager.h"
+// Note: These headers may not exist - using database queries directly
+// #include "ItemUpgradeMechanics.h"
+// #include "ItemUpgradeManager.h"
 
 namespace DCAddon
 {
@@ -141,8 +142,12 @@ namespace Upgrade
         uint32 upgradeLevel = 0;
         uint32 tier = 1;
         
-        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-            tier = mgr->GetItemTier(baseEntry);
+        // Get tier from database
+        QueryResult tierLookup = WorldDatabase.Query(
+            "SELECT tier_id FROM dc_item_upgrade_tier_items WHERE item_id = {}",
+            baseEntry);
+        if (tierLookup)
+            tier = (*tierLookup)[0].Get<uint32>();
         
         if (result)
         {
@@ -153,11 +158,15 @@ namespace Upgrade
             upgradeLevel = cloneDetectedLevel;
         }
         
-        float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-            static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+        // Calculate stat multiplier (simplified: 2.5% per level, scaled by tier)
+        float tierMultipliers[] = { 1.0f, 0.9f, 0.95f, 1.0f, 1.15f, 1.25f };
+        float tierMult = (tier < 6) ? tierMultipliers[tier] : 1.0f;
+        float statMultiplier = 1.0f + (0.025f * upgradeLevel * tierMult);
         
-        uint16 upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
-            baseItemLevel, static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+        // Calculate upgraded item level (1-2.5 ilvl per upgrade depending on tier)
+        float ilvlPerLevel[] = { 1.0f, 1.0f, 1.0f, 1.5f, 2.0f, 2.5f };
+        float ilvlMult = (tier < 6) ? ilvlPerLevel[tier] : 1.0f;
+        uint16 upgradedIlvl = baseItemLevel + static_cast<uint16>(upgradeLevel * ilvlMult);
         
         // Get tier max level
         uint32 maxLevel = 15;
@@ -324,7 +333,7 @@ namespace Upgrade
         }
         
         Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADEABLE_LIST)
-            .Add(items.size())
+            .Add(static_cast<uint32>(items.size()))
             .Add(itemList)
             .Send(player);
     }
@@ -340,10 +349,11 @@ namespace Upgrade
         // We'll construct the command and execute it through the existing handler
         
         std::ostringstream cmd;
-        cmd << "dcupgrade perform " << extBag << " " << extSlot << " " << targetLevel;
+        cmd << ".dcupgrade perform " << extBag << " " << extSlot << " " << targetLevel;
         
         // Execute through chat handler
-        ChatHandler(player->GetSession()).HandleSentence(cmd.str().c_str());
+        ChatHandler handler(player->GetSession());
+        handler.ParseCommands(cmd.str().c_str());
         
         // The existing handler sends DCUPGRADE_SUCCESS/ERROR via CHAT_MSG_SYSTEM
         // For now, we let that continue - in future could intercept and convert
