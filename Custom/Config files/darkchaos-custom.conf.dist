@@ -33,6 +33,9 @@
 #    DC Extensions add: quality filtering, profession integration (auto-skin,
 #    auto-mine, auto-herb), smart loot preferences, and Mythic+ bonuses.
 #
+#    NOTE: Several settings can be overridden per-player via the DC-AOESettings
+#    addon or .lootpref/.aoeloot commands. These settings serve as SERVER DEFAULTS.
+#
 ###########################################################################
 
 #
@@ -49,7 +52,7 @@ AoELoot.Enable = 1
 #                     When a player loots one corpse, all lootable corpses within
 #                     this range are included in the AoE loot operation.
 #        Default:     30.0
-#        Range:       1.0 - 100.0 (values above 100 may cause performance issues)
+#        Range:       5.0 - 100.0 (values below 5 are clamped, above 100 may cause issues)
 #
 AoELoot.Range = 30.0
 
@@ -65,28 +68,31 @@ AoELoot.MaxCorpses = 10
 
 #
 #    AoELoot.ShowMessage
-#        Description: Show a message to players on login about AoE loot feature
-#                     Helps new players discover the AoE loot system.
-#        Default:     1 (Enabled - "AoE Loot is enabled! Loot one corpse to collect nearby loot.")
-#                     0 (Disabled - no login message)
+#        Description: GLOBAL toggle for AoE loot info messages (login, merge results)
+#                     When disabled globally, NO players see messages.
+#                     When enabled, players can INDIVIDUALLY disable via addon/command.
+#                     
+#                     Per-player toggle: .aoeloot messages or .lp messages
+#        Default:     1 (Enabled - players see messages unless they disable)
+#                     0 (Disabled - no players see messages)
 #
 AoELoot.ShowMessage = 1
 
 #
 #    AoELoot.AutoLoot
-#        Description: Controls automatic looting behavior (overrides client setting)
-#                     IMPORTANT: Only use mode 2 if your core supports autostore packet detection
-#        Default:     Commented out (respects client AutoLoot setting)
-#        Options:     0 = Force open loot windows (never auto-loot)
+#        Description: Controls automatic looting behavior
+#        Default:     2 (Respect player's AutoLoot setting)
+#        Options:     0 = Always open loot windows (never auto-loot)
 #                     1 = Force auto-loot all corpses (bypass client setting)
-#                     2 = Respect player's AutoLoot setting (requires client packet detection)
+#                     2 = Respect player's client AutoLoot setting
 #
 AoELoot.AutoLoot = 2
 
 #
 #    AoELoot.DebugPerCorpse
 #        Description: Enable debug logging for each corpse looted in AoE loot
-#                     Shows detailed information about loot distribution.
+#                     Shows detailed per-corpse contribution in server logs.
+#                     ADMIN ONLY - this generates LOG_INFO output.
 #        Default:     0 (Disabled - no debug output)
 #                     1 (Enabled - log each corpse looted)
 #
@@ -102,25 +108,6 @@ AoELoot.DebugPerCorpse = 0
 AoELoot.AllowInGroup = 1
 
 #
-#    AoELoot.LootDelay
-#        Description: Delay in milliseconds between looting each corpse
-#                     Adds artificial throttling to reduce server load spikes.
-#                     0 = no delay (loot all corpses instantly)
-#        Default:     Commented out (no delay)
-#        Range:       0 - 500 (higher values make looting slower but reduce lag)
-#
-#AoELoot.LootDelay = 50
-
-#
-#    AoELoot.ShowCount
-#        Description: Show how many corpses were looted in the confirmation message
-#                     Example: "You looted 7 nearby corpses!" vs "Nearby corpses looted!"
-#        Default:     1 (Enabled - show count)
-#                     0 (Disabled - generic message)
-#
-AoELoot.ShowCount = 1
-
-#
 #    AoELoot.QuestItems
 #        Description: Include quest items in AoE loot collection
 #                     When disabled, quest items remain on their original corpse.
@@ -128,24 +115,6 @@ AoELoot.ShowCount = 1
 #                     0 (Disabled - quest items excluded from AoE loot)
 #
 AoELoot.QuestItems = 1
-
-#
-#    AoELoot.Money
-#        Description: Include money (copper/silver/gold) in AoE loot collection
-#                     When disabled, players must loot each corpse individually for money.
-#        Default:     1 (Enabled - money is collected from all corpses)
-#                     0 (Disabled - money excluded from AoE loot)
-#
-AoELoot.Money = 1
-
-#
-#    AoELoot.RequireLineOfSight
-#        Description: Require line of sight to corpses for AoE looting
-#                     Prevents looting through walls, floors, or terrain.
-#        Default:     0 (Disabled - can loot through obstacles)
-#                     1 (Enabled - must have LoS to corpse)
-#
-AoELoot.RequireLineOfSight = 0
 
 #
 #    AoELoot.IgnoreTapped
@@ -201,74 +170,115 @@ AoELoot.AutoCreditGold = 1
 # -------------------------------------------------------------------------
 # These DC-specific features extend the base AoE Loot system with quality
 # filtering, profession integration, smart loot preferences, and M+ bonuses.
+#
+# IMPORTANT: Many of these settings serve as SERVER DEFAULTS. Players can
+# override them individually using:
+#   - DC-AOESettings addon (Interface → AddOns → DC AoE Loot)
+#   - Commands: .lootpref <option> or .lp <option>
+#
+# Per-Player Overridable Settings (marked with [PLAYER]):
+#   - MinQuality (.lp quality <0-6>)
+#   - AutoSkin (.lp skin)
+#   - AutoVendorPoor (via addon)
+#   - SmartLoot (.lp smart)
+#   - ShowMessages (.lp messages or .aoeloot messages)
+#
+# Server-Only Settings (NOT player overridable):
+#   - Extensions.Enable (master toggle)
+#   - MaxQuality (server enforced maximum)
+#   - All Mythic+ settings
+#   - All Raid settings
+#   - Profession.Range
+#   - TrackDetailedStats
+# -------------------------------------------------------------------------
 
 #
 #    AoELoot.Extensions.Enable
 #        Description: Master toggle for AoE Loot Extensions
+#                     When disabled, all extension features are off for ALL players.
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.Enable = 1
 
+# -------------------------------------------------------------------------
+# Quality Filtering (Server Defaults - Players can override via addon)
+# -------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.QualityFilter.Enable
-#        Description: Enable quality-based loot filtering
-#        Default:     0 (Disabled - loot all qualities)
+#        Description: Enable quality-based loot filtering as DEFAULT behavior
+#                     Individual players can still set their own min quality.
+#        Default:     0 (Disabled - server default is to loot all qualities)
 #
 AoELoot.Extensions.QualityFilter.Enable = 0
 
 #
 #    AoELoot.Extensions.QualityFilter.MinQuality
-#        Description: Minimum item quality to loot
+#        Description: [PLAYER OVERRIDABLE] Default minimum item quality to loot
 #                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
-#        Default:     0 (Poor)
+#                     Players can set their own via .lp quality <0-6>
+#        Default:     0 (Poor - loot everything by default)
 #
 AoELoot.Extensions.QualityFilter.MinQuality = 0
 
 #
 #    AoELoot.Extensions.QualityFilter.MaxQuality
-#        Description: Maximum item quality to loot
-#        Default:     6 (Artifact)
+#        Description: SERVER ENFORCED maximum quality (players cannot exceed this)
+#        Default:     6 (Artifact - no restriction)
 #
 AoELoot.Extensions.QualityFilter.MaxQuality = 6
 
 #
 #    AoELoot.Extensions.QualityFilter.AutoVendorPoor
-#        Description: Automatically vendor Poor quality items
-#        Default:     0 (Disabled)
+#        Description: [PLAYER OVERRIDABLE] Default auto-vendor poor items setting
+#                     Players can toggle via addon settings panel.
+#        Default:     0 (Disabled - don't auto-vendor by default)
 #
 AoELoot.Extensions.QualityFilter.AutoVendorPoor = 0
 
+# -------------------------------------------------------------------------
+# Profession Integration (Server Defaults - AutoSkin player overridable)
+# -------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.Profession.AutoSkin
-#        Description: Automatically skin creatures after looting
-#        Default:     1 (Enabled)
+#        Description: [PLAYER OVERRIDABLE] Default auto-skin setting
+#                     Players can toggle via .lp skin
+#        Default:     1 (Enabled - auto-skin by default)
 #
 AoELoot.Extensions.Profession.AutoSkin = 1
 
 #
 #    AoELoot.Extensions.Profession.AutoMine
-#        Description: Automatically mine ore deposits after looting nearby corpses
+#        Description: Server default for auto-mining ore deposits
+#                     NOTE: Currently not player-overridable
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.Profession.AutoMine = 1
 
 #
 #    AoELoot.Extensions.Profession.AutoHerb
-#        Description: Automatically herb nodes after looting nearby corpses
+#        Description: Server default for auto-herbing nodes
+#                     NOTE: Currently not player-overridable
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.Profession.AutoHerb = 1
 
 #
 #    AoELoot.Extensions.Profession.Range
-#        Description: Range for auto-profession gathering
+#        Description: Range for auto-profession gathering (server-enforced)
 #        Default:     10.0
 #
 AoELoot.Extensions.Profession.Range = 10.0
 
+# -------------------------------------------------------------------------
+# Smart Loot (Server Defaults - SmartLoot toggle player overridable)
+# -------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.SmartLoot.PreferCurrentSpec
 #        Description: Prioritize items usable by current spec
+#                     Part of SmartLoot system, toggled via .lp smart
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.SmartLoot.PreferCurrentSpec = 1
@@ -276,6 +286,7 @@ AoELoot.Extensions.SmartLoot.PreferCurrentSpec = 1
 #
 #    AoELoot.Extensions.SmartLoot.PreferEquippable
 #        Description: Prioritize equippable items
+#                     Part of SmartLoot system, toggled via .lp smart
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.SmartLoot.PreferEquippable = 1
@@ -283,9 +294,14 @@ AoELoot.Extensions.SmartLoot.PreferEquippable = 1
 #
 #    AoELoot.Extensions.SmartLoot.PrioritizeUpgrades
 #        Description: Highlight items that are upgrades for the player
+#                     Part of SmartLoot system, toggled via .lp smart
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.SmartLoot.PrioritizeUpgrades = 1
+
+# -------------------------------------------------------------------------
+# Mythic+ Integration (Server-Only - NOT player overridable)
+# -------------------------------------------------------------------------
 
 #
 #    AoELoot.Extensions.MythicPlus.Bonus
@@ -301,6 +317,10 @@ AoELoot.Extensions.MythicPlus.Bonus = 1
 #
 AoELoot.Extensions.MythicPlus.RangeMultiplier = 1.5
 
+# -------------------------------------------------------------------------
+# Raid Features (Server-Only - NOT player overridable)
+# -------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.Raid.Enable
 #        Description: Enable enhanced AoE looting in raids
@@ -311,13 +331,19 @@ AoELoot.Extensions.Raid.Enable = 1
 #
 #    AoELoot.Extensions.Raid.MaxCorpses
 #        Description: Maximum corpses to loot in raid environments
+#                     Overrides AoELoot.MaxCorpses when in a raid
 #        Default:     25
 #
 AoELoot.Extensions.Raid.MaxCorpses = 25
 
+# -------------------------------------------------------------------------
+# Statistics (Server-Only)
+# -------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.TrackDetailedStats
 #        Description: Track detailed loot statistics per player
+#                     Enables .lp stats command output
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.TrackDetailedStats = 1

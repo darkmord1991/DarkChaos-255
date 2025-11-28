@@ -75,24 +75,39 @@ namespace DCAoELootExt
             enabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Enable", true);
             
             qualityFilterEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.QualityFilter.Enable", false);
+            // Clamp minQuality to 0-6 range
             minQuality = sConfigMgr->GetOption<uint8>("AoELoot.Extensions.QualityFilter.MinQuality", 0);
+            if (minQuality > 6) minQuality = 6;
+            // Clamp maxQuality to 0-6 range
             maxQuality = sConfigMgr->GetOption<uint8>("AoELoot.Extensions.QualityFilter.MaxQuality", 6);
+            if (maxQuality > 6) maxQuality = 6;
+            // Ensure minQuality <= maxQuality
+            if (minQuality > maxQuality) minQuality = maxQuality;
             autoVendorPoorItems = sConfigMgr->GetOption<bool>("AoELoot.Extensions.QualityFilter.AutoVendorPoor", false);
             
             autoSkinEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoSkin", true);
             autoMineEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoMine", true);
             autoHerbEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoHerb", true);
+            // Clamp profession range to 1-100 yards
             professionRange = sConfigMgr->GetOption<float>("AoELoot.Extensions.Profession.Range", 10.0f);
+            if (professionRange < 1.0f) professionRange = 1.0f;
+            if (professionRange > 100.0f) professionRange = 100.0f;
             
             preferCurrentSpec = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PreferCurrentSpec", true);
             preferEquippable = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PreferEquippable", true);
             prioritizeUpgrades = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PrioritizeUpgrades", true);
             
             mythicPlusBonus = sConfigMgr->GetOption<bool>("AoELoot.Extensions.MythicPlus.Bonus", true);
+            // Clamp mythic+ range multiplier to 1.0-5.0
             mythicPlusRangeMultiplier = sConfigMgr->GetOption<float>("AoELoot.Extensions.MythicPlus.RangeMultiplier", 1.5f);
+            if (mythicPlusRangeMultiplier < 1.0f) mythicPlusRangeMultiplier = 1.0f;
+            if (mythicPlusRangeMultiplier > 5.0f) mythicPlusRangeMultiplier = 5.0f;
             
             raidModeEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Raid.Enable", true);
+            // Clamp raid max corpses to 1-100
             raidMaxCorpses = sConfigMgr->GetOption<uint32>("AoELoot.Extensions.Raid.MaxCorpses", 25);
+            if (raidMaxCorpses < 1) raidMaxCorpses = 1;
+            if (raidMaxCorpses > 100) raidMaxCorpses = 100;
             
             trackDetailedStats = sConfigMgr->GetOption<bool>("AoELoot.Extensions.TrackDetailedStats", true);
         }
@@ -106,6 +121,7 @@ namespace DCAoELootExt
     struct PlayerLootPreferences
     {
         bool aoeLootEnabled = true;
+        bool showMessages = true;  // Toggle for debug/info messages
         uint8 minQuality = 0;
         bool autoSkin = true;
         bool smartLootEnabled = true;
@@ -115,6 +131,21 @@ namespace DCAoELootExt
     };
 
     static std::unordered_map<ObjectGuid, PlayerLootPreferences> sPlayerPrefs;
+
+    // Exported function for ac_aoeloot.cpp to query showMessages preference
+    bool GetPlayerShowMessages(ObjectGuid playerGuid)
+    {
+        auto it = sPlayerPrefs.find(playerGuid);
+        if (it != sPlayerPrefs.end())
+            return it->second.showMessages;
+        return true; // default: show messages
+    }
+
+    // Exported function to set showMessages preference
+    void SetPlayerShowMessages(ObjectGuid playerGuid, bool value)
+    {
+        sPlayerPrefs[playerGuid].showMessages = value;
+    }
 
     // ============================================================
     // Detailed Statistics
@@ -308,7 +339,7 @@ public:
 
         // Load preferences from database
         QueryResult result = CharacterDatabase.Query(
-            "SELECT aoe_enabled, min_quality, auto_skin, smart_loot, ignored_items "
+            "SELECT aoe_enabled, min_quality, auto_skin, smart_loot, ignored_items, show_messages "
             "FROM dc_aoeloot_preferences WHERE player_guid = {}",
             player->GetGUID().GetCounter());
 
@@ -317,7 +348,9 @@ public:
         {
             Field* fields = result->Fetch();
             prefs.aoeLootEnabled = fields[0].Get<bool>();
-            prefs.minQuality = fields[1].Get<uint8>();
+            // Clamp minQuality to valid range 0-6
+            uint8 loadedQuality = fields[1].Get<uint8>();
+            prefs.minQuality = loadedQuality > 6 ? 6 : loadedQuality;
             prefs.autoSkin = fields[2].Get<bool>();
             prefs.smartLootEnabled = fields[3].Get<bool>();
             
@@ -330,6 +363,8 @@ public:
                 if (uint32 id = std::stoul(token))
                     prefs.ignoredItemIds.insert(id);
             }
+            
+            prefs.showMessages = fields[5].Get<bool>();
         }
         sPlayerPrefs[player->GetGUID()] = prefs;
 
@@ -379,14 +414,15 @@ public:
 
             CharacterDatabase.Execute(
                 "REPLACE INTO dc_aoeloot_preferences "
-                "(player_guid, aoe_enabled, min_quality, auto_skin, smart_loot, ignored_items) "
-                "VALUES ({}, {}, {}, {}, {}, '{}')",
+                "(player_guid, aoe_enabled, min_quality, auto_skin, smart_loot, ignored_items, show_messages) "
+                "VALUES ({}, {}, {}, {}, {}, '{}', {})",
                 player->GetGUID().GetCounter(),
                 prefs.aoeLootEnabled ? 1 : 0,
                 prefs.minQuality,
                 prefs.autoSkin ? 1 : 0,
                 prefs.smartLootEnabled ? 1 : 0,
-                ignoredSS.str());
+                ignoredSS.str(),
+                prefs.showMessages ? 1 : 0);
 
             sPlayerPrefs.erase(prefIt);
         }
@@ -444,6 +480,7 @@ public:
         static ChatCommandTable lootPrefTable =
         {
             { "toggle",     HandleLootToggle,     SEC_PLAYER,        Console::No },
+            { "messages",   HandleLootMessages,   SEC_PLAYER,        Console::No },
             { "quality",    HandleLootQuality,    SEC_PLAYER,        Console::No },
             { "skin",       HandleLootSkin,       SEC_PLAYER,        Console::No },
             { "smart",      HandleLootSmart,      SEC_PLAYER,        Console::No },
@@ -476,17 +513,29 @@ public:
         return true;
     }
 
+    static bool HandleLootMessages(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.showMessages = !prefs.showMessages;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Show Messages: %s",
+                                  prefs.showMessages ? "Enabled" : "Disabled");
+        return true;
+    }
+
     static bool HandleLootQuality(ChatHandler* handler, uint8 quality)
     {
         Player* player = handler->GetPlayer();
         if (!player)
             return true;
 
+        // Clamp quality to valid range 0-6 (Poor to Artifact)
         if (quality > 6)
-        {
-            handler->SendSysMessage("Quality must be 0-6 (Poor to Artifact).");
-            return true;
-        }
+            quality = 6;
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.minQuality = quality;

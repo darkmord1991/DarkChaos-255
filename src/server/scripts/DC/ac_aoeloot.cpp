@@ -28,6 +28,13 @@
 
 using namespace Acore::ChatCommands;
 
+// Forward declaration from dc_aoeloot_extensions.cpp
+namespace DCAoELootExt
+{
+    bool GetPlayerShowMessages(ObjectGuid playerGuid);
+    void SetPlayerShowMessages(ObjectGuid playerGuid, bool value);
+}
+
 // Helper to format copper amount into Gold/Silver/Copper string
 static std::string formatCoins(uint64_t copper)
 {
@@ -74,10 +81,16 @@ struct AoELootConfig
         autoCreditGold = sConfigMgr->GetOption<bool>("AoELoot.AutoCreditGold", true);
         autoStoreWindowSeconds = sConfigMgr->GetOption<uint32>("AoELoot.AutoStoreWindowSeconds", 5u);
 
+        // Validate and clamp all numeric settings to safe ranges
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
         if (maxCorpses < 1) maxCorpses = 1;
         if (maxCorpses > 50) maxCorpses = 50;
+        if (autoLoot > 2) autoLoot = 0; // 0=disabled, 1=forced, 2=player setting
+        if (maxMergeSlots < 1) maxMergeSlots = 1;
+        if (maxMergeSlots > 16) maxMergeSlots = 16; // WoW client loot window limit
+        if (autoStoreWindowSeconds < 1) autoStoreWindowSeconds = 1;
+        if (autoStoreWindowSeconds > 60) autoStoreWindowSeconds = 60;
     }
 };
 
@@ -89,10 +102,27 @@ struct PlayerAoELootData
     uint32 lootedThisSession = 0;
     uint64 lastCreditedGold = 0; // in copper
     uint64 accumulatedCreditedGold = 0; // accumulated credited copper for the session
+    bool showMessages = true; // per-player message preference (default: show)
 };
 
 static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
 static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
+
+// Helper to check if a player wants to see messages (combines global + player setting)
+static bool ShouldShowMessage(Player* player)
+{
+    if (!sAoEConfig.showMessage) return false; // global disable
+    // Check per-player preference from extensions
+    try {
+        return DCAoELootExt::GetPlayerShowMessages(player->GetGUID());
+    } catch (...) {
+        // Fallback to local data if extensions not available
+        auto it = sPlayerLootData.find(player->GetGUID());
+        if (it != sPlayerLootData.end())
+            return it->second.showMessages;
+    }
+    return true; // default show
+}
 
 static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 {
@@ -157,7 +187,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     if (nearby.empty())
     {
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
-        if (sAoEConfig.showMessage)
+        if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
         return false;
     }
@@ -231,7 +261,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     if (processed == 0)
     {
         LOG_DEBUG("scripts", "AoELoot: processed == 0 after scanning {} corpses for player {}", corpses.size(), player->GetGUID().ToString());
-        if (sAoEConfig.showMessage)
+        if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: found nearby corpses but none were eligible for merging");
         return false;
     }
@@ -374,7 +404,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 
     player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
 
-        if (sAoEConfig.showMessage && processed > 0)
+        if (ShouldShowMessage(player) && processed > 0)
     {
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " nearby corpse(s). ";
@@ -382,8 +412,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         if (mergedGold > 0) ss << "Gold: " << formatCoins(mergedGold) << ".";
         ChatHandler(player->GetSession()).SendNotification(ss.str());
         LOG_INFO("scripts", "AoELoot: player {} merged {} corpses (items added: {}, gold_copper: {})", player->GetGUID().ToString(), processed, itemsToAdd.size(), mergedGold);
-        if (sAoEConfig.showMessage)
-            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), formatCoins(mergedGold));
+        ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: merged {} corpses (items: {}, gold: {})", processed, itemsToAdd.size(), formatCoins(mergedGold));
     }
     return true;
 }
@@ -425,7 +454,7 @@ public:
     if (!creature) return true;
 
     LOG_DEBUG("scripts", "AoELoot: player {} looting creature {} (entry {}). Will attempt AoE merge.", player->GetGUID().ToString(), creature->GetGUID().ToString(), creature->GetEntry());
-    if (sAoEConfig.showMessage)
+    if (ShouldShowMessage(player))
     {
         ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: attempting to merge nearby corpses...");
     }
@@ -448,7 +477,11 @@ public:
     void OnLogin(Player* player)
     {
         if (!player) return;
-        if (sAoEConfig.showMessage)
+        // Initialize player data with default showMessages = true
+        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+        data.showMessages = true; // default - will be updated by addon if they have preference saved
+        
+        if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled. Loot one corpse to loot nearby corpses.");
         // Load persisted accumulated credited gold from character DB if table exists
         try {
@@ -459,7 +492,6 @@ public:
             {
                 Field* f = result->Fetch();
                 uint64 acc = f[0].Get<uint64>();
-                PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
                 data.accumulatedCreditedGold = acc;
             }
         } catch (...) { /* ignore if table missing */ }
@@ -493,11 +525,12 @@ public:
     {
         static ChatCommandTable aoeTable =
         {
-            ChatCommandBuilder("info",   HandleInfo,   SEC_PLAYER,        Console::No),
-            ChatCommandBuilder("reload", HandleReload, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("stats",  HandleStats,  SEC_GAMEMASTER,    Console::No),
-            ChatCommandBuilder("top",    HandleTop,    SEC_PLAYER,        Console::No),
-            ChatCommandBuilder("force",  HandleForce,  SEC_GAMEMASTER,    Console::No)
+            ChatCommandBuilder("info",     HandleInfo,     SEC_PLAYER,        Console::No),
+            ChatCommandBuilder("messages", HandleMessages, SEC_PLAYER,        Console::No),
+            ChatCommandBuilder("reload",   HandleReload,   SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("stats",    HandleStats,    SEC_GAMEMASTER,    Console::No),
+            ChatCommandBuilder("top",      HandleTop,      SEC_PLAYER,        Console::No),
+            ChatCommandBuilder("force",    HandleForce,    SEC_GAMEMASTER,    Console::No)
         };
 
         static ChatCommandTable commandTable =
@@ -510,6 +543,7 @@ public:
 
     static bool HandleInfo(ChatHandler* handler, char const* /*args*/)
     {
+        Player* player = handler->GetPlayer();
         handler->PSendSysMessage("AoE Loot: {}", sAoEConfig.enabled ? "Enabled" : "Disabled");
         if (sAoEConfig.enabled)
         {
@@ -518,7 +552,31 @@ public:
             handler->PSendSysMessage("  Auto-Loot: {}", sAoEConfig.autoLoot == 0 ? "Disabled" : sAoEConfig.autoLoot == 1 ? "Forced" : "Player Setting");
             handler->PSendSysMessage("  Max Merge Slots: {}", sAoEConfig.maxMergeSlots);
             handler->PSendSysMessage("  Auto Credit Gold: {}", sAoEConfig.autoCreditGold ? "Enabled" : "Disabled");
+            if (player)
+                handler->PSendSysMessage("  Your Show Messages: {}", ShouldShowMessage(player) ? "Enabled" : "Disabled");
         }
+        return true;
+    }
+
+    static bool HandleMessages(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player) return false;
+        
+        // Toggle showMessages for this player
+        bool currentSetting = ShouldShowMessage(player);
+        bool newSetting = !currentSetting;
+        
+        // Update via extensions system
+        try {
+            DCAoELootExt::SetPlayerShowMessages(player->GetGUID(), newSetting);
+        } catch (...) {
+            // Fallback to local data
+            PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+            data.showMessages = newSetting;
+        }
+        
+        handler->PSendSysMessage("|cFF00FF00[AoE Loot]|r Show Messages: {}", newSetting ? "Enabled" : "Disabled");
         return true;
     }
 

@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: DC AoE Loot
+## Notes: Settings panel for DarkChaos AoE Loot Extensions
+## Author: DarkChaos Team
+## Version: 1.0.4
+## SavedVariables: DCAoELootSettingsDB
+
+DC-AOESettings.lua
