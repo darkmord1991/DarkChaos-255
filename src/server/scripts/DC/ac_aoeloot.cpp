@@ -24,6 +24,7 @@
 #include <vector>
 #include <list>
 #include <unordered_map>
+#include <algorithm>
 #include <sstream>
 #include <limits>
 
@@ -249,6 +250,18 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // Get player's minimum quality filter
     uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
 
+    // Filter main loot items based on quality (remove items below minimum quality)
+    if (playerMinQuality > 0)
+    {
+        mainLoot->items.erase(
+            std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
+                [playerMinQuality](const LootItem& item) {
+                    return !ItemMeetsQualityFilter(item.itemid, playerMinQuality);
+                }),
+            mainLoot->items.end()
+        );
+    }
+
     size_t processed = 0;
     for (Creature* corpse : corpses)
     {
@@ -364,6 +377,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 
         auto storeOrMail = [&](LootItem const& li)
         {
+            // Apply quality filter - skip items below minimum quality
+            if (!ItemMeetsQualityFilter(li.itemid, playerMinQuality)) return;
+            
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
             if (msg == EQUIP_ERR_OK)
@@ -496,6 +512,12 @@ public:
 
         Creature* creature = ObjectAccessor::GetCreature(*player, guid);
     if (!creature) return true;
+
+    // Check if player has AoE loot enabled before showing message or processing
+    if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
+    {
+        return true; // Let normal loot handling proceed
+    }
 
     LOG_DEBUG("scripts", "AoELoot: player {} looting creature {} (entry {}). Will attempt AoE merge.", player->GetGUID().ToString(), creature->GetGUID().ToString(), creature->GetEntry());
     if (ShouldShowMessage(player))
