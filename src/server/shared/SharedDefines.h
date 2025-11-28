@@ -1522,7 +1522,7 @@ enum Targets
     TARGET_UNK_DEST_AREA_UNK_107       = 107, // not enough info - only generic spells avalible
     TARGET_GAMEOBJECT_CONE             = 108,
     TARGET_DEST_UNK_110                = 110, // 1 spell
-    TOTAL_SPELL_TARGETS                = 138  // Extended for custom spells using higher target IDs
+    TOTAL_SPELL_TARGETS
 };
 
 enum SpellMissInfo
