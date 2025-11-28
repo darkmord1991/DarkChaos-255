@@ -11,8 +11,16 @@ local addon = DCAoELootSettings
 
 -- Addon info
 addon.name = "DC-AOESettings"
-addon.version = "1.0.4"
+addon.version = "1.0.6"
 addon.prefix = "DCAOE"
+
+-- Helper function to clamp a value within a range (defined early for use throughout)
+local function Clamp(value, minVal, maxVal)
+    if value == nil then return minVal end
+    if value < minVal then return minVal end
+    if value > maxVal then return maxVal end
+    return value
+end
 
 -- Settings defaults
 addon.defaults = {
@@ -112,6 +120,64 @@ function addon:SaveSettingsLocal()
 end
 
 -- ============================================================
+-- Server Command Helpers (send settings via chat commands)
+-- ============================================================
+function addon:SendServerCommand(cmd)
+    -- Execute the command as if the player typed it in chat
+    -- This works for server commands starting with . in WoW 3.3.5a
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
+        local editBox = DEFAULT_CHAT_FRAME.editBox
+        local oldText = editBox:GetText() or ""
+        editBox:SetText(cmd)
+        ChatEdit_SendText(editBox)
+        editBox:SetText(oldText)
+    else
+        -- Fallback: Try to use ChatFrameEditBox directly
+        if ChatFrameEditBox then
+            local oldText = ChatFrameEditBox:GetText() or ""
+            ChatFrameEditBox:SetText(cmd)
+            ChatEdit_SendText(ChatFrameEditBox)
+            ChatFrameEditBox:SetText(oldText)
+        end
+    end
+end
+
+function addon:SyncSettingToServer(settingKey, value)
+    -- Map settings to server commands that directly set the state (not toggles)
+    if settingKey == "enabled" then
+        -- Use .lp enable or .lp disable to set state directly
+        if value then
+            self:SendServerCommand(".lp enable")
+        else
+            self:SendServerCommand(".lp disable")
+        end
+    elseif settingKey == "showMessages" then
+        -- Use .lp msg true/false to set state directly
+        if value then
+            self:SendServerCommand(".lp msg 1")
+        else
+            self:SendServerCommand(".lp msg 0")
+        end
+    elseif settingKey == "minQuality" then
+        self:SendServerCommand(".lp quality " .. tostring(value))
+    elseif settingKey == "autoSkin" then
+        -- Use .lp skinset true/false to set state directly
+        if value then
+            self:SendServerCommand(".lp skinset 1")
+        else
+            self:SendServerCommand(".lp skinset 0")
+        end
+    elseif settingKey == "smartLoot" then
+        -- Use .lp smartset true/false to set state directly
+        if value then
+            self:SendServerCommand(".lp smartset 1")
+        else
+            self:SendServerCommand(".lp smartset 0")
+        end
+    end
+end
+
+-- ============================================================
 -- Initialization
 -- ============================================================
 function addon:Initialize()
@@ -201,13 +267,6 @@ function addon:SaveSettings()
     self:Print("Settings saved!", true)
 end
 
--- Helper function to clamp a value within a range
-local function Clamp(value, minVal, maxVal)
-    if value < minVal then return minVal end
-    if value > maxVal then return maxVal end
-    return value
-end
-
 function addon:HandleServerMessage(message)
     local msgType, data = strsplit(":", message, 2)
     
@@ -262,7 +321,7 @@ function addon:CreateOptionsPanel()
     
     -- Enable AoE Loot checkbox
     local enableCB = self:CreateOptionsCheckbox(panel, "Enable AoE Loot", 
-        "Enable or disable the AoE loot system entirely.",
+        "Disable to loot only the corpse you click (no nearby corpse merging).",
         xPos, yPos, "enabled")
     yPos = yPos - 30
     
@@ -288,6 +347,53 @@ function addon:CreateOptionsPanel()
     local vendorCB = self:CreateOptionsCheckbox(panel, "Auto-Vendor Poor Items", 
         "Automatically vendor gray/poor quality items.",
         xPos, yPos, "autoVendorPoor")
+    yPos = yPos - 40
+    
+    -- Minimum Quality Label
+    local qualityLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    qualityLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    qualityLabel:SetText("Minimum Quality to Loot:")
+    yPos = yPos - 20
+    
+    -- Quality buttons for Interface Options panel
+    self.optionQualityButtons = {}
+    for i = 0, 5 do
+        local btn = CreateFrame("Button", "DCAoELootOptQuality" .. i, panel)
+        btn:SetWidth(75)
+        btn:SetHeight(18)
+        btn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + (i % 3) * 80, yPos - math.floor(i / 3) * 20)
+        
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.text:SetAllPoints()
+        btn.text:SetText(self.qualityNames[i])
+        
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+        
+        btn.quality = i
+        btn:SetScript("OnClick", function()
+            local quality = Clamp(i, 0, 5)
+            self.settings.minQuality = quality
+            self:UpdateOptionsQualityButtons()
+            self:UpdateQualityButtons()
+            self:Confirm("Minimum Quality", self.qualityNames[quality])
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("minQuality", quality)
+        end)
+        btn:SetScript("OnEnter", function()
+            btn.bg:SetTexture(0.4, 0.4, 0.4, 0.8)
+        end)
+        btn:SetScript("OnLeave", function()
+            if self.settings.minQuality == i then
+                btn.bg:SetTexture(0, 0.5, 0, 0.8)
+            else
+                btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+            end
+        end)
+        
+        self.optionQualityButtons[i] = btn
+    end
     yPos = yPos - 50
     
     -- Note about server override
@@ -295,7 +401,7 @@ function addon:CreateOptionsPanel()
     note:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
     note:SetWidth(350)
     note:SetJustifyH("LEFT")
-    note:SetText("|cffff8800Note:|r The 'Enable AoE Loot' setting controls whether the addon sends loot merge commands. The server may have its own master enable/disable.")
+    note:SetText("|cffff8800Note:|r Disabling AoE Loot will make you loot only the clicked corpse. The server must be recompiled for this to take effect.")
     yPos = yPos - 50
     
     -- Open Full Panel button
@@ -315,9 +421,17 @@ function addon:CreateOptionsPanel()
 end
 
 function addon:CreateOptionsCheckbox(parent, label, tooltip, x, y, settingKey)
-    local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    -- Need a unique name for 3.3.5a template to work properly
+    local cbName = "DCAoELootOptCB_" .. settingKey
+    local cb = CreateFrame("CheckButton", cbName, parent, "InterfaceOptionsCheckButtonTemplate")
     cb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    cb.Text:SetText(label)
+    
+    -- In 3.3.5a, the text is accessed via global name pattern, not .Text
+    local textObj = _G[cbName .. "Text"]
+    if textObj then
+        textObj:SetText(label)
+    end
+    
     cb.tooltipText = tooltip
     
     -- Set initial value
@@ -328,6 +442,7 @@ function addon:CreateOptionsCheckbox(parent, label, tooltip, x, y, settingKey)
         addon.settings[settingKey] = checked
         addon:Confirm(label, checked)
         addon:SaveSettingsLocal()
+        addon:SyncSettingToServer(settingKey, checked)
         addon:UpdateUI()
     end)
     
@@ -383,6 +498,7 @@ function addon:CreateMainFrame()
             self.settings.enabled = checked 
             self:Confirm("Enable AoE Loot", checked)
             self:SaveSettingsLocal()
+            self:SyncSettingToServer("enabled", checked)
         end)
     yPos = yPos - 30
     
@@ -392,6 +508,7 @@ function addon:CreateMainFrame()
             self.settings.showMessages = checked 
             self:Confirm("Show Messages", checked)
             self:SaveSettingsLocal()
+            self:SyncSettingToServer("showMessages", checked)
         end)
     yPos = yPos - 30
     
@@ -401,6 +518,7 @@ function addon:CreateMainFrame()
             self.settings.autoSkin = checked 
             self:Confirm("Auto-Skin/Mine/Herb", checked)
             self:SaveSettingsLocal()
+            self:SyncSettingToServer("autoSkin", checked)
         end)
     yPos = yPos - 30
     
@@ -410,6 +528,7 @@ function addon:CreateMainFrame()
             self.settings.smartLoot = checked 
             self:Confirm("Smart Loot", checked)
             self:SaveSettingsLocal()
+            self:SyncSettingToServer("smartLoot", checked)
         end)
     yPos = yPos - 30
     
@@ -453,6 +572,7 @@ function addon:CreateMainFrame()
             self:UpdateQualityButtons()
             self:Confirm("Minimum Quality", self.qualityNames[quality])
             self:SaveSettingsLocal()
+            self:SyncSettingToServer("minQuality", quality)
         end)
         btn:SetScript("OnEnter", function()
             btn.bg:SetTexture(0.4, 0.4, 0.4, 0.8)
@@ -494,7 +614,8 @@ function addon:CreateMainFrame()
     statsBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 15)
     statsBtn:SetText("Show Stats")
     statsBtn:SetScript("OnClick", function()
-        self:SendToServer("GET_STATS")
+        -- Try server command first (more reliable than addon message)
+        SendChatMessage(".lp stats", "SAY")
     end)
 end
 
@@ -513,13 +634,24 @@ end
 function addon:UpdateUI()
     if not self.frame then return end
     
-    self.checkboxes.enabled:SetChecked(self.settings.enabled)
-    self.checkboxes.showMessages:SetChecked(self.settings.showMessages)
-    self.checkboxes.autoSkin:SetChecked(self.settings.autoSkin)
-    self.checkboxes.smartLoot:SetChecked(self.settings.smartLoot)
-    self.checkboxes.autoVendorPoor:SetChecked(self.settings.autoVendorPoor)
+    if self.checkboxes.enabled then
+        self.checkboxes.enabled:SetChecked(self.settings.enabled)
+    end
+    if self.checkboxes.showMessages then
+        self.checkboxes.showMessages:SetChecked(self.settings.showMessages)
+    end
+    if self.checkboxes.autoSkin then
+        self.checkboxes.autoSkin:SetChecked(self.settings.autoSkin)
+    end
+    if self.checkboxes.smartLoot then
+        self.checkboxes.smartLoot:SetChecked(self.settings.smartLoot)
+    end
+    if self.checkboxes.autoVendorPoor then
+        self.checkboxes.autoVendorPoor:SetChecked(self.settings.autoVendorPoor)
+    end
     
     self:UpdateQualityButtons()
+    self:UpdateOptionsQualityButtons()
     
     -- Also update options panel checkboxes if they exist
     if self.optionCheckboxes then
@@ -532,7 +664,19 @@ function addon:UpdateUI()
 end
 
 function addon:UpdateQualityButtons()
+    if not self.qualityButtons then return end
     for i, btn in pairs(self.qualityButtons) do
+        if self.settings.minQuality == i then
+            btn.bg:SetTexture(0, 0.5, 0, 0.8)
+        else
+            btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+        end
+    end
+end
+
+function addon:UpdateOptionsQualityButtons()
+    if not self.optionQualityButtons then return end
+    for i, btn in pairs(self.optionQualityButtons) do
         if self.settings.minQuality == i then
             btn.bg:SetTexture(0, 0.5, 0, 0.8)
         else
@@ -554,6 +698,11 @@ function addon:ShowStats(totalItems, totalGold, vendorGold, upgrades)
 end
 
 function addon:Toggle()
+    -- Ensure frame exists before trying to use it
+    if not self.frame then
+        self:CreateMainFrame()
+    end
+    
     if self.frame:IsShown() then
         self.frame:Hide()
     else
@@ -571,7 +720,8 @@ SlashCmdList["DCAOELOOT"] = function(msg)
     msg = strlower(msg or "")
     
     if msg == "stats" then
-        DCAoELootSettings:SendToServer("GET_STATS")
+        -- Use server command instead of addon message
+        SendChatMessage(".lp stats", "SAY")
     elseif msg == "reload" then
         DCAoELootSettings:RequestSettings()
     elseif msg == "config" or msg == "options" then

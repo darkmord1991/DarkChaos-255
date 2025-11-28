@@ -511,10 +511,15 @@ public:
         static ChatCommandTable lootPrefTable =
         {
             { "toggle",     HandleLootToggle,     SEC_PLAYER,        Console::No },
+            { "enable",     HandleLootEnable,     SEC_PLAYER,        Console::No },
+            { "disable",    HandleLootDisable,    SEC_PLAYER,        Console::No },
             { "messages",   HandleLootMessages,   SEC_PLAYER,        Console::No },
+            { "msg",        HandleLootMsgSet,     SEC_PLAYER,        Console::No },
             { "quality",    HandleLootQuality,    SEC_PLAYER,        Console::No },
             { "skin",       HandleLootSkin,       SEC_PLAYER,        Console::No },
+            { "skinset",    HandleLootSkinSet,    SEC_PLAYER,        Console::No },
             { "smart",      HandleLootSmart,      SEC_PLAYER,        Console::No },
+            { "smartset",   HandleLootSmartSet,   SEC_PLAYER,        Console::No },
             { "ignore",     HandleLootIgnore,     SEC_PLAYER,        Console::No },
             { "unignore",   HandleLootUnignore,   SEC_PLAYER,        Console::No },
             { "stats",      HandleLootStats,      SEC_PLAYER,        Console::No },
@@ -544,6 +549,32 @@ public:
         return true;
     }
 
+    static bool HandleLootEnable(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.aoeLootEnabled = true;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r AoE Loot: Enabled");
+        return true;
+    }
+
+    static bool HandleLootDisable(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.aoeLootEnabled = false;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r AoE Loot: Disabled");
+        return true;
+    }
+
     static bool HandleLootMessages(ChatHandler* handler)
     {
         Player* player = handler->GetPlayer();
@@ -552,6 +583,20 @@ public:
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.showMessages = !prefs.showMessages;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Show Messages: %s",
+                                  prefs.showMessages ? "Enabled" : "Disabled");
+        return true;
+    }
+
+    static bool HandleLootMsgSet(ChatHandler* handler, bool enable)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.showMessages = enable;
 
         handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Show Messages: %s",
                                   prefs.showMessages ? "Enabled" : "Disabled");
@@ -590,6 +635,20 @@ public:
         return true;
     }
 
+    static bool HandleLootSkinSet(ChatHandler* handler, bool enable)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.autoSkin = enable;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Auto-Skin: %s",
+                                  prefs.autoSkin ? "Enabled" : "Disabled");
+        return true;
+    }
+
     static bool HandleLootSmart(ChatHandler* handler)
     {
         Player* player = handler->GetPlayer();
@@ -598,6 +657,20 @@ public:
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.smartLootEnabled = !prefs.smartLootEnabled;
+
+        handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Smart Loot: %s",
+                                  prefs.smartLootEnabled ? "Enabled" : "Disabled");
+        return true;
+    }
+
+    static bool HandleLootSmartSet(ChatHandler* handler, bool enable)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return true;
+
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.smartLootEnabled = enable;
 
         handler->PSendSysMessage("|cff00ff00[Loot Prefs]|r Smart Loot: %s",
                                   prefs.smartLootEnabled ? "Enabled" : "Disabled");
@@ -643,10 +716,22 @@ public:
         if (!player)
             return true;
 
+        // Always show current preferences
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        const char* qualityNames[] = { "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact" };
+
+        handler->SendSysMessage("|cff00ff00========== CURRENT SETTINGS ==========|r");
+        handler->PSendSysMessage("|cffffd700AoE Loot:|r %s", prefs.aoeLootEnabled ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("|cffffd700Show Messages:|r %s", prefs.showMessages ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("|cffffd700Minimum Quality:|r %s", qualityNames[prefs.minQuality]);
+        handler->PSendSysMessage("|cffffd700Auto-Skin:|r %s", prefs.autoSkin ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("|cffffd700Smart Loot:|r %s", prefs.smartLootEnabled ? "Enabled" : "Disabled");
+        handler->SendSysMessage("|cff00ff00======================================|r");
+
         auto it = sDetailedStats.find(player->GetGUID());
         if (it == sDetailedStats.end())
         {
-            handler->SendSysMessage("|cffffd700[Loot Stats]|r No detailed statistics available.");
+            handler->SendSysMessage("|cffffd700[Loot Stats]|r No loot statistics recorded yet (start looting to track).");
             return true;
         }
 

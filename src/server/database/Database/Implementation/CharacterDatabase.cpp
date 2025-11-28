@@ -622,9 +622,9 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_REP_WORLD_STATE, "REPLACE INTO world_state (Id, Data) VALUES(?, ?)", CONNECTION_ASYNC);
 
     // DarkChaos AoE loot persistence statements
-    PrepareStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID, "SELECT accumulated FROM dc_aoeloot_credits WHERE guid = ?", CONNECTION_SYNCH);
-    PrepareStatement(CHAR_SEL_DC_AOELOOT_TOP10, "SELECT guid, accumulated FROM dc_aoeloot_credits ORDER BY accumulated DESC LIMIT 10", CONNECTION_SYNCH);
-    PrepareStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED, "REPLACE INTO dc_aoeloot_credits (guid, accumulated) VALUES (?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID, "SELECT accumulated_gold FROM dc_aoeloot_accumulated WHERE player_guid = ?", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_SEL_DC_AOELOOT_TOP10, "SELECT player_guid, accumulated_gold FROM dc_aoeloot_accumulated ORDER BY accumulated_gold DESC LIMIT 10", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_REP_DC_AOELOOT_ACCUMULATED, "REPLACE INTO dc_aoeloot_accumulated (player_guid, accumulated_gold) VALUES (?, ?)", CONNECTION_ASYNC);
 
     // DarkChaos Mythic+ persistence
     PrepareStatement(CHAR_SEL_MPLUS_KEYSTONE,
