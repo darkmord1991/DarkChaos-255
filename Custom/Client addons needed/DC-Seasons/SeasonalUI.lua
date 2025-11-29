@@ -264,7 +264,7 @@ end
 
 SLASH_DCSEASONS1 = "/seasonal"
 SLASH_DCSEASONS2 = "/season"
-SLASH_DCSEASONS3 = "/dcseasons"ons"
+SLASH_DCSEASONS3 = "/dcseasons"
 
 SlashCmdList["DCSEASONS"] = function(msg)
     local cmd = string.lower(msg or "")

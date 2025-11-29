@@ -2,6 +2,10 @@ local addonName = ... or "DC-MythicPlus"
 local namespace = _G.DCMythicPlusHUD or {}
 _G.DCMythicPlusHUD = namespace
 
+-- DCAddonProtocol integration
+local DC = rawget(_G, "DCAddonProtocol")
+namespace.useDCProtocol = (DC ~= nil)
+
 local AIO = rawget(_G, "AIO")
 if not AIO then
     local ok, mod = pcall(function()
@@ -647,6 +651,54 @@ SlashCmdList.DCM = function(msg)
         DCMythicPlusHUDDB.position = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 120 }
         ApplySavedPosition()
         Print("HUD position reset")
+    elseif msg == "json" then
+        -- Toggle JSON mode for DC protocol
+        DCMythicPlusHUDDB.useDCProtocolJSON = not (DCMythicPlusHUDDB.useDCProtocolJSON == true)
+        Print("DC Protocol JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+    elseif msg == "key" then
+        -- Request keystone info via DC protocol
+        if namespace.RequestKeyInfo then
+            namespace.RequestKeyInfo()
+            Print("Requesting keystone info...")
+        else
+            Print("DC protocol not available")
+        end
+    elseif msg == "affixes" then
+        -- Request affixes via DC protocol
+        if namespace.RequestAffixes then
+            namespace.RequestAffixes()
+            Print("Requesting weekly affixes...")
+        else
+            Print("DC protocol not available")
+        end
+    elseif msg == "best" or msg == "runs" then
+        -- Request best runs via DC protocol
+        if namespace.RequestBestRuns then
+            namespace.RequestBestRuns()
+            Print("Requesting best runs...")
+        else
+            Print("DC protocol not available")
+        end
+    elseif msg == "protocol" then
+        -- Show protocol status
+        local dcAvail = rawget(_G, "DCAddonProtocol") and "YES" or "NO"
+        local aioAvail = rawget(_G, "AIO") and "YES" or "NO"
+        Print("Protocol status:")
+        Print("  DCAddonProtocol: " .. dcAvail)
+        Print("  AIO: " .. aioAvail)
+        Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+    elseif msg == "help" then
+        Print("Commands:")
+        Print("  /dcm - Toggle HUD visibility")
+        Print("  /dcm lock/unlock - Lock/unlock HUD position")
+        Print("  /dcm show/hide - Show/hide HUD")
+        Print("  /dcm refresh - Request latest data")
+        Print("  /dcm reset - Reset position to center")
+        Print("  /dcm json - Toggle JSON protocol mode")
+        Print("  /dcm key - Show your keystone info")
+        Print("  /dcm affixes - Show weekly affixes")
+        Print("  /dcm best - Show your best runs")
+        Print("  /dcm protocol - Show protocol status")
     else
         ToggleVisibility()
     end
@@ -671,3 +723,300 @@ loader:SetScript("OnEvent", function(self, event)
         end
     end
 end)
+
+-- =====================================================================
+-- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
+-- =====================================================================
+
+-- Settings toggle for JSON vs pipe-delimited
+DCMythicPlusHUDDB = DCMythicPlusHUDDB or {}
+DCMythicPlusHUDDB.useDCProtocolJSON = DCMythicPlusHUDDB.useDCProtocolJSON or true  -- Prefer JSON by default
+
+if DC then
+    -- Helper to decode JSON from DC protocol
+    local function DecodeJSON(jsonStr)
+        if type(DC.DecodeJSON) == 'function' then
+            return DC:DecodeJSON(jsonStr)
+        end
+        -- Fallback simple JSON decoder if DC doesn't have one
+        local ok, result = pcall(function()
+            if type(jsonStr) ~= 'string' then return nil end
+            local obj = {}
+            -- Simple key:value parser for flat objects
+            for key, val in jsonStr:gmatch('"([^"]+)":([^,}]+)') do
+                val = val:gsub('^%s*', ''):gsub('%s*$', '')
+                if val == 'true' then obj[key] = true
+                elseif val == 'false' then obj[key] = false
+                elseif val:match('^"') then obj[key] = val:gsub('^"', ''):gsub('"$', '')
+                else obj[key] = tonumber(val) or val end
+            end
+            return obj
+        end)
+        return ok and result or nil
+    end
+
+    -- Check if message is JSON format (starts with "J" marker)
+    local function IsJSONMessage(...)
+        local args = {...}
+        return args[1] == "J"
+    end
+
+    -- SMSG_RUN_START (0x13) - Mythic+ run started
+    DC:RegisterHandler("MPLUS", 0x13, function(...)
+        local args = {...}
+        local keyLevel, mapId, dungeonName, timeLimit, affixes
+        
+        if IsJSONMessage(...) then
+            -- JSON format: J, jsonString
+            local json = DecodeJSON(args[2])
+            if json then
+                keyLevel = json.keyLevel
+                mapId = json.dungeonId
+                dungeonName = json.dungeonName
+                timeLimit = json.timeLimit
+                affixes = json.affixes
+            end
+        else
+            -- Pipe-delimited format
+            keyLevel = args[1]
+            mapId = args[2]
+            affixes = args[3]
+            timeLimit = args[4]
+        end
+        
+        Print("Mythic+" .. (keyLevel or "?") .. " started!")
+        activeState = {
+            inProgress = true,
+            keyLevel = keyLevel,
+            mapId = mapId,
+            dungeonName = dungeonName,
+            timeLimit = timeLimit,
+            elapsed = 0,
+            deaths = 0,
+            wipes = 0,
+        }
+        SetFrameVisibility(true)
+        UpdateFrameFromState(activeState)
+    end)
+    
+    -- SMSG_RUN_END (0x14) - Mythic+ run ended
+    DC:RegisterHandler("MPLUS", 0x14, function(...)
+        local args = {...}
+        local success, timeElapsed, keyUpgrade, score, newKeyLevel
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                success = json.success
+                timeElapsed = json.timeElapsed
+                keyUpgrade = json.keyChange
+                score = json.score
+                newKeyLevel = json.newKeyLevel
+            end
+        else
+            success = args[1]
+            timeElapsed = args[2]
+            keyUpgrade = args[3]
+        end
+        
+        if success then
+            Print("Run completed! Key upgraded by " .. (keyUpgrade or 0))
+            if score then
+                Print("Score: " .. score)
+            end
+        else
+            Print("Run failed.")
+        end
+        activeState = nil
+        ShowIdleState()
+    end)
+    
+    -- SMSG_TIMER_UPDATE (0x15) - Timer sync / HUD update
+    DC:RegisterHandler("MPLUS", 0x15, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            -- JSON format with full run state
+            local json = DecodeJSON(args[2])
+            if json then
+                if not activeState then
+                    activeState = { inProgress = true }
+                end
+                activeState.elapsed = json.elapsed or activeState.elapsed
+                activeState.timeLimit = json.remaining and (json.elapsed + json.remaining) or activeState.timeLimit
+                activeState.deaths = json.deaths or activeState.deaths
+                activeState.bossesKilled = json.bossesKilled or activeState.bossesKilled
+                activeState.bossesTotal = json.bossesTotal or activeState.bossesTotal
+                activeState.enemyCount = json.enemyCount or activeState.enemyCount
+                activeState.enemyRequired = json.enemyRequired or activeState.enemyRequired
+                
+                if json.failed then
+                    Print("Run failed!")
+                    activeState = nil
+                    ShowIdleState()
+                    return
+                end
+                
+                if json.completed then
+                    Print("Run completed!")
+                end
+                
+                UpdateFrameFromState(activeState)
+            end
+        else
+            -- Pipe-delimited format
+            local elapsed, timeLimit, deaths, deathPenalty = args[1], args[2], args[3], args[4]
+            if activeState then
+                activeState.elapsed = elapsed
+                activeState.timeLimit = timeLimit
+                activeState.deaths = deaths or activeState.deaths
+                UpdateFrameFromState(activeState)
+            end
+        end
+    end)
+    
+    -- SMSG_OBJECTIVE_UPDATE (0x16) - Boss/enemy count update
+    DC:RegisterHandler("MPLUS", 0x16, function(bossesKilled, bossesTotal, enemyCount, enemyRequired)
+        if activeState then
+            activeState.bossesKilled = bossesKilled
+            activeState.bossesTotal = bossesTotal
+            activeState.enemyCount = enemyCount
+            activeState.enemyRequired = enemyRequired
+            UpdateFrameFromState(activeState)
+        end
+    end)
+    
+    -- SMSG_KEY_INFO (0x10) - Key info response
+    DC:RegisterHandler("MPLUS", 0x10, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                if json.hasKey then
+                    Print("Your key: +" .. (json.level or "?") .. " " .. (json.dungeonName or ""))
+                    if json.depleted then
+                        Print("(Depleted)")
+                    end
+                else
+                    Print("No keystone in inventory")
+                end
+            end
+        else
+            -- Pipe-delimited format
+            local hasKey, dungeonId, mapName, keyLevel, depleted = args[1], args[2], args[3], args[4], args[5]
+            if hasKey == "1" or hasKey == 1 then
+                Print("Your key: +" .. (keyLevel or "?") .. " " .. (mapName or ""))
+            else
+                Print("No keystone in inventory")
+            end
+        end
+    end)
+    
+    -- SMSG_AFFIXES (0x11) - Current week's affixes
+    DC:RegisterHandler("MPLUS", 0x11, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                local weekNum = json.weekNumber or "?"
+                Print("Week " .. weekNum .. " affixes:")
+                -- Parse affixes JSON array if present
+                if json.affixes and type(json.affixes) == 'string' then
+                    -- Affixes is encoded as a JSON array string within the object
+                    local affixList = {}
+                    for entry in json.affixes:gmatch('%{[^}]+%}') do
+                        local name = entry:match('"name":"([^"]+)"')
+                        if name then
+                            table.insert(affixList, name)
+                        end
+                    end
+                    if #affixList > 0 then
+                        Print("  " .. table.concat(affixList, ", "))
+                    end
+                end
+            end
+        else
+            -- Pipe-delimited format
+            local affixData = args[1] -- Format: id:name:desc;id:name:desc;...
+            if affixData then
+                local affixNames = {}
+                for entry in tostring(affixData):gmatch('[^;]+') do
+                    local name = entry:match(':([^:]+):')
+                    if name then
+                        table.insert(affixNames, name)
+                    end
+                end
+                if #affixNames > 0 then
+                    Print("This week's affixes: " .. table.concat(affixNames, ", "))
+                end
+            end
+        end
+    end)
+    
+    -- SMSG_BEST_RUNS (0x12) - Player's best runs
+    DC:RegisterHandler("MPLUS", 0x12, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                local count = json.count or 0
+                Print("Best runs (" .. count .. "):")
+                -- Parse runs JSON array if present
+                if json.runs and type(json.runs) == 'string' then
+                    local idx = 1
+                    for entry in json.runs:gmatch('%{[^}]+%}') do
+                        local name = entry:match('"dungeonName":"([^"]+)"')
+                        local level = entry:match('"level":(%d+)')
+                        local time = entry:match('"time":(%d+)')
+                        if name and level then
+                            local timeStr = time and FormatSeconds(tonumber(time)) or "?"
+                            Print("  " .. idx .. ". " .. name .. " +" .. level .. " (" .. timeStr .. ")")
+                            idx = idx + 1
+                        end
+                    end
+                end
+            end
+        else
+            -- Pipe-delimited format
+            local runData = args[1] -- Format: dungeonId:level:time:deaths:season;...
+            if runData then
+                Print("Best runs:")
+                local idx = 1
+                for entry in tostring(runData):gmatch('[^;]+') do
+                    local parts = {}
+                    for part in entry:gmatch('[^:]+') do
+                        table.insert(parts, part)
+                    end
+                    if #parts >= 3 then
+                        local dungeonId, level, time = parts[1], parts[2], parts[3]
+                        local timeStr = FormatSeconds(tonumber(time))
+                        Print("  " .. idx .. ". Dungeon " .. dungeonId .. " +" .. level .. " (" .. timeStr .. ")")
+                        idx = idx + 1
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- Helper to request data via protocol
+    namespace.RequestKeyInfo = function()
+        if DC then
+            DC:Send("MPLUS", 0x01)  -- CMSG_GET_KEY_INFO
+        end
+    end
+    
+    namespace.RequestAffixes = function()
+        if DC then
+            DC:Send("MPLUS", 0x02)  -- CMSG_GET_AFFIXES
+        end
+    end
+    
+    namespace.RequestBestRuns = function()
+        if DC then
+            DC:Send("MPLUS", 0x03)  -- CMSG_GET_BEST_RUNS
+        end
+    end
+end

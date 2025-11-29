@@ -4,11 +4,16 @@
 	
 	Based on: Blizzard_ItemUpgradeUI (11.2.7.64169)
 	Adapted for: AzerothCore 3.3.5a with Eluna server communication
+	Updated: Now supports DCAddonProtocol for lightweight messaging
 --]]
 
 -- Global namespace
 DarkChaos_ItemUpgrade = DarkChaos_ItemUpgrade or {};
 local DC = DarkChaos_ItemUpgrade;
+
+-- DCAddonProtocol integration (stored in namespace to avoid conflict with DC variable)
+local DCProtocol = rawget(_G, "DCAddonProtocol");
+DC.useDCProtocol = (DCProtocol ~= nil);
 
 --[[=====================================================
 	QUALITY COLOR FIX & ITEM ID TOOLTIPS
@@ -467,3 +472,220 @@ end
 
 -- Initialize settings on load
 DC.InitializeSettings();
+
+--[[=====================================================
+	DCADDONPROTOCOL INTEGRATION
+	Provides lightweight server communication alongside
+	existing chat command fallbacks
+=======================================================]]
+
+function DC.RegisterDCProtocolHandlers()
+	if not DCProtocol then
+		DC.Debug("DCAddonProtocol not available, using chat commands only");
+		return;
+	end
+	
+	DC.Debug("Registering DCAddonProtocol handlers for Upgrade module");
+	
+	-- SMSG_ITEM_INFO (0x10) - Item upgrade information response
+	DCProtocol:RegisterHandler("UPG", 0x10, function(data)
+		DC.Debug("Received SMSG_ITEM_INFO: " .. (data or "nil"));
+		if not data or data == "" then return; end
+		
+		-- Parse: itemId|currentUpgrade|maxUpgrade|tier|tokenCost|essenceCost|baseEntry|cloneMap
+		local itemId, currentUpgrade, maxUpgrade, tier, tokenCost, essenceCost, baseEntry, cloneMap = 
+			string.match(data, "^(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|?(.*)$");
+		
+		if itemId then
+			local info = {
+				itemID = tonumber(itemId),
+				currentUpgrade = tonumber(currentUpgrade) or 0,
+				maxUpgrade = tonumber(maxUpgrade) or 10,
+				tier = tonumber(tier) or 1,
+				tokenCost = tonumber(tokenCost) or 0,
+				essenceCost = tonumber(essenceCost) or 0,
+				baseEntry = tonumber(baseEntry) or tonumber(itemId),
+				cloneEntries = DC.ParseCloneMap(cloneMap),
+			};
+			
+			-- Store in cache
+			DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+			DC.itemUpgradeCache[info.itemID] = info;
+			
+			-- Trigger UI update if we have a pending item
+			if DC.pendingUpgrade and DC.pendingUpgrade.itemID == info.itemID then
+				DC.pendingUpgrade = nil;
+				if DC.UpdateUpgradeUI then
+					DC.UpdateUpgradeUI(info);
+				end
+			end
+			
+			DC.Debug(string.format("Cached item %d: tier=%d, level=%d/%d", 
+				info.itemID, info.tier, info.currentUpgrade, info.maxUpgrade));
+		end
+	end);
+	
+	-- SMSG_UPGRADE_RESULT (0x11) - Upgrade success/failure notification
+	DCProtocol:RegisterHandler("Upgrade", 0x11, function(data)
+		DC.Debug("Received SMSG_UPGRADE_RESULT: " .. (data or "nil"));
+		if not data or data == "" then return; end
+		
+		-- Parse: success|itemId|newLevel|newEntry|errorCode|errorMsg
+		local success, itemId, newLevel, newEntry, errorCode, errorMsg = 
+			string.match(data, "^(%d)|(%d+)|(%d+)|(%d+)|(%d+)|?(.*)$");
+		
+		success = (success == "1");
+		itemId = tonumber(itemId);
+		newLevel = tonumber(newLevel) or 0;
+		newEntry = tonumber(newEntry);
+		errorCode = tonumber(errorCode) or 0;
+		
+		if success then
+			-- Upgrade successful
+			DC.PlaySound("LEVELUPSOUND");
+			
+			-- Update cache
+			if DC.itemUpgradeCache and DC.itemUpgradeCache[itemId] then
+				DC.itemUpgradeCache[itemId].currentUpgrade = newLevel;
+				if newEntry then
+					DC.itemUpgradeCache[itemId].currentEntry = newEntry;
+				end
+			end
+			
+			-- Show celebration
+			if DC_ItemUpgrade_Settings.showCelebration and DC.ShowUpgradeCelebration then
+				DC.ShowUpgradeCelebration(itemId, newLevel);
+			end
+			
+			-- Refresh UI
+			if DC.RefreshUpgradeFrame then
+				DC.RefreshUpgradeFrame();
+			end
+			
+			DEFAULT_CHAT_FRAME:AddMessage(string.format(
+				"|cff00ff00Upgrade successful!|r Item upgraded to level %d", newLevel));
+		else
+			-- Upgrade failed
+			DC.PlaySound("igQuestFailed");
+			
+			local errorMessages = {
+				[1] = "Item not found",
+				[2] = "Already at maximum upgrade level",
+				[3] = "Insufficient tokens",
+				[4] = "Insufficient essence",
+				[5] = "Item is not upgradeable",
+				[6] = "Cannot upgrade in combat",
+			};
+			
+			local msg = errorMessages[errorCode] or errorMsg or "Unknown error";
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Upgrade failed:|r " .. msg);
+		end
+	end);
+	
+	-- SMSG_CURRENCY_UPDATE (0x14) - Token/Essence balance update
+	DCProtocol:RegisterHandler("Upgrade", 0x14, function(data)
+		DC.Debug("Received SMSG_CURRENCY_UPDATE: " .. (data or "nil"));
+		if not data or data == "" then return; end
+		
+		-- Parse: tokens|essence
+		local tokens, essence = string.match(data, "^(%d+)|(%d+)$");
+		
+		if tokens and essence then
+			DC.playerTokens = tonumber(tokens) or 0;
+			DC.playerEssence = tonumber(essence) or 0;
+			
+			DC.Debug(string.format("Currency updated: %d tokens, %d essence", 
+				DC.playerTokens, DC.playerEssence));
+			
+			-- Update UI currency display
+			if DC.UpdateCurrencyDisplay then
+				DC.UpdateCurrencyDisplay();
+			end
+		end
+	end);
+	
+	-- SMSG_BATCH_ITEM_INFO (0x12) - Multiple items info response (for inventory scan)
+	DCProtocol:RegisterHandler("Upgrade", 0x12, function(data)
+		DC.Debug("Received SMSG_BATCH_ITEM_INFO");
+		if not data or data == "" then return; end
+		
+		-- Parse multiple items separated by semicolon
+		for itemData in string.gmatch(data, "[^;]+") do
+			local itemId, currentUpgrade, maxUpgrade, tier = 
+				string.match(itemData, "^(%d+)|(%d+)|(%d+)|(%d+)");
+			
+			if itemId then
+				DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+				DC.itemUpgradeCache[tonumber(itemId)] = {
+					itemID = tonumber(itemId),
+					currentUpgrade = tonumber(currentUpgrade) or 0,
+					maxUpgrade = tonumber(maxUpgrade) or 10,
+					tier = tonumber(tier) or 1,
+				};
+			end
+		end
+		
+		-- Trigger inventory refresh
+		if DC.RefreshInventoryOverlays then
+			DC.RefreshInventoryOverlays();
+		end
+	end);
+end
+
+-- Protocol-aware request functions
+function DC.RequestItemInfo(itemId, itemLink)
+	if DCProtocol and DC.useDCProtocol then
+		-- Use DC protocol
+		local data = tostring(itemId);
+		if itemLink then
+			data = data .. "|" .. itemLink;
+		end
+		DCProtocol:Send("Upgrade", 0x01, data); -- CMSG_REQUEST_ITEM_INFO
+		DC.Debug("Sent item info request via DC protocol: " .. data);
+	else
+		-- Fallback to chat command
+		SendChatMessage(".dcupgrade info " .. tostring(itemId), "GUILD");
+	end
+end
+
+function DC.RequestUpgrade(itemId, targetLevel)
+	if DCProtocol and DC.useDCProtocol then
+		local data = string.format("%d|%d", itemId, targetLevel or 1);
+		DCProtocol:Send("Upgrade", 0x02, data); -- CMSG_REQUEST_UPGRADE
+		DC.Debug("Sent upgrade request via DC protocol: " .. data);
+	else
+		-- Fallback to chat command
+		local cmd = ".dcupgrade upgrade " .. tostring(itemId);
+		if targetLevel then
+			cmd = cmd .. " " .. tostring(targetLevel);
+		end
+		SendChatMessage(cmd, "GUILD");
+	end
+end
+
+function DC.RequestCurrencySync()
+	if DCProtocol and DC.useDCProtocol then
+		DCProtocol:Send("Upgrade", 0x04, ""); -- CMSG_REQUEST_CURRENCY
+		DC.Debug("Sent currency sync request via DC protocol");
+	else
+		SendChatMessage(".dcupgrade currency", "GUILD");
+	end
+end
+
+function DC.RequestBatchItemInfo(itemIds)
+	if not itemIds or #itemIds == 0 then return; end
+	
+	if DCProtocol and DC.useDCProtocol then
+		local data = table.concat(itemIds, ",");
+		DCProtocol:Send("Upgrade", 0x03, data); -- CMSG_BATCH_REQUEST
+		DC.Debug("Sent batch item request via DC protocol: " .. #itemIds .. " items");
+	else
+		-- Chat command fallback - send individual requests
+		for _, itemId in ipairs(itemIds) do
+			DC.RequestItemInfo(itemId);
+		end
+	end
+end
+
+-- Initialize DC protocol handlers
+DC.RegisterDCProtocolHandlers();

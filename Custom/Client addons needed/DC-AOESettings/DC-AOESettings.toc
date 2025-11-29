@@ -2,7 +2,8 @@
 ## Title: DC AoE Loot
 ## Notes: Settings panel for DarkChaos AoE Loot Extensions
 ## Author: DarkChaos Team
-## Version: 1.0.6
+## Version: 1.1.0
 ## SavedVariables: DCAoELootSettingsDB
+## OptionalDeps: DC-AddonProtocol
 
 DC-AOESettings.lua

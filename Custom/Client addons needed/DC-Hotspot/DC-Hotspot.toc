@@ -2,10 +2,11 @@
 ## Title: DC Hotspot Tracker
 ## Notes: Shows active DarkChaos XP hotspots on the world map and minimap.
 ## Author: DarkChaos Team
-## Version: 1.0.0
+## Version: 1.1.0
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
 ## SavedVariables: DCHotspotDB
+## OptionalDeps: DC-AddonProtocol
 ## OptionalDeps: AIO
 
 Libs\DC_DebugUtils.lua

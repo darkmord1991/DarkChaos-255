@@ -5,8 +5,12 @@ local Pins = addonTable.Pins or {}
 local UI = addonTable.UI or {}
 local Debug = _G.DC_DebugUtils
 
+-- DCAddonProtocol integration
+local DC = rawget(_G, "DCAddonProtocol")
+
 local Core = {}
 addonTable.Core = Core
+Core.useDCProtocol = (DC ~= nil)
 
 local state = {
     addonName = addonName,
@@ -534,7 +538,14 @@ end
 function Core:RequestHotspotList()
     self.lastHotspotRequest = GetTime()
     DebugPrint("Requesting hotspot list from server")
-    SendChatMessage(".hotspot list", "SAY")
+    
+    -- Use DCAddonProtocol if available
+    if Core.useDCProtocol and DC then
+        DC:Send("SPOT", 0x01)  -- CMSG_REQUEST_LIST
+    else
+        -- Fallback to chat command
+        SendChatMessage(".hotspot list", "SAY")
+    end
     
     -- Enable announcements after initial list load completes (with delay)
     if state.suppressAnnouncements then
@@ -548,6 +559,16 @@ function Core:RequestHotspotList()
                 DebugPrint("Announcements enabled")
             end
         end)
+    end
+end
+
+-- Request teleport to a hotspot
+function Core:RequestTeleport(hotspotId)
+    if Core.useDCProtocol and DC then
+        DC:Send("SPOT", 0x02, hotspotId)  -- CMSG_TELEPORT
+    else
+        -- Fallback to chat command
+        SendChatMessage(".hotspot tp " .. hotspotId, "SAY")
     end
 end
 
@@ -634,5 +655,100 @@ eventFrame:SetScript("OnUpdate", function(_, elapsed)
         Core:RequestHotspotList()
     end
 end)
+
+-- =====================================================================
+-- DC ADDON PROTOCOL HANDLERS
+-- =====================================================================
+
+if DC then
+    local function DebugProtocol(...)
+        if state.db and state.db.debug then
+            print("|cff33ff99[DC-Hotspot Protocol]|r", ...)
+        end
+    end
+    
+    -- SMSG_LIST (0x10) - Hotspot list response
+    -- Format: count, then for each: id, mapId, zoneId, x, y, bonus, duration
+    DC:RegisterHandler("SPOT", 0x10, function(count, ...)
+        DebugProtocol("Received hotspot list, count:", count)
+        local args = {...}
+        local idx = 1
+        
+        for i = 1, (count or 0) do
+            local id = args[idx]
+            local mapId = args[idx + 1]
+            local zoneId = args[idx + 2]
+            local x = args[idx + 3]
+            local y = args[idx + 4]
+            local bonus = args[idx + 5]
+            local duration = args[idx + 6]
+            idx = idx + 7
+            
+            if id then
+                local payload = {
+                    id = id,
+                    map = mapId,
+                    zone = zoneId,
+                    x = x,
+                    y = y,
+                    bonus = bonus,
+                    dur = duration,
+                }
+                Core:ProcessHotspotPayload(payload)
+            end
+        end
+    end)
+    
+    -- SMSG_NEW_HOTSPOT (0x11) - New hotspot spawned
+    DC:RegisterHandler("SPOT", 0x11, function(id, mapId, zoneId, x, y, bonus, duration)
+        DebugProtocol("New hotspot:", id)
+        local payload = {
+            id = id,
+            map = mapId,
+            zone = zoneId,
+            x = x,
+            y = y,
+            bonus = bonus,
+            dur = duration,
+        }
+        Core:ProcessHotspotPayload(payload)
+    end)
+    
+    -- SMSG_HOTSPOT_EXPIRED (0x12) - Hotspot expired/removed
+    DC:RegisterHandler("SPOT", 0x12, function(hotspotId)
+        DebugProtocol("Hotspot expired:", hotspotId)
+        if hotspotId and state.hotspots[hotspotId] then
+            local record = state.hotspots[hotspotId]
+            state.hotspots[hotspotId] = nil
+            
+            if Pins and Pins.RemoveHotspot then
+                Pins:RemoveHotspot(hotspotId)
+            end
+            
+            if not state.suppressAnnouncements and state.db and state.db.announceExpire then
+                print("|cffff8800[DC-Hotspot]|r Hotspot expired in " .. (record.zone or "unknown zone"))
+            end
+        end
+    end)
+    
+    -- SMSG_TELEPORT_RESULT (0x13) - Teleport result
+    DC:RegisterHandler("SPOT", 0x13, function(success, hotspotId, message)
+        if success then
+            print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. hotspotId)
+        else
+            print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (message or "Unknown error"))
+        end
+    end)
+    
+    -- SMSG_ENTERED_HOTSPOT (0x14) - Player entered a hotspot zone
+    DC:RegisterHandler("SPOT", 0x14, function(hotspotId, bonus)
+        print("|cff00ff00[DC-Hotspot]|r You entered an XP hotspot! (+" .. (bonus or 100) .. "% XP)")
+    end)
+    
+    -- SMSG_LEFT_HOTSPOT (0x15) - Player left a hotspot zone
+    DC:RegisterHandler("SPOT", 0x15, function(hotspotId)
+        print("|cffffff00[DC-Hotspot]|r You left the XP hotspot zone.")
+    end)
+end
 
 return Core

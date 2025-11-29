@@ -14,6 +14,7 @@
 #include "WorldSession.h"
 #include "WorldPacket.h"
 #include "Chat.h"
+#include "SharedDefines.h"
 #include "Log.h"
 #include "Config.h"
 #include "GameTime.h"
@@ -53,8 +54,10 @@ namespace DCAddon
     static void SendRaw(Player* player, const std::string& msg)
     {
         // Build addon message using proper CHAT_MSG_WHISPER format
+        // Format: "DC\t<payload>" - client parses prefix "DC" and message is the payload
+        std::string fullMsg = std::string(DC_PREFIX) + "\t" + msg;
         WorldPacket data;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, msg);
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
         player->SendDirectMessage(&data);
     }
 
@@ -310,9 +313,38 @@ class DCAddonMessageRouterScript : public PlayerScript
 public:
     DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript") {}
     
-    // Note: AzerothCore PlayerScript doesn't have OnBeforeSendChatMessage
-    // Addon message handling is done via OnChat hooks or custom implementation
-    // This script is a placeholder for future expansion
+    // Intercept addon messages with "DC" prefix and route to handlers
+    void OnPlayerBeforeSendChatMessage(Player* player, uint32& type, uint32& lang, std::string& msg) override
+    {
+        // Only process addon whisper messages
+        if (lang != LANG_ADDON || type != CHAT_MSG_WHISPER)
+            return;
+        
+        // Addon messages are formatted as "PREFIX\tPAYLOAD"
+        // Check if message starts with "DC\t"
+        static const std::string dcPrefix = "DC\t";
+        if (msg.rfind(dcPrefix, 0) != 0)
+            return;
+        
+        // Skip the "DC\t" prefix and route to handler
+        std::string payload = msg.substr(3);  // Everything after "DC\t"
+        
+        if (s_AddonConfig.EnableDebugLog)
+            LOG_DEBUG("dc.addon", "Routing DC message from {}: {}", player->GetName(), payload);
+        
+        // Route the message
+        bool handled = DCAddon::MessageRouter::Instance().Route(player, payload);
+        
+        if (handled)
+        {
+            // Message was handled by DC protocol - clear it to prevent normal processing
+            msg.clear();
+        }
+        else if (s_AddonConfig.EnableDebugLog)
+        {
+            LOG_DEBUG("dc.addon", "No handler for DC message from {}: {}", player->GetName(), payload);
+        }
+    }
 };
 
 class DCAddonWorldScript : public WorldScript

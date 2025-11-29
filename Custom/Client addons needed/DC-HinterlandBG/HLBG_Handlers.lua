@@ -1254,6 +1254,71 @@ SlashCmdList['HLBGREFRESH'] = function()
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent fallback chat commands')
     end)
 end
+
+-- Protocol settings and control commands
+SLASH_HLBGPROTO1 = '/hlbgproto'
+SLASH_HLBGPROTO2 = '/hlbgprotocol'
+SlashCmdList['HLBGPROTO'] = function(msg)
+    msg = (msg or ""):lower():match("^%s*(.-)%s*$")  -- trim
+    DCHLBGDB = DCHLBGDB or {}
+    
+    if msg == "json" then
+        -- Toggle JSON mode for DC protocol
+        DCHLBGDB.useDCProtocolJSON = not (DCHLBGDB.useDCProtocolJSON == true)
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r DC Protocol JSON mode: ' .. 
+            (DCHLBGDB.useDCProtocolJSON and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
+    elseif msg == "status" then
+        -- Request status via DC protocol
+        if HLBG.RequestStatus then
+            HLBG.RequestStatus()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requesting BG status...')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
+        end
+    elseif msg == "queue" then
+        -- Quick queue via DC protocol
+        if HLBG.QuickQueue then
+            HLBG.QuickQueue()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Joining HLBG queue...')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
+        end
+    elseif msg == "leave" then
+        -- Leave queue via DC protocol
+        if HLBG.LeaveQueue then
+            HLBG.LeaveQueue()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Leaving HLBG queue...')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
+        end
+    elseif msg == "stats" then
+        -- Request stats via DC protocol
+        if HLBG.RequestStats then
+            HLBG.RequestStats()
+            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requesting stats...')
+        else
+            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
+        end
+    elseif msg == "help" then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Protocol Commands:|r')
+        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto json - Toggle JSON protocol mode')
+        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto status - Request BG status')
+        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto queue - Quick queue for HLBG')
+        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto leave - Leave HLBG queue')
+        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto stats - Request your stats')
+    else
+        -- Show protocol status
+        local dcAvail = rawget(_G, "DCAddonProtocol") and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"
+        local aioAvail = rawget(_G, "AIO") and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Protocol Status:|r')
+        DEFAULT_CHAT_FRAME:AddMessage('  DCAddonProtocol: ' .. dcAvail)
+        DEFAULT_CHAT_FRAME:AddMessage('  AIO: ' .. aioAvail)
+        DEFAULT_CHAT_FRAME:AddMessage('  JSON mode: ' .. 
+            (DCHLBGDB.useDCProtocolJSON and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
+        DEFAULT_CHAT_FRAME:AddMessage('  Type /hlbgproto help for commands')
+    end
+end
+
 -- Emergency: Enhanced HistoryStr function to properly handle TSV data and display
 HLBG.HistoryStr = HLBG.HistoryStr or function(tsv, page, per, total, sortKey, sortDir)
     pcall(function()
@@ -1343,5 +1408,374 @@ end
 -- expose helpers for other files
 HLBG.EnsurePvPTab = EnsurePvPTab
 HLBG.EnsurePvPHeaderButton = EnsurePvPHeaderButton
+
+-- =====================================================================
+-- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
+-- =====================================================================
+
+-- Settings toggle for JSON vs pipe-delimited
+DCHLBGDB = DCHLBGDB or {}
+DCHLBGDB.useDCProtocolJSON = DCHLBGDB.useDCProtocolJSON or true  -- Prefer JSON by default
+
+-- DCAddonProtocol reference
+local DC = rawget(_G, "DCAddonProtocol")
+
+if DC then
+    -- Helper to decode JSON from DC protocol
+    local function DecodeJSON(jsonStr)
+        if type(DC.DecodeJSON) == 'function' then
+            return DC:DecodeJSON(jsonStr)
+        end
+        -- Try HLBG's built-in decoder
+        if type(HLBG.json_decode) == 'function' then
+            return HLBG.json_decode(jsonStr)
+        end
+        -- Fallback simple JSON decoder
+        local ok, result = pcall(function()
+            if type(jsonStr) ~= 'string' then return nil end
+            local obj = {}
+            for key, val in jsonStr:gmatch('"([^"]+)":([^,}]+)') do
+                val = val:gsub('^%s*', ''):gsub('%s*$', '')
+                if val == 'true' then obj[key] = true
+                elseif val == 'false' then obj[key] = false
+                elseif val:match('^"') then obj[key] = val:gsub('^"', ''):gsub('"$', '')
+                else obj[key] = tonumber(val) or val end
+            end
+            return obj
+        end)
+        return ok and result or nil
+    end
+
+    -- Check if message is JSON format (starts with "J" marker)
+    local function IsJSONMessage(...)
+        local args = {...}
+        return args[1] == "J"
+    end
+    
+    local function HLBGPrint(msg)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r " .. (msg or ""))
+        end
+    end
+
+    -- SMSG_STATUS (0x10) - BG status update
+    DC:RegisterHandler("HLBG", 0x10, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                RES = RES or {}
+                RES.A = json.alliance or json.A or 0
+                RES.H = json.horde or json.H or 0
+                RES.END = json.duration or json.elapsed or 0
+                RES.LOCK = 0
+                
+                HLBG._lastStatus = HLBG._lastStatus or {}
+                HLBG._lastStatus.A = RES.A
+                HLBG._lastStatus.H = RES.H
+                HLBG._lastStatus.allianceResources = RES.A
+                HLBG._lastStatus.hordeResources = RES.H
+                HLBG._lastStatus.DURATION = RES.END
+                HLBG._lastStatus.allianceBases = json.allianceBases or 0
+                HLBG._lastStatus.hordeBases = json.hordeBases or 0
+                HLBG._lastStatus.affix = json.affix
+                HLBG._lastStatus.season = json.season
+                HLBG._lastStatusTime = GetTime()
+                
+                if json.affix then
+                    HLBG._affixText = json.affix
+                end
+                
+                if type(HLBG.UpdateHUDVisibility) == 'function' then
+                    pcall(HLBG.UpdateHUDVisibility)
+                end
+                if type(HLBG.UpdateHUD) == 'function' then
+                    pcall(HLBG.UpdateHUD)
+                end
+                
+                pcall(function()
+                    if HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then
+                        HLBG.DebugLog('DC_STATUS_JSON', json)
+                    end
+                end)
+            end
+        else
+            -- Pipe-delimited format
+            local status, mapId, timeRemaining = args[1], args[2], args[3]
+            RES = RES or {}
+            RES.END = tonumber(timeRemaining) or 0
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+        end
+    end)
+    
+    -- SMSG_RESOURCES (0x11) - Resource update
+    DC:RegisterHandler("HLBG", 0x11, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                RES = RES or {}
+                RES.A = json.A or json.alliance or RES.A or 0
+                RES.H = json.H or json.horde or RES.H or 0
+                
+                HLBG._lastStatus = HLBG._lastStatus or {}
+                HLBG._lastStatus.A = RES.A
+                HLBG._lastStatus.H = RES.H
+                HLBG._lastStatus.allianceBases = json.aBases or 0
+                HLBG._lastStatus.hordeBases = json.hBases or 0
+                HLBG._lastStatus.allianceKills = json.aKills or 0
+                HLBG._lastStatus.hordeKills = json.hKills or 0
+                HLBG._lastStatusTime = GetTime()
+                
+                if type(HLBG.UpdateHUD) == 'function' then
+                    pcall(HLBG.UpdateHUD)
+                end
+            end
+        else
+            -- Pipe-delimited format
+            local allianceRes, hordeRes, aBases, hBases = args[1], args[2], args[3], args[4]
+            RES = RES or {}
+            RES.A = tonumber(allianceRes) or RES.A or 0
+            RES.H = tonumber(hordeRes) or RES.H or 0
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+        end
+    end)
+    
+    -- SMSG_QUEUE_UPDATE (0x13) - Queue status
+    DC:RegisterHandler("HLBG", 0x13, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                local status = json.status
+                local position = json.position or 0
+                local eta = json.eta or 0
+                local inQueue = json.inQueue or 0
+                
+                if status == 1 then
+                    HLBGPrint(string.format("Queued for HLBG! Position: %d, ETA: %d sec, Players in queue: %d",
+                        position, eta, inQueue))
+                elseif status == 0 then
+                    HLBGPrint("Left the HLBG queue.")
+                end
+                
+                if type(HLBG.HandleQueueStatus) == 'function' then
+                    pcall(HLBG.HandleQueueStatus, json)
+                end
+            end
+        else
+            local queueStatus, position, estimatedTime = args[1], args[2], args[3]
+            if tonumber(queueStatus) == 1 then
+                HLBGPrint("Queued for HLBG!")
+            elseif tonumber(queueStatus) == 0 then
+                HLBGPrint("Left the HLBG queue.")
+            end
+        end
+    end)
+    
+    -- SMSG_TIMER_SYNC (0x14) - Timer synchronization
+    DC:RegisterHandler("HLBG", 0x14, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                RES = RES or {}
+                RES.END = json.max or 0
+                HLBG._lastStatus = HLBG._lastStatus or {}
+                HLBG._lastStatus.elapsed = json.elapsed or 0
+                HLBG._lastStatus.DURATION = json.max or 0
+                HLBG._lastStatus.isWarmup = json.warmup or false
+                HLBG._lastStatusTime = GetTime()
+                
+                if type(HLBG.UpdateHUD) == 'function' then
+                    pcall(HLBG.UpdateHUD)
+                end
+            end
+        else
+            local elapsedMs, maxMs = args[1], args[2]
+            RES = RES or {}
+            RES.END = tonumber(maxMs) or 0
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+        end
+    end)
+    
+    -- SMSG_TEAM_SCORE (0x15) - Team scores
+    DC:RegisterHandler("HLBG", 0x15, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                RES = RES or {}
+                RES.A = json.aScore or RES.A or 0
+                RES.H = json.hScore or RES.H or 0
+                
+                HLBG._lastStatus = HLBG._lastStatus or {}
+                HLBG._lastStatus.A = RES.A
+                HLBG._lastStatus.H = RES.H
+                HLBG._lastStatus.allianceKills = json.aKills or 0
+                HLBG._lastStatus.hordeKills = json.hKills or 0
+                HLBG._lastStatus.allianceDeaths = json.aDeaths or 0
+                HLBG._lastStatus.hordeDeaths = json.hDeaths or 0
+                
+                if type(HLBG.UpdateHUD) == 'function' then
+                    pcall(HLBG.UpdateHUD)
+                end
+            end
+        else
+            local aScore, hScore, aKills, hKills = args[1], args[2], args[3], args[4]
+            RES = RES or {}
+            RES.A = tonumber(aScore) or RES.A or 0
+            RES.H = tonumber(hScore) or RES.H or 0
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+        end
+    end)
+    
+    -- SMSG_STATS (0x16) - Player stats
+    DC:RegisterHandler("HLBG", 0x16, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                local stats = {
+                    season = json.season or 1,
+                    totalBattles = json.matches or 0,
+                    counts = { Alliance = json.wins or 0, Horde = json.losses or 0 },
+                    draws = json.draws or 0,
+                    kills = json.kills or 0,
+                    deaths = json.deaths or 0,
+                    objectives = json.objectives or 0,
+                    avgDuration = json.avgDuration or 0
+                }
+                
+                if type(HLBG.Stats) == 'function' then
+                    pcall(HLBG.Stats, stats)
+                end
+                
+                HLBGPrint(string.format("Season %d: %d matches, %d wins, %d losses, %d draws",
+                    stats.season, stats.totalBattles, stats.counts.Alliance, stats.counts.Horde, stats.draws))
+            end
+        else
+            local total, wins, losses, kills, deaths, obj, season = args[1], args[2], args[3], args[4], args[5], args[6], args[7]
+            HLBGPrint(string.format("Stats: %d matches, %d wins, %d losses",
+                tonumber(total) or 0, tonumber(wins) or 0, tonumber(losses) or 0))
+        end
+    end)
+    
+    -- SMSG_AFFIX_INFO (0x17) - Affix information
+    DC:RegisterHandler("HLBG", 0x17, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                HLBG._affixText = json.affixName or ""
+                HLBG._affixDesc = json.affixDesc or ""
+                HLBG._currentSeason = json.season
+                HLBG._currentSeasonName = json.seasonName
+                
+                if type(HLBG.UpdateHUD) == 'function' then
+                    pcall(HLBG.UpdateHUD)
+                end
+                
+                if json.affixName then
+                    HLBGPrint("Current affix: " .. json.affixName)
+                end
+            end
+        else
+            local affixId1, affixId2, affixId3, seasonId = args[1], args[2], args[3], args[4]
+            -- Handle pipe-delimited affix info
+        end
+    end)
+    
+    -- SMSG_MATCH_END (0x18) - Match end notification
+    DC:RegisterHandler("HLBG", 0x18, function(...)
+        local args = {...}
+        
+        if IsJSONMessage(...) then
+            local json = DecodeJSON(args[2])
+            if json then
+                local winner = json.winner or (json.victory and "Your team" or "Enemy team")
+                local aScore = json.aScore or 0
+                local hScore = json.hScore or 0
+                local reason = json.reason or "resources"
+                
+                HLBGPrint(string.format("Match ended! Winner: %s (A: %d, H: %d) - %s",
+                    winner, aScore, hScore, reason))
+                
+                if json.honor and json.honor > 0 then
+                    HLBGPrint(string.format("Rewards: %d honor, %d rep, %d tokens",
+                        json.honor or 0, json.rep or 0, json.tokens or 0))
+                end
+                
+                -- Trigger results display if available
+                if type(HLBG.Results) == 'function' then
+                    pcall(HLBG.Results, json)
+                end
+            end
+        else
+            local victory, personalScore, honor, rep, tokens = args[1], args[2], args[3], args[4], args[5]
+            local winText = (victory == "1" or victory == 1) and "Victory!" or "Defeat"
+            HLBGPrint(string.format("%s Score: %d, Honor: %d", winText,
+                tonumber(personalScore) or 0, tonumber(honor) or 0))
+        end
+    end)
+    
+    -- Helper functions to send requests via DC protocol
+    HLBG.RequestStatus = function()
+        if DC then
+            DC:Send("HLBG", 0x01)  -- CMSG_REQUEST_STATUS
+        end
+    end
+    
+    HLBG.RequestResources = function()
+        if DC then
+            DC:Send("HLBG", 0x02)  -- CMSG_REQUEST_RESOURCES
+        end
+    end
+    
+    HLBG.QuickQueue = function()
+        if DC then
+            DC:Send("HLBG", 0x04)  -- CMSG_QUICK_QUEUE
+        end
+    end
+    
+    HLBG.LeaveQueue = function()
+        if DC then
+            DC:Send("HLBG", 0x05)  -- CMSG_LEAVE_QUEUE
+        end
+    end
+    
+    HLBG.RequestStats = function(seasonId)
+        if DC then
+            if seasonId then
+                DC:Send("HLBG", 0x06, tostring(seasonId))  -- CMSG_REQUEST_STATS with season
+            else
+                DC:Send("HLBG", 0x06)  -- CMSG_REQUEST_STATS
+            end
+        end
+    end
+    
+    -- Log that DC protocol handlers are registered
+    pcall(function()
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r DCAddonProtocol handlers registered")
+        end
+    end)
+end
+
 _G.HLBG = HLBG
 

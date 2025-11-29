@@ -2,8 +2,9 @@
 ## Title: DC-HLBG Addon
 ## Notes: Battleground addon with HUD, statistics, and match history
 ## Author: DC-255
-## Version: 1.3.0
+## Version: 1.4.0
 ## Dependencies: AIO_Client
+## OptionalDeps: DC-AddonProtocol
 ## LoadAfter: AIO_Client
 ## DefaultState: enabled
 ## SavedVariables: DCHLBGDB

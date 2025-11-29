@@ -447,5 +447,256 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         y = y - 36
     end
     InterfaceOptions_AddCategory(panel)
+    
+    -- =====================================================================
+    -- Communication Sub-Panel (Test Buttons)
+    -- =====================================================================
+    
+    local commPanel = CreateFrame('Frame', 'DCHLBG_CommOptions', panel)
+    commPanel.name = 'Communication'
+    commPanel.parent = panel.name
+    commPanel:Hide()
+    
+    local commTitle = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+    commTitle:SetPoint('TOPLEFT', 16, -16)
+    commTitle:SetText('Communication Settings')
+    
+    local commSubtitle = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+    commSubtitle:SetPoint('TOPLEFT', commTitle, 'BOTTOMLEFT', 0, -8)
+    commSubtitle:SetText('Configure and test DCAddonProtocol communication for HLBG.')
+    
+    commPanel:SetScript('OnShow', function(self)
+        HLBG.LoadSettings()
+        if self._controlsCreated then return end
+        self._controlsCreated = true
+        
+        local y = -70
+        local DC = rawget(_G, "DCAddonProtocol")
+        local AIO = rawget(_G, "AIO")
+        
+        local function HLBGPrint(msg)
+            if DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r " .. (msg or ""))
+            end
+        end
+        
+        -- Protocol Status
+        local statusHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        statusHeader:SetPoint('TOPLEFT', 16, y)
+        statusHeader:SetText('Protocol Status')
+        y = y - 24
+        
+        local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        dcStatus:SetPoint('TOPLEFT', 24, y)
+        dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+        y = y - 18
+        
+        local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        aioStatus:SetPoint('TOPLEFT', 24, y)
+        aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+        y = y - 30
+        
+        -- JSON Toggle
+        local jsonCheck = CreateFrame("CheckButton", "DCHLBG_Opt_JSONMode", commPanel, "InterfaceOptionsCheckButtonTemplate")
+        jsonCheck:SetPoint("TOPLEFT", 16, y)
+        jsonCheck:SetHitRectInsets(0, -200, 0, 0)
+        _G["DCHLBG_Opt_JSONModeText"]:SetText("Use JSON Protocol (recommended)")
+        jsonCheck:SetChecked(DCHLBGDB and DCHLBGDB.useDCProtocolJSON)
+        jsonCheck:SetScript("OnClick", function(self)
+            HLBG.SaveSetting("useDCProtocolJSON", self:GetChecked())
+            HLBGPrint("JSON Protocol mode: " .. (self:GetChecked() and "ON" or "OFF"))
+        end)
+        y = y - 40
+        
+        -- Test Buttons Section
+        local testHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        testHeader:SetPoint('TOPLEFT', 16, y)
+        testHeader:SetText('Test Communication')
+        y = y - 8
+        
+        local testDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+        testDesc:SetPoint('TOPLEFT', 24, y)
+        testDesc:SetText('Use these buttons to test server communication via DCAddonProtocol.')
+        testDesc:SetTextColor(0.7, 0.7, 0.7)
+        y = y - 30
+        
+        -- Helper to create test buttons
+        local function makeTestButton(text, tooltip, onClick)
+            local btn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
+            btn:SetSize(180, 26)
+            btn:SetPoint("TOPLEFT", 24, y)
+            btn:SetText(text)
+            btn:SetScript("OnClick", function()
+                HLBGPrint("Testing: " .. text .. "...")
+                onClick()
+            end)
+            btn.tooltipText = tooltip
+            btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(self.tooltipText or text, nil, nil, nil, nil, true)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            y = y - 32
+            return btn
+        end
+        
+        -- Test Button: Request Status
+        makeTestButton("Request BG Status", "Send CMSG_REQUEST_STATUS (0x01) to server", function()
+            if HLBG.RequestStatus then
+                HLBG.RequestStatus()
+            elseif DC then
+                DC:Send("HLBG", 0x01)
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Request Resources
+        makeTestButton("Request Resources", "Send CMSG_REQUEST_RESOURCES (0x02) to server", function()
+            if HLBG.RequestResources then
+                HLBG.RequestResources()
+            elseif DC then
+                DC:Send("HLBG", 0x02)
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Quick Queue
+        makeTestButton("Quick Queue", "Send CMSG_QUICK_QUEUE (0x04) to join BG queue", function()
+            if HLBG.QuickQueue then
+                HLBG.QuickQueue()
+            elseif DC then
+                DC:Send("HLBG", 0x04)
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Leave Queue
+        makeTestButton("Leave Queue", "Send CMSG_LEAVE_QUEUE (0x05) to leave BG queue", function()
+            if HLBG.LeaveQueue then
+                HLBG.LeaveQueue()
+            elseif DC then
+                DC:Send("HLBG", 0x05)
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Request Stats
+        makeTestButton("Request Stats", "Send CMSG_REQUEST_STATS (0x06) to get player stats", function()
+            if HLBG.RequestStats then
+                HLBG.RequestStats()
+            elseif DC then
+                DC:Send("HLBG", 0x06)
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Send Test JSON Message
+        makeTestButton("Send Test JSON", "Send a test JSON-formatted message", function()
+            if DC and DC.SendJSON then
+                DC:SendJSON("HLBG", 0x00, { test = true, timestamp = time() })
+                HLBGPrint("Sent test JSON message")
+            elseif DC then
+                DC:Send("HLBG", 0x00, "J", '{"test":true}')
+                HLBGPrint("Sent test message with JSON marker")
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        -- Test Button: Ping Protocol (Handshake)
+        makeTestButton("Ping Server (Handshake)", "Send CMSG_HANDSHAKE to test connectivity", function()
+            if DC then
+                DC:Send("CORE", 0x01)  -- CMSG_HANDSHAKE
+                HLBGPrint("Sent handshake request")
+            else
+                HLBGPrint("|cFFFF0000Error:|r DCAddonProtocol not available")
+            end
+        end)
+        
+        y = y - 20
+        
+        -- AIO Fallback Tests
+        local aioHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        aioHeader:SetPoint('TOPLEFT', 16, y)
+        aioHeader:SetText('AIO Fallback Tests')
+        y = y - 8
+        
+        local aioDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+        aioDesc:SetPoint('TOPLEFT', 24, y)
+        aioDesc:SetText('Test the Eluna AIO system (requires AIO addon).')
+        aioDesc:SetTextColor(0.7, 0.7, 0.7)
+        y = y - 30
+        
+        -- Test Button: AIO Request History
+        makeTestButton("AIO: Request History", "Request battle history via AIO.Handle", function()
+            if AIO and AIO.Handle then
+                local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+                AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, season, "id", "DESC")
+                HLBGPrint("Sent AIO history request")
+            else
+                HLBGPrint("|cFFFF0000Error:|r AIO not available")
+            end
+        end)
+        
+        -- Test Button: AIO Request Stats
+        makeTestButton("AIO: Request Stats", "Request stats via AIO.Handle", function()
+            if AIO and AIO.Handle then
+                local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+                AIO.Handle("HLBG", "Request", "STATS", season)
+                HLBGPrint("Sent AIO stats request")
+            else
+                HLBGPrint("|cFFFF0000Error:|r AIO not available")
+            end
+        end)
+        
+        y = y - 20
+        
+        -- Results/Log Section
+        local logHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        logHeader:SetPoint('TOPLEFT', 16, y)
+        logHeader:SetText('Test Results')
+        y = y - 8
+        
+        local logDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+        logDesc:SetPoint('TOPLEFT', 24, y)
+        logDesc:SetText('Results will appear in the chat window. Enable Developer Mode for verbose output.')
+        logDesc:SetTextColor(0.7, 0.7, 0.7)
+        y = y - 30
+        
+        -- Refresh Status Button
+        local refreshBtn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
+        refreshBtn:SetSize(140, 24)
+        refreshBtn:SetPoint("TOPLEFT", 24, y)
+        refreshBtn:SetText("Refresh Status")
+        refreshBtn:SetScript("OnClick", function()
+            local dc = rawget(_G, "DCAddonProtocol")
+            local aio = rawget(_G, "AIO")
+            dcStatus:SetText('DCAddonProtocol: ' .. (dc and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+            aioStatus:SetText('AIO (Eluna): ' .. (aio and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+            HLBGPrint("Status refreshed")
+        end)
+        
+        -- Open Debug Window Button
+        y = y - 32
+        local debugBtn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
+        debugBtn:SetSize(140, 24)
+        debugBtn:SetPoint("TOPLEFT", 24, y)
+        debugBtn:SetText("Open Debug Log")
+        debugBtn:SetScript("OnClick", function()
+            if HLBG.ShowDebugWindow then
+                HLBG.ShowDebugWindow()
+            else
+                HLBGPrint("Debug window not available")
+            end
+        end)
+    end)
+    
+    InterfaceOptions_AddCategory(commPanel)
 end
 

@@ -3,6 +3,7 @@
 -- ============================================================
 -- A lightweight WoW 3.3.5a addon for managing AoE loot settings
 -- Integrates with Interface -> AddOns menu
+-- Uses DCAddonProtocol for server communication (with fallback)
 -- ============================================================
 
 -- Create the addon namespace
@@ -11,8 +12,12 @@ local addon = DCAoELootSettings
 
 -- Addon info
 addon.name = "DC-AOESettings"
-addon.version = "1.0.6"
-addon.prefix = "DCAOE"
+addon.version = "1.1.0"
+addon.prefix = "DCAOE"  -- Legacy prefix (fallback)
+
+-- DCAddonProtocol integration
+local DC = rawget(_G, "DCAddonProtocol")
+addon.useDCProtocol = (DC ~= nil)
 
 -- Helper function to clamp a value within a range (defined early for use throughout)
 local function Clamp(value, minVal, maxVal)
@@ -143,16 +148,32 @@ function addon:SendServerCommand(cmd)
 end
 
 function addon:SyncSettingToServer(settingKey, value)
-    -- Map settings to server commands that directly set the state (not toggles)
+    -- Use DCAddonProtocol if available
+    if self.useDCProtocol and DC then
+        if settingKey == "enabled" then
+            DC.AOE.Toggle(value)
+        elseif settingKey == "minQuality" then
+            DC.AOE.SetQuality(value)
+        elseif settingKey == "autoSkin" then
+            DC.AOE.SetAutoSkin(value)
+        elseif settingKey == "showMessages" then
+            -- TODO: Add showMessages to protocol
+            self:SendServerCommand(value and ".lp msg 1" or ".lp msg 0")
+        elseif settingKey == "smartLoot" then
+            -- TODO: Add smartLoot to protocol
+            self:SendServerCommand(value and ".lp smartset 1" or ".lp smartset 0")
+        end
+        return
+    end
+    
+    -- Fallback: Map settings to server commands that directly set the state (not toggles)
     if settingKey == "enabled" then
-        -- Use .lp enable or .lp disable to set state directly
         if value then
             self:SendServerCommand(".lp enable")
         else
             self:SendServerCommand(".lp disable")
         end
     elseif settingKey == "showMessages" then
-        -- Use .lp msg true/false to set state directly
         if value then
             self:SendServerCommand(".lp msg 1")
         else
@@ -161,14 +182,12 @@ function addon:SyncSettingToServer(settingKey, value)
     elseif settingKey == "minQuality" then
         self:SendServerCommand(".lp quality " .. tostring(value))
     elseif settingKey == "autoSkin" then
-        -- Use .lp skinset true/false to set state directly
         if value then
             self:SendServerCommand(".lp skinset 1")
         else
             self:SendServerCommand(".lp skinset 0")
         end
     elseif settingKey == "smartLoot" then
-        -- Use .lp smartset true/false to set state directly
         if value then
             self:SendServerCommand(".lp smartset 1")
         else
@@ -216,6 +235,7 @@ end
 function addon:OnEvent(event, ...)
     if event == "CHAT_MSG_ADDON" then
         local prefix, message, channel, sender = ...
+        -- Handle legacy prefix
         if prefix == self.prefix then
             self:HandleServerMessage(message)
         end
@@ -232,10 +252,75 @@ function addon:OnEvent(event, ...)
     end
 end
 
+-- Register DCAddonProtocol handlers if available
+if DC then
+    -- Handle settings sync from server (opcode 0x11 = SMSG_SETTINGS_SYNC)
+    DC:RegisterHandler("AOE", 0x11, function(enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor)
+        addon.settings.enabled = enabled
+        addon.settings.showMessages = showMessages
+        addon.settings.minQuality = Clamp(minQuality or 0, 0, 5)
+        addon.settings.autoSkin = autoSkin
+        addon.settings.smartLoot = smartLoot
+        addon.settings.autoVendorPoor = autoVendorPoor or false
+        
+        addon:SaveSettingsLocal()
+        addon:UpdateUI()
+        addon:Print("Settings synced from server.", true)
+    end)
+    
+    -- Handle stats response (opcode 0x10 = SMSG_STATS)
+    DC:RegisterHandler("AOE", 0x10, function(totalItems, totalGold, vendorGold, upgrades)
+        addon:ShowStats(totalItems, totalGold, vendorGold, upgrades)
+    end)
+    
+    -- Handle loot result notification (opcode 0x12 = SMSG_LOOT_RESULT)
+    DC:RegisterHandler("AOE", 0x12, function(itemCount, quality)
+        if addon.settings.showMessages then
+            addon:Print("Looted " .. itemCount .. " items", false)
+        end
+    end)
+    
+    -- Handle gold collected notification (opcode 0x13 = SMSG_GOLD_COLLECTED)
+    DC:RegisterHandler("AOE", 0x13, function(copperAmount)
+        if addon.settings.showMessages and copperAmount > 0 then
+            local goldStr = GetCoinTextureString(copperAmount)
+            addon:Print("Collected " .. goldStr, false)
+        end
+    end)
+end
+
 -- ============================================================
--- Server Communication
+-- Server Communication (DCAddonProtocol + Legacy fallback)
 -- ============================================================
+
+-- Send message using DCAddonProtocol if available, otherwise legacy
 function addon:SendToServer(messageType, data)
+    if self.useDCProtocol and DC then
+        -- Use new protocol: DC|AOE|opcode|data...
+        local opcode = 0x06  -- CMSG_GET_SETTINGS default
+        if messageType == "GET_SETTINGS" then
+            opcode = 0x06
+            DC.AOE.GetSettings()
+            return
+        elseif messageType == "SAVE_SETTINGS" then
+            -- Parse data and send individual settings via protocol
+            if data then
+                local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = strsplit(",", data)
+                -- The new protocol handles individual setting changes
+                -- For bulk save, we'll send each setting
+                DC.AOE.Toggle(tonumber(enabled) == 1)
+                DC.AOE.SetQuality(tonumber(minQuality) or 0)
+                DC.AOE.SetAutoSkin(tonumber(autoSkin) == 1)
+            end
+            return
+        elseif messageType == "GET_STATS" then
+            opcode = 0x03
+            DC.AOE.GetStats()
+            return
+        end
+    end
+    
+    -- Legacy fallback: use old prefix
     local message = messageType
     if data then
         message = message .. ":" .. data
@@ -244,7 +329,11 @@ function addon:SendToServer(messageType, data)
 end
 
 function addon:RequestSettings()
-    self:SendToServer("GET_SETTINGS")
+    if self.useDCProtocol and DC then
+        DC.AOE.GetSettings()
+    else
+        self:SendToServer("GET_SETTINGS")
+    end
 end
 
 function addon:SaveSettings()

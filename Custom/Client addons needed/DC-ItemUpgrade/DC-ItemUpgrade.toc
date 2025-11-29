@@ -2,9 +2,10 @@
 ## Title: DC-ItemUpgrade (Retail Style)
 ## Notes: Item Upgrade System - Retail 11.2.7 Backport for 3.3.5a
 ## Author: DarkChaos
-## Version: 2.1-modular
+## Version: 2.2-modular
 ## SavedVariables: DC_ItemUpgrade_Settings
 ## SavedVariablesPerCharacter: DC_ItemUpgrade_CharSettings
+## OptionalDeps: DC-AddonProtocol
 
 ## Load Order: Core modules first, then main file, then XML
 Core.lua

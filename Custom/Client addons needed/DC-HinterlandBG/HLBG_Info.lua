@@ -1,4 +1,4 @@
-﻿-- HLBG_Info.lua - Info panel for Hinterland Battleground AddOn
+-- HLBG_Info.lua - Info panel for Hinterland Battleground AddOn
 -- This file provides updated info about the battleground
 -- Initialize our addon namespace if needed
 if not HLBG then HLBG = {} end
@@ -27,7 +27,10 @@ function HLBG.ParseConfigInfo(message)
         end
     end
     
-    HLBG.DebugPrint("Server config updated: " .. table.getn(HLBG.ServerConfig) .. " parameters")
+    -- Count table entries (works for hash tables)
+    local count = 0
+    for _ in pairs(HLBG.ServerConfig) do count = count + 1 end
+    HLBG.DebugPrint("Server config updated: " .. count .. " parameters")
     
     -- Refresh Info panel if it's currently visible
     if HLBG.UI and HLBG.UI.Info and HLBG.UI.Info:IsShown() then

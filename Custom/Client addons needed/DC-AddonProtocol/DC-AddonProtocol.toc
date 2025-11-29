@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: DC Addon Protocol
+## Notes: Communication library for DC addons
+## Version: 1.2.0
+## LoadFirst: 1
+
+DCAddonProtocol.lua

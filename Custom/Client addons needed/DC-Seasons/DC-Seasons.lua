@@ -1,15 +1,20 @@
 --[[
-    DC-Seasons - Client Addon (AIO)
+    DC-Seasons - Client Addon (AIO + DCAddonProtocol)
     DarkChaos Seasonal Reward System UI
     
     Displays reward notifications and seasonal progress tracking
+    Supports both AIO and DCAddonProtocol for server communication
     
     Author: DarkChaos Development Team
-    Date: November 22, 2025
+    Date: November 28, 2025
 ]]--
 
 local ADDON_NAME = "DC-Seasons"
 local DCSeasons = {}
+
+-- DCAddonProtocol integration
+local DC = rawget(_G, "DCAddonProtocol")
+DCSeasons.useDCProtocol = (DC ~= nil)
 
 local DEFAULT_SETTINGS = {
     autoShowTracker = true,
@@ -411,6 +416,44 @@ if AIO and AIO.AddHandlers then
 end
 
 -- =====================================================================
+-- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
+-- =====================================================================
+
+if DC then
+    -- SMSG_CURRENT_SEASON (0x10) - Season info response
+    DC:RegisterHandler("SEAS", 0x10, function(seasonId, seasonName, startTime, endTime, daysRemaining)
+        DCSeasons.Data.seasonNumber = seasonId or 1
+        DCSeasons.Data.seasonName = seasonName or "Season of Discovery"
+        DCSeasons:UpdateProgressTracker()
+    end)
+    
+    -- SMSG_PROGRESS (0x12) - Progress update
+    DC:RegisterHandler("SEAS", 0x12, function(seasonId, seasonLevel, currentXP, xpToNextLevel, totalPoints, rank, tier)
+        DCSeasons.Data.weeklyTokens = currentXP or 0
+        DCSeasons.Data.weeklyTokenCap = xpToNextLevel or 5000
+        DCSeasons:UpdateProgressTracker()
+    end)
+    
+    -- SMSG_REWARDS (0x11) - Rewards list
+    DC:RegisterHandler("SEAS", 0x11, function(seasonId, rewardCount, ...)
+        -- Handle rewards list if needed
+    end)
+    
+    -- SMSG_SEASON_END (0x13) - Season ended notification
+    DC:RegisterHandler("SEAS", 0x13, function(seasonId, finalLevel, finalRank, bonusRewardItemId)
+        print("|cff00ff00[DC-Seasons]|r Season " .. seasonId .. " has ended! Final rank: " .. finalRank)
+    end)
+    
+    -- Request season data on load
+    DCSeasons.RequestSeasonData = function()
+        if DC and DC.Season then
+            DC:Send("SEAS", 0x01)  -- CMSG_GET_CURRENT
+            DC:Send("SEAS", 0x03)  -- CMSG_GET_PROGRESS
+        end
+    end
+end
+
+-- =====================================================================
 -- OPTIONS PANEL
 -- =====================================================================
 
@@ -498,6 +541,11 @@ local function Initialize()
             DCSeasons.Frames.progressTracker:Show()
             DCSeasons:UpdateProgressTracker()
         end
+    end
+    
+    -- Request season data via DCAddonProtocol if available
+    if DCSeasons.useDCProtocol and DCSeasons.RequestSeasonData then
+        DCSeasons.RequestSeasonData()
     end
 end
 

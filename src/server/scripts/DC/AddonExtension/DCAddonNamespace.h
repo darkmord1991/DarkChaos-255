@@ -908,7 +908,8 @@ namespace DCAddon
             if (!player || !player->GetSession())
                 return;
             
-            std::string fullMsg = Build();
+            // Build the full message with DC prefix and tab separator
+            std::string fullMsg = std::string(DC_PREFIX) + "\t" + Build();
             
             // Use proper ChatHandler to build addon message packet
             WorldPacket data;
