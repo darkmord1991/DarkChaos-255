@@ -16,6 +16,7 @@ void AddSC_dc_addon_spectator();
 void AddSC_dc_addon_hotspot();
 void AddSC_dc_addon_hlbg();
 void AddSC_dc_addon_seasons();
+void AddSC_dc_addon_leaderboards();
 
 // Future module handlers:
 // void AddSC_dc_addon_duels();
@@ -34,6 +35,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_hotspot();
     AddSC_dc_addon_hlbg();
     AddSC_dc_addon_seasons();
+    AddSC_dc_addon_leaderboards();
     
     // Future module handlers:
     // AddSC_dc_addon_duels();

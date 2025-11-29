@@ -70,6 +70,7 @@ namespace DCAddon
         constexpr const char* SEASONAL      = "SEAS";
         constexpr const char* CORE          = "CORE";   // Handshake, version check
         constexpr const char* HOTSPOT       = "SPOT";   // Hotspot/XP zones
+        constexpr const char* LEADERBOARD   = "LBRD";   // Unified leaderboards
     }
     
     // ========================================================================
@@ -230,6 +231,20 @@ namespace DCAddon
             constexpr uint8 SMSG_STATS             = 0x16;
             constexpr uint8 SMSG_AFFIX_INFO        = 0x17;
             constexpr uint8 SMSG_MATCH_END         = 0x18;
+        }
+        
+        // Unified Leaderboard opcodes
+        namespace Leaderboard
+        {
+            constexpr uint8 CMSG_GET_LEADERBOARD   = 0x01;  // Request leaderboard data
+            constexpr uint8 CMSG_GET_CATEGORIES    = 0x02;  // Request available categories
+            constexpr uint8 CMSG_GET_MY_RANK       = 0x03;  // Request player's rank
+            constexpr uint8 CMSG_REFRESH           = 0x04;  // Force refresh
+            
+            constexpr uint8 SMSG_LEADERBOARD_DATA  = 0x10;  // Leaderboard response
+            constexpr uint8 SMSG_CATEGORIES        = 0x11;  // Available categories
+            constexpr uint8 SMSG_MY_RANK           = 0x12;  // Player's rank info
+            constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response
         }
     }
     
