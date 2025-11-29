@@ -17,6 +17,8 @@
 #   10. AzerothCore Module Configurations - Various gameplay modules
 #   11. Map Extension System - GPS tracking for custom zones
 #   12. Phased Dueling System - Isolated phase duels with stat tracking
+#   13. Addon Communication Protocol - DC addon client/server messaging
+#   14. Unified Leaderboard System - Cross-system leaderboard aggregation
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -4966,6 +4968,60 @@ DC.AddonProtocol.Seasonal.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.HinterlandBG.Enable = 1
+
+#
+#    DC.AddonProtocol.Leaderboard.Enable
+#        Description: Enable DC addon protocol for Unified Leaderboards
+#                     When enabled, client addons can request and display
+#                     leaderboard data for all DC systems:
+#                     - Mythic+ (key level, runs, score)
+#                     - Seasons (tokens, essence, points)
+#                     - Hinterland BG (rating, wins, kills)
+#                     - Artifact Mastery (level, points)
+#                     - Item Upgrades (tokens, items, tier)
+#                     - Duels (wins, win rate, damage)
+#                     - AOE Loot (items, gold, upgrades)
+#                     - Achievements (completed, progress)
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Leaderboard.Enable = 1
+
+#
+#    DC.AddonProtocol.Leaderboard.EntriesPerPage
+#        Description: Default number of entries per leaderboard page
+#                     Client addons can request different limits up to max.
+#        Default:     25
+#        Range:       10 - 100
+#
+DC.AddonProtocol.Leaderboard.EntriesPerPage = 25
+
+#
+#    DC.AddonProtocol.Leaderboard.MaxEntriesPerPage
+#        Description: Maximum entries allowed per page request
+#                     Prevents excessive database queries from clients.
+#        Default:     50
+#        Range:       25 - 100
+#
+DC.AddonProtocol.Leaderboard.MaxEntriesPerPage = 50
+
+#
+#    DC.AddonProtocol.Leaderboard.CacheSeconds
+#        Description: How long to cache leaderboard data (in seconds)
+#                     Cached data reduces database load for popular queries.
+#                     Set to 0 to disable caching (not recommended).
+#        Default:     60 (1 minute)
+#        Range:       0 - 3600
+#
+DC.AddonProtocol.Leaderboard.CacheSeconds = 60
+
+#
+#    DC.AddonProtocol.Leaderboard.AllowCrossRealmRank
+#        Description: Show cross-realm ranking in leaderboards
+#                     When enabled, rankings include all connected realms.
+#                     When disabled, rankings are realm-specific.
+#        Default:     0 (Disabled - realm-specific)
+#
+DC.AddonProtocol.Leaderboard.AllowCrossRealmRank = 0
 
 #
 #    DC.AddonProtocol.Debug.Enable

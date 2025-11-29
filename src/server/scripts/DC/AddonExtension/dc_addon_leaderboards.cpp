@@ -91,15 +91,16 @@ namespace
     {
         std::vector<LeaderboardEntry> entries;
         
-        std::string orderBy = "s.best_level DESC, s.best_score DESC";
+        // Use aggregate function aliases in ORDER BY for sql_mode=only_full_group_by compatibility
+        std::string orderBy = "best_level DESC, total_score DESC";
         
         if (subcat == "mplus_runs")
         {
-            orderBy = "total_runs DESC, s.best_level DESC";
+            orderBy = "total_runs DESC, best_level DESC";
         }
         else if (subcat == "mplus_score")
         {
-            orderBy = "total_score DESC, s.best_level DESC";
+            orderBy = "total_score DESC, best_level DESC";
         }
         
         // Aggregate per-player across all dungeons for the season
@@ -108,7 +109,7 @@ namespace
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
             "WHERE s.season_id = {} "
-            "GROUP BY s.character_guid "
+            "GROUP BY s.character_guid, c.name, c.class "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             seasonId, orderBy, limit, offset);
@@ -376,7 +377,7 @@ namespace
             "SELECT c.name, c.class, MAX(p.mastery_level) as max_level, SUM(p.total_points_earned) as total_points, COUNT(DISTINCT p.artifact_id) as artifact_count "
             "FROM dc_player_artifact_mastery p "
             "JOIN characters c ON p.player_guid = c.guid "
-            "GROUP BY p.player_guid "
+            "GROUP BY p.player_guid, c.name, c.class "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
@@ -450,7 +451,7 @@ namespace
             "FROM dc_item_upgrades u "
             "JOIN characters c ON u.player_guid = c.guid "
             "WHERE u.season = {} OR u.season = 0 "
-            "GROUP BY u.player_guid "
+            "GROUP BY u.player_guid, c.name, c.class "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             seasonId, orderBy, limit, offset);
@@ -655,7 +656,7 @@ namespace
             "SELECT c.name, c.class, SUM(a.completed) as total_completed, SUM(a.progress) as total_progress "
             "FROM dc_player_achievements a "
             "JOIN characters c ON a.player_guid = c.guid "
-            "GROUP BY a.player_guid "
+            "GROUP BY a.player_guid, c.name, c.class "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
