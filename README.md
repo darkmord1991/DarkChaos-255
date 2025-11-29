@@ -1,7 +1,5 @@
-## I need help in every area to work on more topics and issues - especially scripting and Client changes
-## It would be great to have someone doing some wild stuff with map modifications in Ashzara Crater and the other level Areas for a more Classic+ feeling
 ## I am always open for proposals and discussions
-## Please contact me via Github or Discord (Darkmord1991)
+## Please contact me via Github or Discord (Darkmord1991) or join: (https://discord.gg/pNddMEMbb2)
 
 ---
 
