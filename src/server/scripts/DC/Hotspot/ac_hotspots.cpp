@@ -762,9 +762,18 @@ static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float 
 // Build a standardized addon payload string for a hotspot. Includes optional texture field if configured.
 static std::string BuildHotspotAddonPayload(const Hotspot& hotspot, int32 durationSeconds)
 {
+    // Get zone name from DBC
+    std::string zoneName = "Unknown";
+    if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+    {
+        if (area->area_name[0] && area->area_name[0][0])
+            zoneName = area->area_name[0];
+    }
+    
     std::ostringstream addon;
     addon << "HOTSPOT_ADDON|map:" << hotspot.mapId
           << "|zone:" << hotspot.zoneId
+          << "|zonename:" << zoneName
           << "|x:" << std::fixed << std::setprecision(2) << hotspot.x
           << "|y:" << std::fixed << std::setprecision(2) << hotspot.y
           << "|z:" << std::fixed << std::setprecision(2) << hotspot.z

@@ -5,12 +5,17 @@ local Pins = addonTable.Pins or {}
 local UI = addonTable.UI or {}
 local Debug = _G.DC_DebugUtils
 
--- DCAddonProtocol integration
+-- Protocol detection with fallback chain: DCAddonProtocol → AIO → Chat
 local DC = rawget(_G, "DCAddonProtocol")
+local AIO = rawget(_G, "AIO")
 
 local Core = {}
 addonTable.Core = Core
+
+-- Protocol availability flags
 Core.useDCProtocol = (DC ~= nil)
+Core.useAIO = (AIO ~= nil)
+Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
 
 local state = {
     addonName = addonName,
@@ -50,6 +55,7 @@ local defaults = {
     lockWorldMap = true,
     pinIconStyle = "xp",  -- Default to golden orb (XP themed)
     customIconTexture = "",
+    useDCProtocolJSON = true,  -- Use JSON format when available
 }
 
 local function NowEpoch()
@@ -82,22 +88,32 @@ local function CloneTable(tbl)
     return copy
 end
 
-local function ResolveZoneName(zoneId)
-    if not zoneId or zoneId == 0 then
-        return nil
+local function ResolveZoneName(zoneId, serverZoneName)
+    -- Prefer server-provided zone name (from DBC on server side)
+    if serverZoneName and serverZoneName ~= "" and serverZoneName ~= "Unknown" then
+        return serverZoneName
     end
+    
+    if not zoneId or zoneId == 0 then
+        return "Unknown Zone"
+    end
+    
+    -- WotLK 3.3.5 doesn't have C_Map.GetAreaInfo, but try anyway for forward compat
     if C_Map and C_Map.GetAreaInfo then
         local name = C_Map.GetAreaInfo(zoneId)
         if name and name ~= "" then
             return name
         end
     end
+    
+    -- GetMapNameByID is for map IDs, not zone IDs - usually doesn't work here
     if GetMapNameByID then
         local name = GetMapNameByID(zoneId)
         if name and name ~= "" then
             return name
         end
     end
+    
     return string.format("Zone %s", tostring(zoneId))
 end
 
@@ -113,11 +129,12 @@ local function BuildHotspotRecord(payload)
     local dur = NormalizeNumber(payload.dur) or 0
     local nowSession = GetTime()
     local nowEpoch = NowEpoch()
+    local zoneId = NormalizeNumber(payload.zone)
     local record = {
         id = id,
         map = NormalizeNumber(payload.map),
-        zoneId = NormalizeNumber(payload.zone),
-        zone = ResolveZoneName(NormalizeNumber(payload.zone)),
+        zoneId = zoneId,
+        zone = ResolveZoneName(zoneId, payload.zonename),
         x = NormalizeNumber(payload.x),
         y = NormalizeNumber(payload.y),
         z = NormalizeNumber(payload.z),
@@ -489,6 +506,13 @@ function Core:ADDON_LOADED(name)
         RegisterAddonMessagePrefix("HOTSPOT")
     end
 
+    -- Re-check protocol availability after all addons loaded
+    DC = rawget(_G, "DCAddonProtocol")
+    AIO = rawget(_G, "AIO")
+    Core.useDCProtocol = (DC ~= nil)
+    Core.useAIO = (AIO ~= nil)
+    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+
     if Pins and Pins.Init then
         Pins:Init(state)
     end
@@ -497,10 +521,17 @@ function Core:ADDON_LOADED(name)
     end
     if addonTable.Options and addonTable.Options.Init then
         addonTable.Options:Init(state)
+        -- Create Communication sub-panel
+        if addonTable.Options.CreateCommPanel then
+            addonTable.Options:CreateCommPanel()
+        end
     end
 
+    -- Register DCAddonProtocol handlers if available
+    self:RegisterProtocolHandlers()
+
     self:RestoreCachedHotspots()
-    DebugPrint("Addon loaded")
+    DebugPrint("Addon loaded, protocol mode:", Core.protocolMode)
 end
 
 function Core:PLAYER_LOGIN()
@@ -534,16 +565,24 @@ function Core:PLAYER_LOGIN()
     end
 end
 
--- Request hotspot list from server
+-- Request hotspot list from server using protocol fallback chain
 function Core:RequestHotspotList()
     self.lastHotspotRequest = GetTime()
-    DebugPrint("Requesting hotspot list from server")
+    DebugPrint("Requesting hotspot list from server via", Core.protocolMode)
     
-    -- Use DCAddonProtocol if available
+    -- Protocol fallback chain: DCAddonProtocol → AIO → Chat
     if Core.useDCProtocol and DC then
-        DC:Send("SPOT", 0x01)  -- CMSG_REQUEST_LIST
+        -- Primary: DCAddonProtocol
+        if state.db and state.db.useDCProtocolJSON then
+            DC:Send("SPOT", 0x01, "J", '{"action":"list"}')  -- JSON format
+        else
+            DC:Send("SPOT", 0x01)  -- Binary format
+        end
+    elseif Core.useAIO and AIO and AIO.Handle then
+        -- Secondary: AIO/Eluna
+        AIO.Handle("HOTSPOT", "Request", "LIST")
     else
-        -- Fallback to chat command
+        -- Tertiary: Chat command fallback
         SendChatMessage(".hotspot list", "SAY")
     end
     
@@ -562,13 +601,37 @@ function Core:RequestHotspotList()
     end
 end
 
--- Request teleport to a hotspot
+-- Request teleport to a hotspot using protocol fallback chain
 function Core:RequestTeleport(hotspotId)
+    DebugPrint("Requesting teleport to hotspot", hotspotId, "via", Core.protocolMode)
+    
     if Core.useDCProtocol and DC then
-        DC:Send("SPOT", 0x02, hotspotId)  -- CMSG_TELEPORT
+        if state.db and state.db.useDCProtocolJSON then
+            DC:Send("SPOT", 0x03, "J", '{"action":"teleport","id":' .. hotspotId .. '}')
+        else
+            DC:Send("SPOT", 0x03, hotspotId)
+        end
+    elseif Core.useAIO and AIO and AIO.Handle then
+        AIO.Handle("HOTSPOT", "Request", "TELEPORT", hotspotId)
     else
-        -- Fallback to chat command
         SendChatMessage(".hotspot tp " .. hotspotId, "SAY")
+    end
+end
+
+-- Request info for a specific hotspot
+function Core:RequestHotspotInfo(hotspotId)
+    DebugPrint("Requesting info for hotspot", hotspotId)
+    
+    if Core.useDCProtocol and DC then
+        if state.db and state.db.useDCProtocolJSON then
+            DC:Send("SPOT", 0x02, "J", '{"action":"info","id":' .. hotspotId .. '}')
+        else
+            DC:Send("SPOT", 0x02, hotspotId)
+        end
+    elseif Core.useAIO and AIO and AIO.Handle then
+        AIO.Handle("HOTSPOT", "Request", "INFO", hotspotId)
+    else
+        SendChatMessage(".hotspot info " .. hotspotId, "SAY")
     end
 end
 
@@ -660,7 +723,46 @@ end)
 -- DC ADDON PROTOCOL HANDLERS
 -- =====================================================================
 
-if DC then
+-- Simple JSON parser for WotLK (no native JSON support)
+local function ParseJSON(str)
+    if not str or str == "" then return nil end
+    
+    -- Very basic JSON parsing for simple objects
+    local result = {}
+    
+    -- Remove outer braces
+    str = str:match("^%s*{(.+)}%s*$")
+    if not str then return nil end
+    
+    -- Parse key-value pairs
+    for key, value in str:gmatch('"([^"]+)"%s*:%s*([^,}]+)') do
+        -- Remove quotes from string values
+        local strVal = value:match('^"(.+)"$')
+        if strVal then
+            result[key] = strVal
+        elseif value == "true" then
+            result[key] = true
+        elseif value == "false" then
+            result[key] = false
+        elseif value == "null" then
+            result[key] = nil
+        else
+            result[key] = tonumber(value) or value
+        end
+    end
+    
+    return result
+end
+
+-- Register protocol handlers (called after ADDON_LOADED)
+function Core:RegisterProtocolHandlers()
+    -- Re-check DC availability
+    DC = rawget(_G, "DCAddonProtocol")
+    if not DC then
+        DebugPrint("DCAddonProtocol not available, using fallback")
+        return
+    end
+    
     local function DebugProtocol(...)
         if state.db and state.db.debug then
             print("|cff33ff99[DC-Hotspot Protocol]|r", ...)
@@ -668,44 +770,85 @@ if DC then
     end
     
     -- SMSG_LIST (0x10) - Hotspot list response
-    -- Format: count, then for each: id, mapId, zoneId, x, y, bonus, duration
-    DC:RegisterHandler("SPOT", 0x10, function(count, ...)
-        DebugProtocol("Received hotspot list, count:", count)
-        local args = {...}
-        local idx = 1
+    -- Server sends: count (number), list (string with entries separated by ";")
+    -- Each entry format: id:mapId:zoneId:zoneName:x:y:dur:bonus
+    DC:RegisterHandler("SPOT", 0x10, function(firstArg, ...)
+        local args = {firstArg, ...}
         
-        for i = 1, (count or 0) do
-            local id = args[idx]
-            local mapId = args[idx + 1]
-            local zoneId = args[idx + 2]
-            local x = args[idx + 3]
-            local y = args[idx + 4]
-            local bonus = args[idx + 5]
-            local duration = args[idx + 6]
-            idx = idx + 7
-            
-            if id then
-                local payload = {
-                    id = id,
-                    map = mapId,
-                    zone = zoneId,
-                    x = x,
-                    y = y,
-                    bonus = bonus,
-                    dur = duration,
-                }
-                Core:ProcessHotspotPayload(payload)
+        -- Check if first arg is "J" (JSON marker)
+        if firstArg == "J" then
+            local jsonStr = args[2]
+            DebugProtocol("Received JSON hotspot list:", jsonStr)
+            local data = ParseJSON(jsonStr)
+            if data and data.hotspots then
+                -- JSON format: { hotspots: [...], count: N }
+                for _, hs in ipairs(data.hotspots) do
+                    Core:ProcessHotspotPayload(hs)
+                end
             end
+            return
+        end
+        
+        -- Binary format: count (number) + list (semicolon-separated string)
+        local count = tonumber(firstArg) or 0
+        local listStr = args[2] or ""
+        DebugProtocol("Received hotspot list, count:", count, "data:", listStr:sub(1, 100))
+        
+        if count == 0 or listStr == "" then
+            DebugProtocol("No hotspots in list")
+            return
+        end
+        
+        -- Parse semicolon-separated entries
+        for entry in listStr:gmatch("[^;]+") do
+            -- Each entry format: id:mapId:zoneId:zoneName:x:y:dur:bonus
+            local parts = {}
+            for part in entry:gmatch("[^:]+") do
+                table.insert(parts, part)
+            end
+            
+            if #parts >= 7 then
+                local payload = {
+                    id = tonumber(parts[1]),
+                    map = tonumber(parts[2]),
+                    zoneId = tonumber(parts[3]),
+                    zone = parts[4],  -- Zone name from DBC
+                    x = tonumber(parts[5]),
+                    y = tonumber(parts[6]),
+                    dur = tonumber(parts[7]),
+                    bonus = tonumber(parts[8]) or 100,
+                }
+                DebugProtocol("Parsed hotspot:", payload.id, "zone:", payload.zone, "map:", payload.map)
+                Core:ProcessHotspotPayload(payload)
+            else
+                DebugProtocol("Invalid entry format, parts:", #parts, "raw:", entry)
+            end
+        end
+        
+        -- Refresh pins after processing all hotspots
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
         end
     end)
     
     -- SMSG_NEW_HOTSPOT (0x11) - New hotspot spawned
-    DC:RegisterHandler("SPOT", 0x11, function(id, mapId, zoneId, x, y, bonus, duration)
+    DC:RegisterHandler("SPOT", 0x11, function(firstArg, ...)
+        if firstArg == "J" then
+            local data = ParseJSON(select(1, ...))
+            if data then
+                DebugProtocol("New hotspot (JSON):", data.id)
+                Core:ProcessHotspotPayload(data)
+            end
+            return
+        end
+        
+        local id, mapId, zoneId, zoneName, x, y, bonus, duration = firstArg, ...
         DebugProtocol("New hotspot:", id)
         local payload = {
             id = id,
             map = mapId,
             zone = zoneId,
+            zonename = zoneName,
             x = x,
             y = y,
             bonus = bonus,
@@ -734,7 +877,7 @@ if DC then
     -- SMSG_TELEPORT_RESULT (0x13) - Teleport result
     DC:RegisterHandler("SPOT", 0x13, function(success, hotspotId, message)
         if success then
-            print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. hotspotId)
+            print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. (hotspotId or "?"))
         else
             print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (message or "Unknown error"))
         end
@@ -749,6 +892,49 @@ if DC then
     DC:RegisterHandler("SPOT", 0x15, function(hotspotId)
         print("|cffffff00[DC-Hotspot]|r You left the XP hotspot zone.")
     end)
+    
+    -- SMSG_HOTSPOT_INFO (0x16) - Hotspot info response
+    DC:RegisterHandler("SPOT", 0x16, function(firstArg, ...)
+        if firstArg == "J" then
+            local data = ParseJSON(select(1, ...))
+            if data then
+                DebugProtocol("Hotspot info (JSON):", data.id)
+                Core:ProcessHotspotPayload(data)
+            end
+            return
+        end
+        
+        local found, id, mapId, zoneId, zoneName, x, y, z, dur, bonus = firstArg, ...
+        if found and found ~= 0 then
+            DebugProtocol("Hotspot info:", id)
+            local payload = {
+                id = id,
+                map = mapId,
+                zone = zoneId,
+                zonename = zoneName,
+                x = x,
+                y = y,
+                z = z,
+                dur = dur,
+                bonus = bonus,
+            }
+            Core:ProcessHotspotPayload(payload)
+        else
+            print("|cffff8800[DC-Hotspot]|r Hotspot not found or expired")
+        end
+    end)
+    
+    DebugPrint("DCAddonProtocol handlers registered")
+end
+
+-- Process a hotspot payload (from any protocol)
+function Core:ProcessHotspotPayload(payload)
+    if not payload or not payload.id then return end
+    
+    local record = BuildHotspotRecord(payload)
+    if record then
+        self:UpsertHotspot(record)
+    end
 end
 
 return Core

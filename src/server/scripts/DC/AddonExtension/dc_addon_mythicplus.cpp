@@ -14,8 +14,7 @@
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include "Log.h"
-// Note: MythicPlusRunManager.h not available - using database queries directly
-// #include "MythicPlusRunManager.h"
+#include "../MythicPlus/MythicPlusRunManager.h"
 
 namespace DCAddon
 {
@@ -241,8 +240,12 @@ namespace MythicPlus
             } while (result->NextRow());
         }
         
+        // Calculate current week number
+        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
+        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+        
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_AFFIXES)
-            .Set("weekNumber", GetCurrentWeekNumber())
+            .Set("weekNumber", weekNumber)
             .Set("affixes", affixArray.Encode())
             .Send(player);
     }

@@ -409,11 +409,34 @@ function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     if shouldAnnounce and self.state.db.announce then
         local zone = info.zone or MapName(info.map)
         local bonus = info.bonus or (self.state.config and self.state.config.experienceBonus) or 0
+        
+        -- Check if hotspot is in player's current zone (only show center announce for same zone)
+        local playerZoneId = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+        local hotspotZoneId = info.zoneId or 0
+        local sameZone = (hotspotZoneId > 0 and playerZoneId > 0 and hotspotZoneId == playerZoneId)
+        
+        -- Also check by map if zone comparison fails
+        local playerMapId = info.map  -- We don't have a reliable way to get player's map in 3.3.5
+        local sameMap = false
+        if not sameZone and info.map then
+            -- Check if player is on the same continent/map
+            local SetMapToCurrentZone = SetMapToCurrentZone
+            if SetMapToCurrentZone then
+                SetMapToCurrentZone()
+                local currentMapId = GetCurrentMapContinent and GetCurrentMapContinent() or 0
+                -- Approximate: both zone and map should match for center announce
+            end
+        end
+        
         local message = string.format("|cFFFFD700[Hotspot]|r %s (+%d%% XP)", zone, bonus)
+        
+        -- Always show in chat
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage(message)
         end
-        if RaidNotice_AddMessage then
+        
+        -- Only show center announce (RaidWarning) if hotspot is in same zone
+        if sameZone and RaidNotice_AddMessage then
             RaidNotice_AddMessage(RaidWarningFrame, message, ChatTypeInfo["RAID_WARNING"])
         end
         SafePlaySound(self.state.db.spawnSound)

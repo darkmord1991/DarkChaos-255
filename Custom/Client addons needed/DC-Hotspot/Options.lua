@@ -39,6 +39,12 @@ local function PlayCheckboxSound(checked)
     end
 end
 
+local function Print(msg)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Hotspot]|r " .. (msg or ""))
+    end
+end
+
 function Options:Init(state)
     self.state = state
     if not InterfaceOptions_AddCategory then
@@ -218,6 +224,198 @@ function Options:Open()
     end
     InterfaceOptionsFrame_OpenToCategory(self.panel)
     InterfaceOptionsFrame_OpenToCategory(self.panel)
+end
+
+-- =====================================================================
+-- Communication Sub-Panel
+-- =====================================================================
+function Options:CreateCommPanel()
+    if not InterfaceOptions_AddCategory or not self.panel then return end
+    if self.commPanel then return end
+    
+    local commPanel = CreateFrame('Frame', 'DCHotspot_CommOptions', self.panel)
+    commPanel.name = 'Communication'
+    commPanel.parent = self.panel.name
+    commPanel:Hide()
+    self.commPanel = commPanel
+    
+    local commTitle = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+    commTitle:SetPoint('TOPLEFT', 16, -16)
+    commTitle:SetText('Communication Settings')
+    
+    local commSubtitle = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+    commSubtitle:SetPoint('TOPLEFT', commTitle, 'BOTTOMLEFT', 0, -8)
+    commSubtitle:SetText('Configure DCAddonProtocol communication for Hotspot tracking.')
+    
+    commPanel:SetScript('OnShow', function(panel)
+        if panel._controlsCreated then return end
+        panel._controlsCreated = true
+        
+        local y = -70
+        local DC = rawget(_G, "DCAddonProtocol")
+        local AIO = rawget(_G, "AIO")
+        local db = Options.state and Options.state.db or {}
+        
+        -- Protocol Status
+        local statusHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        statusHeader:SetPoint('TOPLEFT', 16, y)
+        statusHeader:SetText('Protocol Status')
+        y = y - 22
+        
+        local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        dcStatus:SetPoint('TOPLEFT', 24, y)
+        dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+        y = y - 16
+        
+        local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        aioStatus:SetPoint('TOPLEFT', 24, y)
+        aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+        y = y - 16
+        
+        local fallbackStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        fallbackStatus:SetPoint('TOPLEFT', 24, y)
+        local fallbackMode = (DC and "DCAddonProtocol") or (AIO and "AIO/Eluna") or "Chat Commands"
+        fallbackStatus:SetText('Active Mode: |cFF00FFFF' .. fallbackMode .. '|r')
+        y = y - 26
+        
+        -- JSON Toggle
+        local jsonCheck = CreateFrame("CheckButton", "DCHotspot_Opt_JSONMode", commPanel, "InterfaceOptionsCheckButtonTemplate")
+        jsonCheck:SetPoint("TOPLEFT", 16, y)
+        jsonCheck:SetHitRectInsets(0, -200, 0, 0)
+        _G["DCHotspot_Opt_JSONModeText"]:SetText("Use JSON Protocol (recommended)")
+        jsonCheck:SetChecked(db.useDCProtocolJSON ~= false)
+        jsonCheck:SetScript("OnClick", function(self)
+            if Options.state and Options.state.db then
+                Options.state.db.useDCProtocolJSON = self:GetChecked()
+            end
+            Print("JSON Protocol mode: " .. (self:GetChecked() and "ON" or "OFF"))
+        end)
+        y = y - 32
+        
+        -- Test Buttons Section
+        local testHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        testHeader:SetPoint('TOPLEFT', 16, y)
+        testHeader:SetText('Test Communication')
+        
+        local testDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
+        testDesc:SetPoint('TOPLEFT', testHeader, 'TOPRIGHT', 10, 0)
+        testDesc:SetText('(results appear in chat)')
+        testDesc:SetTextColor(0.6, 0.6, 0.6)
+        y = y - 26
+        
+        -- Button dimensions for 2-column layout
+        local btnWidth = 150
+        local btnHeight = 24
+        local colSpacing = 160
+        local rowSpacing = 28
+        local col1X = 24
+        local col2X = col1X + colSpacing
+        local btnRow = 0
+        
+        -- Helper to create test buttons in 2 columns
+        local function makeTestButton(text, tooltip, onClick, column)
+            local btn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
+            btn:SetSize(btnWidth, btnHeight)
+            local xPos = (column == 2) and col2X or col1X
+            local yPos = y - (btnRow * rowSpacing)
+            btn:SetPoint("TOPLEFT", xPos, yPos)
+            btn:SetText(text)
+            btn:SetScript("OnClick", function()
+                Print("Testing: " .. text .. "...")
+                onClick()
+            end)
+            btn.tooltipText = tooltip
+            btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(self.tooltipText or text, nil, nil, nil, nil, true)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            return btn
+        end
+        
+        -- Row 1
+        makeTestButton("Request Hotspot List", "Send CMSG_GET_LIST (0x01)", function()
+            if addonTable.Core and addonTable.Core.RequestHotspotList then
+                addonTable.Core:RequestHotspotList()
+            elseif DC then
+                DC:Send("SPOT", 0x01)
+            else
+                Print("|cFFFF0000No protocol available|r")
+            end
+        end, 1)
+        makeTestButton("Request Hotspot Info", "Send CMSG_GET_INFO (0x02)", function()
+            if DC then DC:Send("SPOT", 0x02, 1) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 2)
+        btnRow = btnRow + 1
+        
+        -- Row 2
+        makeTestButton("Request Teleport", "Send CMSG_TELEPORT (0x03)", function()
+            if DC then DC:Send("SPOT", 0x03, 1) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 1)
+        makeTestButton("Send Test JSON", "Send a test JSON message", function()
+            if DC then
+                DC:Send("SPOT", 0x00, "J", '{"test":true,"timestamp":' .. time() .. '}')
+                Print("Sent test JSON")
+            else
+                Print("|cFFFF0000DCAddonProtocol not available|r")
+            end
+        end, 2)
+        btnRow = btnRow + 1
+        
+        -- Row 3
+        makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity", function()
+            if DC then DC:Send("CORE", 0x01); Print("Sent handshake") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 1)
+        makeTestButton("Chat Fallback Test", "Test .hotspot list command", function()
+            SendChatMessage(".hotspot list", "SAY")
+            Print("Sent .hotspot list via chat")
+        end, 2)
+        btnRow = btnRow + 1
+        
+        y = y - (btnRow * rowSpacing) - 20
+        
+        -- Results/Log Section
+        local logHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
+        logHeader:SetPoint('TOPLEFT', 16, y)
+        logHeader:SetText('Protocol Fallback Chain')
+        y = y - 20
+        
+        local fallbackDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        fallbackDesc:SetPoint('TOPLEFT', 24, y)
+        fallbackDesc:SetText('1. DCAddonProtocol (binary/JSON)')
+        fallbackDesc:SetTextColor(0.8, 0.8, 0.8)
+        y = y - 16
+        
+        local fallbackDesc2 = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        fallbackDesc2:SetPoint('TOPLEFT', 24, y)
+        fallbackDesc2:SetText('2. AIO/Eluna (HOTSPOT_ADDON messages)')
+        fallbackDesc2:SetTextColor(0.8, 0.8, 0.8)
+        y = y - 16
+        
+        local fallbackDesc3 = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
+        fallbackDesc3:SetPoint('TOPLEFT', 24, y)
+        fallbackDesc3:SetText('3. Chat Commands (.hotspot list)')
+        fallbackDesc3:SetTextColor(0.8, 0.8, 0.8)
+        y = y - 26
+        
+        -- Refresh Status Button
+        local refreshBtn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
+        refreshBtn:SetSize(140, 24)
+        refreshBtn:SetPoint("TOPLEFT", 24, y)
+        refreshBtn:SetText("Refresh Status")
+        refreshBtn:SetScript("OnClick", function()
+            local dc = rawget(_G, "DCAddonProtocol")
+            local aio = rawget(_G, "AIO")
+            dcStatus:SetText('DCAddonProtocol: ' .. (dc and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+            aioStatus:SetText('AIO (Eluna): ' .. (aio and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
+            local mode = (dc and "DCAddonProtocol") or (aio and "AIO/Eluna") or "Chat Commands"
+            fallbackStatus:SetText('Active Mode: |cFF00FFFF' .. mode .. '|r')
+            Print("Status refreshed")
+        end)
+    end)
+    
+    InterfaceOptions_AddCategory(commPanel)
 end
 
 return Options

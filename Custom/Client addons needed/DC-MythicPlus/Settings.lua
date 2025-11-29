@@ -166,17 +166,17 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         local statusHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         statusHeader:SetPoint('TOPLEFT', 16, y)
         statusHeader:SetText('Protocol Status')
-        y = y - 24
+        y = y - 22
         
         local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         dcStatus:SetPoint('TOPLEFT', 24, y)
         dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 18
+        y = y - 16
         
         local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         aioStatus:SetPoint('TOPLEFT', 24, y)
         aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 30
+        y = y - 26
         
         -- JSON Toggle
         local jsonCheck = CreateFrame("CheckButton", "DCMPlus_Opt_JSONMode", commPanel, "InterfaceOptionsCheckButtonTemplate")
@@ -188,25 +188,35 @@ if type(InterfaceOptions_AddCategory) == 'function' then
             namespace.SaveSetting("useDCProtocolJSON", self:GetChecked())
             Print("JSON Protocol mode: " .. (self:GetChecked() and "ON" or "OFF"))
         end)
-        y = y - 40
+        y = y - 32
         
         -- Test Buttons Section
         local testHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         testHeader:SetPoint('TOPLEFT', 16, y)
         testHeader:SetText('Test Communication')
-        y = y - 8
         
         local testDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-        testDesc:SetPoint('TOPLEFT', 24, y)
-        testDesc:SetText('Use these buttons to test server communication via DCAddonProtocol.')
-        testDesc:SetTextColor(0.7, 0.7, 0.7)
-        y = y - 30
+        testDesc:SetPoint('TOPLEFT', testHeader, 'TOPRIGHT', 10, 0)
+        testDesc:SetText('(results appear in chat)')
+        testDesc:SetTextColor(0.6, 0.6, 0.6)
+        y = y - 26
         
-        -- Helper to create test buttons
-        local function makeTestButton(text, tooltip, onClick)
+        -- Button dimensions for 2-column layout
+        local btnWidth = 160
+        local btnHeight = 24
+        local colSpacing = 170
+        local rowSpacing = 28
+        local col1X = 24
+        local col2X = col1X + colSpacing
+        local btnRow = 0
+        
+        -- Helper to create test buttons in 2 columns
+        local function makeTestButton(text, tooltip, onClick, column)
             local btn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
-            btn:SetSize(180, 26)
-            btn:SetPoint("TOPLEFT", 24, y)
+            btn:SetSize(btnWidth, btnHeight)
+            local xPos = (column == 2) and col2X or col1X
+            local yPos = y - (btnRow * rowSpacing)
+            btn:SetPoint("TOPLEFT", xPos, yPos)
             btn:SetText(text)
             btn:SetScript("OnClick", function()
                 Print("Testing: " .. text .. "...")
@@ -219,79 +229,46 @@ if type(InterfaceOptions_AddCategory) == 'function' then
                 GameTooltip:Show()
             end)
             btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            y = y - 32
             return btn
         end
         
-        -- Test Button: Request Key Info
-        makeTestButton("Request Keystone Info", "Send CMSG_GET_KEY_INFO (0x01) to server", function()
-            if namespace.RequestKeyInfo then
-                namespace.RequestKeyInfo()
-            elseif DC then
-                DC:Send("MPLUS", 0x01)
-            else
-                Print("|cFFFF0000Error:|r DCAddonProtocol not available")
-            end
-        end)
+        -- Row 1
+        makeTestButton("Request Keystone Info", "Send CMSG_GET_KEY_INFO (0x01)", function()
+            if DC then DC:Send("MPLUS", 0x01) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 1)
+        makeTestButton("Request Weekly Affixes", "Send CMSG_GET_AFFIXES (0x02)", function()
+            if DC then DC:Send("MPLUS", 0x02) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 2)
+        btnRow = btnRow + 1
         
-        -- Test Button: Request Affixes
-        makeTestButton("Request Weekly Affixes", "Send CMSG_GET_AFFIXES (0x02) to server", function()
-            if namespace.RequestAffixes then
-                namespace.RequestAffixes()
-            elseif DC then
-                DC:Send("MPLUS", 0x02)
-            else
-                Print("|cFFFF0000Error:|r DCAddonProtocol not available")
-            end
-        end)
+        -- Row 2
+        makeTestButton("Request Best Runs", "Send CMSG_GET_BEST_RUNS (0x03)", function()
+            if DC then DC:Send("MPLUS", 0x03) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 1)
+        makeTestButton("Send Test JSON", "Send a test JSON message", function()
+            if DC then DC:Send("MPLUS", 0x00, "J", '{"test":true}'); Print("Sent test JSON") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 2)
+        btnRow = btnRow + 1
         
-        -- Test Button: Request Best Runs
-        makeTestButton("Request Best Runs", "Send CMSG_GET_BEST_RUNS (0x03) to server", function()
-            if namespace.RequestBestRuns then
-                namespace.RequestBestRuns()
-            elseif DC then
-                DC:Send("MPLUS", 0x03)
-            else
-                Print("|cFFFF0000Error:|r DCAddonProtocol not available")
-            end
-        end)
-        
-        -- Test Button: Send Test JSON Message
-        makeTestButton("Send Test JSON", "Send a test JSON-formatted message", function()
-            if DC and DC.SendJSON then
-                DC:SendJSON("MPLUS", 0x00, { test = true, timestamp = time() })
-                Print("Sent test JSON message")
-            elseif DC then
-                DC:Send("MPLUS", 0x00, "J", '{"test":true}')
-                Print("Sent test message with JSON marker")
-            else
-                Print("|cFFFF0000Error:|r DCAddonProtocol not available")
-            end
-        end)
-        
-        -- Test Button: Ping Protocol
+        -- Row 3
         makeTestButton("Ping Server (Handshake)", "Send CMSG_HANDSHAKE to test connectivity", function()
-            if DC then
-                DC:Send("CORE", 0x01)  -- CMSG_HANDSHAKE
-                Print("Sent handshake request")
-            else
-                Print("|cFFFF0000Error:|r DCAddonProtocol not available")
-            end
-        end)
+            if DC then DC:Send("CORE", 0x01); Print("Sent handshake") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        end, 1)
+        btnRow = btnRow + 1
         
-        y = y - 20
+        y = y - (btnRow * rowSpacing) - 20
         
         -- Results/Log Section
         local logHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         logHeader:SetPoint('TOPLEFT', 16, y)
         logHeader:SetText('Test Results')
-        y = y - 8
+        y = y - 18
         
         local logDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
         logDesc:SetPoint('TOPLEFT', 24, y)
         logDesc:SetText('Results will appear in the chat window. Enable Developer Mode for verbose output.')
         logDesc:SetTextColor(0.7, 0.7, 0.7)
-        y = y - 30
+        y = y - 28
         
         -- Refresh Status Button
         local refreshBtn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")

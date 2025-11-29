@@ -12,24 +12,22 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Log.h"
+#include "GameTime.h"
+#include "DBCStores.h"
 
-// Forward declaration - will link with ac_hotspots.cpp
-namespace Hotspots
+// External functions from ac_hotspots.cpp
+extern uint32 GetHotspotXPBonusPercentage();
+
+// Helper to get zone name from DBC (like .gps command does)
+static std::string GetZoneNameFromDBC(uint32 zoneId)
 {
-    struct HotspotInfo
+    if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
     {
-        uint32 id;
-        uint32 mapId;
-        uint32 zoneId;
-        std::string zoneName;
-        float x, y, z;
-        uint32 durationRemaining;
-        float xpBonus;
-    };
-    
-    // These functions would be implemented in ac_hotspots.cpp
-    bool GetActiveHotspots(std::vector<HotspotInfo>& outList);
-    bool GetHotspotById(uint32 id, HotspotInfo& outInfo);
+        // area_name[0] is the default English name
+        if (area->area_name[0] && area->area_name[0][0])
+            return area->area_name[0];
+    }
+    return "Unknown Zone";
 }
 
 namespace DCAddon
@@ -59,13 +57,18 @@ namespace Hotspot
         // Build hotspot list string
         // Format: count;id:map:zone:zoneName:x:y:dur:bonus;...
         
-        // For now, query from database directly
+        // Query from dc_hotspots_active table (correct table name)
+        // expire_time is unix timestamp, compare with current time
+        time_t now = GameTime::GetGameTime().count();
+        
         QueryResult result = WorldDatabase.Query(
-            "SELECT h.id, h.map_id, h.zone_id, z.zone_name, h.x, h.y, h.z, "
-            "TIMESTAMPDIFF(SECOND, NOW(), h.expires_at) as dur, h.xp_bonus "
-            "FROM dc_active_hotspots h "
-            "LEFT JOIN dc_zone_names z ON h.zone_id = z.zone_id "
-            "WHERE h.expires_at > NOW()");
+            "SELECT id, map_id, zone_id, x, y, z, "
+            "(expire_time - UNIX_TIMESTAMP()) as dur "
+            "FROM dc_hotspots_active "
+            "WHERE expire_time > UNIX_TIMESTAMP()");
+        
+        // Get XP bonus from config (same for all hotspots)
+        uint32 xpBonus = GetHotspotXPBonusPercentage();
         
         std::string list;
         uint32 count = 0;
@@ -79,18 +82,17 @@ namespace Hotspot
                 uint32 id = (*result)[0].Get<uint32>();
                 uint32 mapId = (*result)[1].Get<uint32>();
                 uint32 zoneId = (*result)[2].Get<uint32>();
-                std::string zoneName = (*result)[3].IsNull() ? "Unknown" : (*result)[3].Get<std::string>();
-                float x = (*result)[4].Get<float>();
-                float y = (*result)[5].Get<float>();
-                // z is [6]
-                int32 dur = (*result)[7].Get<int32>();
-                float bonus = (*result)[8].Get<float>();
+                float x = (*result)[3].Get<float>();
+                float y = (*result)[4].Get<float>();
+                // z is [5]
+                int64 dur = (*result)[6].Get<int64>();
+                std::string zoneName = GetZoneNameFromDBC(zoneId);
                 
                 if (dur <= 0) continue;
                 
                 std::ostringstream ss;
                 ss << id << ":" << mapId << ":" << zoneId << ":" << zoneName 
-                   << ":" << x << ":" << y << ":" << dur << ":" << bonus;
+                   << ":" << x << ":" << y << ":" << dur << ":" << xpBonus;
                 list += ss.str();
                 count++;
             } while (result->NextRow());
@@ -108,11 +110,10 @@ namespace Hotspot
         uint32 hotspotId = msg.GetUInt32(0);
         
         QueryResult result = WorldDatabase.Query(
-            "SELECT h.id, h.map_id, h.zone_id, z.zone_name, h.x, h.y, h.z, "
-            "TIMESTAMPDIFF(SECOND, NOW(), h.expires_at) as dur, h.xp_bonus "
-            "FROM dc_active_hotspots h "
-            "LEFT JOIN dc_zone_names z ON h.zone_id = z.zone_id "
-            "WHERE h.id = {} AND h.expires_at > NOW()",
+            "SELECT id, map_id, zone_id, x, y, z, "
+            "(expire_time - UNIX_TIMESTAMP()) as dur "
+            "FROM dc_hotspots_active "
+            "WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
             hotspotId);
         
         if (!result)
@@ -124,14 +125,16 @@ namespace Hotspot
             return;
         }
         
+        // Get XP bonus from config
+        uint32 xpBonus = GetHotspotXPBonusPercentage();
+        
         uint32 mapId = (*result)[1].Get<uint32>();
         uint32 zoneId = (*result)[2].Get<uint32>();
-        std::string zoneName = (*result)[3].IsNull() ? "Unknown" : (*result)[3].Get<std::string>();
-        float x = (*result)[4].Get<float>();
-        float y = (*result)[5].Get<float>();
-        float z = (*result)[6].Get<float>();
-        int32 dur = (*result)[7].Get<int32>();
-        float bonus = (*result)[8].Get<float>();
+        float x = (*result)[3].Get<float>();
+        float y = (*result)[4].Get<float>();
+        float z = (*result)[5].Get<float>();
+        int64 dur = (*result)[6].Get<int64>();
+        std::string zoneName = GetZoneNameFromDBC(zoneId);
         
         Message(MODULE_HOTSPOT, Opcode::SMSG_HOTSPOT_INFO)
             .Add(1)  // found
@@ -142,8 +145,8 @@ namespace Hotspot
             .Add(x)
             .Add(y)
             .Add(z)
-            .Add(dur)
-            .Add(bonus)
+            .Add(static_cast<uint32>(dur))
+            .Add(xpBonus)
             .Send(player);
     }
     
@@ -170,7 +173,7 @@ namespace Hotspot
         }
         
         QueryResult result = WorldDatabase.Query(
-            "SELECT map_id, x, y, z FROM dc_active_hotspots WHERE id = {} AND expires_at > NOW()",
+            "SELECT map_id, x, y, z FROM dc_hotspots_active WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
             hotspotId);
         
         if (!result)

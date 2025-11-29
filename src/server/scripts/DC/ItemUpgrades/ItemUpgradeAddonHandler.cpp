@@ -33,6 +33,58 @@ using Acore::ChatCommands::Console;
 using DarkChaos::ItemUpgrade::ITEM_UPGRADES_TABLE;
 using DarkChaos::ItemUpgrade::ITEM_UPGRADE_LOG_TABLE;
 
+// Missing items log table
+static constexpr const char* MISSING_ITEMS_TABLE = "dc_item_upgrade_missing_items";
+
+// Log a missing/failed item to the database for analysis
+static void LogMissingItem(Player* player, uint32 itemId, uint32 itemGuid, 
+                           const std::string& errorType, const std::string& errorDetail,
+                           uint8 bag = 0, uint8 slot = 0)
+{
+    if (!player)
+        return;
+    
+    // Get item name if template exists
+    std::string itemName = "Unknown";
+    if (ItemTemplate const* templ = sObjectMgr->GetItemTemplate(itemId))
+        itemName = templ->Name1;
+    
+    // Escape strings for SQL
+    std::string escapedName = itemName;
+    std::string escapedDetail = errorDetail;
+    
+    // Replace single quotes with escaped quotes
+    size_t pos = 0;
+    while ((pos = escapedName.find("'", pos)) != std::string::npos) {
+        escapedName.replace(pos, 1, "''");
+        pos += 2;
+    }
+    pos = 0;
+    while ((pos = escapedDetail.find("'", pos)) != std::string::npos) {
+        escapedDetail.replace(pos, 1, "''");
+        pos += 2;
+    }
+    
+    CharacterDatabase.Execute(
+        "INSERT INTO {} (player_guid, player_name, item_id, item_guid, item_name, "
+        "error_type, error_detail, bag_slot, item_slot) "
+        "VALUES ({}, '{}', {}, {}, '{}', '{}', '{}', {}, {})",
+        MISSING_ITEMS_TABLE,
+        player->GetGUID().GetCounter(),
+        player->GetName(),
+        itemId,
+        itemGuid,
+        escapedName,
+        errorType,
+        escapedDetail,
+        bag,
+        slot
+    );
+    
+    LOG_DEBUG("scripts", "ItemUpgrade: Logged missing item {} ({}) for player {} - {} ({})",
+        itemId, itemName, player->GetName(), errorType, errorDetail);
+}
+
 class ItemUpgradeAddonCommands : public CommandScript
 {
 public:
@@ -163,6 +215,9 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
+                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                    Acore::StringFormat("Query: Invalid slot translation extBag={}, extSlot={}", extBag, extSlot),
+                    static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
                 return true;
             }
@@ -170,6 +225,9 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                    Acore::StringFormat("Query: No item at bag={}, slot={}", bag, slot),
+                    bag, slot);
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
                 return true;
             }
@@ -253,7 +311,17 @@ private:
 
             // Get tier from database mapping using BASE ENTRY (not clone entry)
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+            {
                 tier = mgr->GetItemTier(baseEntry);
+                // Log if tier is invalid (item not in tier mapping and template not found)
+                if (tier == 0)  // TIER_INVALID
+                {
+                    LogMissingItem(player, baseEntry, itemGUID, "TIER_INVALID",
+                        Acore::StringFormat("Item not in tier mapping and template lookup failed. currentEntry={}", currentEntry),
+                        bag, slot);
+                    tier = 1;  // Default to leveling tier
+                }
+            }
             else
                 tier = 1; // fallback if manager not available
 
@@ -304,6 +372,13 @@ private:
                     cloneEntries[level] = entry;
                 }
                 while (cloneResult->NextRow());
+            }
+            else
+            {
+                // No clone entries found - log for analysis (item may need clone generation)
+                LogMissingItem(player, baseEntry, itemGUID, "CLONE_MISSING",
+                    Acore::StringFormat("No clone entries for base_item_id={} tier={}", baseEntry, tier),
+                    bag, slot);
             }
 
             cloneEntries[upgradeLevel] = currentEntry;
@@ -504,6 +579,9 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
+                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                    Acore::StringFormat("Perform: Invalid slot translation extBag={}, extSlot={}", extBag, extSlot),
+                    static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
                 return true;
             }
@@ -511,6 +589,9 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                    Acore::StringFormat("Perform: No item at bag={}, slot={}", bag, slot),
+                    bag, slot);
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
                 return true;
             }
@@ -895,6 +976,9 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
+                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                    Acore::StringFormat("Heirloom Query: Invalid slot extBag={}, extSlot={}", extBag, extSlot),
+                    static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
                 return true;
             }
@@ -902,6 +986,9 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                    Acore::StringFormat("Heirloom Query: No item bag={}, slot={}", bag, slot),
+                    bag, slot);
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
                 return true;
             }
@@ -975,6 +1062,9 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
+                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                    Acore::StringFormat("Heirloom Upgrade: Invalid slot extBag={}, extSlot={}", extBag, extSlot),
+                    static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
                 return true;
             }
@@ -982,6 +1072,9 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                    Acore::StringFormat("Heirloom Upgrade: No item bag={}, slot={}", bag, slot),
+                    bag, slot);
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
                 return true;
             }

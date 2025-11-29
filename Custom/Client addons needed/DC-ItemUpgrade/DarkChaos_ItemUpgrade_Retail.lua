@@ -2840,6 +2840,10 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 		if DC.CreateSettingsPanel then
 			DC.CreateSettingsPanel();
 		end
+		-- Create Communication sub-panel (must be after main settings panel)
+		if DC.CreateCommPanel then
+			DC.CreateCommPanel();
+		end
 		-- Hook tooltip functions for upgrade info display
 		DarkChaos_ItemUpgrade_HookTooltips();
 		-- Load per-character settings
