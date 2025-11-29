@@ -233,26 +233,26 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         end
         
         -- Row 1
-        makeTestButton("Request Keystone Info", "Send CMSG_GET_KEY_INFO (0x01)", function()
-            if DC then DC:Send("MPLUS", 0x01) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Keystone Info", "Send CMSG_GET_KEY_INFO (0x01) JSON", function()
+            if DC then DC:Request("MPLUS", 0x01, { action = "keyinfo" }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
-        makeTestButton("Request Weekly Affixes", "Send CMSG_GET_AFFIXES (0x02)", function()
-            if DC then DC:Send("MPLUS", 0x02) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Weekly Affixes", "Send CMSG_GET_AFFIXES (0x02) JSON", function()
+            if DC then DC:Request("MPLUS", 0x02, { action = "affixes" }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 2
-        makeTestButton("Request Best Runs", "Send CMSG_GET_BEST_RUNS (0x03)", function()
-            if DC then DC:Send("MPLUS", 0x03) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Best Runs", "Send CMSG_GET_BEST_RUNS (0x03) JSON", function()
+            if DC then DC:Request("MPLUS", 0x03, { action = "bestruns" }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Send Test JSON", "Send a test JSON message", function()
-            if DC then DC:Send("MPLUS", 0x00, "J", '{"test":true}'); Print("Sent test JSON") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+            if DC then DC:Request("MPLUS", 0x00, { test = true }); Print("Sent test JSON") else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 3
-        makeTestButton("Ping Server (Handshake)", "Send CMSG_HANDSHAKE to test connectivity", function()
-            if DC then DC:Send("CORE", 0x01); Print("Sent handshake") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Ping Server (Handshake)", "Send CMSG_HANDSHAKE to test connectivity (JSON)", function()
+            if DC then DC:Request("CORE", 0x01, { ping = true }); Print("Sent handshake (JSON)") else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         btnRow = btnRow + 1
         

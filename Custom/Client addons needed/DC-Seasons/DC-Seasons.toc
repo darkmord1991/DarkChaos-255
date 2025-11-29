@@ -4,7 +4,6 @@
 ## Author: DarkChaos Development Team
 ## Version: 1.1.0
 ## SavedVariables: DCSeasons_Settings
-## OptionalDeps: DC-AddonProtocol
-## OptionalDeps: AIO
+## OptionalDeps: DC-AddonProtocol, AIO_Client
 
 DC-Seasons.lua

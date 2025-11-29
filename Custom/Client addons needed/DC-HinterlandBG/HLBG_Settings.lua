@@ -561,35 +561,35 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         end
         
         -- Row 1
-        makeTestButton("Request BG Status", "Send CMSG_REQUEST_STATUS (0x01)", function()
-            if DC then DC:Send("HLBG", 0x01) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request BG Status", "Send CMSG_REQUEST_STATUS (0x01) JSON", function()
+            if DC then DC:Request("HLBG", 0x01, { action = "status" }) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
-        makeTestButton("Request Resources", "Send CMSG_REQUEST_RESOURCES (0x02)", function()
-            if DC then DC:Send("HLBG", 0x02) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Resources", "Send CMSG_REQUEST_RESOURCES (0x02) JSON", function()
+            if DC then DC:Request("HLBG", 0x02, { action = "resources" }) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 2
-        makeTestButton("Quick Queue", "Send CMSG_QUICK_QUEUE (0x04)", function()
-            if DC then DC:Send("HLBG", 0x04) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Quick Queue", "Send CMSG_QUICK_QUEUE (0x04) JSON", function()
+            if DC then DC:Request("HLBG", 0x04, { action = "queue" }) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
-        makeTestButton("Leave Queue", "Send CMSG_LEAVE_QUEUE (0x05)", function()
-            if DC then DC:Send("HLBG", 0x05) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Leave Queue", "Send CMSG_LEAVE_QUEUE (0x05) JSON", function()
+            if DC then DC:Request("HLBG", 0x05, { action = "leave" }) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 3
-        makeTestButton("Request Stats", "Send CMSG_REQUEST_STATS (0x06)", function()
-            if DC then DC:Send("HLBG", 0x06) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Stats", "Send CMSG_REQUEST_STATS (0x06) JSON", function()
+            if DC then DC:Request("HLBG", 0x06, { action = "stats" }) else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Send Test JSON", "Send a test JSON message", function()
-            if DC then DC:Send("HLBG", 0x00, "J", '{"test":true}'); HLBGPrint("Sent test JSON") else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+            if DC then DC:Request("HLBG", 0x00, { test = true }); HLBGPrint("Sent test JSON") else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 4
-        makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity", function()
-            if DC then DC:Send("CORE", 0x01); HLBGPrint("Sent handshake") else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity (JSON)", function()
+            if DC then DC:Request("CORE", 0x01, { ping = true }); HLBGPrint("Sent handshake (JSON)") else HLBGPrint("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         btnRow = btnRow + 1
         

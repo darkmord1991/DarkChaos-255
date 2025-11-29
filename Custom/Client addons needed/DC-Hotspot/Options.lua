@@ -335,27 +335,27 @@ function Options:CreateCommPanel()
         end
         
         -- Row 1
-        makeTestButton("Request Hotspot List", "Send CMSG_GET_LIST (0x01)", function()
+        makeTestButton("Request Hotspot List", "Send CMSG_GET_LIST (0x01) JSON", function()
             if addonTable.Core and addonTable.Core.RequestHotspotList then
                 addonTable.Core:RequestHotspotList()
             elseif DC then
-                DC:Send("SPOT", 0x01)
+                DC:Request("SPOT", 0x01, { action = "list" })
             else
                 Print("|cFFFF0000No protocol available|r")
             end
         end, 1)
-        makeTestButton("Request Hotspot Info", "Send CMSG_GET_INFO (0x02)", function()
-            if DC then DC:Send("SPOT", 0x02, 1) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Hotspot Info", "Send CMSG_GET_INFO (0x02) JSON", function()
+            if DC then DC:Request("SPOT", 0x02, { action = "info", id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 2
-        makeTestButton("Request Teleport", "Send CMSG_TELEPORT (0x03)", function()
-            if DC then DC:Send("SPOT", 0x03, 1) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Request Teleport", "Send CMSG_TELEPORT (0x03) JSON", function()
+            if DC then DC:Request("SPOT", 0x03, { action = "teleport", id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Send Test JSON", "Send a test JSON message", function()
             if DC then
-                DC:Send("SPOT", 0x00, "J", '{"test":true,"timestamp":' .. time() .. '}')
+                DC:Request("SPOT", 0x00, { test = true, timestamp = time() })
                 Print("Sent test JSON")
             else
                 Print("|cFFFF0000DCAddonProtocol not available|r")
@@ -364,8 +364,8 @@ function Options:CreateCommPanel()
         btnRow = btnRow + 1
         
         -- Row 3
-        makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity", function()
-            if DC then DC:Send("CORE", 0x01); Print("Sent handshake") else Print("|cFFFF0000DCAddonProtocol not available|r") end
+        makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity (JSON)", function()
+            if DC then DC:Request("CORE", 0x01, { ping = true }); Print("Sent handshake (JSON)") else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Chat Fallback Test", "Test .hotspot list command", function()
             SendChatMessage(".hotspot list", "SAY")

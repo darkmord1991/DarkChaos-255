@@ -733,64 +733,53 @@ DCMythicPlusHUDDB = DCMythicPlusHUDDB or {}
 DCMythicPlusHUDDB.useDCProtocolJSON = DCMythicPlusHUDDB.useDCProtocolJSON or true  -- Prefer JSON by default
 
 if DC then
-    -- Helper to decode JSON from DC protocol
-    local function DecodeJSON(jsonStr)
-        if type(DC.DecodeJSON) == 'function' then
-            return DC:DecodeJSON(jsonStr)
-        end
-        -- Fallback simple JSON decoder if DC doesn't have one
-        local ok, result = pcall(function()
-            if type(jsonStr) ~= 'string' then return nil end
-            local obj = {}
-            -- Simple key:value parser for flat objects
-            for key, val in jsonStr:gmatch('"([^"]+)":([^,}]+)') do
-                val = val:gsub('^%s*', ''):gsub('%s*$', '')
-                if val == 'true' then obj[key] = true
-                elseif val == 'false' then obj[key] = false
-                elseif val:match('^"') then obj[key] = val:gsub('^"', ''):gsub('"$', '')
-                else obj[key] = tonumber(val) or val end
+    -- Helper to get value from table or raw args depending on format
+    -- In JSON mode, DC protocol passes the decoded object directly to handlers
+    local function HandleMPlusData(args, jsonFields, pipeFields)
+        local data = args[1]
+        
+        -- If first arg is a table, it's already decoded JSON
+        if type(data) == "table" then
+            local result = {}
+            for _, field in ipairs(jsonFields) do
+                result[field] = data[field]
             end
-            return obj
-        end)
-        return ok and result or nil
-    end
-
-    -- Check if message is JSON format (starts with "J" marker)
-    local function IsJSONMessage(...)
-        local args = {...}
-        return args[1] == "J"
+            return result
+        end
+        
+        -- Otherwise it's pipe-delimited args
+        local result = {}
+        for i, field in ipairs(pipeFields) do
+            result[field] = args[i]
+        end
+        return result
     end
 
     -- SMSG_RUN_START (0x13) - Mythic+ run started
     DC:RegisterHandler("MPLUS", 0x13, function(...)
         local args = {...}
-        local keyLevel, mapId, dungeonName, timeLimit, affixes
+        local data
         
-        if IsJSONMessage(...) then
-            -- JSON format: J, jsonString
-            local json = DecodeJSON(args[2])
-            if json then
-                keyLevel = json.keyLevel
-                mapId = json.dungeonId
-                dungeonName = json.dungeonName
-                timeLimit = json.timeLimit
-                affixes = json.affixes
-            end
+        if type(args[1]) == "table" then
+            -- JSON format (DC protocol decodes before calling handler)
+            data = args[1]
         else
             -- Pipe-delimited format
-            keyLevel = args[1]
-            mapId = args[2]
-            affixes = args[3]
-            timeLimit = args[4]
+            data = {
+                keyLevel = tonumber(args[1]),
+                dungeonId = tonumber(args[2]),
+                affixes = args[3],
+                timeLimit = tonumber(args[4]),
+            }
         end
         
-        Print("Mythic+" .. (keyLevel or "?") .. " started!")
+        Print("Mythic+" .. (data.keyLevel or "?") .. " started!")
         activeState = {
             inProgress = true,
-            keyLevel = keyLevel,
-            mapId = mapId,
-            dungeonName = dungeonName,
-            timeLimit = timeLimit,
+            keyLevel = data.keyLevel,
+            mapId = data.dungeonId,
+            dungeonName = data.dungeonName,
+            timeLimit = data.timeLimit,
             elapsed = 0,
             deaths = 0,
             wipes = 0,
@@ -802,27 +791,22 @@ if DC then
     -- SMSG_RUN_END (0x14) - Mythic+ run ended
     DC:RegisterHandler("MPLUS", 0x14, function(...)
         local args = {...}
-        local success, timeElapsed, keyUpgrade, score, newKeyLevel
+        local data
         
-        if IsJSONMessage(...) then
-            local json = DecodeJSON(args[2])
-            if json then
-                success = json.success
-                timeElapsed = json.timeElapsed
-                keyUpgrade = json.keyChange
-                score = json.score
-                newKeyLevel = json.newKeyLevel
-            end
+        if type(args[1]) == "table" then
+            data = args[1]
         else
-            success = args[1]
-            timeElapsed = args[2]
-            keyUpgrade = args[3]
+            data = {
+                success = (args[1] == "1" or args[1] == 1),
+                timeElapsed = tonumber(args[2]),
+                keyChange = tonumber(args[3]),
+            }
         end
         
-        if success then
-            Print("Run completed! Key upgraded by " .. (keyUpgrade or 0))
-            if score then
-                Print("Score: " .. score)
+        if data.success then
+            Print("Run completed! Key upgraded by " .. (data.keyChange or 0))
+            if data.score then
+                Print("Score: " .. data.score)
             end
         else
             Print("Run failed.")
@@ -835,37 +819,35 @@ if DC then
     DC:RegisterHandler("MPLUS", 0x15, function(...)
         local args = {...}
         
-        if IsJSONMessage(...) then
+        if type(args[1]) == "table" then
             -- JSON format with full run state
-            local json = DecodeJSON(args[2])
-            if json then
-                if not activeState then
-                    activeState = { inProgress = true }
-                end
-                activeState.elapsed = json.elapsed or activeState.elapsed
-                activeState.timeLimit = json.remaining and (json.elapsed + json.remaining) or activeState.timeLimit
-                activeState.deaths = json.deaths or activeState.deaths
-                activeState.bossesKilled = json.bossesKilled or activeState.bossesKilled
-                activeState.bossesTotal = json.bossesTotal or activeState.bossesTotal
-                activeState.enemyCount = json.enemyCount or activeState.enemyCount
-                activeState.enemyRequired = json.enemyRequired or activeState.enemyRequired
-                
-                if json.failed then
-                    Print("Run failed!")
-                    activeState = nil
-                    ShowIdleState()
-                    return
-                end
-                
-                if json.completed then
-                    Print("Run completed!")
-                end
-                
-                UpdateFrameFromState(activeState)
+            local json = args[1]
+            if not activeState then
+                activeState = { inProgress = true }
             end
+            activeState.elapsed = json.elapsed or activeState.elapsed
+            activeState.timeLimit = json.remaining and (json.elapsed + json.remaining) or activeState.timeLimit
+            activeState.deaths = json.deaths or activeState.deaths
+            activeState.bossesKilled = json.bossesKilled or activeState.bossesKilled
+            activeState.bossesTotal = json.bossesTotal or activeState.bossesTotal
+            activeState.enemyCount = json.enemyCount or activeState.enemyCount
+            activeState.enemyRequired = json.enemyRequired or activeState.enemyRequired
+            
+            if json.failed then
+                Print("Run failed!")
+                activeState = nil
+                ShowIdleState()
+                return
+            end
+            
+            if json.completed then
+                Print("Run completed!")
+            end
+            
+            UpdateFrameFromState(activeState)
         else
             -- Pipe-delimited format
-            local elapsed, timeLimit, deaths, deathPenalty = args[1], args[2], args[3], args[4]
+            local elapsed, timeLimit, deaths = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
             if activeState then
                 activeState.elapsed = elapsed
                 activeState.timeLimit = timeLimit
@@ -876,7 +858,23 @@ if DC then
     end)
     
     -- SMSG_OBJECTIVE_UPDATE (0x16) - Boss/enemy count update
-    DC:RegisterHandler("MPLUS", 0x16, function(bossesKilled, bossesTotal, enemyCount, enemyRequired)
+    DC:RegisterHandler("MPLUS", 0x16, function(...)
+        local args = {...}
+        local bossesKilled, bossesTotal, enemyCount, enemyRequired
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            bossesKilled = json.bossesKilled
+            bossesTotal = json.bossesTotal
+            enemyCount = json.enemyCount
+            enemyRequired = json.enemyRequired
+        else
+            bossesKilled = tonumber(args[1])
+            bossesTotal = tonumber(args[2])
+            enemyCount = tonumber(args[3])
+            enemyRequired = tonumber(args[4])
+        end
+        
         if activeState then
             activeState.bossesKilled = bossesKilled
             activeState.bossesTotal = bossesTotal
@@ -890,17 +888,15 @@ if DC then
     DC:RegisterHandler("MPLUS", 0x10, function(...)
         local args = {...}
         
-        if IsJSONMessage(...) then
-            local json = DecodeJSON(args[2])
-            if json then
-                if json.hasKey then
-                    Print("Your key: +" .. (json.level or "?") .. " " .. (json.dungeonName or ""))
-                    if json.depleted then
-                        Print("(Depleted)")
-                    end
-                else
-                    Print("No keystone in inventory")
+        if type(args[1]) == "table" then
+            local json = args[1]
+            if json.hasKey then
+                Print("Your key: +" .. (json.level or "?") .. " " .. (json.dungeonName or ""))
+                if json.depleted then
+                    Print("(Depleted)")
                 end
+            else
+                Print("No keystone in inventory")
             end
         else
             -- Pipe-delimited format
@@ -917,29 +913,27 @@ if DC then
     DC:RegisterHandler("MPLUS", 0x11, function(...)
         local args = {...}
         
-        if IsJSONMessage(...) then
-            local json = DecodeJSON(args[2])
-            if json then
-                local weekNum = json.weekNumber or "?"
-                Print("Week " .. weekNum .. " affixes:")
-                -- Parse affixes JSON array if present
-                if json.affixes and type(json.affixes) == 'string' then
-                    -- Affixes is encoded as a JSON array string within the object
-                    local affixList = {}
-                    for entry in json.affixes:gmatch('%{[^}]+%}') do
-                        local name = entry:match('"name":"([^"]+)"')
-                        if name then
-                            table.insert(affixList, name)
-                        end
+        if type(args[1]) == "table" then
+            local json = args[1]
+            local weekNum = json.weekNumber or "?"
+            Print("Week " .. weekNum .. " affixes:")
+            -- Parse affixes array if present
+            if json.affixes and type(json.affixes) == "table" then
+                local affixNames = {}
+                for _, affix in ipairs(json.affixes) do
+                    if type(affix) == "table" and affix.name then
+                        table.insert(affixNames, affix.name)
+                    elseif type(affix) == "string" then
+                        table.insert(affixNames, affix)
                     end
-                    if #affixList > 0 then
-                        Print("  " .. table.concat(affixList, ", "))
-                    end
+                end
+                if #affixNames > 0 then
+                    Print("  " .. table.concat(affixNames, ", "))
                 end
             end
         else
-            -- Pipe-delimited format
-            local affixData = args[1] -- Format: id:name:desc;id:name:desc;...
+            -- Pipe-delimited format: id:name:desc;id:name:desc;...
+            local affixData = args[1]
             if affixData then
                 local affixNames = {}
                 for entry in tostring(affixData):gmatch('[^;]+') do
@@ -959,29 +953,24 @@ if DC then
     DC:RegisterHandler("MPLUS", 0x12, function(...)
         local args = {...}
         
-        if IsJSONMessage(...) then
-            local json = DecodeJSON(args[2])
-            if json then
-                local count = json.count or 0
-                Print("Best runs (" .. count .. "):")
-                -- Parse runs JSON array if present
-                if json.runs and type(json.runs) == 'string' then
-                    local idx = 1
-                    for entry in json.runs:gmatch('%{[^}]+%}') do
-                        local name = entry:match('"dungeonName":"([^"]+)"')
-                        local level = entry:match('"level":(%d+)')
-                        local time = entry:match('"time":(%d+)')
-                        if name and level then
-                            local timeStr = time and FormatSeconds(tonumber(time)) or "?"
-                            Print("  " .. idx .. ". " .. name .. " +" .. level .. " (" .. timeStr .. ")")
-                            idx = idx + 1
-                        end
+        if type(args[1]) == "table" then
+            local json = args[1]
+            local count = json.count or 0
+            Print("Best runs (" .. count .. "):")
+            -- Parse runs array if present
+            if json.runs and type(json.runs) == "table" then
+                for idx, run in ipairs(json.runs) do
+                    if type(run) == "table" then
+                        local name = run.dungeonName or ("Dungeon " .. (run.dungeonId or "?"))
+                        local level = run.level or "?"
+                        local timeStr = run.time and FormatSeconds(run.time) or "?"
+                        Print("  " .. idx .. ". " .. name .. " +" .. level .. " (" .. timeStr .. ")")
                     end
                 end
             end
         else
-            -- Pipe-delimited format
-            local runData = args[1] -- Format: dungeonId:level:time:deaths:season;...
+            -- Pipe-delimited format: dungeonId:level:time:deaths:season;...
+            local runData = args[1]
             if runData then
                 Print("Best runs:")
                 local idx = 1
@@ -1001,7 +990,7 @@ if DC then
         end
     end)
     
-    -- Helper to request data via protocol
+    -- Helper functions exposed on namespace for slash commands and external use
     namespace.RequestKeyInfo = function()
         if DC then
             DC:Send("MPLUS", 0x01)  -- CMSG_GET_KEY_INFO
@@ -1019,4 +1008,18 @@ if DC then
             DC:Send("MPLUS", 0x03)  -- CMSG_GET_BEST_RUNS
         end
     end
+    
+    -- Test connection by sending all requests
+    namespace.TestConnection = function()
+        if not DC then
+            Print("DCAddonProtocol not available")
+            return
+        end
+        Print("Testing DC Protocol connection...")
+        DC:Send("MPLUS", 0x01)  -- Key info
+        DC:Send("MPLUS", 0x02)  -- Affixes
+        DC:Send("MPLUS", 0x03)  -- Best runs
+    end
+    
+    Print("DCAddonProtocol v" .. (DC.VERSION or "?") .. " handlers registered")
 end

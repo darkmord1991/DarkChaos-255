@@ -535,6 +535,18 @@ function Core:ADDON_LOADED(name)
 end
 
 function Core:PLAYER_LOGIN()
+    -- Re-check DC availability (DC-AddonProtocol may have loaded after us)
+    DC = rawget(_G, "DCAddonProtocol")
+    Core.useDCProtocol = (DC ~= nil)
+    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+    
+    -- Re-register protocol handlers if DC is now available
+    if DC and not Core._handlersRegistered then
+        self:RegisterProtocolHandlers()
+    end
+    
+    DebugPrint("PLAYER_LOGIN - Protocol mode:", Core.protocolMode, "DC available:", tostring(DC ~= nil))
+    
     if state.db and state.db.showListOnLogin and UI and UI.listFrame then
         UI.listFrame:Show()
         if UI.RefreshList then
@@ -546,38 +558,28 @@ function Core:PLAYER_LOGIN()
     self:HookWorldMap()
     
     -- Automatically request hotspot list on login (after a short delay for server connection)
-    C_Timer = C_Timer or {}
-    if C_Timer.After then
-        C_Timer.After(2, function()
+    -- Use a slightly longer delay to ensure connection is established
+    local loginFrame = CreateFrame("Frame")
+    loginFrame.elapsed = 0
+    loginFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed >= 3 then  -- 3 second delay for server connection
+            self:SetScript("OnUpdate", nil)
+            DebugPrint("Auto-requesting hotspot list...")
             Core:RequestHotspotList()
-        end)
-    else
-        -- Fallback for 3.3.5 client without C_Timer
-        local loginFrame = CreateFrame("Frame")
-        loginFrame.elapsed = 0
-        loginFrame:SetScript("OnUpdate", function(self, elapsed)
-            self.elapsed = self.elapsed + elapsed
-            if self.elapsed >= 2 then
-                self:SetScript("OnUpdate", nil)
-                Core:RequestHotspotList()
-            end
-        end)
-    end
+        end
+    end)
 end
 
--- Request hotspot list from server using protocol fallback chain
+-- Request hotspot list from server using protocol fallback chain (JSON standard)
 function Core:RequestHotspotList()
     self.lastHotspotRequest = GetTime()
-    DebugPrint("Requesting hotspot list from server via", Core.protocolMode)
+    DebugPrint("Requesting hotspot list from server via", Core.protocolMode, "(JSON)")
     
     -- Protocol fallback chain: DCAddonProtocol → AIO → Chat
     if Core.useDCProtocol and DC then
-        -- Primary: DCAddonProtocol
-        if state.db and state.db.useDCProtocolJSON then
-            DC:Send("SPOT", 0x01, "J", '{"action":"list"}')  -- JSON format
-        else
-            DC:Send("SPOT", 0x01)  -- Binary format
-        end
+        -- Primary: DCAddonProtocol with JSON format (standard)
+        DC:Request("SPOT", 0x01, { action = "list" })
     elseif Core.useAIO and AIO and AIO.Handle then
         -- Secondary: AIO/Eluna
         AIO.Handle("HOTSPOT", "Request", "LIST")
@@ -601,16 +603,12 @@ function Core:RequestHotspotList()
     end
 end
 
--- Request teleport to a hotspot using protocol fallback chain
+-- Request teleport to a hotspot using protocol fallback chain (JSON standard)
 function Core:RequestTeleport(hotspotId)
-    DebugPrint("Requesting teleport to hotspot", hotspotId, "via", Core.protocolMode)
+    DebugPrint("Requesting teleport to hotspot", hotspotId, "via", Core.protocolMode, "(JSON)")
     
     if Core.useDCProtocol and DC then
-        if state.db and state.db.useDCProtocolJSON then
-            DC:Send("SPOT", 0x03, "J", '{"action":"teleport","id":' .. hotspotId .. '}')
-        else
-            DC:Send("SPOT", 0x03, hotspotId)
-        end
+        DC:Request("SPOT", 0x03, { action = "teleport", id = hotspotId })
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "TELEPORT", hotspotId)
     else
@@ -618,16 +616,12 @@ function Core:RequestTeleport(hotspotId)
     end
 end
 
--- Request info for a specific hotspot
+-- Request info for a specific hotspot (JSON standard)
 function Core:RequestHotspotInfo(hotspotId)
-    DebugPrint("Requesting info for hotspot", hotspotId)
+    DebugPrint("Requesting info for hotspot", hotspotId, "(JSON)")
     
     if Core.useDCProtocol and DC then
-        if state.db and state.db.useDCProtocolJSON then
-            DC:Send("SPOT", 0x02, "J", '{"action":"info","id":' .. hotspotId .. '}')
-        else
-            DC:Send("SPOT", 0x02, hotspotId)
-        end
+        DC:Request("SPOT", 0x02, { action = "info", id = hotspotId })
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "INFO", hotspotId)
     else
@@ -762,6 +756,15 @@ function Core:RegisterProtocolHandlers()
         DebugPrint("DCAddonProtocol not available, using fallback")
         return
     end
+    
+    -- Prevent double registration
+    if Core._handlersRegistered then
+        DebugPrint("Protocol handlers already registered")
+        return
+    end
+    Core._handlersRegistered = true
+    
+    DebugPrint("Registering DCAddonProtocol handlers...")
     
     local function DebugProtocol(...)
         if state.db and state.db.debug then

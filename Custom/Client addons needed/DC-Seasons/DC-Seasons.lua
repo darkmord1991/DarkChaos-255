@@ -12,9 +12,10 @@
 local ADDON_NAME = "DC-Seasons"
 local DCSeasons = {}
 
--- DCAddonProtocol integration
+-- DCAddonProtocol integration (will be re-checked on PLAYER_LOGIN)
 local DC = rawget(_G, "DCAddonProtocol")
 DCSeasons.useDCProtocol = (DC ~= nil)
+DCSeasons._handlersRegistered = false
 
 local DEFAULT_SETTINGS = {
     autoShowTracker = true,
@@ -352,6 +353,62 @@ SlashCmdList["DCSEASONS"] = function(msg)
         DCSeasons.Data.weeklyTokens = DCSeasons.Data.weeklyTokens + 150
         DCSeasons.Data.weeklyEssence = DCSeasons.Data.weeklyEssence + 75
         DCSeasons:UpdateProgressTracker()
+    elseif cmd == "refresh" or cmd == "sync" then
+        -- Request data from server via DC protocol
+        if DCSeasons.RequestSeasonData then
+            DCSeasons.RequestSeasonData()
+            print("|cff00ff00[DC-Seasons]|r Requesting season data from server...")
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
+    elseif cmd == "rewards" then
+        -- Request rewards list
+        if DCSeasons.RequestRewards then
+            DCSeasons.RequestRewards()
+            print("|cff00ff00[DC-Seasons]|r Requesting rewards...")
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
+    elseif cmd == "leaderboard" or cmd == "lb" then
+        -- Request leaderboard
+        if DCSeasons.RequestLeaderboard then
+            DCSeasons.RequestLeaderboard()
+            print("|cff00ff00[DC-Seasons]|r Requesting leaderboard...")
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
+    elseif cmd == "challenges" or cmd == "daily" then
+        -- Request challenges
+        if DCSeasons.RequestChallenges then
+            DCSeasons.RequestChallenges()
+            print("|cff00ff00[DC-Seasons]|r Requesting challenges...")
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
+    elseif cmd:match("^claim%s+%d+$") then
+        -- Claim a specific reward by ID
+        local rewardId = tonumber(cmd:match("%d+"))
+        if DCSeasons.ClaimReward and rewardId then
+            DCSeasons.ClaimReward(rewardId)
+            print("|cff00ff00[DC-Seasons]|r Claiming reward " .. rewardId .. "...")
+        end
+    elseif cmd == "protocol" or cmd == "status" then
+        -- Show protocol status
+        local dcAvail = rawget(_G, "DCAddonProtocol") and "YES" or "NO"
+        local aioAvail = rawget(_G, "AIO") and "YES" or "NO"
+        print("|cff00ff00[DC-Seasons]|r Protocol status:")
+        print("  DCAddonProtocol: " .. dcAvail)
+        print("  AIO: " .. aioAvail)
+        print("  Season: " .. (DCSeasons.Data.seasonNumber or "?") .. " - " .. (DCSeasons.Data.seasonName or "Unknown"))
+        print("  Tokens: " .. (DCSeasons.Data.weeklyTokens or 0) .. "/" .. (DCSeasons.Data.weeklyTokenCap or 5000))
+        print("  Essence: " .. (DCSeasons.Data.weeklyEssence or 0) .. "/" .. (DCSeasons.Data.weeklyEssenceCap or 2500))
+    elseif cmd == "testconn" then
+        -- Test DC protocol connection
+        if DCSeasons.TestConnection then
+            DCSeasons.TestConnection()
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
     elseif cmd == "options" or cmd == "config" or cmd == "settings" then
         if InterfaceOptionsFrame_OpenToCategory and DCSeasons.OptionsPanel then
             InterfaceOptionsFrame_OpenToCategory(DCSeasons.OptionsPanel)
@@ -361,6 +418,13 @@ SlashCmdList["DCSEASONS"] = function(msg)
         print("|cff00ff00[Seasonal]|r Commands:")
         print("  /seasonal show - Toggle progress tracker")
         print("  /seasonal hide - Hide progress tracker")
+        print("  /seasonal refresh - Request data from server")
+        print("  /seasonal rewards - Show available rewards")
+        print("  /seasonal leaderboard - Show leaderboard")
+        print("  /seasonal challenges - Show daily/weekly challenges")
+        print("  /seasonal claim <id> - Claim a reward by ID")
+        print("  /seasonal status - Show protocol status")
+        print("  /seasonal testconn - Test DC protocol connection")
         print("  /seasonal test - Test reward popup")
         print("  /seasonal options - Open the addon settings panel")
     end
@@ -419,38 +483,277 @@ end
 -- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
 -- =====================================================================
 
-if DC then
+-- Function to register DC handlers (called from PLAYER_LOGIN when DC is available)
+function DCSeasons:RegisterDCHandlers()
+    -- Re-check DC availability
+    DC = rawget(_G, "DCAddonProtocol")
+    if not DC then
+        print("|cffff6600[DC-Seasons]|r DCAddonProtocol not available, using AIO fallback")
+        return false
+    end
+    
+    -- Prevent double registration
+    if DCSeasons._handlersRegistered then
+        return true
+    end
+    DCSeasons._handlersRegistered = true
+    DCSeasons.useDCProtocol = true
+    
+    print("|cff00ff00[DC-Seasons]|r Registering DCAddonProtocol handlers...")
+    
     -- SMSG_CURRENT_SEASON (0x10) - Season info response
-    DC:RegisterHandler("SEAS", 0x10, function(seasonId, seasonName, startTime, endTime, daysRemaining)
-        DCSeasons.Data.seasonNumber = seasonId or 1
-        DCSeasons.Data.seasonName = seasonName or "Season of Discovery"
+    DC:RegisterHandler("SEAS", 0x10, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            -- JSON format
+            local json = args[1]
+            DCSeasons.Data.seasonNumber = json.seasonId or json.id or 1
+            DCSeasons.Data.seasonName = json.name or json.seasonName or "Season of Discovery"
+            DCSeasons.Data.startTime = json.startTime
+            DCSeasons.Data.endTime = json.endTime
+            DCSeasons.Data.daysRemaining = json.daysRemaining
+            if json.tokenCap then DCSeasons.Data.weeklyTokenCap = json.tokenCap end
+            if json.essenceCap then DCSeasons.Data.weeklyEssenceCap = json.essenceCap end
+        else
+            -- Pipe-delimited format
+            DCSeasons.Data.seasonNumber = tonumber(args[1]) or 1
+            DCSeasons.Data.seasonName = args[2] or "Season of Discovery"
+            DCSeasons.Data.startTime = tonumber(args[3])
+            DCSeasons.Data.endTime = tonumber(args[4])
+            DCSeasons.Data.daysRemaining = tonumber(args[5])
+        end
         DCSeasons:UpdateProgressTracker()
+        print("|cff00ff00[DC-Seasons]|r Season info received: " .. DCSeasons.Data.seasonName)
     end)
     
     -- SMSG_PROGRESS (0x12) - Progress update
-    DC:RegisterHandler("SEAS", 0x12, function(seasonId, seasonLevel, currentXP, xpToNextLevel, totalPoints, rank, tier)
-        DCSeasons.Data.weeklyTokens = currentXP or 0
-        DCSeasons.Data.weeklyTokenCap = xpToNextLevel or 5000
+    DC:RegisterHandler("SEAS", 0x12, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            -- JSON format
+            local json = args[1]
+            DCSeasons.Data.seasonLevel = json.level or json.seasonLevel or 1
+            DCSeasons.Data.weeklyTokens = json.currentXP or json.tokens or 0
+            DCSeasons.Data.weeklyTokenCap = json.xpToNextLevel or json.tokenCap or 5000
+            DCSeasons.Data.weeklyEssence = json.essence or 0
+            DCSeasons.Data.weeklyEssenceCap = json.essenceCap or 2500
+            DCSeasons.Data.totalPoints = json.totalPoints or 0
+            DCSeasons.Data.rank = json.rank
+            DCSeasons.Data.tier = json.tier
+            DCSeasons.Data.quests = json.quests or 0
+            DCSeasons.Data.worldBosses = json.worldBosses or 0
+            DCSeasons.Data.dungeonBosses = json.dungeonBosses or 0
+        else
+            -- Pipe-delimited format
+            DCSeasons.Data.seasonLevel = tonumber(args[2]) or 1
+            DCSeasons.Data.weeklyTokens = tonumber(args[3]) or 0
+            DCSeasons.Data.weeklyTokenCap = tonumber(args[4]) or 5000
+            DCSeasons.Data.totalPoints = tonumber(args[5]) or 0
+            DCSeasons.Data.rank = args[6]
+            DCSeasons.Data.tier = args[7]
+        end
         DCSeasons:UpdateProgressTracker()
     end)
     
     -- SMSG_REWARDS (0x11) - Rewards list
-    DC:RegisterHandler("SEAS", 0x11, function(seasonId, rewardCount, ...)
-        -- Handle rewards list if needed
+    DC:RegisterHandler("SEAS", 0x11, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            -- JSON format
+            local json = args[1]
+            DCSeasons.Data.rewards = json.rewards or {}
+            DCSeasons.Data.rewardCount = json.count or (json.rewards and #json.rewards or 0)
+            
+            -- Display rewards if we have them
+            if json.rewards and #json.rewards > 0 then
+                print("|cff00ff00[DC-Seasons]|r Available rewards:")
+                for i, reward in ipairs(json.rewards) do
+                    if type(reward) == "table" then
+                        local name = reward.name or ("Reward " .. (reward.id or i))
+                        local tier = reward.tier and (" (Tier " .. reward.tier .. ")") or ""
+                        local claimed = reward.claimed and " |cff888888[Claimed]|r" or ""
+                        print("  " .. i .. ". " .. name .. tier .. claimed)
+                    end
+                end
+            end
+        else
+            -- Pipe-delimited format
+            DCSeasons.Data.rewardCount = tonumber(args[2]) or 0
+        end
     end)
     
     -- SMSG_SEASON_END (0x13) - Season ended notification
-    DC:RegisterHandler("SEAS", 0x13, function(seasonId, finalLevel, finalRank, bonusRewardItemId)
-        print("|cff00ff00[DC-Seasons]|r Season " .. seasonId .. " has ended! Final rank: " .. finalRank)
+    DC:RegisterHandler("SEAS", 0x13, function(...)
+        local args = {...}
+        local seasonId, finalLevel, finalRank, bonusReward
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            seasonId = json.seasonId
+            finalLevel = json.finalLevel
+            finalRank = json.finalRank
+            bonusReward = json.bonusRewardItemId
+        else
+            seasonId = tonumber(args[1])
+            finalLevel = tonumber(args[2])
+            finalRank = args[3]
+            bonusReward = tonumber(args[4])
+        end
+        
+        print("|cff00ff00[DC-Seasons]|r Season " .. (seasonId or "?") .. " has ended!")
+        print("|cff00ff00[DC-Seasons]|r Final Level: " .. (finalLevel or "?"))
+        print("|cff00ff00[DC-Seasons]|r Final Rank: " .. (finalRank or "?"))
+        if bonusReward and bonusReward > 0 then
+            print("|cff00ff00[DC-Seasons]|r Bonus reward granted!")
+        end
     end)
     
-    -- Request season data on load
+    -- SMSG_REWARD_CLAIMED (0x14) - Reward claim result (custom opcode)
+    DC:RegisterHandler("SEAS", 0x14, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            if json.success then
+                print("|cff00ff00[DC-Seasons]|r Reward claimed: " .. (json.rewardName or ""))
+                -- Refresh progress
+                DCSeasons.RequestSeasonData()
+            else
+                print("|cffff0000[DC-Seasons]|r Failed to claim reward: " .. (json.error or "Unknown error"))
+            end
+        else
+            local success = (args[1] == "1" or args[1] == 1)
+            local rewardId = args[2]
+            local error = args[3]
+            if success then
+                print("|cff00ff00[DC-Seasons]|r Reward " .. (rewardId or "?") .. " claimed!")
+            else
+                print("|cffff0000[DC-Seasons]|r Failed: " .. (error or "Unknown error"))
+            end
+        end
+    end)
+    
+    -- SMSG_LEADERBOARD (0x15) - Leaderboard data (custom opcode)
+    DC:RegisterHandler("SEAS", 0x15, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            local leaderboard = json.entries or json.leaderboard or {}
+            print("|cff00ff00[DC-Seasons]|r Leaderboard (Season " .. (json.seasonId or "?") .. "):")
+            for i, entry in ipairs(leaderboard) do
+                if type(entry) == "table" then
+                    local name = entry.name or entry.playerName or "Unknown"
+                    local points = entry.points or entry.score or 0
+                    local rank = entry.rank or i
+                    print(string.format("  %d. %s - %d points", rank, name, points))
+                end
+            end
+            if json.playerRank then
+                print("|cff00ff00[DC-Seasons]|r Your rank: " .. json.playerRank)
+            end
+        end
+    end)
+    
+    -- SMSG_CHALLENGES (0x16) - Weekly/Daily challenges (custom opcode)
+    DC:RegisterHandler("SEAS", 0x16, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            DCSeasons.Data.challenges = json.challenges or {}
+            print("|cff00ff00[DC-Seasons]|r Challenges available:")
+            for i, challenge in ipairs(DCSeasons.Data.challenges) do
+                if type(challenge) == "table" then
+                    local name = challenge.name or ("Challenge " .. i)
+                    local progress = challenge.progress or 0
+                    local required = challenge.required or 1
+                    local reward = challenge.reward or 0
+                    local status = (progress >= required) and "|cff00ff00Complete|r" or string.format("%d/%d", progress, required)
+                    print(string.format("  %s: %s (+%d tokens)", name, status, reward))
+                end
+            end
+        end
+    end)
+    
+    -- SMSG_REWARD_EARNED (0x17) - Real-time reward notification
+    DC:RegisterHandler("SEAS", 0x17, function(...)
+        local args = {...}
+        local tokens, essence, source
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            tokens = json.tokens or 0
+            essence = json.essence or 0
+            source = json.source or json.reason or "Unknown"
+        else
+            tokens = tonumber(args[1]) or 0
+            essence = tonumber(args[2]) or 0
+            source = args[3] or "Unknown"
+        end
+        
+        if tokens > 0 or essence > 0 then
+            DCSeasons:ShowRewardPopup(tokens, essence, source)
+            DCSeasons.Data.weeklyTokens = (DCSeasons.Data.weeklyTokens or 0) + tokens
+            DCSeasons.Data.weeklyEssence = (DCSeasons.Data.weeklyEssence or 0) + essence
+            DCSeasons:UpdateProgressTracker()
+        end
+    end)
+    
+    -- Request functions exposed for external use (JSON format standard)
     DCSeasons.RequestSeasonData = function()
-        if DC and DC.Season then
-            DC:Send("SEAS", 0x01)  -- CMSG_GET_CURRENT
-            DC:Send("SEAS", 0x03)  -- CMSG_GET_PROGRESS
+        if DC then
+            DC:Request("SEAS", 0x01, {})  -- CMSG_GET_CURRENT
+            DC:Request("SEAS", 0x03, {})  -- CMSG_GET_PROGRESS
         end
     end
+    
+    DCSeasons.RequestRewards = function()
+        if DC then
+            DC:Request("SEAS", 0x02, {})  -- CMSG_GET_REWARDS
+        end
+    end
+    
+    DCSeasons.ClaimReward = function(rewardId)
+        if DC then
+            DC:Request("SEAS", 0x04, { rewardId = rewardId })  -- CMSG_CLAIM_REWARD
+        end
+    end
+    
+    DCSeasons.RequestLeaderboard = function()
+        if DC then
+            DC:Request("SEAS", 0x05, {})  -- CMSG_GET_LEADERBOARD
+        end
+    end
+    
+    DCSeasons.RequestChallenges = function()
+        if DC then
+            DC:Request("SEAS", 0x06, {})  -- CMSG_GET_CHALLENGES
+        end
+    end
+    
+    -- Test all connections
+    DCSeasons.TestConnection = function()
+        if not DC then
+            print("|cffff0000[DC-Seasons]|r DCAddonProtocol not available")
+            return
+        end
+        print("|cff00ff00[DC-Seasons]|r Testing DC Protocol connection (JSON format)...")
+        DC:Request("SEAS", 0x01, {})  -- Current season
+        DC:Request("SEAS", 0x02, {})  -- Rewards
+        DC:Request("SEAS", 0x03, {})  -- Progress
+    end
+    
+    print("|cff00ff00[DC-Seasons]|r DCAddonProtocol v" .. (DC.VERSION or "?") .. " handlers registered")
+    return true
+end
+
+-- Try to register handlers immediately if DC is available
+if DC then
+    DCSeasons:RegisterDCHandlers()
 end
 
 -- =====================================================================
@@ -526,7 +829,215 @@ local function BuildOptionsPanel()
     return panel
 end
 
+local function BuildCommunicationPanel(parentPanel)
+    local panel = CreateFrame("Frame", "DCSeasonsCommPanel", InterfaceOptionsFramePanelContainer or UIParent)
+    panel.name = "Communication"
+    panel.parent = parentPanel.name
+    panel:Hide()
+    
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("|cff00ff00DC-Seasons|r - Communication")
+    
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetWidth(500)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Manage server communication protocols and test connectivity.")
+    
+    local yPos = -70
+    local xPos = 20
+    
+    -- Protocol Status Section
+    local statusHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    statusHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    statusHeader:SetText("|cffffd700Protocol Status|r")
+    yPos = yPos - 20
+    
+    -- DCAddonProtocol status
+    local dcStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    dcStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.dcStatus = dcStatus
+    yPos = yPos - 18
+    
+    -- AIO status
+    local aioStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    aioStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.aioStatus = aioStatus
+    yPos = yPos - 18
+    
+    -- Connection status
+    local connStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    connStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.connStatus = connStatus
+    yPos = yPos - 18
+    
+    -- Server version
+    local serverVer = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    serverVer:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.serverVer = serverVer
+    yPos = yPos - 30
+    
+    -- Test Buttons Section
+    local testHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    testHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    testHeader:SetText("|cffffd700Test Communication|r")
+    yPos = yPos - 25
+    
+    -- Test Connection button
+    local testBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    testBtn:SetWidth(150)
+    testBtn:SetHeight(22)
+    testBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    testBtn:SetText("Test Connection")
+    testBtn:SetScript("OnClick", function()
+        if DCSeasons.TestConnection then
+            DCSeasons.TestConnection()
+        else
+            print("|cffff0000[DC-Seasons]|r TestConnection not available")
+        end
+    end)
+    
+    -- Request Season Data button
+    local reqBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reqBtn:SetWidth(150)
+    reqBtn:SetHeight(22)
+    reqBtn:SetPoint("LEFT", testBtn, "RIGHT", 10, 0)
+    reqBtn:SetText("Request Season")
+    reqBtn:SetScript("OnClick", function()
+        if DCSeasons.RequestSeasonData then
+            DCSeasons.RequestSeasonData()
+            print("|cff00ff00[DC-Seasons]|r Season data requested")
+        end
+    end)
+    yPos = yPos - 30
+    
+    -- Request Rewards button
+    local rewardsBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    rewardsBtn:SetWidth(150)
+    rewardsBtn:SetHeight(22)
+    rewardsBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    rewardsBtn:SetText("Request Rewards")
+    rewardsBtn:SetScript("OnClick", function()
+        if DCSeasons.RequestRewards then
+            DCSeasons.RequestRewards()
+            print("|cff00ff00[DC-Seasons]|r Rewards requested")
+        end
+    end)
+    
+    -- Request Leaderboard button
+    local lbBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    lbBtn:SetWidth(150)
+    lbBtn:SetHeight(22)
+    lbBtn:SetPoint("LEFT", rewardsBtn, "RIGHT", 10, 0)
+    lbBtn:SetText("Leaderboard")
+    lbBtn:SetScript("OnClick", function()
+        if DCSeasons.RequestLeaderboard then
+            DCSeasons.RequestLeaderboard()
+            print("|cff00ff00[DC-Seasons]|r Leaderboard requested")
+        end
+    end)
+    yPos = yPos - 30
+    
+    -- Request Challenges button
+    local chalBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    chalBtn:SetWidth(150)
+    chalBtn:SetHeight(22)
+    chalBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    chalBtn:SetText("Challenges")
+    chalBtn:SetScript("OnClick", function()
+        if DCSeasons.RequestChallenges then
+            DCSeasons.RequestChallenges()
+            print("|cff00ff00[DC-Seasons]|r Challenges requested")
+        end
+    end)
+    
+    -- Reconnect button
+    local reconBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reconBtn:SetWidth(150)
+    reconBtn:SetHeight(22)
+    reconBtn:SetPoint("LEFT", chalBtn, "RIGHT", 10, 0)
+    reconBtn:SetText("Reconnect")
+    reconBtn:SetScript("OnClick", function()
+        local dcProto = rawget(_G, "DCAddonProtocol")
+        if dcProto then
+            dcProto._connected = false
+            dcProto._handshakeSent = false
+            dcProto:Send("CORE", 1, dcProto.VERSION)
+            print("|cff00ff00[DC-Seasons]|r Reconnection handshake sent")
+        else
+            print("|cffff0000[DC-Seasons]|r DC Protocol not available")
+        end
+    end)
+    yPos = yPos - 40
+    
+    -- Current Data Section
+    local dataHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    dataHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    dataHeader:SetText("|cffffd700Current Data|r")
+    yPos = yPos - 20
+    
+    local seasonInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    seasonInfo:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.seasonInfo = seasonInfo
+    yPos = yPos - 18
+    
+    local tokenInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    tokenInfo:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.tokenInfo = tokenInfo
+    yPos = yPos - 18
+    
+    local essenceInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    essenceInfo:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.essenceInfo = essenceInfo
+    yPos = yPos - 30
+    
+    -- Info Section
+    local infoHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    infoHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    infoHeader:SetText("|cffffd700Information|r")
+    yPos = yPos - 20
+    
+    local infoText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    infoText:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    infoText:SetWidth(450)
+    infoText:SetJustifyH("LEFT")
+    infoText:SetText("DC-Seasons uses DCAddonProtocol for efficient server communication.\n" ..
+        "AIO is also supported as a fallback for complex data sync.\n\n" ..
+        "Slash commands: /seasonal, /season, /dcseasons")
+    
+    -- Update function
+    local function UpdateStatus()
+        local dcAvail = rawget(_G, "DCAddonProtocol")
+        local aioAvail = rawget(_G, "AIO")
+        
+        panel.dcStatus:SetText("DCAddonProtocol: " .. (dcAvail and "|cff00ff00Available v" .. (dcAvail.VERSION or "?") .. "|r" or "|cffff0000Not Loaded|r"))
+        panel.aioStatus:SetText("AIO: " .. (aioAvail and "|cff00ff00Available|r" or "|cff888888Not Loaded|r"))
+        
+        if dcAvail then
+            panel.connStatus:SetText("Connected: " .. (dcAvail._connected and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+            panel.serverVer:SetText("Server Version: " .. (dcAvail._serverVersion or "|cff888888Unknown|r"))
+        else
+            panel.connStatus:SetText("Connected: |cff888888N/A|r")
+            panel.serverVer:SetText("Server Version: |cff888888N/A|r")
+        end
+        
+        panel.seasonInfo:SetText("Season: " .. (DCSeasons.Data.seasonNumber or "?") .. " - " .. (DCSeasons.Data.seasonName or "Unknown"))
+        panel.tokenInfo:SetText("Tokens: |cffffd700" .. (DCSeasons.Data.weeklyTokens or 0) .. "|r / " .. (DCSeasons.Data.weeklyTokenCap or 5000))
+        panel.essenceInfo:SetText("Essence: |cff00ffff" .. (DCSeasons.Data.weeklyEssence or 0) .. "|r / " .. (DCSeasons.Data.weeklyEssenceCap or 2500))
+    end
+    
+    panel:SetScript("OnShow", UpdateStatus)
+    
+    if InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+    end
+    return panel
+end
+
 DCSeasons.OptionsPanel = BuildOptionsPanel()
+DCSeasons.CommPanel = BuildCommunicationPanel(DCSeasons.OptionsPanel)
 
 -- =====================================================================
 -- INITIALIZATION
@@ -543,9 +1054,29 @@ local function Initialize()
         end
     end
     
-    -- Request season data via DCAddonProtocol if available
-    if DCSeasons.useDCProtocol and DCSeasons.RequestSeasonData then
-        DCSeasons.RequestSeasonData()
+    -- Re-check and register DC handlers if not already registered
+    -- (DC-AddonProtocol may have loaded after DC-Seasons)
+    if not DCSeasons._handlersRegistered then
+        DCSeasons:RegisterDCHandlers()
+    end
+    
+    -- Update DC reference for request functions
+    DC = rawget(_G, "DCAddonProtocol")
+    DCSeasons.useDCProtocol = (DC ~= nil)
+    
+    -- Request season data via DCAddonProtocol if available (with delay for connection)
+    if DCSeasons.useDCProtocol and DC then
+        local delayFrame = CreateFrame("Frame")
+        delayFrame.elapsed = 0
+        delayFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = self.elapsed + elapsed
+            if self.elapsed >= 3 then  -- Wait 3 seconds for server connection
+                self:SetScript("OnUpdate", nil)
+                if DCSeasons.RequestSeasonData then
+                    DCSeasons.RequestSeasonData()
+                end
+            end
+        end)
     end
 end
 

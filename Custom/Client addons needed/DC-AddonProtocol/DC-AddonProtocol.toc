@@ -1,7 +1,8 @@
 ## Interface: 30300
 ## Title: DC Addon Protocol
-## Notes: Communication library for DC addons
-## Version: 1.2.0
+## Notes: Communication library for all DC addons - unified server messaging with JSON support and debug panel
+## Version: 1.5.1
+## Author: DarkChaos Development Team
 ## LoadFirst: 1
 
 DCAddonProtocol.lua

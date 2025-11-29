@@ -1051,6 +1051,20 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_aoe_loot_settings
+CREATE TABLE IF NOT EXISTS `dc_aoe_loot_settings` (
+  `character_guid` int unsigned NOT NULL,
+  `enabled` tinyint(1) DEFAULT '1',
+  `show_messages` tinyint(1) DEFAULT '1',
+  `min_quality` tinyint unsigned DEFAULT '0',
+  `auto_skin` tinyint(1) DEFAULT '0',
+  `smart_loot` tinyint(1) DEFAULT '1',
+  `loot_range` float DEFAULT '30',
+  PRIMARY KEY (`character_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AOE Loot addon settings per character';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_aoeloot_accumulated
 CREATE TABLE IF NOT EXISTS `dc_aoeloot_accumulated` (
   `player_guid` int unsigned NOT NULL,
@@ -1519,7 +1533,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   KEY `idx_player_timestamp` (`player_guid`,`timestamp`),
   KEY `idx_dc_item_upgrade_log_player_timestamp` (`player_guid`,`timestamp`),
   CONSTRAINT `fk_dc_item_upgrade_log_player` FOREIGN KEY (`player_guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
+) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1628,7 +1642,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   KEY `k_tier` (`tier_id`),
   KEY `k_season` (`season`),
   KEY `k_last_upgraded` (`last_upgraded_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1778,6 +1792,19 @@ CREATE TABLE IF NOT EXISTS `dc_mythicplus_hud_cache` (
   `updated_at` bigint unsigned NOT NULL,
   PRIMARY KEY (`instance_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_artifact_discoveries
+CREATE TABLE IF NOT EXISTS `dc_player_artifact_discoveries` (
+  `player_guid` int unsigned NOT NULL,
+  `artifact_id` int unsigned NOT NULL,
+  `discovery_type` enum('quest','craft','purchase','event','admin') COLLATE utf8mb4_unicode_ci DEFAULT 'craft',
+  `discovered_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `completion_percentage` tinyint unsigned DEFAULT '0',
+  PRIMARY KEY (`player_guid`,`artifact_id`),
+  KEY `idx_discovery_type` (`discovery_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks discovered artifacts per player';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2248,6 +2275,23 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_tier_conversion_log
+CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
+  `log_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `from_tier` tinyint unsigned NOT NULL,
+  `to_tier` tinyint unsigned NOT NULL,
+  `conversion_type` enum('upgrade','downgrade','reset','skip') COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade',
+  `tokens_spent` int unsigned DEFAULT '0',
+  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`log_id`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Audit trail for tier conversion events';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_token_event_config
 CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique event config ID',
@@ -2338,6 +2382,20 @@ CREATE TABLE IF NOT EXISTS `dc_vault_reward_pool` (
   PRIMARY KEY (`character_guid`,`season_id`,`week_start`,`slot_index`),
   KEY `idx_claimed` (`character_guid`,`season_id`,`week_start`,`claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Generated vault reward options with claim tracking';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_weekly_spending
+CREATE TABLE IF NOT EXISTS `dc_weekly_spending` (
+  `player_guid` int unsigned NOT NULL,
+  `week_start` date NOT NULL,
+  `tokens_spent` int unsigned DEFAULT '0',
+  `essence_spent` int unsigned DEFAULT '0',
+  `upgrades_performed` int unsigned DEFAULT '0',
+  `reset_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`player_guid`,`week_start`),
+  KEY `idx_week_start` (`week_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly spending tracking for progression and limits';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

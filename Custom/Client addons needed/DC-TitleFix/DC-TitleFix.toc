@@ -4,5 +4,6 @@
 ## Author: DarkChaos
 ## Version: 1.0
 ## LoadFirst: 1
+## OptionalDeps: DC-AddonProtocol
 
 DC-TitleFix.lua

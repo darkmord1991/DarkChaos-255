@@ -216,6 +216,7 @@ function addon:Initialize()
     self.eventFrame = CreateFrame("Frame")
     self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
     self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self.eventFrame:RegisterEvent("PLAYER_LOGIN")
     self.eventFrame:RegisterEvent("PLAYER_LOGOUT")
     self.eventFrame:SetScript("OnEvent", function(_, event, ...)
         addon:OnEvent(event, ...)
@@ -232,6 +233,10 @@ end
 -- ============================================================
 -- Event Handler
 -- ============================================================
+
+-- Flag to prevent double handler registration
+local _handlersRegistered = false
+
 function addon:OnEvent(event, ...)
     if event == "CHAT_MSG_ADDON" then
         local prefix, message, channel, sender = ...
@@ -243,25 +248,69 @@ function addon:OnEvent(event, ...)
         -- Load settings and request from server
         self:LoadSettings()
         self:UpdateUI()
+        
+        -- Try to register DC handlers (DC may have loaded after us)
+        if not _handlersRegistered then
+            local DC = rawget(_G, "DCAddonProtocol")
+            if DC then
+                addon:RegisterDCHandlers(DC)
+                addon.useDCProtocol = true
+                addon:Print("Connected to server via DCAddonProtocol", true)
+            end
+        end
+        
         DelayedCall(2, function()
             addon:RequestSettings()
         end)
+    elseif event == "PLAYER_LOGIN" then
+        -- Re-check DC availability (in case it loaded after us)
+        if not _handlersRegistered then
+            local DC = rawget(_G, "DCAddonProtocol")
+            if DC then
+                addon:RegisterDCHandlers(DC)
+                addon.useDCProtocol = true
+                addon:Print("Connected to server via DCAddonProtocol", true)
+            end
+        end
     elseif event == "PLAYER_LOGOUT" then
         -- Save settings on logout
         self:SaveSettingsLocal()
     end
 end
 
--- Register DCAddonProtocol handlers if available
-if DC then
+-- ============================================================
+-- DC Handler Registration (called on PLAYER_ENTERING_WORLD/PLAYER_LOGIN)
+-- ============================================================
+function addon:RegisterDCHandlers(DC)
+    if _handlersRegistered then return end
+    if not DC then return end
+    
+    _handlersRegistered = true
+    
     -- Handle settings sync from server (opcode 0x11 = SMSG_SETTINGS_SYNC)
-    DC:RegisterHandler("AOE", 0x11, function(enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor)
-        addon.settings.enabled = enabled
-        addon.settings.showMessages = showMessages
-        addon.settings.minQuality = Clamp(minQuality or 0, 0, 5)
-        addon.settings.autoSkin = autoSkin
-        addon.settings.smartLoot = smartLoot
-        addon.settings.autoVendorPoor = autoVendorPoor or false
+    DC:RegisterHandler("AOE", 0x11, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            -- JSON format
+            local json = args[1]
+            addon.settings.enabled = json.enabled or false
+            addon.settings.showMessages = json.showMessages ~= false
+            addon.settings.minQuality = Clamp(json.minQuality or json.quality or 0, 0, 5)
+            addon.settings.autoSkin = json.autoSkin or false
+            addon.settings.smartLoot = json.smartLoot or false
+            addon.settings.autoVendorPoor = json.autoVendorPoor or false
+            if json.range then addon.settings.range = json.range end
+        else
+            -- Pipe-delimited format
+            local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = args[1], args[2], args[3], args[4], args[5], args[6]
+            addon.settings.enabled = (enabled == "1" or enabled == 1 or enabled == true)
+            addon.settings.showMessages = (showMessages == "1" or showMessages == 1 or showMessages == true or showMessages == nil)
+            addon.settings.minQuality = Clamp(tonumber(minQuality) or 0, 0, 5)
+            addon.settings.autoSkin = (autoSkin == "1" or autoSkin == 1 or autoSkin == true)
+            addon.settings.smartLoot = (smartLoot == "1" or smartLoot == 1 or smartLoot == true)
+            addon.settings.autoVendorPoor = (autoVendorPoor == "1" or autoVendorPoor == 1 or autoVendorPoor == true)
+        end
         
         addon:SaveSettingsLocal()
         addon:UpdateUI()
@@ -269,24 +318,107 @@ if DC then
     end)
     
     -- Handle stats response (opcode 0x10 = SMSG_STATS)
-    DC:RegisterHandler("AOE", 0x10, function(totalItems, totalGold, vendorGold, upgrades)
+    DC:RegisterHandler("AOE", 0x10, function(...)
+        local args = {...}
+        local totalItems, totalGold, vendorGold, upgrades
+        
+        if type(args[1]) == "table" then
+            -- JSON format
+            local json = args[1]
+            totalItems = json.totalItems or json.items or 0
+            totalGold = json.totalGold or json.gold or 0
+            vendorGold = json.vendorGold or json.vendor or 0
+            upgrades = json.upgrades or 0
+        else
+            -- Pipe-delimited format
+            totalItems = tonumber(args[1]) or 0
+            totalGold = tonumber(args[2]) or 0
+            vendorGold = tonumber(args[3]) or 0
+            upgrades = tonumber(args[4]) or 0
+        end
+        
         addon:ShowStats(totalItems, totalGold, vendorGold, upgrades)
     end)
     
     -- Handle loot result notification (opcode 0x12 = SMSG_LOOT_RESULT)
-    DC:RegisterHandler("AOE", 0x12, function(itemCount, quality)
+    DC:RegisterHandler("AOE", 0x12, function(...)
+        local args = {...}
+        local itemCount, quality, itemId, itemName
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            itemCount = json.count or json.itemCount or 0
+            quality = json.quality or 0
+            itemId = json.itemId
+            itemName = json.itemName
+        else
+            itemCount = tonumber(args[1]) or 0
+            quality = tonumber(args[2]) or 0
+        end
+        
         if addon.settings.showMessages then
-            addon:Print("Looted " .. itemCount .. " items", false)
+            if itemName then
+                addon:Print("Looted " .. itemCount .. " items (incl. " .. itemName .. ")", false)
+            else
+                addon:Print("Looted " .. itemCount .. " items", false)
+            end
         end
     end)
     
     -- Handle gold collected notification (opcode 0x13 = SMSG_GOLD_COLLECTED)
-    DC:RegisterHandler("AOE", 0x13, function(copperAmount)
+    DC:RegisterHandler("AOE", 0x13, function(...)
+        local args = {...}
+        local copperAmount
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            copperAmount = json.amount or json.copper or 0
+        else
+            copperAmount = tonumber(args[1]) or 0
+        end
+        
         if addon.settings.showMessages and copperAmount > 0 then
             local goldStr = GetCoinTextureString(copperAmount)
             addon:Print("Collected " .. goldStr, false)
         end
     end)
+    
+    -- Handle upgrade found notification (opcode 0x14 = custom)
+    DC:RegisterHandler("AOE", 0x14, function(...)
+        local args = {...}
+        
+        if type(args[1]) == "table" then
+            local json = args[1]
+            if json.itemName and json.itemLink then
+                addon:Print("Upgrade found: " .. (json.itemLink or json.itemName), true)
+            end
+        else
+            local itemId, itemName, slot = args[1], args[2], args[3]
+            if itemName then
+                addon:Print("Upgrade found: " .. itemName, true)
+            end
+        end
+    end)
+    
+    -- Request settings on protocol init (JSON format standard)
+    addon.RequestSettingsViaDC = function()
+        if DC then
+            DC:Request("AOE", 0x06, { action = "get_settings" })  -- CMSG_GET_SETTINGS
+        end
+    end
+    
+    -- Test connection (JSON format standard)
+    addon.TestConnection = function()
+        if not DC then
+            addon:Print("DCAddonProtocol not available", true)
+            return
+        end
+        addon:Print("Testing DC Protocol connection (JSON format)...", true)
+        DC:Request("AOE", 0x06, { action = "get_settings" })  -- Get settings
+        DC:Request("AOE", 0x03, { action = "get_stats" })  -- Get stats
+    end
+    
+    addon:Print("DCAddonProtocol v" .. (DC.VERSION or "?") .. " handlers registered", false)
 end
 
 -- ============================================================
@@ -507,6 +639,156 @@ function addon:CreateOptionsPanel()
     -- Register with Interface Options
     InterfaceOptions_AddCategory(panel)
     self.optionsPanel = panel
+    
+    -- Create Communication sub-panel
+    self:CreateCommunicationPanel(panel)
+end
+
+-- ============================================================
+-- Communication Settings Sub-Panel
+-- ============================================================
+function addon:CreateCommunicationPanel(parentPanel)
+    local panel = CreateFrame("Frame", "DCAoELootCommPanel", UIParent)
+    panel.name = "Communication"
+    panel.parent = parentPanel.name
+    
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("|cff00ff00DC AoE Loot|r - Communication")
+    
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetWidth(500)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Manage server communication protocols and test connectivity.")
+    
+    local yPos = -70
+    local xPos = 20
+    
+    -- Protocol Status Section
+    local statusHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    statusHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    statusHeader:SetText("|cffffd700Protocol Status|r")
+    yPos = yPos - 20
+    
+    -- DCAddonProtocol status
+    local dcStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    dcStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.dcStatus = dcStatus
+    yPos = yPos - 18
+    
+    -- Connection status
+    local connStatus = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    connStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.connStatus = connStatus
+    yPos = yPos - 18
+    
+    -- Server version
+    local serverVer = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    serverVer:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    panel.serverVer = serverVer
+    yPos = yPos - 30
+    
+    -- Test Buttons Section
+    local testHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    testHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    testHeader:SetText("|cffffd700Test Communication|r")
+    yPos = yPos - 25
+    
+    -- Test Connection button
+    local testBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    testBtn:SetWidth(150)
+    testBtn:SetHeight(22)
+    testBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    testBtn:SetText("Test Connection")
+    testBtn:SetScript("OnClick", function()
+        if addon.TestConnection then
+            addon.TestConnection()
+        elseif DC then
+            DC:Request("AOE", 0x06, { action = "get_settings" })  -- CMSG_GET_SETTINGS
+            DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
+            addon:Print("Test messages sent (JSON format)", true)
+        else
+            addon:Print("DC Protocol not available", true)
+        end
+    end)
+    
+    -- Request Settings button
+    local reqBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reqBtn:SetWidth(150)
+    reqBtn:SetHeight(22)
+    reqBtn:SetPoint("LEFT", testBtn, "RIGHT", 10, 0)
+    reqBtn:SetText("Request Settings")
+    reqBtn:SetScript("OnClick", function()
+        addon:RequestSettings()
+        addon:Print("Settings requested from server", true)
+    end)
+    yPos = yPos - 30
+    
+    -- Get Stats button
+    local statsBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    statsBtn:SetWidth(150)
+    statsBtn:SetHeight(22)
+    statsBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    statsBtn:SetText("Get Loot Stats")
+    statsBtn:SetScript("OnClick", function()
+        if DC then
+            DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
+        else
+            SendChatMessage(".lp stats", "SAY")
+        end
+    end)
+    
+    -- Reconnect button
+    local reconBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reconBtn:SetWidth(150)
+    reconBtn:SetHeight(22)
+    reconBtn:SetPoint("LEFT", statsBtn, "RIGHT", 10, 0)
+    reconBtn:SetText("Reconnect")
+    reconBtn:SetScript("OnClick", function()
+        if DC then
+            DC._connected = false
+            DC._handshakeSent = false
+            DC:Request("CORE", 1, { version = DC.VERSION })
+            addon:Print("Reconnection handshake sent (JSON)", true)
+        else
+            addon:Print("DC Protocol not available", true)
+        end
+    end)
+    yPos = yPos - 40
+    
+    -- Info Section
+    local infoHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    infoHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    infoHeader:SetText("|cffffd700Information|r")
+    yPos = yPos - 20
+    
+    local infoText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    infoText:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    infoText:SetWidth(450)
+    infoText:SetJustifyH("LEFT")
+    infoText:SetText("DC-AOESettings uses DCAddonProtocol for efficient server communication.\n" ..
+        "If DCAddonProtocol is not available, settings are synced via chat commands.\n\n" ..
+        "Slash commands: /aoeloot, /dcaoe")
+    
+    -- Update function
+    local function UpdateStatus()
+        local dcAvail = rawget(_G, "DCAddonProtocol")
+        panel.dcStatus:SetText("DCAddonProtocol: " .. (dcAvail and "|cff00ff00Available v" .. (dcAvail.VERSION or "?") .. "|r" or "|cffff0000Not Loaded|r"))
+        if dcAvail then
+            panel.connStatus:SetText("Connected: " .. (dcAvail._connected and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+            panel.serverVer:SetText("Server Version: " .. (dcAvail._serverVersion or "|cff888888Unknown|r"))
+        else
+            panel.connStatus:SetText("Connected: |cff888888N/A|r")
+            panel.serverVer:SetText("Server Version: |cff888888N/A|r")
+        end
+    end
+    
+    panel:SetScript("OnShow", UpdateStatus)
+    
+    InterfaceOptions_AddCategory(panel)
+    self.commPanel = panel
 end
 
 function addon:CreateOptionsCheckbox(parent, label, tooltip, x, y, settingKey)
@@ -809,19 +1091,62 @@ SlashCmdList["DCAOELOOT"] = function(msg)
     msg = strlower(msg or "")
     
     if msg == "stats" then
-        -- Use server command instead of addon message
-        SendChatMessage(".lp stats", "SAY")
-    elseif msg == "reload" then
+        -- Use DC protocol if available (JSON format), otherwise server command
+        if DCAoELootSettings.useDCProtocol and DC then
+            DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
+        else
+            SendChatMessage(".lp stats", "SAY")
+        end
+    elseif msg == "reload" or msg == "sync" or msg == "refresh" then
         DCAoELootSettings:RequestSettings()
+    elseif msg == "testconn" then
+        if DCAoELootSettings.TestConnection then
+            DCAoELootSettings.TestConnection()
+        else
+            DCAoELootSettings:Print("DC Protocol not available", true)
+        end
+    elseif msg == "protocol" or msg == "status" then
+        local dcAvail = rawget(_G, "DCAddonProtocol") and "|cff00ff00YES|r" or "|cffff0000NO|r"
+        DCAoELootSettings:Print("Protocol status:", true)
+        print("  DCAddonProtocol: " .. dcAvail)
+        print("  Enabled: " .. (DCAoELootSettings.settings.enabled and "|cff00ff00YES|r" or "|cffff0000NO|r"))
+        print("  Min Quality: " .. (DCAoELootSettings.qualityNames[DCAoELootSettings.settings.minQuality] or "?"))
+        print("  Auto-Skin: " .. (DCAoELootSettings.settings.autoSkin and "YES" or "NO"))
+        print("  Smart Loot: " .. (DCAoELootSettings.settings.smartLoot and "YES" or "NO"))
     elseif msg == "config" or msg == "options" then
         InterfaceOptionsFrame_OpenToCategory(DCAoELootSettings.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(DCAoELootSettings.optionsPanel) -- Call twice for WoW bug
+    elseif msg == "enable" then
+        DCAoELootSettings.settings.enabled = true
+        DCAoELootSettings:SaveSettingsLocal()
+        DCAoELootSettings:SyncSettingToServer("enabled", true)
+        DCAoELootSettings:UpdateUI()
+        DCAoELootSettings:Confirm("AoE Loot", true)
+    elseif msg == "disable" then
+        DCAoELootSettings.settings.enabled = false
+        DCAoELootSettings:SaveSettingsLocal()
+        DCAoELootSettings:SyncSettingToServer("enabled", false)
+        DCAoELootSettings:UpdateUI()
+        DCAoELootSettings:Confirm("AoE Loot", false)
+    elseif msg:match("^quality%s+%d$") then
+        local quality = tonumber(msg:match("%d"))
+        if quality and quality >= 0 and quality <= 5 then
+            DCAoELootSettings.settings.minQuality = quality
+            DCAoELootSettings:SaveSettingsLocal()
+            DCAoELootSettings:SyncSettingToServer("minQuality", quality)
+            DCAoELootSettings:UpdateUI()
+            DCAoELootSettings:Confirm("Min Quality", DCAoELootSettings.qualityNames[quality])
+        end
     elseif msg == "help" then
         print("|cff00ff00[DC AoE Loot] Commands:|r")
         print("  /aoeloot - Open settings panel")
         print("  /aoeloot config - Open Interface Options panel")
         print("  /aoeloot stats - Show loot statistics")
         print("  /aoeloot reload - Reload settings from server")
+        print("  /aoeloot status - Show protocol status")
+        print("  /aoeloot testconn - Test DC protocol")
+        print("  /aoeloot enable/disable - Toggle AoE loot")
+        print("  /aoeloot quality <0-5> - Set min quality")
         print("  /aoeloot help - Show this help")
     else
         DCAoELootSettings:Toggle()

@@ -5,7 +5,7 @@
 ## Version: 2.3-protocol
 ## SavedVariables: DC_ItemUpgrade_Settings
 ## SavedVariablesPerCharacter: DC_ItemUpgrade_CharSettings
-## OptionalDeps: DCAddonProtocol, AIO_Client
+## OptionalDeps: DC-AddonProtocol, AIO_Client
 
 ## Load Order: Core modules first, then main file, then XML
 Core.lua
