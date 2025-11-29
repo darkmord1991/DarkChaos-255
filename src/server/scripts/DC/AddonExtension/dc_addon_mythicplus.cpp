@@ -348,12 +348,10 @@ namespace MythicPlus
             .Send(player);
     }
     
-    // Helper to get current week number
-    static uint32 GetCurrentWeekNumber()
+    // Helper to get current week number (for future weekly reset logic)
+    [[maybe_unused]] static uint32 GetCurrentWeekNumber()
     {
         time_t now = time(nullptr);
-        struct tm* timeinfo = localtime(&now);
-        
         // Simple week calculation from epoch
         return static_cast<uint32>((now / 604800) % 52);
     }

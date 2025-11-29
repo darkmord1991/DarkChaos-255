@@ -59,8 +59,6 @@ namespace Hotspot
         
         // Query from dc_hotspots_active table (correct table name)
         // expire_time is unix timestamp, compare with current time
-        time_t now = GameTime::GetGameTime().count();
-        
         QueryResult result = WorldDatabase.Query(
             "SELECT id, map_id, zone_id, x, y, z, "
             "(expire_time - UNIX_TIMESTAMP()) as dur "

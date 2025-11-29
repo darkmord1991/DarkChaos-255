@@ -177,6 +177,20 @@ set(SCRIPTS_DC_MythicPlus
     MythicPlus/dc_mythic_spectator.cpp
 )
 
+# DC Addon Extension System - Unified client/server protocol
+set(SCRIPTS_DC_AddonExtension
+    AddonExtension/dc_addon_extension_loader.cpp
+    AddonExtension/dc_addon_protocol.cpp
+    AddonExtension/dc_addon_aoeloot.cpp
+    AddonExtension/dc_addon_upgrade.cpp
+    AddonExtension/dc_addon_mythicplus.cpp
+    AddonExtension/dc_addon_spectator.cpp
+    AddonExtension/dc_addon_hotspot.cpp
+    AddonExtension/dc_addon_hlbg.cpp
+    AddonExtension/dc_addon_seasons.cpp
+    AddonExtension/dc_addon_leaderboards.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -205,6 +219,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_DungeonEnhancement}
     ${SCRIPTS_DC_Jadeforest}
+    ${SCRIPTS_DC_AddonExtension}
 )
 
 # The DC HinterlandBG config was merged into the consolidated
