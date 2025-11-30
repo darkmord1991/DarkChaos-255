@@ -28,6 +28,7 @@
 #include "Config.h"
 #include <cstdio>  // for snprintf
 #include <unordered_set>
+#include <utility>  // for std::pair
 
 namespace
 {
@@ -44,6 +45,7 @@ namespace
         constexpr uint8 CMSG_REFRESH = 0x04;
         constexpr uint8 CMSG_TEST_TABLES = 0x05;
         constexpr uint8 CMSG_GET_SEASONS = 0x06;
+        constexpr uint8 CMSG_GET_MPLUS_DUNGEONS = 0x07;  // v1.3.0: Get available M+ dungeons
         
         // Server -> Client
         constexpr uint8 SMSG_LEADERBOARD_DATA = 0x10;
@@ -51,6 +53,7 @@ namespace
         constexpr uint8 SMSG_MY_RANK = 0x12;
         constexpr uint8 SMSG_TEST_RESULTS = 0x15;
         constexpr uint8 SMSG_SEASONS_LIST = 0x16;
+        constexpr uint8 SMSG_MPLUS_DUNGEONS = 0x17;      // v1.3.0: M+ dungeon list response
         constexpr uint8 SMSG_ERROR = 0x1F;
     }
     
@@ -72,6 +75,9 @@ namespace
         std::string className;
         uint32 score;
         std::string extra;
+        // Extended fields for v1.3.0
+        std::string score_str;   // For gold (uint64) sent as string
+        uint32 mapId = 0;        // For M+ per-dungeon display
     };
     
     // Helper to get class name from class ID
@@ -149,6 +155,144 @@ namespace
                 entry.score = fields[2].Get<uint32>();  // best_level
                 entry.extra = std::to_string(fields[4].Get<uint32>()) + " runs";
             }
+            
+            entries.push_back(entry);
+        } while (result->NextRow());
+        
+        return entries;
+    }
+    
+    // Get dungeon name from dc_mplus_featured_dungeons or fallback to map_id
+    std::string GetDungeonNameForMap(uint16 mapId, uint32 seasonId = 0)
+    {
+        // Try to get from dc_mplus_featured_dungeons (world database)
+        // This table has: season_id, map_id, sort_order, dungeon_name, notes
+        QueryResult result;
+        if (seasonId > 0)
+        {
+            result = WorldDatabase.Query(
+                "SELECT dungeon_name FROM dc_mplus_featured_dungeons WHERE map_id = {} AND season_id = {} LIMIT 1", 
+                mapId, seasonId);
+        }
+        
+        // If not found for specific season, try any season
+        if (!result)
+        {
+            result = WorldDatabase.Query(
+                "SELECT dungeon_name FROM dc_mplus_featured_dungeons WHERE map_id = {} ORDER BY season_id DESC LIMIT 1", 
+                mapId);
+        }
+        
+        if (result)
+            return result->Fetch()[0].Get<std::string>();
+        
+        // Fallback to map ID
+        return "Dungeon #" + std::to_string(mapId);
+    }
+    
+    // Get available M+ dungeons for a season from dc_mplus_featured_dungeons
+    std::vector<std::pair<uint16, std::string>> GetMythicPlusDungeons(uint32 seasonId)
+    {
+        std::vector<std::pair<uint16, std::string>> dungeons;
+        
+        // Get dungeons from dc_mplus_featured_dungeons for this season
+        // Table structure: season_id, map_id, sort_order, dungeon_name, notes
+        QueryResult result = WorldDatabase.Query(
+            "SELECT map_id, dungeon_name FROM dc_mplus_featured_dungeons "
+            "WHERE season_id = {} "
+            "ORDER BY sort_order ASC", seasonId);
+        
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint16 mapId = fields[0].Get<uint16>();
+                std::string name = fields[1].Get<std::string>();
+                dungeons.emplace_back(mapId, name);
+            } while (result->NextRow());
+        }
+        
+        return dungeons;
+    }
+    
+    // Get Mythic+ leaderboard for a specific dungeon
+    // v1.3.0: New function for per-dungeon leaderboards with dungeon name display
+    std::vector<LeaderboardEntry> GetMythicPlusDungeonLeaderboard(uint16 mapId, uint32 seasonId, uint32 limit, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
+        
+        std::string dungeonName = GetDungeonNameForMap(mapId, seasonId);
+        
+        // Query best runs for this specific dungeon
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
+            "FROM dc_mplus_scores s "
+            "JOIN characters c ON s.character_guid = c.guid "
+            "WHERE s.season_id = {} AND s.map_id = {} "
+            "ORDER BY s.best_level DESC, s.best_score DESC "
+            "LIMIT {} OFFSET {}",
+            seasonId, mapId, limit, offset);
+        
+        if (!result)
+            return entries;
+        
+        uint32 rank = offset + 1;
+        do
+        {
+            Field* fields = result->Fetch();
+            LeaderboardEntry entry;
+            entry.rank = rank++;
+            entry.name = fields[0].Get<std::string>();
+            entry.className = GetClassNameFromId(fields[1].Get<uint8>());
+            entry.score = fields[2].Get<uint32>();  // best_level
+            entry.mapId = fields[5].Get<uint16>();
+            
+            // Extra shows dungeon name and total runs
+            entry.extra = dungeonName + " (" + std::to_string(fields[4].Get<uint32>()) + " runs)";
+            
+            entries.push_back(entry);
+        } while (result->NextRow());
+        
+        return entries;
+    }
+    
+    // Get Mythic+ best dungeon runs per player (shows their best dungeon)
+    // v1.3.0: Shows which dungeon each player performed best in
+    std::vector<LeaderboardEntry> GetMythicPlusBestRunsLeaderboard(uint32 seasonId, uint32 limit, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
+        
+        // Get each player's best single dungeon run (highest level)
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
+            "FROM dc_mplus_scores s "
+            "JOIN characters c ON s.character_guid = c.guid "
+            "WHERE s.season_id = {} AND s.best_level = ("
+            "    SELECT MAX(s2.best_level) FROM dc_mplus_scores s2 "
+            "    WHERE s2.character_guid = s.character_guid AND s2.season_id = s.season_id"
+            ") "
+            "ORDER BY s.best_level DESC, s.best_score DESC "
+            "LIMIT {} OFFSET {}",
+            seasonId, limit, offset);
+        
+        if (!result)
+            return entries;
+        
+        uint32 rank = offset + 1;
+        do
+        {
+            Field* fields = result->Fetch();
+            LeaderboardEntry entry;
+            entry.rank = rank++;
+            entry.name = fields[0].Get<std::string>();
+            entry.className = GetClassNameFromId(fields[1].Get<uint8>());
+            entry.score = fields[2].Get<uint32>();  // best_level
+            entry.mapId = fields[5].Get<uint16>();
+            
+            // Get dungeon name from dc_mplus_featured_dungeons
+            std::string dungeonName = GetDungeonNameForMap(entry.mapId, seasonId);
+            entry.extra = dungeonName;
             
             entries.push_back(entry);
         } while (result->NextRow());
@@ -642,8 +786,10 @@ namespace
             
             if (subcat == "aoe_gold")
             {
-                // Gold view: score is gold value (in copper for proper formatting on client)
-                entry.score = static_cast<uint32>(totalGold);  // Send as copper, client formats
+                // Gold view: send as string to avoid uint32 truncation (max 4.2B copper = 429k gold)
+                // Client will parse and format with FormatMoney()
+                entry.score = 0;  // Set to 0, use score_str instead
+                entry.score_str = std::to_string(totalGold);  // Full uint64 as string
                 entry.extra = std::to_string(items) + " items";
             }
             else if (subcat == "aoe_filtered")
@@ -890,7 +1036,25 @@ namespace
         std::vector<LeaderboardEntry> entries;
         
         if (category == "mplus")
-            entries = GetMythicPlusLeaderboard(subcategory, seasonId, limit, offset);
+        {
+            // v1.3.0: Check for per-dungeon subcategory (format: mplus_dungeon_<mapId>)
+            if (subcategory.rfind("mplus_dungeon_", 0) == 0)
+            {
+                // Extract map ID from subcategory
+                std::string mapIdStr = subcategory.substr(14);  // After "mplus_dungeon_"
+                uint16 mapId = static_cast<uint16>(std::stoul(mapIdStr));
+                entries = GetMythicPlusDungeonLeaderboard(mapId, seasonId, limit, offset);
+            }
+            else if (subcategory == "mplus_bestruns")
+            {
+                // Best runs view - shows each player's best dungeon run with name
+                entries = GetMythicPlusBestRunsLeaderboard(seasonId, limit, offset);
+            }
+            else
+            {
+                entries = GetMythicPlusLeaderboard(subcategory, seasonId, limit, offset);
+            }
+        }
         else if (category == "seasons")
             entries = GetSeasonalLeaderboard(subcategory, seasonId, limit, offset);
         else if (category == "hlbg")
@@ -929,6 +1093,12 @@ namespace
             entriesJson += "\"name\":\"" + entries[i].name + "\",";
             entriesJson += "\"class\":\"" + entries[i].className + "\",";
             entriesJson += "\"score\":" + std::to_string(entries[i].score) + ",";
+            // v1.3.0: Add score_str for large values (gold as uint64)
+            if (!entries[i].score_str.empty())
+                entriesJson += "\"score_str\":\"" + entries[i].score_str + "\",";
+            // v1.3.0: Add mapId for per-dungeon display
+            if (entries[i].mapId > 0)
+                entriesJson += "\"mapId\":" + std::to_string(entries[i].mapId) + ",";
             entriesJson += "\"extra\":\"" + entries[i].extra + "\"";
             entriesJson += "}";
         }
@@ -1192,6 +1362,51 @@ namespace
         player->SendDirectMessage(&data);
     }
     
+    // v1.3.0: Handle request for available M+ dungeons
+    void HandleGetMythicPlusDungeons(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player)
+            return;
+        
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 seasonId = json["seasonId"].IsNumber() ? json["seasonId"].AsUInt32() : 0;
+        
+        if (seasonId == 0)
+            seasonId = GetCurrentSeasonId();
+        
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Getting M+ dungeons for season {}", seasonId);
+        
+        auto dungeons = GetMythicPlusDungeons(seasonId);
+        
+        // Build dungeons array
+        std::string dungeonsJson = "[";
+        bool first = true;
+        
+        for (const auto& [mapId, dungeonName] : dungeons)
+        {
+            if (!first) dungeonsJson += ",";
+            first = false;
+            
+            dungeonsJson += "{";
+            dungeonsJson += "\"mapId\":" + std::to_string(mapId) + ",";
+            dungeonsJson += "\"name\":\"" + dungeonName + "\"";
+            dungeonsJson += "}";
+        }
+        
+        dungeonsJson += "]";
+        
+        // Build full JSON response
+        std::string fullJson = "{\"seasonId\":" + std::to_string(seasonId) + ",\"dungeons\":" + dungeonsJson + "}";
+        
+        // Send raw JSON message
+        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_MPLUS_DUNGEONS) + "|J|" + fullJson;
+        
+        WorldPacket data;
+        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
+        player->SendDirectMessage(&data);
+    }
+    
     // Error handler for future use
     [[maybe_unused]] void HandleError(Player* player, const std::string& message)
     {
@@ -1217,6 +1432,7 @@ namespace
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_REFRESH, HandleRefresh);
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_TEST_TABLES, HandleTestTables);
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_SEASONS, HandleGetSeasons);
+        router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_MPLUS_DUNGEONS, HandleGetMythicPlusDungeons);
         
         LOG_INFO("server.scripts", "DC-Leaderboards: Addon protocol handlers registered");
     }

@@ -368,8 +368,20 @@ function Options:CreateCommPanel()
             if DC then DC:Request("CORE", 0x01, { ping = true }); Print("Sent handshake (JSON)") else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Chat Fallback Test", "Test .hotspot list command", function()
-            SendChatMessage(".hotspot list", "SAY")
-            Print("Sent .hotspot list via chat")
+            -- Use the proper server command method
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
+                local editBox = DEFAULT_CHAT_FRAME.editBox
+                local oldText = editBox:GetText() or ""
+                editBox:SetText(".hotspot list")
+                ChatEdit_SendText(editBox)
+                editBox:SetText(oldText)
+            elseif ChatFrameEditBox then
+                local oldText = ChatFrameEditBox:GetText() or ""
+                ChatFrameEditBox:SetText(".hotspot list")
+                ChatEdit_SendText(ChatFrameEditBox)
+                ChatFrameEditBox:SetText(oldText)
+            end
+            Print("Sent .hotspot list via server command")
         end, 2)
         btnRow = btnRow + 1
         

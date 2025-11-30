@@ -65,6 +65,24 @@ local function NowEpoch()
     return time()
 end
 
+-- Execute a server command (e.g., .hotspot list) by simulating chat input
+-- This works for WoW 3.3.5a server commands starting with "."
+local function SendServerCommand(cmd)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
+        local editBox = DEFAULT_CHAT_FRAME.editBox
+        local oldText = editBox:GetText() or ""
+        editBox:SetText(cmd)
+        ChatEdit_SendText(editBox)
+        editBox:SetText(oldText)
+    elseif ChatFrameEditBox then
+        -- Fallback: Try to use ChatFrameEditBox directly
+        local oldText = ChatFrameEditBox:GetText() or ""
+        ChatFrameEditBox:SetText(cmd)
+        ChatEdit_SendText(ChatFrameEditBox)
+        ChatFrameEditBox:SetText(oldText)
+    end
+end
+
 local function CopyInto(src, dest)
     for k, v in pairs(src) do
         if type(v) == "table" then
@@ -584,8 +602,8 @@ function Core:RequestHotspotList()
         -- Secondary: AIO/Eluna
         AIO.Handle("HOTSPOT", "Request", "LIST")
     else
-        -- Tertiary: Chat command fallback
-        SendChatMessage(".hotspot list", "SAY")
+        -- Tertiary: Chat command fallback (uses editbox to send server command)
+        SendServerCommand(".hotspot list")
     end
     
     -- Enable announcements after initial list load completes (with delay)
@@ -612,7 +630,7 @@ function Core:RequestTeleport(hotspotId)
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "TELEPORT", hotspotId)
     else
-        SendChatMessage(".hotspot tp " .. hotspotId, "SAY")
+        SendServerCommand(".hotspot tp " .. hotspotId)
     end
 end
 
@@ -625,7 +643,7 @@ function Core:RequestHotspotInfo(hotspotId)
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "INFO", hotspotId)
     else
-        SendChatMessage(".hotspot info " .. hotspotId, "SAY")
+        SendServerCommand(".hotspot info " .. hotspotId)
     end
 end
 

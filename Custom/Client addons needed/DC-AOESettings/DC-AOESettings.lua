@@ -12,7 +12,7 @@ local addon = DCAoELootSettings
 
 -- Addon info
 addon.name = "DC-AOESettings"
-addon.version = "1.1.0"
+addon.version = "1.2.0"
 addon.prefix = "DCAOE"  -- Legacy prefix (fallback)
 
 -- DCAddonProtocol integration
@@ -35,6 +35,7 @@ addon.defaults = {
     autoSkin = true,
     smartLoot = true,
     autoVendorPoor = false,
+    goldOnly = false,    -- Only loot gold (quest items still looted)
     debugMessages = false, -- Verbose debug messages (sync status etc)
     -- Note: Range is controlled by server config, not per-player
 }
@@ -204,6 +205,12 @@ function addon:SyncSettingToServer(settingKey, value)
         else
             self:SendServerCommand(".lp smartset 0")
         end
+    elseif settingKey == "goldOnly" then
+        if value then
+            self:SendServerCommand(".lp goldonly 1")
+        else
+            self:SendServerCommand(".lp goldonly 0")
+        end
     end
 end
 
@@ -321,16 +328,18 @@ function addon:RegisterDCHandlers(DC)
             addon.settings.autoSkin = json.autoSkin or false
             addon.settings.smartLoot = json.smartLoot or false
             addon.settings.autoVendorPoor = json.autoVendorPoor or false
+            addon.settings.goldOnly = json.goldOnly or false
             if json.range then addon.settings.range = json.range end
         else
             -- Pipe-delimited format
-            local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = args[1], args[2], args[3], args[4], args[5], args[6]
+            local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor, goldOnly = args[1], args[2], args[3], args[4], args[5], args[6], args[7]
             addon.settings.enabled = (enabled == "1" or enabled == 1 or enabled == true)
             addon.settings.showMessages = (showMessages == "1" or showMessages == 1 or showMessages == true or showMessages == nil)
             addon.settings.minQuality = Clamp(tonumber(minQuality) or 0, 0, 5)
             addon.settings.autoSkin = (autoSkin == "1" or autoSkin == 1 or autoSkin == true)
             addon.settings.smartLoot = (smartLoot == "1" or smartLoot == 1 or smartLoot == true)
             addon.settings.autoVendorPoor = (autoVendorPoor == "1" or autoVendorPoor == 1 or autoVendorPoor == true)
+            addon.settings.goldOnly = (goldOnly == "1" or goldOnly == 1 or goldOnly == true)
         end
         
         addon:SaveSettingsLocal()
@@ -497,13 +506,14 @@ function addon:SaveSettings()
     self:SaveSettingsLocal()
     
     -- Then send to server with validated values
-    local data = string.format("%d,%d,%d,%d,%d,%d",
+    local data = string.format("%d,%d,%d,%d,%d,%d,%d",
         self.settings.enabled and 1 or 0,
         self.settings.showMessages and 1 or 0,
         self.settings.minQuality,
         self.settings.autoSkin and 1 or 0,
         self.settings.smartLoot and 1 or 0,
-        self.settings.autoVendorPoor and 1 or 0
+        self.settings.autoVendorPoor and 1 or 0,
+        self.settings.goldOnly and 1 or 0
     )
     self:SendToServer("SAVE_SETTINGS", data)
     self:Print("Settings saved!", true)
@@ -523,8 +533,8 @@ function addon:HandleServerMessage(message)
         end
         self.ignoreSync = false
         
-        -- Parse settings: enabled,showMessages,minQuality,autoSkin,smartLoot,autoVendorPoor
-        local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = strsplit(",", data)
+        -- Parse settings: enabled,showMessages,minQuality,autoSkin,smartLoot,autoVendorPoor,goldOnly
+        local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor, goldOnly = strsplit(",", data)
         
         self.settings.enabled = tonumber(enabled) == 1
         self.settings.showMessages = tonumber(showMessages) == 1 or (showMessages == nil)
@@ -533,6 +543,7 @@ function addon:HandleServerMessage(message)
         self.settings.autoSkin = tonumber(autoSkin) == 1
         self.settings.smartLoot = tonumber(smartLoot) == 1
         self.settings.autoVendorPoor = tonumber(autoVendorPoor) == 1
+        self.settings.goldOnly = tonumber(goldOnly) == 1
         
         self:SaveSettingsLocal()
         self:UpdateUI()
@@ -599,6 +610,12 @@ function addon:CreateOptionsPanel()
     local vendorCB = self:CreateOptionsCheckbox(panel, "Auto-Vendor Poor Items", 
         "Automatically vendor gray/poor quality items.",
         xPos, yPos, "autoVendorPoor")
+    yPos = yPos - 30
+    
+    -- Gold Only checkbox
+    local goldOnlyCB = self:CreateOptionsCheckbox(panel, "Gold Only (Quest Items Still Looted)", 
+        "Only loot gold from corpses. Quest items will still be picked up automatically.",
+        xPos, yPos, "goldOnly")
     yPos = yPos - 40
     
     -- Minimum Quality Label
@@ -861,8 +878,8 @@ end
 function addon:CreateMainFrame()
     -- Create base frame without template (3.3.5a doesn't have BasicFrameTemplateWithInset)
     local frame = CreateFrame("Frame", "DCAoELootSettingsFrame", UIParent)
-    frame:SetWidth(320)
-    frame:SetHeight(340)
+    frame:SetWidth(350)
+    frame:SetHeight(370)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -940,6 +957,16 @@ function addon:CreateMainFrame()
             self.settings.autoVendorPoor = checked 
             self:Confirm("Auto-Vendor Poor Items", checked)
             self:SaveSettingsLocal()
+        end)
+    yPos = yPos - 30
+    
+    -- Gold Only checkbox
+    self.checkboxes.goldOnly = self:CreateCheckbox(frame, "Gold Only (Quest Items Still Looted)", xPos, yPos,
+        function(checked) 
+            self.settings.goldOnly = checked 
+            self:Confirm("Gold Only", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("goldOnly", checked)
         end)
     yPos = yPos - 40
     
@@ -1050,6 +1077,9 @@ function addon:UpdateUI()
     end
     if self.checkboxes.autoVendorPoor then
         self.checkboxes.autoVendorPoor:SetChecked(self.settings.autoVendorPoor)
+    end
+    if self.checkboxes.goldOnly then
+        self.checkboxes.goldOnly:SetChecked(self.settings.goldOnly)
     end
     
     self:UpdateQualityButtons()

@@ -5,8 +5,8 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2025-11-30 (synced with quality stats, HLBG seasons, consolidated AOE tables, protocol logging)
-    Tables: ~98 in acore_chars, ~65 in acore_world = ~163 total
+    Updated: 2025-11-30 (removed obsolete dc_mythic_keystones - consolidated into dc_mplus_keystones)
+    Tables: ~97 in acore_chars, ~65 in acore_world = ~162 total
     
     Author: DarkChaos Development Team
 ]]
@@ -106,12 +106,11 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_upgrade_history", "Item Upgrade", false},
         {"acore_chars", "dc_upgrade_speed_stats", "Item Upgrade", false},
         
-        -- Mythic+ System
+        -- Mythic+ System (dc_mythic_keystones removed - consolidated into dc_mplus_keystones)
         {"acore_chars", "dc_mplus_keystones", "Mythic+", true},
         {"acore_chars", "dc_mplus_runs", "Mythic+", true},
         {"acore_chars", "dc_mplus_scores", "Mythic+", false},
         {"acore_chars", "dc_mythicplus_hud_cache", "Mythic+", false},
-        {"acore_chars", "dc_mythic_keystones", "Mythic+", false},
         {"acore_chars", "dc_player_keystones", "Mythic+", false},
         
         -- Mythic Spectator

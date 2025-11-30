@@ -1,8 +1,8 @@
 ## Interface: 30300
 ## Title: DC AoE Loot
-## Notes: Settings panel for DarkChaos AoE Loot Extensions
+## Notes: Settings panel for DarkChaos AoE Loot Extensions - Gold Only option added
 ## Author: DarkChaos Team
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: DCAoELootSettingsDB
 ## OptionalDeps: DC-AddonProtocol
 

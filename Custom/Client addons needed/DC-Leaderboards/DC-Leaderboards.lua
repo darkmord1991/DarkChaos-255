@@ -1,5 +1,5 @@
 --[[
-    DC-Leaderboards - Unified Leaderboard Addon v1.2.0
+    DC-Leaderboards - Unified Leaderboard Addon v1.4.0
     DarkChaos Full-Screen Leaderboard System
     
     Features:
@@ -9,36 +9,47 @@
     - 8+ leaderboard categories with multiple subcategories
     - Caching for performance
     - Sorting and filtering options
+    - Dungeon filtering for Mythic+ leaderboards
     
     Leaderboard Categories:
-    1. Mythic+ (Best Key, Best Time, Most Runs, Best Score)
+    1. Mythic+ (Best Key, Best Time, Most Runs, Best Score) - with dungeon filter
     2. Seasons (Tokens, Essence, Overall Points)
     3. HLBG (Rating, Wins, Win Rate, Total Games)
     4. Prestige (Prestige Level, Total Points)
     5. Item Upgrades (Total Upgrades, Efficiency, Highest Tier)
     6. Duels (Wins, Win Rate, Rating)
-    7. AOE Loot (Looted Items, Filtered Items, Gold)
+    7. AOE Loot (Looted Items, Filtered Items, Gold) - with separate quality columns
     8. Achievements (Points, Completions)
     
+    v1.4.0 Changes:
+    - Changed AOE Loot quality display from combined "L/E/R/U" to separate columns
+    - Each quality (Legendary, Epic, Rare, Uncommon) now has its own dedicated column
+    - Quality columns only shown for AOE Loot Items and Filtered Items subcategories
+    
+    v1.3.0 Changes:
+    - Added dungeon filter dropdown for Mythic+ leaderboards
+    - Added per-dungeon best run display with dungeon names
+    - Fixed gold display to properly show copper value as formatted g/s/c
+    - AOE Loot now shows individual quality columns (P/C/U/R/E/L)
+    - AOE Loot Filtered shows breakdown of skipped items by quality
+    - Wider extra column for quality breakdown display
+    
     v1.2.0 Changes:
-    - Simplified AOE Loot to 3 clear categories:
-      * Looted Items - shows quality breakdown (L/E/R/U)
-      * Filtered Items - shows filtered quality breakdown (P/C/U/R/E/L)
-      * Gold Collected - shows gold with proper g/s/c formatting
+    - Simplified AOE Loot to 3 clear categories
     - Added FormatMoney() for proper gold display with colors
     - Fixed gold showing as 0 (now sends copper, client formats)
     
     v1.1.0 Changes:
-    - Added quality breakdown for AOE Loot (Poor/Common/Uncommon/Rare/Epic/Legendary)
-    - Added filtered items tracking (items skipped due to quality filter)
-    - Color-coded quality display in leaderboard
+    - Added quality breakdown for AOE Loot
+    - Added filtered items tracking
+    - Color-coded quality display
     
     Author: DarkChaos Development Team
     Date: November 30, 2025
 ]]
 
 local ADDON_NAME = "DC-Leaderboards"
-local VERSION = "1.2.0"
+local VERSION = "1.4.0"
 
 -- Namespace
 DCLeaderboards = DCLeaderboards or {}
@@ -63,6 +74,7 @@ LB.Opcode = {
     CMSG_REFRESH = 0x04,              -- Force refresh
     CMSG_TEST_TABLES = 0x05,          -- Test database tables
     CMSG_GET_SEASONS = 0x06,          -- Get available seasons
+    CMSG_GET_MPLUS_DUNGEONS = 0x07,   -- v1.3.0: Get M+ dungeons list
     
     -- Server -> Client
     SMSG_LEADERBOARD_DATA = 0x10,     -- Leaderboard response
@@ -70,6 +82,7 @@ LB.Opcode = {
     SMSG_MY_RANK = 0x12,              -- Player's rank info
     SMSG_TEST_RESULTS = 0x15,         -- Test results response
     SMSG_SEASONS_LIST = 0x16,         -- Available seasons list
+    SMSG_MPLUS_DUNGEONS = 0x17,       -- v1.3.0: M+ dungeon list
     SMSG_ERROR = 0x1F,                -- Error response
 }
 
@@ -84,7 +97,9 @@ LB.Categories = {
             { id = "mplus_key", name = "Best Key Level" },
             { id = "mplus_runs", name = "Total Runs" },
             { id = "mplus_score", name = "Overall Score" },
-        }
+            { id = "mplus_bestruns", name = "Best Runs (w/ Dungeon)" },  -- v1.3.0
+        },
+        hasDungeonFilter = true,  -- v1.3.0: Enables dungeon selector
     },
     {
         id = "seasons",
@@ -205,6 +220,12 @@ LB.DefaultSettings = {
 LB.AvailableSeasons = {
     { id = 0, name = "Current Season (Auto)" },
 }
+
+-- v1.3.0: Available M+ dungeons (populated from server)
+LB.MythicPlusDungeons = {
+    -- { mapId = X, name = "Dungeon Name" }
+}
+LB.SelectedDungeonMapId = 0  -- 0 = "All Dungeons"
 
 -- =====================================================================
 -- DATA CACHE
@@ -362,6 +383,17 @@ function LB:RequestCategories()
     return true
 end
 
+-- v1.3.0: Request M+ dungeons for current season
+function LB:RequestMythicPlusDungeons()
+    if not DC then return false end
+    
+    local seasonId = self:GetSetting("selectedSeasonId") or 0
+    DC:Request(self.MODULE, self.Opcode.CMSG_GET_MPLUS_DUNGEONS, {
+        seasonId = seasonId,
+    })
+    return true
+end
+
 function LB:ForceRefresh()
     if not DC then return false end
     
@@ -427,6 +459,11 @@ function LB:RegisterHandlers()
         LB:OnSeasonsList(...)
     end)
     
+    -- v1.3.0: M+ dungeons list response
+    DC:RegisterHandler(self.MODULE, self.Opcode.SMSG_MPLUS_DUNGEONS, function(...)
+        LB:OnMythicPlusDungeons(...)
+    end)
+    
     -- Error response
     DC:RegisterHandler(self.MODULE, self.Opcode.SMSG_ERROR, function(...)
         LB:OnError(...)
@@ -486,6 +523,33 @@ function LB:OnSeasonsList(data)
     -- Update dropdown if it exists
     if LB.Frames.seasonDropdown then
         LB:UpdateSeasonDropdown()
+    end
+end
+
+-- v1.3.0: Handler for M+ dungeons list
+function LB:OnMythicPlusDungeons(data)
+    if type(data) ~= "table" then
+        Print("|cffff0000M+ Dungeons: Invalid data received|r")
+        return
+    end
+    
+    -- Update available dungeons
+    LB.MythicPlusDungeons = {}
+    
+    if data.dungeons then
+        for _, dungeon in ipairs(data.dungeons) do
+            table.insert(LB.MythicPlusDungeons, {
+                mapId = dungeon.mapId,
+                name = dungeon.name,
+            })
+        end
+    end
+    
+    Print("|cff00ff00Received " .. #LB.MythicPlusDungeons .. " M+ dungeons for season " .. (data.seasonId or "?") .. "|r")
+    
+    -- Update dungeon dropdown if it exists
+    if LB.Frames.dungeonDropdown and LB.currentCategory == "mplus" then
+        LB:UpdateDungeonDropdownItems()
     end
 end
 
@@ -677,6 +741,9 @@ function LB:CreateMainFrame()
     -- Create season selector (bottom left)
     self:CreateSeasonSelector(frame)
     
+    -- v1.3.0: Create dungeon selector (bottom right, for M+ category)
+    self:CreateDungeonSelector(frame)
+    
     -- Create settings button
     local settingsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     settingsBtn:SetSize(80, 22)
@@ -811,11 +878,40 @@ function LB:CreateContentArea(parent)
     classHeader:SetPoint("LEFT", 390, 0)
     classHeader:SetText("|cffffd700Class|r")
     
-    -- Extra info header (wider for quality breakdown)
+    -- Extra info header
     local extraHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     extraHeader:SetPoint("LEFT", 470, 0)
     extraHeader:SetText("|cffffd700Info|r")
     self.Frames.extraHeader = extraHeader
+    
+    -- Quality breakdown headers (for AOE Loot category) - hidden by default
+    -- L (Legendary)
+    local legHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    legHeader:SetPoint("LEFT", 540, 0)
+    legHeader:SetText("|cffff8000L|r")
+    legHeader:Hide()
+    self.Frames.legHeader = legHeader
+    
+    -- E (Epic)
+    local epicHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    epicHeader:SetPoint("LEFT", 570, 0)
+    epicHeader:SetText("|cffa335eeE|r")
+    epicHeader:Hide()
+    self.Frames.epicHeader = epicHeader
+    
+    -- R (Rare)
+    local rareHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rareHeader:SetPoint("LEFT", 600, 0)
+    rareHeader:SetText("|cff0070ddR|r")
+    rareHeader:Hide()
+    self.Frames.rareHeader = rareHeader
+    
+    -- U (Uncommon)
+    local unHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    unHeader:SetPoint("LEFT", 630, 0)
+    unHeader:SetText("|cff1eff00U|r")
+    unHeader:Hide()
+    self.Frames.unHeader = unHeader
     
     -- Adjust scroll frame position to be below headers
     scrollFrame:SetPoint("TOP", headerFrame, "BOTTOM", 0, -5)
@@ -930,6 +1026,197 @@ function LB:CreateSeasonSelector(parent)
     -- Request seasons on load
     if DC then
         self:RequestSeasons()
+    end
+end
+
+-- =====================================================================
+-- v1.3.0: DUNGEON SELECTOR (Bottom Right - for M+ category)
+-- =====================================================================
+
+function LB:CreateDungeonSelector(parent)
+    local dungeonFrame = CreateFrame("Frame", nil, parent)
+    dungeonFrame:SetSize(180, 60)
+    dungeonFrame:SetPoint("BOTTOMRIGHT", -15, 15)
+    dungeonFrame:Hide()  -- Only shown when M+ category is selected
+    self.Frames.dungeonSelector = dungeonFrame
+    
+    -- Background
+    local bg = dungeonFrame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(0.1, 0.1, 0.1, 0.7)
+    
+    -- Label
+    local label = dungeonFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", 5, -5)
+    label:SetText("|cffff8000M+ Dungeon Filter:|r")
+    
+    -- Current dungeon display
+    local dungeonText = dungeonFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dungeonText:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3)
+    dungeonText:SetText("|cff00ff00All Dungeons|r")
+    self.Frames.dungeonText = dungeonText
+    
+    -- Create dropdown-style button
+    local dropBtn = CreateFrame("Button", "DCLeaderboardsDungeonDropdown", dungeonFrame, "UIPanelButtonTemplate")
+    dropBtn:SetSize(170, 20)
+    dropBtn:SetPoint("BOTTOMLEFT", 5, 5)
+    dropBtn:SetText("Filter by Dungeon")
+    dropBtn:SetScript("OnClick", function()
+        self:ToggleDungeonDropdown()
+    end)
+    self.Frames.dungeonDropBtn = dropBtn
+    
+    -- Create dropdown menu (hidden by default)
+    local dropdown = CreateFrame("Frame", "DCLeaderboardsDungeonMenu", dungeonFrame)
+    dropdown:SetSize(170, 10) -- Will resize based on content
+    dropdown:SetPoint("BOTTOM", dropBtn, "TOP", 0, 2)
+    dropdown:SetFrameStrata("DIALOG")
+    dropdown:Hide()
+    
+    local dropBg = dropdown:CreateTexture(nil, "BACKGROUND")
+    dropBg:SetAllPoints()
+    dropBg:SetTexture(0.1, 0.1, 0.1, 0.95)
+    
+    local dropBorder = CreateFrame("Frame", nil, dropdown)
+    dropBorder:SetAllPoints()
+    dropBorder:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    
+    self.Frames.dungeonDropdown = dropdown
+end
+
+function LB:ToggleDungeonDropdown()
+    local dropdown = self.Frames.dungeonDropdown
+    if not dropdown then return end
+    
+    if dropdown:IsShown() then
+        dropdown:Hide()
+    else
+        -- Request fresh dungeon list if empty
+        if #self.MythicPlusDungeons == 0 then
+            self:RequestMythicPlusDungeons()
+        end
+        self:UpdateDungeonDropdownItems()
+        dropdown:Show()
+    end
+end
+
+function LB:UpdateDungeonDropdownItems()
+    local dropdown = self.Frames.dungeonDropdown
+    if not dropdown then return end
+    
+    -- Clear existing items
+    for _, child in pairs({dropdown:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    -- Build dungeon list with "All Dungeons" at top
+    local dungeons = {
+        { mapId = 0, name = "All Dungeons" },
+    }
+    
+    for _, d in ipairs(self.MythicPlusDungeons or {}) do
+        table.insert(dungeons, d)
+    end
+    
+    local yOffset = -5
+    local itemHeight = 18
+    local maxVisible = 12  -- Limit height
+    
+    for i, dungeon in ipairs(dungeons) do
+        if i > maxVisible + 1 then break end  -- +1 for "All Dungeons"
+        
+        local item = CreateFrame("Button", nil, dropdown)
+        item:SetSize(160, itemHeight)
+        item:SetPoint("TOPLEFT", 5, yOffset)
+        
+        local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        itemText:SetPoint("LEFT", 5, 0)
+        
+        -- Highlight current selection
+        local selectedId = self.SelectedDungeonMapId or 0
+        if dungeon.mapId == selectedId then
+            itemText:SetText("|cff00ff00> " .. dungeon.name .. "|r")
+        else
+            itemText:SetText("|cffffffff" .. dungeon.name .. "|r")
+        end
+        
+        item:SetScript("OnClick", function()
+            self:SelectDungeon(dungeon.mapId, dungeon.name)
+            dropdown:Hide()
+        end)
+        
+        item:SetScript("OnEnter", function(self)
+            itemText:SetText("|cffffff00" .. dungeon.name .. "|r")
+        end)
+        
+        item:SetScript("OnLeave", function(self)
+            if dungeon.mapId == selectedId then
+                itemText:SetText("|cff00ff00> " .. dungeon.name .. "|r")
+            else
+                itemText:SetText("|cffffffff" .. dungeon.name .. "|r")
+            end
+        end)
+        
+        yOffset = yOffset - itemHeight
+    end
+    
+    -- Resize dropdown to fit items
+    dropdown:SetHeight(math.abs(yOffset) + 10)
+end
+
+function LB:SelectDungeon(mapId, dungeonName)
+    self.SelectedDungeonMapId = mapId
+    
+    -- Update display
+    if self.Frames.dungeonText then
+        if mapId == 0 then
+            self.Frames.dungeonText:SetText("|cff00ff00All Dungeons|r")
+        else
+            self.Frames.dungeonText:SetText("|cffff8000" .. (dungeonName or ("Map " .. mapId)) .. "|r")
+        end
+    end
+    
+    Print("Dungeon filter: " .. (dungeonName or ("Map " .. mapId)))
+    
+    -- If a specific dungeon is selected, switch to per-dungeon subcategory
+    if mapId > 0 then
+        -- Change to dungeon-specific subcategory
+        self.currentSubCategory = "mplus_dungeon_" .. mapId
+    else
+        -- Reset to default M+ subcategory
+        self.currentSubCategory = "mplus_key"
+    end
+    
+    -- Refresh leaderboard with new filter
+    self:ForceRefresh()
+end
+
+-- Show/hide dungeon selector based on category
+function LB:UpdateDungeonSelectorVisibility()
+    if not self.Frames.dungeonSelector then return end
+    
+    -- Find current category config
+    local category = nil
+    for _, cat in ipairs(self.Categories) do
+        if cat.id == self.currentCategory then
+            category = cat
+            break
+        end
+    end
+    
+    if category and category.hasDungeonFilter then
+        self.Frames.dungeonSelector:Show()
+        -- Request dungeons if we don't have them yet
+        if #self.MythicPlusDungeons == 0 then
+            self:RequestMythicPlusDungeons()
+        end
+    else
+        self.Frames.dungeonSelector:Hide()
     end
 end
 
@@ -1104,6 +1391,15 @@ function LB:SelectCategory(categoryId)
     self.currentSubCategory = nil
     self.currentPage = 1
     
+    -- Reset dungeon filter when changing categories
+    self.SelectedDungeonMapId = 0
+    if self.Frames.dungeonText then
+        self.Frames.dungeonText:SetText("|cff00ff00All Dungeons|r")
+    end
+    
+    -- v1.3.0: Update dungeon selector visibility
+    self:UpdateDungeonSelectorVisibility()
+    
     -- Update button highlights
     for id, btn in pairs(self.categoryButtons or {}) do
         if id == categoryId then
@@ -1180,10 +1476,18 @@ function LB:UpdateHeaderText()
         extra:SetText("|cffffd700Items Looted|r")
     elseif subcat == "aoe_items" then
         header:SetText("|cffffd700Items|r")
-        extra:SetText("|cffffd700Quality (L/E/R/U)|r")
+        extra:SetText("|cffffd700Class|r")
     elseif subcat == "aoe_filtered" then
         header:SetText("|cffffd700Filtered|r")
-        extra:SetText("|cffffd700Quality (P/C/U/R)|r")
+        extra:SetText("|cffffd700Class|r")
+    elseif subcat == "mplus_bestruns" then
+        -- v1.3.0: Best runs with dungeon names
+        header:SetText("|cffffd700Key Level|r")
+        extra:SetText("|cffffd700Dungeon|r")
+    elseif subcat:find("mplus_dungeon_") then
+        -- v1.3.0: Per-dungeon view
+        header:SetText("|cffffd700Key Level|r")
+        extra:SetText("|cffffd700Dungeon (Runs)|r")
     elseif subcat:find("_level") or subcat:find("_key") then
         header:SetText("|cffffd700Level|r")
         extra:SetText("|cffffd700Details|r")
@@ -1240,11 +1544,40 @@ function LB:GetOrCreateEntry(index)
     entry.class:SetWidth(70)
     entry.class:SetJustifyH("LEFT")
     
-    -- Extra info (wider for quality breakdown)
+    -- Extra info
     entry.extra = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     entry.extra:SetPoint("LEFT", 470, 0)
-    entry.extra:SetWidth(180)
+    entry.extra:SetWidth(60)
     entry.extra:SetJustifyH("LEFT")
+    
+    -- Quality breakdown columns (for AOE Loot) - separate columns
+    -- L (Legendary)
+    entry.qLeg = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    entry.qLeg:SetPoint("LEFT", 540, 0)
+    entry.qLeg:SetWidth(25)
+    entry.qLeg:SetJustifyH("CENTER")
+    entry.qLeg:Hide()
+    
+    -- E (Epic)
+    entry.qEpic = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    entry.qEpic:SetPoint("LEFT", 570, 0)
+    entry.qEpic:SetWidth(25)
+    entry.qEpic:SetJustifyH("CENTER")
+    entry.qEpic:Hide()
+    
+    -- R (Rare)
+    entry.qRare = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    entry.qRare:SetPoint("LEFT", 600, 0)
+    entry.qRare:SetWidth(25)
+    entry.qRare:SetJustifyH("CENTER")
+    entry.qRare:Hide()
+    
+    -- U (Uncommon)
+    entry.qUncommon = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    entry.qUncommon:SetPoint("LEFT", 630, 0)
+    entry.qUncommon:SetWidth(25)
+    entry.qUncommon:SetJustifyH("CENTER")
+    entry.qUncommon:Hide()
     
     self.entryPool[index] = entry
     return entry
@@ -1318,17 +1651,27 @@ function LB:UpdateLeaderboardDisplay()
             entry.name:SetText(name)
             
             -- Score (formatted based on type)
-            local scoreVal = entryData.score or entryData.value or 0
             local subcat = self.currentSubCategory or ""
             local scoreText
+            
             if subcat:find("_time") then
+                local scoreVal = entryData.score or entryData.value or 0
                 scoreText = FormatTime(scoreVal)
             elseif subcat:find("_winrate") or subcat:find("_efficiency") then
+                local scoreVal = entryData.score or entryData.value or 0
                 scoreText = FormatPercent(scoreVal)
             elseif subcat == "aoe_gold" then
-                -- Gold is sent as copper, format with gold/silver/copper
-                scoreText = FormatMoney(scoreVal)
+                -- v1.3.0: Gold is sent as score_str (string) to avoid uint32 truncation
+                -- Fall back to score if score_str not present
+                local copperVal
+                if entryData.score_str and entryData.score_str ~= "" then
+                    copperVal = tonumber(entryData.score_str) or 0
+                else
+                    copperVal = entryData.score or entryData.value or 0
+                end
+                scoreText = FormatMoney(copperVal)
             else
+                local scoreVal = entryData.score or entryData.value or 0
                 scoreText = FormatNumber(scoreVal)
             end
             entry.score:SetText(scoreText)
@@ -1338,7 +1681,49 @@ function LB:UpdateLeaderboardDisplay()
             
             -- Extra info
             entry.extra:SetText(entryData.extra or entryData.details or "")
+            
+            -- Quality breakdown columns (for AOE Loot category)
+            local isAOE = (self.currentCategory == "aoe")
+            if isAOE and (subcat == "aoe_items" or subcat == "aoe_filtered") then
+                -- Show quality columns
+                entry.qLeg:Show()
+                entry.qEpic:Show()
+                entry.qRare:Show()
+                entry.qUncommon:Show()
+                
+                -- Parse quality data from entryData (expected: qLeg, qEpic, qRare, qUncommon)
+                local legCount = entryData.qLeg or entryData.legendary or 0
+                local epicCount = entryData.qEpic or entryData.epic or 0
+                local rareCount = entryData.qRare or entryData.rare or 0
+                local unCount = entryData.qUncommon or entryData.uncommon or 0
+                
+                entry.qLeg:SetText("|cffff8000" .. FormatNumber(legCount) .. "|r")
+                entry.qEpic:SetText("|cffa335ee" .. FormatNumber(epicCount) .. "|r")
+                entry.qRare:SetText("|cff0070dd" .. FormatNumber(rareCount) .. "|r")
+                entry.qUncommon:SetText("|cff1eff00" .. FormatNumber(unCount) .. "|r")
+            else
+                -- Hide quality columns for non-AOE categories
+                entry.qLeg:Hide()
+                entry.qEpic:Hide()
+                entry.qRare:Hide()
+                entry.qUncommon:Hide()
+            end
         end
+    end
+    
+    -- Show/hide quality header columns based on category (3.3.5a compatible)
+    local isAOEItems = (self.currentCategory == "aoe" and (self.currentSubCategory == "aoe_items" or self.currentSubCategory == "aoe_filtered"))
+    if self.Frames.legHeader then
+        if isAOEItems then self.Frames.legHeader:Show() else self.Frames.legHeader:Hide() end
+    end
+    if self.Frames.epicHeader then
+        if isAOEItems then self.Frames.epicHeader:Show() else self.Frames.epicHeader:Hide() end
+    end
+    if self.Frames.rareHeader then
+        if isAOEItems then self.Frames.rareHeader:Show() else self.Frames.rareHeader:Hide() end
+    end
+    if self.Frames.unHeader then
+        if isAOEItems then self.Frames.unHeader:Show() else self.Frames.unHeader:Hide() end
     end
     
     -- Update scroll child height
