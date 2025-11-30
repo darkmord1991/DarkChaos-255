@@ -1,4 +1,4 @@
-## I am always open for proposals and discussions
+## I am always open for proposals and discussions, especially in the client modding area I would need some support
 ## Please contact me via Github or Discord (Darkmord1991) or join: (https://discord.gg/pNddMEMbb2)
 
 ---
@@ -8,10 +8,15 @@
 ## General WoW stuff:
 
 * Level 255 stats for Players, Creatures, Pets
-* Remove of hardcoded Level limit in Azerothcore
+* Remove of hardcoded Level limit in Azerothcore and exp limitation + addon for XP bar for levl 80 and higher
 * Teleporter NPCs (mobile + standard one, same scripts used from DB Table based on LUA scripts)
 * Vendors for every kind of WOTLK item
 * Vendors and trainers for every profession
+* All Races, all Classes
+* Eluna Scripts, Addons, Addon Json support
+* massive configurable via Config file
+* AOE loot included, plus addon
+* Phased Dueling with reset script implementation
 
 ### 🎮 Mythic+ System
 Advanced endgame difficulty system for dungeons with scaling, affixes, and progression mechanics.
@@ -141,49 +146,25 @@ Seasonal loot distribution for top-tier content.
 
 ---
 
-## General Features
-
-### Level 255 System
-- Full support for levels 1-255
-- Custom creature scaling per zone
-- Custom zone difficulty configurations
-- Quest and quest giver support across all levels
-
-### Custom Content
-- Custom zones with proper scaling
-- Custom item sets (T11 Level 100, T12 Level 130)
-- Custom dungeons with blizzlike setups
-- Custom NPCs and services
-
-### Teleporter Systems
-- Mobile teleporters
-- Static teleporter NPCs
-- Database-driven teleportation
-- Zone access control
-
-### Service NPCs
-- Vendors for all professions
-- Transmog services
-- Pet vendor
-- Various services accessible throughout the world
-
----
-
 ## Custom areas:
 
 * Hinterland BG - Scripted OutdoorPvP Area
-* Ashzara Crater Level Area 1-80
 * Custom Tier Vendor Jail
+* Jadeforest(MOP port) in preparation
+* Giant Isles (MOP port) in preparation
+
 ## Custom Level Areas:
 * Ashzara Crater - Level 1 - 80 - spawns and preps done, more quests to be done
-* Hyjal - Level 80 - 130 - start area prepared
-* Strathholme dungeon outside - Level 130 - 160
+* Hyjal - Level 80 - 100 - start area prepared
+* Strathholme dungeon outside - Level 100 - 130
 * Flightmasters to be implemented for more immersion (Ashzara Crater already done)
 * Teleporting guards for easier access
+* loot boxes all around
+* wandering npcs
+* more to come...
 
 ## used modules
 * git clone https://github.com/azerothcore/mod-ah-bot.git modules/mod-ah-bot
-* git clone https://github.com/azerothcore/mod-duel-reset.git modules/mod-duel-reset
 * git clone https://github.com/azerothcore/mod-learn-spells.git modules/mod-learn-spells
 * git clone https://github.com/azerothcore/mod-world-chat.git modules/mod-world-chat
 * git clone https://github.com/azerothcore/mod-cfbg.git modules/mod-cfbg
@@ -191,7 +172,6 @@ Seasonal loot distribution for top-tier content.
 * git clone https://github.com/azerothcore/mod-npc-services.git modules/mod-npc-services
 * git clone https://github.com/azerothcore/mod-instance-reset.git modules/mod-instance-reset
 * git clone https://github.com/azerothcore/mod-arac.git modules/mod-arac
-* git clone https://github.com/azerothcore/mod-anticheat.git modules/mod-anticheat
-* git clone https://github.com/azerothcore/mod-eluna.git modules/mod-eluna
+* git clone https://github.com/azerothcore/mod-ale.git modules/mod-ale
 * git clone https://github.com/Brian-Aldridge/mod-customlogin.git modules/mod-customlogin
 
