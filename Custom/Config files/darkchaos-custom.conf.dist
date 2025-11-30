@@ -5068,6 +5068,37 @@ DC.AddonProtocol.RateLimit.Messages = 30
 #
 DC.AddonProtocol.RateLimit.Action = 0
 
+# -------------------------------------------------------------------------
+# Protocol Logging (Database Logging for Debugging/Monitoring)
+# -------------------------------------------------------------------------
+# When enabled, all addon protocol messages are logged to database tables:
+#   - dc_addon_protocol_log: Detailed log of every C2S/S2C message
+#   - dc_addon_protocol_stats: Aggregated stats per player per module
+#   - dc_addon_protocol_daily: Daily summaries for trend analysis
+#
+# Tables must be created first using:
+#   Custom/Custom feature SQLs/dc_addon_protocol_logging_schema.sql
+#
+# WARNING: Enabling logging will increase database writes significantly!
+# Only enable for debugging or if you need protocol analytics.
+# -------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.Logging.Enable
+#        Description: Enable database logging of addon protocol messages
+#                     When enabled, all C2S and S2C messages are logged to 
+#                     dc_addon_protocol_log table for debugging and analytics.
+#                     
+#                     Also enables aggregated statistics in dc_addon_protocol_stats
+#                     and daily summaries in dc_addon_protocol_daily (via scheduled events).
+#                     
+#                     IMPORTANT: Requires database tables to be created first!
+#                     Run: Custom/Custom feature SQLs/dc_addon_protocol_logging_schema.sql
+#        Default:     0 (Disabled - no database logging)
+#        Recommended: 0 for production, 1 for debugging
+#
+DC.AddonProtocol.Logging.Enable = 1
+
 ###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################

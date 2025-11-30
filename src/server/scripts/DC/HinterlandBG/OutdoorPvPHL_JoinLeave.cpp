@@ -10,6 +10,7 @@
 #include "HinterlandBG.h"
 #include "ObjectAccessor.h"
 #include "GroupMgr.h"
+#include "HLBG_Integration_Helper.h"
 #include <algorithm>
 #include <algorithm>
 
@@ -54,6 +55,9 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 
     // Auto-invite into faction battleground-raid if available
     AddOrSetPlayerToCorrectBfGroup(player);
+
+    // Record player participation in hlbg_player_stats for leaderboards
+    HLBGPlayerStats::OnPlayerEnterBG(player);
 
     // Seed HUD worldstates for the player entering
     UpdateWorldStatesForPlayer(player);

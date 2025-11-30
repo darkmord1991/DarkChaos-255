@@ -1,6 +1,6 @@
 /*
  * Hinterland BG - Comprehensive Stats AIO Handler
- * Queries all statistics from hlbg_winner_history and sends to client
+ * Queries all statistics from dc_hlbg_winner_history and sends to client
  * Matches functionality from HL_ScoreboardNPC.cpp but sends via AIO instead of gossip
  */
 
@@ -95,7 +95,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         
         // Basic counts
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT COUNT(*), SUM(winner_tid=1), SUM(winner_tid=2), SUM(winner_tid=0) FROM hlbg_winner_history WHERE {}",
+            "SELECT COUNT(*), SUM(winner_tid=1), SUM(winner_tid=2), SUM(winner_tid=0) FROM dc_hlbg_winner_history WHERE {}",
             cond))
         {
             Field* f = res->Fetch();
@@ -112,7 +112,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         
         // Win reasons
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual') FROM hlbg_winner_history WHERE {}",
+            "SELECT SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual') FROM dc_hlbg_winner_history WHERE {}",
             cond))
         {
             Field* f = res->Fetch();
@@ -124,7 +124,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Current streak (scan last 200 records)
         {
             QueryResult recent = CharacterDatabase.Query(
-                "SELECT winner_tid FROM hlbg_winner_history WHERE {} ORDER BY id DESC LIMIT 200",
+                "SELECT winner_tid FROM dc_hlbg_winner_history WHERE {} ORDER BY id DESC LIMIT 200",
                 cond);
             
             if (recent)
@@ -154,7 +154,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Longest streak
         {
             QueryResult recent = CharacterDatabase.Query(
-                "SELECT winner_tid FROM hlbg_winner_history WHERE {} ORDER BY id DESC LIMIT 200",
+                "SELECT winner_tid FROM dc_hlbg_winner_history WHERE {} ORDER BY id DESC LIMIT 200",
                 cond);
             
             if (recent)
@@ -202,7 +202,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         
         // Largest margin
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT occurred_at, winner_tid, score_alliance, score_horde, ABS(score_alliance - score_horde) AS m FROM hlbg_winner_history WHERE {} ORDER BY m DESC LIMIT 1",
+            "SELECT occurred_at, winner_tid, score_alliance, score_horde, ABS(score_alliance - score_horde) AS m FROM dc_hlbg_winner_history WHERE {} ORDER BY m DESC LIMIT 1",
             cond))
         {
             Field* f = res->Fetch();
@@ -225,7 +225,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Top winners by affix (top 5 affixes, show dominant team)
         payload.BeginArray("topWinnersByAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, SUM(winner_tid=1) AS a, SUM(winner_tid=2) AS h FROM hlbg_winner_history WHERE {} AND winner_tid IN (1,2) GROUP BY affix ORDER BY (a+h) DESC LIMIT 5",
+            "SELECT affix, SUM(winner_tid=1) AS a, SUM(winner_tid=2) AS h FROM dc_hlbg_winner_history WHERE {} AND winner_tid IN (1,2) GROUP BY affix ORDER BY (a+h) DESC LIMIT 5",
             cond))
         {
             bool firstEntry = true;
@@ -251,7 +251,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Top affixes by match count
         payload.BeginArray("topAffixes");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, COUNT(*) AS cnt FROM hlbg_winner_history WHERE {} GROUP BY affix ORDER BY cnt DESC LIMIT 5",
+            "SELECT affix, COUNT(*) AS cnt FROM dc_hlbg_winner_history WHERE {} GROUP BY affix ORDER BY cnt DESC LIMIT 5",
             cond))
         {
             bool firstEntry = true;
@@ -272,7 +272,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Average scores per affix
         payload.BeginArray("avgScoresPerAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
+            "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM dc_hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
             cond))
         {
             bool firstEntry = true;
@@ -298,7 +298,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Win rates per affix
         payload.BeginArray("winRatesPerAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, SUM(winner_tid=1), SUM(winner_tid=2), SUM(winner_tid=0), COUNT(*) FROM hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
+            "SELECT affix, SUM(winner_tid=1), SUM(winner_tid=2), SUM(winner_tid=0), COUNT(*) FROM dc_hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
             cond))
         {
             bool firstEntry = true;
@@ -330,7 +330,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Average margin per affix
         payload.BeginArray("avgMarginPerAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, AVG(ABS(score_alliance - score_horde)), COUNT(*) FROM hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
+            "SELECT affix, AVG(ABS(score_alliance - score_horde)), COUNT(*) FROM dc_hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
             cond))
         {
             bool firstEntry = true;
@@ -354,7 +354,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Reason breakdown per affix
         payload.BeginArray("reasonBreakdownPerAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
+            "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM dc_hlbg_winner_history WHERE {} GROUP BY affix ORDER BY affix",
             cond))
         {
             bool firstEntry = true;
@@ -380,7 +380,7 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* /*args*/)
         // Average duration per affix (if populated)
         payload.BeginArray("avgDurationPerAffix");
         if (QueryResult res = CharacterDatabase.Query(
-            "SELECT affix, AVG(duration_seconds), COUNT(*) FROM hlbg_winner_history WHERE {} AND duration_seconds > 0 GROUP BY affix ORDER BY affix",
+            "SELECT affix, AVG(duration_seconds), COUNT(*) FROM dc_hlbg_winner_history WHERE {} AND duration_seconds > 0 GROUP BY affix ORDER BY affix",
             cond))
         {
             bool firstEntry = true;

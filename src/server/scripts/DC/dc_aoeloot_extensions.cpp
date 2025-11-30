@@ -195,11 +195,135 @@ namespace DCAoELootExt
         uint32 skinnedCorpses = 0;
         uint32 minedNodes = 0;
         uint32 herbedNodes = 0;
-        std::unordered_map<uint8, uint32> itemsByQuality;  // quality -> count
         uint32 upgradesFound = 0;
+        
+        // Quality breakdown for looted items (0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)
+        uint32 qualityPoor = 0;      // Gray
+        uint32 qualityCommon = 0;    // White
+        uint32 qualityUncommon = 0;  // Green
+        uint32 qualityRare = 0;      // Blue
+        uint32 qualityEpic = 0;      // Purple
+        uint32 qualityLegendary = 0; // Orange
+        
+        // Filtered/skipped items by quality (due to min quality filter)
+        uint32 filteredPoor = 0;
+        uint32 filteredCommon = 0;
+        uint32 filteredUncommon = 0;
+        uint32 filteredRare = 0;
+        uint32 filteredEpic = 0;
+        uint32 filteredLegendary = 0;
     };
 
     static std::unordered_map<ObjectGuid, DetailedLootStats> sDetailedStats;
+
+    // ============================================================
+    // Exported Functions for Stat Tracking
+    // ============================================================
+    
+    // Called by ac_aoeloot.cpp when loot is merged/collected
+    void UpdateDetailedStats(ObjectGuid playerGuid, uint32 itemsLooted, uint32 goldLooted, uint32 upgradesFound)
+    {
+        if (!sConfig.trackDetailedStats)
+            return;
+        
+        DetailedLootStats& stats = sDetailedStats[playerGuid];
+        stats.totalItemsLooted += itemsLooted;
+        stats.totalGoldLooted += goldLooted;
+        stats.upgradesFound += upgradesFound;
+        
+        LOG_DEBUG("scripts", "DCAoELootExt: UpdateDetailedStats for {} - items +{} (total: {}), gold +{} (total: {})",
+            playerGuid.ToString(), itemsLooted, stats.totalItemsLooted, goldLooted, stats.totalGoldLooted);
+    }
+    
+    // Get current stats for a player (for leaderboard queries)
+    void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound)
+    {
+        auto it = sDetailedStats.find(playerGuid);
+        if (it != sDetailedStats.end())
+        {
+            itemsLooted = it->second.totalItemsLooted;
+            goldLooted = it->second.totalGoldLooted;
+            upgradesFound = it->second.upgradesFound;
+        }
+        else
+        {
+            itemsLooted = 0;
+            goldLooted = 0;
+            upgradesFound = 0;
+        }
+    }
+    
+    // Called by ac_aoeloot.cpp when an item is looted - track by quality
+    void UpdateQualityStats(ObjectGuid playerGuid, uint8 quality)
+    {
+        if (!sConfig.trackDetailedStats)
+            return;
+        
+        DetailedLootStats& stats = sDetailedStats[playerGuid];
+        switch (quality)
+        {
+            case 0: stats.qualityPoor++; break;
+            case 1: stats.qualityCommon++; break;
+            case 2: stats.qualityUncommon++; break;
+            case 3: stats.qualityRare++; break;
+            case 4: stats.qualityEpic++; break;
+            case 5: 
+            case 6: stats.qualityLegendary++; break; // 6 = artifact, treat as legendary
+            default: stats.qualityCommon++; break;
+        }
+    }
+    
+    // Called when an item is filtered/skipped due to quality filter
+    void UpdateFilteredStats(ObjectGuid playerGuid, uint8 quality)
+    {
+        if (!sConfig.trackDetailedStats)
+            return;
+        
+        DetailedLootStats& stats = sDetailedStats[playerGuid];
+        switch (quality)
+        {
+            case 0: stats.filteredPoor++; break;
+            case 1: stats.filteredCommon++; break;
+            case 2: stats.filteredUncommon++; break;
+            case 3: stats.filteredRare++; break;
+            case 4: stats.filteredEpic++; break;
+            case 5: 
+            case 6: stats.filteredLegendary++; break;
+            default: stats.filteredCommon++; break;
+        }
+    }
+    
+    // Get quality breakdown for a player (for addon stats display)
+    void GetQualityStats(ObjectGuid playerGuid, 
+                         uint32& poor, uint32& common, uint32& uncommon, 
+                         uint32& rare, uint32& epic, uint32& legendary,
+                         uint32& filtPoor, uint32& filtCommon, uint32& filtUncommon,
+                         uint32& filtRare, uint32& filtEpic, uint32& filtLegendary)
+    {
+        auto it = sDetailedStats.find(playerGuid);
+        if (it != sDetailedStats.end())
+        {
+            const auto& s = it->second;
+            poor = s.qualityPoor;
+            common = s.qualityCommon;
+            uncommon = s.qualityUncommon;
+            rare = s.qualityRare;
+            epic = s.qualityEpic;
+            legendary = s.qualityLegendary;
+            
+            filtPoor = s.filteredPoor;
+            filtCommon = s.filteredCommon;
+            filtUncommon = s.filteredUncommon;
+            filtRare = s.filteredRare;
+            filtEpic = s.filteredEpic;
+            filtLegendary = s.filteredLegendary;
+        }
+        else
+        {
+            poor = common = uncommon = rare = epic = legendary = 0;
+            filtPoor = filtCommon = filtUncommon = filtRare = filtEpic = filtLegendary = 0;
+        }
+    }
 
     // ============================================================
     // Helper Functions
@@ -217,6 +341,7 @@ namespace DCAoELootExt
         // This is a simple check - could integrate with sMythicPlusRunManager
         return sConfigMgr->GetOption<bool>("MythicPlus.Enable", false);
     }
+
 
     bool IsItemUpgrade(Player* player, uint32 itemId)
     {
@@ -408,7 +533,11 @@ public:
         if (sConfig.trackDetailedStats)
         {
             QueryResult statsResult = CharacterDatabase.Query(
-                "SELECT total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades "
+                "SELECT total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
+                "COALESCE(quality_poor, 0), COALESCE(quality_common, 0), COALESCE(quality_uncommon, 0), "
+                "COALESCE(quality_rare, 0), COALESCE(quality_epic, 0), COALESCE(quality_legendary, 0), "
+                "COALESCE(filtered_poor, 0), COALESCE(filtered_common, 0), COALESCE(filtered_uncommon, 0), "
+                "COALESCE(filtered_rare, 0), COALESCE(filtered_epic, 0), COALESCE(filtered_legendary, 0) "
                 "FROM dc_aoeloot_detailed_stats WHERE player_guid = {}",
                 player->GetGUID().GetCounter());
 
@@ -424,6 +553,22 @@ public:
                 stats.minedNodes = f[5].Get<uint32>();
                 stats.herbedNodes = f[6].Get<uint32>();
                 stats.upgradesFound = f[7].Get<uint32>();
+                
+                // Quality breakdown
+                stats.qualityPoor = f[8].Get<uint32>();
+                stats.qualityCommon = f[9].Get<uint32>();
+                stats.qualityUncommon = f[10].Get<uint32>();
+                stats.qualityRare = f[11].Get<uint32>();
+                stats.qualityEpic = f[12].Get<uint32>();
+                stats.qualityLegendary = f[13].Get<uint32>();
+                
+                // Filtered breakdown
+                stats.filteredPoor = f[14].Get<uint32>();
+                stats.filteredCommon = f[15].Get<uint32>();
+                stats.filteredUncommon = f[16].Get<uint32>();
+                stats.filteredRare = f[17].Get<uint32>();
+                stats.filteredEpic = f[18].Get<uint32>();
+                stats.filteredLegendary = f[19].Get<uint32>();
             }
         }
     }
@@ -472,12 +617,18 @@ public:
                 DetailedLootStats& stats = statsIt->second;
                 CharacterDatabase.Execute(
                     "REPLACE INTO dc_aoeloot_detailed_stats "
-                    "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades) "
-                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})",
+                    "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
+                    "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
+                    "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary) "
+                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
                     player->GetGUID().GetCounter(),
                     stats.totalItemsLooted, stats.totalGoldLooted, stats.poorItemsVendored,
                     stats.goldFromVendor, stats.skinnedCorpses, stats.minedNodes,
-                    stats.herbedNodes, stats.upgradesFound);
+                    stats.herbedNodes, stats.upgradesFound,
+                    stats.qualityPoor, stats.qualityCommon, stats.qualityUncommon,
+                    stats.qualityRare, stats.qualityEpic, stats.qualityLegendary,
+                    stats.filteredPoor, stats.filteredCommon, stats.filteredUncommon,
+                    stats.filteredRare, stats.filteredEpic, stats.filteredLegendary);
 
                 sDetailedStats.erase(statsIt);
             }

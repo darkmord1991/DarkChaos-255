@@ -162,7 +162,7 @@ public:
     uint64 aWins = 0, hWins = 0, draws = 0, depWins = 0, tieWins = 0, manual = 0, total = 0;
     
     // Note: cond is either "1=1" or a safe constant string - no user input
-    std::string query1 = "SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual'), COUNT(*) FROM hlbg_winner_history WHERE " + cond;
+    std::string query1 = "SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual'), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond;
     QueryResult res = CharacterDatabase.Query(query1);
     if (res)
         {
@@ -199,7 +199,7 @@ public:
         uint32 currCount = 0; TeamId currTeam = TEAM_NEUTRAL;
         uint32 bestCount = 0; TeamId bestTeam = TEAM_NEUTRAL;
         
-        std::string query2 = "SELECT winner_tid FROM hlbg_winner_history WHERE " + cond + " ORDER BY id DESC LIMIT 200";
+        std::string query2 = "SELECT winner_tid FROM dc_hlbg_winner_history WHERE " + cond + " ORDER BY id DESC LIMIT 200";
         QueryResult rs = CharacterDatabase.Query(query2);
         if (rs)
         {
@@ -256,7 +256,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
 
         // Largest margin win
-        std::string query3 = "SELECT occurred_at, winner_tid, score_alliance, score_horde FROM hlbg_winner_history WHERE " + cond + " AND winner_tid IN (0,1) ORDER BY ABS(score_alliance - score_horde) DESC, id DESC LIMIT 1";
+        std::string query3 = "SELECT occurred_at, winner_tid, score_alliance, score_horde FROM dc_hlbg_winner_history WHERE " + cond + " AND winner_tid IN (0,1) ORDER BY ABS(score_alliance - score_horde) DESC, id DESC LIMIT 1";
         QueryResult rm = CharacterDatabase.Query(query3);
         if (rm)
         {
@@ -276,7 +276,7 @@ public:
         }
 
         // Top N most frequent winners by affix (Alliance/Horde only)
-        std::string query4 = "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history WHERE " + cond + " AND winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
+        std::string query4 = "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " AND winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
         QueryResult rt = CharacterDatabase.Query(query4);
         if (rt)
         {
@@ -298,7 +298,7 @@ public:
         }
 
         // Draws by affix (separate list for clarity)
-        std::string query5 = "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history WHERE " + cond + " AND winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
+        std::string query5 = "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " AND winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
         QueryResult rdraw = CharacterDatabase.Query(query5);
         if (rdraw)
         {
@@ -318,7 +318,7 @@ public:
         }
 
         // Top N outcomes by affix (includes draws); excludes manual resets
-        std::string query6 = "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history WHERE " + cond + " GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
+        std::string query6 = "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
         QueryResult rtd = CharacterDatabase.Query(query6);
         if (rtd)
         {
@@ -340,7 +340,7 @@ public:
         }
 
         // Top N affixes by overall frequency (any outcome); excludes manual resets
-        std::string query7 = "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY c DESC, affix ASC LIMIT " + std::to_string(TOP_N);
+        std::string query7 = "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY c DESC, affix ASC LIMIT " + std::to_string(TOP_N);
         QueryResult raf = CharacterDatabase.Query(query7);
         if (raf)
         {
@@ -360,7 +360,7 @@ public:
         }
 
         // Average scores per affix (exclude manual resets)
-        std::string query8 = "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
+        std::string query8 = "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
         QueryResult ra = CharacterDatabase.Query(query8);
         if (ra)
         {
@@ -382,7 +382,7 @@ public:
         }
 
         // Per-affix win rates (Alliance/Horde/Draw percentage); excludes manual resets
-        std::string query9 = "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
+        std::string query9 = "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
         QueryResult rr = CharacterDatabase.Query(query9);
         if (rr)
         {
@@ -409,7 +409,7 @@ public:
         }
 
         // Per-affix average margin (exclude manual resets)
-        std::string query10 = "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY am DESC";
+        std::string query10 = "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY am DESC";
         QueryResult ram = CharacterDatabase.Query(query10);
         if (ram)
         {
@@ -430,7 +430,7 @@ public:
         }
 
         // Per-affix reason breakdown (exclude manual resets)
-        std::string query11 = "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
+        std::string query11 = "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
         QueryResult rrb = CharacterDatabase.Query(query11);
         if (rrb)
         {
@@ -459,7 +459,7 @@ public:
                 "  SELECT affix, ABS(score_alliance - score_horde) AS m,\n"
                 "         ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn,\n"
                 "         COUNT(*)     OVER (PARTITION BY affix) AS cnt\n"
-                "  FROM hlbg_winner_history WHERE " + cond + "\n"
+                "  FROM dc_hlbg_winner_history WHERE " + cond + "\n"
                 ")\n"
                 "SELECT affix, AVG(m) AS med FROM ranked\n"
                 "WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2))\n"
@@ -484,7 +484,7 @@ public:
         }
 
         // Average duration per affix (if populated)
-        std::string query13 = "SELECT affix, AVG(duration_seconds), COUNT(*) FROM hlbg_winner_history WHERE " + cond + " AND duration_seconds > 0 GROUP BY affix ORDER BY affix";
+        std::string query13 = "SELECT affix, AVG(duration_seconds), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " AND duration_seconds > 0 GROUP BY affix ORDER BY affix";
         QueryResult rdur = CharacterDatabase.Query(query13);
         if (rdur)
         {
@@ -588,7 +588,7 @@ public:
                 struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; };
                 std::vector<HistRow> rows;
                 {
-                    QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT 5");
+                    QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT 5");
                     if (res)
                     {
                         do

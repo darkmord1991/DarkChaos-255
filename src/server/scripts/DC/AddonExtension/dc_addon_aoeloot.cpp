@@ -16,6 +16,22 @@
 #include "Log.h"
 #include "Chat.h"
 
+// Forward declaration from dc_aoeloot_extensions.cpp to get live in-memory stats
+namespace DCAoELootExt
+{
+    void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound);
+    void GetQualityStats(ObjectGuid playerGuid, 
+                         uint32& poor, uint32& common, uint32& uncommon, 
+                         uint32& rare, uint32& epic, uint32& legendary,
+                         uint32& filtPoor, uint32& filtCommon, uint32& filtUncommon,
+                         uint32& filtRare, uint32& filtEpic, uint32& filtLegendary);
+    
+    // In-memory preference setters (for real-time updates)
+    void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality);
+    void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool enabled);
+    void SetPlayerShowMessages(ObjectGuid playerGuid, bool value);
+}
+
 namespace DCAddon
 {
 namespace AOELoot
@@ -34,13 +50,14 @@ namespace AOELoot
     static std::unordered_map<uint32, PlayerAOESettings> s_PlayerSettings;
     
     // Load settings from DB for player
+    // Uses dc_aoeloot_preferences (same table as dc_aoeloot_extensions.cpp)
     static void LoadPlayerSettings(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT enabled, show_messages, min_quality, auto_skin, smart_loot, loot_range "
-            "FROM dc_aoe_loot_settings WHERE character_guid = {}", guid);
+            "SELECT aoe_enabled, show_messages, min_quality, auto_skin, smart_loot "
+            "FROM dc_aoeloot_preferences WHERE player_guid = {}", guid);
         
         PlayerAOESettings settings;
         if (result)
@@ -51,13 +68,14 @@ namespace AOELoot
             settings.minQuality = fields[2].Get<uint8>();
             settings.autoSkin = fields[3].Get<bool>();
             settings.smartLoot = fields[4].Get<bool>();
-            settings.lootRange = fields[5].Get<float>();
+            // lootRange is server-controlled, not stored per-player
         }
         
         s_PlayerSettings[guid] = settings;
     }
     
     // Save settings to DB
+    // Uses dc_aoeloot_preferences (same table as dc_aoeloot_extensions.cpp)
     static void SavePlayerSettings(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
@@ -67,21 +85,35 @@ namespace AOELoot
         
         const auto& s = it->second;
         CharacterDatabase.Execute(
-            "REPLACE INTO dc_aoe_loot_settings "
-            "(character_guid, enabled, show_messages, min_quality, auto_skin, smart_loot, loot_range) "
-            "VALUES ({}, {}, {}, {}, {}, {}, {})",
+            "REPLACE INTO dc_aoeloot_preferences "
+            "(player_guid, aoe_enabled, show_messages, min_quality, auto_skin, smart_loot) "
+            "VALUES ({}, {}, {}, {}, {}, {})",
             guid, s.enabled ? 1 : 0, s.showMessages ? 1 : 0, s.minQuality,
-            s.autoSkin ? 1 : 0, s.smartLoot ? 1 : 0, s.lootRange);
+            s.autoSkin ? 1 : 0, s.smartLoot ? 1 : 0);
     }
     
-    // Get player stats from DB
+    // Get player stats - uses live in-memory stats from dc_aoeloot_extensions first,
+    // falls back to DB for persisted data (e.g. from previous sessions)
     static void GetPlayerStats(Player* player, uint32& itemsLooted, uint32& goldLooted, uint32& skinned)
     {
-        uint32 guid = player->GetGUID().GetCounter();
+        // First try to get live in-memory stats (updated in real-time by ac_aoeloot.cpp)
+        uint32 memItems = 0, memGold = 0, memUpgrades = 0;
+        DCAoELootExt::GetDetailedStats(player->GetGUID(), memItems, memGold, memUpgrades);
         
+        // If we have in-memory stats, use them directly
+        if (memItems > 0 || memGold > 0)
+        {
+            itemsLooted = memItems;
+            goldLooted = memGold;
+            skinned = memUpgrades; // upgradesFound maps to skinned in legacy schema
+            return;
+        }
+        
+        // Fall back to database for previous session data
+        uint32 guid = player->GetGUID().GetCounter();
         QueryResult result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(items_looted), 0), COALESCE(SUM(gold_looted), 0), "
-            "COALESCE(SUM(creatures_skinned), 0) FROM dc_aoe_loot_stats WHERE character_guid = {}", guid);
+            "SELECT COALESCE(total_items, 0), COALESCE(total_gold, 0), "
+            "COALESCE(skinned, 0) FROM dc_aoeloot_detailed_stats WHERE player_guid = {}", guid);
         
         if (result)
         {
@@ -129,6 +161,10 @@ namespace AOELoot
         bool enabled = msg.GetBool(0);
         
         s_PlayerSettings[guid].enabled = enabled;
+        
+        // Update in-memory prefs used by ac_aoeloot.cpp (critical for real-time effect)
+        DCAoELootExt::SetPlayerAoELootEnabled(player->GetGUID(), enabled);
+        
         SavePlayerSettings(player);
         SendSettingsSync(player);
         
@@ -143,6 +179,10 @@ namespace AOELoot
         if (quality > 6) quality = 0;
         
         s_PlayerSettings[guid].minQuality = quality;
+        
+        // Update in-memory prefs used by ac_aoeloot.cpp (critical for real-time effect)
+        DCAoELootExt::SetPlayerMinQuality(player->GetGUID(), quality);
+        
         SavePlayerSettings(player);
         SendSettingsSync(player);
         
@@ -196,6 +236,36 @@ namespace AOELoot
         SendSettingsSync(player);
     }
     
+    // Handler: Get quality breakdown stats
+    static void HandleGetQualityStats(Player* player, const ParsedMessage& /*msg*/)
+    {
+        uint32 poor, common, uncommon, rare, epic, legendary;
+        uint32 filtPoor, filtCommon, filtUncommon, filtRare, filtEpic, filtLegendary;
+        
+        DCAoELootExt::GetQualityStats(player->GetGUID(),
+            poor, common, uncommon, rare, epic, legendary,
+            filtPoor, filtCommon, filtUncommon, filtRare, filtEpic, filtLegendary);
+        
+        // Send quality breakdown: looted counts then filtered counts
+        Message(Module::AOE_LOOT, Opcode::AOE::SMSG_QUALITY_STATS)
+            .Add(poor)
+            .Add(common)
+            .Add(uncommon)
+            .Add(rare)
+            .Add(epic)
+            .Add(legendary)
+            .Add(filtPoor)
+            .Add(filtCommon)
+            .Add(filtUncommon)
+            .Add(filtRare)
+            .Add(filtEpic)
+            .Add(filtLegendary)
+            .Send(player);
+            
+        LOG_DEBUG("dc.addon.aoe", "Player {} quality stats: Poor:{} Common:{} Uncommon:{} Rare:{} Epic:{} Legendary:{}",
+            player->GetName(), poor, common, uncommon, rare, epic, legendary);
+    }
+    
     // Register all handlers
     void RegisterHandlers()
     {
@@ -205,6 +275,7 @@ namespace AOELoot
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_SET_AUTO_SKIN, HandleSetAutoSkin);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_SET_RANGE, HandleSetRange);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_SETTINGS, HandleGetSettings);
+        DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_QUALITY_STATS, HandleGetQualityStats);
         
         LOG_INFO("dc.addon", "AOE Loot module handlers registered");
     }

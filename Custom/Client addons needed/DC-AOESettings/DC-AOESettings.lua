@@ -30,16 +30,22 @@ end
 -- Settings defaults
 addon.defaults = {
     enabled = true,
-    showMessages = true, -- Toggle for debug/info messages
+    showMessages = true, -- Toggle for info messages
     minQuality = 0,      -- 0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
     autoSkin = true,
     smartLoot = true,
     autoVendorPoor = false,
+    debugMessages = false, -- Verbose debug messages (sync status etc)
     -- Note: Range is controlled by server config, not per-player
 }
 
 -- Current settings (loaded from SavedVariables)
 addon.settings = {}
+
+-- Flag to temporarily ignore server sync responses after user changes
+-- This prevents the UI from flickering when user clicks a setting
+addon.ignoreSync = false
+addon.ignoreSyncUntil = 0
 
 -- Quality names for display
 addon.qualityNames = {
@@ -148,6 +154,11 @@ function addon:SendServerCommand(cmd)
 end
 
 function addon:SyncSettingToServer(settingKey, value)
+    -- Set flag to ignore sync responses for 2 seconds after user makes a change
+    -- This prevents the UI from flickering when server sends back the old value
+    self.ignoreSync = true
+    self.ignoreSyncUntil = GetTime() + 2.0
+    
     -- Use DCAddonProtocol if available
     if self.useDCProtocol and DC then
         if settingKey == "enabled" then
@@ -289,6 +300,16 @@ function addon:RegisterDCHandlers(DC)
     
     -- Handle settings sync from server (opcode 0x11 = SMSG_SETTINGS_SYNC)
     DC:RegisterHandler("AOE", 0x11, function(...)
+        -- Check if we should ignore this sync (user just made a change)
+        if addon.ignoreSync and GetTime() < addon.ignoreSyncUntil then
+            -- Only show debug message if verbose mode enabled
+            if addon.settings.debugMessages then
+                addon:Print("Ignoring server sync (user change pending)", false)
+            end
+            return
+        end
+        addon.ignoreSync = false
+        
         local args = {...}
         
         if type(args[1]) == "table" then
@@ -492,6 +513,16 @@ function addon:HandleServerMessage(message)
     local msgType, data = strsplit(":", message, 2)
     
     if msgType == "SETTINGS" and data then
+        -- Check if we should ignore this sync (user just made a change)
+        if self.ignoreSync and GetTime() < self.ignoreSyncUntil then
+            -- Only show debug message if verbose mode enabled
+            if self.settings.debugMessages then
+                self:Print("Ignoring server sync (user change pending)", false)
+            end
+            return
+        end
+        self.ignoreSync = false
+        
         -- Parse settings: enabled,showMessages,minQuality,autoSkin,smartLoot,autoVendorPoor
         local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = strsplit(",", data)
         

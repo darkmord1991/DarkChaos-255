@@ -5,8 +5,8 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2025-11-29 (synced with C++ code and schema files)
-    Tables: ~95 in acore_chars, ~60 in acore_world = ~155 total
+    Updated: 2025-11-30 (synced with quality stats, HLBG seasons, consolidated AOE tables, protocol logging)
+    Tables: ~98 in acore_chars, ~65 in acore_world = ~163 total
     
     Author: DarkChaos Development Team
 ]]
@@ -29,11 +29,10 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_player_achievements", "Achievements", false},
         {"acore_chars", "dc_server_firsts", "Achievements", false},
         
-        -- AoE Loot System
-        {"acore_chars", "dc_aoe_loot_settings", "AoE Loot", true},
+        -- AoE Loot System (consolidated - uses dc_aoeloot_preferences as main settings table)
         {"acore_chars", "dc_aoeloot_accumulated", "AoE Loot", false},
-        {"acore_chars", "dc_aoeloot_detailed_stats", "AoE Loot", false},
-        {"acore_chars", "dc_aoeloot_preferences", "AoE Loot", false},
+        {"acore_chars", "dc_aoeloot_detailed_stats", "AoE Loot", true},  -- Now includes quality breakdown columns
+        {"acore_chars", "dc_aoeloot_preferences", "AoE Loot", true},     -- Main settings table (consolidated)
         
         -- Artifact System
         {"acore_chars", "dc_artifact_mastery_events", "Artifacts", false},
@@ -76,10 +75,10 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_heirloom_upgrade_log", "Heirloom", false},
         {"acore_chars", "dc_heirloom_upgrades", "Heirloom", true},
         
-        -- HLBG (Hinterlands BG) System
+        -- HLBG (Hinterlands BG) System - Player data in chars, seasons in world
         {"acore_chars", "dc_hlbg_player_history", "HLBG System", false},
-        {"acore_chars", "dc_hlbg_player_season_data", "HLBG System", false},
-        {"acore_chars", "dc_hlbg_season_config", "HLBG System", false},
+        {"acore_chars", "dc_hlbg_player_season_data", "HLBG System", true},
+        {"acore_chars", "dc_hlbg_player_stats", "HLBG System", true},     -- All-time stats
         {"acore_chars", "dc_hlbg_match_history", "HLBG System", false},
         
         -- Item Upgrade System
@@ -150,6 +149,11 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_vault_reward_pool", "Vault/Rewards", false},
         {"acore_chars", "dc_weekly_spending", "Vault/Rewards", false},
         {"acore_chars", "dc_weekly_vault", "Weekly Vault", true},
+        
+        -- Addon Protocol Logging (optional - only needed if DCAddon.EnableProtocolLogging is enabled)
+        {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_stats", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
         
         -- ============================================================
         -- WORLD DATABASE (acore_world)
@@ -222,6 +226,9 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_mythic_spectator_npcs", "Mythic Spectator", false},
         {"acore_world", "dc_mythic_spectator_positions", "Mythic Spectator", false},
         {"acore_world", "dc_mythic_spectator_strings", "Mythic Spectator", false},
+        
+        -- HLBG Seasons Config (season definitions in world DB, player data in chars)
+        {"acore_world", "dc_hlbg_seasons", "HLBG System", true},
         
         -- Season Rewards Config
         {"acore_world", "dc_seasonal_chest_rewards", "Season System", false},

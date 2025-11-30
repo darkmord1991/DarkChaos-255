@@ -107,7 +107,24 @@ namespace HLBGAddon
         return ss.str();
     }
 
+    // Cache for season names (loaded from WorldDatabase.dc_hlbg_seasons)
+    static std::unordered_map<uint32, std::string> s_SeasonNameCache;
+    
+    static std::string GetSeasonName(uint32 season)
+    {
+        auto it = s_SeasonNameCache.find(season);
+        if (it != s_SeasonNameCache.end())
+            return it->second;
+        
+        // Query from WorldDatabase
+        QueryResult rs = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
+        std::string name = rs ? rs->Fetch()[0].Get<std::string>() : ("Season " + std::to_string(season));
+        s_SeasonNameCache[season] = name;
+        return name;
+    }
+
     // Build TSV string for history rows (id\tseason\tseasonName\tts\twinner\taffix\treason) with lines joined by "||" for safe transport
+    // Query format: SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history
     static std::string BuildHistoryTsv(QueryResult& rs)
     {
         std::ostringstream ss;
@@ -117,11 +134,11 @@ namespace HLBGAddon
             Field* f = rs->Fetch();
             uint64 id = f[0].Get<uint64>();
             uint32 season = f[1].Get<uint32>();
-            std::string sname = f[2].IsNull() ? std::string("") : f[2].Get<std::string>();
-            std::string ts = f[3].Get<std::string>();
-            uint32 winnerTid = f[4].Get<uint32>();
-            std::string reason = f[5].Get<std::string>();
-            uint32 affix = f[6].Get<uint32>();
+            std::string sname = GetSeasonName(season);
+            std::string ts = f[2].Get<std::string>();
+            uint32 winnerTid = f[3].Get<uint32>();
+            std::string reason = f[4].Get<std::string>();
+            uint32 affix = f[5].Get<uint32>();
             const char* win = (winnerTid == 0 ? "Alliance" : (winnerTid == 1 ? "Horde" : "Draw"));
             if (!first) ss << "||"; first = false;
             ss << id << '\t' << season << '\t' << HLBGAddon::EscapeJson(sname) << '\t' << ts << '\t' << win << '\t' << affix << '\t' << reason;
@@ -302,15 +319,17 @@ namespace HLBGAddon
         else if (sort == "occurred_at") sortCol = "h.occurred_at"; 
         else if (sort == "season") sortCol = "h.season";
         
-        std::string query = "SELECT h.id, h.season, s.name AS seasonName, h.occurred_at, h.winner_tid, h.win_reason, h.affix FROM hlbg_winner_history h LEFT JOIN hlbg_seasons s ON h.season=s.season";
+        // Note: dc_hlbg_seasons is in WorldDatabase, dc_hlbg_winner_history is in CharacterDatabase
+        // Cannot JOIN across databases, so we fetch history without season names and look them up separately
+        std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
         if (season > 0)
-            query += " WHERE h.season=" + std::to_string(season);
+            query += " WHERE season=" + std::to_string(season);
         query += " ORDER BY " + sortCol + " " + odir;
         query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
         
         // Get total count for pagination
-        std::string countQuery = "SELECT COUNT(*) FROM hlbg_winner_history h";
-        if (season > 0) countQuery += " WHERE h.season=" + std::to_string(season);
+        std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
+        if (season > 0) countQuery += " WHERE season=" + std::to_string(season);
         
         uint32 totalRows = 0;
         QueryResult countRes = CharacterDatabase.Query(countQuery);
@@ -358,7 +377,7 @@ namespace HLBGAddon
         };
 
         // Basic counts
-        QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM hlbg_winner_history" + where);
+        QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM dc_hlbg_winner_history" + where);
         if (r)
         {
             Field* f = r->Fetch();
@@ -368,7 +387,7 @@ namespace HLBGAddon
         {
             LOG_ERROR("hlbg", "Failed to query basic winner counts for season {}", season);
     }
-        QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM hlbg_winner_history" + whereAnd("duration_seconds > 0"));
+        QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM dc_hlbg_winner_history" + whereAnd("duration_seconds > 0"));
         if (r2)
         {
             Field* f = r2->Fetch(); avgDur = (uint32)f[0].Get<double>();
@@ -380,7 +399,7 @@ namespace HLBGAddon
         
         if (season > 0)
         {
-            QueryResult r3 = CharacterDatabase.Query("SELECT name FROM hlbg_seasons WHERE season=" + std::to_string(season));
+            QueryResult r3 = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
             if (r3)
             {
                 Field* f = r3->Fetch(); seasonName = f[0].Get<std::string>();
@@ -393,7 +412,7 @@ namespace HLBGAddon
 
         // Reasons breakdown
         uint32 rDepl=0, rTie=0, rDraw=0, rMan=0;
-        QueryResult rr = CharacterDatabase.Query("SELECT win_reason, COUNT(*) FROM hlbg_winner_history" + where + " GROUP BY win_reason");
+        QueryResult rr = CharacterDatabase.Query("SELECT win_reason, COUNT(*) FROM dc_hlbg_winner_history" + where + " GROUP BY win_reason");
         if (rr)
         {
             do {
@@ -411,7 +430,7 @@ namespace HLBGAddon
         // Largest and average win margin (exclude draws)
         uint32 avgMargin = 0; uint32 largestMargin = 0; uint8 largestTeam = TEAM_NEUTRAL; uint32 lmA=0, lmH=0; std::string lmTs; uint64 lmId=0;
         QueryResult q = CharacterDatabase.Query(
-            "SELECT id, occurred_at, winner_tid, score_alliance, score_horde, ABS(score_alliance - score_horde) AS margin FROM hlbg_winner_history" + whereAnd("winner_tid IN (0,1)") + " ORDER BY margin DESC, id DESC LIMIT 1");
+            "SELECT id, occurred_at, winner_tid, score_alliance, score_horde, ABS(score_alliance - score_horde) AS margin FROM dc_hlbg_winner_history" + whereAnd("winner_tid IN (0,1)") + " ORDER BY margin DESC, id DESC LIMIT 1");
         if (q)
         {
             Field* f = q->Fetch();
@@ -422,7 +441,7 @@ namespace HLBGAddon
             LOG_ERROR("hlbg", "Failed to query largest margin for season {}", season);
         }
         
-        QueryResult q2 = CharacterDatabase.Query("SELECT AVG(ABS(score_alliance - score_horde)) FROM hlbg_winner_history" + whereAnd("winner_tid IN (0,1)"));
+        QueryResult q2 = CharacterDatabase.Query("SELECT AVG(ABS(score_alliance - score_horde)) FROM dc_hlbg_winner_history" + whereAnd("winner_tid IN (0,1)"));
         if (q2)
         {
             Field* f = q2->Fetch(); avgMargin = (uint32)f[0].Get<double>();
@@ -436,7 +455,7 @@ namespace HLBGAddon
         struct AffixRow { uint32 affix; uint32 a; uint32 h; uint32 d; uint32 avgd; };
         std::vector<AffixRow> affixRows;
         QueryResult qa = CharacterDatabase.Query(
-            "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM hlbg_winner_history" + where + " GROUP BY affix ORDER BY COUNT(*) DESC LIMIT 8");
+            "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM dc_hlbg_winner_history" + where + " GROUP BY affix ORDER BY COUNT(*) DESC LIMIT 8");
         if (qa)
         {
             do {
@@ -452,7 +471,7 @@ namespace HLBGAddon
         struct WeatherRow { uint32 weather; uint32 a; uint32 h; uint32 d; uint32 avgd; };
         std::vector<WeatherRow> weatherRows;
         QueryResult qw = CharacterDatabase.Query(
-            "SELECT weather, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM hlbg_winner_history" + where + " GROUP BY weather ORDER BY COUNT(*) DESC");
+            "SELECT weather, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), AVG(duration_seconds) FROM dc_hlbg_winner_history" + where + " GROUP BY weather ORDER BY COUNT(*) DESC");
         if (qw)
         {
             do {
@@ -466,7 +485,7 @@ namespace HLBGAddon
 
         // Streaks (compute in code from chronological winners)
         uint32 longestLen = 0; uint8 longestTeam = TEAM_NEUTRAL; uint32 currentLen = 0; uint8 currentTeam = TEAM_NEUTRAL;
-        QueryResult qs = CharacterDatabase.Query("SELECT winner_tid FROM hlbg_winner_history" + where + " ORDER BY occurred_at ASC, id ASC");
+        QueryResult qs = CharacterDatabase.Query("SELECT winner_tid FROM dc_hlbg_winner_history" + where + " ORDER BY occurred_at ASC, id ASC");
         if (qs)
         {
             do {

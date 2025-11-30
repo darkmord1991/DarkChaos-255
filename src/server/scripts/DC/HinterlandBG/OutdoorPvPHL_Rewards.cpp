@@ -13,6 +13,7 @@
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "SharedDefines.h"
+#include "HLBG_Integration_Helper.h"
 #include <algorithm>
 #include <cstdio>
 // Scoreboard helpers ---------------------------------------------------------
@@ -127,6 +128,10 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
                 // Optional: token reward for match participation/victory
                 if (_rewardNpcTokenItemId && _rewardNpcTokenCount && team == winner)
                     plr->AddItem(_rewardNpcTokenItemId, _rewardNpcTokenCount);
+                
+                // Record win in hlbg_player_stats for leaderboards (winners only)
+                if (team == winner)
+                    HLBGPlayerStats::OnPlayerWin(plr);
             }
         }
     };
@@ -221,6 +226,9 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         if (player->GetGUID() == killed->GetGUID())
             return;
 
+        // Record kill/death stats for leaderboards
+        HLBGPlayerStats::OnPlayerKill(player, killed->ToPlayer());
+
         TeamId victimTeam = killed->ToPlayer()->GetTeamId();
         uint32 scorePoints = 0;
         switch (victimTeam)
@@ -257,7 +265,11 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 plr->AddItem(_rewardKillItemId, _rewardKillItemCount);
             // Add scoreboard points if member is in zone
             if (plr->GetZoneId() == OutdoorPvPHLBuffZones[0])
+            {
                 AddPlayerScore(plr->GetGUID(), scorePoints);
+                // Record resources captured for leaderboards
+                HLBGPlayerStats::OnResourceCapture(plr, scorePoints);
+            }
         };
 
         // Group-range reward distribution similar to Nagrand (Halaa)
@@ -328,27 +340,33 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             // Determine normal vs boss by victim team classification sets
             bool isBoss = false;
             bool isNormal = false;
+            uint32 resourcesGained = 0;
             if (victimTeam == TEAM_HORDE)
             {
                 isBoss   = _npcBossEntriesHorde.count(entry) > 0;
                 isNormal = _npcNormalEntriesHorde.count(entry) > 0;
                 if (isBoss)
-                { _horde_gathered = (_horde_gathered > _resourcesLossNpcBoss) ? (_horde_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); }
+                { _horde_gathered = (_horde_gathered > _resourcesLossNpcBoss) ? (_horde_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); resourcesGained = _resourcesLossNpcBoss; }
                 else if (isNormal)
-                { _horde_gathered = (_horde_gathered > _resourcesLossNpcNormal) ? (_horde_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); }
+                { _horde_gathered = (_horde_gathered > _resourcesLossNpcNormal) ? (_horde_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); resourcesGained = _resourcesLossNpcNormal; }
             }
             else if (victimTeam == TEAM_ALLIANCE)
             {
                 isBoss   = _npcBossEntriesAlliance.count(entry) > 0;
                 isNormal = _npcNormalEntriesAlliance.count(entry) > 0;
                 if (isBoss)
-                { _ally_gathered = (_ally_gathered > _resourcesLossNpcBoss) ? (_ally_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); }
+                { _ally_gathered = (_ally_gathered > _resourcesLossNpcBoss) ? (_ally_gathered - _resourcesLossNpcBoss) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcBoss); resourcesGained = _resourcesLossNpcBoss; }
                 else if (isNormal)
-                { _ally_gathered = (_ally_gathered > _resourcesLossNpcNormal) ? (_ally_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); }
+                { _ally_gathered = (_ally_gathered > _resourcesLossNpcNormal) ? (_ally_gathered - _resourcesLossNpcNormal) : 0u; AddPlayerScore(player->GetGUID(), _resourcesLossNpcNormal); resourcesGained = _resourcesLossNpcNormal; }
             }
             // Award random honor when a configured NPC type is killed
             if (isBoss || isNormal)
+            {
                 Randomizer(player);
+                // Record resources captured for leaderboards
+                if (resourcesGained > 0)
+                    HLBGPlayerStats::OnResourceCapture(player, resourcesGained);
+            }
         };
 
         // Decide victim team by entry (Alliance list vs Horde list)

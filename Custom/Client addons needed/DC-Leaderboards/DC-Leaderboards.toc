@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: |cff00ff96DC-Leaderboards|r
+## Notes: Unified full-screen leaderboard system for DarkChaos with quality breakdown
+## Author: DarkChaos Development Team
+## Version: 1.2.0
+## SavedVariables: DCLeaderboardsDB
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: Ace3
+
+DC-Leaderboards.lua

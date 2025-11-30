@@ -39,6 +39,10 @@ namespace DCAoELootExt
     void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool value);
     uint8 GetPlayerMinQuality(ObjectGuid playerGuid);
     void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality);
+    // Detailed stats tracking
+    void UpdateDetailedStats(ObjectGuid playerGuid, uint32 itemsLooted, uint32 goldLooted, uint32 upgradesFound);
+    void UpdateQualityStats(ObjectGuid playerGuid, uint8 quality);
+    void UpdateFilteredStats(ObjectGuid playerGuid, uint8 quality);
 }
 
 // Helper to format copper amount into Gold/Silver/Copper string
@@ -249,6 +253,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         // If quality filter is active, we must handle the loot ourselves to apply filtering
         if (playerMinQuality > 0)
         {
+            size_t beforeFilter = mainLoot->items.size();
+            
             // Filter the main loot
             mainLoot->items.erase(
                 std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
@@ -258,8 +264,16 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     }),
                 mainLoot->items.end()
             );
-            LOG_INFO("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain", 
+            LOG_DEBUG("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain", 
                      playerMinQuality, mainLoot->items.size());
+            
+            // If no items remain after filtering and no gold, let normal loot proceed
+            // (corpse will appear empty or just show gold)
+            if (mainLoot->items.empty() && mainLoot->gold == 0)
+            {
+                LOG_DEBUG("scripts", "AoELoot: All {} items filtered out and no gold, letting normal loot proceed", beforeFilter);
+                return false; // Let normal loot handling show empty corpse
+            }
             
             // If auto-loot is enabled, auto-loot the filtered items
             if (shouldAutoLootForPlayer(player))
@@ -352,6 +366,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     if (shouldRemove) {
                         LOG_INFO("scripts", "AoELoot: Filtering out item {} (quality {}) for player {} (min quality {})",
                             item.itemid, proto ? proto->Quality : 0, player->GetName(), playerMinQuality);
+                        // Track filtered item quality
+                        DCAoELootExt::UpdateFilteredStats(player->GetGUID(), proto->Quality);
                     }
                     return shouldRemove;
                 }),
@@ -385,12 +401,23 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         {
             if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
             if (!sAoEConfig.questItems && it.needs_quest) continue;
-            // Apply player's quality filter
-            if (!ItemMeetsQualityFilter(it.itemid, playerMinQuality)) continue;
+            // Apply player's quality filter - track filtered items
+            if (!ItemMeetsQualityFilter(it.itemid, playerMinQuality))
+            {
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(it.itemid);
+                if (proto)
+                    DCAoELootExt::UpdateFilteredStats(player->GetGUID(), proto->Quality);
+                continue;
+            }
             size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
             if (projected >= MAX_MERGE_SLOTS) break;
             itemsToAdd.push_back(it);
             ++addedItemsFromCorpse;
+            
+            // Track quality of looted items
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(it.itemid);
+            if (proto)
+                DCAoELootExt::UpdateQualityStats(player->GetGUID(), proto->Quality);
         }
         for (auto const& it : loot->quest_items)
         {
@@ -399,6 +426,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             if (projected >= MAX_MERGE_SLOTS) break;
             questItemsToAdd.push_back(it);
             ++addedQuestItemsFromCorpse;
+            
+            // Quest items are treated as common quality for tracking
+            DCAoELootExt::UpdateQualityStats(player->GetGUID(), 1);
         }
 
         loot->clear();
@@ -549,6 +579,15 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     }
 
     player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+
+    // Update detailed stats for leaderboards
+    if (processed > 0)
+    {
+        DCAoELootExt::UpdateDetailedStats(player->GetGUID(), 
+            static_cast<uint32>(itemsToAdd.size()), 
+            mergedGold, 
+            0);  // upgradesFound - would need smart loot detection here
+    }
 
         if (ShouldShowMessage(player) && processed > 0)
     {

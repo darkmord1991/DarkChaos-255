@@ -58,19 +58,20 @@ DCSeasons.Frames = {
     progressTracker = nil
 }
 
--- Data cache
+-- Data cache (defaults will be overwritten by server data)
 DCSeasons.Data = {
-    seasonNumber = 1,
-    seasonName = "Season of Discovery",
+    seasonNumber = nil,  -- nil = not yet loaded from server
+    seasonName = nil,
     tokens = 0,
     essence = 0,
     weeklyTokens = 0,
     weeklyEssence = 0,
-    weeklyTokenCap = 5000,
-    weeklyEssenceCap = 2500,
+    weeklyTokenCap = 1000,
+    weeklyEssenceCap = 1000,
     quests = 0,
     worldBosses = 0,
-    dungeonBosses = 0
+    dungeonBosses = 0,
+    _loaded = false  -- Flag to indicate server data received
 }
 
 local function ScheduleAfter(delay, callback)
@@ -295,6 +296,23 @@ function DCSeasons:UpdateProgressTracker()
     local frame = self.Frames.progressTracker
     if not frame then return end
     
+    -- Check if we have server data yet
+    if not self.Data._loaded then
+        -- Show loading state
+        if frame.seasonTitle then
+            frame.seasonTitle:SetText("|cffFFD700Season...|r")
+        end
+        if frame.seasonName then
+            frame.seasonName:SetText("|cff888888Loading...|r")
+        end
+        frame.tokenBar:SetValue(0)
+        frame.tokenBarText:SetText("Loading...")
+        frame.essenceBar:SetValue(0)
+        frame.essenceBarText:SetText("Loading...")
+        frame.statsText:SetText("Waiting for server data...")
+        return
+    end
+    
     -- Update season title and name
     if frame.seasonTitle then
         frame.seasonTitle:SetText(string.format("|cffFFD700Season %d|r", self.Data.seasonNumber or 1))
@@ -509,7 +527,7 @@ function DCSeasons:RegisterDCHandlers()
             -- JSON format
             local json = args[1]
             DCSeasons.Data.seasonNumber = json.seasonId or json.id or 1
-            DCSeasons.Data.seasonName = json.name or json.seasonName or "Season of Discovery"
+            DCSeasons.Data.seasonName = json.name or json.seasonName or "Unknown Season"
             DCSeasons.Data.startTime = json.startTime
             DCSeasons.Data.endTime = json.endTime
             DCSeasons.Data.daysRemaining = json.daysRemaining
@@ -518,11 +536,12 @@ function DCSeasons:RegisterDCHandlers()
         else
             -- Pipe-delimited format
             DCSeasons.Data.seasonNumber = tonumber(args[1]) or 1
-            DCSeasons.Data.seasonName = args[2] or "Season of Discovery"
+            DCSeasons.Data.seasonName = args[2] or "Unknown Season"
             DCSeasons.Data.startTime = tonumber(args[3])
             DCSeasons.Data.endTime = tonumber(args[4])
             DCSeasons.Data.daysRemaining = tonumber(args[5])
         end
+        DCSeasons.Data._loaded = true  -- Mark data as received from server
         DCSeasons:UpdateProgressTracker()
         print("|cff00ff00[DC-Seasons]|r Season info received: " .. DCSeasons.Data.seasonName)
     end)
@@ -536,9 +555,9 @@ function DCSeasons:RegisterDCHandlers()
             local json = args[1]
             DCSeasons.Data.seasonLevel = json.level or json.seasonLevel or 1
             DCSeasons.Data.weeklyTokens = json.currentXP or json.tokens or 0
-            DCSeasons.Data.weeklyTokenCap = json.xpToNextLevel or json.tokenCap or 5000
+            DCSeasons.Data.weeklyTokenCap = json.xpToNextLevel or json.tokenCap or 1000
             DCSeasons.Data.weeklyEssence = json.essence or 0
-            DCSeasons.Data.weeklyEssenceCap = json.essenceCap or 2500
+            DCSeasons.Data.weeklyEssenceCap = json.essenceCap or 1000
             DCSeasons.Data.totalPoints = json.totalPoints or 0
             DCSeasons.Data.rank = json.rank
             DCSeasons.Data.tier = json.tier
@@ -549,11 +568,12 @@ function DCSeasons:RegisterDCHandlers()
             -- Pipe-delimited format
             DCSeasons.Data.seasonLevel = tonumber(args[2]) or 1
             DCSeasons.Data.weeklyTokens = tonumber(args[3]) or 0
-            DCSeasons.Data.weeklyTokenCap = tonumber(args[4]) or 5000
+            DCSeasons.Data.weeklyTokenCap = tonumber(args[4]) or 1000
             DCSeasons.Data.totalPoints = tonumber(args[5]) or 0
             DCSeasons.Data.rank = args[6]
             DCSeasons.Data.tier = args[7]
         end
+        DCSeasons.Data._loaded = true  -- Mark data as received from server
         DCSeasons:UpdateProgressTracker()
     end)
     

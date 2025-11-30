@@ -102,11 +102,13 @@ namespace DCAddon
             constexpr uint8 CMSG_SET_RANGE         = 0x05;
             constexpr uint8 CMSG_GET_SETTINGS      = 0x06;
             constexpr uint8 CMSG_IGNORE_ITEM       = 0x07;
+            constexpr uint8 CMSG_GET_QUALITY_STATS = 0x08;  // Request quality breakdown
             
             constexpr uint8 SMSG_STATS             = 0x10;
             constexpr uint8 SMSG_SETTINGS_SYNC     = 0x11;
             constexpr uint8 SMSG_LOOT_RESULT       = 0x12;
             constexpr uint8 SMSG_GOLD_COLLECTED    = 0x13;
+            constexpr uint8 SMSG_QUALITY_STATS     = 0x14;  // Quality breakdown response
         }
         
         // Spectator opcodes
@@ -240,10 +242,14 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_CATEGORIES    = 0x02;  // Request available categories
             constexpr uint8 CMSG_GET_MY_RANK       = 0x03;  // Request player's rank
             constexpr uint8 CMSG_REFRESH           = 0x04;  // Force refresh
+            constexpr uint8 CMSG_TEST_TABLES       = 0x05;  // Test database tables (debug)
+            constexpr uint8 CMSG_GET_SEASONS       = 0x06;  // Get available seasons
             
             constexpr uint8 SMSG_LEADERBOARD_DATA  = 0x10;  // Leaderboard response
             constexpr uint8 SMSG_CATEGORIES        = 0x11;  // Available categories
             constexpr uint8 SMSG_MY_RANK           = 0x12;  // Player's rank info
+            constexpr uint8 SMSG_TEST_RESULTS      = 0x15;  // Database test results
+            constexpr uint8 SMSG_SEASONS_LIST      = 0x16;  // Available seasons list
             constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response
         }
     }

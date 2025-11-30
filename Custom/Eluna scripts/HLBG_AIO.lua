@@ -182,19 +182,19 @@ local function buildOrderClause(sortKeys, sortDirs)
 end
 
 -- Build WHERE clause parts for HISTORY filters
--- Resolve affix name to id using CharDB table hlbg_affixes, preferring a specific season when provided
+-- Resolve affix name to id using CharDB table dc_hlbg_affixes, preferring a specific season when provided
 local function resolveAffixToken(token, seasonId)
     if not token or token == '' then return nil end
     if tonumber(token) then return math.floor(tonumber(token)) end
     local name = tostring(token)
     local sql
-    if seasonId and hasColumn('hlbg_affixes','season_id') then
-        sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' AND season_id = %d LIMIT 1", name:gsub("'","''"), tonumber(seasonId) or 0)
+    if seasonId and hasColumn('dc_hlbg_affixes','season_id') then
+        sql = string.format("SELECT id FROM dc_hlbg_affixes WHERE name = '%s' AND season_id = %d LIMIT 1", name:gsub("'","''"), tonumber(seasonId) or 0)
     else
-        if hasColumn('hlbg_affixes','season_id') then
-            sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' ORDER BY season_id IS NULL ASC LIMIT 1", name:gsub("'","''"))
+        if hasColumn('dc_hlbg_affixes','season_id') then
+            sql = string.format("SELECT id FROM dc_hlbg_affixes WHERE name = '%s' ORDER BY season_id IS NULL ASC LIMIT 1", name:gsub("'","''"))
         else
-            sql = string.format("SELECT id FROM hlbg_affixes WHERE name = '%s' LIMIT 1", name:gsub("'","''"))
+            sql = string.format("SELECT id FROM dc_hlbg_affixes WHERE name = '%s' LIMIT 1", name:gsub("'","''"))
         end
     end
     local res = safeQuery(CharDBQuery, sql)
@@ -222,7 +222,7 @@ local function buildHistoryWhereClause(winnerFilter, affixFilter, seasonId)
             table.insert(where, string.format("winner_tid IN (%s)", table.concat(parts, ",")))
         end
     end
-    -- affixFilter can be CSV of numbers or names; support server-side name resolution via hlbg_affixes
+    -- affixFilter can be CSV of numbers or names; support server-side name resolution via dc_hlbg_affixes
     if affixFilter and tostring(affixFilter) ~= "" and tostring(affixFilter):lower() ~= "all" then
         local ids = {}
         for _,a in ipairs(splitCSV(affixFilter)) do
@@ -239,7 +239,7 @@ local function buildHistoryWhereClause(winnerFilter, affixFilter, seasonId)
         end
     end
     -- Optional: if a seasonId > 0 was provided, filter by season column in history (only if column exists)
-    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('hlbg_winner_history','season') then
+    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('dc_hlbg_winner_history','season') then
         table.insert(where, string.format("(season = %d)", tonumber(seasonId)))
     end
     if #where > 0 then return " WHERE " .. table.concat(where, " AND ") else return "" end
@@ -254,9 +254,9 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir, winnerFilter, a
     -- Build WHERE using optional filters (winner/affix/season)
     local where = buildHistoryWhereClause(winnerFilter, affixFilter, seasonId)
     -- Include season column if available
-    local haveSeason = hasColumn('hlbg_winner_history','season')
+    local haveSeason = hasColumn('dc_hlbg_winner_history','season')
     local seasonSel = haveSeason and ", season" or ""
-    local sql = string.format("SELECT id, occurred_at, winner_tid, win_reason, affix%s FROM hlbg_winner_history%s ORDER BY %s LIMIT %d OFFSET %d", seasonSel, where, orderBy, perPage, offset)
+    local sql = string.format("SELECT id, occurred_at, winner_tid, win_reason, affix%s FROM dc_hlbg_winner_history%s ORDER BY %s LIMIT %d OFFSET %d", seasonSel, where, orderBy, perPage, offset)
     local res = safeQuery(CharDBQuery, sql)
     local rows = {}
     if res then
@@ -279,7 +279,7 @@ local function FetchHistoryPage(page, perPage, sortKey, sortDir, winnerFilter, a
         end
     end
     local total = 0
-    local cnt = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history" .. where)
+    local cnt = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM dc_hlbg_winner_history" .. where)
     if cnt then total = asNumber((cnt.GetUInt64 and cnt:GetUInt64(0)) or (cnt.GetUInt32 and cnt:GetUInt32(0)) or 0) end
     -- Return the primary col/dir (first pair), for client display
     local firstCol = sanitizeSort(splitCSV(sortKey)[1] or "id")
@@ -292,7 +292,7 @@ local function FetchStats(seasonId)
     local stats = { counts = {}, draws = 0, avgDuration = 0, byAffix = {}, affixDur = {}, winRates = {}, totals = {}, reasons = {} }
     local whereParts = {}
     -- Treat seasonId=0 as "current/all" (no filter). Only filter when > 0 and column exists.
-    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('hlbg_winner_history','season') then
+    if seasonId and tonumber(seasonId) and tonumber(seasonId) > 0 and hasColumn('dc_hlbg_winner_history','season') then
         table.insert(whereParts, string.format("season = %d", tonumber(seasonId)))
     end
     -- Optionally exclude manual resets if configured via OutdoorPvPHL (when available)
@@ -310,11 +310,11 @@ local function FetchStats(seasonId)
     local where = (#whereParts>0) and (" WHERE "..table.concat(whereParts, " AND ")) or ""
     -- total
     do
-        local t = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM hlbg_winner_history"..where)
+        local t = safeQuery(CharDBQuery, "SELECT COUNT(*) FROM dc_hlbg_winner_history"..where)
         if t then stats.total = asNumber((t.GetUInt64 and t:GetUInt64(0)) or (t.GetUInt32 and t:GetUInt32(0)) or 0) end
     end
     -- winner_tid: 0 Alliance, 1 Horde, 2 Neutral/Draw
-    local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY winner_tid")
+    local res = safeQuery(CharDBQuery, "SELECT winner_tid, COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY winner_tid")
     if res then
         while res:NextRow() do
             local tid = res:GetUInt32(0)
@@ -326,15 +326,15 @@ local function FetchStats(seasonId)
     end
     -- Win reasons summary
     do
-        local rr = safeQuery(CharDBQuery, "SELECT SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual') FROM hlbg_winner_history"..where)
+        local rr = safeQuery(CharDBQuery, "SELECT SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual') FROM dc_hlbg_winner_history"..where)
         if rr then
             stats.reasons = { depletion = asNumber(rr:GetUInt64(0) or 0), tiebreaker = asNumber(rr:GetUInt64(1) or 0), manual = asNumber(rr:GetUInt64(2) or 0) }
         end
     end
-    if hasColumn('hlbg_winner_history','duration_seconds') then
+    if hasColumn('dc_hlbg_winner_history','duration_seconds') then
         -- Include the base WHERE clause (if any) before appending additional predicates
         local sep = (where ~= "" and " AND ") or " WHERE "
-        local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration_seconds) FROM hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL")
+        local res2 = safeQuery(CharDBQuery, "SELECT AVG(duration_seconds) FROM dc_hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL")
         if res2 then
             stats.avgDuration = res2:IsNull(0) and 0 or res2:GetFloat(0)
         end
@@ -342,7 +342,7 @@ local function FetchStats(seasonId)
         stats.avgDuration = 0
     end
     -- Minimal by-affix split (optional)
-    local res3 = safeQuery(CharDBQuery, "SELECT affix, winner_tid, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix, winner_tid")
+    local res3 = safeQuery(CharDBQuery, "SELECT affix, winner_tid, COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY affix, winner_tid")
     if res3 then
         while res3:NextRow() do
             local aff = tostring(res3:GetUInt32(0))
@@ -356,7 +356,7 @@ local function FetchStats(seasonId)
     end
     -- Per-affix win rates (A/H/D counts + n)
     do
-        local rr = safeQuery(CharDBQuery, "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        local rr = safeQuery(CharDBQuery, "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
         if rr then
             while rr:NextRow() do
                 local aff = tostring(rr:GetUInt32(0))
@@ -370,10 +370,10 @@ local function FetchStats(seasonId)
     end
     -- No weather column in schema; leave byWeather empty
     -- Duration aggregates per affix
-    if hasColumn('hlbg_winner_history','duration_seconds') then
+    if hasColumn('dc_hlbg_winner_history','duration_seconds') then
         -- Include the base WHERE clause (if any) before appending additional predicates
         local sep = (where ~= "" and " AND ") or " WHERE "
-        local res5 = safeQuery(CharDBQuery, "SELECT affix, COUNT(*), SUM(duration_seconds), AVG(duration_seconds) FROM hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL GROUP BY affix")
+        local res5 = safeQuery(CharDBQuery, "SELECT affix, COUNT(*), SUM(duration_seconds), AVG(duration_seconds) FROM dc_hlbg_winner_history"..where..sep.."duration_seconds IS NOT NULL GROUP BY affix")
         if res5 then
             while res5:NextRow() do
                 local aff = tostring(res5:GetUInt32(0))
@@ -386,7 +386,7 @@ local function FetchStats(seasonId)
     end
     -- Current and longest streaks (last 200)
     do
-        local q = safeQuery(CharDBQuery, "SELECT winner_tid FROM hlbg_winner_history"..where.." ORDER BY id DESC LIMIT 200")
+        local q = safeQuery(CharDBQuery, "SELECT winner_tid FROM dc_hlbg_winner_history"..where.." ORDER BY id DESC LIMIT 200")
         local currCount, currTeam = 0, 2
         local bestCount, bestTeam = 0, 2
         if q then
@@ -421,7 +421,7 @@ local function FetchStats(seasonId)
     -- Largest margin among A/H
     do
         local sep = (where ~= "" and " AND ") or " WHERE "
-        local rm = safeQuery(CharDBQuery, "SELECT occurred_at, winner_tid, score_alliance, score_horde FROM hlbg_winner_history"..where..sep.."winner_tid IN (0,1) ORDER BY ABS(score_alliance - score_horde) DESC, id DESC LIMIT 1")
+        local rm = safeQuery(CharDBQuery, "SELECT occurred_at, winner_tid, score_alliance, score_horde FROM dc_hlbg_winner_history"..where..sep.."winner_tid IN (0,1) ORDER BY ABS(score_alliance - score_horde) DESC, id DESC LIMIT 1")
         if rm and rm:NextRow() then
             local ts = rm:GetString(0)
             local tid = rm:GetUInt32(1)
@@ -433,7 +433,7 @@ local function FetchStats(seasonId)
     end
     -- Average scores per affix
     do
-        local ra = safeQuery(CharDBQuery, "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        local ra = safeQuery(CharDBQuery, "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
         if ra then
             stats.avgScorePerAffix = {}
             while ra:NextRow() do
@@ -447,7 +447,7 @@ local function FetchStats(seasonId)
     end
     -- Average margin per affix
     do
-        local ram = safeQuery(CharDBQuery, "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY am DESC")
+        local ram = safeQuery(CharDBQuery, "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY affix ORDER BY am DESC")
         if ram then
             stats.affixAvgMargin = {}
             while ram:NextRow() do
@@ -460,7 +460,7 @@ local function FetchStats(seasonId)
     end
     -- Reason breakdown per affix
     do
-        local rrb = safeQuery(CharDBQuery, "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
+        local rrb = safeQuery(CharDBQuery, "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM dc_hlbg_winner_history"..where.." GROUP BY affix ORDER BY affix")
         if rrb then
             stats.affixReasons = {}
             while rrb:NextRow() do
@@ -476,7 +476,7 @@ local function FetchStats(seasonId)
     local topN = 5
     do
         local sep = (where ~= "" and " AND ") or " WHERE "
-        local rt = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history"..where..sep.."winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
+        local rt = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history"..where..sep.."winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
         if rt then
             stats.topWinnersByAffix = {}
             while rt:NextRow() do
@@ -489,7 +489,7 @@ local function FetchStats(seasonId)
     end
     do
         local sep = (where ~= "" and " AND ") or " WHERE "
-        local rdraw = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history"..where..sep.."winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT "..topN)
+        local rdraw = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history"..where..sep.."winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT "..topN)
         if rdraw then
             stats.drawsByAffix = {}
             while rdraw:NextRow() do
@@ -500,7 +500,7 @@ local function FetchStats(seasonId)
         end
     end
     do
-        local rtd = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM hlbg_winner_history"..where.." GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
+        local rtd = safeQuery(CharDBQuery, "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history"..where.." GROUP BY winner_tid, affix ORDER BY c DESC LIMIT "..topN)
         if rtd then
             stats.topOutcomesByAffix = {}
             while rtd:NextRow() do
@@ -513,7 +513,7 @@ local function FetchStats(seasonId)
         end
     end
     do
-        local raf = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM hlbg_winner_history"..where.." GROUP BY affix ORDER BY c DESC, affix ASC LIMIT "..topN)
+        local raf = safeQuery(CharDBQuery, "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history"..where.." GROUP BY affix ORDER BY c DESC, affix ASC LIMIT "..topN)
         if raf then
             stats.topAffixesByMatches = {}
             while raf:NextRow() do
@@ -544,7 +544,7 @@ local function FetchStats(seasonId)
                 "WITH ranked AS ("..
                 "SELECT affix, ABS(score_alliance - score_horde) AS m, "..
                 "ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn, "..
-                "COUNT(*) OVER (PARTITION BY affix) AS cnt FROM hlbg_winner_history WHERE "..cond..") "..
+                "COUNT(*) OVER (PARTITION BY affix) AS cnt FROM dc_hlbg_winner_history WHERE "..cond..") "..
                 "SELECT affix, AVG(m) AS med FROM ranked WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2)) GROUP BY affix ORDER BY med DESC"
             )
             local rmed = safeQuery(CharDBQuery, sql)
@@ -871,11 +871,11 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7
     elseif what == "RESULTS" then
         -- Return the last recorded match (optionally for a given season)
         local season = tonumber(arg1)
-        local haveSeason = hasColumn('hlbg_winner_history','season')
+        local haveSeason = hasColumn('dc_hlbg_winner_history','season')
         local where = ""
         if season and haveSeason then where = string.format(" WHERE season = %d", season) end
         local sql = "SELECT id, occurred_at, winner_tid, win_reason, affix" .. (haveSeason and ", season" or "") ..
-                    " FROM hlbg_winner_history" .. where .. " ORDER BY occurred_at DESC LIMIT 1"
+                    " FROM dc_hlbg_winner_history" .. where .. " ORDER BY occurred_at DESC LIMIT 1"
         local res = safeQuery(CharDBQuery, sql)
         local payload = {}
         if res and res:NextRow() then
@@ -897,10 +897,10 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7
         -- Preflight column availability via information_schema to avoid MySQL aborts when columns are missing
         local hasEffect, hasSeason = false, false
         do
-            local qEff = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hlbg_affixes' AND COLUMN_NAME='effect'"
+            local qEff = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='dc_hlbg_affixes' AND COLUMN_NAME='effect'"
             local rEff = safeQuery(CharDBQuery, qEff)
             if rEff then local n = asNumber((rEff.GetUInt64 and rEff:GetUInt64(0)) or (rEff.GetUInt32 and rEff:GetUInt32(0)) or 0); hasEffect = (n > 0) end
-            local qSea = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hlbg_affixes' AND COLUMN_NAME='season_id'"
+            local qSea = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='dc_hlbg_affixes' AND COLUMN_NAME='season_id'"
             local rSea = safeQuery(CharDBQuery, qSea)
             if rSea then local n2 = asNumber((rSea.GetUInt64 and rSea:GetUInt64(0)) or (rSea.GetUInt32 and rSea:GetUInt32(0)) or 0); hasSeason = (n2 > 0) end
         end
@@ -919,7 +919,7 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7
         local where = (#whereParts > 0) and (" WHERE "..table.concat(whereParts, " AND ")) or ""
         local selEffect = hasEffect and "effect" or "''"
         local selSeason = hasSeason and "COALESCE(season_id,0)" or "0"
-        local sql = string.format("SELECT id, name, %s, %s FROM hlbg_affixes%s ORDER BY name ASC", selEffect, selSeason, where)
+        local sql = string.format("SELECT id, name, %s, %s FROM dc_hlbg_affixes%s ORDER BY name ASC", selEffect, selSeason, where)
         local res = safeQuery(CharDBQuery, sql)
         local rows = {}
         if res then
@@ -1283,11 +1283,11 @@ local function GetLiveRows(scope, zoneId)
     zoneId = tonumber(zoneId) or HLBG_Config.live_broadcast.zoneId
 
     -- Try to query the latest entry for the zone (if zone_id exists in table)
-    local haveZone = hasColumn('hlbg_winner_history','zone_id')
-    local haveScoreA = hasColumn('hlbg_winner_history','score_alliance')
-    local haveScoreH = hasColumn('hlbg_winner_history','score_horde')
+    local haveZone = hasColumn('dc_hlbg_winner_history','zone_id')
+    local haveScoreA = hasColumn('dc_hlbg_winner_history','score_alliance')
+    local haveScoreH = hasColumn('dc_hlbg_winner_history','score_horde')
     if haveZone and haveScoreA and haveScoreH then
-        local sql = string.format("SELECT id, occurred_at, score_alliance, score_horde, zone_id FROM hlbg_winner_history WHERE zone_id = %d ORDER BY occurred_at DESC LIMIT 1", tonumber(zoneId) or 0)
+        local sql = string.format("SELECT id, occurred_at, score_alliance, score_horde, zone_id FROM dc_hlbg_winner_history WHERE zone_id = %d ORDER BY occurred_at DESC LIMIT 1", tonumber(zoneId) or 0)
         local res = safeQuery(CharDBQuery, sql)
         if res and res:NextRow() then
         -- found a recorded match; build two per-team rows (Alliance/Horde)

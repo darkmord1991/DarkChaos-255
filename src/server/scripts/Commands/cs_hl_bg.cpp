@@ -326,10 +326,10 @@ public:
             uint32 v = Acore::StringTo<uint32>(args).value_or(10);
             count = std::max<uint32>(1, std::min<uint32>(50, v));
         }
-        QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
+        QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
         if (!res)
         {
-            handler->PSendSysMessage("No history found (apply Custom/Hinterland BG/CharDB/hlbg_winner_history.sql to the characters DB)");
+            handler->PSendSysMessage("No history found (apply Custom/Hinterland BG/CharDB/dc_hlbg_winner_history.sql to the characters DB)");
             return true;
         }
         handler->PSendSysMessage("|cffffd700Hinterland BG recent results (latest {}):|r", count);

@@ -23,23 +23,23 @@ namespace MythicPlus
     // Send current keystone info
     static void SendKeyInfo(Player* player)
     {
-        // Query player's current keystone
+        // Query player's current keystone from dc_mplus_keystones
         uint32 guid = player->GetGUID().GetCounter();
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT dungeon_id, level, depleted FROM dc_mythic_keystones WHERE player_guid = {}",
+            "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
             guid);
         
         if (result)
         {
             uint32 dungeonId = (*result)[0].Get<uint32>();
             uint32 level = (*result)[1].Get<uint32>();
-            bool depleted = (*result)[2].Get<bool>();
+            bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
             
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE dungeon_id = {}",
+                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE map_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
@@ -184,19 +184,19 @@ namespace MythicPlus
         uint32 guid = player->GetGUID().GetCounter();
         
         QueryResult result = CharacterDatabase.Query(
-            "SELECT dungeon_id, level, depleted FROM dc_mythic_keystones WHERE player_guid = {}",
+            "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
             guid);
         
         if (result)
         {
             uint32 dungeonId = (*result)[0].Get<uint32>();
             uint32 level = (*result)[1].Get<uint32>();
-            bool depleted = (*result)[2].Get<bool>();
+            bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
             
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE dungeon_id = {}",
+                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE map_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
