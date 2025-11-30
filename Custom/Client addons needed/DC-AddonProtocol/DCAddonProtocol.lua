@@ -35,7 +35,7 @@ if DCAddonProtocol then return end
 
 DCAddonProtocol = {
     PREFIX = "DC",
-    VERSION = "1.5.1",
+    VERSION = "1.6.0",
     _handlers = {},
     _debug = false,
     _connected = false,
@@ -43,9 +43,159 @@ DCAddonProtocol = {
     _features = {},
     _handshakeSent = false,
     _lastHandshakeTime = 0,
+    
+    -- Request tracking system
+    _requestLog = {},           -- Array of request entries
+    _requestLogMax = 100,       -- Max entries to keep
+    _responseLog = {},          -- Array of response entries
+    _responseLogMax = 100,
+    _pendingRequests = {},      -- Requests waiting for response (keyed by module_opcode)
+    
+    -- Statistics tracking
+    _stats = {
+        totalRequests = 0,
+        totalResponses = 0,
+        totalTimeouts = 0,
+        avgResponseTime = 0,
+        moduleStats = {},
+        sessionStart = 0,  -- Will be set to time() after load
+    },
 }
 
 local DC = DCAddonProtocol
+
+-- Module names for display
+DC.ModuleNames = {
+    CORE = "Core",
+    AOEL = "AOE Loot",
+    SPOT = "Hotspot",
+    UPGR = "Item Upgrade",
+    SPEC = "Spectator",
+    DUEL = "Phased Duels",
+    MPLS = "Mythic+",
+    SEAS = "Seasonal",
+    LBRD = "Leaderboards",
+}
+
+-- Log a request
+function DC:LogRequest(module, opcode, data)
+    local entry = {
+        id = #self._requestLog + 1,
+        timestamp = time(),
+        timeStr = date("%H:%M:%S"),
+        player = UnitName("player"),
+        module = module,
+        moduleName = self.ModuleNames[module] or module,
+        opcode = opcode,
+        data = data,
+        status = "pending",
+        responseTime = nil,
+    }
+    
+    table.insert(self._requestLog, 1, entry) -- Add to front
+    
+    -- Trim log if too long
+    while #self._requestLog > self._requestLogMax do
+        table.remove(self._requestLog)
+    end
+    
+    -- Track pending request
+    local key = module .. "_" .. tostring(opcode)
+    self._pendingRequests[key] = entry
+    
+    -- Update statistics
+    self:UpdateStats("request", entry)
+    
+    return entry
+end
+
+-- Log a response
+function DC:LogResponse(module, opcode, data, jsonStr)
+    local entry = {
+        id = #self._responseLog + 1,
+        timestamp = time(),
+        timeStr = date("%H:%M:%S"),
+        player = UnitName("player"),
+        module = module,
+        moduleName = self.ModuleNames[module] or module,
+        opcode = opcode,
+        data = data,
+        jsonLength = jsonStr and string.len(jsonStr) or 0,
+    }
+    
+    table.insert(self._responseLog, 1, entry)
+    
+    while #self._responseLog > self._responseLogMax do
+        table.remove(self._responseLog)
+    end
+    
+    -- Update statistics
+    self:UpdateStats("response", entry)
+    
+    -- Check if this was a pending request (response opcode is usually request + 0x0F)
+    -- e.g., CMSG 0x01 -> SMSG 0x10
+    local requestOpcode = opcode - 0x0F
+    if requestOpcode > 0 then
+        local key = module .. "_" .. tostring(requestOpcode)
+        local pending = self._pendingRequests[key]
+        if pending then
+            pending.status = "completed"
+            pending.responseTime = time() - pending.timestamp
+            
+            -- Update module avg response time
+            local mod = module
+            if self._stats.moduleStats[mod] then
+                local stats = self._stats.moduleStats[mod]
+                stats.totalResponseTime = stats.totalResponseTime + pending.responseTime
+                stats.avgResponseTime = stats.totalResponseTime / stats.responses
+            end
+            
+            self._pendingRequests[key] = nil
+        end
+    end
+    
+    return entry
+end
+
+-- Get request log for display
+function DC:GetRequestLog(limit)
+    limit = limit or 20
+    local result = {}
+    for i = 1, math.min(limit, #self._requestLog) do
+        table.insert(result, self._requestLog[i])
+    end
+    return result
+end
+
+-- Get response log for display
+function DC:GetResponseLog(limit)
+    limit = limit or 20
+    local result = {}
+    for i = 1, math.min(limit, #self._responseLog) do
+        table.insert(result, self._responseLog[i])
+    end
+    return result
+end
+
+-- Get pending requests
+function DC:GetPendingRequests()
+    local result = {}
+    for key, entry in pairs(self._pendingRequests) do
+        -- Check if request is stale (over 30 seconds)
+        if time() - entry.timestamp > 30 then
+            entry.status = "timeout"
+        end
+        table.insert(result, entry)
+    end
+    return result
+end
+
+-- Clear logs
+function DC:ClearLogs()
+    self._requestLog = {}
+    self._responseLog = {}
+    self._pendingRequests = {}
+end
 
 function DC:RegisterHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode)
@@ -71,12 +221,27 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
         end
     end
     local msg = table.concat(parts, "|")
+    
+    -- Log request
+    self:LogRequest(module, opcode, {a1, a2, a3, a4, a5})
+    
+    if self._debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending: " .. msg)
+    end
     SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
 end
 
 function DC:SendJSON(module, opcode, data)
     local json = self:EncodeJSON(data)
     local msg = module .. "|" .. tostring(opcode) .. "|J|" .. json
+    
+    -- Log request
+    self:LogRequest(module, opcode, data)
+    
+    if self._debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending JSON: " .. module .. " opcode=" .. tostring(opcode))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Data: " .. string.sub(json, 1, 200) .. (string.len(json) > 200 and "..." or ""))
+    end
     SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
 end
 
@@ -257,6 +422,7 @@ DC.Module = {
     PRESTIGE = "PRES",
     SEASONAL = "SEAS",
     RESTORE_XP = "RXP",
+    LEADERBOARD = "LBRD",
 }
 
 -- Opcode definitions for each module
@@ -307,6 +473,16 @@ DC.Opcode = {
     Season = {
         CMSG_GET_CURRENT = 0x01,
         SMSG_CURRENT = 0x10,
+    },
+    Leaderboard = {
+        CMSG_GET_LEADERBOARD = 0x01,
+        CMSG_GET_CATEGORIES = 0x02,
+        CMSG_GET_MY_RANK = 0x03,
+        CMSG_REFRESH = 0x04,
+        SMSG_LEADERBOARD_DATA = 0x10,
+        SMSG_CATEGORIES = 0x11,
+        SMSG_MY_RANK = 0x12,
+        SMSG_ERROR = 0x1F,
     },
 }
 
@@ -377,6 +553,31 @@ DC.Prestige = {
     GetBonuses = function() DC:Request("PRES", 0x02, {}) end,
 }
 
+-- Unified Leaderboard API
+DC.Leaderboard = {
+    -- Request leaderboard data
+    Get = function(category, subcategory, page, limit)
+        DC:Request("LBRD", 0x01, {
+            category = category or "mplus",
+            subcategory = subcategory or "mplus_key",
+            page = page or 1,
+            limit = limit or 25,
+            seasonId = 0,
+        })
+    end,
+    -- Request available categories
+    GetCategories = function() DC:Request("LBRD", 0x02, {}) end,
+    -- Get player's rank in a category
+    GetMyRank = function(category, subcategory)
+        DC:Request("LBRD", 0x03, {
+            category = category or "mplus",
+            subcategory = subcategory or "mplus_key",
+        })
+    end,
+    -- Force refresh
+    Refresh = function() DC:Request("LBRD", 0x04, {}) end,
+}
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -387,7 +588,12 @@ frame:SetScript("OnEvent", function()
             for p in string.gmatch(arg2, "([^|]+)") do table.insert(parts, p) end
             if #parts >= 2 then
                 local module = parts[1]
-                local opcode = parts[2]
+                local opcode = tonumber(parts[2]) or 0
+                
+                -- Debug output
+                if DC._debug then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Received: " .. module .. " opcode=" .. opcode .. " parts=" .. #parts)
+                end
                 
                 -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json})
                 if #parts >= 4 and parts[3] == "J" then
@@ -399,22 +605,48 @@ frame:SetScript("OnEvent", function()
                     local jsonStr = table.concat(jsonParts, "|")
                     local data = DC:DecodeJSON(jsonStr)
                     
+                    -- Log response
+                    DC:LogResponse(module, opcode, data, jsonStr)
+                    
+                    if DC._debug then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r JSON: " .. string.sub(jsonStr, 1, 200) .. (string.len(jsonStr) > 200 and "..." or ""))
+                    end
+                    
                     -- Try JSON-specific handler first
                     local jsonKey = module .. "_" .. opcode .. "_json"
                     local jsonHandler = DC._handlers[jsonKey]
                     if jsonHandler then
+                        if DC._debug then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. jsonKey)
+                        end
                         pcall(jsonHandler, data, jsonStr)
                     else
                         -- Fall back to regular handler with decoded data
                         local key = module .. "_" .. opcode
                         local h = DC._handlers[key]
-                        if h then pcall(h, data) end
+                        if h then 
+                            if DC._debug then
+                                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
+                            end
+                            pcall(h, data) 
+                        elseif DC._debug then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
+                        end
                     end
                 else
-                    -- Regular message
+                    -- Regular message - log it too
+                    DC:LogResponse(module, opcode, {parts[3], parts[4], parts[5]}, nil)
+                    
                     local key = module .. "_" .. opcode
                     local h = DC._handlers[key]
-                    if h then pcall(h, parts[3], parts[4], parts[5], parts[6], parts[7]) end
+                    if h then 
+                        if DC._debug then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
+                        end
+                        pcall(h, parts[3], parts[4], parts[5], parts[6], parts[7]) 
+                    elseif DC._debug then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
+                    end
                 end
             end
         end
@@ -465,6 +697,47 @@ SlashCmdList["DC"] = function(msg)
     elseif cmd == "panel" or cmd == "settings" or cmd == "config" then
         InterfaceOptionsFrame_OpenToCategory(DC.SettingsPanel)
         InterfaceOptionsFrame_OpenToCategory(DC.SettingsPanel)
+    elseif cmd == "log" or cmd == "logs" then
+        DC:ShowLogPanel()
+    elseif cmd == "requests" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Recent Requests:")
+        local requests = DC:GetRequestLog(10)
+        if #requests == 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("  (no requests logged)")
+        else
+            for _, req in ipairs(requests) do
+                local statusColor = req.status == "completed" and "|cff00ff00" or (req.status == "timeout" and "|cffff0000" or "|cffffff00")
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("  [%s] %s %s op=%d %s%s|r",
+                    req.timeStr, req.moduleName, req.module, req.opcode, statusColor, req.status))
+            end
+        end
+    elseif cmd == "responses" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Recent Responses:")
+        local responses = DC:GetResponseLog(10)
+        if #responses == 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("  (no responses logged)")
+        else
+            for _, resp in ipairs(responses) do
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("  [%s] %s %s op=%d len=%d",
+                    resp.timeStr, resp.moduleName, resp.module, resp.opcode, resp.jsonLength or 0))
+            end
+        end
+    elseif cmd == "pending" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Pending Requests:")
+        local pending = DC:GetPendingRequests()
+        if #pending == 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("  (no pending requests)")
+        else
+            for _, req in ipairs(pending) do
+                local age = time() - req.timestamp
+                local ageColor = age > 10 and "|cffff0000" or "|cffffff00"
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("  %s op=%d %s%ds ago|r",
+                    req.moduleName, req.opcode, ageColor, age))
+            end
+        end
+    elseif cmd == "clearlog" or cmd == "clearlogs" then
+        DC:ClearLogs()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Logs cleared")
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Commands:")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc status - Show connection status")
@@ -473,6 +746,11 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc handlers - List registered handlers")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc json - Test JSON encode/decode")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc panel - Open settings/debug panel")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc log - Open request/response log panel")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc requests - Show recent requests")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc responses - Show recent responses")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc pending - Show pending requests")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc clearlog - Clear all logs")
     end
 end
 
@@ -802,15 +1080,46 @@ function DC:HasFeature(feature)
 end
 
 -- Register built-in handlers for CORE module
-DC:RegisterHandler("CORE", 0x10, function(version, features)
+DC:RegisterHandler("CORE", 0x10, function(arg1, arg2)
+    -- Handle both JSON format (arg1 = table) and pipe format (arg1 = version string)
+    local version, features
+    if type(arg1) == "table" then
+        version = arg1.version or arg1.v or "1.0.0"
+        features = arg1.features
+    else
+        version = arg1 or "1.0.0"
+        features = arg2
+    end
+    
     DC._connected = true
-    DC._serverVersion = version
+    DC._serverVersion = tostring(version)
     DC:DebugPrint("Handshake ACK received, server v" .. tostring(version))
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Connected to server v" .. tostring(version))
+    
     if features then
-        for feat in string.gmatch(features, "([^,]+)") do
-            DC._features[feat] = true
+        if type(features) == "table" then
+            for _, feat in ipairs(features) do
+                DC._features[feat] = true
+            end
+        elseif type(features) == "string" then
+            for feat in string.gmatch(features, "([^,]+)") do
+                DC._features[feat] = true
+            end
         end
+    end
+    
+    -- Update settings panel if open
+    if DC._statusText then
+        local connected = "|cff00ff00Connected|r"
+        local handlers = DC:CountHandlers()
+        local debug = DC._debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        DC._statusText:SetText(
+            "Status: " .. connected .. "\n" ..
+            "Client Version: |cff00ccff" .. DC.VERSION .. "|r\n" ..
+            "Server Version: |cff00ccff" .. DC._serverVersion .. "|r\n" ..
+            "Handlers: |cffffff00" .. handlers .. "|r\n" ..
+            "Debug Mode: " .. debug
+        )
     end
 end)
 
@@ -849,5 +1158,664 @@ DC:RegisterHandler("CORE", 0xFF, function(...)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Echo]|r " .. table.concat(args, "|"))
     end
 end)
+
+-- ============================================================
+-- Request/Response Log Panel (Leaderboard Style)
+-- ============================================================
+
+-- Statistics tracking - initialize sessionStart
+DC._stats.sessionStart = time()
+
+-- Update statistics when logging
+function DC:UpdateStats(entryType, entry)
+    if entryType == "request" then
+        self._stats.totalRequests = self._stats.totalRequests + 1
+        
+        -- Per-module stats
+        local mod = entry.module or "UNKNOWN"
+        if not self._stats.moduleStats[mod] then
+            self._stats.moduleStats[mod] = {
+                requests = 0,
+                responses = 0,
+                timeouts = 0,
+                totalResponseTime = 0,
+                avgResponseTime = 0,
+            }
+        end
+        self._stats.moduleStats[mod].requests = self._stats.moduleStats[mod].requests + 1
+        
+    elseif entryType == "response" then
+        self._stats.totalResponses = self._stats.totalResponses + 1
+        
+        local mod = entry.module or "UNKNOWN"
+        if self._stats.moduleStats[mod] then
+            self._stats.moduleStats[mod].responses = self._stats.moduleStats[mod].responses + 1
+        end
+        
+    elseif entryType == "timeout" then
+        self._stats.totalTimeouts = self._stats.totalTimeouts + 1
+        
+        local mod = entry.module or "UNKNOWN"
+        if self._stats.moduleStats[mod] then
+            self._stats.moduleStats[mod].timeouts = self._stats.moduleStats[mod].timeouts + 1
+        end
+    end
+end
+
+-- Get module statistics as leaderboard-style sorted list
+function DC:GetModuleLeaderboard()
+    local list = {}
+    for mod, stats in pairs(self._stats.moduleStats) do
+        table.insert(list, {
+            module = mod,
+            moduleName = self.ModuleNames[mod] or mod,
+            requests = stats.requests,
+            responses = stats.responses,
+            timeouts = stats.timeouts,
+            successRate = stats.requests > 0 and math.floor((stats.responses / stats.requests) * 100) or 0,
+            avgResponseTime = stats.avgResponseTime,
+        })
+    end
+    
+    -- Sort by requests (most active first)
+    table.sort(list, function(a, b) return a.requests > b.requests end)
+    
+    return list
+end
+
+function DC:ShowLogPanel()
+    if self.LogPanel then
+        self.LogPanel:Show()
+        self:RefreshLogPanel()
+        return
+    end
+    
+    -- Create the log panel (wider for leaderboard style)
+    local frame = CreateFrame("Frame", "DCProtocolLogPanel", UIParent)
+    frame:SetSize(850, 550)
+    frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    
+    -- Background
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
+    bg:SetVertexColor(0.08, 0.08, 0.08, 0.98)
+    
+    -- Border
+    local border = CreateFrame("Frame", nil, frame)
+    border:SetAllPoints()
+    border:SetBackdrop({
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    
+    -- Title bar
+    local titleBar = CreateFrame("Frame", nil, frame)
+    titleBar:SetSize(830, 28)
+    titleBar:SetPoint("TOP", 0, -8)
+    local titleBarBg = titleBar:CreateTexture(nil, "ARTWORK")
+    titleBarBg:SetAllPoints()
+    titleBarBg:SetTexture(0.15, 0.15, 0.15, 0.6)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -12)
+    title:SetText("|cff00ff00DC Protocol Monitor|r")
+    
+    -- Subtitle with session info
+    local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
+    subtitle:SetText("|cff888888Request/Response Tracking & Statistics|r")
+    frame.subtitle = subtitle
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    tinsert(UISpecialFrames, "DCProtocolLogPanel")
+    
+    -- Left panel: Statistics summary
+    local statsPanel = CreateFrame("Frame", nil, frame)
+    statsPanel:SetSize(200, 460)
+    statsPanel:SetPoint("TOPLEFT", 15, -50)
+    frame.statsPanel = statsPanel
+    
+    local statsBg = statsPanel:CreateTexture(nil, "BACKGROUND")
+    statsBg:SetAllPoints()
+    statsBg:SetTexture(0.12, 0.12, 0.12, 0.8)
+    
+    local statsTitle = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    statsTitle:SetPoint("TOP", 0, -10)
+    statsTitle:SetText("|cffffd700Session Statistics|r")
+    
+    -- Stats will be populated in RefreshLogPanel
+    frame.statsLabels = {}
+    
+    -- Right panel: Tab content area
+    local contentPanel = CreateFrame("Frame", nil, frame)
+    contentPanel:SetSize(610, 460)
+    contentPanel:SetPoint("TOPRIGHT", -15, -50)
+    frame.contentPanel = contentPanel
+    
+    -- Tab buttons (inside content panel)
+    local tabFrame = CreateFrame("Frame", nil, contentPanel)
+    tabFrame:SetSize(610, 28)
+    tabFrame:SetPoint("TOP", 0, 0)
+    
+    local tabs = {
+        { id = "requests", label = "Requests", icon = "Interface\\Icons\\INV_Letter_15" },
+        { id = "responses", label = "Responses", icon = "Interface\\Icons\\INV_Letter_16" },
+        { id = "pending", label = "Pending", icon = "Interface\\Icons\\Spell_Holy_BorrowedTime" },
+        { id = "modules", label = "By Module", icon = "Interface\\Icons\\Trade_Engineering" },
+    }
+    
+    frame.tabButtons = {}
+    local tabX = 0
+    for _, tab in ipairs(tabs) do
+        local btn = CreateFrame("Button", nil, tabFrame)
+        btn:SetSize(145, 26)
+        btn:SetPoint("LEFT", tabX, 0)
+        
+        local btnBg = btn:CreateTexture(nil, "BACKGROUND")
+        btnBg:SetAllPoints()
+        btnBg:SetTexture(0.2, 0.2, 0.2, 0.8)
+        btn.bg = btnBg
+        
+        local btnIcon = btn:CreateTexture(nil, "ARTWORK")
+        btnIcon:SetSize(18, 18)
+        btnIcon:SetPoint("LEFT", 5, 0)
+        btnIcon:SetTexture(tab.icon)
+        
+        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btnText:SetPoint("LEFT", btnIcon, "RIGHT", 5, 0)
+        btnText:SetText(tab.label)
+        btn.text = btnText
+        
+        btn:SetScript("OnClick", function()
+            frame.currentTab = tab.id
+            DC:RefreshLogPanel()
+        end)
+        
+        btn:SetScript("OnEnter", function(self)
+            if frame.currentTab ~= tab.id then
+                self.bg:SetTexture(0.3, 0.3, 0.3, 0.8)
+            end
+        end)
+        
+        btn:SetScript("OnLeave", function(self)
+            if frame.currentTab ~= tab.id then
+                self.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+            end
+        end)
+        
+        frame.tabButtons[tab.id] = btn
+        tabX = tabX + 150
+    end
+    
+    -- Action buttons
+    local clearBtn = CreateFrame("Button", nil, contentPanel, "UIPanelButtonTemplate")
+    clearBtn:SetSize(70, 20)
+    clearBtn:SetPoint("TOPRIGHT", 0, 0)
+    clearBtn:SetText("Clear")
+    clearBtn:SetScript("OnClick", function()
+        DC:ClearLogs()
+        DC._stats = {
+            totalRequests = 0,
+            totalResponses = 0,
+            totalTimeouts = 0,
+            avgResponseTime = 0,
+            moduleStats = {},
+            sessionStart = time(),
+        }
+        DC:RefreshLogPanel()
+    end)
+    
+    -- Column headers (dynamic based on tab)
+    local headerFrame = CreateFrame("Frame", nil, contentPanel)
+    headerFrame:SetSize(590, 22)
+    headerFrame:SetPoint("TOP", tabFrame, "BOTTOM", 0, -5)
+    frame.headerFrame = headerFrame
+    
+    local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
+    headerBg:SetAllPoints()
+    headerBg:SetTexture(0.18, 0.18, 0.18, 0.9)
+    
+    frame.headerLabels = {}
+    
+    -- Scroll frame for entries
+    local scrollFrame = CreateFrame("ScrollFrame", "DCLogScrollFrame", contentPanel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetSize(590, 380)
+    scrollFrame:SetPoint("TOP", headerFrame, "BOTTOM", 0, -2)
+    
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(570, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+    frame.scrollChild = scrollChild
+    
+    -- Bottom status bar
+    local statusBar = CreateFrame("Frame", nil, frame)
+    statusBar:SetSize(820, 20)
+    statusBar:SetPoint("BOTTOM", 0, 10)
+    
+    local statusText = statusBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("LEFT", 20, 0)
+    statusText:SetText("|cff888888Session started: " .. date("%H:%M:%S") .. "|r")
+    frame.statusText = statusText
+    
+    frame.currentTab = "requests"
+    frame.entryFrames = {}
+    
+    self.LogPanel = frame
+    self:RefreshLogPanel()
+end
+
+function DC:RefreshLogPanel()
+    if not self.LogPanel then return end
+    
+    local frame = self.LogPanel
+    local scrollChild = frame.scrollChild
+    local headerFrame = frame.headerFrame
+    
+    -- Update statistics panel
+    self:UpdateStatsPanel()
+    
+    -- Clear existing entries
+    for _, entryFrame in ipairs(frame.entryFrames) do
+        entryFrame:Hide()
+        entryFrame:SetParent(nil)
+    end
+    frame.entryFrames = {}
+    
+    -- Clear header labels
+    for _, label in ipairs(frame.headerLabels) do
+        label:SetText("")
+    end
+    
+    -- Update tab highlighting
+    for id, btn in pairs(frame.tabButtons) do
+        if frame.currentTab == id then
+            btn.bg:SetTexture(0.2, 0.4, 0.2, 0.9)
+            btn.text:SetText("|cff00ff00" .. btn.text:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. "|r")
+        else
+            btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+            btn.text:SetText(btn.text:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+        end
+    end
+    
+    -- Setup columns and get data based on current tab
+    local columns, entries
+    
+    if frame.currentTab == "requests" then
+        columns = {
+            { x = 5, width = 55, label = "#" },
+            { x = 40, width = 65, label = "Time" },
+            { x = 110, width = 100, label = "Module" },
+            { x = 210, width = 60, label = "Opcode" },
+            { x = 280, width = 80, label = "Status" },
+            { x = 370, width = 200, label = "Data Preview" },
+        }
+        entries = self:GetRequestLog(50)
+        
+    elseif frame.currentTab == "responses" then
+        columns = {
+            { x = 5, width = 55, label = "#" },
+            { x = 40, width = 65, label = "Time" },
+            { x = 110, width = 100, label = "Module" },
+            { x = 210, width = 60, label = "Opcode" },
+            { x = 280, width = 70, label = "Size" },
+            { x = 360, width = 210, label = "Data Preview" },
+        }
+        entries = self:GetResponseLog(50)
+        
+    elseif frame.currentTab == "pending" then
+        columns = {
+            { x = 5, width = 55, label = "#" },
+            { x = 40, width = 65, label = "Time" },
+            { x = 110, width = 100, label = "Module" },
+            { x = 210, width = 60, label = "Opcode" },
+            { x = 280, width = 70, label = "Age" },
+            { x = 360, width = 80, label = "Status" },
+            { x = 450, width = 120, label = "Data" },
+        }
+        entries = self:GetPendingRequests()
+        
+    elseif frame.currentTab == "modules" then
+        columns = {
+            { x = 5, width = 40, label = "Rank" },
+            { x = 50, width = 120, label = "Module" },
+            { x = 180, width = 70, label = "Requests" },
+            { x = 260, width = 70, label = "Responses" },
+            { x = 340, width = 60, label = "Timeouts" },
+            { x = 410, width = 80, label = "Success %" },
+            { x = 500, width = 70, label = "Avg Time" },
+        }
+        entries = self:GetModuleLeaderboard()
+    end
+    
+    -- Create header labels
+    for i, col in ipairs(columns) do
+        local label = frame.headerLabels[i]
+        if not label then
+            label = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            frame.headerLabels[i] = label
+        end
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", col.x, 0)
+        label:SetText("|cffffd700" .. col.label .. "|r")
+    end
+    
+    -- Create entry rows
+    local yOffset = 0
+    local rowHeight = 24
+    
+    for i, entry in ipairs(entries) do
+        local row = CreateFrame("Button", nil, scrollChild)
+        row:SetSize(570, rowHeight)
+        row:SetPoint("TOPLEFT", 0, yOffset)
+        
+        -- Alternating background with hover
+        local rowBg = row:CreateTexture(nil, "BACKGROUND")
+        rowBg:SetAllPoints()
+        local bgColor = i % 2 == 0 and 0.14 or 0.10
+        rowBg:SetTexture(bgColor, bgColor, bgColor, 0.7)
+        row.bg = rowBg
+        row.bgColor = bgColor
+        
+        row:SetScript("OnEnter", function(self)
+            self.bg:SetTexture(0.25, 0.25, 0.3, 0.8)
+        end)
+        row:SetScript("OnLeave", function(self)
+            self.bg:SetTexture(self.bgColor, self.bgColor, self.bgColor, 0.7)
+        end)
+        
+        -- Populate based on tab
+        if frame.currentTab == "modules" then
+            -- Module leaderboard row
+            self:CreateModuleRow(row, entry, i, columns)
+        else
+            -- Log entry row
+            self:CreateLogRow(row, entry, i, columns, frame.currentTab)
+        end
+        
+        table.insert(frame.entryFrames, row)
+        yOffset = yOffset - rowHeight
+    end
+    
+    -- Update scroll child height
+    scrollChild:SetHeight(math.max(1, math.abs(yOffset)))
+    
+    -- Show empty message if no entries
+    if #entries == 0 then
+        local emptyText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        emptyText:SetPoint("CENTER", 0, 50)
+        emptyText:SetText("|cff666666No " .. frame.currentTab .. " to display|r")
+        local emptyFrame = CreateFrame("Frame", nil, scrollChild)
+        emptyFrame:SetAllPoints()
+        table.insert(frame.entryFrames, emptyFrame)
+    end
+    
+    -- Update status bar
+    local sessionTime = time() - self._stats.sessionStart
+    local hours = math.floor(sessionTime / 3600)
+    local mins = math.floor((sessionTime % 3600) / 60)
+    local secs = sessionTime % 60
+    frame.statusText:SetText(string.format(
+        "|cff888888Session: %02d:%02d:%02d | Requests: %d | Responses: %d | Timeouts: %d|r",
+        hours, mins, secs,
+        self._stats.totalRequests,
+        self._stats.totalResponses,
+        self._stats.totalTimeouts
+    ))
+end
+
+function DC:CreateLogRow(row, entry, index, columns, tabType)
+    -- Row number
+    local numText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    numText:SetPoint("LEFT", columns[1].x, 0)
+    numText:SetText("|cff888888" .. index .. "|r")
+    
+    -- Time
+    local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timeText:SetPoint("LEFT", columns[2].x, 0)
+    timeText:SetText("|cffffffff" .. (entry.timeStr or "--:--:--") .. "|r")
+    
+    -- Module with color
+    local modText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    modText:SetPoint("LEFT", columns[3].x, 0)
+    local modColor = self:GetModuleColor(entry.module)
+    modText:SetText(modColor .. (entry.moduleName or entry.module or "?") .. "|r")
+    
+    -- Opcode
+    local opText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    opText:SetPoint("LEFT", columns[4].x, 0)
+    opText:SetText("|cffffff00" .. string.format("0x%02X", entry.opcode or 0) .. "|r")
+    
+    if tabType == "requests" then
+        -- Status
+        local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        statusText:SetPoint("LEFT", columns[5].x, 0)
+        local statusColor = entry.status == "completed" and "|cff00ff00" or 
+                           (entry.status == "timeout" and "|cffff0000" or "|cffffff00")
+        statusText:SetText(statusColor .. (entry.status or "?") .. "|r")
+        
+        -- Data preview
+        local dataText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dataText:SetPoint("LEFT", columns[6].x, 0)
+        dataText:SetWidth(190)
+        dataText:SetJustifyH("LEFT")
+        dataText:SetText("|cff888888" .. self:FormatDataPreview(entry.data, 40) .. "|r")
+        
+    elseif tabType == "responses" then
+        -- Size
+        local sizeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        sizeText:SetPoint("LEFT", columns[5].x, 0)
+        local size = entry.jsonLength or 0
+        local sizeColor = size > 1000 and "|cffff8800" or "|cff00ff00"
+        sizeText:SetText(sizeColor .. size .. " B|r")
+        
+        -- Data preview
+        local dataText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dataText:SetPoint("LEFT", columns[6].x, 0)
+        dataText:SetWidth(200)
+        dataText:SetJustifyH("LEFT")
+        dataText:SetText("|cff888888" .. self:FormatDataPreview(entry.data, 45) .. "|r")
+        
+    elseif tabType == "pending" then
+        -- Age
+        local ageText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        ageText:SetPoint("LEFT", columns[5].x, 0)
+        local age = time() - (entry.timestamp or time())
+        local ageColor = age > 10 and "|cffff0000" or (age > 5 and "|cffffff00" or "|cff00ff00")
+        ageText:SetText(ageColor .. age .. "s|r")
+        
+        -- Status
+        local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        statusText:SetPoint("LEFT", columns[6].x, 0)
+        local statusColor = age > 30 and "|cffff0000" or "|cffffff00"
+        statusText:SetText(statusColor .. (age > 30 and "TIMEOUT" or "waiting...") .. "|r")
+        
+        -- Data
+        local dataText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dataText:SetPoint("LEFT", columns[7].x, 0)
+        dataText:SetWidth(110)
+        dataText:SetJustifyH("LEFT")
+        dataText:SetText("|cff888888" .. self:FormatDataPreview(entry.data, 25) .. "|r")
+    end
+end
+
+function DC:CreateModuleRow(row, entry, index, columns)
+    -- Rank with medal colors
+    local rankText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rankText:SetPoint("LEFT", columns[1].x, 0)
+    local rankColor = index == 1 and "|cffffff00" or (index == 2 and "|cffc0c0c0" or (index == 3 and "|cffcd7f32" or "|cffffffff"))
+    rankText:SetText(rankColor .. "#" .. index .. "|r")
+    
+    -- Module name
+    local modText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    modText:SetPoint("LEFT", columns[2].x, 0)
+    local modColor = self:GetModuleColor(entry.module)
+    modText:SetText(modColor .. entry.moduleName .. "|r")
+    
+    -- Requests count
+    local reqText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    reqText:SetPoint("LEFT", columns[3].x, 0)
+    reqText:SetText("|cff00ccff" .. entry.requests .. "|r")
+    
+    -- Responses count
+    local respText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    respText:SetPoint("LEFT", columns[4].x, 0)
+    respText:SetText("|cff00ff00" .. entry.responses .. "|r")
+    
+    -- Timeouts count
+    local timeoutText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timeoutText:SetPoint("LEFT", columns[5].x, 0)
+    local toColor = entry.timeouts > 0 and "|cffff0000" or "|cff888888"
+    timeoutText:SetText(toColor .. entry.timeouts .. "|r")
+    
+    -- Success rate with color gradient
+    local successText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    successText:SetPoint("LEFT", columns[6].x, 0)
+    local successColor = entry.successRate >= 90 and "|cff00ff00" or 
+                        (entry.successRate >= 70 and "|cffffff00" or "|cffff0000")
+    successText:SetText(successColor .. entry.successRate .. "%|r")
+    
+    -- Average response time
+    local avgText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    avgText:SetPoint("LEFT", columns[7].x, 0)
+    avgText:SetText("|cff888888" .. string.format("%.1fs", entry.avgResponseTime or 0) .. "|r")
+end
+
+function DC:UpdateStatsPanel()
+    if not self.LogPanel or not self.LogPanel.statsPanel then return end
+    
+    local panel = self.LogPanel.statsPanel
+    
+    -- Clear existing stat labels
+    for _, child in pairs({panel:GetChildren()}) do
+        child:Hide()
+    end
+    
+    local yOffset = -35
+    local stats = {
+        { label = "Total Requests", value = self._stats.totalRequests, color = "|cff00ccff" },
+        { label = "Total Responses", value = self._stats.totalResponses, color = "|cff00ff00" },
+        { label = "Total Timeouts", value = self._stats.totalTimeouts, color = self._stats.totalTimeouts > 0 and "|cffff0000" or "|cff888888" },
+        { label = "", value = "", color = "" }, -- Spacer
+        { label = "Pending Requests", value = #self:GetPendingRequests(), color = "|cffffff00" },
+        { label = "Active Modules", value = self:CountTable(self._stats.moduleStats), color = "|cff00ff00" },
+    }
+    
+    for _, stat in ipairs(stats) do
+        if stat.label ~= "" then
+            local labelText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            labelText:SetPoint("TOPLEFT", 10, yOffset)
+            labelText:SetText("|cff888888" .. stat.label .. ":|r")
+            
+            local valueText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            valueText:SetPoint("TOPRIGHT", -10, yOffset)
+            valueText:SetText(stat.color .. tostring(stat.value) .. "|r")
+        end
+        yOffset = yOffset - 20
+    end
+    
+    -- Success rate
+    local successRate = self._stats.totalRequests > 0 and 
+        math.floor((self._stats.totalResponses / self._stats.totalRequests) * 100) or 0
+    
+    yOffset = yOffset - 10
+    local rateLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rateLabel:SetPoint("TOPLEFT", 10, yOffset)
+    rateLabel:SetText("|cffffd700Success Rate:|r")
+    
+    yOffset = yOffset - 25
+    local rateValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    rateValue:SetPoint("TOP", 0, yOffset)
+    local rateColor = successRate >= 90 and "|cff00ff00" or 
+                     (successRate >= 70 and "|cffffff00" or "|cffff0000")
+    rateValue:SetText(rateColor .. successRate .. "%|r")
+    
+    -- Session time
+    yOffset = yOffset - 40
+    local sessionLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sessionLabel:SetPoint("TOPLEFT", 10, yOffset)
+    sessionLabel:SetText("|cff888888Session Time:|r")
+    
+    local sessionTime = time() - self._stats.sessionStart
+    local hours = math.floor(sessionTime / 3600)
+    local mins = math.floor((sessionTime % 3600) / 60)
+    local secs = sessionTime % 60
+    
+    yOffset = yOffset - 18
+    local sessionValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sessionValue:SetPoint("TOP", 0, yOffset)
+    sessionValue:SetText(string.format("|cffffffff%02d:%02d:%02d|r", hours, mins, secs))
+    
+    -- Most active module
+    local moduleList = self:GetModuleLeaderboard()
+    if #moduleList > 0 then
+        yOffset = yOffset - 30
+        local topLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        topLabel:SetPoint("TOPLEFT", 10, yOffset)
+        topLabel:SetText("|cffffd700Most Active:|r")
+        
+        yOffset = yOffset - 18
+        local topValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        topValue:SetPoint("TOP", 0, yOffset)
+        local modColor = self:GetModuleColor(moduleList[1].module)
+        topValue:SetText(modColor .. moduleList[1].moduleName .. "|r")
+        
+        yOffset = yOffset - 15
+        local topCount = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        topCount:SetPoint("TOP", 0, yOffset)
+        topCount:SetText("|cff888888(" .. moduleList[1].requests .. " requests)|r")
+    end
+end
+
+function DC:GetModuleColor(module)
+    local colors = {
+        CORE = "|cff00ff00",
+        AOEL = "|cffff8800",
+        SPOT = "|cff00ccff",
+        UPGR = "|cffa335ee",
+        SPEC = "|cff0070dd",
+        DUEL = "|cffff0000",
+        MPLS = "|cffff8000",
+        SEAS = "|cffffff00",
+        LBRD = "|cff00ff96",
+    }
+    return colors[module] or "|cffffffff"
+end
+
+function DC:FormatDataPreview(data, maxLen)
+    if not data then return "-" end
+    
+    local preview = ""
+    if type(data) == "table" then
+        preview = self:EncodeJSON(data)
+    else
+        preview = tostring(data)
+    end
+    
+    if string.len(preview) > maxLen then
+        preview = string.sub(preview, 1, maxLen - 3) .. "..."
+    end
+    
+    return preview
+end
+
+function DC:CountTable(t)
+    local count = 0
+    for _ in pairs(t or {}) do count = count + 1 end
+    return count
+end
 
 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r v" .. DC.VERSION .. " loaded")

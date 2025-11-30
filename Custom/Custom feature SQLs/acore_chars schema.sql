@@ -1051,6 +1051,77 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_daily
+CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `date` date NOT NULL,
+  `module` varchar(8) NOT NULL,
+  `total_requests` int unsigned DEFAULT '0',
+  `total_responses` int unsigned DEFAULT '0',
+  `total_timeouts` int unsigned DEFAULT '0',
+  `unique_players` int unsigned DEFAULT '0',
+  `avg_response_time_ms` float DEFAULT '0',
+  `peak_hour` tinyint unsigned DEFAULT NULL COMMENT 'Hour with most requests (0-23)',
+  `peak_requests` int unsigned DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_date_module` (`date`,`module`),
+  KEY `idx_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Daily aggregated protocol statistics';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_log
+CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `account_id` int unsigned NOT NULL,
+  `character_name` varchar(32) NOT NULL,
+  `direction` enum('C2S','S2C') NOT NULL COMMENT 'Client->Server or Server->Client',
+  `module` varchar(8) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)',
+  `opcode` tinyint unsigned NOT NULL,
+  `opcode_name` varchar(32) DEFAULT NULL COMMENT 'Human readable opcode name',
+  `data_size` int unsigned DEFAULT '0' COMMENT 'JSON payload size in bytes',
+  `data_preview` varchar(255) DEFAULT NULL COMMENT 'First 255 chars of JSON data',
+  `response_time_ms` int unsigned DEFAULT NULL COMMENT 'Response time in milliseconds (for matched requests)',
+  `status` enum('pending','completed','timeout','error') DEFAULT 'pending',
+  `error_message` varchar(255) DEFAULT NULL,
+  `session_id` varchar(64) DEFAULT NULL COMMENT 'Unique session identifier',
+  PRIMARY KEY (`id`),
+  KEY `idx_timestamp` (`timestamp`),
+  KEY `idx_guid` (`guid`),
+  KEY `idx_module` (`module`),
+  KEY `idx_direction_module` (`direction`,`module`),
+  KEY `idx_status` (`status`),
+  KEY `idx_session` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Addon protocol request/response logging';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_stats
+CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `guid` int unsigned NOT NULL,
+  `module` varchar(8) NOT NULL,
+  `total_requests` int unsigned DEFAULT '0',
+  `total_responses` int unsigned DEFAULT '0',
+  `total_timeouts` int unsigned DEFAULT '0',
+  `total_errors` int unsigned DEFAULT '0',
+  `avg_response_time_ms` float DEFAULT '0',
+  `max_response_time_ms` int unsigned DEFAULT '0',
+  `total_data_sent_bytes` bigint unsigned DEFAULT '0',
+  `total_data_received_bytes` bigint unsigned DEFAULT '0',
+  `first_request` datetime DEFAULT NULL,
+  `last_request` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_guid_module` (`guid`,`module`),
+  KEY `idx_module` (`module`),
+  KEY `idx_last_request` (`last_request`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Aggregated protocol statistics per player per module';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_aoe_loot_settings
 CREATE TABLE IF NOT EXISTS `dc_aoe_loot_settings` (
   `character_guid` int unsigned NOT NULL,
@@ -1062,6 +1133,24 @@ CREATE TABLE IF NOT EXISTS `dc_aoe_loot_settings` (
   `loot_range` float DEFAULT '30',
   PRIMARY KEY (`character_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AOE Loot addon settings per character';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_aoe_loot_stats
+CREATE TABLE IF NOT EXISTS `dc_aoe_loot_stats` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `account_id` int unsigned NOT NULL,
+  `character_guid` int unsigned NOT NULL,
+  `total_items` int unsigned NOT NULL DEFAULT '0',
+  `total_gold` bigint unsigned NOT NULL DEFAULT '0',
+  `vendor_gold` bigint unsigned NOT NULL DEFAULT '0',
+  `upgrades_found` int unsigned NOT NULL DEFAULT '0',
+  `last_loot_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_character` (`character_guid`),
+  KEY `idx_account` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1125,6 +1214,48 @@ CREATE TABLE IF NOT EXISTS `dc_artifact_mastery_events` (
   KEY `idx_artifact_id` (`artifact_id`),
   KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical log of artifact mastery events';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_character_challenge_mode_log
+CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `character_guid` int unsigned NOT NULL,
+  `dungeon_id` int unsigned NOT NULL,
+  `difficulty` tinyint unsigned NOT NULL DEFAULT '0',
+  `completion_time` int unsigned NOT NULL DEFAULT '0' COMMENT 'In seconds',
+  `deaths` int unsigned NOT NULL DEFAULT '0',
+  `party_size` tinyint unsigned NOT NULL DEFAULT '1',
+  `success` tinyint(1) NOT NULL DEFAULT '0',
+  `score` int unsigned NOT NULL DEFAULT '0',
+  `completed_at` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_character_dungeon` (`character_guid`,`dungeon_id`),
+  KEY `idx_dungeon_difficulty` (`dungeon_id`,`difficulty`),
+  KEY `idx_completed_at` (`completed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode run history log';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_character_challenge_mode_stats
+CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_stats` (
+  `character_guid` int unsigned NOT NULL,
+  `dungeon_id` int unsigned NOT NULL,
+  `total_runs` int unsigned NOT NULL DEFAULT '0',
+  `successful_runs` int unsigned NOT NULL DEFAULT '0',
+  `failed_runs` int unsigned NOT NULL DEFAULT '0',
+  `best_time` int unsigned DEFAULT NULL COMMENT 'In seconds',
+  `best_score` int unsigned DEFAULT NULL,
+  `highest_difficulty` tinyint unsigned NOT NULL DEFAULT '0',
+  `total_deaths` int unsigned NOT NULL DEFAULT '0',
+  `last_run_at` bigint unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`character_guid`,`dungeon_id`),
+  KEY `idx_character_guid` (`character_guid`),
+  KEY `idx_best_time` (`dungeon_id`,`best_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode statistics per character per dungeon';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1392,6 +1523,26 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
 CREATE TABLE `dc_guild_leaderboard` 
 );
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_guild_upgrade_stats
+CREATE TABLE IF NOT EXISTS `dc_guild_upgrade_stats` (
+  `guild_id` int unsigned NOT NULL,
+  `season_id` int unsigned NOT NULL DEFAULT '1',
+  `total_upgrades` bigint unsigned NOT NULL DEFAULT '0',
+  `total_tokens_spent` bigint unsigned NOT NULL DEFAULT '0',
+  `highest_tier_reached` tinyint unsigned NOT NULL DEFAULT '0',
+  `active_upgraders` int unsigned NOT NULL DEFAULT '0',
+  `weekly_upgrades` int unsigned NOT NULL DEFAULT '0',
+  `weekly_tokens_spent` int unsigned NOT NULL DEFAULT '0',
+  `last_activity_at` bigint unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guild_id`,`season_id`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_total_upgrades` (`total_upgrades` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild-level upgrade statistics for leaderboards';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_heirloom_package_history
 CREATE TABLE IF NOT EXISTS `dc_heirloom_package_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1476,6 +1627,95 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_match_history
+CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
+  `match_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `season_id` int unsigned NOT NULL,
+  `start_time` bigint unsigned NOT NULL,
+  `end_time` bigint unsigned DEFAULT NULL,
+  `winner_team` tinyint unsigned DEFAULT NULL COMMENT '0 = draw, 1 = team1, 2 = team2',
+  `team1_score` int unsigned NOT NULL DEFAULT '0',
+  `team2_score` int unsigned NOT NULL DEFAULT '0',
+  `player_count` tinyint unsigned NOT NULL DEFAULT '0',
+  `map_id` int unsigned DEFAULT NULL,
+  `match_duration` int unsigned DEFAULT NULL COMMENT 'In seconds',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`match_id`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_start_time` (`start_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG match history and results';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_history
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `season_id` int unsigned NOT NULL,
+  `joined_at` bigint unsigned NOT NULL,
+  `rating` int unsigned NOT NULL,
+  `completed_games` int unsigned NOT NULL,
+  `wins` int unsigned NOT NULL,
+  `losses` int unsigned NOT NULL,
+  `highest_rating` int unsigned NOT NULL,
+  `lowest_rating` int unsigned NOT NULL,
+  `total_score` bigint unsigned NOT NULL,
+  `average_score` int unsigned NOT NULL,
+  `final_rank` int unsigned DEFAULT NULL,
+  `archived_at` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_player_season` (`player_guid`,`season_id`),
+  KEY `idx_season_rank` (`season_id`,`final_rank`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived HLBG player stats from previous seasons';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_season_data
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `season_id` int unsigned NOT NULL,
+  `joined_at` bigint unsigned NOT NULL,
+  `rating` int unsigned NOT NULL DEFAULT '1500',
+  `completed_games` int unsigned NOT NULL DEFAULT '0',
+  `wins` int unsigned NOT NULL DEFAULT '0',
+  `losses` int unsigned NOT NULL DEFAULT '0',
+  `highest_rating` int unsigned NOT NULL DEFAULT '1500',
+  `lowest_rating` int unsigned NOT NULL DEFAULT '1500',
+  `total_score` bigint unsigned NOT NULL DEFAULT '0',
+  `average_score` int unsigned NOT NULL DEFAULT '0',
+  `win_streak` int unsigned NOT NULL DEFAULT '0',
+  `best_win_streak` int unsigned NOT NULL DEFAULT '0',
+  `last_game_at` bigint unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_player_season` (`player_guid`,`season_id`),
+  KEY `idx_season_rating` (`season_id`,`rating` DESC),
+  KEY `idx_player_guid` (`player_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG player seasonal stats (rating, wins, losses, etc.)';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_season_config
+CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
+  `season_id` int unsigned NOT NULL,
+  `base_rating` int unsigned NOT NULL DEFAULT '1500',
+  `max_rating_change` int unsigned NOT NULL DEFAULT '50',
+  `min_players_per_team` tinyint unsigned NOT NULL DEFAULT '5',
+  `max_players_per_team` tinyint unsigned NOT NULL DEFAULT '10',
+  `match_duration` int unsigned NOT NULL DEFAULT '1800' COMMENT 'In seconds',
+  `rating_decay_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `rating_decay_threshold` int unsigned DEFAULT '0' COMMENT 'Days inactive before decay',
+  `rating_decay_amount` int unsigned DEFAULT '0' COMMENT 'Rating lost per decay period',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`season_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG-specific season configuration (base_rating, match settings, etc.)';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_costs
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL COMMENT 'Item tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
@@ -1533,9 +1773,46 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   KEY `idx_player_timestamp` (`player_guid`,`timestamp`),
   KEY `idx_dc_item_upgrade_log_player_timestamp` (`player_guid`,`timestamp`),
   CONSTRAINT `fk_dc_item_upgrade_log_player` FOREIGN KEY (`player_guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
+) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_missing_items
+CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
+  `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
+  `player_guid` int unsigned NOT NULL COMMENT 'Player who triggered the query',
+  `player_name` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Player name for easy reference',
+  `item_id` int unsigned NOT NULL COMMENT 'Item template ID that failed',
+  `item_guid` int unsigned DEFAULT NULL COMMENT 'Item instance GUID if available',
+  `item_name` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Item name if template exists',
+  `error_type` enum('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Type of failure',
+  `error_detail` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Additional error details',
+  `bag_slot` tinyint unsigned DEFAULT NULL COMMENT 'Bag slot requested',
+  `item_slot` tinyint unsigned DEFAULT NULL COMMENT 'Item slot requested',
+  `timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When error occurred',
+  `resolved` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether issue has been resolved',
+  `resolution_notes` text COLLATE utf8mb4_general_ci COMMENT 'Notes on how issue was fixed',
+  PRIMARY KEY (`log_id`),
+  KEY `idx_item_id` (`item_id`),
+  KEY `idx_error_type` (`error_type`),
+  KEY `idx_timestamp` (`timestamp`),
+  KEY `idx_player` (`player_guid`),
+  KEY `idx_unresolved` (`resolved`,`timestamp`)
+) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von View acore_chars.dc_item_upgrade_missing_items_summary
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `dc_item_upgrade_missing_items_summary` (
+	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
+	`item_name` VARCHAR(1) NULL COMMENT 'Item name if template exists' COLLATE 'utf8mb4_general_ci',
+	`error_type` ENUM('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') NOT NULL COMMENT 'Type of failure' COLLATE 'utf8mb4_general_ci',
+	`occurrence_count` BIGINT NOT NULL,
+	`last_occurrence` DATETIME NULL COMMENT 'When error occurred',
+	`first_occurrence` DATETIME NULL COMMENT 'When error occurred',
+	`affected_players` TEXT NULL COLLATE 'utf8mb4_general_ci'
+);
 
 -- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_stat_scaling
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stat_scaling` (
@@ -1642,7 +1919,28 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   KEY `k_tier` (`tier_id`),
   KEY `k_season` (`season`),
   KEY `k_last_upgraded` (`last_upgraded_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_leaderboard_cache
+CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `leaderboard_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'upgrades, tokens, mythic, pvp, etc.',
+  `season_id` int unsigned NOT NULL DEFAULT '1',
+  `rank` int unsigned NOT NULL,
+  `entity_guid` int unsigned NOT NULL COMMENT 'Player or guild GUID',
+  `entity_type` enum('player','guild') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'player',
+  `entity_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `score` bigint unsigned NOT NULL DEFAULT '0',
+  `secondary_score` bigint unsigned DEFAULT NULL,
+  `cached_at` bigint unsigned NOT NULL,
+  `expires_at` bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_type_season_rank` (`leaderboard_type`,`season_id`,`rank`),
+  KEY `idx_entity` (`entity_guid`,`entity_type`),
+  KEY `idx_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cached leaderboard rankings for fast retrieval';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1795,6 +2093,28 @@ CREATE TABLE IF NOT EXISTS `dc_mythicplus_hud_cache` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_achievements
+CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `achievement_id` int unsigned NOT NULL,
+  `achievement_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `progress` int unsigned NOT NULL DEFAULT '0',
+  `max_progress` int unsigned NOT NULL DEFAULT '1',
+  `completed` tinyint(1) NOT NULL DEFAULT '0',
+  `completed_at` bigint unsigned DEFAULT NULL,
+  `reward_claimed` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_player_achievement` (`player_guid`,`achievement_id`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_achievement_id` (`achievement_id`),
+  KEY `idx_completed` (`completed`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player custom achievement progress';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_player_artifact_discoveries
 CREATE TABLE IF NOT EXISTS `dc_player_artifact_discoveries` (
   `player_guid` int unsigned NOT NULL,
@@ -1894,6 +2214,24 @@ CREATE TABLE IF NOT EXISTS `dc_player_item_upgrades` (
   KEY `k_season` (`season`),
   KEY `k_tier` (`tier_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player item upgrade state and history';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_keystones
+CREATE TABLE IF NOT EXISTS `dc_player_keystones` (
+  `player_guid` int unsigned NOT NULL,
+  `current_keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
+  `highest_completed` tinyint unsigned NOT NULL DEFAULT '0',
+  `weekly_highest` tinyint unsigned NOT NULL DEFAULT '0',
+  `total_runs` int unsigned NOT NULL DEFAULT '0',
+  `successful_runs` int unsigned NOT NULL DEFAULT '0',
+  `failed_runs` int unsigned NOT NULL DEFAULT '0',
+  `last_cancelled` bigint unsigned DEFAULT NULL,
+  `last_updated` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`player_guid`),
+  KEY `idx_keystone_level` (`current_keystone_level` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player M+ keystone progress';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2190,6 +2528,46 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_challenges` (
 CREATE TABLE `dc_recent_upgrades_feed` 
 );
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_respec_history
+CREATE TABLE IF NOT EXISTS `dc_respec_history` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `old_stats` json DEFAULT NULL COMMENT 'Stats before respec',
+  `new_stats` json DEFAULT NULL COMMENT 'Stats after respec',
+  `respec_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'full',
+  `cost_tokens` int unsigned NOT NULL DEFAULT '0',
+  `cost_gold` int unsigned NOT NULL DEFAULT '0',
+  `respec_at` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_item_guid` (`item_guid`),
+  KEY `idx_respec_at` (`respec_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade respec history';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_respec_log
+CREATE TABLE IF NOT EXISTS `dc_respec_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'respec, refund, reset, etc.',
+  `item_entry` int unsigned DEFAULT NULL,
+  `tokens_refunded` int unsigned NOT NULL DEFAULT '0',
+  `gold_refunded` int unsigned NOT NULL DEFAULT '0',
+  `details` text COLLATE utf8mb4_unicode_ci,
+  `logged_at` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_action` (`action`),
+  KEY `idx_logged_at` (`logged_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Respec action audit log';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_reward_transactions
 CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -2275,6 +2653,21 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_spectator_settings
+CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `setting_key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `setting_value` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_player_setting` (`player_guid`,`setting_key`),
+  KEY `idx_player_guid` (`player_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player spectator mode settings';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_tier_conversion_log
 CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2357,6 +2750,30 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_top_upgraders` 
 );
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_upgrade_history
+CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `upgrade_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'tier, stat, socket, enchant, etc.',
+  `old_value` int unsigned DEFAULT NULL,
+  `new_value` int unsigned DEFAULT NULL,
+  `cost_tokens` int unsigned NOT NULL DEFAULT '0',
+  `cost_essence` int unsigned NOT NULL DEFAULT '0',
+  `cost_gold` int unsigned NOT NULL DEFAULT '0',
+  `season_id` int unsigned NOT NULL DEFAULT '1',
+  `upgraded_at` bigint unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_item_guid` (`item_guid`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_upgraded_at` (`upgraded_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete item upgrade history log';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
 
 -- Exportiere Struktur von View acore_chars.dc_upgrade_speed_stats
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
@@ -2735,7 +3152,7 @@ CREATE TABLE IF NOT EXISTS `hlbg_winner_history` (
   KEY `idx_weather` (`weather`) COMMENT 'Weather statistics queries',
   KEY `idx_win_reason` (`win_reason`) COMMENT 'Win condition analysis',
   KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -3261,6 +3678,55 @@ BEGIN
 END//
 DELIMITER ;
 
+-- Exportiere Struktur von Prozedur acore_chars.sp_dc_addon_aggregate_daily
+DELIMITER //
+CREATE PROCEDURE `sp_dc_addon_aggregate_daily`()
+BEGIN
+    DECLARE target_date DATE DEFAULT DATE_SUB(CURDATE(), INTERVAL 1 DAY);
+    
+    INSERT INTO dc_addon_protocol_daily 
+        (date, module, total_requests, total_responses, total_timeouts, unique_players, avg_response_time_ms)
+    SELECT 
+        target_date,
+        module,
+        SUM(CASE WHEN direction = 'C2S' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN direction = 'S2C' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN status = 'timeout' THEN 1 ELSE 0 END),
+        COUNT(DISTINCT guid),
+        AVG(response_time_ms)
+    FROM dc_addon_protocol_log
+    WHERE DATE(timestamp) = target_date
+    GROUP BY module
+    ON DUPLICATE KEY UPDATE
+        total_requests = VALUES(total_requests),
+        total_responses = VALUES(total_responses),
+        total_timeouts = VALUES(total_timeouts),
+        unique_players = VALUES(unique_players),
+        avg_response_time_ms = VALUES(avg_response_time_ms);
+END//
+DELIMITER ;
+
+-- Exportiere Struktur von Prozedur acore_chars.sp_dc_addon_cleanup_logs
+DELIMITER //
+CREATE PROCEDURE `sp_dc_addon_cleanup_logs`(IN days_to_keep INT)
+BEGIN
+    DECLARE deleted_count INT DEFAULT 0;
+    
+    -- Delete old detailed logs (keep aggregated stats)
+    DELETE FROM dc_addon_protocol_log 
+    WHERE timestamp < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
+    
+    SET deleted_count = ROW_COUNT();
+    
+    -- Log the cleanup
+    INSERT INTO dc_addon_protocol_log 
+        (guid, account_id, character_name, direction, module, opcode, opcode_name, data_preview)
+    VALUES 
+        (0, 0, 'SYSTEM', 'S2C', 'CORE', 0xFF, 'CLEANUP', 
+         CONCAT('Deleted ', deleted_count, ' log entries older than ', days_to_keep, ' days'));
+END//
+DELIMITER ;
+
 -- Exportiere Struktur von Prozedur acore_chars.sp_LogChallengeModeEvent
 DELIMITER //
 CREATE PROCEDURE `sp_LogChallengeModeEvent`(
@@ -3397,6 +3863,47 @@ BEGIN
 END//
 DELIMITER ;
 
+-- Exportiere Struktur von View acore_chars.v_dc_addon_module_health
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_dc_addon_module_health` (
+	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)' COLLATE 'utf8mb4_0900_ai_ci',
+	`total_requests_24h` BIGINT NOT NULL,
+	`completed` DECIMAL(23,0) NULL,
+	`timeouts` DECIMAL(23,0) NULL,
+	`errors` DECIMAL(23,0) NULL,
+	`success_rate` DECIMAL(29,2) NULL,
+	`avg_response_ms` DECIMAL(13,2) NULL,
+	`max_response_ms` INT UNSIGNED NULL COMMENT 'Response time in milliseconds (for matched requests)'
+);
+
+-- Exportiere Struktur von View acore_chars.v_dc_addon_player_activity
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_dc_addon_player_activity` (
+	`guid` INT UNSIGNED NOT NULL,
+	`character_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
+	`module` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`total_requests` INT UNSIGNED NULL,
+	`total_responses` INT UNSIGNED NULL,
+	`total_timeouts` INT UNSIGNED NULL,
+	`success_rate` DECIMAL(16,2) NULL,
+	`avg_response_ms` DOUBLE NULL,
+	`last_request` DATETIME NULL
+);
+
+-- Exportiere Struktur von View acore_chars.v_dc_addon_recent_activity
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_dc_addon_recent_activity` (
+	`timestamp` DATETIME NOT NULL,
+	`character_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`direction` ENUM('C2S','S2C') NOT NULL COMMENT 'Client->Server or Server->Client' COLLATE 'utf8mb4_0900_ai_ci',
+	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)' COLLATE 'utf8mb4_0900_ai_ci',
+	`opcode_hex` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`opcode_name` VARCHAR(1) NULL COMMENT 'Human readable opcode name' COLLATE 'utf8mb4_0900_ai_ci',
+	`status` ENUM('pending','completed','timeout','error') NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`response_time_ms` INT UNSIGNED NULL COMMENT 'Response time in milliseconds (for matched requests)',
+	`data_size` INT UNSIGNED NULL COMMENT 'JSON payload size in bytes'
+);
+
 -- Exportiere Struktur von View acore_chars.v_player_heirloom_upgrades
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_player_heirloom_upgrades` (
@@ -3528,6 +4035,11 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_guild_leaderboard` AS s
 ;
 
 -- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `dc_item_upgrade_missing_items_summary`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_item_upgrade_missing_items_summary` AS select `dc_item_upgrade_missing_items`.`item_id` AS `item_id`,max(`dc_item_upgrade_missing_items`.`item_name`) AS `item_name`,`dc_item_upgrade_missing_items`.`error_type` AS `error_type`,count(0) AS `occurrence_count`,max(`dc_item_upgrade_missing_items`.`timestamp`) AS `last_occurrence`,min(`dc_item_upgrade_missing_items`.`timestamp`) AS `first_occurrence`,group_concat(distinct `dc_item_upgrade_missing_items`.`player_name` order by `dc_item_upgrade_missing_items`.`player_name` ASC separator ', ') AS `affected_players` from `dc_item_upgrade_missing_items` where (`dc_item_upgrade_missing_items`.`resolved` = 0) group by `dc_item_upgrade_missing_items`.`item_id`,`dc_item_upgrade_missing_items`.`error_type` order by `occurrence_count` desc,`last_occurrence` desc
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_player_progression_summary`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_player_progression_summary` AS select `p`.`player_guid` AS `player_guid`,`p`.`total_mastery_points` AS `total_mastery_points`,`p`.`mastery_rank` AS `mastery_rank`,`p`.`items_fully_upgraded` AS `items_fully_upgraded`,`p`.`total_upgrades_applied` AS `total_upgrades_applied`,`s`.`essence_earned` AS `essence_earned`,`s`.`tokens_earned` AS `tokens_earned`,`s`.`essence_spent` AS `essence_spent`,`s`.`tokens_spent` AS `tokens_spent`,`s`.`items_upgraded` AS `items_upgraded`,`s`.`season_id` AS `season_id` from (`dc_player_artifact_mastery` `p` left join `dc_player_season_data` `s` on((`s`.`player_guid` = `p`.`player_guid`))) where (`s`.`season_id` = (select `dc_seasons`.`season_id` from `dc_seasons` where (`dc_seasons`.`is_active` = 1) limit 1))
 ;
@@ -3550,6 +4062,21 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_top_upgraders` AS selec
 -- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_upgrade_speed_stats`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_upgrade_speed_stats` AS select `dc_item_upgrade_log`.`player_guid` AS `player_guid`,count(0) AS `total_upgrades`,((count(0) / ((unix_timestamp(max(`dc_item_upgrade_log`.`timestamp`)) - unix_timestamp(min(`dc_item_upgrade_log`.`timestamp`))) + 1)) * 86400) AS `upgrades_per_day`,min(`dc_item_upgrade_log`.`timestamp`) AS `first_upgrade`,max(`dc_item_upgrade_log`.`timestamp`) AS `last_upgrade`,avg((`dc_item_upgrade_log`.`essence_cost` + `dc_item_upgrade_log`.`token_cost`)) AS `average_cost_per_upgrade` from `dc_item_upgrade_log` group by `dc_item_upgrade_log`.`player_guid`
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_dc_addon_module_health`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_module_health` AS select `dc_addon_protocol_log`.`module` AS `module`,count(0) AS `total_requests_24h`,sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) AS `completed`,sum((case when (`dc_addon_protocol_log`.`status` = 'timeout') then 1 else 0 end)) AS `timeouts`,sum((case when (`dc_addon_protocol_log`.`status` = 'error') then 1 else 0 end)) AS `errors`,round(((sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) / count(0)) * 100),2) AS `success_rate`,round(avg(`dc_addon_protocol_log`.`response_time_ms`),2) AS `avg_response_ms`,max(`dc_addon_protocol_log`.`response_time_ms`) AS `max_response_ms` from `dc_addon_protocol_log` where ((`dc_addon_protocol_log`.`timestamp` > (now() - interval 24 hour)) and (`dc_addon_protocol_log`.`direction` = 'C2S')) group by `dc_addon_protocol_log`.`module` order by `total_requests_24h` desc
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_dc_addon_player_activity`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_player_activity` AS select `s`.`guid` AS `guid`,`c`.`name` AS `character_name`,`s`.`module` AS `module`,`s`.`total_requests` AS `total_requests`,`s`.`total_responses` AS `total_responses`,`s`.`total_timeouts` AS `total_timeouts`,round(((`s`.`total_responses` / nullif(`s`.`total_requests`,0)) * 100),2) AS `success_rate`,round(`s`.`avg_response_time_ms`,2) AS `avg_response_ms`,`s`.`last_request` AS `last_request` from (`dc_addon_protocol_stats` `s` left join `characters` `c` on((`c`.`guid` = `s`.`guid`))) order by `s`.`last_request` desc
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_dc_addon_recent_activity`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_recent_activity` AS select `l`.`timestamp` AS `timestamp`,`l`.`character_name` AS `character_name`,`l`.`direction` AS `direction`,`l`.`module` AS `module`,concat('0x',lpad(hex(`l`.`opcode`),2,'0')) AS `opcode_hex`,`l`.`opcode_name` AS `opcode_name`,`l`.`status` AS `status`,`l`.`response_time_ms` AS `response_time_ms`,`l`.`data_size` AS `data_size` from `dc_addon_protocol_log` `l` where (`l`.`timestamp` > (now() - interval 1 hour)) order by `l`.`timestamp` desc limit 100
 ;
 
 -- Entferne temporäre Tabelle und erstelle die eigentliche View

@@ -7,22 +7,22 @@
 -- Date: October 28, 2025
 -- 
 -- Changes from Previous Schema:
--- - REMOVED hlbg_battle_history (duplicate of hlbg_winner_history)
--- - REMOVED hlbg_config (config handled in .conf files)
--- - REMOVED hlbg_affixes (affixes defined in C++ code)
--- - REMOVED hlbg_statistics (can be computed from hlbg_winner_history)
--- - REMOVED hlbg_weather (never existed, data in hlbg_winner_history.weather)
+-- - REMOVED dc_hlbg_battle_history (duplicate of dc_hlbg_winner_history)
+-- - REMOVED dc_hlbg_config (config handled in .conf files)
+-- - REMOVED dc_hlbg_affixes (affixes defined in C++ code)
+-- - REMOVED dc_hlbg_statistics (can be computed from dc_hlbg_winner_history)
+-- - REMOVED hlbg_weather (never existed, data in dc_hlbg_winner_history.weather)
 -- - FIXED database type (all tables now use CharacterDatabase)
 -- - ADDED performance indexes for common queries
--- - KEPT hlbg_winner_history (primary table - 42 code references)
--- - KEPT hlbg_seasons (season management - 2 code references)
--- - KEPT hlbg_player_stats (player tracking - 6 code references, needs integration)
+-- - KEPT dc_hlbg_winner_history (primary table - 42 code references)
+-- - KEPT dc_hlbg_seasons (season management - 2 code references)
+-- - KEPT dc_hlbg_player_stats (player tracking - 6 code references, needs integration)
 -- 
 -- Total Tables: 3 (down from 8 - 62.5% reduction)
 -- =============================================================================
 
 -- =============================================================================
--- TABLE 1: hlbg_winner_history
+-- TABLE 1: dc_hlbg_winner_history
 -- =============================================================================
 -- Purpose: Primary battle history table - stores all battle results
 -- Usage: 42 references across codebase
@@ -30,12 +30,12 @@
 -- Database: CharacterDatabase (player progression data)
 -- =============================================================================
 
-DROP TABLE IF EXISTS `hlbg_winner_history`;
-CREATE TABLE `hlbg_winner_history` (
+DROP TABLE IF EXISTS `dc_hlbg_winner_history`;
+CREATE TABLE `dc_hlbg_winner_history` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
     
     -- Season & Time Tracking
-    `season` SMALLINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Season number (joins with hlbg_seasons)',
+    `season` SMALLINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Season number (joins with dc_hlbg_seasons)',
     `occurred_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Battle end timestamp',
     `duration_seconds` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Battle duration in seconds',
     
@@ -69,21 +69,21 @@ CREATE TABLE `hlbg_winner_history` (
     KEY `idx_season_occurred` (`season`, `occurred_at`) COMMENT 'Composite index for season history'
     
     -- Foreign Key (Optional - uncomment if enforcing referential integrity)
-    -- , CONSTRAINT `fk_hlbg_winner_season` FOREIGN KEY (`season`) REFERENCES `hlbg_seasons` (`season`) ON DELETE CASCADE
+    -- , CONSTRAINT `fk_hlbg_winner_season` FOREIGN KEY (`season`) REFERENCES `dc_hlbg_seasons` (`season`) ON DELETE CASCADE
     
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HLBG Battle History - Primary table for all battle results';
 
 -- =============================================================================
--- TABLE 2: hlbg_seasons
+-- TABLE 2: dc_hlbg_seasons
 -- =============================================================================
 -- Purpose: Season definitions and metadata
--- Usage: 2 references (JOIN queries with hlbg_winner_history)
+-- Usage: 2 references (JOIN queries with dc_hlbg_winner_history)
 -- Files: HL_ScoreboardNPC.cpp, hlbg_addon.cpp
 -- Database: CharacterDatabase (player progression data)
 -- =============================================================================
 
-DROP TABLE IF EXISTS `hlbg_seasons`;
-CREATE TABLE `hlbg_seasons` (
+DROP TABLE IF EXISTS `dc_hlbg_seasons`;
+CREATE TABLE `dc_hlbg_seasons` (
     `season` SMALLINT UNSIGNED NOT NULL COMMENT 'Season number (increments each season)',
     `name` VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Season display name (e.g., "Season 1: Genesis")',
     `start_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start timestamp',
@@ -101,7 +101,7 @@ CREATE TABLE `hlbg_seasons` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HLBG Season Tracking - Season metadata and names';
 
 -- =============================================================================
--- TABLE 3: hlbg_player_stats
+-- TABLE 3: dc_hlbg_player_stats
 -- =============================================================================
 -- Purpose: Player-level statistics (participation, kills, deaths, wins)
 -- Usage: 6 references (UPDATE queries in HLBG_Integration_Helper.cpp)
@@ -112,8 +112,8 @@ CREATE TABLE `hlbg_seasons` (
 -- TODO: Integrate with Scoreboard NPC or .hlbg stats command
 -- =============================================================================
 
-DROP TABLE IF EXISTS `hlbg_player_stats`;
-CREATE TABLE `hlbg_player_stats` (
+DROP TABLE IF EXISTS `dc_hlbg_player_stats`;
+CREATE TABLE `dc_hlbg_player_stats` (
     `player_guid` INT UNSIGNED NOT NULL COMMENT 'Player GUID (unique identifier)',
     `player_name` VARCHAR(12) NOT NULL COMMENT 'Player character name',
     `faction` VARCHAR(16) NOT NULL DEFAULT 'Unknown' COMMENT 'Alliance or Horde',
@@ -144,7 +144,7 @@ CREATE TABLE `hlbg_player_stats` (
 -- DEFAULT DATA: Insert Initial Season
 -- =============================================================================
 
-INSERT INTO `hlbg_seasons` (`season`, `name`, `start_date`, `end_date`, `is_active`, `description`) VALUES
+INSERT INTO `dc_hlbg_seasons` (`season`, `name`, `start_date`, `end_date`, `is_active`, `description`) VALUES
 (1, 'Season 1: Genesis', CURRENT_TIMESTAMP, NULL, 1, 'The first season of Hinterland Battleground - weather-based affixes, custom maps, and 255 PvP action!');
 
 -- =============================================================================
@@ -153,7 +153,7 @@ INSERT INTO `hlbg_seasons` (`season`, `name`, `start_date`, `end_date`, `is_acti
 -- Uncomment below to insert sample battles for testing
 
 /*
-INSERT INTO `hlbg_winner_history` 
+INSERT INTO `dc_hlbg_winner_history` 
     (`season`, `occurred_at`, `duration_seconds`, `zone_id`, `map_id`, `winner_tid`, `win_reason`, 
      `score_alliance`, `score_horde`, `affix`, `weather`, `weather_intensity`) 
 VALUES
@@ -178,12 +178,12 @@ VALUES
 -- SHOW TABLES LIKE 'hlbg%';
 
 -- Verify indexes created
--- SHOW INDEX FROM hlbg_winner_history;
--- SHOW INDEX FROM hlbg_seasons;
--- SHOW INDEX FROM hlbg_player_stats;
+-- SHOW INDEX FROM dc_hlbg_winner_history;
+-- SHOW INDEX FROM dc_hlbg_seasons;
+-- SHOW INDEX FROM dc_hlbg_player_stats;
 
 -- Check default season inserted
--- SELECT * FROM hlbg_seasons WHERE is_active = 1;
+-- SELECT * FROM dc_hlbg_seasons WHERE is_active = 1;
 
 -- =============================================================================
 -- MIGRATION NOTES (If upgrading from old schema)
@@ -193,15 +193,15 @@ VALUES
 IF UPGRADING FROM OLD SCHEMA:
 
 1. BACKUP EXISTING DATA:
-   - mysqldump -u root -p characters hlbg_winner_history > hlbg_backup.sql
-   - mysqldump -u root -p characters hlbg_seasons >> hlbg_backup.sql
-   - mysqldump -u root -p characters hlbg_player_stats >> hlbg_backup.sql
+   - mysqldump -u root -p characters dc_hlbg_winner_history > hlbg_backup.sql
+   - mysqldump -u root -p characters dc_hlbg_seasons >> hlbg_backup.sql
+   - mysqldump -u root -p characters dc_hlbg_player_stats >> hlbg_backup.sql
 
-2. DATA MIGRATION (if hlbg_battle_history exists):
-   -- Copy data from hlbg_battle_history to hlbg_winner_history if needed
+2. DATA MIGRATION (if dc_hlbg_battle_history exists):
+   -- Copy data from dc_hlbg_battle_history to dc_hlbg_winner_history if needed
    -- (Check if battle_history has any unique data not in winner_history)
    
-   INSERT INTO hlbg_winner_history 
+   INSERT INTO dc_hlbg_winner_history 
        (occurred_at, winner_tid, score_alliance, score_horde, affix, duration_seconds)
    SELECT 
        battle_end,
@@ -210,15 +210,15 @@ IF UPGRADING FROM OLD SCHEMA:
        horde_resources,
        affix_id,
        duration_seconds
-   FROM hlbg_battle_history
+   FROM dc_hlbg_battle_history
    WHERE battle_end IS NOT NULL
-   AND id NOT IN (SELECT id FROM hlbg_winner_history);
+   AND id NOT IN (SELECT id FROM dc_hlbg_winner_history);
 
 3. DROP OLD TABLES:
-   DROP TABLE IF EXISTS hlbg_battle_history;
-   DROP TABLE IF EXISTS hlbg_config;
-   DROP TABLE IF EXISTS hlbg_affixes;
-   DROP TABLE IF EXISTS hlbg_statistics;
+   DROP TABLE IF EXISTS dc_hlbg_battle_history;
+   DROP TABLE IF EXISTS dc_hlbg_config;
+   DROP TABLE IF EXISTS dc_hlbg_affixes;
+   DROP TABLE IF EXISTS dc_hlbg_statistics;
 
 4. UPDATE CODE REFERENCES:
    - Search for "WorldDatabase" in HLBG_Integration_Helper.cpp
@@ -226,9 +226,9 @@ IF UPGRADING FROM OLD SCHEMA:
    - Test all queries after migration
 
 5. VERIFY DATA INTEGRITY:
-   SELECT COUNT(*) FROM hlbg_winner_history;
-   SELECT COUNT(*) FROM hlbg_player_stats;
-   SELECT * FROM hlbg_seasons WHERE is_active = 1;
+   SELECT COUNT(*) FROM dc_hlbg_winner_history;
+   SELECT COUNT(*) FROM dc_hlbg_player_stats;
+   SELECT * FROM dc_hlbg_seasons WHERE is_active = 1;
 */
 
 -- =============================================================================
@@ -256,8 +256,8 @@ SELECT
         WHEN 6 THEN 'Fog' 
         ELSE 'None' 
     END AS affix_name
-FROM hlbg_winner_history h
-LEFT JOIN hlbg_seasons s ON h.season = s.season
+FROM dc_hlbg_winner_history h
+LEFT JOIN dc_hlbg_seasons s ON h.season = s.season
 ORDER BY h.occurred_at DESC
 LIMIT 20;
 
@@ -265,8 +265,8 @@ LIMIT 20;
 SELECT 
     CASE winner_tid WHEN 0 THEN 'Alliance' WHEN 1 THEN 'Horde' ELSE 'Draw' END AS winner,
     COUNT(*) AS total_wins,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM hlbg_winner_history), 2) AS win_percentage
-FROM hlbg_winner_history
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM dc_hlbg_winner_history), 2) AS win_percentage
+FROM dc_hlbg_winner_history
 GROUP BY winner_tid;
 
 -- Affix win rate analysis
@@ -284,7 +284,7 @@ SELECT
     SUM(CASE WHEN winner_tid = 1 THEN 1 ELSE 0 END) AS horde_wins,
     SUM(CASE WHEN winner_tid = 2 THEN 1 ELSE 0 END) AS draws,
     COUNT(*) AS total_battles
-FROM hlbg_winner_history h
+FROM dc_hlbg_winner_history h
 GROUP BY h.affix
 ORDER BY h.affix;
 
@@ -303,7 +303,7 @@ SELECT
     SUM(CASE WHEN winner_tid = 1 THEN 1 ELSE 0 END) AS horde_wins,
     AVG(duration_seconds) AS avg_duration,
     COUNT(*) AS total_battles
-FROM hlbg_winner_history h
+FROM dc_hlbg_winner_history h
 GROUP BY h.weather
 ORDER BY h.weather;
 
@@ -318,7 +318,7 @@ SELECT
     total_deaths,
     ROUND(total_kills * 1.0 / NULLIF(total_deaths, 1), 2) AS kd_ratio,
     resources_captured
-FROM hlbg_player_stats
+FROM dc_hlbg_player_stats
 WHERE battles_participated >= 5
 ORDER BY battles_won DESC, win_rate DESC
 LIMIT 20;
@@ -333,8 +333,8 @@ SELECT
     SUM(CASE WHEN h.winner_tid = 1 THEN 1 ELSE 0 END) AS horde_wins,
     SUM(CASE WHEN h.winner_tid = 2 THEN 1 ELSE 0 END) AS draws,
     AVG(h.duration_seconds) AS avg_duration_seconds
-FROM hlbg_seasons s
-LEFT JOIN hlbg_winner_history h ON s.season = h.season
+FROM dc_hlbg_seasons s
+LEFT JOIN dc_hlbg_winner_history h ON s.season = h.season
 GROUP BY s.season, s.name, s.start_date
 ORDER BY s.season DESC;
 */
