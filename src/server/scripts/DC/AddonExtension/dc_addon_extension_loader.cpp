@@ -4,7 +4,7 @@
  * 
  * Loads all addon extension scripts for the DC namespace.
  * 
- * Copyright (C) 2024 Dark Chaos Development Team
+ * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
 // Script declarations
@@ -17,6 +17,7 @@ void AddSC_dc_addon_hotspot();
 void AddSC_dc_addon_hlbg();
 void AddSC_dc_addon_seasons();
 void AddSC_dc_addon_leaderboards();
+void AddSC_dc_addon_welcome();
 
 // Future module handlers:
 // void AddSC_dc_addon_duels();
@@ -36,6 +37,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_hlbg();
     AddSC_dc_addon_seasons();
     AddSC_dc_addon_leaderboards();
+    AddSC_dc_addon_welcome();
     
     // Future module handlers:
     // AddSC_dc_addon_duels();

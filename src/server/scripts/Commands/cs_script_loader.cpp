@@ -63,7 +63,7 @@ void AddSC_cache_commandscript();
 void AddSC_item_commandscript();
 void AddSC_player_settings_commandscript();
 void AddSC_worldstate_commandscript();
-void AddSC_faq_commandscript();
+// void AddSC_faq_commandscript();  // DEPRECATED: FAQ now handled by DC-Welcome addon
 void AddSC_dc_addons_commandscript();
 void AddSC_dc_dungeonquests_commandscript();
 
@@ -118,7 +118,7 @@ void AddCommandsScripts()
     AddSC_item_commandscript();
     AddSC_player_settings_commandscript();
     AddSC_worldstate_commandscript();
-    AddSC_faq_commandscript();
+    // AddSC_faq_commandscript();  // DEPRECATED: FAQ now handled by DC-Welcome addon
     AddSC_dc_addons_commandscript();
     AddSC_dc_dungeonquests_commandscript();
 }

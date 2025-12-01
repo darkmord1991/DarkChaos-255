@@ -71,6 +71,7 @@ namespace DCAddon
         constexpr const char* CORE          = "CORE";   // Handshake, version check
         constexpr const char* HOTSPOT       = "SPOT";   // Hotspot/XP zones
         constexpr const char* LEADERBOARD   = "LBRD";   // Unified leaderboards
+        constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
     }
     
     // ========================================================================
@@ -251,6 +252,23 @@ namespace DCAddon
             constexpr uint8 SMSG_TEST_RESULTS      = 0x15;  // Database test results
             constexpr uint8 SMSG_SEASONS_LIST      = 0x16;  // Available seasons list
             constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response
+        }
+        
+        // Welcome/First-Start opcodes
+        namespace Welcome
+        {
+            constexpr uint8 CMSG_GET_SERVER_INFO   = 0x01;  // Request server configuration
+            constexpr uint8 CMSG_GET_FAQ           = 0x02;  // Request FAQ data
+            constexpr uint8 CMSG_DISMISS_WELCOME   = 0x03;  // User dismissed welcome
+            constexpr uint8 CMSG_MARK_FEATURE_SEEN = 0x04;  // User saw feature intro
+            constexpr uint8 CMSG_GET_WHATS_NEW     = 0x05;  // Request what's new content
+            
+            constexpr uint8 SMSG_SHOW_WELCOME      = 0x10;  // Trigger welcome popup
+            constexpr uint8 SMSG_SERVER_INFO       = 0x11;  // Server configuration
+            constexpr uint8 SMSG_FAQ_DATA          = 0x12;  // FAQ content
+            constexpr uint8 SMSG_FEATURE_UNLOCK    = 0x13;  // Feature unlocked notification
+            constexpr uint8 SMSG_WHATS_NEW         = 0x14;  // What's new content
+            constexpr uint8 SMSG_LEVEL_MILESTONE   = 0x15;  // Level milestone reached
         }
     }
     

@@ -19,6 +19,8 @@
 #   12. Phased Dueling System - Isolated phase duels with stat tracking
 #   13. Addon Communication Protocol - DC addon client/server messaging
 #   14. Unified Leaderboard System - Cross-system leaderboard aggregation
+#   15. Custom Login System - First-login rewards, BoA items, DC integrations
+#   16. DC-Welcome Addon System - First-start experience, FAQ, milestones
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -5098,6 +5100,474 @@ DC.AddonProtocol.RateLimit.Action = 0
 #        Recommended: 0 for production, 1 for debugging
 #
 DC.AddonProtocol.Logging.Enable = 1
+
+
+###########################################################################
+#
+#    SECTION 15: CUSTOM LOGIN SYSTEM (DC-CustomLogin)
+#
+#    Enhanced first-login experience integrating mod-customlogin features
+#    with DarkChaos-255 custom systems.
+#
+#    Based on: https://github.com/Brian-Aldridge/mod-customlogin
+#    Extended with: DC-Welcome addon triggers, Prestige bonuses, Seasonal tokens
+#
+#    Features:
+#    - First-login BoA gear distribution (class-specific heirlooms)
+#    - Starting bags, gold, professions, mounts
+#    - Weapon skills and special abilities
+#    - Reputation configuration
+#    - DC-Welcome addon trigger (shows welcome popup)
+#    - Seasonal starter tokens
+#    - Prestige account-wide bonus application
+#    - Mobile teleporter item
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# General Settings
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.Enable
+#        Description: Master toggle for the Custom Login system
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.Enable = 1
+
+#
+#    DCCustomLogin.Debug
+#        Description: Enable debug logging for custom login operations
+#                     Logs all item grants, spell learns, etc. to server log.
+#        Default:     0 (Disabled)
+#
+DCCustomLogin.Debug = 0
+
+#
+#    DCCustomLogin.Announce
+#        Description: Send welcome message to player on login
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.Announce = 1
+
+#
+#    DCCustomLogin.AnnounceMessage
+#        Description: Welcome message shown to all players on login
+#        Default:     "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
+#
+DCCustomLogin.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
+
+#
+#    DCCustomLogin.PlayerAnnounce
+#        Description: Announce player login/logout in world chat (faction-colored)
+#        Default:     0 (Disabled)
+#
+DCCustomLogin.PlayerAnnounce = 0
+
+# -------------------------------------------------------------------------
+# First Login Rewards - BoA Items
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.BoA
+#        Description: Give new characters Bind-on-Account heirloom items
+#                     Items are class-specific and configured below.
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.BoA = 1
+
+# Class-specific item configuration
+# Format: DCCustomLogin.<ClassName>.<Slot> = <item_id>
+# Available slots: Shoulders, Chest, Trinket, Weapon1, Weapon2, Weapon3
+#
+# Example WotLK Heirloom IDs:
+#   Shoulders: 42949 (Polished Spaulders), 42950 (Champion's), 42984 (Preened)
+#   Chest:     48685 (Polished Breastplate), 48677 (Champion's), 48718 (Preened)
+#   Trinket:   42991 (Swift Hand of Justice)
+#   Weapons:   42943 (Bloodied Arcanite), 42945 (Venerable Dal'Rend)
+
+# Warrior
+DCCustomLogin.Warrior.Shoulders = 42949
+DCCustomLogin.Warrior.Chest = 48685
+DCCustomLogin.Warrior.Trinket = 42991
+DCCustomLogin.Warrior.Weapon1 = 42943
+DCCustomLogin.Warrior.Weapon2 = 0
+DCCustomLogin.Warrior.Weapon3 = 0
+
+# Paladin
+DCCustomLogin.Paladin.Shoulders = 42949
+DCCustomLogin.Paladin.Chest = 48685
+DCCustomLogin.Paladin.Trinket = 42991
+DCCustomLogin.Paladin.Weapon1 = 42943
+DCCustomLogin.Paladin.Weapon2 = 0
+DCCustomLogin.Paladin.Weapon3 = 0
+
+# Hunter
+DCCustomLogin.Hunter.Shoulders = 42950
+DCCustomLogin.Hunter.Chest = 48677
+DCCustomLogin.Hunter.Trinket = 42991
+DCCustomLogin.Hunter.Weapon1 = 42943
+DCCustomLogin.Hunter.Weapon2 = 0
+DCCustomLogin.Hunter.Weapon3 = 0
+
+# Rogue
+DCCustomLogin.Rogue.Shoulders = 42950
+DCCustomLogin.Rogue.Chest = 48677
+DCCustomLogin.Rogue.Trinket = 42991
+DCCustomLogin.Rogue.Weapon1 = 42944
+DCCustomLogin.Rogue.Weapon2 = 42944
+DCCustomLogin.Rogue.Weapon3 = 0
+
+# Priest
+DCCustomLogin.Priest.Shoulders = 42985
+DCCustomLogin.Priest.Chest = 48691
+DCCustomLogin.Priest.Trinket = 42992
+DCCustomLogin.Priest.Weapon1 = 42947
+DCCustomLogin.Priest.Weapon2 = 0
+DCCustomLogin.Priest.Weapon3 = 0
+
+# Death Knight
+DCCustomLogin.DeathKnight.Shoulders = 42949
+DCCustomLogin.DeathKnight.Chest = 48685
+DCCustomLogin.DeathKnight.Trinket = 42991
+DCCustomLogin.DeathKnight.Weapon1 = 42943
+DCCustomLogin.DeathKnight.Weapon2 = 0
+DCCustomLogin.DeathKnight.Weapon3 = 0
+
+# Shaman
+DCCustomLogin.Shaman.Shoulders = 42950
+DCCustomLogin.Shaman.Chest = 48677
+DCCustomLogin.Shaman.Trinket = 42991
+DCCustomLogin.Shaman.Weapon1 = 42948
+DCCustomLogin.Shaman.Weapon2 = 0
+DCCustomLogin.Shaman.Weapon3 = 0
+
+# Mage
+DCCustomLogin.Mage.Shoulders = 42985
+DCCustomLogin.Mage.Chest = 48691
+DCCustomLogin.Mage.Trinket = 42992
+DCCustomLogin.Mage.Weapon1 = 42947
+DCCustomLogin.Mage.Weapon2 = 0
+DCCustomLogin.Mage.Weapon3 = 0
+
+# Warlock
+DCCustomLogin.Warlock.Shoulders = 42985
+DCCustomLogin.Warlock.Chest = 48691
+DCCustomLogin.Warlock.Trinket = 42992
+DCCustomLogin.Warlock.Weapon1 = 42947
+DCCustomLogin.Warlock.Weapon2 = 0
+DCCustomLogin.Warlock.Weapon3 = 0
+
+# Druid
+DCCustomLogin.Druid.Shoulders = 42984
+DCCustomLogin.Druid.Chest = 48718
+DCCustomLogin.Druid.Trinket = 42992
+DCCustomLogin.Druid.Weapon1 = 42948
+DCCustomLogin.Druid.Weapon2 = 0
+DCCustomLogin.Druid.Weapon3 = 0
+
+# -------------------------------------------------------------------------
+# Starting Gold
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.StartingGold.Enable
+#        Description: Grant starting currency to new characters
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.StartingGold.Enable = 1
+
+#
+#    DCCustomLogin.StartingGold.Gold/Silver/Copper
+#        Description: Amount of currency to grant
+#        Default:     10g 0s 0c
+#
+DCCustomLogin.StartingGold.Gold = 10
+DCCustomLogin.StartingGold.Silver = 0
+DCCustomLogin.StartingGold.Copper = 0
+
+# -------------------------------------------------------------------------
+# Starting Mount
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.StartingMount.Enable
+#        Description: Grant a starting mount and riding skill to new characters
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.StartingMount.Enable = 1
+
+#
+#    DCCustomLogin.StartingMount.Spell
+#        Description: Mount spell ID to teach
+#                     Examples: 458 (Brown Horse), 6653 (Dire Wolf), 32235 (Swift Nether Drake)
+#        Default:     6653 (Dire Wolf - both factions can use)
+#
+DCCustomLogin.StartingMount.Spell = 6653
+
+#
+#    DCCustomLogin.StartingMount.Skill
+#        Description: Riding skill spell ID to teach
+#                     33388 = Apprentice (60%)
+#                     33391 = Journeyman (100%)
+#                     34090 = Expert (150%)
+#                     34091 = Artisan (280%)
+#                     90265 = Master (310%)
+#        Default:     33388 (Apprentice Riding)
+#
+DCCustomLogin.StartingMount.Skill = 33388
+
+# -------------------------------------------------------------------------
+# Starting Professions
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.StartingProfessions.Enable
+#        Description: Teach professions to new characters on first login
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.StartingProfessions.Enable = 1
+
+#
+#    DCCustomLogin.StartingProfessions.List
+#        Description: Comma-separated list of profession spell IDs to teach
+#                     Common IDs: 129 (First Aid), 185 (Cooking), 186 (Mining)
+#                                 182 (Herbalism), 356 (Fishing)
+#        Default:     "129,185,356" (First Aid, Cooking, Fishing)
+#
+DCCustomLogin.StartingProfessions.List = "129,185,356"
+
+# -------------------------------------------------------------------------
+# Starting Bags
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.Bags.Default
+#        Description: Comma-separated list of bag item IDs to equip (slots 19-22)
+#                     Common IDs: 41599 (Frostweave 20-slot), 21841 (Netherweave 16-slot)
+#        Default:     "21841,21841,21841,21841" (4x Netherweave Bag)
+#
+DCCustomLogin.Bags.Default = "21841,21841,21841,21841"
+
+#
+#    DCCustomLogin.Bags.Hunter/Warlock/Rogue
+#        Description: Class-specific bag (quiver, soul bag, etc.)
+#                     Set to 0 to disable class bag.
+#        Default:     0 (Disabled for all classes)
+#
+DCCustomLogin.Bags.Hunter = 0
+DCCustomLogin.Bags.Warlock = 0
+DCCustomLogin.Bags.Rogue = 0
+
+# -------------------------------------------------------------------------
+# Weapon Skills
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.Skills
+#        Description: Grant additional weapon skills to new characters
+#        Default:     0 (Disabled)
+#
+DCCustomLogin.Skills = 0
+
+#
+#    DCCustomLogin.Skills.List
+#        Description: Global skill spell list for all classes (comma-separated)
+#                     Example: 674 (Dual Wield), 1180 (Daggers), 196 (Axes)
+#        Default:     ""
+#
+DCCustomLogin.Skills.List = ""
+
+# Class-specific skill overrides (use these instead of global list)
+# DCCustomLogin.Skills.Warrior = "674,1180"
+# DCCustomLogin.Skills.Hunter = "674,1180"
+# etc.
+
+# -------------------------------------------------------------------------
+# Special Abilities
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.SpecialAbility
+#        Description: Grant special spells, titles, or mounts on first login
+#        Default:     0 (Disabled)
+#
+DCCustomLogin.SpecialAbility = 0
+
+#
+#    DCCustomLogin.SpecialAbility.Spell1/Spell2
+#        Description: Custom spells to teach (e.g., teleport spell)
+#        Default:     0 (None)
+#
+DCCustomLogin.SpecialAbility.Spell1 = 0
+DCCustomLogin.SpecialAbility.Spell2 = 0
+
+#
+#    DCCustomLogin.SpecialAbility.Title
+#        Description: Title ID to grant (see CharTitles.dbc)
+#        Default:     0 (None)
+#
+DCCustomLogin.SpecialAbility.Title = 0
+
+#
+#    DCCustomLogin.SpecialAbility.Mount
+#        Description: Special mount spell to teach
+#        Default:     0 (None)
+#
+DCCustomLogin.SpecialAbility.Mount = 0
+
+# -------------------------------------------------------------------------
+# Reputation Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.Reputation
+#        Description: Set custom starting reputation for new characters
+#        Default:     0 (Disabled)
+#
+DCCustomLogin.Reputation = 0
+
+# Reputation values (amount to set):
+#   0 = Neutral (0)
+#   3000 = Friendly (3000)
+#   9000 = Honored (9000)
+#   21000 = Revered (21000)
+#   42000 = Exalted (42000)
+
+# Alliance Factions
+# DCCustomLogin.Reputation.Stormwind = 0
+# DCCustomLogin.Reputation.Ironforge = 0
+# DCCustomLogin.Reputation.Darnassus = 0
+# DCCustomLogin.Reputation.Gnomeregan = 0
+# DCCustomLogin.Reputation.Exodar = 0
+
+# Horde Factions
+# DCCustomLogin.Reputation.Orgrimmar = 0
+# DCCustomLogin.Reputation.ThunderBluff = 0
+# DCCustomLogin.Reputation.Undercity = 0
+# DCCustomLogin.Reputation.DarkspearTrolls = 0
+# DCCustomLogin.Reputation.Silvermoon = 0
+
+# Neutral Factions
+# DCCustomLogin.Reputation.ArgentDawn = 0
+# DCCustomLogin.Reputation.CenarionCircle = 0
+# DCCustomLogin.Reputation.TimbermawHold = 0
+
+# WotLK Factions
+# DCCustomLogin.Reputation.ArgentCrusade = 0
+# DCCustomLogin.Reputation.KirinTor = 0
+# DCCustomLogin.Reputation.TheWyrmrestAccord = 0
+# DCCustomLogin.Reputation.TheSonsOfHodir = 0
+
+# -------------------------------------------------------------------------
+# DC System Integrations
+# -------------------------------------------------------------------------
+
+#
+#    DCCustomLogin.TriggerWelcome
+#        Description: Trigger DC-Welcome addon on first login
+#                     Shows welcome popup with server info, FAQ, getting started.
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.TriggerWelcome = 1
+
+#
+#    DCCustomLogin.SeasonalTokens.Enable
+#        Description: Grant seasonal starter tokens to new characters
+#                     Token type is determined by the current active season.
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.SeasonalTokens.Enable = 1
+
+#
+#    DCCustomLogin.SeasonalTokens.Amount
+#        Description: Number of seasonal tokens to grant
+#        Default:     100
+#
+DCCustomLogin.SeasonalTokens.Amount = 100
+
+#
+#    DCCustomLogin.PrestigeBonuses
+#        Description: Apply account-wide prestige bonuses to new characters
+#                     If account has prestige levels, bonuses apply immediately.
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.PrestigeBonuses = 1
+
+#
+#    DCCustomLogin.MobileTeleporter.Enable
+#        Description: Grant mobile teleporter item to new characters
+#                     Allows instant travel to major locations.
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.MobileTeleporter.Enable = 1
+
+#
+#    DCCustomLogin.MobileTeleporter.ItemId
+#        Description: Item ID of the mobile teleporter to grant
+#                     Must be a valid item in item_template that summons companion NPC
+#        Default:     0 (Set to your mobile teleporter item ID)
+#
+DCCustomLogin.MobileTeleporter.ItemId = 0
+
+
+###########################################################################
+#
+#    SECTION 16: DC-WELCOME ADDON SYSTEM
+#
+#    First-start experience addon that provides:
+#    - Welcome popup on first login with server info
+#    - FAQ system (replaces .faq command)
+#    - Level milestone notifications
+#    - Progressive feature introduction
+#    - Server branding (logo, Discord, website)
+#
+###########################################################################
+
+#
+#    DCWelcome.Enable
+#        Description: Master toggle for the DC-Welcome system
+#        Default:     1 (Enabled)
+#
+DCWelcome.Enable = 1
+
+#
+#    DCWelcome.ServerName
+#        Description: Server name shown in welcome popup
+#        Default:     "DarkChaos-255"
+#
+DCWelcome.ServerName = "DarkChaos-255"
+
+#
+#    DCWelcome.DiscordUrl
+#        Description: Discord invite URL shown to players
+#        Default:     "discord.gg/pNddMEMbb2"
+#
+DCWelcome.DiscordUrl = "discord.gg/pNddMEMbb2"
+
+#
+#    DCWelcome.WebsiteUrl
+#        Description: Website URL shown to players
+#        Default:     "darkchaos255.com"
+#
+DCWelcome.WebsiteUrl = "darkchaos255.com"
+
+#
+#    DCWelcome.WikiUrl
+#        Description: Wiki/documentation URL shown to players
+#        Default:     "wiki.darkchaos255.com"
+#
+DCWelcome.WikiUrl = "wiki.darkchaos255.com"
+
+#
+#    DCWelcome.Progressive.Enable
+#        Description: Enable progressive feature introduction
+#                     Shows feature unlock notifications at milestone levels
+#                     (10, 20, 58, 80, 100, 130, 160, 200, 255)
+#        Default:     1 (Enabled)
+#
+DCWelcome.Progressive.Enable = 1
+
 
 ###########################################################################
 # END OF CONFIGURATION FILE
