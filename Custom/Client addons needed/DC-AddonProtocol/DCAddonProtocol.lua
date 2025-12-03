@@ -75,6 +75,7 @@ DC.ModuleNames = {
     MPLS = "Mythic+",
     SEAS = "Seasonal",
     LBRD = "Leaderboards",
+    WELC = "Welcome",
 }
 
 -- Log a request
@@ -423,6 +424,7 @@ DC.Module = {
     SEASONAL = "SEAS",
     RESTORE_XP = "RXP",
     LEADERBOARD = "LBRD",
+    WELCOME = "WELC",
 }
 
 -- Opcode definitions for each module
@@ -483,6 +485,19 @@ DC.Opcode = {
         SMSG_CATEGORIES = 0x11,
         SMSG_MY_RANK = 0x12,
         SMSG_ERROR = 0x1F,
+    },
+    Welcome = {
+        CMSG_GET_SERVER_INFO = 0x01,
+        CMSG_GET_FAQ = 0x02,
+        CMSG_DISMISS = 0x03,
+        CMSG_MARK_FEATURE_SEEN = 0x04,
+        CMSG_GET_WHATS_NEW = 0x05,
+        SMSG_SHOW_WELCOME = 0x10,
+        SMSG_SERVER_INFO = 0x11,
+        SMSG_FAQ_DATA = 0x12,
+        SMSG_FEATURE_UNLOCK = 0x13,
+        SMSG_WHATS_NEW = 0x14,
+        SMSG_LEVEL_MILESTONE = 0x15,
     },
 }
 
@@ -576,6 +591,20 @@ DC.Leaderboard = {
     end,
     -- Force refresh
     Refresh = function() DC:Request("LBRD", 0x04, {}) end,
+}
+
+-- Welcome/First-Start API
+DC.Welcome = {
+    -- Request server configuration
+    GetServerInfo = function() DC:Request("WELC", 0x01, {}) end,
+    -- Request FAQ data (future: dynamic FAQ from server)
+    GetFAQ = function() DC:Request("WELC", 0x02, {}) end,
+    -- Notify server that user dismissed welcome
+    Dismiss = function() DC:Request("WELC", 0x03, {}) end,
+    -- Mark a feature introduction as seen
+    MarkFeatureSeen = function(feature) DC:Request("WELC", 0x04, { feature = feature }) end,
+    -- Request What's New content
+    GetWhatsNew = function() DC:Request("WELC", 0x05, {}) end,
 }
 
 local frame = CreateFrame("Frame")

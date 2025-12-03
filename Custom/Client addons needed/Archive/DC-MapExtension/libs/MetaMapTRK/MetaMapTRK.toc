@@ -1,9 +1,0 @@
-## Interface: 30300
-## Title: MetaMapTRK
-## Notes: Tracker module for Herbs and Ores etc.
-## Author: Urshurak
-## SavedVariables: TRK_Data, TRK_Errata, TRK_Excludes
-## SavedVariablesPerCharacter: TRK_Options
-## Dependencies: MetaMap
-## LoadOnDemand: 1
-MetaMapTRK.xml

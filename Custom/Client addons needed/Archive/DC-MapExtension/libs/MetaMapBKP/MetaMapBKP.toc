@@ -1,8 +1,0 @@
-## Interface: 30300
-## Title: MetaMapBKP
-## Author: MetaHawk
-## Notes: Backup module for data backup and restore.
-## Dependencies: MetaMap
-## LoadOnDemand: 1
-## SavedVariables: BKP_MetaMap_Notes, BKP_MetaMap_Lines, BKP_WKB_Data, BKP_QST_QuestBase, BKP_TRK_Data
-MetaMapBKP.xml
