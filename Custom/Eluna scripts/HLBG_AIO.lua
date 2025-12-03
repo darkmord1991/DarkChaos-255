@@ -845,15 +845,15 @@ function Handlers.Request(player, what, arg1, arg2, arg3, arg4, arg5, arg6, arg7
             end
             local tsv = table.concat(buf, "\n")
             AIO.Handle(player, "HLBG", "HistoryStr", tsv, page, per, total, col, dir)
-            -- DEBUG: also send a short plain chat broadcast to the player with a TSV sample so clients
+            -- DEBUG (disabled): also send a short plain chat broadcast to the player with a TSV sample so clients
             -- that don't decode AIO properly still receive a visible sample for debugging.
-            local ok, err = pcall(function()
-                if player and player.SendBroadcastMessage then
-                    local sample = (tsv and #tsv>200) and tsv:sub(1,200) or tsv
-                    sample = sanitize_for_chat(sample)
-                    player:SendBroadcastMessage("[HLBG_DBG_TSV] "..tostring(sample or ""))
-                end
-            end)
+            -- local ok, err = pcall(function()
+            --     if player and player.SendBroadcastMessage then
+            --         local sample = (tsv and #tsv>200) and tsv:sub(1,200) or tsv
+            --         sample = sanitize_for_chat(sample)
+            --         player:SendBroadcastMessage("[HLBG_DBG_TSV] "..tostring(sample or ""))
+            --     end
+            -- end)
             -- Debug ping to confirm client receive path
             AIO.Handle(player, "HLBG", "PONG")
             -- Lightweight debug string (avoid large tables) so client can confirm receipt

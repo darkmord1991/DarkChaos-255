@@ -1873,6 +1873,19 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_costs` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_world.dc_hlbg_seasons
+CREATE TABLE IF NOT EXISTS `dc_hlbg_seasons` (
+  `season` smallint unsigned NOT NULL COMMENT 'Season number',
+  `name` varchar(64) NOT NULL DEFAULT 'Season' COMMENT 'Display name',
+  `start_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start',
+  `end_date` datetime DEFAULT NULL COMMENT 'Season end (NULL = ongoing)',
+  `is_active` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 = current active season',
+  `description` text COMMENT 'Season description',
+  PRIMARY KEY (`season`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Season configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_world.dc_hotspots_active
 CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
   `id` int unsigned NOT NULL COMMENT 'Unique hotspot ID',
@@ -2128,23 +2141,14 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
 
 -- Exportiere Struktur von Tabelle acore_world.dc_mplus_seasons
 CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
-  `season_id` int unsigned NOT NULL,
-  `label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Season display name',
-  `is_active` tinyint(1) NOT NULL DEFAULT '0',
-  `start_ts` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Season start timestamp',
-  `end_ts` bigint unsigned DEFAULT '0' COMMENT 'Season end timestamp (0 = ongoing)',
-  `featured_dungeons` json DEFAULT NULL COMMENT 'Array of featured dungeon IDs: [574, 575, 576, ...]',
-  `affix_schedule` json DEFAULT NULL COMMENT 'Weekly affix rotation: [{week: 1, affixPairId: 1}, ...]',
-  `reward_curve` json DEFAULT NULL COMMENT 'Level-based rewards: {1: {ilvl: 216, tokens: 30}, ...}',
-  `scaling_config` json DEFAULT NULL COMMENT 'Difficulty scaling: {baseHealth: 1.0, baseDamage: 1.0, ...}',
-  `description` text COLLATE utf8mb4_unicode_ci,
-  `theme_color` varchar(7) COLLATE utf8mb4_unicode_ci DEFAULT '#00ff00' COMMENT 'Hex color for UI',
-  `icon_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`season_id`),
-  KEY `idx_active` (`is_active`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='M+ specific season config (affixes, dungeons, reward curves)';
+  `season` smallint unsigned NOT NULL COMMENT 'Season number',
+  `name` varchar(64) NOT NULL DEFAULT 'Season' COMMENT 'Display name',
+  `start_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start',
+  `end_date` datetime DEFAULT NULL COMMENT 'Season end (NULL = ongoing)',
+  `is_active` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 = current active season',
+  `description` text COMMENT 'Season description',
+  PRIMARY KEY (`season`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='M+ Season configuration';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -7355,158 +7359,6 @@ CREATE TABLE IF NOT EXISTS `worldmapoverlay_dbc` (
   `HitRectRight` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_disallowed_buffs
-CREATE TABLE IF NOT EXISTS `zone_difficulty_disallowed_buffs` (
-  `MapID` int NOT NULL DEFAULT '0',
-  `DisallowedBuffs` text,
-  `Enabled` tinyint DEFAULT '1',
-  `Comment` text,
-  PRIMARY KEY (`MapID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_hardmode_ai
-CREATE TABLE IF NOT EXISTS `zone_difficulty_hardmode_ai` (
-  `CreatureEntry` int NOT NULL DEFAULT '0',
-  `Chance` tinyint NOT NULL DEFAULT '100',
-  `Spell` int NOT NULL,
-  `Spellbp0` int NOT NULL DEFAULT '0',
-  `Spellbp1` int NOT NULL DEFAULT '0',
-  `Spellbp2` int NOT NULL DEFAULT '0',
-  `Target` tinyint NOT NULL DEFAULT '1',
-  `TargetArg` tinyint NOT NULL DEFAULT '0',
-  `Delay` int NOT NULL DEFAULT '1',
-  `Cooldown` int NOT NULL DEFAULT '1',
-  `Repetitions` tinyint NOT NULL DEFAULT '0',
-  `Enabled` tinyint DEFAULT '1',
-  `Comment` text
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_hardmode_creatureoverrides
-CREATE TABLE IF NOT EXISTS `zone_difficulty_hardmode_creatureoverrides` (
-  `CreatureEntry` int NOT NULL DEFAULT '0',
-  `HPModifier` float NOT NULL DEFAULT '1',
-  `Enabled` tinyint DEFAULT '1',
-  `Comment` text
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_hardmode_instance_data
-CREATE TABLE IF NOT EXISTS `zone_difficulty_hardmode_instance_data` (
-  `MapID` int NOT NULL DEFAULT '0',
-  `SourceEntry` int NOT NULL,
-  `Override` int NOT NULL DEFAULT '0',
-  `InstanceType` tinyint NOT NULL DEFAULT '0',
-  PRIMARY KEY (`MapID`,`SourceEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_hardmode_rewards
-CREATE TABLE IF NOT EXISTS `zone_difficulty_hardmode_rewards` (
-  `ContentType` int NOT NULL DEFAULT '0',
-  `ItemType` int NOT NULL DEFAULT '0',
-  `Entry` int NOT NULL DEFAULT '0',
-  `Price` int NOT NULL DEFAULT '0',
-  `Enchant` int NOT NULL DEFAULT '0',
-  `EnchantSlot` tinyint NOT NULL DEFAULT '0',
-  `Achievement` int NOT NULL DEFAULT '0',
-  `Enabled` tinyint DEFAULT '0',
-  `Comment` text,
-  PRIMARY KEY (`ContentType`,`Entry`,`Enchant`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_info
-CREATE TABLE IF NOT EXISTS `zone_difficulty_info` (
-  `MapID` int NOT NULL DEFAULT '0',
-  `PhaseMask` int NOT NULL DEFAULT '0',
-  `HealingNerfValue` float NOT NULL DEFAULT '1',
-  `AbsorbNerfValue` float NOT NULL DEFAULT '1',
-  `MeleeDmgBuffValue` float NOT NULL DEFAULT '1',
-  `SpellDmgBuffValue` float NOT NULL DEFAULT '1',
-  `Enabled` tinyint NOT NULL DEFAULT '1',
-  `Comment` text,
-  PRIMARY KEY (`MapID`,`PhaseMask`,`Enabled`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_mythicmode_ai
-CREATE TABLE IF NOT EXISTS `zone_difficulty_mythicmode_ai` (
-  `CreatureEntry` int NOT NULL DEFAULT '0',
-  `Chance` tinyint NOT NULL DEFAULT '100',
-  `Spell` int NOT NULL,
-  `Spellbp0` int NOT NULL DEFAULT '0',
-  `Spellbp1` int NOT NULL DEFAULT '0',
-  `Spellbp2` int NOT NULL DEFAULT '0',
-  `Target` tinyint NOT NULL DEFAULT '1',
-  `TargetArg` int NOT NULL DEFAULT '0',
-  `TargetArg2` int NOT NULL DEFAULT '0',
-  `Delay` int NOT NULL DEFAULT '1',
-  `Cooldown` int NOT NULL DEFAULT '1',
-  `Repetitions` tinyint NOT NULL DEFAULT '0',
-  `Enabled` tinyint DEFAULT '1',
-  `TriggeredCast` tinyint DEFAULT '1',
-  `Comment` text
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_mythicmode_creatureoverrides
-CREATE TABLE IF NOT EXISTS `zone_difficulty_mythicmode_creatureoverrides` (
-  `CreatureEntry` int NOT NULL DEFAULT '0',
-  `HPModifier` float NOT NULL DEFAULT '1',
-  `HPModifierNormal` float NOT NULL DEFAULT '1',
-  `Enabled` tinyint unsigned DEFAULT '1',
-  `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_mythicmode_instance_data
-CREATE TABLE IF NOT EXISTS `zone_difficulty_mythicmode_instance_data` (
-  `MapID` int NOT NULL DEFAULT '0',
-  `SourceEntry` int NOT NULL,
-  `Override` int NOT NULL DEFAULT '0',
-  `InstanceType` tinyint NOT NULL DEFAULT '0',
-  PRIMARY KEY (`MapID`,`SourceEntry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_mythicmode_rewards
-CREATE TABLE IF NOT EXISTS `zone_difficulty_mythicmode_rewards` (
-  `ContentType` int NOT NULL DEFAULT '0',
-  `ItemType` int NOT NULL DEFAULT '0',
-  `Entry` int NOT NULL DEFAULT '0',
-  `Price` int NOT NULL DEFAULT '0',
-  `Enchant` int NOT NULL DEFAULT '0',
-  `EnchantSlot` tinyint NOT NULL DEFAULT '0',
-  `Achievement` int NOT NULL DEFAULT '0',
-  `Enabled` tinyint DEFAULT '0',
-  `Comment` text,
-  PRIMARY KEY (`ContentType`,`Entry`,`Enchant`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.zone_difficulty_spelloverrides
-CREATE TABLE IF NOT EXISTS `zone_difficulty_spelloverrides` (
-  `SpellID` int NOT NULL DEFAULT '0',
-  `MapId` int NOT NULL DEFAULT '0',
-  `NerfValue` float NOT NULL DEFAULT '1',
-  `ModeMask` tinyint DEFAULT '1',
-  `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

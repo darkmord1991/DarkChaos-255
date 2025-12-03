@@ -995,9 +995,9 @@ namespace
         if (result)
             return result->Fetch()[0].Get<uint32>();
         
-        // Fallback: try dc_mplus_seasons (uses 'id' not 'season_id')
+        // Fallback: try dc_mplus_seasons (uses 'season' as primary key)
         result = WorldDatabase.Query(
-            "SELECT id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY id DESC LIMIT 1");
+            "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY season DESC LIMIT 1");
         
         if (result)
             return result->Fetch()[0].Get<uint32>();
@@ -1327,11 +1327,11 @@ namespace
             } while (result->NextRow());
         }
         
-        // Also try M+ seasons if we got nothing (dc_mplus_seasons uses 'id' not 'season_id')
+        // Also try M+ seasons if we got nothing (uses 'season' as primary key)
         if (first)
         {
             result = WorldDatabase.Query(
-                "SELECT id, is_active FROM dc_mplus_seasons ORDER BY id DESC LIMIT 10");
+                "SELECT season, is_active FROM dc_mplus_seasons ORDER BY season DESC LIMIT 10");
             
             if (result)
             {

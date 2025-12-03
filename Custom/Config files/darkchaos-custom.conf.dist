@@ -2006,114 +2006,6 @@ SeasonalRewards.VaultIntegration = 1
 #
 SeasonalRewards.SeasonEndBehavior = 0
 
-# -------------------------------------------------------------------------
-# Extended Features (Loot Suppression, Cancellation, Countdown, Teleportation)
-# -------------------------------------------------------------------------
-
-#
-#    MythicPlus.SuppressTrashLoot
-#        Description: Prevent non-final bosses from dropping loot in Mythic+ dungeons (retail-like behavior)
-#        Default:     1 (enabled)
-#                     0 (disabled - all creatures drop loot)
-#
-
-MythicPlus.SuppressTrashLoot = 1
-
-#
-#    MythicPlus.CancellationTimeout
-#        Description: Time in seconds before an abandoned run is automatically cancelled
-#                     When all players leave a Mythic+ instance, this timer begins
-#                     After timeout, the run is failed and keystone downgraded
-#        Default:     180 (3 minutes)
-#        Range:       60-1800 seconds (1-30 minutes)
-#
-
-MythicPlus.CancellationTimeout = 180
-
-#
-#    MythicPlus.CountdownDuration
-#        Description: Countdown duration in seconds before a Mythic+ run begins
-#                     Gives players time to prepare after keystone activation
-#                     Announcements at key intervals (10/5/4/3/2/1 seconds)
-#        Default:     10 seconds
-#        Range:       0-60 seconds (0 = instant start, no countdown)
-#
-
-MythicPlus.CountdownDuration = 10
-
-#
-#    MythicPlus.TeleportToEntrance
-#        Description: Teleport all group members to dungeon entrance when keystone is activated
-#                     Uses existing areatrigger_teleport table (no custom database table needed)
-#        Default:     1 (enabled)
-#                     0 (disabled - players stay at keystone location)
-#
-
-MythicPlus.TeleportToEntrance = 1
-
-#
-#    MythicPlus.AllowManualCancellation
-#        Description: Allow group members to vote to cancel runs with .mplus cancel command
-#                     Cancellation requires MythicPlus.CancellationVotesRequired votes
-#                     Cancellation downgrades keystone by 1 level (minimum +2)
-#        Default:     1 (enabled)
-#                     0 (disabled - only auto-cancellation on timeout)
-#
-
-MythicPlus.AllowManualCancellation = 1
-
-#
-#    MythicPlus.CancellationVotesRequired
-#        Description: Number of group members required to vote to cancel a run
-#                     Any group member can start a vote, but this many must agree
-#                     Prevents single-player trolling while allowing group consensus
-#        Default:     2 (minimum 2 players must vote)
-#        Range:       1-5 (1 = any player can cancel, 5 = full group required)
-#
-
-MythicPlus.CancellationVotesRequired = 2
-
-#
-#    MythicPlus.CancellationVoteTimeout
-#        Description: Time in seconds before cancellation votes are reset
-#                     If votes don't reach required threshold within this time, they expire
-#                     Prevents lingering votes from old cancel attempts
-#        Default:     60 (1 minute)
-#        Range:       30-300 seconds
-#
-
-MythicPlus.CancellationVoteTimeout = 60
-
-#
-#    MythicPlus.MinimumKeystoneLevel
-#        Description: Minimum keystone level when downgrading from failures/cancellations
-#                     Prevents keystones from going below this level
-#        Default:     2
-#        Range:       1-25
-#
-
-MythicPlus.MinimumKeystoneLevel = 2
-
-#
-#    MythicPlus.AnnounceCancellation
-#        Description: Announce to entire instance when a run is cancelled
-#        Default:     1 (enabled - broadcasts to all players in instance)
-#                     0 (disabled - only voters notified)
-#
-
-MythicPlus.AnnounceCancellation = 1
-
-#
-#    MythicPlus.CountdownAnnounceIntervals
-#        Description: Comma-separated list of countdown intervals to announce (in seconds)
-#                     Only intervals less than CountdownDuration will be used
-#        Default:     "10,5,4,3,2,1"
-#        Examples:    "30,15,10,5,3,1" for longer countdowns
-#                     "5,3,2,1" for shorter announcements
-#
-
-MythicPlus.CountdownAnnounceIntervals = "10,5,4,3,2,1"
-
 ###########################################################################
 # -------------------------------------------------------------------------
 
@@ -5478,6 +5370,15 @@ DCCustomLogin.TriggerWelcome = 1
 #        Default:     1 (Enabled)
 #
 DCCustomLogin.SeasonalTokens.Enable = 1
+
+#
+#    DCCustomLogin.SeasonalTokens.ItemId
+#        Description: Item ID of the seasonal token to grant
+#                     Set to 0 to disable token granting.
+#                     Should be a valid item in item_template.
+#        Default:     0 (Disabled - set to your season token item ID)
+#
+DCCustomLogin.SeasonalTokens.ItemId = 0
 
 #
 #    DCCustomLogin.SeasonalTokens.Amount

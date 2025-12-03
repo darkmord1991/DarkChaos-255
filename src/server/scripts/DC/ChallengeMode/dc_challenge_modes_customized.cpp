@@ -293,7 +293,11 @@ void ChallengeModes::RefreshChallengeAuras(Player* player)
         {
             ++activeModeCount;
             if (!player->HasAura(config.auraId))
+            {
                 player->CastSpell(player, config.auraId, true);
+                LOG_DEBUG("dc.challenge", "ChallengeMode: Applied aura {} ({}) to player {}", 
+                    config.auraId, config.name, player->GetName());
+            }
         }
         else if (player->HasAura(config.auraId))
         {
@@ -591,30 +595,103 @@ public:
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
 
-        // Show challenge mode selection menu
+        // Check which challenge modes are already active for this player
+        bool hasHardcore = sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player);
+        bool hasSemiHardcore = sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player);
+        bool hasSelfCrafted = sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player);
+        bool hasItemQuality = sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player);
+        bool hasSlowXP = sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player);
+        bool hasVerySlowXP = sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player);
+        bool hasQuestXPOnly = sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player);
+        bool hasIronMan = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player);
+        
+        // XP modes are mutually exclusive
+        bool hasAnyXPMode = hasSlowXP || hasVerySlowXP || hasQuestXPOnly;
+        
+        // Iron Man includes Hardcore, Self-Crafted, and Item Quality - blocks those individually
+        // Hardcore and Semi-Hardcore are mutually exclusive
+
+        // Show challenge mode selection menu with mutual exclusivity
         if (sChallengeModes->challengeEnabled(SETTING_HARDCORE))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF0000[Hardcore Mode]|r - Death is permanent", GOSSIP_SENDER_MAIN, SETTING_HARDCORE);
+        {
+            if (hasHardcore)
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00FF00[Hardcore Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasSemiHardcore || hasIronMan)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Hardcore Mode]|r - Unavailable (conflicts with active mode)", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF0000[Hardcore Mode]|r - Death is permanent", GOSSIP_SENDER_MAIN, SETTING_HARDCORE);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_SEMI_HARDCORE))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF8800[Semi-Hardcore Mode]|r - Severe death penalty", GOSSIP_SENDER_MAIN, SETTING_SEMI_HARDCORE);
+        {
+            if (hasSemiHardcore)
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00FF00[Semi-Hardcore Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasHardcore || hasIronMan)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Semi-Hardcore Mode]|r - Unavailable (conflicts with active mode)", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFF8800[Semi-Hardcore Mode]|r - Severe death penalty", GOSSIP_SENDER_MAIN, SETTING_SEMI_HARDCORE);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_SELF_CRAFTED))
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ffff[Self-Crafted Mode]|r - Only use crafted gear", GOSSIP_SENDER_MAIN, SETTING_SELF_CRAFTED);
+        {
+            if (hasSelfCrafted)
+                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00FF00[Self-Crafted Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasIronMan)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Self-Crafted Mode]|r - Included in Iron Man", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ffff[Self-Crafted Mode]|r - Only use crafted gear", GOSSIP_SENDER_MAIN, SETTING_SELF_CRAFTED);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_ITEM_QUALITY_LEVEL))
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffaaaaaa[Item Quality Restriction]|r - White/gray items only", GOSSIP_SENDER_MAIN, SETTING_ITEM_QUALITY_LEVEL);
+        {
+            if (hasItemQuality)
+                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00FF00[Item Quality Restriction]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasIronMan)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Item Quality Restriction]|r - Included in Iron Man", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffaaaaaa[Item Quality Restriction]|r - White/gray items only", GOSSIP_SENDER_MAIN, SETTING_ITEM_QUALITY_LEVEL);
+        }
 
+        // XP modes - only one can be active
         if (sChallengeModes->challengeEnabled(SETTING_SLOW_XP_GAIN))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff8888ff[Slow XP Gain]|r - 50% XP rate", GOSSIP_SENDER_MAIN, SETTING_SLOW_XP_GAIN);
+        {
+            if (hasSlowXP)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00FF00[Slow XP Gain]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasVerySlowXP || hasQuestXPOnly)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Slow XP Gain]|r - Another XP mode is active", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff8888ff[Slow XP Gain]|r - 50% XP rate", GOSSIP_SENDER_MAIN, SETTING_SLOW_XP_GAIN);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_VERY_SLOW_XP_GAIN))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff4444ff[Very Slow XP Gain]|r - 25% XP rate", GOSSIP_SENDER_MAIN, SETTING_VERY_SLOW_XP_GAIN);
+        {
+            if (hasVerySlowXP)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00FF00[Very Slow XP Gain]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasSlowXP || hasQuestXPOnly)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Very Slow XP Gain]|r - Another XP mode is active", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff4444ff[Very Slow XP Gain]|r - 25% XP rate", GOSSIP_SENDER_MAIN, SETTING_VERY_SLOW_XP_GAIN);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_QUEST_XP_ONLY))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff88[Quest XP Only]|r - No XP from kills", GOSSIP_SENDER_MAIN, SETTING_QUEST_XP_ONLY);
+        {
+            if (hasQuestXPOnly)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00FF00[Quest XP Only]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasSlowXP || hasVerySlowXP)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Quest XP Only]|r - Another XP mode is active", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff88[Quest XP Only]|r - No XP from kills", GOSSIP_SENDER_MAIN, SETTING_QUEST_XP_ONLY);
+        }
 
         if (sChallengeModes->challengeEnabled(SETTING_IRON_MAN))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man Mode]|r - Ultimate challenge", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
+        {
+            if (hasIronMan)
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00FF00[Iron Man Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasHardcore || hasSemiHardcore || hasSelfCrafted || hasItemQuality)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Iron Man Mode]|r - Conflicts with active challenge modes", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man Mode]|r - Ultimate challenge", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
+        }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
@@ -821,6 +898,79 @@ public:
                 return true;
             }
 
+            // Iron Man conflicts with Hardcore, Semi-Hardcore, Self-Crafted, and Item Quality (it includes these)
+            if (setting == SETTING_IRON_MAN)
+            {
+                bool hasConflict = sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player);
+                if (hasConflict)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Iron Man includes Hardcore, Self-Crafted,", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "and Item Quality restrictions.", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "You already have one of these active!", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                    SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                    return true;
+                }
+            }
+
+            // Cannot enable individual modes if Iron Man is active
+            if ((setting == SETTING_HARDCORE || setting == SETTING_SEMI_HARDCORE || 
+                 setting == SETTING_SELF_CRAFTED || setting == SETTING_ITEM_QUALITY_LEVEL) &&
+                sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player))
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Iron Man mode is already active!", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "It includes this challenge mode.", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                return true;
+            }
+
+            // XP modes are mutually exclusive
+            if (setting == SETTING_SLOW_XP_GAIN || setting == SETTING_VERY_SLOW_XP_GAIN || setting == SETTING_QUEST_XP_ONLY)
+            {
+                bool hasOtherXPMode = false;
+                std::string conflictName;
+                if (setting != SETTING_SLOW_XP_GAIN && sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player))
+                {
+                    hasOtherXPMode = true;
+                    conflictName = "Slow XP Gain";
+                }
+                else if (setting != SETTING_VERY_SLOW_XP_GAIN && sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player))
+                {
+                    hasOtherXPMode = true;
+                    conflictName = "Very Slow XP Gain";
+                }
+                else if (setting != SETTING_QUEST_XP_ONLY && sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player))
+                {
+                    hasOtherXPMode = true;
+                    conflictName = "Quest XP Only";
+                }
+
+                if (hasOtherXPMode)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Only one XP modification mode can be active.", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, conflictName + " is already enabled!", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                    SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                    return true;
+                }
+            }
+
             // Show confirmation dialog
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== FINAL CONFIRMATION ===|r", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
@@ -848,6 +998,7 @@ public:
             sChallengeModes->RefreshChallengeAuras(player);
             
             std::string title = GetChallengeTitle(setting);
+            std::string activationMsg = "|cff00ff00Challenge Mode Activated:|r " + title;
             
             // Success message
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff00=== CHALLENGE ACTIVATED ===|r", GOSSIP_SENDER_MAIN, 9999);
@@ -859,7 +1010,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Challenge Mode Activated:|r %s", title.c_str());
+            ChatHandler(player->GetSession()).PSendSysMessage("%s", activationMsg.c_str());
             
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
