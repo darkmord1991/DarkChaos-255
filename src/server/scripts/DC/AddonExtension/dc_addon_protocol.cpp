@@ -301,7 +301,8 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
 }
 
 // Log S2C (Server to Client) message to database
-static void LogS2CMessage(Player* player, const std::string& payload)
+// Note: Currently unused but kept for future debugging/logging features
+[[maybe_unused]] static void LogS2CMessage(Player* player, const std::string& payload)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
         return;

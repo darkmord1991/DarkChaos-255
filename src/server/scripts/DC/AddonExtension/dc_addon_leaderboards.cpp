@@ -764,9 +764,13 @@ namespace
             
             uint32 items = fields[2].Get<uint32>();
             uint64 totalGold = fields[3].Get<uint64>();  // In copper
-            uint32 upgrades = fields[4].Get<uint32>();
-            uint32 skinned = fields[5].Get<uint32>();
-            uint64 vendorGold = fields[6].Get<uint64>();
+            // Future: These fields are queried but not yet exposed in the UI
+            // uint32 upgrades = fields[4].Get<uint32>();
+            // uint32 skinned = fields[5].Get<uint32>();
+            // uint64 vendorGold = fields[6].Get<uint64>();
+            (void)fields[4];  // upgrades - reserved for future use
+            (void)fields[5];  // skinned - reserved for future use
+            (void)fields[6];  // vendorGold - reserved for future use
             
             // Quality breakdown for looted items
             uint32 qPoor = fields[7].Get<uint32>();

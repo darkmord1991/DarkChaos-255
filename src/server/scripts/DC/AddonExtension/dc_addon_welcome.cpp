@@ -51,7 +51,7 @@ namespace DCWelcome
         // Server -> Client
         constexpr uint8 SMSG_SHOW_WELCOME        = 0x10;
         constexpr uint8 SMSG_SERVER_INFO         = 0x11;
-        constexpr uint8 SMSG_FAQ_DATA            = 0x12;
+        // constexpr uint8 SMSG_FAQ_DATA         = 0x12;  // Future: Dynamic FAQ from DB
         constexpr uint8 SMSG_FEATURE_UNLOCK      = 0x13;
         constexpr uint8 SMSG_WHATS_NEW           = 0x14;
         constexpr uint8 SMSG_LEVEL_MILESTONE     = 0x15;
@@ -61,7 +61,7 @@ namespace DCWelcome
     namespace Config
     {
         // Welcome system
-        constexpr const char* ENABLED = "DCWelcome.Enabled";
+        constexpr const char* ENABLED = "DCWelcome.Enable";
         constexpr const char* SERVER_NAME = "DCWelcome.ServerName";
         constexpr const char* DISCORD_URL = "DCWelcome.DiscordUrl";
         constexpr const char* WEBSITE_URL = "DCWelcome.WebsiteUrl";
@@ -69,9 +69,10 @@ namespace DCWelcome
         
         // Progressive introduction
         constexpr const char* PROGRESSIVE_ENABLED = "DCWelcome.Progressive.Enabled";
-        constexpr const char* LEVEL_10_MESSAGE = "DCWelcome.Progressive.Level10.Message";
-        constexpr const char* LEVEL_20_MESSAGE = "DCWelcome.Progressive.Level20.Message";
-        constexpr const char* LEVEL_80_MESSAGE = "DCWelcome.Progressive.Level80.Message";
+        // Future: Load custom messages from config
+        // constexpr const char* LEVEL_10_MESSAGE = "DCWelcome.Progressive.Level10.Message";
+        // constexpr const char* LEVEL_20_MESSAGE = "DCWelcome.Progressive.Level20.Message";
+        // constexpr const char* LEVEL_80_MESSAGE = "DCWelcome.Progressive.Level80.Message";
     }
     
     // Level milestones for progressive introduction
@@ -108,8 +109,8 @@ namespace DCWelcome
         uint32 seasonId = 1;
         std::string seasonName = "Season 1";
         
-        // Query current season from database
-        QueryResult result = CharacterDatabase.Query("SELECT id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
+        // Query current season from database (dc_mplus_seasons is in WorldDatabase)
+        QueryResult result = WorldDatabase.Query("SELECT season_id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
         if (result)
         {
             Field* fields = result->Fetch();
@@ -139,7 +140,8 @@ namespace DCWelcome
         uint32 seasonId = 1;
         std::string seasonName = "Season 1";
         
-        QueryResult result = CharacterDatabase.Query("SELECT id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
+        // Query current season from database (dc_mplus_seasons is in WorldDatabase)
+        QueryResult result = WorldDatabase.Query("SELECT season_id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
         if (result)
         {
             Field* fields = result->Fetch();
@@ -196,18 +198,18 @@ namespace DCWelcome
     // Message Handlers
     // =======================================================================
     
-    void HandleGetServerInfo(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetServerInfo(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         SendServerInfo(player);
     }
     
-    void HandleGetFAQ(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetFAQ(Player* /*player*/, const DCAddon::ParsedMessage& /*msg*/)
     {
         // For now, FAQ is client-side only
         // Future: Load FAQ from database for dynamic updates
     }
     
-    void HandleDismissWelcome(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleDismissWelcome(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         if (!player)
             return;
@@ -243,7 +245,7 @@ namespace DCWelcome
         );
     }
     
-    void HandleGetWhatsNew(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetWhatsNew(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -281,24 +283,32 @@ class DCWelcome_PlayerScript : public PlayerScript
 public:
     DCWelcome_PlayerScript() : PlayerScript("DCWelcome_PlayerScript") { }
     
-    // Called on first login (new character)
-    void OnFirstLogin(Player* player) override
+    // Called when player logs in
+    void OnPlayerLogin(Player* player) override
     {
         if (!player || !sConfigMgr->GetOption<bool>(DCWelcome::Config::ENABLED, true))
             return;
         
-        // Delay welcome popup to allow UI to load
-        player->GetScheduler().Schedule(3s, [player](TaskContext /*context*/)
+        // Check if this is a first login (new character - total played time is 0)
+        if (player->GetTotalPlayedTime() == 0)
         {
-            if (player && player->GetSession())
-            {
-                DCWelcome::SendShowWelcome(player);
-            }
-        });
+            // This is effectively a first login - show welcome popup
+            DCWelcome::SendShowWelcome(player);
+            return;
+        }
+        
+        // Check if player has dismissed welcome
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT dismissed_at FROM dc_player_welcome WHERE guid = {}",
+            player->GetGUID().GetCounter()
+        );
+        
+        // Always send server info on login (for version updates, season changes, etc.)
+        DCWelcome::SendServerInfo(player);
     }
     
     // Called when player levels up
-    void OnLevelChanged(Player* player, uint8 oldLevel) override
+    void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         if (!player || !sConfigMgr->GetOption<bool>(DCWelcome::Config::PROGRESSIVE_ENABLED, true))
             return;
@@ -310,46 +320,10 @@ public:
         {
             if (newLevel == milestone.level && oldLevel < milestone.level)
             {
-                // Small delay to not interrupt level up celebration
-                player->GetScheduler().Schedule(2s, [player, level = milestone.level](TaskContext /*context*/)
-                {
-                    if (player && player->GetSession())
-                    {
-                        DCWelcome::SendLevelMilestone(player, level);
-                    }
-                });
+                DCWelcome::SendLevelMilestone(player, newLevel);
                 break;
             }
         }
-    }
-    
-    // Called when player logs in (not first time)
-    void OnLogin(Player* player) override
-    {
-        if (!player || !sConfigMgr->GetOption<bool>(DCWelcome::Config::ENABLED, true))
-            return;
-        
-        // Check if player has dismissed welcome
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT dismissed_at FROM dc_player_welcome WHERE guid = {}",
-            player->GetGUID().GetCounter()
-        );
-        
-        if (!result)
-        {
-            // First time logging in with this character post-creation
-            // Or welcome screen was reset
-            // Don't auto-show on subsequent logins, let client handle it
-        }
-        
-        // Always send server info on login (for version updates, season changes, etc.)
-        player->GetScheduler().Schedule(2s, [player](TaskContext /*context*/)
-        {
-            if (player && player->GetSession())
-            {
-                DCWelcome::SendServerInfo(player);
-            }
-        });
     }
 };
 

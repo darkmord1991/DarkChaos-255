@@ -35,7 +35,6 @@
 #include "CharacterDatabase.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
-#include "DCAddonNamespace.h"
 #include <sstream>
 #include <map>
 #include <vector>
@@ -460,8 +459,8 @@ namespace DCCustomLogin
         
         uint32 amount = sConfigMgr->GetOption<uint32>(Config::DC_SEASONAL_TOKENS_AMOUNT, 100);
         
-        // Query current season token item
-        QueryResult result = CharacterDatabase.Query(
+        // Query current season token item (dc_mplus_seasons is in WorldDatabase)
+        QueryResult result = WorldDatabase.Query(
             "SELECT reward_token_item FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
         
         if (result)
@@ -590,7 +589,7 @@ class DCCustomLogin_PlayerScript : public PlayerScript
 public:
     DCCustomLogin_PlayerScript() : PlayerScript("DCCustomLogin_PlayerScript") { }
     
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!sConfigMgr->GetOption<bool>(DCCustomLogin::Config::ENABLE, true))
             return;
@@ -631,11 +630,11 @@ public:
                 ss << "|cffFFFFFF[|cffFF0000 Horde |cffFFFFFF]:|cff4CFF00 "
                    << player->GetName() << "|cffFFFFFF has come online.";
             }
-            sWorld->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str());
+            ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
         }
     }
     
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         bool playerAnnounce = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::PLAYER_ANNOUNCE, false);
         if (playerAnnounce)
@@ -651,7 +650,7 @@ public:
                 ss << "|cffFFFFFF[|cffFF0000 Horde |cffFFFFFF]|cff4CFF00 "
                    << player->GetName() << "|cffFFFFFF has left the game.";
             }
-            sWorld->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str());
+            ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
         }
     }
 };
