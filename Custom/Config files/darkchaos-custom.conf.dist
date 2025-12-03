@@ -5550,14 +5550,14 @@ DCWelcome.DiscordUrl = "discord.gg/pNddMEMbb2"
 #        Description: Website URL shown to players
 #        Default:     "darkchaos255.com"
 #
-DCWelcome.WebsiteUrl = "darkchaos255.com"
+DCWelcome.WebsiteUrl = "https://github.com/darkmord1991/DarkChaos-255"
 
 #
 #    DCWelcome.WikiUrl
 #        Description: Wiki/documentation URL shown to players
 #        Default:     "wiki.darkchaos255.com"
 #
-DCWelcome.WikiUrl = "wiki.darkchaos255.com"
+DCWelcome.WikiUrl = "https://github.com/darkmord1991/DarkChaos-255"
 
 #
 #    DCWelcome.Progressive.Enable

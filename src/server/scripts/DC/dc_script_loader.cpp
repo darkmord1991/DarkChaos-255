@@ -15,6 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Log.h"
+#include <exception>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FORWARD DECLARATIONS - DC Script Functions
@@ -32,9 +34,9 @@ void AddSC_flightmasters();                   // AC\ac_flightmasters.cpp
 void AddSC_jadeforest_flightmaster();         // Jadeforest\jadeforest_flightmaster.cpp
 void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cpp
 
-// --- Map Extension ---
-void AddSC_cs_gps_test();                     // MapExtension\cs_gps_test.cpp
-void AddSC_PlayerScript_MapExtension();       // MapExtension\PlayerScript_MapExtension.cpp
+// --- Map Extension (DISABLED - requires AIO which is not compiled) ---
+// void AddSC_cs_gps_test();                     // MapExtension\cs_gps_test.cpp
+// void AddSC_PlayerScript_MapExtension();       // MapExtension\PlayerScript_MapExtension.cpp
 
 // --- Heirloom System ---
 void AddSC_heirloom_scaling_255();            // heirloom_scaling_255.cpp
@@ -104,14 +106,17 @@ void AddSC_SeasonalRewardCommands();          // Seasons\SeasonalRewardCommands.
 void AddSC_dc_phased_duels();                 // PhasedDuels\dc_phased_duels.cpp
 
 // --- Dungeon Quest System (Loaded Last) ---
-void AddSC_DungeonQuestSystem();              // DungeonQuests\DungeonQuestSystem.cpp
-void AddSC_DungeonQuestPhasing();             // DungeonQuests\DungeonQuestPhasing.cpp
-void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\DungeonQuestMasterFollower.cpp
-void AddSC_npc_dungeon_quest_master();        // DungeonQuests\npc_dungeon_quest_master.cpp
-void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\npc_dungeon_quest_daily_weekly.cpp
+void AddSC_DungeonQuestSystem();              // DungeonQuests\\DungeonQuestSystem.cpp
+void AddSC_DungeonQuestPhasing();             // DungeonQuests\\DungeonQuestPhasing.cpp
+void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\\DungeonQuestMasterFollower.cpp
+void AddSC_npc_dungeon_quest_master();        // DungeonQuests\\npc_dungeon_quest_master.cpp
+void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\\npc_dungeon_quest_daily_weekly.cpp
 
 // --- Addon Extension System ---
-void AddDCAddonExtensionScripts();            // AddonExtension\dc_addon_extension_loader.cpp
+void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extension_loader.cpp
+
+// --- Integration System (First-Start, Custom Login) ---
+void AddSC_dc_firststart();                   // Integration\\dc_firststart.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -144,10 +149,10 @@ void AddDCScripts()
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // MAP EXTENSION & GPS
+    // MAP EXTENSION & GPS (DISABLED - requires AIO which is not compiled)
     // ═══════════════════════════════════════════════════════════════════════
-    AddSC_cs_gps_test();
-    AddSC_PlayerScript_MapExtension();
+    // AddSC_cs_gps_test();
+    // AddSC_PlayerScript_MapExtension();
 
     // ═══════════════════════════════════════════════════════════════════════
     // HEIRLOOM SYSTEM
@@ -518,6 +523,22 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Addon Extension: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Addon Extension");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIRST-START SYSTEM (Custom Login, Welcome Experience)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> First-Start System (Custom Login, Welcome)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_firststart();
+        LOG_INFO("scripts", ">>   ✓ First-start experience loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in First-Start: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in First-Start");
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 

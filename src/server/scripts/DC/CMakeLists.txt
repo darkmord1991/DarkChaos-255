@@ -62,7 +62,7 @@ set(SCRIPTS_DC_AC
     HinterlandBG/HLBG_Queue_AIO_Extension.cpp
     HinterlandBG/HLBG_AIO_Handlers.cpp
     AIO/aio_bridge.cpp
-    MapExtension/cs_gps_test.cpp
+    # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled
 )
 
 # DC HinterlandBG split implementations (config, rewards, reset, afk)
@@ -189,6 +189,12 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_hlbg.cpp
     AddonExtension/dc_addon_seasons.cpp
     AddonExtension/dc_addon_leaderboards.cpp
+    AddonExtension/dc_addon_welcome.cpp
+)
+
+# DC First Start System - First-start experience, login system
+set(SCRIPTS_DC_FirstStart
+    FirstStart/dc_firststart.cpp
 )
 
 set(SCRIPTS_DC_ItemUpgrade
@@ -220,6 +226,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_DungeonEnhancement}
     ${SCRIPTS_DC_Jadeforest}
     ${SCRIPTS_DC_AddonExtension}
+    ${SCRIPTS_DC_FirstStart}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

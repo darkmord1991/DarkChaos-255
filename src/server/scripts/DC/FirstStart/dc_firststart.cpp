@@ -459,25 +459,24 @@ namespace DCCustomLogin
         
         uint32 amount = sConfigMgr->GetOption<uint32>(Config::DC_SEASONAL_TOKENS_AMOUNT, 100);
         
-        // Query current season token item (dc_mplus_seasons is in WorldDatabase)
-        QueryResult result = WorldDatabase.Query(
-            "SELECT reward_token_item FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
+        // Get the seasonal token item ID from config (since dc_mplus_seasons uses JSON for rewards)
+        // The reward_curve JSON contains rewards per key level, not a simple token item ID
+        // So we use a config option for the starter token item instead
+        uint32 tokenItemId = sConfigMgr->GetOption<uint32>("DCCustomLogin.SeasonalTokens.ItemId", 0);
         
-        if (result)
+        if (tokenItemId > 0)
         {
-            Field* fields = result->Fetch();
-            uint32 tokenItemId = fields[0].Get<uint32>();
+            player->AddItem(tokenItemId, amount);
+            if (debug)
+                LOG_INFO("module", "[DCCustomLogin] Granted {} seasonal tokens (item {}) to {}", 
+                         amount, tokenItemId, player->GetName());
             
-            if (tokenItemId > 0)
-            {
-                player->AddItem(tokenItemId, amount);
-                if (debug)
-                    LOG_INFO("module", "[DCCustomLogin] Granted {} seasonal tokens (item {}) to {}", 
-                             amount, tokenItemId, player->GetName());
-                
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Season]:|r You received |cfffff000%u|r seasonal starter tokens!", amount);
-            }
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cff00ff00[Season]:|r You received |cfffff000%u|r seasonal starter tokens!", amount);
+        }
+        else if (debug)
+        {
+            LOG_WARN("module", "[DCCustomLogin] SeasonalTokens.ItemId not configured, skipping token grant");
         }
     }
     

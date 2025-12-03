@@ -34,8 +34,8 @@ namespace DarkChaos
                 }
             }
             
-            // Fallback to M+ specific season table (backward compatibility)
-            QueryResult result = WorldDatabase.Query("SELECT season_id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY start_ts DESC LIMIT 1");
+            // Fallback to M+ specific season table (backward compatibility - uses 'id' not 'season_id')
+            QueryResult result = WorldDatabase.Query("SELECT id FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY start_ts DESC LIMIT 1");
             if (result)
             {
                 uint32 seasonId = (*result)[0].Get<uint32>();

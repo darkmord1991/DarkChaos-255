@@ -110,7 +110,8 @@ namespace DCWelcome
         std::string seasonName = "Season 1";
         
         // Query current season from database (dc_mplus_seasons is in WorldDatabase)
-        QueryResult result = WorldDatabase.Query("SELECT season_id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
+        // Note: Table uses 'id' not 'season_id', and 'name' not 'label'
+        QueryResult result = WorldDatabase.Query("SELECT id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
         if (result)
         {
             Field* fields = result->Fetch();
@@ -141,7 +142,8 @@ namespace DCWelcome
         std::string seasonName = "Season 1";
         
         // Query current season from database (dc_mplus_seasons is in WorldDatabase)
-        QueryResult result = WorldDatabase.Query("SELECT season_id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
+        // Note: Table uses 'id' not 'season_id', and 'name' not 'label'
+        QueryResult result = WorldDatabase.Query("SELECT id, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
         if (result)
         {
             Field* fields = result->Fetch();
