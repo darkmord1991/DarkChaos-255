@@ -4558,3 +4558,23 @@ DC_EarlyInitFrame:SetScript("OnEvent", function(self, event, ...)
 		return;
 	end
 end);
+
+-- =============================================================================
+-- Chat Filter to hide DC protocol messages from chat
+-- =============================================================================
+-- In 3.3.5a, we use ChatFrame_AddMessageEventFilter to intercept and hide messages
+local function DC_ChatFilter(self, event, message, ...)
+	if message then
+		-- Hide DC protocol messages from appearing in chat
+		if string.find(message, "^DCUPGRADE_") or 
+		   string.find(message, "^DCHEIRLOOM_") or
+		   string.find(message, "^DC_ITEMCHECK") then
+			-- Return true to block the message, and pass along all arguments
+			return true
+		end
+	end
+	return false, message, ...
+end
+
+-- Register the filter for system messages (where server sends protocol messages)
+ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", DC_ChatFilter)

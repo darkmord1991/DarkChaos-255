@@ -399,8 +399,8 @@ function HLBG.UpdateHUDVisibility()
         end
         -- Don't use _lastStatus as a fallback - it keeps HUD visible after leaving zone
         shouldShow = inHinterlands or inBattleground
-        -- DEBUG: Log visibility decision
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        -- DEBUG: Log visibility decision (only if debug mode is enabled)
+        if DCHLBGDB and DCHLBGDB.debugMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local zone = GetRealZoneText and GetRealZoneText() or "unknown"
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[HUD Visibility]|r Zone=%s inHinterlands=%s inBG=%s shouldShow=%s",
                 zone, tostring(inHinterlands), tostring(inBattleground), tostring(shouldShow)))

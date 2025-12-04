@@ -118,6 +118,9 @@ void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extens
 // --- Integration System (First-Start, Custom Login) ---
 void AddSC_dc_firststart();                   // Integration\\dc_firststart.cpp
 
+// --- Cross-System Integration Framework ---
+void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
+
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
@@ -539,6 +542,25 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in First-Start: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in First-Start");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CROSS-SYSTEM INTEGRATION FRAMEWORK (Loaded Last - Coordinates All Systems)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Cross-System Integration Framework");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_cross_system_scripts();
+        LOG_INFO("scripts", ">>   ✓ Cross-System framework loaded");
+        LOG_INFO("scripts", ">>   ✓ Session context management active");
+        LOG_INFO("scripts", ">>   ✓ Event bus ready for system coordination");
+        LOG_INFO("scripts", ">>   ✓ Unified reward distributor active");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Cross-System Framework: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Cross-System Framework");
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 

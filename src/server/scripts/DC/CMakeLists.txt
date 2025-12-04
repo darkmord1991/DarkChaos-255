@@ -197,6 +197,15 @@ set(SCRIPTS_DC_FirstStart
     FirstStart/dc_firststart.cpp
 )
 
+# DC Cross-System Integration Framework
+set(SCRIPTS_DC_CrossSystem
+    CrossSystem/SessionContext.cpp
+    CrossSystem/EventBus.cpp
+    CrossSystem/RewardDistributor.cpp
+    CrossSystem/CrossSystemManager.cpp
+    CrossSystem/CrossSystemScripts.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -227,6 +236,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Jadeforest}
     ${SCRIPTS_DC_AddonExtension}
     ${SCRIPTS_DC_FirstStart}
+    ${SCRIPTS_DC_CrossSystem}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

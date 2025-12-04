@@ -1,0 +1,21 @@
+## Interface: 30300
+## Title: DC-Welcome
+## Notes: First-login welcome, XP bar for 80+, title fix, addons hub, and seasons tracker for DarkChaos-255
+## Author: DarkChaos-255
+## Version: 1.3.0
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: AIO_Client
+## SavedVariables: DCWelcomeDB
+
+## Core modules
+Localization.lua
+Core.lua
+AddonsPanel.lua
+WelcomeFrame.lua
+FAQ.lua
+MinimapButton.lua
+
+## Integrated utility modules (previously standalone addons)
+TitleFix.lua
+RestoreXP.lua
+Seasons.lua

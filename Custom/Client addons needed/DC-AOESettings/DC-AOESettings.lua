@@ -299,6 +299,9 @@ end
 -- ============================================================
 -- DC Handler Registration (called on PLAYER_ENTERING_WORLD/PLAYER_LOGIN)
 -- ============================================================
+local _lastSyncTime = 0
+local _syncDebounce = 2  -- Ignore syncs within 2 seconds of each other
+
 function addon:RegisterDCHandlers(DC)
     if _handlersRegistered then return end
     if not DC then return end
@@ -316,6 +319,11 @@ function addon:RegisterDCHandlers(DC)
             return
         end
         addon.ignoreSync = false
+        
+        -- Debounce duplicate sync messages (server may send multiple during login)
+        local now = GetTime()
+        local showMessage = (now - _lastSyncTime) > _syncDebounce
+        _lastSyncTime = now
         
         local args = {...}
         
@@ -344,7 +352,10 @@ function addon:RegisterDCHandlers(DC)
         
         addon:SaveSettingsLocal()
         addon:UpdateUI()
-        addon:Print("Settings synced from server.", true)
+        -- Only show sync message if not a duplicate (debounced)
+        if showMessage then
+            addon:Print("Settings synced from server.", true)
+        end
     end)
     
     -- Handle stats response (opcode 0x10 = SMSG_STATS)
@@ -547,7 +558,7 @@ function addon:HandleServerMessage(message)
         
         self:SaveSettingsLocal()
         self:UpdateUI()
-        self:Print("Settings synced from server.", true)
+        -- Note: Don't print here - the RegisterHandler callback already prints
         
     elseif msgType == "SAVED" then
         self:Print("Settings saved to server!", true)

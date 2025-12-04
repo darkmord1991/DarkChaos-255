@@ -1053,104 +1053,65 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
 
 -- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_daily
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
   `date` date NOT NULL,
-  `module` varchar(8) NOT NULL,
-  `total_requests` int unsigned DEFAULT '0',
-  `total_responses` int unsigned DEFAULT '0',
-  `total_timeouts` int unsigned DEFAULT '0',
-  `unique_players` int unsigned DEFAULT '0',
+  `module` varchar(8) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `total_c2s` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total client-to-server messages',
+  `total_s2c` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total server-to-client messages',
+  `unique_players` int unsigned NOT NULL DEFAULT '0' COMMENT 'Distinct player count',
+  `error_count` int unsigned NOT NULL DEFAULT '0',
   `avg_response_time_ms` float DEFAULT '0',
-  `peak_hour` tinyint unsigned DEFAULT NULL COMMENT 'Hour with most requests (0-23)',
-  `peak_requests` int unsigned DEFAULT '0',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `idx_date_module` (`date`,`module`),
-  KEY `idx_date` (`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Daily aggregated protocol statistics';
+  `peak_hour` tinyint unsigned DEFAULT NULL COMMENT 'Hour with most traffic (0-23)',
+  PRIMARY KEY (`date`,`module`),
+  KEY `idx_date` (`date`),
+  KEY `idx_module` (`module`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily aggregated statistics for trend analysis';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
 -- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_log
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `account_id` int unsigned NOT NULL,
-  `character_name` varchar(32) NOT NULL,
-  `direction` enum('C2S','S2C') NOT NULL COMMENT 'Client->Server or Server->Client',
-  `module` varchar(8) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)',
-  `opcode` tinyint unsigned NOT NULL,
-  `opcode_name` varchar(32) DEFAULT NULL COMMENT 'Human readable opcode name',
-  `data_size` int unsigned DEFAULT '0' COMMENT 'JSON payload size in bytes',
-  `data_preview` varchar(255) DEFAULT NULL COMMENT 'First 255 chars of JSON data',
-  `response_time_ms` int unsigned DEFAULT NULL COMMENT 'Response time in milliseconds (for matched requests)',
-  `status` enum('pending','completed','timeout','error') DEFAULT 'pending',
-  `error_message` varchar(255) DEFAULT NULL,
-  `session_id` varchar(64) DEFAULT NULL COMMENT 'Unique session identifier',
+  `character_name` varchar(48) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `direction` enum('C2S','S2C') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Client to Server or Server to Client',
+  `request_type` enum('STANDARD','JSON','AIO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'STANDARD' COMMENT 'Protocol type: STANDARD (colon-delim), JSON, or AIO (Rochet2)',
+  `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)',
+  `opcode` tinyint unsigned NOT NULL COMMENT 'Message opcode within module',
+  `data_size` int unsigned NOT NULL DEFAULT '0' COMMENT 'Size of payload in bytes',
+  `data_preview` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'First 255 chars of payload for debugging',
+  `status` enum('pending','completed','error','timeout') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `error_message` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Error description if status=error',
+  `processing_time_ms` int unsigned DEFAULT NULL COMMENT 'Time to process message in ms',
   PRIMARY KEY (`id`),
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_guid` (`guid`),
+  KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
-  KEY `idx_session` (`session_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Addon protocol request/response logging';
+  KEY `idx_request_type` (`request_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=463 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
 -- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_stats
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `guid` int unsigned NOT NULL,
-  `module` varchar(8) NOT NULL,
-  `total_requests` int unsigned DEFAULT '0',
-  `total_responses` int unsigned DEFAULT '0',
-  `total_timeouts` int unsigned DEFAULT '0',
-  `total_errors` int unsigned DEFAULT '0',
-  `avg_response_time_ms` float DEFAULT '0',
-  `max_response_time_ms` int unsigned DEFAULT '0',
-  `total_data_sent_bytes` bigint unsigned DEFAULT '0',
-  `total_data_received_bytes` bigint unsigned DEFAULT '0',
-  `first_request` datetime DEFAULT NULL,
-  `last_request` datetime DEFAULT NULL,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `idx_guid_module` (`guid`,`module`),
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code',
+  `total_requests` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total C2S messages',
+  `total_responses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total S2C messages',
+  `total_errors` int unsigned NOT NULL DEFAULT '0' COMMENT 'Messages that resulted in error',
+  `total_timeouts` int unsigned NOT NULL DEFAULT '0' COMMENT 'Messages that timed out',
+  `avg_response_time_ms` float DEFAULT '0' COMMENT 'Average response time in ms',
+  `max_response_time_ms` int unsigned DEFAULT '0' COMMENT 'Maximum response time in ms',
+  `first_request` timestamp NULL DEFAULT NULL COMMENT 'First message from this player',
+  `last_request` timestamp NULL DEFAULT NULL COMMENT 'Most recent message',
+  PRIMARY KEY (`guid`,`module`),
   KEY `idx_module` (`module`),
   KEY `idx_last_request` (`last_request`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Aggregated protocol statistics per player per module';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_aoe_loot_settings
-CREATE TABLE IF NOT EXISTS `dc_aoe_loot_settings` (
-  `character_guid` int unsigned NOT NULL,
-  `enabled` tinyint(1) DEFAULT '1',
-  `show_messages` tinyint(1) DEFAULT '1',
-  `min_quality` tinyint unsigned DEFAULT '0',
-  `auto_skin` tinyint(1) DEFAULT '0',
-  `smart_loot` tinyint(1) DEFAULT '1',
-  `loot_range` float DEFAULT '30',
-  PRIMARY KEY (`character_guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AOE Loot addon settings per character';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_aoe_loot_stats
-CREATE TABLE IF NOT EXISTS `dc_aoe_loot_stats` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `account_id` int unsigned NOT NULL,
-  `character_guid` int unsigned NOT NULL,
-  `total_items` int unsigned NOT NULL DEFAULT '0',
-  `total_gold` bigint unsigned NOT NULL DEFAULT '0',
-  `vendor_gold` bigint unsigned NOT NULL DEFAULT '0',
-  `upgrades_found` int unsigned NOT NULL DEFAULT '0',
-  `last_loot_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_character` (`character_guid`),
-  KEY `idx_account` (`account_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Aggregated protocol statistics per player per module';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1176,10 +1137,25 @@ CREATE TABLE IF NOT EXISTS `dc_aoeloot_detailed_stats` (
   `mined` int unsigned NOT NULL DEFAULT '0',
   `herbed` int unsigned NOT NULL DEFAULT '0',
   `upgrades` int unsigned NOT NULL DEFAULT '0' COMMENT 'Gear upgrades found',
+  `quality_poor` int unsigned NOT NULL DEFAULT '0' COMMENT 'Gray items looted',
+  `quality_common` int unsigned NOT NULL DEFAULT '0' COMMENT 'White items looted',
+  `quality_uncommon` int unsigned NOT NULL DEFAULT '0' COMMENT 'Green items looted',
+  `quality_rare` int unsigned NOT NULL DEFAULT '0' COMMENT 'Blue items looted',
+  `quality_epic` int unsigned NOT NULL DEFAULT '0' COMMENT 'Purple items looted',
+  `quality_legendary` int unsigned NOT NULL DEFAULT '0' COMMENT 'Orange items looted',
+  `filtered_poor` int unsigned NOT NULL DEFAULT '0' COMMENT 'Gray items filtered',
+  `filtered_common` int unsigned NOT NULL DEFAULT '0' COMMENT 'White items filtered',
+  `filtered_uncommon` int unsigned NOT NULL DEFAULT '0' COMMENT 'Green items filtered',
+  `filtered_rare` int unsigned NOT NULL DEFAULT '0' COMMENT 'Blue items filtered',
+  `filtered_epic` int unsigned NOT NULL DEFAULT '0' COMMENT 'Purple items filtered',
+  `filtered_legendary` int unsigned NOT NULL DEFAULT '0' COMMENT 'Orange items filtered',
   `mythic_bonus_items` int unsigned NOT NULL DEFAULT '0' COMMENT 'Bonus items from M+ runs',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`)
+  PRIMARY KEY (`player_guid`),
+  KEY `idx_quality_epic` (`quality_epic`),
+  KEY `idx_quality_rare` (`quality_rare`),
+  KEY `idx_quality_legendary` (`quality_legendary`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Detailed Statistics';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
@@ -1698,6 +1674,27 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_stats
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
+  `player_name` varchar(12) NOT NULL COMMENT 'Player character name',
+  `faction` varchar(16) NOT NULL DEFAULT 'Unknown' COMMENT 'Alliance or Horde',
+  `battles_participated` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total battles joined',
+  `battles_won` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total battles won',
+  `last_participation` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Last battle timestamp',
+  `total_kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total player kills',
+  `total_deaths` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total deaths',
+  `resources_captured` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total resources captured',
+  PRIMARY KEY (`player_guid`),
+  KEY `idx_player_name` (`player_name`) COMMENT 'Search by name',
+  KEY `idx_faction` (`faction`) COMMENT 'Faction-specific leaderboards',
+  KEY `idx_battles_won` (`battles_won`) COMMENT 'Win count leaderboard',
+  KEY `idx_total_kills` (`total_kills`) COMMENT 'Kill count leaderboard',
+  KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_season_config
 CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
   `season_id` int unsigned NOT NULL,
@@ -1713,6 +1710,33 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`season_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG-specific season configuration (base_rating, match settings, etc.)';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_winner_history
+CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
+  `season` smallint unsigned NOT NULL DEFAULT '1' COMMENT 'Season number (joins with hlbg_seasons)',
+  `occurred_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Battle end timestamp',
+  `duration_seconds` int unsigned NOT NULL DEFAULT '0' COMMENT 'Battle duration in seconds',
+  `zone_id` smallint unsigned NOT NULL DEFAULT '26' COMMENT 'Zone ID (26 = Hinterlands)',
+  `map_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Map ID (0 = Eastern Kingdoms)',
+  `winner_tid` tinyint unsigned NOT NULL DEFAULT '2' COMMENT 'Winner: 0=Alliance, 1=Horde, 2=Draw',
+  `win_reason` varchar(32) NOT NULL DEFAULT 'depletion' COMMENT 'Win reason: depletion, tiebreaker, manual',
+  `score_alliance` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Final Alliance resource count',
+  `score_horde` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Final Horde resource count',
+  `affix` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Affix ID: 0=None, 1=Sunlight, 2=Clear, 3=Breeze, 4=Storm, 5=Rain, 6=Fog',
+  `weather` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Weather type: 0=Fine, 1=Rain, 2=Snow, 3=Storm, 4=Thunder, 5=BlackRain',
+  `weather_intensity` float NOT NULL DEFAULT '0' COMMENT 'Weather intensity (0.0-1.0)',
+  PRIMARY KEY (`id`),
+  KEY `idx_season` (`season`) COMMENT 'Season filtering queries',
+  KEY `idx_occurred_at` (`occurred_at`) COMMENT 'Date range queries',
+  KEY `idx_winner_tid` (`winner_tid`) COMMENT 'Win rate aggregations',
+  KEY `idx_affix` (`affix`) COMMENT 'Affix statistics queries',
+  KEY `idx_weather` (`weather`) COMMENT 'Weather statistics queries',
+  KEY `idx_win_reason` (`win_reason`) COMMENT 'Win condition analysis',
+  KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1798,7 +1822,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=87 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2837,6 +2861,20 @@ CREATE TABLE IF NOT EXISTS `dc_weekly_vault` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Ereignis acore_chars.evt_dc_addon_cleanup_logs
+DELIMITER //
+CREATE EVENT `evt_dc_addon_cleanup_logs` ON SCHEDULE EVERY 1 WEEK STARTS '2025-12-01 03:00:00' ON COMPLETION PRESERVE ENABLE DO BEGIN
+    CALL `sp_dc_addon_cleanup_logs`(30);
+END//
+DELIMITER ;
+
+-- Exportiere Struktur von Ereignis acore_chars.evt_dc_addon_daily_aggregate
+DELIMITER //
+CREATE EVENT `evt_dc_addon_daily_aggregate` ON SCHEDULE EVERY 1 DAY STARTS '2025-11-30 02:00:00' ON COMPLETION PRESERVE ENABLE DO BEGIN
+    CALL `sp_dc_addon_aggregate_daily`();
+END//
+DELIMITER ;
+
 -- Exportiere Struktur von Tabelle acore_chars.game_event_condition_save
 CREATE TABLE IF NOT EXISTS `game_event_condition_save` (
   `eventEntry` tinyint unsigned NOT NULL,
@@ -3090,69 +3128,6 @@ CREATE TABLE IF NOT EXISTS `guild_rank` (
   PRIMARY KEY (`guildid`,`rid`),
   KEY `Idx_rid` (`rid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.hlbg_player_stats
-CREATE TABLE IF NOT EXISTS `hlbg_player_stats` (
-  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
-  `player_name` varchar(12) NOT NULL COMMENT 'Player character name',
-  `faction` varchar(16) NOT NULL DEFAULT 'Unknown' COMMENT 'Alliance or Horde',
-  `battles_participated` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total battles joined',
-  `battles_won` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total battles won',
-  `last_participation` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Last battle timestamp',
-  `total_kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total player kills',
-  `total_deaths` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total deaths',
-  `resources_captured` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total resources captured',
-  PRIMARY KEY (`player_guid`),
-  KEY `idx_player_name` (`player_name`) COMMENT 'Search by name',
-  KEY `idx_faction` (`faction`) COMMENT 'Faction-specific leaderboards',
-  KEY `idx_battles_won` (`battles_won`) COMMENT 'Win count leaderboard',
-  KEY `idx_total_kills` (`total_kills`) COMMENT 'Kill count leaderboard',
-  KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.hlbg_seasons
-CREATE TABLE IF NOT EXISTS `hlbg_seasons` (
-  `season` smallint unsigned NOT NULL COMMENT 'Season number (increments each season)',
-  `name` varchar(64) NOT NULL DEFAULT '' COMMENT 'Season display name (e.g., "Season 1: Genesis")',
-  `start_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start timestamp',
-  `end_date` timestamp NULL DEFAULT NULL COMMENT 'Season end timestamp (NULL = current season)',
-  `is_active` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 = Active season, 0 = Past season',
-  `description` text COMMENT 'Season description/changelog',
-  PRIMARY KEY (`season`),
-  KEY `idx_is_active` (`is_active`) COMMENT 'Find current season',
-  KEY `idx_dates` (`start_date`,`end_date`) COMMENT 'Date range queries'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Season Tracking - Season metadata and names';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.hlbg_winner_history
-CREATE TABLE IF NOT EXISTS `hlbg_winner_history` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
-  `season` smallint unsigned NOT NULL DEFAULT '1' COMMENT 'Season number (joins with hlbg_seasons)',
-  `occurred_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Battle end timestamp',
-  `duration_seconds` int unsigned NOT NULL DEFAULT '0' COMMENT 'Battle duration in seconds',
-  `zone_id` smallint unsigned NOT NULL DEFAULT '26' COMMENT 'Zone ID (26 = Hinterlands)',
-  `map_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Map ID (0 = Eastern Kingdoms)',
-  `winner_tid` tinyint unsigned NOT NULL DEFAULT '2' COMMENT 'Winner: 0=Alliance, 1=Horde, 2=Draw',
-  `win_reason` varchar(32) NOT NULL DEFAULT 'depletion' COMMENT 'Win reason: depletion, tiebreaker, manual',
-  `score_alliance` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Final Alliance resource count',
-  `score_horde` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Final Horde resource count',
-  `affix` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Affix ID: 0=None, 1=Sunlight, 2=Clear, 3=Breeze, 4=Storm, 5=Rain, 6=Fog',
-  `weather` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Weather type: 0=Fine, 1=Rain, 2=Snow, 3=Storm, 4=Thunder, 5=BlackRain',
-  `weather_intensity` float NOT NULL DEFAULT '0' COMMENT 'Weather intensity (0.0-1.0)',
-  PRIMARY KEY (`id`),
-  KEY `idx_season` (`season`) COMMENT 'Season filtering queries',
-  KEY `idx_occurred_at` (`occurred_at`) COMMENT 'Date range queries',
-  KEY `idx_winner_tid` (`winner_tid`) COMMENT 'Win rate aggregations',
-  KEY `idx_affix` (`affix`) COMMENT 'Affix statistics queries',
-  KEY `idx_weather` (`weather`) COMMENT 'Weather statistics queries',
-  KEY `idx_win_reason` (`win_reason`) COMMENT 'Win condition analysis',
-  KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -3682,27 +3657,38 @@ DELIMITER ;
 DELIMITER //
 CREATE PROCEDURE `sp_dc_addon_aggregate_daily`()
 BEGIN
-    DECLARE target_date DATE DEFAULT DATE_SUB(CURDATE(), INTERVAL 1 DAY);
+    DECLARE yesterday DATE;
+    SET yesterday = DATE_SUB(CURDATE(), INTERVAL 1 DAY);
     
-    INSERT INTO dc_addon_protocol_daily 
-        (date, module, total_requests, total_responses, total_timeouts, unique_players, avg_response_time_ms)
+    -- Insert or update daily aggregates
+    INSERT INTO `dc_addon_protocol_daily` (`date`, `module`, `total_c2s`, `total_s2c`, `unique_players`, `error_count`, `avg_response_time_ms`, `peak_hour`)
     SELECT 
-        target_date,
-        module,
-        SUM(CASE WHEN direction = 'C2S' THEN 1 ELSE 0 END),
-        SUM(CASE WHEN direction = 'S2C' THEN 1 ELSE 0 END),
-        SUM(CASE WHEN status = 'timeout' THEN 1 ELSE 0 END),
-        COUNT(DISTINCT guid),
-        AVG(response_time_ms)
-    FROM dc_addon_protocol_log
-    WHERE DATE(timestamp) = target_date
-    GROUP BY module
+        DATE(`timestamp`) as log_date,
+        `module`,
+        SUM(CASE WHEN `direction` = 'C2S' THEN 1 ELSE 0 END) as total_c2s,
+        SUM(CASE WHEN `direction` = 'S2C' THEN 1 ELSE 0 END) as total_s2c,
+        COUNT(DISTINCT `guid`) as unique_players,
+        SUM(CASE WHEN `status` = 'error' THEN 1 ELSE 0 END) as error_count,
+        AVG(`processing_time_ms`) as avg_response_time_ms,
+        (
+            SELECT HOUR(sub.`timestamp`)
+            FROM `dc_addon_protocol_log` sub
+            WHERE DATE(sub.`timestamp`) = DATE(l.`timestamp`)
+              AND sub.`module` = l.`module`
+            GROUP BY HOUR(sub.`timestamp`)
+            ORDER BY COUNT(*) DESC
+            LIMIT 1
+        ) as peak_hour
+    FROM `dc_addon_protocol_log` l
+    WHERE DATE(`timestamp`) = yesterday
+    GROUP BY DATE(`timestamp`), `module`
     ON DUPLICATE KEY UPDATE
-        total_requests = VALUES(total_requests),
-        total_responses = VALUES(total_responses),
-        total_timeouts = VALUES(total_timeouts),
-        unique_players = VALUES(unique_players),
-        avg_response_time_ms = VALUES(avg_response_time_ms);
+        `total_c2s` = VALUES(`total_c2s`),
+        `total_s2c` = VALUES(`total_s2c`),
+        `unique_players` = VALUES(`unique_players`),
+        `error_count` = VALUES(`error_count`),
+        `avg_response_time_ms` = VALUES(`avg_response_time_ms`),
+        `peak_hour` = VALUES(`peak_hour`);
 END//
 DELIMITER ;
 
@@ -3710,20 +3696,18 @@ DELIMITER ;
 DELIMITER //
 CREATE PROCEDURE `sp_dc_addon_cleanup_logs`(IN days_to_keep INT)
 BEGIN
-    DECLARE deleted_count INT DEFAULT 0;
+    DECLARE cutoff_date TIMESTAMP;
+    SET cutoff_date = DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
     
-    -- Delete old detailed logs (keep aggregated stats)
-    DELETE FROM dc_addon_protocol_log 
-    WHERE timestamp < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
+    -- Delete old log entries
+    DELETE FROM `dc_addon_protocol_log` WHERE `timestamp` < cutoff_date;
     
-    SET deleted_count = ROW_COUNT();
+    -- Delete old daily stats
+    DELETE FROM `dc_addon_protocol_daily` WHERE `date` < DATE(cutoff_date);
     
-    -- Log the cleanup
-    INSERT INTO dc_addon_protocol_log 
-        (guid, account_id, character_name, direction, module, opcode, opcode_name, data_preview)
-    VALUES 
-        (0, 0, 'SYSTEM', 'S2C', 'CORE', 0xFF, 'CLEANUP', 
-         CONCAT('Deleted ', deleted_count, ' log entries older than ', days_to_keep, ' days'));
+    -- Optimize tables after bulk delete
+    OPTIMIZE TABLE `dc_addon_protocol_log`;
+    OPTIMIZE TABLE `dc_addon_protocol_daily`;
 END//
 DELIMITER ;
 
@@ -3865,43 +3849,26 @@ DELIMITER ;
 
 -- Exportiere Struktur von View acore_chars.v_dc_addon_module_health
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
-CREATE TABLE `v_dc_addon_module_health` (
-	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)' COLLATE 'utf8mb4_0900_ai_ci',
-	`total_requests_24h` BIGINT NOT NULL,
-	`completed` DECIMAL(23,0) NULL,
-	`timeouts` DECIMAL(23,0) NULL,
-	`errors` DECIMAL(23,0) NULL,
-	`success_rate` DECIMAL(29,2) NULL,
-	`avg_response_ms` DECIMAL(13,2) NULL,
-	`max_response_ms` INT UNSIGNED NULL COMMENT 'Response time in milliseconds (for matched requests)'
+CREATE TABLE `v_dc_addon_module_health` 
 );
 
 -- Exportiere Struktur von View acore_chars.v_dc_addon_player_activity
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_addon_player_activity` (
-	`guid` INT UNSIGNED NOT NULL,
+	`guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
 	`character_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
-	`module` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`total_requests` INT UNSIGNED NULL,
-	`total_responses` INT UNSIGNED NULL,
-	`total_timeouts` INT UNSIGNED NULL,
+	`module` VARCHAR(1) NOT NULL COMMENT 'Module code' COLLATE 'utf8mb4_unicode_ci',
+	`total_requests` INT UNSIGNED NOT NULL COMMENT 'Total C2S messages',
+	`total_responses` INT UNSIGNED NOT NULL COMMENT 'Total S2C messages',
+	`total_timeouts` INT UNSIGNED NOT NULL COMMENT 'Messages that timed out',
 	`success_rate` DECIMAL(16,2) NULL,
 	`avg_response_ms` DOUBLE NULL,
-	`last_request` DATETIME NULL
+	`last_request` TIMESTAMP NULL COMMENT 'Most recent message'
 );
 
 -- Exportiere Struktur von View acore_chars.v_dc_addon_recent_activity
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
-CREATE TABLE `v_dc_addon_recent_activity` (
-	`timestamp` DATETIME NOT NULL,
-	`character_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`direction` ENUM('C2S','S2C') NOT NULL COMMENT 'Client->Server or Server->Client' COLLATE 'utf8mb4_0900_ai_ci',
-	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, LBRD, etc)' COLLATE 'utf8mb4_0900_ai_ci',
-	`opcode_hex` VARCHAR(1) NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`opcode_name` VARCHAR(1) NULL COMMENT 'Human readable opcode name' COLLATE 'utf8mb4_0900_ai_ci',
-	`status` ENUM('pending','completed','timeout','error') NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`response_time_ms` INT UNSIGNED NULL COMMENT 'Response time in milliseconds (for matched requests)',
-	`data_size` INT UNSIGNED NULL COMMENT 'JSON payload size in bytes'
+CREATE TABLE `v_dc_addon_recent_activity` 
 );
 
 -- Exportiere Struktur von View acore_chars.v_player_heirloom_upgrades
@@ -3982,50 +3949,6 @@ CREATE TABLE IF NOT EXISTS `worldstates` (
   `comment` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Variable Saves';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.zone_difficulty_completion_logs
-CREATE TABLE IF NOT EXISTS `zone_difficulty_completion_logs` (
-  `guid` int unsigned NOT NULL,
-  `type` tinyint NOT NULL,
-  `mode` tinyint NOT NULL DEFAULT '0',
-  PRIMARY KEY (`guid`,`type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.zone_difficulty_encounter_logs
-CREATE TABLE IF NOT EXISTS `zone_difficulty_encounter_logs` (
-  `InstanceId` int NOT NULL DEFAULT '0',
-  `TimestampStart` int NOT NULL DEFAULT '0',
-  `TimestampEnd` int NOT NULL DEFAULT '0',
-  `Map` int NOT NULL DEFAULT '0',
-  `BossId` int NOT NULL DEFAULT '0',
-  `PlayerGuid` int NOT NULL DEFAULT '0',
-  `Mode` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`InstanceId`,`TimestampStart`,`PlayerGuid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.zone_difficulty_instance_saves
-CREATE TABLE IF NOT EXISTS `zone_difficulty_instance_saves` (
-  `InstanceID` int NOT NULL DEFAULT '0',
-  `HardmodeOn` tinyint NOT NULL DEFAULT '0',
-  `HardmodePossible` tinyint NOT NULL DEFAULT '1',
-  PRIMARY KEY (`InstanceID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.zone_difficulty_mythicmode_score
-CREATE TABLE IF NOT EXISTS `zone_difficulty_mythicmode_score` (
-  `GUID` int NOT NULL DEFAULT '0',
-  `Type` tinyint NOT NULL DEFAULT '0',
-  `Score` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`GUID`,`Type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

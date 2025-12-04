@@ -51,7 +51,7 @@ namespace DCWelcome
         // Server -> Client
         constexpr uint8 SMSG_SHOW_WELCOME        = 0x10;
         constexpr uint8 SMSG_SERVER_INFO         = 0x11;
-        // constexpr uint8 SMSG_FAQ_DATA         = 0x12;  // Future: Dynamic FAQ from DB
+        constexpr uint8 SMSG_FAQ_DATA            = 0x12;  // Dynamic FAQ from DB
         constexpr uint8 SMSG_FEATURE_UNLOCK      = 0x13;
         constexpr uint8 SMSG_WHATS_NEW           = 0x14;
         constexpr uint8 SMSG_LEVEL_MILESTONE     = 0x15;
@@ -205,10 +205,60 @@ namespace DCWelcome
         SendServerInfo(player);
     }
     
-    void HandleGetFAQ(Player* /*player*/, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetFAQ(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        // For now, FAQ is client-side only
-        // Future: Load FAQ from database for dynamic updates
+        if (!player || !player->GetSession())
+            return;
+        
+        // Parse optional category filter from request
+        std::string categoryFilter = "";
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        if (!json.IsNull() && json.HasKey("category"))
+        {
+            categoryFilter = json["category"].AsString();
+        }
+        
+        // Build FAQ query - load from dc_welcome_faq table
+        std::string query = "SELECT id, category, question, answer FROM dc_welcome_faq WHERE active = 1";
+        if (!categoryFilter.empty() && categoryFilter != "all")
+        {
+            query += " AND category = '" + categoryFilter + "'";
+        }
+        query += " ORDER BY category, priority DESC, id";
+        
+        QueryResult result = CharacterDatabase.Query(query);
+        
+        DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FAQ_DATA);
+        
+        if (result)
+        {
+            DCAddon::JsonValue entriesArray;
+            entriesArray.SetArray();
+            
+            int count = 0;
+            do
+            {
+                Field* fields = result->Fetch();
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                entry.Set("category", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                entry.Set("question", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                entry.Set("answer", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                entriesArray.Push(entry);
+                count++;
+            } while (result->NextRow());
+            
+            response.Set("entries", entriesArray.Encode());
+            response.Set("count", count);
+        }
+        else
+        {
+            response.Set("entries", "[]");
+            response.Set("count", 0);
+        }
+        
+        response.Send(player);
     }
     
     void HandleDismissWelcome(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -217,11 +267,12 @@ namespace DCWelcome
             return;
         
         // Record that player dismissed the welcome screen
-        // This could be stored in a character variable or database
         CharacterDatabase.Execute(
-            "INSERT INTO dc_player_welcome (guid, dismissed_at) VALUES ({}, NOW()) "
-            "ON DUPLICATE KEY UPDATE dismissed_at = NOW()",
-            player->GetGUID().GetCounter()
+            "INSERT INTO dc_player_welcome (guid, account_id, dismissed_at, show_on_login) "
+            "VALUES ({}, {}, NOW(), 0) "
+            "ON DUPLICATE KEY UPDATE dismissed_at = NOW(), show_on_login = 0",
+            player->GetGUID().GetCounter(),
+            player->GetSession()->GetAccountId()
         );
     }
     
@@ -240,8 +291,9 @@ namespace DCWelcome
         
         // Record that player has seen this feature intro
         CharacterDatabase.Execute(
-            "INSERT INTO dc_player_seen_features (guid, feature, seen_at) VALUES ({}, '{}', NOW()) "
-            "ON DUPLICATE KEY UPDATE seen_at = NOW()",
+            "INSERT INTO dc_player_seen_features (guid, feature, seen_at, dismissed) "
+            "VALUES ({}, '{}', NOW(), 1) "
+            "ON DUPLICATE KEY UPDATE seen_at = NOW(), dismissed = 1",
             player->GetGUID().GetCounter(),
             feature
         );
@@ -252,11 +304,51 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
         
-        // Build What's New content
-        // Future: Load from database for easy updates
+        // Load What's New from database
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
+            "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
+            "ORDER BY priority DESC, id DESC LIMIT 10"
+        );
+        
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_WHATS_NEW);
-        response.Set("version", "1.0.0");
-        response.Set("content", "Welcome to DarkChaos-255! Features include Mythic+, Prestige, Hotspots, and more.");
+        
+        if (result)
+        {
+            DCAddon::JsonValue entriesArray;
+            entriesArray.SetArray();
+            std::string latestVersion = "";
+            int count = 0;
+            
+            do
+            {
+                Field* fields = result->Fetch();
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                entry.Set("version", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                entry.Set("title", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                entry.Set("content", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                entry.Set("icon", DCAddon::JsonValue(fields[4].Get<std::string>()));
+                entry.Set("category", DCAddon::JsonValue(fields[5].Get<std::string>()));
+                entriesArray.Push(entry);
+                count++;
+                
+                if (latestVersion.empty())
+                    latestVersion = fields[1].Get<std::string>();
+            } while (result->NextRow());
+            
+            response.Set("version", latestVersion);
+            response.Set("entries", entriesArray.Encode());
+            response.Set("count", count);
+        }
+        else
+        {
+            // Fallback to hardcoded message if no DB entries
+            response.Set("version", "1.0.0");
+            response.Set("content", "Welcome to DarkChaos-255! Features include Mythic+, Prestige, Hotspots, and more.");
+            response.Set("count", 0);
+        }
         
         response.Send(player);
     }

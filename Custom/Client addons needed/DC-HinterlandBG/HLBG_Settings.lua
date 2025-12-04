@@ -323,7 +323,18 @@ end
 -- Register slash command for settings
 SLASH_HLBGCONFIG1 = "/hlbgconfig"
 SlashCmdList["HLBGCONFIG"] = function(msg)
-    HLBG.OpenUI("Settings")
+    -- Open Interface Options panel for HLBG settings
+    local panel = _G["DCHLBG_InterfaceOptions"]
+    if panel then
+        InterfaceOptionsFrame_OpenToCategory(panel)
+        InterfaceOptionsFrame_OpenToCategory(panel)  -- Call twice for WoW bug
+    elseif HLBG and HLBG.UI and HLBG.UI.Settings then
+        HLBG.UI.Settings:Show()
+    else
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[HLBG]|r Settings panel not available. Try /hlbgshow first.")
+        end
+    end
 end
 -- Register a simple Interface -> AddOns panel so settings appear in the Blizzard options
 if type(InterfaceOptions_AddCategory) == 'function' then

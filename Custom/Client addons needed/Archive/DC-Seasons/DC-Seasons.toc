@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: DC-Seasons
+## Notes: DarkChaos Seasonal Reward System UI
+## Author: DarkChaos Development Team
+## Version: 1.1.0
+## SavedVariables: DCSeasons_Settings
+## OptionalDeps: DC-AddonProtocol, AIO_Client
+
+DC-Seasons.lua
