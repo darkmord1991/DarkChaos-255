@@ -21,6 +21,7 @@
 #   14. Unified Leaderboard System - Cross-system leaderboard aggregation
 #   15. Custom Login System - First-login rewards, BoA items, DC integrations
 #   16. DC-Welcome Addon System - First-start experience, FAQ, milestones
+#   17. Cross-System Integration - EventBus, SessionContext, unified rewards
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -1770,14 +1771,55 @@ MythicSpectator.SyncHudToSpectators = 1
 #    DarkChaos.ActiveSeasonID
 #        Description: Global active season ID for all seasonal systems
 #                     When changed, ALL systems transition to the new season together.
-#                     This is the single source of truth for season management.
+#                     This is the SINGLE SOURCE OF TRUTH for season management.
 #                     
-#                     NOTE: Individual systems may override this for backward
-#                     compatibility, but it's recommended to use this unified setting.
+#                     All systems use this value:
+#                     - SeasonalRewards (token/essence rewards)
+#                     - Mythic+ (seasonal affixes and dungeons)
+#                     - Item Upgrades (season-based progression)
+#                     - Hinterland BG (seasonal statistics)
+#                     - Custom Login (starter token type)
 #        Default:     1 (Season 1)
 #        Range:       1 - 99
 #
 DarkChaos.ActiveSeasonID = 1
+
+# -------------------------------------------------------------------------
+# CANONICAL SEASONAL CURRENCY DEFINITIONS
+# -------------------------------------------------------------------------
+# These are the SINGLE SOURCE OF TRUTH for seasonal currency item IDs.
+# All systems should reference these settings via CrossSystemConfig or
+# the SeasonalRewardsMgr singleton.
+#
+# DO NOT define seasonal currency item IDs elsewhere in this config!
+# Individual systems can have overrides, but they should default to these.
+# -------------------------------------------------------------------------
+
+#
+#    DarkChaos.Seasonal.TokenItemID
+#        Description: Item ID for Seasonal Tokens (primary currency)
+#                     Players receive this item when earning seasonal tokens.
+#                     Must be a valid item_template entry.
+#                     
+#                     Used by: SeasonalRewards, Mythic+ Vault, CustomLogin,
+#                              Cross-System rewards, Achievement rewards
+#        Default:     300311 (DC Seasonal Token)
+#        Range:       Any valid item ID
+#
+DarkChaos.Seasonal.TokenItemID = 300311
+
+#
+#    DarkChaos.Seasonal.EssenceItemID
+#        Description: Item ID for Seasonal Essence (secondary currency)
+#                     Used for prestige rewards and high-tier upgrades.
+#                     Must be a valid item_template entry.
+#                     
+#                     Used by: SeasonalRewards, Prestige rewards,
+#                              Challenge mode rewards, Cross-System bonuses
+#        Default:     300312 (DC Seasonal Essence)
+#        Range:       Any valid item ID
+#
+DarkChaos.Seasonal.EssenceItemID = 300312
 
 # -------------------------------------------------------------------------
 # Seasonal Reward System
@@ -1791,36 +1833,14 @@ DarkChaos.ActiveSeasonID = 1
 #
 SeasonalRewards.Enable = 1
 
+# -------------------------------------------------------------------------
+# NOTE: Season ID and Currency Item IDs are defined above in
+#       DarkChaos.ActiveSeasonID, DarkChaos.Seasonal.TokenItemID,
+#       and DarkChaos.Seasonal.EssenceItemID
 #
-#    SeasonalRewards.ActiveSeasonID
-#        Description: [DEPRECATED] Use DarkChaos.ActiveSeasonID instead.
-#                     This setting is maintained for backward compatibility only.
-#                     The system will automatically use DarkChaos.ActiveSeasonID
-#                     if SeasonalManager is available.
-#        Default:     1 (Season 1)
-#        Range:       1 - 99
-#
-SeasonalRewards.ActiveSeasonID = 1
-
-#
-#    SeasonalRewards.TokenItemID
-#        Description: Item ID for Seasonal Tokens (primary currency)
-#                     Players receive this item when earning seasonal tokens.
-#                     Must be a valid item_template entry.
-#        Default:     49426 (Emblem of Frost placeholder)
-#        Range:       Any valid item ID
-#
-SeasonalRewards.TokenItemID = 49426
-
-#
-#    SeasonalRewards.EssenceItemID
-#        Description: Item ID for Seasonal Essence (secondary currency)
-#                     Used for prestige rewards and high-tier upgrades.
-#                     Must be a valid item_template entry.
-#        Default:     47241 (Emblem of Triumph placeholder)
-#        Range:       Any valid item ID
-#
-SeasonalRewards.EssenceItemID = 47241
+#       The SeasonalRewards system reads those canonical settings.
+#       Legacy settings below are REMOVED to prevent confusion.
+# -------------------------------------------------------------------------
 
 #
 #    SeasonalRewards.CacheRefreshMinutes
@@ -2061,8 +2081,9 @@ HinterlandBG.Base.Horde.O = 1.12528
 
 #
 #    HinterlandBG.Reward.MatchHonor
-#        Description: Legacy total honor amount (may be used by legacy paths)
-#                     This setting is deprecated in favor of specific reward types below.
+#        Description: [DEPRECATED] Legacy total honor amount
+#                     This is the fallback if specific reward types are not set.
+#                     Prefer using MatchHonorDepletion/MatchHonorTiebreaker/MatchHonorLoser.
 #        Default:     50
 #
 HinterlandBG.Reward.MatchHonor = 50
@@ -2274,14 +2295,21 @@ HinterlandBG.Lock.Duration.Depletion = 0
 # -------------------------------------------------------------------------
 # Season Tracking
 # -------------------------------------------------------------------------
+# NOTE: For global season management, use DarkChaos.ActiveSeasonID in Section 9.
+#       HinterlandBG.Season below is kept for BG-specific historical tracking
+#       separate from the global seasonal system (e.g., arena seasons vs PvE seasons).
+# -------------------------------------------------------------------------
 
 #
 #    HinterlandBG.Season
-#        Description: Track season number for persistent stats
+#        Description: Track season number for persistent stats (BG-specific)
+#                     This can differ from DarkChaos.ActiveSeasonID if you want
+#                     separate PvP/BG seasons from the main seasonal content.
 #                     Season resets allow for fresh leaderboards/statistics.
-#                     Change this value to start a new season.
+#                     Change this value to start a new BG season.
 #        Default:     1
 #        Range:       1 - 999
+#        See Also:    DarkChaos.ActiveSeasonID (global season)
 #
 HinterlandBG.Season = 1
 
@@ -2324,142 +2352,14 @@ HinterlandBG.KillSpell.PlayerKillHorde = 0
 HinterlandBG.KillSpell.NpcKill = 0
 
 # -------------------------------------------------------------------------
-# Affix System (Weather-Based Gameplay Modifiers)
+# Affix System (REMOVED)
 # -------------------------------------------------------------------------
-
+# The affix system (weather-based gameplay modifiers) has been completely
+# removed from HinterlandBG. All affix-related settings are no longer
+# functional and have been removed from the codebase.
 #
-#    HinterlandBG.Affix.Enabled
-#        Description: Enable the affix system (zone-wide buffs/debuffs with weather)
-#                     Affixes rotate periodically and change gameplay mechanics.
-#        Default:     0 (Disabled - no affixes)
-#                     1 (Enabled - affixes active)
-#
-HinterlandBG.Affix.Enabled = 0
-
-#
-#    HinterlandBG.Affix.WeatherEnabled
-#        Description: Enable weather effects tied to affixes
-#                     When enabled, each affix also changes the zone weather.
-#        Default:     0 (Disabled - affixes without weather)
-#                     1 (Enabled - affixes change weather)
-#
-HinterlandBG.Affix.WeatherEnabled = 0
-
-#
-#    HinterlandBG.Affix.Period
-#        Description: Seconds between affix rotations
-#                     How often affixes change during battle.
-#        Default:     600 (10 minutes)
-#        Range:       60 - 3600 (1 minute to 1 hour)
-#
-HinterlandBG.Affix.Period = 600
-
-#
-#    Legacy Affix Spells (Deprecated - use per-affix arrays below)
-#        Description: These settings are deprecated. Use the per-affix
-#                     PlayerSpell/NpcSpell arrays instead for better control.
-#
-HinterlandBG.Affix.Spell.Haste = 0
-HinterlandBG.Affix.Spell.Slow = 0
-HinterlandBG.Affix.Spell.ReducedHealing = 0
-HinterlandBG.Affix.Spell.ReducedArmor = 0
-HinterlandBG.Affix.Spell.BossEnrage = 0
-HinterlandBG.Affix.Spell.BadWeatherNpcBuff = 0
-
-#
-#    HinterlandBG.Affix.RandomOnBattleStart
-#        Description: Shuffle affixes when the battle starts
-#                     Ensures variety across battles.
-#        Default:     1 (Enabled - random affix at start)
-#                     0 (Disabled - start with no affix or fixed affix)
-#
-HinterlandBG.Affix.RandomOnBattleStart = 1
-
-#
-#    HinterlandBG.Affix.Announce
-#        Description: Broadcast affix changes to players in zone
-#                     Example: "Affix changed to Sunlight! Players gain 10% haste!"
-#        Default:     0 (Disabled - silent affix changes)
-#                     1 (Enabled - announce affix changes)
-#
-HinterlandBG.Affix.Announce = 0
-
-#
-#    HinterlandBG.Affix.WorldstateEnabled
-#        Description: Update affix state in worldstates for UI integrations
-#                     Allows client addons to read current affix via worldstate.
-#        Default:     0 (Disabled - no worldstate updates)
-#                     1 (Enabled - send affix to worldstate)
-#
-HinterlandBG.Affix.WorldstateEnabled = 0
-
-# =====================================================================
-# Weather-Based Affixes Configuration
-# =====================================================================
-# Index mapping (matches AffixType enum):
-#   0 = AFFIX_NONE (not used)
-#   1 = AFFIX_SUNLIGHT (Good: Clear weather, +10% haste to players)
-#   2 = AFFIX_CLEAR_SKIES (Good: Clear weather, +15% damage to players)
-#   3 = AFFIX_GENTLE_BREEZE (Good: Light rain, +20% healing received to players)
-#   4 = AFFIX_STORM (Bad: Heavy rain, +15% damage to NPCs)
-#   5 = AFFIX_HEAVY_RAIN (Bad: Storm, +20% armor to NPCs)
-#   6 = AFFIX_FOG (Bad: Sandstorm/Snow, +10% evasion to NPCs)
-#
-# WeatherType values:
-#   0 = WEATHER_TYPE_FINE (Clear)
-#   1 = WEATHER_TYPE_RAIN
-#   2 = WEATHER_TYPE_SNOW
-#   3 = WEATHER_TYPE_STORM
-#   86 = WEATHER_TYPE_THUNDERS
-#   90 = WEATHER_TYPE_BLACKRAIN
-#
-# Suggested Spell IDs (WoW 3.3.5a):
-#   Haste: 10% = 61042, 15% = 54648, 20% = 57522
-#   Damage: 10% = 50322, 15% = 57733, 20% = 52364
-#   Healing: 10% = 59000, 15% = 57778, 20% = 52369
-#   Armor: 10% = 50489, 15% = 61254, 20% = 43688
-#   Evasion: 10% = 61336, 15% = 51755, 20% = 31224
-# =====================================================================
-
-# Player spell IDs (index 0-6)
-# 0 = None, 1 = Sunlight (10% haste), 2 = Clear Skies (15% damage)
-# 3 = Gentle Breeze (20% healing), 4-6 = Storm/Rain/Fog (no player spell)
-HinterlandBG.Affix.PlayerSpell.0 = 0
-HinterlandBG.Affix.PlayerSpell.1 = 0
-HinterlandBG.Affix.PlayerSpell.2 = 0
-HinterlandBG.Affix.PlayerSpell.3 = 0
-HinterlandBG.Affix.PlayerSpell.4 = 0
-HinterlandBG.Affix.PlayerSpell.5 = 0
-HinterlandBG.Affix.PlayerSpell.6 = 0
-
-# NPC spell IDs (index 0-6)
-# 0-3 = None (player buffs), 4 = Storm (15% damage), 5 = Heavy Rain (20% armor), 6 = Fog (10% evasion)
-HinterlandBG.Affix.NpcSpell.0 = 0
-HinterlandBG.Affix.NpcSpell.1 = 0
-HinterlandBG.Affix.NpcSpell.2 = 0
-HinterlandBG.Affix.NpcSpell.3 = 0
-HinterlandBG.Affix.NpcSpell.4 = 0
-HinterlandBG.Affix.NpcSpell.5 = 0
-HinterlandBG.Affix.NpcSpell.6 = 0
-
-# Weather type per affix (index 0-6)
-# 0 = FINE, 1 = RAIN, 2 = SNOW, 3 = STORM
-HinterlandBG.Affix.WeatherType.0 = 0
-HinterlandBG.Affix.WeatherType.1 = 0
-HinterlandBG.Affix.WeatherType.2 = 0
-HinterlandBG.Affix.WeatherType.3 = 0
-HinterlandBG.Affix.WeatherType.4 = 0
-HinterlandBG.Affix.WeatherType.5 = 0
-HinterlandBG.Affix.WeatherType.6 = 0
-
-# Weather intensity per affix (0.0-1.0, index 0-6)
-HinterlandBG.Affix.WeatherIntensity.0 = 0.0
-HinterlandBG.Affix.WeatherIntensity.1 = 0.0
-HinterlandBG.Affix.WeatherIntensity.2 = 0.0
-HinterlandBG.Affix.WeatherIntensity.3 = 0.0
-HinterlandBG.Affix.WeatherIntensity.4 = 0.0
-HinterlandBG.Affix.WeatherIntensity.5 = 0.0
-HinterlandBG.Affix.WeatherIntensity.6 = 0.0
+# If you had previously configured affixes, those settings will be ignored.
+# -------------------------------------------------------------------------
 
 
 ###########################################################################
@@ -2701,11 +2601,26 @@ ChallengeModes.Enable = 1
 ChallengeMode.ShrineEntry = 190010
 
 # -------------------------------------------------------------------------
-# Legacy Challenge Mode Compatibility Settings
+# LEGACY CHALLENGE MODE SETTINGS - DEPRECATED
 # -------------------------------------------------------------------------
 # These settings use the shorter naming convention for backward compatibility
-# with older challenge mode implementations. The full ChallengeMode.* settings
-# below take precedence, but these are required by some module configurations.
+# with older challenge mode implementations.
+#
+# IMPORTANT: These are DEPRECATED. Use the full ChallengeMode.* settings
+# defined later in this section instead. These legacy settings are only
+# read if the corresponding ChallengeMode.* setting is not present.
+#
+# For new installations, use:
+#   ChallengeMode.Hardcore.Enable instead of Hardcore.Enable
+#   ChallengeMode.Hardcore.XpBonus instead of Hardcore.XPMultiplier
+#   etc.
+#
+# MIGRATION: To migrate, copy your values to the ChallengeMode.* settings
+# below and remove or comment out these legacy settings.
+# -------------------------------------------------------------------------
+
+# NOTE: Legacy settings below are kept for backward compatibility.
+#       New installations should skip to "Hardcore Mode Settings" section.
 
 #
 #    Hardcore.Enable
@@ -3736,10 +3651,30 @@ ItemUpgrade.DebugToSay = 0
 # -------------------------------------------------------------------------
 # Currency & Cost Configuration
 # -------------------------------------------------------------------------
+# NOTE: By default, Item Upgrade uses its OWN currency (Upgrade Tokens/Essence)
+#       which is SEPARATE from the seasonal currency. This is intentional:
+#       - Seasonal currency = earned from activities, time-limited
+#       - Upgrade currency = earned from boss kills, persistent
+#
+#       If you want Item Upgrade to use seasonal currency instead, set:
+#         ItemUpgrade.Currency.UseSeasonalCurrency = 1
+#       This will read DarkChaos.Seasonal.TokenItemID/EssenceItemID
+# -------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Currency.UseSeasonalCurrency
+#        Description: Use the canonical seasonal currency for item upgrades
+#                     When enabled, ignores EssenceId/TokenId below and uses
+#                     DarkChaos.Seasonal.TokenItemID and DarkChaos.Seasonal.EssenceItemID
+#        Default:     0 (Disabled - use dedicated upgrade currency)
+#                     1 (Enabled - share seasonal currency)
+#
+ItemUpgrade.Currency.UseSeasonalCurrency = 0
 
 #
 #    ItemUpgrade.Currency.EssenceId
-#        Description: Item ID for Upgrade Essence (secondary currency)
+#        Description: Item ID for Upgrade Essence (Item Upgrade specific currency)
+#                     Only used when UseSeasonalCurrency = 0
 #        Default:     300312 (Custom item: Upgrade Essence)
 #        Range:       Any valid item_template entry
 #
@@ -3747,7 +3682,8 @@ ItemUpgrade.Currency.EssenceId = 300312
 
 #
 #    ItemUpgrade.Currency.TokenId
-#        Description: Item ID for Upgrade Tokens (primary currency)
+#        Description: Item ID for Upgrade Tokens (Item Upgrade specific currency)
+#                     Only used when UseSeasonalCurrency = 0
 #        Default:     300311 (Custom item: Upgrade Token)
 #        Range:       Any valid item_template entry
 #
@@ -5372,11 +5308,21 @@ DCCustomLogin.TriggerWelcome = 1
 DCCustomLogin.SeasonalTokens.Enable = 1
 
 #
+#    DCCustomLogin.SeasonalTokens.UseCanonicalCurrency
+#        Description: Use the canonical seasonal token defined in
+#                     DarkChaos.Seasonal.TokenItemID instead of a custom item.
+#                     When enabled, ItemId setting below is ignored.
+#        Default:     1 (Enabled - use canonical seasonal token)
+#                     0 (Disabled - use custom ItemId below)
+#
+DCCustomLogin.SeasonalTokens.UseCanonicalCurrency = 1
+
+#
 #    DCCustomLogin.SeasonalTokens.ItemId
-#        Description: Item ID of the seasonal token to grant
-#                     Set to 0 to disable token granting.
-#                     Should be a valid item in item_template.
-#        Default:     0 (Disabled - set to your season token item ID)
+#        Description: Custom item ID for starter tokens
+#                     Only used when UseCanonicalCurrency = 0
+#                     Set to 0 to disable custom token granting entirely.
+#        Default:     0 (uses canonical DarkChaos.Seasonal.TokenItemID)
 #
 DCCustomLogin.SeasonalTokens.ItemId = 0
 
@@ -5468,6 +5414,245 @@ DCWelcome.WikiUrl = "https://github.com/darkmord1991/DarkChaos-255"
 #        Default:     1 (Enabled)
 #
 DCWelcome.Progressive.Enable = 1
+
+
+###########################################################################
+#
+#    SECTION 17: CROSS-SYSTEM INTEGRATION FRAMEWORK
+#
+#    Provides unified coordination between all DarkChaos-255 custom systems:
+#    - EventBus: Publish/subscribe events across systems (boss kills, level ups, etc.)
+#    - SessionContext: Track active contexts per player (Mythic+ run, BG, arena, etc.)
+#    - RewardDistributor: Unified reward distribution with multiplier stacking
+#    - Cross-System Multipliers: Bonus rewards when systems interact
+#
+#    Integrated Systems:
+#    - Mythic+ Dungeon System (run states, completion bonuses)
+#    - Seasonal Reward System (token awards, season bonuses)
+#    - Item Upgrade System (upgrade completion triggers)
+#    - Prestige System (prestige multipliers, tier unlocks)
+#    - Hinterland BG (PvP context, rating bonuses)
+#    - AOE Loot (context-aware loot bonuses)
+#
+#    Database Tables (aggregation, not replacement):
+#    - dc_cross_system_events: Event log for all cross-system events
+#    - dc_player_cross_system_stats: Per-player aggregated statistics
+#    - dc_cross_system_config: Runtime config overrides
+#    - dc_cross_system_multipliers: Active multiplier definitions
+#    - dc_cross_system_achievement_triggers: Achievement completion triggers
+#
+###########################################################################
+
+# -------------------------------------------------------------------------
+# Core Settings
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.Enable
+#        Description: Master toggle for Cross-System Integration Framework
+#                     When disabled, all cross-system features are bypassed.
+#                     Individual systems continue to work independently.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Enable = 1
+
+#
+#    DC.CrossSystem.Debug
+#        Description: Enable debug logging for cross-system operations
+#                     Logs all events, context changes, and reward distributions.
+#                     WARNING: Very verbose in active environments!
+#        Default:     0 (Disabled)
+#
+DC.CrossSystem.Debug = 0
+
+# -------------------------------------------------------------------------
+# EventBus Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.EventBus.Enable
+#        Description: Enable the EventBus for cross-system event publishing
+#                     When disabled, systems cannot notify each other of events.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.EventBus.Enable = 1
+
+#
+#    DC.CrossSystem.EventBus.LogEvents
+#        Description: Log all events to dc_cross_system_events table
+#                     Useful for debugging and analytics.
+#                     Set to 0 in production to reduce database writes.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.EventBus.LogEvents = 1
+
+#
+#    DC.CrossSystem.EventBus.RetentionDays
+#        Description: Days to retain event logs in database
+#                     Events older than this are auto-deleted by scheduled task.
+#        Default:     30
+#        Range:       7 - 365
+#
+DC.CrossSystem.EventBus.RetentionDays = 30
+
+#
+#    DC.CrossSystem.EventBus.MaxEventsPerSecond
+#        Description: Maximum events processed per second (rate limiting)
+#                     Prevents event storms from impacting server performance.
+#        Default:     1000
+#        Range:       100 - 10000
+#
+DC.CrossSystem.EventBus.MaxEventsPerSecond = 1000
+
+# -------------------------------------------------------------------------
+# SessionContext Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.SessionContext.Enable
+#        Description: Enable session context tracking per player
+#                     Tracks active contexts (Mythic+ run, BG, arena, etc.)
+#                     Required for context-aware multipliers and rewards.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.SessionContext.Enable = 1
+
+#
+#    DC.CrossSystem.SessionContext.MaxContextsPerPlayer
+#        Description: Maximum concurrent contexts per player
+#                     Normally 1-2 (e.g., Mythic+ run + seasonal event)
+#        Default:     5
+#        Range:       1 - 10
+#
+DC.CrossSystem.SessionContext.MaxContextsPerPlayer = 5
+
+#
+#    DC.CrossSystem.SessionContext.PersistOnLogout
+#        Description: Persist session contexts when player logs out
+#                     When enabled, contexts are restored on re-login.
+#                     Useful for Mythic+ runs that can be resumed.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.SessionContext.PersistOnLogout = 1
+
+# -------------------------------------------------------------------------
+# RewardDistributor Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.Rewards.Enable
+#        Description: Enable unified reward distribution system
+#                     When disabled, systems distribute rewards independently
+#                     without multiplier stacking.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Rewards.Enable = 1
+
+#
+#    DC.CrossSystem.Rewards.StackMultipliers
+#        Description: Allow multipliers from multiple systems to stack
+#                     Example: Mythic+ bonus * Seasonal bonus * Prestige bonus
+#                     When disabled, only the highest multiplier applies.
+#        Default:     1 (Enabled - multiplicative stacking)
+#
+DC.CrossSystem.Rewards.StackMultipliers = 1
+
+#
+#    DC.CrossSystem.Rewards.MaxMultiplier
+#        Description: Maximum total multiplier cap
+#                     Prevents excessive rewards from multiplier stacking.
+#                     Final rewards = base * min(total_multiplier, this_cap)
+#        Default:     10.0 (1000% max bonus)
+#        Range:       1.0 - 50.0
+#
+DC.CrossSystem.Rewards.MaxMultiplier = 10.0
+
+#
+#    DC.CrossSystem.Rewards.LogDistributions
+#        Description: Log all reward distributions to database
+#                     Stored in dc_player_cross_system_stats table.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Rewards.LogDistributions = 1
+
+# -------------------------------------------------------------------------
+# System-Specific Multiplier Caps
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.Multiplier.MythicPlus.Max
+#        Description: Maximum multiplier from Mythic+ system
+#                     Higher key levels provide higher bonuses up to this cap.
+#        Default:     3.0 (300% max from M+)
+#
+DC.CrossSystem.Multiplier.MythicPlus.Max = 3.0
+
+#
+#    DC.CrossSystem.Multiplier.Seasonal.Max
+#        Description: Maximum multiplier from Seasonal system
+#                     Active season events can boost rewards up to this cap.
+#        Default:     2.0 (200% max from seasonal)
+#
+DC.CrossSystem.Multiplier.Seasonal.Max = 2.0
+
+#
+#    DC.CrossSystem.Multiplier.Prestige.Max
+#        Description: Maximum multiplier from Prestige system
+#                     Higher prestige levels provide bonuses up to this cap.
+#        Default:     2.5 (250% max from prestige)
+#
+DC.CrossSystem.Multiplier.Prestige.Max = 2.5
+
+#
+#    DC.CrossSystem.Multiplier.HinterlandBG.Max
+#        Description: Maximum multiplier from Hinterland BG
+#                     BG rating and performance provide bonuses up to this cap.
+#        Default:     1.5 (150% max from HLBG)
+#
+DC.CrossSystem.Multiplier.HinterlandBG.Max = 1.5
+
+# -------------------------------------------------------------------------
+# Cross-System Achievement Triggers
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.Achievements.Enable
+#        Description: Enable cross-system achievement triggers
+#                     Achievements can be triggered by combinations of events
+#                     from multiple systems (e.g., "Complete M+15 during a season event")
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Achievements.Enable = 1
+
+#
+#    DC.CrossSystem.Achievements.AnnounceWorld
+#        Description: Announce cross-system achievements to all players
+#                     When enabled, special achievements are announced server-wide.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Achievements.AnnounceWorld = 1
+
+# -------------------------------------------------------------------------
+# Statistics Aggregation
+# -------------------------------------------------------------------------
+
+#
+#    DC.CrossSystem.Stats.Enable
+#        Description: Enable statistics aggregation across systems
+#                     Aggregates player stats from all integrated systems
+#                     into dc_player_cross_system_stats table.
+#        Default:     1 (Enabled)
+#
+DC.CrossSystem.Stats.Enable = 1
+
+#
+#    DC.CrossSystem.Stats.UpdateIntervalSeconds
+#        Description: How often to update aggregated statistics (seconds)
+#                     Lower values = more current stats but more DB writes.
+#        Default:     300 (5 minutes)
+#        Range:       60 - 3600
+#
+DC.CrossSystem.Stats.UpdateIntervalSeconds = 300
 
 
 ###########################################################################

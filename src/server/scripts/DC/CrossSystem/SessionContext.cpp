@@ -7,6 +7,7 @@
 
 #include "SessionContext.h"
 #include "CrossSystemManager.h"
+#include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
 #include "Timer.h"
@@ -21,7 +22,7 @@ namespace CrossSystem
     
     SessionContext::SessionContext(ObjectGuid playerGuid)
         : playerGuid_(playerGuid)
-        , sessionStartTime_(GameTime::GetGameTime())
+        , sessionStartTime_(GameTime::GetGameTime().count())
     {
         // Initialize all systems as potentially active
         // Specific systems will enable/disable based on their state
@@ -31,7 +32,7 @@ namespace CrossSystem
     
     uint64 SessionContext::GetSessionDuration() const
     {
-        return GameTime::GetGameTime() - sessionStartTime_;
+        return GameTime::GetGameTime().count() - sessionStartTime_;
     }
     
     // =========================================================================
@@ -48,7 +49,7 @@ namespace CrossSystem
         activeContent_.mapId = mapId;
         activeContent_.instanceId = instanceId;
         activeContent_.keystoneLevel = keystoneLevel;
-        activeContent_.enteredAt = GameTime::GetGameTime();
+        activeContent_.enteredAt = GameTime::GetGameTime().count();
         
         isDirty_ = true;
         
@@ -72,7 +73,7 @@ namespace CrossSystem
         std::lock_guard<std::mutex> lock(mutex_);
         
         activeContent_.isRunActive = true;
-        activeContent_.runStartedAt = GameTime::GetGameTime();
+        activeContent_.runStartedAt = GameTime::GetGameTime().count();
         activeContent_.seasonId = seasonId;
         activeContent_.bossesKilled = 0;
         activeContent_.trashKilled = 0;
@@ -105,7 +106,7 @@ namespace CrossSystem
         if (!activeContent_.isRunActive || activeContent_.runStartedAt == 0)
             return 0;
             
-        return GameTime::GetGameTime() - activeContent_.runStartedAt;
+        return GameTime::GetGameTime().count() - activeContent_.runStartedAt;
     }
     
     void SessionContext::IncrementBossKills()
@@ -232,7 +233,7 @@ namespace CrossSystem
         
         PendingReward r = reward;
         r.id = nextRewardId_++;
-        r.createdAt = GameTime::GetGameTime();
+        r.createdAt = GameTime::GetGameTime().count();
         
         if (r.expiresAt == 0)
             r.expiresAt = r.createdAt + (7 * 24 * 60 * 60);  // Default 7 days
@@ -264,7 +265,7 @@ namespace CrossSystem
     {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        uint64 now = GameTime::GetGameTime();
+        uint64 now = GameTime::GetGameTime().count();
         
         pendingRewards_.erase(
             std::remove_if(pendingRewards_.begin(), pendingRewards_.end(),

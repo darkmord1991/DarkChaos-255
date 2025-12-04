@@ -459,10 +459,22 @@ namespace DCCustomLogin
         
         uint32 amount = sConfigMgr->GetOption<uint32>(Config::DC_SEASONAL_TOKENS_AMOUNT, 100);
         
-        // Get the seasonal token item ID from config (since dc_mplus_seasons uses JSON for rewards)
-        // The reward_curve JSON contains rewards per key level, not a simple token item ID
-        // So we use a config option for the starter token item instead
-        uint32 tokenItemId = sConfigMgr->GetOption<uint32>("DCCustomLogin.SeasonalTokens.ItemId", 0);
+        // Get the seasonal token item ID
+        // Priority: UseCanonicalCurrency -> DarkChaos.Seasonal.TokenItemID
+        //           Otherwise -> DCCustomLogin.SeasonalTokens.ItemId
+        bool useCanonical = sConfigMgr->GetOption<bool>("DCCustomLogin.SeasonalTokens.UseCanonicalCurrency", true);
+        uint32 tokenItemId;
+        
+        if (useCanonical)
+        {
+            // Use canonical seasonal token from DarkChaos.Seasonal.TokenItemID
+            tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+        }
+        else
+        {
+            // Use custom token item ID
+            tokenItemId = sConfigMgr->GetOption<uint32>("DCCustomLogin.SeasonalTokens.ItemId", 0);
+        }
         
         if (tokenItemId > 0)
         {
@@ -476,7 +488,8 @@ namespace DCCustomLogin
         }
         else if (debug)
         {
-            LOG_WARN("module", "[DCCustomLogin] SeasonalTokens.ItemId not configured, skipping token grant");
+            LOG_WARN("module", "[DCCustomLogin] SeasonalTokens not configured (UseCanonical={}, ItemId={}), skipping token grant", 
+                     useCanonical, tokenItemId);
         }
     }
     

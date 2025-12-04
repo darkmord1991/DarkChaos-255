@@ -31,8 +31,21 @@ namespace Upgrade
     // Load config
     static void LoadConfig()
     {
-        s_TokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-        s_EssenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+        // Check if Item Upgrade should use canonical seasonal currency
+        bool useSeasonalCurrency = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
+        
+        if (useSeasonalCurrency)
+        {
+            // Use canonical seasonal currency (DarkChaos.Seasonal.*)
+            s_TokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+            s_EssenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+        }
+        else
+        {
+            // Use Item Upgrade specific currency
+            s_TokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+            s_EssenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+        }
     }
     
     // Translate addon bag/slot to server format

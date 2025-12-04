@@ -9,6 +9,7 @@
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "Player.h"
@@ -126,7 +127,7 @@ namespace CrossSystem
         eventMultiplier_ = multiplier;
         
         if (durationSeconds > 0)
-            eventMultiplierExpires_ = GameTime::GetGameTime() + durationSeconds;
+            eventMultiplierExpires_ = GameTime::GetGameTime().count() + durationSeconds;
         else
             eventMultiplierExpires_ = 0;
             
@@ -138,7 +139,7 @@ namespace CrossSystem
     {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        if (eventMultiplierExpires_ > 0 && GameTime::GetGameTime() > eventMultiplierExpires_)
+        if (eventMultiplierExpires_ > 0 && GameTime::GetGameTime().count() > eventMultiplierExpires_)
             return 1.0f;
             
         return eventMultiplier_;
@@ -334,7 +335,7 @@ namespace CrossSystem
             RewardTransaction tx;
             tx.id = nextTransactionId_++;
             tx.playerGuid = player->GetGUID();
-            tx.timestamp = GameTime::GetGameTime();
+            tx.timestamp = GameTime::GetGameTime().count();
             tx.sourceSystem = context.sourceSystem;
             tx.triggerEvent = context.triggerEvent;
             tx.source = context.sourceName;

@@ -127,9 +127,19 @@ private:
             return true;
         }
 
-        // Get currency item IDs from config
-    uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312); // updated default per configuration note
-    uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+        // Get currency item IDs from config (support for canonical seasonal currency)
+    bool useSeasonalCurrency = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
+    uint32 essenceId, tokenId;
+    if (useSeasonalCurrency)
+    {
+        essenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+        tokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+    }
+    else
+    {
+        essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+        tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+    }
 
         // Parse arguments
         std::string argStr = args ? args : "";
@@ -1140,9 +1150,19 @@ private:
                     essenceNeeded = costFields[1].Get<uint32>();
             }
 
-            // Get currency item IDs from config
-            uint32 tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-            uint32 essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+            // Get currency item IDs from config (support for canonical seasonal currency)
+            bool useSeasonalCurrency2 = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
+            uint32 tokenId, essenceId;
+            if (useSeasonalCurrency2)
+            {
+                tokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+                essenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+            }
+            else
+            {
+                tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+                essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+            }
 
             // Check if player has enough currency
             uint32 currentTokens = player->GetItemCount(tokenId);

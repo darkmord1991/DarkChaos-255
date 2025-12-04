@@ -57,32 +57,32 @@ class CrossSystemPlayerScript : public PlayerScript
 public:
     CrossSystemPlayerScript() : PlayerScript("dc_cross_system_player") {}
     
-    void OnLogin(Player* player, bool firstLogin) override
+    void OnPlayerLogin(Player* player) override
     {
-        GetManager()->OnPlayerLogin(player, firstLogin);
+        GetManager()->OnPlayerLogin(player, false);  // Note: firstLogin not available in this hook
     }
     
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         GetManager()->OnPlayerLogout(player);
     }
     
-    void OnLevelChanged(Player* player, uint8 oldLevel) override
+    void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         GetManager()->OnPlayerLevelChanged(player, oldLevel, player->GetLevel());
     }
     
-    void OnPlayerKilledByCreature(Creature* killer, Player* player) override
+    void OnPlayerKilledByCreature(Creature* /*killer*/, Player* player) override
     {
         GetManager()->OnPlayerDeath(player, nullptr);
     }
     
-    void OnPVPKill(Player* killer, Player* killed) override
+    void OnPlayerPVPKill(Player* killer, Player* killed) override
     {
         GetManager()->OnPlayerDeath(killed, killer);
     }
     
-    void OnMapChanged(Player* player) override
+    void OnPlayerMapChanged(Player* player) override
     {
         if (player && player->GetMap())
         {
@@ -90,7 +90,7 @@ public:
         }
     }
     
-    void OnQuestComplete(Player* player, Quest const* quest) override
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {
         if (player && quest)
         {
@@ -98,7 +98,7 @@ public:
         }
     }
     
-    void OnCreatureKill(Player* player, Creature* creature) override
+    void OnPlayerCreatureKill(Player* player, Creature* creature) override
     {
         if (!player || !creature)
             return;

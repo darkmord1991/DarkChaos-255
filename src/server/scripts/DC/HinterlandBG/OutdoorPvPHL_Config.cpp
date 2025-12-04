@@ -69,43 +69,16 @@ void OutdoorPvPHL::LoadConfig()
     _killSpellOnPlayerKillHorde    = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.PlayerKillHorde", _killSpellOnPlayerKillHorde);
     _killSpellOnNpcKill            = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.NpcKill", _killSpellOnNpcKill);
     // Affix system (optional)
-    _affixEnabled         = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Enabled", _affixEnabled);
-    _affixWeatherEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WeatherEnabled", _affixWeatherEnabled);
-    _affixPeriodSec       = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Period", _affixPeriodSec);
-    _affixSpellHaste      = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.Haste", _affixSpellHaste);
-    _affixSpellSlow       = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.Slow", _affixSpellSlow);
-    _affixSpellReducedHealing = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.ReducedHealing", _affixSpellReducedHealing);
-    _affixSpellReducedArmor   = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.ReducedArmor", _affixSpellReducedArmor);
-    _affixSpellBossEnrage     = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.BossEnrage", _affixSpellBossEnrage);
-    _affixSpellBadWeatherNpcBuff = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Spell.BadWeatherNpcBuff", _affixSpellBadWeatherNpcBuff);
-    _affixRandomOnStart      = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnBattleStart", _affixRandomOnStart);
-    _affixAnnounce           = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
-    _affixWorldstateEnabled  = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.WorldstateEnabled", _affixWorldstateEnabled);
+    // NOTE: Affix system has been removed. These settings are kept for backwards compatibility
+    // but the affix system is no longer functional. Set _affixEnabled to false to ensure
+    // no affix code runs even if old config has it enabled.
+    _affixEnabled = false;
+    _affixWeatherEnabled = false;
+    _affixPeriodSec = 0;
+    _affixRandomOnStart = false;
+    _affixAnnounce = false;
+    _affixWorldstateEnabled = false;
     _statsIncludeManualResets = sConfigMgr->GetOption<bool>("HinterlandBG.Stats.IncludeManual", _statsIncludeManualResets);
-    // Per-affix overrides: player/npc spells and weather
-    auto loadAffixArrayU32 = [&](char const* base, uint32 arr[7])
-    {
-        // keys like base.0 .. base.6 (0=NONE, 1-6=affixes)
-        for (uint32 i = 0; i <= 6; ++i)
-        {
-            char key[128];
-            snprintf(key, sizeof(key), "%s.%u", base, i);
-            arr[i] = sConfigMgr->GetOption<uint32>(key, arr[i]);
-        }
-    };
-    auto loadAffixArrayFloat = [&](char const* base, float arr[7])
-    {
-        for (uint32 i = 0; i <= 6; ++i)
-        {
-            char key[128];
-            snprintf(key, sizeof(key), "%s.%u", base, i);
-            arr[i] = sConfigMgr->GetOption<float>(key, arr[i]);
-        }
-    };
-    loadAffixArrayU32("HinterlandBG.Affix.PlayerSpell", _affixPlayerSpell);
-    loadAffixArrayU32("HinterlandBG.Affix.NpcSpell", _affixNpcSpell);
-    loadAffixArrayU32("HinterlandBG.Affix.WeatherType", _affixWeatherType);
-    loadAffixArrayFloat("HinterlandBG.Affix.WeatherIntensity", _affixWeatherIntensity);
     // Resource loss amounts
     _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);
     _resourcesLossNpcNormal  = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcNormal",  _resourcesLossNpcNormal);

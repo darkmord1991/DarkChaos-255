@@ -8,6 +8,7 @@
 #include "EventBus.h"
 #include "CrossSystemManager.h"
 #include "Creature.h"
+#include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
 #include "Timer.h"
@@ -237,7 +238,7 @@ namespace CrossSystem
     {
         EventData event;
         event.type = type;
-        event.timestamp = GameTime::GetGameTime();
+        event.timestamp = GameTime::GetGameTime().count();
         event.playerGuid = playerGuid;
         event.mapId = mapId;
         event.instanceId = instanceId;
@@ -293,7 +294,7 @@ namespace CrossSystem
             
         auto event = std::make_unique<CreatureKillEvent>();
         event->type = isBoss ? EventType::BossKill : EventType::CreatureKill;
-        event->timestamp = GameTime::GetGameTime();
+        event->timestamp = GameTime::GetGameTime().count();
         event->playerGuid = player->GetGUID();
         event->mapId = player->GetMapId();
         event->instanceId = player->GetInstanceId();
@@ -320,7 +321,7 @@ namespace CrossSystem
         auto event = std::make_unique<QuestCompleteEvent>();
         event->type = isDaily ? EventType::DailyQuestComplete 
                      : (isWeekly ? EventType::WeeklyQuestComplete : EventType::QuestComplete);
-        event->timestamp = GameTime::GetGameTime();
+        event->timestamp = GameTime::GetGameTime().count();
         event->playerGuid = player->GetGUID();
         event->mapId = player->GetMapId();
         event->instanceId = player->GetInstanceId();
@@ -340,7 +341,7 @@ namespace CrossSystem
             
         auto event = std::make_unique<ItemUpgradeEvent>();
         event->type = EventType::ItemUpgraded;
-        event->timestamp = GameTime::GetGameTime();
+        event->timestamp = GameTime::GetGameTime().count();
         event->playerGuid = player->GetGUID();
         event->mapId = player->GetMapId();
         event->instanceId = player->GetInstanceId();
@@ -363,7 +364,7 @@ namespace CrossSystem
             
         auto event = std::make_unique<PrestigeEvent>();
         event->type = EventType::PlayerPrestige;
-        event->timestamp = GameTime::GetGameTime();
+        event->timestamp = GameTime::GetGameTime().count();
         event->playerGuid = player->GetGUID();
         event->mapId = player->GetMapId();
         event->instanceId = player->GetInstanceId();
@@ -383,7 +384,7 @@ namespace CrossSystem
             
         auto event = std::make_unique<VaultClaimEvent>();
         event->type = EventType::VaultClaimed;
-        event->timestamp = GameTime::GetGameTime();
+        event->timestamp = GameTime::GetGameTime().count();
         event->playerGuid = player->GetGUID();
         event->mapId = player->GetMapId();
         event->instanceId = player->GetInstanceId();

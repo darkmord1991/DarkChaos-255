@@ -84,7 +84,7 @@ namespace CrossSystem
         // Subsystem Access
         // =====================================================================
         
-        SessionManager* GetSessionManager() { return &sessionManager_; }
+        SessionManager* GetSessionManager() { return sessionManager_; }
         EventBus* GetEventBus() { return eventBus_; }
         RewardDistributor* GetRewardDistributor() { return rewardDistributor_; }
         
@@ -163,7 +163,7 @@ namespace CrossSystem
         bool IsEnabled() const { return globalEnabled_; }
         
     private:
-        CrossSystemManager() = default;
+        CrossSystemManager() : eventBus_(nullptr), rewardDistributor_(nullptr), sessionManager_(nullptr) {}
         
         // Initialize subsystems
         void InitializeEventBus();
@@ -173,10 +173,10 @@ namespace CrossSystem
         // Systems
         std::unordered_map<SystemId, SystemInfo> systems_;
         
-        // Subsystems (singletons)
-        SessionManager sessionManager_;
-        EventBus* eventBus_ = nullptr;
-        RewardDistributor* rewardDistributor_ = nullptr;
+        // Subsystems (use singletons via pointers)
+        EventBus* eventBus_;
+        RewardDistributor* rewardDistributor_;
+        SessionManager* sessionManager_;
         
         // State
         bool initialized_ = false;
@@ -196,21 +196,6 @@ namespace CrossSystem
     inline CrossSystemManager* GetManager()
     {
         return CrossSystemManager::instance();
-    }
-    
-    inline SessionContext* GetPlayerSession(Player* player)
-    {
-        return GetManager()->GetSessionManager()->GetSession(player);
-    }
-    
-    inline EventBus* GetEventBus()
-    {
-        return GetManager()->GetEventBus();
-    }
-    
-    inline RewardDistributor* GetRewardDistributor()
-    {
-        return GetManager()->GetRewardDistributor();
     }
 
 } // namespace CrossSystem

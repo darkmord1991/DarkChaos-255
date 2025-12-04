@@ -8,6 +8,7 @@
 #include "CrossSystemManager.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
@@ -44,6 +45,7 @@ namespace CrossSystem
         // Initialize subsystems
         eventBus_ = EventBus::instance();
         rewardDistributor_ = RewardDistributor::instance();
+        sessionManager_ = SessionManager::instance();
         
         // Load configuration
         LoadConfiguration();
@@ -68,7 +70,8 @@ namespace CrossSystem
         LOG_INFO("dc.crosssystem", "Shutting down Cross-System Integration...");
         
         // Save any dirty sessions
-        sessionManager_.SaveDirtySessions();
+        if (sessionManager_)
+            sessionManager_->SaveDirtySessions();
         
         // Cleanup
         systems_.clear();
@@ -201,7 +204,7 @@ namespace CrossSystem
             return;
             
         // Create session
-        auto* session = sessionManager_.CreateSession(player);
+        auto* session = sessionManager_->CreateSession(player);
         if (session)
         {
             session->RefreshProgression(player);
@@ -225,7 +228,7 @@ namespace CrossSystem
                                 player->GetMapId(), player->GetInstanceId());
         
         // Destroy session
-        sessionManager_.DestroySession(player->GetGUID());
+        sessionManager_->DestroySession(player->GetGUID());
         
         LOG_DEBUG("dc.crosssystem", "Player {} logged out", player->GetName());
     }
@@ -242,19 +245,19 @@ namespace CrossSystem
         }
         
         // Update session
-        if (auto* session = sessionManager_.GetSession(player))
+        if (auto* session = sessionManager_->GetSession(player))
         {
             session->RefreshProgression(player);
         }
     }
     
-    void CrossSystemManager::OnPlayerDeath(Player* player, Player* killer)
+    void CrossSystemManager::OnPlayerDeath(Player* player, Player* /*killer*/)
     {
         if (!globalEnabled_ || !player)
             return;
             
         // Update session
-        if (auto* session = sessionManager_.GetSession(player))
+        if (auto* session = sessionManager_->GetSession(player))
         {
             session->IncrementDeaths();
         }
@@ -272,7 +275,7 @@ namespace CrossSystem
         if (!globalEnabled_ || !player || !map)
             return;
             
-        auto* session = sessionManager_.GetSession(player);
+        auto* session = sessionManager_->GetSession(player);
         if (!session)
             return;
             
@@ -342,18 +345,18 @@ namespace CrossSystem
         eventBus_->PublishSimple(EventType::DungeonLeave, player->GetGUID(),
                                 map->GetId(), map->GetInstanceId());
         
-        if (auto* session = sessionManager_.GetSession(player))
+        if (auto* session = sessionManager_->GetSession(player))
         {
             session->ClearActiveContent();
         }
     }
     
-    void CrossSystemManager::OnPlayerEnterDungeon(Player* player, Map* map, Difficulty difficulty)
+    void CrossSystemManager::OnPlayerEnterDungeon(Player* /*player*/, Map* /*map*/, Difficulty /*difficulty*/)
     {
         // More specific dungeon handling is done in OnPlayerEnterMap
     }
     
-    void CrossSystemManager::OnPlayerLeaveDungeon(Player* player, Map* map)
+    void CrossSystemManager::OnPlayerLeaveDungeon(Player* /*player*/, Map* /*map*/)
     {
         // Handled by OnPlayerLeaveMap
     }
@@ -367,7 +370,7 @@ namespace CrossSystem
         if (!globalEnabled_ || !player || !creature)
             return;
             
-        auto* session = sessionManager_.GetSession(player);
+        auto* session = sessionManager_->GetSession(player);
         uint8 keystoneLevel = session ? session->GetActiveContent().keystoneLevel : 0;
         
         session->IncrementTrashKills(1);
@@ -381,7 +384,7 @@ namespace CrossSystem
         if (!globalEnabled_ || !player || !boss)
             return;
             
-        auto* session = sessionManager_.GetSession(player);
+        auto* session = sessionManager_->GetSession(player);
         uint8 keystoneLevel = session ? session->GetActiveContent().keystoneLevel : 0;
         
         if (session)
@@ -409,7 +412,7 @@ namespace CrossSystem
             
         eventBus_->PublishQuestComplete(player, questId, false, false);
         
-        if (auto* session = sessionManager_.GetSession(player))
+        if (auto* session = sessionManager_->GetSession(player))
         {
             session->IncrementSessionStat("quests");
         }
@@ -443,7 +446,7 @@ namespace CrossSystem
         // Item entry would need to be looked up
         eventBus_->PublishItemUpgrade(player, itemGuid, 0, fromLevel, toLevel, 0, 0, 0);
         
-        if (auto* session = sessionManager_.GetSession(player))
+        if (auto* session = sessionManager_->GetSession(player))
         {
             session->IncrementSessionStat("items_upgraded");
         }
@@ -471,8 +474,8 @@ namespace CrossSystem
         // Save dirty sessions every 5 minutes
         if (saveTimer_ >= 5 * 60 * 1000)
         {
-            sessionManager_.SaveDirtySessions();
-            sessionManager_.CleanupExpiredRewards();
+            sessionManager_->SaveDirtySessions();
+            sessionManager_->CleanupExpiredRewards();
             saveTimer_ = 0;
         }
     }
@@ -496,7 +499,7 @@ namespace CrossSystem
         // Publish to all listening systems
         EventData event;
         event.type = EventType::WeeklyResetOccurred;
-        event.timestamp = GameTime::GetGameTime();
+        event.timestamp = GameTime::GetGameTime().count();
         eventBus_->Publish(event);
     }
     
@@ -509,7 +512,7 @@ namespace CrossSystem
         
         EventData event;
         event.type = EventType::SeasonStart;
-        event.timestamp = GameTime::GetGameTime();
+        event.timestamp = GameTime::GetGameTime().count();
         event.mapId = seasonId;  // Repurposing mapId for seasonId
         eventBus_->Publish(event);
     }
@@ -523,7 +526,7 @@ namespace CrossSystem
         
         EventData event;
         event.type = EventType::SeasonEnd;
-        event.timestamp = GameTime::GetGameTime();
+        event.timestamp = GameTime::GetGameTime().count();
         event.mapId = seasonId;
         eventBus_->Publish(event);
     }
@@ -561,7 +564,7 @@ namespace CrossSystem
         ss << "=== DarkChaos Cross-System Status ===\n";
         ss << "Initialized: " << (initialized_ ? "Yes" : "No") << "\n";
         ss << "Enabled: " << (globalEnabled_ ? "Yes" : "No") << "\n";
-        ss << "Active Sessions: " << sessionManager_.GetActiveSessionCount() << "\n";
+        ss << "Active Sessions: " << sessionManager_->GetActiveSessionCount() << "\n";
         ss << "\nRegistered Systems:\n";
         
         for (const auto& [id, info] : systems_)
@@ -581,7 +584,7 @@ namespace CrossSystem
         if (!player)
             return "Invalid player";
             
-        auto* session = const_cast<SessionManager&>(sessionManager_).GetSession(player);
+        auto* session = sessionManager_->GetSession(player);
         if (!session)
             return "No active session";
             

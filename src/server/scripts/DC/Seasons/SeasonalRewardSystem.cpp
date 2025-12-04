@@ -56,12 +56,14 @@ namespace DarkChaos
             }
             else
             {
-                config_.activeSeason = sConfigMgr->GetOption<uint32>("SeasonalRewards.ActiveSeasonID", 1);
+                // Fallback to canonical DarkChaos.ActiveSeasonID
+                config_.activeSeason = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
                 LOG_INFO("module", ">> [SeasonalRewards] SeasonalManager not available, using config season: {}", config_.activeSeason);
             }
             
-            config_.tokenItemId = sConfigMgr->GetOption<uint32>("SeasonalRewards.TokenItemID", 49426);       // Default: Emblem of Frost
-            config_.essenceItemId = sConfigMgr->GetOption<uint32>("SeasonalRewards.EssenceItemID", 47241);   // Default: Emblem of Triumph
+            // Load canonical seasonal currency from DarkChaos.Seasonal.* (Section 9 unified settings)
+            config_.tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);       // Default: DC Seasonal Token
+            config_.essenceItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);   // Default: DC Seasonal Essence
             config_.weeklyTokenCap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxTokensPerWeek", 0);
             config_.weeklyEssenceCap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxEssencePerWeek", 0);
             config_.questMultiplier = sConfigMgr->GetOption<float>("SeasonalRewards.QuestMultiplier", 1.0f);

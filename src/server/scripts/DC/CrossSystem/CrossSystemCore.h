@@ -353,13 +353,88 @@ namespace CrossSystem
     };
     
     // =========================================================================
+    // System Priority
+    // =========================================================================
+    
+    enum class SystemPriority : uint8
+    {
+        HIGHEST = 0,
+        CORE    = 1,
+        HIGH    = 2,
+        NORMAL  = 3,
+        LOW     = 4,
+        LOWEST  = 5
+    };
+    
+    // =========================================================================
+    // System Capabilities
+    // =========================================================================
+    
+    enum class SystemCapability : uint32
+    {
+        NONE                = 0x00000000,
+        PLAYER_TRACKING     = 0x00000001,
+        DUNGEON_TRACKING    = 0x00000002,
+        RAID_TRACKING       = 0x00000004,
+        PVP_TRACKING        = 0x00000008,
+        REWARD_GRANTING     = 0x00000010,
+        DIFFICULTY_SCALING  = 0x00000020,
+        LEADERBOARD_TRACKING= 0x00000040,
+        SEASONAL_CONTENT    = 0x00000080,
+        CURRENCY_MANAGEMENT = 0x00000100,
+        ACHIEVEMENT_TRACKING= 0x00000200
+    };
+    
+    // =========================================================================
+    // DCSystem Base Interface
+    // =========================================================================
+    
+    /**
+     * @brief Base interface for all DC systems that integrate with CrossSystem
+     *
+     * Systems should extend this to participate in cross-system coordination.
+     */
+    class DCSystem
+    {
+    public:
+        virtual ~DCSystem() = default;
+        
+        // System identification
+        virtual std::string GetSystemName() const = 0;
+        virtual SystemPriority GetPriority() const { return SystemPriority::NORMAL; }
+        virtual uint32 GetCapabilities() const { return 0; }
+        
+        // Lifecycle
+        virtual bool Initialize() { return true; }
+        virtual void Shutdown() {}
+        virtual void Update(uint32 /*diff*/) {}
+        
+        // Player hooks
+        virtual void OnPlayerLogin(Player* /*player*/, bool /*firstLogin*/) {}
+        virtual void OnPlayerLogout(Player* /*player*/) {}
+        virtual void OnPlayerLevelUp(Player* /*player*/, uint8 /*oldLevel*/) {}
+        virtual void OnPlayerDeath(Player* /*player*/, Player* /*killer*/) {}
+        
+        // Content hooks
+        virtual void OnDungeonStart(Player* /*player*/, Map* /*map*/, uint8 /*difficulty*/) {}
+        virtual void OnDungeonComplete(Player* /*player*/, Map* /*map*/, uint32 /*completionTimeMs*/) {}
+        virtual void OnBossKill(Player* /*player*/, Creature* /*boss*/, bool /*isWorldBoss*/) {}
+        
+        // Check if initialized
+        bool IsInitialized() const { return _initialized; }
+        
+    protected:
+        bool _initialized = false;
+    };
+    
+    // =========================================================================
     // Global Access Functions
     // =========================================================================
     
     // Get the singleton CrossSystemManager instance
     CrossSystemManager* GetManager();
     
-    // Convenience functions
+    // Convenience functions (defined in their respective headers)
     SessionContext* GetPlayerSession(Player* player);
     EventBus* GetEventBus();
     RewardDistributor* GetRewardDistributor();
