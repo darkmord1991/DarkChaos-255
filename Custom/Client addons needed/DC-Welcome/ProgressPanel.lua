@@ -199,7 +199,7 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     yOffset = yOffset - 35
     
     -- ==========================================================================
-    -- Stat Boxes Row
+    -- Stat Boxes Row 1 (M+ Rating, Prestige, Season Rank, Achievements)
     -- ==========================================================================
     
     local statBoxes = {}
@@ -241,6 +241,41 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         color = { r = 1, g = 0.84, b = 0 }
     })
     statBoxes.achievements:SetPoint("TOPLEFT", xStart + boxSpacing * 3, yOffset)
+    
+    yOffset = yOffset - STAT_BOX_HEIGHT - 10
+    
+    -- ==========================================================================
+    -- Stat Boxes Row 2 (Alt Bonus Level - centered)
+    -- ==========================================================================
+    
+    -- Alt Bonus Level (XP bonus from max-level alts)
+    statBoxes.altBonus = CreateStatBox(scrollChild, {
+        label = "Alt Bonus",
+        value = "---",
+        icon = "Interface\\Icons\\Spell_Holy_BlessingOfStrength",
+        color = { r = 0.2, g = 0.8, b = 0.4 }
+    })
+    -- Center the alt bonus box
+    statBoxes.altBonus:SetPoint("TOPLEFT", xStart + boxSpacing * 1.5, yOffset)
+    
+    -- Add tooltip for alt bonus
+    statBoxes.altBonus:EnableMouse(true)
+    statBoxes.altBonus:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("|cffffd700Prestige Alt Bonus|r", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Earn +5% XP bonus for each max-level", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("character on your account (max 25%).", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(" ")
+        local altLevel = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusLevel or 0
+        local altPercent = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusPercent or 0
+        GameTooltip:AddDoubleLine("Max-Level Alts:", tostring(altLevel) .. " / 5", 1, 1, 1, 0.2, 0.8, 0.4)
+        GameTooltip:AddDoubleLine("Current Bonus:", "+" .. tostring(altPercent) .. "% XP", 1, 1, 1, 0.2, 0.8, 0.4)
+        GameTooltip:Show()
+    end)
+    statBoxes.altBonus:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
     
     scrollChild.statBoxes = statBoxes
     yOffset = yOffset - STAT_BOX_HEIGHT - 20
@@ -365,12 +400,32 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
             if progress.achievementPoints then
                 self.statBoxes.achievements:SetValue(progress.achievementPoints)
             end
+            
+            -- Alt Bonus Level - show as "Level X (+Y%)"
+            if progress.altBonusLevel ~= nil then
+                local altLevel = progress.altBonusLevel or 0
+                local altPercent = progress.altBonusPercent or (altLevel * 5)
+                if altLevel > 0 then
+                    self.statBoxes.altBonus:SetValue(string.format("%d |cff88ff88(+%d%%)|r", altLevel, altPercent))
+                else
+                    self.statBoxes.altBonus:SetValue("|cff8888880|r")
+                end
+            end
         end
         
         -- Update progress bars
         if self.progressBars then
             if progress.weeklyVaultProgress then
                 self.progressBars.vault:SetProgress(progress.weeklyVaultProgress, 3)
+            end
+            if progress.seasonPoints then
+                self.progressBars.seasonPoints:SetProgress(progress.seasonPoints, 1000)
+            end
+            if progress.prestigeXP then
+                self.progressBars.prestigeXP:SetProgress(progress.prestigeXP, 100)
+            end
+            if progress.keysThisWeek then
+                self.progressBars.keysWeek:SetProgress(progress.keysThisWeek, 10)
             end
         end
     end

@@ -99,10 +99,17 @@ DCWelcome.Progress = {
     prestigeLevel = nil,
     prestigeXP = nil,
     seasonRank = nil,
+    seasonPoints = nil,
     weeklyVaultProgress = nil,
     achievementPoints = nil,
+    keysThisWeek = nil,
+    altBonusLevel = nil,
+    altBonusPercent = nil,
     _lastUpdate = 0
 }
+
+-- Progress cache for tooltip access
+DCWelcome.ProgressCache = {}
 
 -- =============================================================================
 -- Local Variables
@@ -388,7 +395,18 @@ local function RegisterHandlers()
                 progress.keysThisWeek = data.keysThisWeek
             end
             
+            -- Alt Bonus (Prestige system - max-level alts)
+            if data.altBonusLevel then
+                progress.altBonusLevel = data.altBonusLevel
+            end
+            if data.altBonusPercent then
+                progress.altBonusPercent = data.altBonusPercent
+            end
+            
             progress._lastUpdate = time()
+            
+            -- Store in cache for tooltip access
+            DCWelcome.ProgressCache = progress
             
             -- Emit event for UI updates
             DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)

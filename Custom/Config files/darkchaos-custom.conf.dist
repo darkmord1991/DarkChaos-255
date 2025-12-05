@@ -1377,8 +1377,15 @@ MythicPlus.Vault.RequirePopulatedTable = 1
 
 #
 #    MythicPlus.Seasons.Enabled
-#        Description: Enable seasonal rotation system
+#        Description: Enable seasonal rotation system for Mythic+
 #                     Limits featured dungeons and rotates affixes weekly
+#                     
+#                     NOTE: This controls M+ FEATURES (affixes, featured dungeons).
+#                     The ACTIVE SEASON ID is always from DarkChaos.ActiveSeasonID.
+#                     dc_mplus_seasons table is used for M+-specific season config:
+#                       - Featured dungeon rotation
+#                       - Affix schedule for each week
+#                       - Season-specific rewards/titles
 #        Default:     1 (Enabled - seasonal rotation)
 #                     0 (Disabled - all dungeons always available)
 #
@@ -1387,8 +1394,9 @@ MythicPlus.Seasons.Enabled = 1
 #
 #    MythicPlus.Seasons.AutoRotate
 #        Description: Automatically rotate to next season when current expires
-#                     Requires dc_mplus_seasons table to have valid next season
-#        Default:     1 (Enabled - auto-advance seasons)
+#                     This affects M+ feature rotation, not the global season ID.
+#                     Requires dc_mplus_seasons table to have valid next season.
+#        Default:     1 (Enabled - auto-advance M+ season features)
 #                     0 (Disabled - manual GM intervention required)
 #
 MythicPlus.Seasons.AutoRotate = 1
@@ -1954,6 +1962,20 @@ DC.GroupFinder.NPC.SpawnLocations = ""
 #    season management framework. This ensures all systems transition together
 #    and maintain consistent seasonal progression.
 #
+#    IMPORTANT - CONSOLIDATED SEASON ARCHITECTURE:
+#    =============================================
+#    The active season is controlled by a SINGLE source:
+#      1. DarkChaos.ActiveSeasonID config setting (this file) - PREFERRED
+#      2. dc_seasons table in CharacterDatabase (season_state = 1)
+#    
+#    Secondary tables exist for system-specific configuration:
+#      - dc_mplus_seasons (WorldDB): M+ affix schedules, featured dungeons
+#      - dc_hlbg_seasons (WorldDB): HLBG-specific seasonal settings
+#    
+#    These SECONDARY tables should NOT be queried for "which season is active"
+#    All C++ code should use DarkChaos::GetActiveSeasonId() helper from:
+#      #include "DC/CrossSystem/DCSeasonHelper.h"
+#
 #    Subsystems:
 #    - Seasonal Rewards: Token/essence rewards from activities
 #    - Mythic+: Seasonal affixes and dungeons
@@ -1968,12 +1990,19 @@ DC.GroupFinder.NPC.SpawnLocations = ""
 #                     When changed, ALL systems transition to the new season together.
 #                     This is the SINGLE SOURCE OF TRUTH for season management.
 #                     
-#                     All systems use this value:
+#                     All systems use this value via DarkChaos::GetActiveSeasonId():
 #                     - SeasonalRewards (token/essence rewards)
 #                     - Mythic+ (seasonal affixes and dungeons)
 #                     - Item Upgrades (season-based progression)
 #                     - Hinterland BG (seasonal statistics)
 #                     - Custom Login (starter token type)
+#                     - DC-Welcome addon (season display)
+#                     
+#                     To change the active season:
+#                     1. Update this config value and restart server, OR
+#                     2. Use .dc season set <id> command (if implemented), OR
+#                     3. Update dc_seasons table (season_state = 1 for active)
+#                     
 #        Default:     1 (Season 1)
 #        Range:       1 - 99
 #

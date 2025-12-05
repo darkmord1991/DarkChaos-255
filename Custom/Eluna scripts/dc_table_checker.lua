@@ -5,7 +5,22 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2025-12-04 (added Cross-System Integration tables, removed HinterlandBG affix system)
+    Updated: 2025-12-XX (consolidated season tables, unified rating table)
+    
+    IMPORTANT - TABLE CONSOLIDATION NOTES:
+    =====================================
+    1. SEASON TABLES: The primary season table is dc_seasons (acore_chars).
+       - dc_mplus_seasons and dc_hlbg_seasons are SECONDARY tables for
+         system-specific configuration (affixes, featured dungeons, etc.)
+       - The active season ID is controlled via:
+         a) Config: DarkChaos.ActiveSeasonID (preferred)
+         b) Database: dc_seasons.season_state = 1
+       - All systems should use DarkChaos::GetActiveSeasonId() helper
+    
+    2. RATING TABLES: Use dc_mplus_player_ratings (not dc_mplus_player_rating)
+       - dc_mplus_scores is used for leaderboard caching
+       - Player ratings are stored in dc_mplus_player_ratings
+    
     Tables: ~101 in acore_chars, ~65 in acore_world = ~166 total
     
     Author: DarkChaos Development Team
@@ -107,12 +122,13 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_upgrade_speed_stats", "Item Upgrade", false},
         
         -- Mythic+ System (dc_mythic_keystones removed - consolidated into dc_mplus_keystones)
+        -- NOTE: dc_mplus_player_ratings is the CANONICAL rating table (not dc_mplus_player_rating)
         {"acore_chars", "dc_mplus_keystones", "Mythic+", true},
         {"acore_chars", "dc_mplus_runs", "Mythic+", true},
         {"acore_chars", "dc_mplus_best_runs", "Mythic+", false},
-        {"acore_chars", "dc_mplus_scores", "Mythic+", false},
+        {"acore_chars", "dc_mplus_scores", "Mythic+", false},  -- Leaderboard cache
         {"acore_chars", "dc_mplus_hud_cache", "Mythic+", false},
-        {"acore_chars", "dc_mplus_player_ratings", "Mythic+", false},
+        {"acore_chars", "dc_mplus_player_ratings", "Mythic+", false},  -- CANONICAL player ratings
         {"acore_chars", "dc_player_keystones", "Mythic+", false},
         
         -- Mythic Spectator
@@ -123,7 +139,8 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_mplus_spec_settings", "Mythic Spectator", false},
         {"acore_chars", "dc_spectator_settings", "Mythic Spectator", false},
         
-        -- Season System
+        -- Season System (CONSOLIDATED - dc_seasons is PRIMARY source of truth)
+        -- NOTE: Use DarkChaos::GetActiveSeasonId() helper in C++ code for season access
         {"acore_chars", "dc_player_claimed_chests", "Season System", false},
         {"acore_chars", "dc_player_season_data", "Season System", true},
         {"acore_chars", "dc_player_seasonal_achievements", "Season System", false},
@@ -131,7 +148,7 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_player_seasonal_stats", "Season System", false},
         {"acore_chars", "dc_player_seasonal_stats_history", "Season System", false},
         {"acore_chars", "dc_season_history", "Season System", false},
-        {"acore_chars", "dc_seasons", "Season System", true},
+        {"acore_chars", "dc_seasons", "Season System", true},  -- PRIMARY season table
         
         -- Quest/Daily/Weekly System
         {"acore_chars", "dc_player_daily_quest_progress", "Quest System", false},
@@ -220,12 +237,13 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_synthesis_recipes", "Item Upgrade", false},
         {"acore_world", "dc_upgrade_tracks", "Item Upgrade", false},
         
-        -- Mythic+ Config
+        -- Mythic+ Config (dc_mplus_seasons is SECONDARY - for affix/dungeon config only)
+        -- The active season ID should come from DarkChaos.ActiveSeasonID config or dc_seasons table
         {"acore_world", "dc_mplus_affix_pairs", "Mythic+", false},
         {"acore_world", "dc_mplus_affix_schedule", "Mythic+", false},
         {"acore_world", "dc_mplus_affixes", "Mythic+", true},
         {"acore_world", "dc_mplus_featured_dungeons", "Mythic+", false},
-        {"acore_world", "dc_mplus_seasons", "Mythic+", true},
+        {"acore_world", "dc_mplus_seasons", "Mythic+", true},  -- SECONDARY: affix/dungeon rotation config
         {"acore_world", "dc_mplus_teleporter_npcs", "Mythic+", false},
         {"acore_world", "dc_mplus_dungeons", "Mythic+", false},
         {"acore_world", "dc_mplus_weekly_affixes", "Mythic+", false},
@@ -236,8 +254,9 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_mplus_spec_positions", "Mythic Spectator", false},
         {"acore_world", "dc_mplus_spec_strings", "Mythic Spectator", false},
         
-        -- HLBG Seasons Config (season definitions in world DB, player data in chars)
-        {"acore_world", "dc_hlbg_seasons", "HLBG System", true},
+        -- HLBG Seasons Config (SECONDARY - for BG-specific config, not active season ID)
+        -- The active season ID should come from DarkChaos.ActiveSeasonID config or dc_seasons table
+        {"acore_world", "dc_hlbg_seasons", "HLBG System", true},  -- SECONDARY: BG season config
         
         -- Season Rewards Config
         {"acore_world", "dc_seasonal_chest_rewards", "Season System", false},

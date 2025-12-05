@@ -32,6 +32,7 @@
 #include "DCAddonNamespace.h"
 #include "Config.h"
 #include "World.h"
+#include "../CrossSystem/DCSeasonHelper.h"
 #include <string>
 
 namespace DCWelcome
@@ -108,19 +109,9 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
         
-        // Get current season info
-        uint32 seasonId = 1;
-        std::string seasonName = "Season 1";
-        
-        // Query current season from database (dc_mplus_seasons is in WorldDatabase)
-        // Note: Table uses 'season' as primary key, not 'id' or 'season_id'
-        QueryResult result = WorldDatabase.Query("SELECT season, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            seasonId = fields[0].Get<uint32>();
-            seasonName = fields[1].Get<std::string>();
-        }
+        // Get current season info using unified helper
+        uint32 seasonId = DarkChaos::GetActiveSeasonId();
+        std::string seasonName = DarkChaos::GetActiveSeasonName();
         
         // Build JSON message
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SERVER_INFO);
@@ -140,19 +131,9 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
         
-        // Get season info
-        uint32 seasonId = 1;
-        std::string seasonName = "Season 1";
-        
-        // Query current season from database (dc_mplus_seasons is in WorldDatabase)
-        // Note: Table uses 'season' as primary key, not 'id' or 'season_id'
-        QueryResult result = WorldDatabase.Query("SELECT season, name FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1");
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            seasonId = fields[0].Get<uint32>();
-            seasonName = fields[1].Get<std::string>();
-        }
+        // Get season info using unified helper
+        uint32 seasonId = DarkChaos::GetActiveSeasonId();
+        std::string seasonName = DarkChaos::GetActiveSeasonName();
         
         // Build welcome message with embedded server info
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SHOW_WELCOME);
@@ -367,11 +348,11 @@ namespace DCWelcome
         
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
         
-        // Get M+ Rating from dc_mplus_player_rating table
+        // Get M+ Rating from dc_mplus_player_ratings table (canonical rating table)
         uint32 mythicRating = 0;
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT rating FROM dc_mplus_player_rating WHERE guid = {}",
+                "SELECT rating FROM dc_mplus_player_ratings WHERE guid = {}",
                 player->GetGUID().GetCounter()
             );
             if (result)
@@ -400,21 +381,15 @@ namespace DCWelcome
         uint32 seasonPoints = 0;
         uint32 seasonRank = 0;
         {
-            // Get active season first
-            QueryResult seasonResult = WorldDatabase.Query(
-                "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1"
+            // Use unified season helper
+            uint32 activeSeason = DarkChaos::GetActiveSeasonId();
+            
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT points FROM dc_mplus_season_player WHERE guid = {} AND season = {}",
+                player->GetGUID().GetCounter(), activeSeason
             );
-            if (seasonResult)
-            {
-                uint32 activeSeason = seasonResult->Fetch()[0].Get<uint32>();
-                
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT points FROM dc_mplus_season_player WHERE guid = {} AND season = {}",
-                    player->GetGUID().GetCounter(), activeSeason
-                );
-                if (result)
-                    seasonPoints = result->Fetch()[0].Get<uint32>();
-            }
+            if (result)
+                seasonPoints = result->Fetch()[0].Get<uint32>();
         }
         response.Set("seasonPoints", static_cast<int32>(seasonPoints));
         response.Set("seasonRank", static_cast<int32>(seasonRank));
@@ -458,6 +433,26 @@ namespace DCWelcome
                 keysThisWeek = result->Fetch()[0].Get<uint32>();
         }
         response.Set("keysThisWeek", static_cast<int32>(keysThisWeek));
+        
+        // Prestige Alt Bonus Level (max-level chars on account, capped at 5)
+        uint32 altBonusLevel = 0;
+        uint32 altBonusPercent = 0;
+        {
+            uint32 accountId = player->GetSession()->GetAccountId();
+            uint32 maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
+            
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
+                accountId, maxLevel
+            );
+            if (result)
+            {
+                altBonusLevel = std::min(static_cast<uint32>(5), result->Fetch()[0].Get<uint32>());
+                altBonusPercent = altBonusLevel * 5;  // 5% per max-level char
+            }
+        }
+        response.Set("altBonusLevel", static_cast<int32>(altBonusLevel));
+        response.Set("altBonusPercent", static_cast<int32>(altBonusPercent));
         
         response.Send(player);
     }
