@@ -12,6 +12,7 @@
 #include "Chat.h"
 #include "Config.h"
 #include "Log.h"
+#include "DatabaseEnv.h"
 #include "DCAddonNamespace.h"
 
 namespace DCAddon
@@ -155,11 +156,51 @@ namespace Seasons
     static void HandleGetProgress(Player* player, const ParsedMessage& msg)
     {
         uint32 seasonId = msg.GetUInt32(0);
+        if (seasonId == 0)
+            seasonId = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
 
-        // TODO: Query player's seasonal progress from character_dc_seasons table
-        // For now send placeholder data
-
-        SendProgress(player, seasonId, 1, 0, 1000, 0, 0, 0);
+        // Get seasonal token/essence item IDs from config
+        uint32 tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+        uint32 essenceItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+        
+        // Get current token count from player's inventory
+        uint32 currentTokens = player->GetItemCount(tokenItemId);
+        uint32 currentEssence = player->GetItemCount(essenceItemId);
+        
+        // Weekly caps from config
+        uint32 weeklyTokenCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 1000);
+        uint32 weeklyEssenceCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyEssenceCap", 1000);
+        
+        // Query weekly progress from database if table exists
+        uint32 weeklyTokensEarned = 0;
+        uint32 weeklyEssenceEarned = 0;
+        uint32 questsCompleted = 0;
+        uint32 bossesKilled = 0;
+        
+        if (QueryResult result = CharacterDatabase.Query(
+            "SELECT weekly_tokens, weekly_essence, quests_done, bosses_killed "
+            "FROM dc_player_seasonal_stats WHERE guid = {} AND season_id = {}",
+            player->GetGUID().GetCounter(), seasonId))
+        {
+            Field* fields = result->Fetch();
+            weeklyTokensEarned = fields[0].Get<uint32>();
+            weeklyEssenceEarned = fields[1].Get<uint32>();
+            questsCompleted = fields[2].Get<uint32>();
+            bossesKilled = fields[3].Get<uint32>();
+        }
+        
+        // Build response with extended data using JSON
+        DCAddon::JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_PROGRESS);
+        response.Set("seasonId", static_cast<int32>(seasonId));
+        response.Set("tokens", static_cast<int32>(currentTokens));
+        response.Set("essence", static_cast<int32>(currentEssence));
+        response.Set("tokenCap", static_cast<int32>(weeklyTokenCap));
+        response.Set("essenceCap", static_cast<int32>(weeklyEssenceCap));
+        response.Set("weeklyTokens", static_cast<int32>(weeklyTokensEarned));
+        response.Set("weeklyEssence", static_cast<int32>(weeklyEssenceEarned));
+        response.Set("quests", static_cast<int32>(questsCompleted));
+        response.Set("bosses", static_cast<int32>(bossesKilled));
+        response.Send(player);
     }
 
     static void HandleGetRewards(Player* player, const ParsedMessage& msg)

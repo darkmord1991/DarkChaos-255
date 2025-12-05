@@ -315,13 +315,13 @@ function DCWelcome.Seasons:UpdateProgressTracker()
         frame.seasonName:SetText(string.format("|cff00ff00%s|r", Data.seasonName or ""))
     end
     
-    local tokenPercent = Data.weeklyTokens / math.max(Data.weeklyTokenCap, 1)
-    frame.tokenBar:SetValue(tokenPercent)
-    frame.tokenBarText:SetText(string.format("%d / %d Tokens", Data.weeklyTokens, Data.weeklyTokenCap))
+    local tokenPercent = Data.tokens / math.max(Data.weeklyTokenCap, 1)
+    frame.tokenBar:SetValue(math.min(tokenPercent, 1))
+    frame.tokenBarText:SetText(string.format("%d / %d Tokens", Data.tokens, Data.weeklyTokenCap))
     
-    local essencePercent = Data.weeklyEssence / math.max(Data.weeklyEssenceCap, 1)
-    frame.essenceBar:SetValue(essencePercent)
-    frame.essenceBarText:SetText(string.format("%d / %d Essence", Data.weeklyEssence, Data.weeklyEssenceCap))
+    local essencePercent = Data.essence / math.max(Data.weeklyEssenceCap, 1)
+    frame.essenceBar:SetValue(math.min(essencePercent, 1))
+    frame.essenceBarText:SetText(string.format("%d / %d Essence", Data.essence, Data.weeklyEssenceCap))
     
     frame.statsText:SetText(string.format("Quests: %d | Bosses: %d", Data.quests, Data.worldBosses + Data.dungeonBosses))
 end
@@ -365,17 +365,26 @@ local function RegisterHandlers()
     -- SMSG_PROGRESS (0x12)
     DC:RegisterHandler("SEAS", 0x12, function(data)
         if type(data) == "table" then
+            Data.seasonNumber = data.seasonId or Data.seasonNumber or 1
             Data.seasonLevel = data.level or data.seasonLevel or 1
-            Data.weeklyTokens = data.currentXP or data.tokens or 0
-            Data.weeklyTokenCap = data.xpToNextLevel or data.tokenCap or 1000
-            Data.weeklyEssence = data.essence or 0
+            
+            -- Current token/essence counts (actual inventory items)
+            Data.tokens = data.tokens or 0
+            Data.essence = data.essence or 0
+            
+            -- Weekly progress tracking
+            Data.weeklyTokens = data.weeklyTokens or data.tokens or 0
+            Data.weeklyEssence = data.weeklyEssence or data.essence or 0
+            Data.weeklyTokenCap = data.tokenCap or data.xpToNextLevel or 1000
             Data.weeklyEssenceCap = data.essenceCap or 1000
+            
+            -- Activity tracking
             Data.totalPoints = data.totalPoints or 0
             Data.rank = data.rank
             Data.tier = data.tier
             Data.quests = data.quests or 0
             Data.worldBosses = data.worldBosses or 0
-            Data.dungeonBosses = data.dungeonBosses or 0
+            Data.dungeonBosses = data.dungeonBosses or data.bosses or 0
         end
         Data._loaded = true
         DCWelcome.Seasons:UpdateProgressTracker()

@@ -13,8 +13,8 @@
  *
  * The function uses the following priority:
  *   1. Config value: DarkChaos.ActiveSeasonID (from worldserver.conf)
- *   2. SeasonalManager (if loaded and has active season)
- *   3. Database fallback: dc_seasons table
+ *   2. Database fallback: dc_seasons table
+ *   3. Legacy fallback: dc_mplus_seasons table
  *   4. Default: 1
  *
  * Author: DarkChaos Development Team
@@ -28,12 +28,10 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include <atomic>
+#include <string>
 
 namespace DarkChaos
 {
-    // Forward declaration to avoid circular dependency with full SeasonalSystem.h
-    namespace Seasonal { class SeasonalManager; SeasonalManager* GetSeasonalManager(); }
-
     // =========================================================================
     // Cached Season ID - Thread-safe singleton
     // =========================================================================
@@ -88,22 +86,7 @@ namespace DarkChaos
             return seasonId;
         }
         
-        // Priority 2: SeasonalManager (if available)
-        if (auto* manager = Seasonal::GetSeasonalManager())
-        {
-            if (auto* activeSeason = manager->GetActiveSeason())
-            {
-                seasonId = activeSeason->season_id;
-                if (seasonId > 0)
-                {
-                    Internal::g_cachedSeasonId.store(seasonId);
-                    Internal::g_lastSeasonRefresh.store(now);
-                    return seasonId;
-                }
-            }
-        }
-        
-        // Priority 3: Database fallback (dc_seasons in CharacterDatabase)
+        // Priority 2: Database fallback (dc_seasons in CharacterDatabase)
         if (QueryResult result = CharacterDatabase.Query(
             "SELECT season_id FROM dc_seasons WHERE season_state = 1 ORDER BY season_id DESC LIMIT 1"))
         {
@@ -116,7 +99,7 @@ namespace DarkChaos
             }
         }
         
-        // Priority 4: Secondary database fallback (dc_mplus_seasons in WorldDatabase)
+        // Priority 3: Secondary database fallback (dc_mplus_seasons in WorldDatabase)
         // This is for backward compatibility during migration
         if (QueryResult result = WorldDatabase.Query(
             "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1"))
@@ -158,17 +141,7 @@ namespace DarkChaos
     {
         uint32 seasonId = GetActiveSeasonId();
         
-        // Try SeasonalManager first
-        if (auto* manager = Seasonal::GetSeasonalManager())
-        {
-            if (auto* activeSeason = manager->GetActiveSeason())
-            {
-                if (!activeSeason->season_name.empty())
-                    return activeSeason->season_name;
-            }
-        }
-        
-        // Try database
+        // Try CharacterDatabase first (primary)
         if (QueryResult result = CharacterDatabase.Query(
             "SELECT season_name FROM dc_seasons WHERE season_id = {} LIMIT 1", seasonId))
         {

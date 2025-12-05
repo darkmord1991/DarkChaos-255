@@ -366,7 +366,7 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     refreshBtn:SetPoint("TOPLEFT", 20, yOffset)
     refreshBtn:SetText("Refresh")
     refreshBtn:SetScript("OnClick", function()
-        DCWelcome:RefreshProgressFromAddons()
+        DCWelcome:RequestProgressData()  -- Request from server (includes alt bonus)
         scrollChild:Refresh()
         
         if DCWelcomeDB and DCWelcomeDB.enableSounds then
@@ -430,9 +430,9 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         end
     end
     
-    -- Initial refresh
+    -- Initial refresh - request data from server
     C_Timer_After(0.5, function()
-        DCWelcome:RefreshProgressFromAddons()
+        DCWelcome:RequestProgressData()  -- Request from server (includes alt bonus)
         scrollChild:Refresh()
     end)
     
