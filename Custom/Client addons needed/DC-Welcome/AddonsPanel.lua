@@ -283,6 +283,42 @@ DCWelcome.RegisteredAddons = {
             return HLBG ~= nil or SlashCmdList["HLBGSHOW"] ~= nil
         end,
     },
+    {
+        id = "dc-mythicplus",
+        name = "Mythic+ Suite",
+        description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
+        icon = "Interface\\Icons\\INV_Relics_Hourglass",
+        color = {0.2, 0.8, 1.0},  -- Cyan
+        category = "Dungeons",
+        minLevel = 1,
+        openCommand = "/dcgf",
+        settingsCommand = "/dcm help",
+        openFunc = function()
+            -- Open Group Finder
+            if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder then
+                DCMythicPlusHUD.GroupFinder:Toggle()
+            elseif SlashCmdList["DCGF"] then
+                SlashCmdList["DCGF"]("")
+            else
+                DCWelcome.Print("Mythic+ addon not loaded. Try /dcm or /dcgf")
+            end
+        end,
+        settingsFunc = function()
+            -- Open Interface Options panel for M+ settings
+            local panel = _G["DCMythicPlus_InterfaceOptions"]
+            if panel then
+                InterfaceOptionsFrame_OpenToCategory(panel)
+                InterfaceOptionsFrame_OpenToCategory(panel)  -- Call twice for WoW bug
+            elseif SlashCmdList["DCM"] then
+                SlashCmdList["DCM"]("help")
+            else
+                DCWelcome.Print("M+ settings not available. Use Interface > AddOns > DC Mythic+ HUD")
+            end
+        end,
+        isLoaded = function()
+            return DCMythicPlusHUD ~= nil or SlashCmdList["DCM"] ~= nil
+        end,
+    },
 }
 
 -- =============================================================================

@@ -72,6 +72,7 @@ namespace DCAddon
         constexpr const char* HOTSPOT       = "SPOT";   // Hotspot/XP zones
         constexpr const char* LEADERBOARD   = "LBRD";   // Unified leaderboards
         constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
+        constexpr const char* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
     }
     
     // ========================================================================
@@ -269,6 +270,63 @@ namespace DCAddon
             constexpr uint8 SMSG_FEATURE_UNLOCK    = 0x13;  // Feature unlocked notification
             constexpr uint8 SMSG_WHATS_NEW         = 0x14;  // What's new content
             constexpr uint8 SMSG_LEVEL_MILESTONE   = 0x15;  // Level milestone reached
+        }
+        
+        // Group Finder opcodes (M+, Raid Finder, Scheduled Events)
+        namespace GroupFinder
+        {
+            // Client -> Server: Listings
+            constexpr uint8 CMSG_CREATE_LISTING      = 0x10;  // Create a new group listing
+            constexpr uint8 CMSG_SEARCH_LISTINGS     = 0x11;  // Search for groups
+            constexpr uint8 CMSG_APPLY_TO_GROUP      = 0x12;  // Apply to join a group
+            constexpr uint8 CMSG_CANCEL_APPLICATION  = 0x13;  // Cancel pending application
+            constexpr uint8 CMSG_ACCEPT_APPLICATION  = 0x14;  // Leader accepts an applicant
+            constexpr uint8 CMSG_DECLINE_APPLICATION = 0x15;  // Leader declines an applicant
+            constexpr uint8 CMSG_DELIST_GROUP        = 0x16;  // Remove group listing
+            constexpr uint8 CMSG_UPDATE_LISTING      = 0x17;  // Update group listing
+            
+            // Client -> Server: Keystone & Difficulty
+            constexpr uint8 CMSG_GET_MY_KEYSTONE     = 0x20;  // Request player's keystone info
+            constexpr uint8 CMSG_SET_DIFFICULTY      = 0x21;  // Request difficulty change
+            
+            // Client -> Server: Spectating
+            constexpr uint8 CMSG_START_SPECTATE      = 0x25;  // Request to spectate a run
+            constexpr uint8 CMSG_STOP_SPECTATE       = 0x26;  // Stop spectating
+            constexpr uint8 CMSG_GET_SPECTATE_LIST   = 0x27;  // Get available runs to spectate
+            
+            // Client -> Server: Scheduled Events
+            constexpr uint8 CMSG_CREATE_EVENT        = 0x60;  // Create scheduled event
+            constexpr uint8 CMSG_SIGNUP_EVENT        = 0x61;  // Sign up for event
+            constexpr uint8 CMSG_CANCEL_SIGNUP       = 0x62;  // Cancel event signup
+            constexpr uint8 CMSG_GET_SCHEDULED_EVENTS= 0x63;  // Get upcoming events
+            constexpr uint8 CMSG_GET_MY_SIGNUPS      = 0x64;  // Get my event signups
+            constexpr uint8 CMSG_CANCEL_EVENT        = 0x65;  // Cancel event (leader only)
+            
+            // Server -> Client: Listings
+            constexpr uint8 SMSG_LISTING_CREATED     = 0x30;  // Confirm listing created
+            constexpr uint8 SMSG_SEARCH_RESULTS      = 0x31;  // Search results
+            constexpr uint8 SMSG_APPLICATION_STATUS  = 0x32;  // Application accepted/declined
+            constexpr uint8 SMSG_NEW_APPLICATION     = 0x33;  // Leader: new applicant
+            constexpr uint8 SMSG_GROUP_UPDATED       = 0x34;  // Group composition changed
+            
+            // Server -> Client: Keystone & Difficulty
+            constexpr uint8 SMSG_KEYSTONE_INFO       = 0x40;  // Player's keystone data
+            constexpr uint8 SMSG_DIFFICULTY_CHANGED  = 0x41;  // Confirm difficulty changed
+            
+            // Server -> Client: Spectating
+            constexpr uint8 SMSG_SPECTATE_DATA       = 0x45;  // Spectator live data
+            constexpr uint8 SMSG_SPECTATE_LIST       = 0x47;  // Available runs to spectate
+            constexpr uint8 SMSG_SPECTATE_STARTED    = 0x48;  // Spectating started
+            constexpr uint8 SMSG_SPECTATE_ENDED      = 0x49;  // Spectating ended
+            
+            // Server -> Client: Scheduled Events
+            constexpr uint8 SMSG_EVENT_CREATED       = 0x70;  // Event created confirmation
+            constexpr uint8 SMSG_EVENT_SIGNUP_RESULT = 0x71;  // Signup result
+            constexpr uint8 SMSG_SCHEDULED_EVENTS    = 0x72;  // List of events
+            constexpr uint8 SMSG_MY_SIGNUPS          = 0x73;  // My event signups
+            
+            // Server -> Client: Errors
+            constexpr uint8 SMSG_ERROR               = 0x5F;  // Error response
         }
     }
     

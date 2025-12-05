@@ -1,22 +1,43 @@
 -- DC-MythicPlus Settings.lua
--- Settings panel with Interface Options integration and Communication test buttons
+-- Comprehensive settings panel with Interface Options integration
+-- Includes HUD, Group Finder, Spectator, and Communication settings
 
 local addonName = "DC-MythicPlus"
 local namespace = _G.DCMythicPlusHUD or {}
 _G.DCMythicPlusHUD = namespace
 
--- Default settings
+-- Default settings (comprehensive)
 namespace.DefaultSettings = {
+    -- HUD Settings
     locked = false,
     hidden = false,
     hudScale = 1.0,
-    useDCProtocolJSON = true,
-    devMode = false,
     showTimerAlerts = true,
     showDeathCounter = true,
     showBossProgress = true,
     showEnemyCount = true,
-    position = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 120 }
+    position = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 120 },
+    
+    -- Communication Settings
+    useDCProtocolJSON = true,
+    devMode = false,
+    
+    -- Group Finder Settings
+    groupFinderAutoRefresh = true,
+    groupFinderRefreshInterval = 30,
+    groupFinderShowFullGroups = false,
+    groupFinderRememberFilters = true,
+    
+    -- Spectator Settings
+    spectatorPrivacy = 1, -- 1=Public, 2=Friends, 3=Guild, 4=Private
+    spectatorMaxViewers = 10,
+    spectatorShowInList = true,
+    spectatorAllowInvites = true,
+    
+    -- Keystone Activation Settings
+    keystoneSoundEnabled = true,
+    keystoneCountdownDuration = 10,
+    keystoneAutoReady = false,
 }
 
 -- Load saved settings or apply defaults

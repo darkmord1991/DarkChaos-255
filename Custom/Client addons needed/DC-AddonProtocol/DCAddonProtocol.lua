@@ -76,6 +76,63 @@ DC.ModuleNames = {
     SEAS = "Seasonal",
     LBRD = "Leaderboards",
     WELC = "Welcome",
+    GRPF = "Group Finder",
+}
+
+-- Group Finder Opcodes
+DC.GroupFinderOpcodes = {
+    -- Client -> Server: Listings
+    CMSG_CREATE_LISTING      = 0x10,  -- Create a new group listing
+    CMSG_SEARCH_LISTINGS     = 0x11,  -- Search for groups
+    CMSG_APPLY_TO_GROUP      = 0x12,  -- Apply to join a group
+    CMSG_CANCEL_APPLICATION  = 0x13,  -- Cancel pending application
+    CMSG_ACCEPT_APPLICATION  = 0x14,  -- Leader accepts an applicant
+    CMSG_DECLINE_APPLICATION = 0x15,  -- Leader declines an applicant
+    CMSG_DELIST_GROUP        = 0x16,  -- Remove group listing
+    CMSG_UPDATE_LISTING      = 0x17,  -- Update group listing
+    
+    -- Client -> Server: Keystone & Difficulty
+    CMSG_GET_MY_KEYSTONE     = 0x20,  -- Request player's keystone info
+    CMSG_SET_DIFFICULTY      = 0x21,  -- Request difficulty change
+    
+    -- Client -> Server: Spectating
+    CMSG_START_SPECTATE      = 0x25,  -- Request to spectate a run
+    CMSG_STOP_SPECTATE       = 0x26,  -- Stop spectating
+    CMSG_GET_SPECTATE_LIST   = 0x27,  -- Get available runs to spectate
+    
+    -- Client -> Server: Scheduled Events
+    CMSG_CREATE_EVENT        = 0x60,  -- Create scheduled event
+    CMSG_SIGNUP_EVENT        = 0x61,  -- Sign up for event
+    CMSG_CANCEL_SIGNUP       = 0x62,  -- Cancel event signup
+    CMSG_GET_SCHEDULED_EVENTS= 0x63,  -- Get upcoming events
+    CMSG_GET_MY_SIGNUPS      = 0x64,  -- Get my event signups
+    CMSG_CANCEL_EVENT        = 0x65,  -- Cancel event (leader only)
+    
+    -- Server -> Client: Listings
+    SMSG_LISTING_CREATED     = 0x30,  -- Confirm listing created
+    SMSG_SEARCH_RESULTS      = 0x31,  -- Search results
+    SMSG_APPLICATION_STATUS  = 0x32,  -- Application accepted/declined
+    SMSG_NEW_APPLICATION     = 0x33,  -- Leader: new applicant
+    SMSG_GROUP_UPDATED       = 0x34,  -- Group composition changed
+    
+    -- Server -> Client: Keystone & Difficulty
+    SMSG_KEYSTONE_INFO       = 0x40,  -- Player's keystone data
+    SMSG_DIFFICULTY_CHANGED  = 0x41,  -- Confirm difficulty changed
+    
+    -- Server -> Client: Spectating
+    SMSG_SPECTATE_DATA       = 0x45,  -- Spectator live data
+    SMSG_SPECTATE_LIST       = 0x47,  -- Available runs to spectate
+    SMSG_SPECTATE_STARTED    = 0x48,  -- Spectating started
+    SMSG_SPECTATE_ENDED      = 0x49,  -- Spectating ended
+    
+    -- Server -> Client: Scheduled Events
+    SMSG_EVENT_CREATED       = 0x70,  -- Event created confirmation
+    SMSG_EVENT_SIGNUP_RESULT = 0x71,  -- Signup result
+    SMSG_SCHEDULED_EVENTS    = 0x72,  -- List of events
+    SMSG_MY_SIGNUPS          = 0x73,  -- My event signups
+    
+    -- Server -> Client: Errors
+    SMSG_ERROR               = 0x5F,  -- Error response
 }
 
 -- Log a request
@@ -605,6 +662,131 @@ DC.Welcome = {
     MarkFeatureSeen = function(feature) DC:Request("WELC", 0x04, { feature = feature }) end,
     -- Request What's New content
     GetWhatsNew = function() DC:Request("WELC", 0x05, {}) end,
+}
+
+-- Group Finder API (Raid Finder + Mythic Dungeon Finder)
+DC.GroupFinder = {
+    -- Create a new group listing
+    CreateListing = function(data)
+        -- data: { dungeonId, keyLevel, note, roles = { tank, healer, dps1, dps2, dps3 } }
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CREATE_LISTING, data)
+    end,
+    
+    -- Search for groups
+    Search = function(filters)
+        -- filters: { dungeonId, minLevel, maxLevel, role, hasSlot }
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_SEARCH_LISTINGS, filters or {})
+    end,
+    
+    -- Apply to join a group
+    Apply = function(listingId, role, message)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_APPLY_TO_GROUP, {
+            listingId = listingId,
+            role = role,
+            message = message or ""
+        })
+    end,
+    
+    -- Cancel pending application
+    CancelApplication = function(listingId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CANCEL_APPLICATION, { listingId = listingId })
+    end,
+    
+    -- Leader: Accept an applicant
+    AcceptApplicant = function(listingId, applicantGuid)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_ACCEPT_APPLICATION, {
+            listingId = listingId,
+            applicantGuid = applicantGuid
+        })
+    end,
+    
+    -- Leader: Decline an applicant
+    DeclineApplicant = function(listingId, applicantGuid)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_DECLINE_APPLICATION, {
+            listingId = listingId,
+            applicantGuid = applicantGuid
+        })
+    end,
+    
+    -- Remove group listing (delist)
+    Delist = function(listingId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_DELIST_GROUP, { listingId = listingId })
+    end,
+    
+    -- Update group listing
+    UpdateListing = function(listingId, data)
+        data.listingId = listingId
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_UPDATE_LISTING, data)
+    end,
+    
+    -- Get player's keystone info
+    GetKeystoneInfo = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+    end,
+    
+    -- Spectator functions
+    StartSpectate = function(runId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_START_SPECTATE, { runId = runId })
+    end,
+    
+    StopSpectate = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_STOP_SPECTATE, {})
+    end,
+    
+    GetSpectateList = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_SPECTATE_LIST, {})
+    end,
+    
+    -- Difficulty control
+    SetDifficulty = function(difficultyType, difficulty)
+        -- difficultyType: "dungeon" or "raid"
+        -- difficulty: "normal", "heroic", "mythic" (dungeon) or "10n", "25n", "10h", "25h" (raid)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_SET_DIFFICULTY, {
+            type = difficultyType,
+            difficulty = difficulty
+        })
+    end,
+    
+    -- ========================================================================
+    -- SCHEDULED EVENTS API
+    -- ========================================================================
+    
+    -- Create a scheduled event
+    CreateEvent = function(data)
+        -- data: { eventType, dungeonId, dungeonName, keyLevel, scheduledTime (unix timestamp), maxSignups, note }
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CREATE_EVENT, data)
+    end,
+    
+    -- Sign up for an event
+    SignupEvent = function(eventId, role, note)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_SIGNUP_EVENT, {
+            eventId = eventId,
+            role = role or 0,
+            note = note or ""
+        })
+    end,
+    
+    -- Cancel signup for an event
+    CancelSignup = function(eventId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CANCEL_SIGNUP, { eventId = eventId })
+    end,
+    
+    -- Get upcoming scheduled events
+    GetScheduledEvents = function(eventType)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_SCHEDULED_EVENTS, {
+            eventType = eventType or 0  -- 0 = all types
+        })
+    end,
+    
+    -- Get my event signups
+    GetMySignups = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_SIGNUPS, {})
+    end,
+    
+    -- Cancel an event (leader only)
+    CancelEvent = function(eventId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CANCEL_EVENT, { eventId = eventId })
+    end,
 }
 
 local frame = CreateFrame("Frame")

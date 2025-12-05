@@ -13,6 +13,7 @@
 #include "Creature.h"
 #include "Map.h"
 #include "DBCStores.h"
+#include "LFGMgr.h"
 #include "Log.h"
 #include "Player.h"
 #include "Chat.h"
@@ -382,6 +383,62 @@ public:
             amount = 0.0f;
             LOG_DEBUG("mythic.run", "Suppressed reputation gain for {} during active Mythic+ run", player->GetName());
         }
+    }
+
+    // Mythic+ death handling: resurrect at dungeon entrance instead of graveyard (retail-like behavior)
+    // Return false to prevent normal graveyard repop, and handle entrance teleport + resurrection ourselves
+    bool OnPlayerCanRepopAtGraveyard(Player* player) override
+    {
+        if (!player)
+            return true;
+
+        Map* map = player->GetMap();
+        if (!map || !map->IsDungeon())
+            return true;
+
+        // Only apply in Mythic+ runs
+        uint8 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
+        if (keystoneLevel == 0)
+            return true;
+
+        // Get LFG dungeon data for entrance position
+        LFGDungeonEntry const* dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_EPIC);
+        if (!dungeonEntry)
+        {
+            // Try heroic difficulty as fallback
+            dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_HEROIC);
+        }
+        if (!dungeonEntry)
+        {
+            // Try normal difficulty as fallback
+            dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_NORMAL);
+        }
+
+        if (!dungeonEntry)
+        {
+            LOG_DEBUG("mythic.run", "No LFGDungeonEntry found for map {} - using default graveyard", map->GetId());
+            return true; // Allow normal graveyard behavior
+        }
+
+        // Get the dungeon data with entrance coordinates
+        lfg::LFGDungeonData const* dungeonData = sLFGMgr->GetLFGDungeon(dungeonEntry->ID);
+        if (!dungeonData || (dungeonData->x == 0.0f && dungeonData->y == 0.0f && dungeonData->z == 0.0f))
+        {
+            LOG_DEBUG("mythic.run", "No entrance position found for dungeon {} - using default graveyard", dungeonEntry->ID);
+            return true; // Allow normal graveyard behavior
+        }
+
+        // Teleport player to dungeon entrance and resurrect them
+        player->ResurrectPlayer(0.5f);  // Resurrect with 50% health
+        player->SpawnCorpseBones();      // Remove corpse
+        player->TeleportTo(map->GetId(), dungeonData->x, dungeonData->y, dungeonData->z, dungeonData->o);
+
+        LOG_DEBUG("mythic.run", "Player {} died in M+{} - resurrected at dungeon entrance ({}, {}, {})",
+                 player->GetName(), keystoneLevel, dungeonData->x, dungeonData->y, dungeonData->z);
+
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r You have been resurrected at the dungeon entrance.");
+
+        return false; // Prevent normal graveyard behavior
     }
 };
 

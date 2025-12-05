@@ -1,12 +1,23 @@
 ## Interface: 30300
-## Title: DC-MythicPlus HUD
-## Notes: Provides a lightweight HUD for DarkChaos Mythic+ runs
+## Title: DC-MythicPlus
+## Notes: Complete Mythic+ addon - HUD, Group Finder, Spectator, and Keystone Activation
 ## Author: DarkChaos-255
-## Version: 0.2.1
+## Version: 1.0.0
 ## Dependencies: AIO_Client
 ## OptionalDeps: DC-AddonProtocol
-## LoadAfter: AIO_Client
+## LoadAfter: AIO_Client, DC-AddonProtocol
 ## SavedVariables: DCMythicPlusHUDDB
 
+# Settings (loads first for defaults)
 Settings.lua
+
+# Core HUD
 Core.lua
+
+# Group Finder UI
+UI\GroupFinderFrame.lua
+UI\MythicTab.lua
+UI\RaidTab.lua
+UI\LiveRunsTab.lua
+UI\ScheduledTab.lua
+UI\KeystoneActivation.lua

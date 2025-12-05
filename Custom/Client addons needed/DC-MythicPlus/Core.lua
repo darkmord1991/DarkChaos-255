@@ -625,6 +625,20 @@ local function ToggleVisibility()
 end
 
 SLASH_DCM1 = "/dcm"
+SLASH_DCM2 = "/dcmplus"
+SLASH_DCGF1 = "/dcgf"
+SLASH_DCGF2 = "/groupfinder"
+
+-- Group Finder slash command
+SlashCmdList.DCGF = function(msg)
+    msg = Trim((msg or "")):lower()
+    if namespace.GroupFinder then
+        namespace.GroupFinder:Toggle()
+    else
+        Print("Group Finder not loaded yet")
+    end
+end
+
 SlashCmdList.DCM = function(msg)
     msg = Trim((msg or "")):lower()
     if msg == "lock" then
@@ -687,6 +701,28 @@ SlashCmdList.DCM = function(msg)
         Print("  DCAddonProtocol: " .. dcAvail)
         Print("  AIO: " .. aioAvail)
         Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+    elseif msg == "finder" or msg == "gf" then
+        -- Open Group Finder
+        if namespace.GroupFinder then
+            namespace.GroupFinder:Toggle()
+        else
+            Print("Group Finder not loaded yet")
+        end
+    elseif msg == "keystone" or msg == "activation" then
+        -- Show keystone activation UI (for testing)
+        if namespace.KeystoneUI then
+            namespace.KeystoneUI:Show({
+                dungeon = "Test Dungeon",
+                level = 15,
+                timeLimit = 1800,
+                affixes = {
+                    { id = 1, name = "Fortified", description = "Non-boss enemies have more health and damage." },
+                    { id = 3, name = "Bolstering", description = "Non-boss enemies buff nearby allies on death." },
+                }
+            }, true)
+        else
+            Print("Keystone UI not loaded")
+        end
     elseif msg == "help" then
         Print("Commands:")
         Print("  /dcm - Toggle HUD visibility")
@@ -699,6 +735,8 @@ SlashCmdList.DCM = function(msg)
         Print("  /dcm affixes - Show weekly affixes")
         Print("  /dcm best - Show your best runs")
         Print("  /dcm protocol - Show protocol status")
+        Print("  /dcm finder - Open Group Finder")
+        Print("  /dcgf - Open Group Finder (shortcut)")
     else
         ToggleVisibility()
     end
@@ -990,6 +1028,224 @@ if DC then
         end
     end)
     
+    -- =========================================================================
+    -- Keystone Activation Integration (integrated KeystoneUI)
+    -- =========================================================================
+    
+    -- SMSG_KEYSTONE_ACTIVATE (0x40) - Server requesting keystone activation UI
+    DC:RegisterHandler("MPLUS", 0x40, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            -- Use integrated KeystoneUI
+            if namespace.KeystoneUI then
+                namespace.KeystoneUI:OnKeystoneReadyCheck(data)
+            else
+                Print("Keystone activation requested for: " .. (data.dungeonName or "Unknown") .. " +" .. (data.level or "?"))
+            end
+        end
+    end)
+    
+    -- SMSG_KEYSTONE_STATUS (0x41) - Player ready state update
+    DC:RegisterHandler("MPLUS", 0x41, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.KeystoneUI then
+                namespace.KeystoneUI:OnPlayerReadyUpdate(data)
+            end
+        end
+    end)
+    
+    -- SMSG_KEYSTONE_COUNTDOWN (0x43) - Countdown update
+    DC:RegisterHandler("MPLUS", 0x43, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.KeystoneUI then
+                namespace.KeystoneUI:OnCountdownStart(data)
+            end
+        end
+    end)
+    
+    -- SMSG_KEYSTONE_CANCEL (0x44) - Activation cancelled
+    DC:RegisterHandler("MPLUS", 0x44, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.KeystoneUI then
+                namespace.KeystoneUI:OnActivationCancelled(data)
+            else
+                Print("Keystone activation cancelled: " .. (data.reason or "Unknown reason"))
+            end
+        end
+    end)
+    
+    -- =========================================================================
+    -- Group Finder Protocol Handlers
+    -- =========================================================================
+    
+    -- SMSG_GROUP_LIST (0x13) - List of available groups
+    DC:RegisterHandler("MPLUS", 0x13, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:PopulateMythicGroups(data.groups or {})
+            end
+        end
+    end)
+    
+    -- SMSG_LIVE_RUNS (0x20) - List of spectatable runs
+    DC:RegisterHandler("MPLUS", 0x20, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:PopulateLiveRuns(data.runs or {})
+            end
+        end
+    end)
+    
+    -- SMSG_SPECTATOR_UPDATE (0x24) - Update spectator HUD
+    DC:RegisterHandler("MPLUS", 0x24, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateSpectatorHUD(data)
+            end
+        end
+    end)
+    
+    -- SMSG_SCHEDULED_EVENTS (0x30) - List of scheduled events
+    DC:RegisterHandler("MPLUS", 0x30, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:PopulateScheduledEvents(data.events or {})
+            end
+        end
+    end)
+    
+    -- =========================================================================
+    -- GRPF (Group Finder) Protocol Handlers
+    -- =========================================================================
+    
+    local GFOpcodes = DC.GroupFinderOpcodes or {}
+    
+    -- SMSG_LISTING_CREATED (0x30) - Confirm listing created
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_LISTING_CREATED or 0x30, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            Print("Group listing created! ID: " .. (data.listingId or "?"))
+            if namespace.GroupFinder then
+                namespace.GroupFinder:OnListingCreated(data)
+            end
+        end
+    end)
+    
+    -- SMSG_SEARCH_RESULTS (0x31) - Search results
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SEARCH_RESULTS or 0x31, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:PopulateMythicGroups(data.groups or {})
+            end
+        end
+    end)
+    
+    -- SMSG_APPLICATION_STATUS (0x32) - Application accepted/declined
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_APPLICATION_STATUS or 0x32, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            local status = data.status or "unknown"
+            if status == "accepted" then
+                Print("|cff00ff00Your application was accepted!|r")
+            elseif status == "declined" then
+                Print("|cffff0000Your application was declined.|r")
+            else
+                Print("Application status: " .. status)
+            end
+            if namespace.GroupFinder then
+                namespace.GroupFinder:OnApplicationStatusChanged(data)
+            end
+        end
+    end)
+    
+    -- SMSG_NEW_APPLICATION (0x33) - Leader: new applicant
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_NEW_APPLICATION or 0x33, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            Print("|cffffff00New applicant:|r " .. (data.playerName or "Unknown") .. " (" .. (data.role or "?") .. ")")
+            if namespace.GroupFinder then
+                namespace.GroupFinder:OnNewApplication(data)
+            end
+        end
+    end)
+    
+    -- SMSG_GROUP_UPDATED (0x34) - Group composition changed
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_GROUP_UPDATED or 0x34, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:OnGroupUpdated(data)
+            end
+        end
+    end)
+    
+    -- SMSG_KEYSTONE_INFO (0x40) - Player's keystone data
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_KEYSTONE_INFO or 0x40, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateKeystoneDisplay(data)
+            end
+        end
+    end)
+    
+    -- SMSG_SPECTATE_DATA (0x45) - Spectator live data
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_DATA or 0x45, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateSpectatorHUD(data)
+            end
+        end
+    end)
+    
+    -- SMSG_SPECTATE_LIST (0x47) - Available runs to spectate
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_LIST or 0x47, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:PopulateLiveRuns(data.runs or {})
+            end
+        end
+    end)
+    
+    -- SMSG_DIFFICULTY_CHANGED (0x51) - Confirm difficulty changed
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_DIFFICULTY_CHANGED or 0x51, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            local diffName = data.difficultyName or "Unknown"
+            Print("Difficulty changed to: |cff32c4ff" .. diffName .. "|r")
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateDifficultyDisplay(data.difficultyId, diffName)
+            end
+        end
+    end)
+    
     -- Helper functions exposed on namespace for slash commands and external use
     namespace.RequestKeyInfo = function()
         if DC then
@@ -1009,6 +1265,13 @@ if DC then
         end
     end
     
+    -- Respond to keystone activation
+    namespace.RespondToKeystone = function(accepted)
+        if DC then
+            DC:Send("MPLUS", 0x42, { accepted = accepted })  -- CMSG_KEYSTONE_RESPOND
+        end
+    end
+    
     -- Test connection by sending all requests
     namespace.TestConnection = function()
         if not DC then
@@ -1023,3 +1286,4 @@ if DC then
     
     Print("DCAddonProtocol v" .. (DC.VERSION or "?") .. " handlers registered")
 end
+
