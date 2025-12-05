@@ -21,13 +21,13 @@ namespace DCAddon
 {
 
 // NPC Entry ID - Update this in SQL to match your creature template
-constexpr uint32 NPC_GROUP_FINDER = 600100;
+[[maybe_unused]] constexpr uint32 NPC_GROUP_FINDER = 600100;
 
 // Gossip Menu IDs
-constexpr uint32 GOSSIP_MENU_MAIN        = 60010;
-constexpr uint32 GOSSIP_MENU_MYTHIC      = 60011;
-constexpr uint32 GOSSIP_MENU_RAID        = 60012;
-constexpr uint32 GOSSIP_MENU_EVENTS      = 60013;
+[[maybe_unused]] constexpr uint32 GOSSIP_MENU_MAIN        = 60010;
+[[maybe_unused]] constexpr uint32 GOSSIP_MENU_MYTHIC      = 60011;
+[[maybe_unused]] constexpr uint32 GOSSIP_MENU_RAID        = 60012;
+[[maybe_unused]] constexpr uint32 GOSSIP_MENU_EVENTS      = 60013;
 
 // Gossip Option IDs
 enum GroupFinderOptions
@@ -365,8 +365,8 @@ private:
     {
         QueryResult result = CharacterDatabase.Query(
             "SELECT r.run_id, d.dungeon_name, r.key_level, c.name "
-            "FROM dc_mythic_plus_runs r "
-            "LEFT JOIN dc_mythic_plus_dungeons d ON r.map_id = d.map_id "
+            "FROM dc_mplus_runs r "
+            "LEFT JOIN dc_mplus_dungeons d ON r.map_id = d.map_id "
             "LEFT JOIN characters c ON r.leader_guid = c.guid "
             "WHERE r.status = 1 AND r.allow_spectate = 1 "
             "ORDER BY r.key_level DESC LIMIT 10");

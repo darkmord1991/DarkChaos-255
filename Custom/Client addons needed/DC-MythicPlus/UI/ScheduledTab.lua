@@ -106,15 +106,21 @@ function GF:CreateScheduledTab()
     scrollFrame:SetPoint("BOTTOMRIGHT", -28, 10)
     
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetSize(scrollFrame:GetWidth(), 1)
+    scrollChild:SetSize(500, 1)  -- Initial size, will be updated
     scrollFrame:SetScrollChild(scrollChild)
     frame.scrollChild = scrollChild
+    frame.scrollFrame = scrollFrame
     
     self.ScheduledTabContent = frame
-    self:PopulateScheduledEvents(mockScheduledEvents)
+    
+    -- Delay population slightly to allow layout
+    C_Timer.After(0.1, function()
+        self:PopulateScheduledEvents(mockScheduledEvents)
+    end)
 end
 
 function GF:PopulateScheduledEvents(events)
+    if not self.ScheduledTabContent then return end
     local scrollChild = self.ScheduledTabContent.scrollChild
     if not scrollChild then return end
     
@@ -124,12 +130,20 @@ function GF:PopulateScheduledEvents(events)
         child:SetParent(nil)
     end
     
+    -- Get width from scroll frame or default
+    local scrollFrame = scrollChild:GetParent()
+    local contentWidth = scrollFrame and scrollFrame:GetWidth() or 500
+    if contentWidth < 100 then contentWidth = 500 end  -- Fallback if not yet laid out
+    scrollChild:SetWidth(contentWidth)
+    
     local yOffset = 0
     local rowHeight = 90
     
+    GF.Print("Populating " .. #events .. " scheduled events")
+    
     for i, event in ipairs(events) do
         local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetSize(scrollChild:GetWidth() - 10, rowHeight - 4)
+        row:SetSize(contentWidth - 40, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
         
         row.bg = row:CreateTexture(nil, "BACKGROUND")
@@ -198,6 +212,26 @@ function GF:PopulateScheduledEvents(events)
     end
     
     scrollChild:SetHeight(yOffset)
+    
+    -- Show or hide empty state
+    if #events == 0 then
+        if not self.ScheduledTabContent.emptyText then
+            local emptyText = self.ScheduledTabContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            emptyText:SetPoint("CENTER", 0, 20)
+            emptyText:SetText("|cff666666No scheduled events|r")
+            self.ScheduledTabContent.emptyText = emptyText
+            
+            local emptySubtext = self.ScheduledTabContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            emptySubtext:SetPoint("TOP", emptyText, "BOTTOM", 0, -8)
+            emptySubtext:SetText("|cff555555Click 'Create Event' to schedule a new run|r")
+            self.ScheduledTabContent.emptySubtext = emptySubtext
+        end
+        if self.ScheduledTabContent.emptyText then self.ScheduledTabContent.emptyText:Show() end
+        if self.ScheduledTabContent.emptySubtext then self.ScheduledTabContent.emptySubtext:Show() end
+    else
+        if self.ScheduledTabContent.emptyText then self.ScheduledTabContent.emptyText:Hide() end
+        if self.ScheduledTabContent.emptySubtext then self.ScheduledTabContent.emptySubtext:Hide() end
+    end
 end
 
 function GF:RefreshScheduledEvents()
@@ -205,6 +239,9 @@ function GF:RefreshScheduledEvents()
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
         DC:Request("MPLUS", 0x30, { action = "list_scheduled" })
+    else
+        -- Demo mode - use mock data
+        self:PopulateScheduledEvents(mockScheduledEvents)
     end
 end
 
@@ -241,17 +278,15 @@ function GF:ShowCreateEventDialog()
     dialog.bg:SetAllPoints()
     dialog.bg:SetColorTexture(0.05, 0.05, 0.1, 0.98)
     
-    -- Border
-    local border = CreateFrame("Frame", nil, dialog, "BackdropTemplate" or nil)
+    -- Border (3.3.5a compatible)
+    local border = CreateFrame("Frame", nil, dialog)
     border:SetAllPoints()
-    if border.SetBackdrop then
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        border:SetBackdropBorderColor(0.3, 0.6, 0.9, 0.8)
-    end
+    border:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    border:SetBackdropBorderColor(0.4, 0.7, 1.0, 0.9)
     
     -- Title
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

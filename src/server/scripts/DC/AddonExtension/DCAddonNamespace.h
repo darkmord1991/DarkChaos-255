@@ -288,6 +288,8 @@ namespace DCAddon
             // Client -> Server: Keystone & Difficulty
             constexpr uint8 CMSG_GET_MY_KEYSTONE     = 0x20;  // Request player's keystone info
             constexpr uint8 CMSG_SET_DIFFICULTY      = 0x21;  // Request difficulty change
+            constexpr uint8 CMSG_GET_DUNGEON_LIST    = 0x22;  // Get M+ dungeon list from DB
+            constexpr uint8 CMSG_GET_RAID_LIST       = 0x23;  // Get raid list from DB
             
             // Client -> Server: Spectating
             constexpr uint8 CMSG_START_SPECTATE      = 0x25;  // Request to spectate a run
@@ -312,6 +314,8 @@ namespace DCAddon
             // Server -> Client: Keystone & Difficulty
             constexpr uint8 SMSG_KEYSTONE_INFO       = 0x40;  // Player's keystone data
             constexpr uint8 SMSG_DIFFICULTY_CHANGED  = 0x41;  // Confirm difficulty changed
+            constexpr uint8 SMSG_DUNGEON_LIST        = 0x42;  // M+ dungeon list from DB
+            constexpr uint8 SMSG_RAID_LIST           = 0x43;  // Raid list from DB
             
             // Server -> Client: Spectating
             constexpr uint8 SMSG_SPECTATE_DATA       = 0x45;  // Spectator live data

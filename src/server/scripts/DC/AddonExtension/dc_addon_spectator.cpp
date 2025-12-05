@@ -29,7 +29,7 @@ namespace Spectator
         
         // Verify run exists and is in progress
         QueryResult result = CharacterDatabase.Query(
-            "SELECT dungeon_id, keystone_level, start_time, status FROM dc_mythic_plus_runs "
+            "SELECT dungeon_id, keystone_level, start_time, status FROM dc_mplus_runs "
             "WHERE run_id = {} AND status = 'in_progress'",
             runId);
         
@@ -65,7 +65,7 @@ namespace Spectator
         std::string dungeonName = "Unknown Dungeon";
         uint32 mapId = 0;
         QueryResult dungeonResult = WorldDatabase.Query(
-            "SELECT dungeon_name, map_id FROM dc_mythic_plus_dungeons WHERE dungeon_id = {}",
+            "SELECT dungeon_name, map_id FROM dc_mplus_dungeons WHERE dungeon_id = {}",
             dungeonId);
         if (dungeonResult)
         {
@@ -120,9 +120,9 @@ namespace Spectator
         QueryResult result = CharacterDatabase.Query(
             "SELECT r.run_id, r.dungeon_id, r.keystone_level, r.start_time, "
             "d.dungeon_name, COUNT(DISTINCT p.player_guid) as party_size "
-            "FROM dc_mythic_plus_runs r "
-            "LEFT JOIN dc_mythic_plus_dungeons d ON r.dungeon_id = d.dungeon_id "
-            "LEFT JOIN dc_mythic_plus_run_participants p ON r.run_id = p.run_id "
+            "FROM dc_mplus_runs r "
+            "LEFT JOIN dc_mplus_dungeons d ON r.dungeon_id = d.dungeon_id "
+            "LEFT JOIN dc_mplus_run_participants p ON r.run_id = p.run_id "
             "WHERE r.status = 'in_progress' AND r.allow_spectators = 1 "
             "GROUP BY r.run_id ORDER BY r.keystone_level DESC LIMIT 20");
         

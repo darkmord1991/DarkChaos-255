@@ -77,17 +77,15 @@ function KUI:CreateActivationFrame()
     frame.bg:SetAllPoints()
     frame.bg:SetColorTexture(0.02, 0.02, 0.05, 0.98)
     
-    -- Glowing border (mythic+ theme)
-    local border = CreateFrame("Frame", nil, frame, "BackdropTemplate" or nil)
+    -- Glowing border (mythic+ theme) - 3.3.5a compatible
+    local border = CreateFrame("Frame", nil, frame)
     border:SetPoint("TOPLEFT", -3, 3)
     border:SetPoint("BOTTOMRIGHT", 3, -3)
-    if border.SetBackdrop then
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-        })
-        border:SetBackdropBorderColor(0.2, 0.6, 1.0, 0.9)
-    end
+    border:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 16,
+    })
+    border:SetBackdropBorderColor(0.2, 0.6, 1.0, 0.9)
     
     -- Top decorative bar
     local topBar = frame:CreateTexture(nil, "ARTWORK")

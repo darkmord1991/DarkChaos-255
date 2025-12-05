@@ -5,8 +5,8 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2025-11-30 (removed obsolete dc_mythic_keystones - consolidated into dc_mplus_keystones)
-    Tables: ~97 in acore_chars, ~65 in acore_world = ~162 total
+    Updated: 2025-12-04 (added Cross-System Integration tables, removed HinterlandBG affix system)
+    Tables: ~101 in acore_chars, ~65 in acore_world = ~166 total
     
     Author: DarkChaos Development Team
 ]]
@@ -109,16 +109,18 @@ local DC_TABLE_CHECKER = {
         -- Mythic+ System (dc_mythic_keystones removed - consolidated into dc_mplus_keystones)
         {"acore_chars", "dc_mplus_keystones", "Mythic+", true},
         {"acore_chars", "dc_mplus_runs", "Mythic+", true},
+        {"acore_chars", "dc_mplus_best_runs", "Mythic+", false},
         {"acore_chars", "dc_mplus_scores", "Mythic+", false},
-        {"acore_chars", "dc_mythicplus_hud_cache", "Mythic+", false},
+        {"acore_chars", "dc_mplus_hud_cache", "Mythic+", false},
+        {"acore_chars", "dc_mplus_player_ratings", "Mythic+", false},
         {"acore_chars", "dc_player_keystones", "Mythic+", false},
         
         -- Mythic Spectator
-        {"acore_chars", "dc_mythic_spectator_invites", "Mythic Spectator", false},
-        {"acore_chars", "dc_mythic_spectator_popularity", "Mythic Spectator", false},
-        {"acore_chars", "dc_mythic_spectator_replays", "Mythic Spectator", false},
-        {"acore_chars", "dc_mythic_spectator_sessions", "Mythic Spectator", false},
-        {"acore_chars", "dc_mythic_spectator_settings", "Mythic Spectator", false},
+        {"acore_chars", "dc_mplus_spec_invites", "Mythic Spectator", false},
+        {"acore_chars", "dc_mplus_spec_popularity", "Mythic Spectator", false},
+        {"acore_chars", "dc_mplus_spec_replays", "Mythic Spectator", false},
+        {"acore_chars", "dc_mplus_spec_sessions", "Mythic Spectator", false},
+        {"acore_chars", "dc_mplus_spec_settings", "Mythic Spectator", false},
         {"acore_chars", "dc_spectator_settings", "Mythic Spectator", false},
         
         -- Season System
@@ -153,6 +155,14 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_stats", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
+        
+        -- Cross-System Integration Framework (added 2025-12-04)
+        -- Provides unified event bus, aggregated stats, and cross-system multipliers
+        {"acore_chars", "dc_cross_system_events", "Cross-System", false},           -- Event log for debugging/analytics
+        {"acore_chars", "dc_player_cross_system_stats", "Cross-System", true},      -- Aggregated player stats
+        {"acore_chars", "dc_cross_system_config", "Cross-System", true},            -- Framework configuration
+        {"acore_chars", "dc_cross_system_multipliers", "Cross-System", false},      -- Multiplier overrides
+        {"acore_chars", "dc_cross_system_achievement_triggers", "Cross-System", false}, -- Achievement trigger definitions
         
         -- ============================================================
         -- WORLD DATABASE (acore_world)
@@ -217,14 +227,14 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_mplus_featured_dungeons", "Mythic+", false},
         {"acore_world", "dc_mplus_seasons", "Mythic+", true},
         {"acore_world", "dc_mplus_teleporter_npcs", "Mythic+", false},
-        {"acore_world", "dc_mythic_plus_dungeons", "Mythic+", false},
-        {"acore_world", "dc_mythic_plus_weekly_affixes", "Mythic+", false},
-        {"acore_world", "dc_mythic_scaling_multipliers", "Mythic+", false},
+        {"acore_world", "dc_mplus_dungeons", "Mythic+", false},
+        {"acore_world", "dc_mplus_weekly_affixes", "Mythic+", false},
+        {"acore_world", "dc_mplus_scale_multipliers", "Mythic+", false},
         
         -- Mythic Spectator Config
-        {"acore_world", "dc_mythic_spectator_npcs", "Mythic Spectator", false},
-        {"acore_world", "dc_mythic_spectator_positions", "Mythic Spectator", false},
-        {"acore_world", "dc_mythic_spectator_strings", "Mythic Spectator", false},
+        {"acore_world", "dc_mplus_spec_npcs", "Mythic Spectator", false},
+        {"acore_world", "dc_mplus_spec_positions", "Mythic Spectator", false},
+        {"acore_world", "dc_mplus_spec_strings", "Mythic Spectator", false},
         
         -- HLBG Seasons Config (season definitions in world DB, player data in chars)
         {"acore_world", "dc_hlbg_seasons", "HLBG System", true},

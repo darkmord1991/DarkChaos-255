@@ -1,19 +1,26 @@
 --[[
     DC-Welcome Core.lua
-    Main addon initialization and DCAddonProtocol integration
+    Main addon initialization, Plugin API, and DCAddonProtocol integration
     
     Features:
     - First-login detection and welcome popup trigger
     - DCAddonProtocol handler registration
+    - Plugin Registration API (replaces DC-Central)
+    - Event Bus for inter-addon communication
+    - Progress tracking (M+ rating, Prestige, Seasons)
     - Server-side config sync
-    - Slash commands (/welcome, /faq)
+    - Slash commands (/welcome, /faq, /dcprogress)
     
     Author: DarkChaos-255
     Date: January 2025
+    Updated: December 2025 - Added Plugin API and Event Bus
 ]]
 
 local addonName = "DC-Welcome"
 DCWelcome = DCWelcome or {}
+
+-- Version
+DCWelcome.VERSION = "2.0.0"
 
 -- =============================================================================
 -- Saved Variables & Defaults
@@ -26,6 +33,75 @@ local defaults = {
     firstLoginComplete = false, -- First login flow finished
     seenFeatures = {},          -- Which feature popups have been shown
     seenLevels = {},            -- Which level milestones have been shown
+    showMilestones = true,      -- Show level milestone notifications
+    showMinimapButton = true,   -- Minimap button visibility
+    enableSounds = true,        -- Sound effects
+    showTooltips = true,        -- Feature tooltips
+    pluginSettings = {},        -- Per-plugin settings storage
+}
+
+-- =============================================================================
+-- Plugin Registry (Replaces DC-Central functionality)
+-- =============================================================================
+
+DCWelcome.Plugins = {}       -- All registered plugins
+DCWelcome.PluginsByID = {}   -- Quick lookup by ID
+DCWelcome.Categories = {
+    "Dungeons",
+    "PvP", 
+    "Progression",
+    "Gear",
+    "World",
+    "Competition",
+    "Settings",
+    "Utility",
+    "Other"
+}
+
+-- =============================================================================
+-- Event Bus (Inter-addon communication)
+-- =============================================================================
+
+DCWelcome.EventBus = {
+    _handlers = {}
+}
+
+-- Register an event handler
+function DCWelcome.EventBus:On(eventName, callback)
+    self._handlers[eventName] = self._handlers[eventName] or {}
+    table.insert(self._handlers[eventName], callback)
+end
+
+-- Emit an event to all registered handlers
+function DCWelcome.EventBus:Emit(eventName, ...)
+    local handlers = self._handlers[eventName]
+    if handlers then
+        for _, callback in ipairs(handlers) do
+            local ok, err = pcall(callback, ...)
+            if not ok then
+                DCWelcome.Print("|cffff0000EventBus error:|r " .. tostring(err))
+            end
+        end
+    end
+end
+
+-- Clear all handlers for an event
+function DCWelcome.EventBus:Off(eventName)
+    self._handlers[eventName] = nil
+end
+
+-- =============================================================================
+-- Progress Data Cache
+-- =============================================================================
+
+DCWelcome.Progress = {
+    mythicRating = nil,
+    prestigeLevel = nil,
+    prestigeXP = nil,
+    seasonRank = nil,
+    weeklyVaultProgress = nil,
+    achievementPoints = nil,
+    _lastUpdate = 0
 }
 
 -- =============================================================================
@@ -52,6 +128,7 @@ DCWelcome.Opcode = {
     CMSG_DISMISS_WELCOME = 0x03,
     CMSG_MARK_FEATURE_SEEN = 0x04,
     CMSG_GET_WHATS_NEW = 0x05,
+    CMSG_GET_PROGRESS = 0x06,        -- NEW: Request progress data
     
     -- Server -> Client
     SMSG_SHOW_WELCOME = 0x10,
@@ -60,6 +137,7 @@ DCWelcome.Opcode = {
     SMSG_FEATURE_UNLOCK = 0x13,
     SMSG_WHATS_NEW = 0x14,
     SMSG_LEVEL_MILESTONE = 0x15,
+    SMSG_PROGRESS_DATA = 0x16,       -- NEW: Progress data response
 }
 
 -- =============================================================================
@@ -277,7 +355,49 @@ local function RegisterHandlers()
         end
     end)
     
-    Print("Handlers registered (v1.0.0)")
+    -- SMSG_PROGRESS_DATA - Server sends player progress data (NEW)
+    DC:RegisterHandler(DCWelcome.Module, DCWelcome.Opcode.SMSG_PROGRESS_DATA, function(data)
+        DebugPrint("Received SMSG_PROGRESS_DATA")
+        
+        if type(data) == "table" then
+            local progress = DCWelcome.Progress
+            
+            -- Update cached progress data
+            if data.mythicRating then
+                progress.mythicRating = data.mythicRating
+            end
+            if data.prestigeLevel then
+                progress.prestigeLevel = data.prestigeLevel
+            end
+            if data.prestigeXP then
+                progress.prestigeXP = data.prestigeXP
+            end
+            if data.seasonPoints then
+                progress.seasonPoints = data.seasonPoints
+            end
+            if data.seasonRank then
+                progress.seasonRank = data.seasonRank
+            end
+            if data.weeklyVaultProgress then
+                progress.weeklyVaultProgress = data.weeklyVaultProgress
+            end
+            if data.achievementPoints then
+                progress.achievementPoints = data.achievementPoints
+            end
+            if data.keysThisWeek then
+                progress.keysThisWeek = data.keysThisWeek
+            end
+            
+            progress._lastUpdate = time()
+            
+            -- Emit event for UI updates
+            DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
+            
+            DebugPrint("Progress data updated from server")
+        end
+    end)
+    
+    Print("Handlers registered (v" .. DCWelcome.VERSION .. ")")
 end
 
 -- =============================================================================
@@ -296,6 +416,252 @@ if not C_Timer_After then
             end
         end)
     end
+end
+
+-- Export C_Timer_After globally if needed by other files
+DCWelcome.After = C_Timer_After
+
+-- =============================================================================
+-- Plugin Registration API
+-- =============================================================================
+
+--[[
+    Register a plugin with DC-Welcome
+    
+    @param plugin table with the following fields:
+        - id (string, required): Unique identifier, e.g. "dc-mythicplus"
+        - name (string, required): Display name
+        - description (string, optional): Short description
+        - icon (string, optional): Icon path
+        - color (table, optional): {r, g, b} accent color
+        - category (string, optional): Category for grouping (default: "Other")
+        - openFunc (function, optional): Called when "Open" is clicked
+        - openCommand (string, optional): Slash command equivalent
+        - settingsFunc (function, optional): Called when "Settings" is clicked
+        - settingsCommand (string, optional): Settings slash command
+        - minLevel (number, optional): Minimum player level to show (default: 1)
+        - version (string, optional): Plugin version
+        - isLoaded (function, optional): Returns true if addon is loaded
+        - priority (number, optional): Sort order (higher = first)
+        - settingsOnly (boolean, optional): Only show settings button
+        - infoOnly (boolean, optional): Info display only, no open button
+    
+    @return boolean success
+]]
+function DCWelcome:RegisterPlugin(plugin)
+    if not plugin or not plugin.id or not plugin.name then
+        DebugPrint("RegisterPlugin: Missing required fields (id, name)")
+        return false
+    end
+    
+    -- Check for duplicate
+    if self.PluginsByID[plugin.id] then
+        DebugPrint("RegisterPlugin: Updating existing plugin: " .. plugin.id)
+        -- Update existing registration (allows addons to update their info)
+        for i, p in ipairs(self.Plugins) do
+            if p.id == plugin.id then
+                self.Plugins[i] = plugin
+                self.PluginsByID[plugin.id] = plugin
+                break
+            end
+        end
+        -- Emit event for update
+        self.EventBus:Emit("PLUGIN_UPDATED", plugin)
+        return true
+    end
+    
+    -- Set defaults
+    plugin.category = plugin.category or "Other"
+    plugin.minLevel = plugin.minLevel or 1
+    plugin.priority = plugin.priority or 50
+    plugin.version = plugin.version or "1.0.0"
+    
+    -- Add to registry
+    table.insert(self.Plugins, plugin)
+    self.PluginsByID[plugin.id] = plugin
+    
+    -- Sort by priority (descending) then name
+    table.sort(self.Plugins, function(a, b)
+        if a.priority ~= b.priority then
+            return a.priority > b.priority
+        end
+        return a.name < b.name
+    end)
+    
+    DebugPrint("Registered plugin: " .. plugin.id .. " (" .. plugin.name .. ")")
+    
+    -- Emit event for new registration
+    self.EventBus:Emit("PLUGIN_REGISTERED", plugin)
+    
+    -- Refresh addons panel if open
+    if self.RefreshAddonStatus then
+        self:RefreshAddonStatus()
+    end
+    
+    return true
+end
+
+-- Unregister a plugin
+function DCWelcome:UnregisterPlugin(pluginId)
+    if not self.PluginsByID[pluginId] then
+        return false
+    end
+    
+    for i, p in ipairs(self.Plugins) do
+        if p.id == pluginId then
+            table.remove(self.Plugins, i)
+            break
+        end
+    end
+    
+    self.PluginsByID[pluginId] = nil
+    self.EventBus:Emit("PLUGIN_UNREGISTERED", pluginId)
+    return true
+end
+
+-- Get all registered plugins
+function DCWelcome:GetPlugins()
+    return self.Plugins
+end
+
+-- Get plugin by ID
+function DCWelcome:GetPlugin(pluginId)
+    return self.PluginsByID[pluginId]
+end
+
+-- Get plugins grouped by category
+function DCWelcome:GetPluginsByCategory()
+    local byCategory = {}
+    for _, plugin in ipairs(self.Plugins) do
+        local cat = plugin.category or "Other"
+        byCategory[cat] = byCategory[cat] or {}
+        table.insert(byCategory[cat], plugin)
+    end
+    return byCategory
+end
+
+-- Check if player can use a plugin
+function DCWelcome:CanUsePlugin(pluginId)
+    local plugin = self.PluginsByID[pluginId]
+    if not plugin then
+        return false, "not_found"
+    end
+    
+    -- Check if addon is loaded
+    if plugin.isLoaded and not plugin.isLoaded() then
+        return false, "not_loaded"
+    end
+    
+    -- Check level requirement
+    local playerLevel = UnitLevel("player")
+    if plugin.minLevel and playerLevel < plugin.minLevel then
+        return false, "level", plugin.minLevel
+    end
+    
+    return true
+end
+
+-- Open a plugin
+function DCWelcome:OpenPlugin(pluginId)
+    local plugin = self.PluginsByID[pluginId]
+    if not plugin then
+        Print("Plugin not found: " .. tostring(pluginId))
+        return false
+    end
+    
+    local canUse, reason = self:CanUsePlugin(pluginId)
+    if not canUse then
+        if reason == "not_loaded" then
+            Print("Plugin not loaded: " .. plugin.name)
+        elseif reason == "level" then
+            Print("Requires level " .. plugin.minLevel)
+        end
+        return false
+    end
+    
+    if plugin.openFunc then
+        plugin.openFunc()
+        return true
+    end
+    
+    return false
+end
+
+-- Open plugin settings
+function DCWelcome:OpenPluginSettings(pluginId)
+    local plugin = self.PluginsByID[pluginId]
+    if not plugin then
+        return false
+    end
+    
+    if plugin.settingsFunc then
+        plugin.settingsFunc()
+        return true
+    end
+    
+    return false
+end
+
+-- Per-plugin settings storage
+function DCWelcome:GetPluginSetting(pluginId, key)
+    if DCWelcomeDB and DCWelcomeDB.pluginSettings and DCWelcomeDB.pluginSettings[pluginId] then
+        return DCWelcomeDB.pluginSettings[pluginId][key]
+    end
+    return nil
+end
+
+function DCWelcome:SetPluginSetting(pluginId, key, value)
+    if DCWelcomeDB then
+        DCWelcomeDB.pluginSettings = DCWelcomeDB.pluginSettings or {}
+        DCWelcomeDB.pluginSettings[pluginId] = DCWelcomeDB.pluginSettings[pluginId] or {}
+        DCWelcomeDB.pluginSettings[pluginId][key] = value
+    end
+end
+
+-- =============================================================================
+-- Progress Data API
+-- =============================================================================
+
+-- Request progress data from server
+function DCWelcome:RequestProgressData()
+    if DC then
+        DC:Request(self.Module, self.Opcode.CMSG_GET_PROGRESS, {})
+        DebugPrint("Requested progress data from server")
+    end
+    
+    -- Also try to get data from loaded addons
+    self:RefreshProgressFromAddons()
+end
+
+-- Refresh progress data from loaded addons
+function DCWelcome:RefreshProgressFromAddons()
+    local progress = self.Progress
+    
+    -- Get M+ rating from DC-MythicPlus
+    if _G.DCMythicPlusHUD and DCMythicPlusHUD.GetPlayerRating then
+        progress.mythicRating = DCMythicPlusHUD:GetPlayerRating()
+    end
+    
+    -- Get prestige from DC-Prestige (if it exists)
+    if _G.DCPrestige and DCPrestige.GetPrestigeLevel then
+        progress.prestigeLevel = DCPrestige:GetPrestigeLevel()
+        progress.prestigeXP = DCPrestige:GetPrestigeXP()
+    end
+    
+    -- Get achievement points
+    if GetTotalAchievementPoints then
+        progress.achievementPoints = GetTotalAchievementPoints()
+    end
+    
+    progress._lastUpdate = time()
+    
+    -- Emit update event
+    self.EventBus:Emit("PROGRESS_UPDATED", progress)
+end
+
+-- Get current progress data
+function DCWelcome:GetProgress()
+    return self.Progress
 end
 
 -- =============================================================================
@@ -578,6 +944,44 @@ SlashCmdList["DCDISCORD"] = function(msg)
         ChatFrame1EditBox:SetFocus()
         ChatFrame1EditBox:HighlightText()
     end
+end
+
+-- Progress command
+SLASH_DCPROGRESS1 = "/dcprogress"
+SLASH_DCPROGRESS2 = "/progress"
+SlashCmdList["DCPROGRESS"] = function(msg)
+    local args = {}
+    for word in string.gmatch(msg or "", "%S+") do
+        table.insert(args, string.lower(word))
+    end
+    
+    local cmd = args[1] or ""
+    
+    if cmd == "refresh" then
+        DCWelcome:RequestProgressData()
+        Print("Refreshing progress data...")
+    elseif cmd == "show" or cmd == "" then
+        DCWelcome:ShowWelcome(true)
+        C_Timer_After(0.1, function()
+            if welcomeFrame and welcomeFrame.SelectTab then
+                welcomeFrame:SelectTab("progress")
+            end
+        end)
+    else
+        Print("Usage: /dcprogress [show|refresh]")
+    end
+end
+
+-- Addons hub command
+SLASH_DCADDONS1 = "/dcaddons"
+SLASH_DCADDONS2 = "/addons"
+SlashCmdList["DCADDONS"] = function(msg)
+    DCWelcome:ShowWelcome(true)
+    C_Timer_After(0.1, function()
+        if welcomeFrame and welcomeFrame.SelectTab then
+            welcomeFrame:SelectTab("addons")
+        end
+    end)
 end
 
 -- =============================================================================

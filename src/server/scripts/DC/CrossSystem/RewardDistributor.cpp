@@ -139,7 +139,7 @@ namespace CrossSystem
     {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        if (eventMultiplierExpires_ > 0 && GameTime::GetGameTime().count() > eventMultiplierExpires_)
+        if (eventMultiplierExpires_ > 0 && static_cast<uint64>(GameTime::GetGameTime().count()) > eventMultiplierExpires_)
             return 1.0f;
             
         return eventMultiplier_;
@@ -229,7 +229,7 @@ namespace CrossSystem
         return 1.0f + (keystoneLevel * multiplierConfig_.mythicPlusLevelBonus);
     }
     
-    float RewardDistributor::GetSeasonalMultiplier(uint32 seasonId) const
+    float RewardDistributor::GetSeasonalMultiplier([[maybe_unused]] uint32 seasonId) const
     {
         // Could load from dc_seasonal_reward_multipliers
         return 1.0f;
@@ -416,7 +416,7 @@ namespace CrossSystem
     // Preview
     // =========================================================================
     
-    std::vector<RewardCalculation> RewardDistributor::PreviewRewards(Player* player, 
+    std::vector<RewardCalculation> RewardDistributor::PreviewRewards([[maybe_unused]] Player* player, 
                                                                       const RewardContext& context,
                                                                       const std::vector<RewardDefinition>& rewards)
     {

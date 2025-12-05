@@ -9,7 +9,7 @@ _G.DCMythicPlusHudBridgeLoaded = true
 local MODULE_PREFIX = "[DCMythicPlusHUD]"
 local ADDON_NAME = "DCMythicPlusHUD"
 local MESSAGE_KEY = "HUD"
-local HUD_TABLE = "dc_mythicplus_hud_cache"
+local HUD_TABLE = "dc_mplus_hud_cache"
 local POLL_INTERVAL_MS = 1000
 local INSTANCE_KEY_FACTOR = 4294967296 -- 2^32
 

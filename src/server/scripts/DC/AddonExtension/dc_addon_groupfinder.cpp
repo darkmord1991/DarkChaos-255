@@ -23,6 +23,34 @@ namespace DCAddon
 namespace GroupFinder
 {
     // ========================================================================
+    // JSON HELPER FUNCTIONS
+    // ========================================================================
+    
+    // Helper to safely get int from JSON with default value
+    inline int32 JsonGetInt(const JsonValue& json, const std::string& key, int32 defaultVal = 0)
+    {
+        return json[key].IsNumber() ? json[key].AsInt32() : defaultVal;
+    }
+    
+    // Helper to safely get uint32 from JSON with default value
+    inline uint32 JsonGetUInt(const JsonValue& json, const std::string& key, uint32 defaultVal = 0)
+    {
+        return json[key].IsNumber() ? json[key].AsUInt32() : defaultVal;
+    }
+    
+    // Helper to safely get string from JSON with default value
+    inline std::string JsonGetString(const JsonValue& json, const std::string& key, const std::string& defaultVal = "")
+    {
+        return json[key].IsString() ? json[key].AsString() : defaultVal;
+    }
+    
+    // Helper to safely get bool from JSON with default value
+    inline bool JsonGetBool(const JsonValue& json, const std::string& key, bool defaultVal = false)
+    {
+        return json[key].IsBool() ? json[key].AsBool() : defaultVal;
+    }
+
+    // ========================================================================
     // CONFIGURATION
     // ========================================================================
     
@@ -64,7 +92,7 @@ namespace GroupFinder
     // Create a new group listing
     static void HandleCreateListing(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -72,7 +100,7 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if player already has max listings
@@ -94,15 +122,15 @@ namespace GroupFinder
         }
         
         // Extract listing data
-        uint8 listingType = static_cast<uint8>(json.GetInt("listingType", LISTING_MYTHIC_PLUS));
-        uint32 dungeonId = static_cast<uint32>(json.GetInt("dungeonId", 0));
-        std::string dungeonName = json.GetString("dungeonName", "Unknown");
-        uint8 keystoneLevel = static_cast<uint8>(json.GetInt("keyLevel", 0));
-        uint16 minIlvl = static_cast<uint16>(json.GetInt("minIlvl", 0));
-        uint8 needTank = static_cast<uint8>(json.GetInt("needTank", 1));
-        uint8 needHealer = static_cast<uint8>(json.GetInt("needHealer", 1));
-        uint8 needDps = static_cast<uint8>(json.GetInt("needDps", 3));
-        std::string note = json.GetString("note", "");
+        uint8 listingType = static_cast<uint8>(JsonGetInt(json, "listingType", LISTING_MYTHIC_PLUS));
+        uint32 dungeonId = static_cast<uint32>(JsonGetInt(json, "dungeonId", 0));
+        std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
+        uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
+        uint16 minIlvl = static_cast<uint16>(JsonGetInt(json, "minIlvl", 0));
+        uint8 needTank = static_cast<uint8>(JsonGetInt(json, "needTank", 1));
+        uint8 needHealer = static_cast<uint8>(JsonGetInt(json, "needHealer", 1));
+        uint8 needDps = static_cast<uint8>(JsonGetInt(json, "needDps", 3));
+        std::string note = JsonGetString(json, "note", "");
         
         // Get group GUID if in a group
         uint32 groupGuid = 0;
@@ -138,13 +166,13 @@ namespace GroupFinder
     // Search for available listings
     static void HandleSearchListings(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
         // Optional filters
-        int32 listingType = json.GetInt("listingType", 0);  // 0 = all
-        int32 dungeonId = json.GetInt("dungeonId", 0);      // 0 = all
-        int32 minLevel = json.GetInt("minLevel", 0);
-        int32 maxLevel = json.GetInt("maxLevel", 0);
+        int32 listingType = JsonGetInt(json, "listingType", 0);  // 0 = all
+        int32 dungeonId = JsonGetInt(json, "dungeonId", 0);      // 0 = all
+        int32 minLevel = JsonGetInt(json, "minLevel", 0);
+        int32 maxLevel = JsonGetInt(json, "maxLevel", 0);
         
         // Build query
         std::string query = 
@@ -212,11 +240,11 @@ namespace GroupFinder
     // Apply to join a group
     static void HandleApplyToGroup(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
-        int32 listingId = json.GetInt("listingId", 0);
-        std::string role = json.GetString("role", "dps");
-        std::string message = json.GetString("message", "");
+        int32 listingId = JsonGetInt(json, "listingId", 0);
+        std::string role = JsonGetString(json, "role", "dps");
+        std::string message = JsonGetString(json, "message", "");
         
         if (listingId <= 0)
         {
@@ -279,6 +307,17 @@ namespace GroupFinder
         // Escape message
         CharacterDatabase.EscapeString(message);
         
+        // Get player's average item level
+        uint16 playerIlvl = static_cast<uint16>(player->GetAverageItemLevel());
+        
+        // Get player's M+ rating (if available)
+        uint32 mplusRating = 0;
+        QueryResult ratingResult = CharacterDatabase.Query(
+            "SELECT score FROM dc_mplus_scores WHERE character_guid = {} ORDER BY season_id DESC LIMIT 1",
+            guid);
+        if (ratingResult)
+            mplusRating = (*ratingResult)[0].Get<uint32>();
+        
         // Insert application
         CharacterDatabase.Execute(
             "INSERT INTO dc_group_finder_applications "
@@ -286,7 +325,7 @@ namespace GroupFinder
             "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
             listingId, guid, player->GetName(),
             roleId, player->getClass(), player->GetLevel(),
-            0,  // TODO: Calculate average item level
+            playerIlvl,
             message);
         
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
@@ -305,20 +344,23 @@ namespace GroupFinder
                 .Set("role", role)
                 .Set("playerClass", static_cast<int32>(player->getClass()))
                 .Set("playerLevel", static_cast<int32>(player->GetLevel()))
+                .Set("itemLevel", static_cast<int32>(playerIlvl))
+                .Set("rating", static_cast<int32>(mplusRating))
                 .Set("message", message)
                 .Send(leader);
         }
         
-        LOG_DEBUG("dc.groupfinder", "Player {} applied to listing #{}", player->GetName(), listingId);
+        LOG_DEBUG("dc.groupfinder", "Player {} applied to listing #{} (iLvl: {}, Rating: {})", 
+            player->GetName(), listingId, playerIlvl, mplusRating);
     }
     
     // Accept an application (leader only)
     static void HandleAcceptApplication(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
-        int32 applicationId = json.GetInt("applicationId", 0);
-        uint32 applicantGuid = static_cast<uint32>(json.GetInt("applicantGuid", 0));
+        int32 applicationId = JsonGetInt(json, "applicationId", 0);
+        uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
         
         uint32 leaderGuid = player->GetGUID().GetCounter();
         
@@ -377,10 +419,10 @@ namespace GroupFinder
     // Decline an application (leader only)
     static void HandleDeclineApplication(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
-        int32 applicationId = json.GetInt("applicationId", 0);
-        uint32 applicantGuid = static_cast<uint32>(json.GetInt("applicantGuid", 0));
+        int32 applicationId = JsonGetInt(json, "applicationId", 0);
+        uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
         
         uint32 leaderGuid = player->GetGUID().GetCounter();
         
@@ -425,9 +467,9 @@ namespace GroupFinder
     // Remove a listing
     static void HandleDelistGroup(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
-        int32 listingId = json.GetInt("listingId", 0);
+        int32 listingId = JsonGetInt(json, "listingId", 0);
         uint32 guid = player->GetGUID().GetCounter();
         
         // Verify player owns the listing
@@ -459,7 +501,7 @@ namespace GroupFinder
         QueryResult keyResult = CharacterDatabase.Query(
             "SELECT k.map_id, k.level, d.dungeon_name "
             "FROM dc_mplus_keystones k "
-            "LEFT JOIN dc_mythic_plus_dungeons d ON k.map_id = d.map_id "
+            "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
             "WHERE k.character_guid = {}",
             guid);
         
@@ -504,10 +546,10 @@ namespace GroupFinder
     // Set dungeon/raid difficulty
     static void HandleSetDifficulty(Player* player, const ParsedMessage& msg)
     {
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         
-        std::string diffType = json.GetString("type", "dungeon");
-        std::string diffValue = json.GetString("difficulty", "normal");
+        std::string diffType = JsonGetString(json, "type", "dungeon");
+        std::string diffValue = JsonGetString(json, "difficulty", "normal");
         
         // Check if player is in a group and is the leader
         Group* group = player->GetGroup();
@@ -599,8 +641,8 @@ namespace GroupFinder
         QueryResult result = CharacterDatabase.Query(
             "SELECT r.run_id, r.map_id, r.key_level, r.start_time, r.leader_guid, "
             "d.dungeon_name, c.name AS leader_name "
-            "FROM dc_mythic_plus_runs r "
-            "LEFT JOIN dc_mythic_plus_dungeons d ON r.map_id = d.map_id "
+            "FROM dc_mplus_runs r "
+            "LEFT JOIN dc_mplus_dungeons d ON r.map_id = d.map_id "
             "LEFT JOIN characters c ON r.leader_guid = c.guid "
             "WHERE r.status = 1 AND r.allow_spectate = 1 "
             "ORDER BY r.key_level DESC LIMIT 20");
@@ -638,7 +680,7 @@ namespace GroupFinder
     // Create a new scheduled event
     static void HandleCreateEvent(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -646,7 +688,7 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
+        auto json = GetJsonData(msg);
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if player already has max scheduled events
@@ -668,16 +710,16 @@ namespace GroupFinder
         }
         
         // Extract event data
-        uint8 eventType = static_cast<uint8>(json.GetInt("eventType", LISTING_MYTHIC_PLUS));
-        uint32 dungeonId = static_cast<uint32>(json.GetInt("dungeonId", 0));
-        std::string dungeonName = json.GetString("dungeonName", "Unknown");
-        uint8 keystoneLevel = static_cast<uint8>(json.GetInt("keyLevel", 0));
-        uint32 scheduledTime = static_cast<uint32>(json.GetInt("scheduledTime", 0));
-        uint8 maxSignups = static_cast<uint8>(json.GetInt("maxSignups", 5));
-        std::string note = json.GetString("note", "");
+        uint8 eventType = static_cast<uint8>(JsonGetInt(json, "eventType", LISTING_MYTHIC_PLUS));
+        uint32 dungeonId = static_cast<uint32>(JsonGetInt(json, "dungeonId", 0));
+        std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
+        uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
+        uint32 scheduledTime = static_cast<uint32>(JsonGetInt(json, "scheduledTime", 0));
+        uint8 maxSignups = static_cast<uint8>(JsonGetInt(json, "maxSignups", 5));
+        std::string note = JsonGetString(json, "note", "");
         
         // Validate scheduled time (must be in the future)
-        time_t now = GameTime::GetGameTime();
+        time_t now = GameTime::GetGameTime().count();
         if (scheduledTime <= now)
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
@@ -707,7 +749,7 @@ namespace GroupFinder
     // Sign up for a scheduled event
     static void HandleSignupEvent(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -715,10 +757,10 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
-        uint32 eventId = static_cast<uint32>(json.GetInt("eventId", 0));
-        uint8 role = static_cast<uint8>(json.GetInt("role", 0));
-        std::string note = json.GetString("note", "");
+        auto json = GetJsonData(msg);
+        uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
+        uint8 role = static_cast<uint8>(JsonGetInt(json, "role", 0));
+        std::string note = JsonGetString(json, "note", "");
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if event exists and is open
@@ -808,7 +850,7 @@ namespace GroupFinder
     // Cancel signup for a scheduled event
     static void HandleCancelSignup(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -816,8 +858,8 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
-        uint32 eventId = static_cast<uint32>(json.GetInt("eventId", 0));
+        auto json = GetJsonData(msg);
+        uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if signed up
@@ -862,9 +904,9 @@ namespace GroupFinder
     static void HandleGetScheduledEvents(Player* player, const ParsedMessage& msg)
     {
         uint8 eventType = 0;
-        if (msg.HasJson())
+        if (IsJsonMessage(msg))
         {
-            eventType = static_cast<uint8>(msg.GetJson().GetInt("eventType", 0));
+            eventType = static_cast<uint8>(JsonGetInt(GetJsonData(msg), "eventType", 0));
         }
         
         std::string typeFilter = eventType > 0 ? 
@@ -958,7 +1000,7 @@ namespace GroupFinder
     // Cancel an event (leader only)
     static void HandleCancelEvent(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -966,8 +1008,8 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
-        uint32 eventId = static_cast<uint32>(json.GetInt("eventId", 0));
+        auto json = GetJsonData(msg);
+        uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if player is the event leader
@@ -1017,7 +1059,7 @@ namespace GroupFinder
     // Start spectating a run
     static void HandleStartSpectate(Player* player, const ParsedMessage& msg)
     {
-        if (!msg.HasJson())
+        if (!IsJsonMessage(msg))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Invalid request format")
@@ -1025,13 +1067,13 @@ namespace GroupFinder
             return;
         }
         
-        auto& json = msg.GetJson();
-        uint32 runId = static_cast<uint32>(json.GetInt("runId", 0));
+        auto json = GetJsonData(msg);
+        uint32 runId = static_cast<uint32>(JsonGetInt(json, "runId", 0));
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if run exists and allows spectating
         QueryResult runResult = CharacterDatabase.Query(
-            "SELECT map_id, key_level FROM dc_mythic_plus_runs WHERE run_id = {} AND status = 1 AND allow_spectate = 1",
+            "SELECT map_id, key_level FROM dc_mplus_runs WHERE run_id = {} AND status = 1 AND allow_spectate = 1",
             runId);
         
         if (!runResult)
@@ -1064,9 +1106,9 @@ namespace GroupFinder
         uint32 guid = player->GetGUID().GetCounter();
         uint32 runId = 0;
         
-        if (msg.HasJson())
+        if (IsJsonMessage(msg))
         {
-            runId = static_cast<uint32>(msg.GetJson().GetInt("runId", 0));
+            runId = static_cast<uint32>(JsonGetInt(GetJsonData(msg), "runId", 0));
         }
         
         if (runId > 0)
@@ -1092,6 +1134,145 @@ namespace GroupFinder
     }
     
     // ========================================================================
+    // HANDLERS: DUNGEON & RAID LISTS
+    // ========================================================================
+    
+    // Get M+ dungeon list from database (current season)
+    static void HandleGetDungeonList(Player* player, const ParsedMessage& /*msg*/)
+    {
+        // Query dungeons enabled for current season
+        // Note: dungeon_id IS the map_id in this table
+        QueryResult result = WorldDatabase.Query(
+            "SELECT dungeon_id, dungeon_name, short_name, base_timer, boss_count, difficulty_rating "
+            "FROM dc_mplus_dungeons WHERE season_enabled = 1 ORDER BY dungeon_name");
+        
+        JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_DUNGEON_LIST);
+        
+        if (!result)
+        {
+            // Send empty list
+            json.Set("count", 0);
+            json.Set("dungeons", "[]");
+            json.Send(player);
+            return;
+        }
+        
+        std::ostringstream dungeonArray;
+        dungeonArray << "[";
+        uint32 count = 0;
+        
+        do
+        {
+            Field* fields = result->Fetch();
+            if (count > 0) dungeonArray << ",";
+            
+            uint32 dungeonId = fields[0].Get<uint32>();
+            
+            dungeonArray << "{";
+            dungeonArray << "\"id\":" << dungeonId << ",";
+            dungeonArray << "\"name\":\"" << fields[1].Get<std::string>() << "\",";
+            dungeonArray << "\"short\":\"" << fields[2].Get<std::string>() << "\",";
+            dungeonArray << "\"timer\":" << fields[3].Get<uint32>() << ",";
+            dungeonArray << "\"bosses\":" << fields[4].Get<uint32>() << ",";
+            dungeonArray << "\"difficulty\":" << fields[5].Get<uint32>() << ",";
+            dungeonArray << "\"mapId\":" << dungeonId;  // dungeon_id IS the map_id
+            dungeonArray << "}";
+            
+            count++;
+        } while (result->NextRow());
+        
+        dungeonArray << "]";
+        
+        json.Set("count", static_cast<int32>(count));
+        json.Set("dungeons", dungeonArray.str());
+        json.Send(player);
+        
+        LOG_DEBUG("dc.addon", "Sent {} M+ dungeons to player {}", count, player->GetName());
+    }
+    
+    // Get raid list from database (all eras)
+    static void HandleGetRaidList(Player* player, const ParsedMessage& /*msg*/)
+    {
+        // Hardcoded raid list with proper difficulties per era
+        // Era: 0=Classic, 1=TBC, 2=WotLK
+        // Difficulties vary by era:
+        //   Classic: 40-man only (diff 0)
+        //   TBC: 10/25 Normal only (diff 0/1)
+        //   WotLK: 10N/25N/10H/25H (diff 0/1/2/3)
+        
+        struct RaidInfo {
+            uint32 id;
+            const char* name;
+            uint32 mapId;
+            uint8 era;          // 0=Classic, 1=TBC, 2=WotLK
+            uint8 bosses;
+            uint8 minDiff;      // Minimum difficulty available
+            uint8 maxDiff;      // Maximum difficulty available
+        };
+        
+        static const RaidInfo raids[] = {
+            // Classic Raids (40-man only, difficulty 0)
+            { 101, "Molten Core",            409, 0, 10, 0, 0 },
+            { 102, "Blackwing Lair",         469, 0, 8,  0, 0 },
+            { 103, "Temple of Ahn'Qiraj",    531, 0, 9,  0, 0 },
+            { 104, "Ruins of Ahn'Qiraj",     509, 0, 6,  0, 0 },  // 20-man
+            { 105, "Zul'Gurub",              309, 0, 10, 0, 0 },  // 20-man
+            
+            // TBC Raids (10/25 Normal only)
+            { 201, "Karazhan",               532, 1, 12, 0, 0 },  // 10-man only
+            { 202, "Gruul's Lair",           565, 1, 2,  1, 1 },  // 25-man only
+            { 203, "Magtheridon's Lair",     544, 1, 1,  1, 1 },  // 25-man only
+            { 204, "Serpentshrine Cavern",   548, 1, 6,  1, 1 },  // 25-man
+            { 205, "Tempest Keep",           550, 1, 4,  1, 1 },  // 25-man
+            { 206, "Mount Hyjal",            534, 1, 5,  1, 1 },  // 25-man
+            { 207, "Black Temple",           564, 1, 9,  1, 1 },  // 25-man
+            { 208, "Zul'Aman",               568, 1, 6,  0, 0 },  // 10-man
+            { 209, "Sunwell Plateau",        580, 1, 6,  1, 1 },  // 25-man
+            
+            // WotLK Raids (10N/25N/10H/25H)
+            { 301, "Naxxramas",              533, 2, 15, 0, 1 },  // 10/25 Normal only
+            { 302, "Obsidian Sanctum",       615, 2, 1,  0, 1 },
+            { 303, "Eye of Eternity",        616, 2, 1,  0, 1 },
+            { 304, "Vault of Archavon",      624, 2, 4,  0, 1 },
+            { 305, "Ulduar",                 603, 2, 14, 0, 1 },  // Hard modes, not heroic diff
+            { 306, "Trial of the Crusader",  649, 2, 5,  0, 3 },  // Full heroic support
+            { 307, "Onyxia's Lair",          249, 2, 1,  0, 1 },
+            { 308, "Icecrown Citadel",       631, 2, 12, 0, 3 },  // Full heroic support
+            { 309, "Ruby Sanctum",           724, 2, 1,  0, 3 },  // Full heroic support
+        };
+        
+        static const uint32 raidCount = sizeof(raids) / sizeof(raids[0]);
+        
+        std::ostringstream raidArray;
+        raidArray << "[";
+        
+        for (uint32 i = 0; i < raidCount; i++)
+        {
+            if (i > 0) raidArray << ",";
+            const auto& r = raids[i];
+            
+            raidArray << "{";
+            raidArray << "\"id\":" << r.id << ",";
+            raidArray << "\"name\":\"" << r.name << "\",";
+            raidArray << "\"mapId\":" << r.mapId << ",";
+            raidArray << "\"era\":" << static_cast<int>(r.era) << ",";
+            raidArray << "\"bosses\":" << static_cast<int>(r.bosses) << ",";
+            raidArray << "\"minDiff\":" << static_cast<int>(r.minDiff) << ",";
+            raidArray << "\"maxDiff\":" << static_cast<int>(r.maxDiff);
+            raidArray << "}";
+        }
+        
+        raidArray << "]";
+        
+        JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_RAID_LIST);
+        json.Set("count", static_cast<int32>(raidCount));
+        json.Set("raids", raidArray.str());
+        json.Send(player);
+        
+        LOG_DEBUG("dc.addon", "Sent {} raids to player {}", raidCount, player->GetName());
+    }
+    
+    // ========================================================================
     // REGISTRATION
     // ========================================================================
     
@@ -1110,6 +1291,8 @@ namespace GroupFinder
         // Keystone & difficulty
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_MY_KEYSTONE, HandleGetMyKeystone);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_SET_DIFFICULTY, HandleSetDifficulty);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_DUNGEON_LIST, HandleGetDungeonList);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_RAID_LIST, HandleGetRaidList);
         
         // Spectating
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_SPECTATE_LIST, HandleGetSpectateList);
@@ -1144,12 +1327,12 @@ public:
     void OnStartup() override
     {
         LOG_INFO("dc.groupfinder", "Initializing Group Finder Manager...");
-        DCAddon::sGroupFinderMgr->Initialize();
+        DCAddon::sGroupFinderMgr.Initialize();
     }
     
     void OnUpdate(uint32 diff) override
     {
-        DCAddon::sGroupFinderMgr->Update(diff);
+        DCAddon::sGroupFinderMgr.Update(diff);
     }
 };
 

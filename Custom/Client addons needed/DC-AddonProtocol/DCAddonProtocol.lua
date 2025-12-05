@@ -94,6 +94,8 @@ DC.GroupFinderOpcodes = {
     -- Client -> Server: Keystone & Difficulty
     CMSG_GET_MY_KEYSTONE     = 0x20,  -- Request player's keystone info
     CMSG_SET_DIFFICULTY      = 0x21,  -- Request difficulty change
+    CMSG_GET_DUNGEON_LIST    = 0x22,  -- Get M+ dungeon list from DB
+    CMSG_GET_RAID_LIST       = 0x23,  -- Get raid list from DB
     
     -- Client -> Server: Spectating
     CMSG_START_SPECTATE      = 0x25,  -- Request to spectate a run
@@ -118,6 +120,8 @@ DC.GroupFinderOpcodes = {
     -- Server -> Client: Keystone & Difficulty
     SMSG_KEYSTONE_INFO       = 0x40,  -- Player's keystone data
     SMSG_DIFFICULTY_CHANGED  = 0x41,  -- Confirm difficulty changed
+    SMSG_DUNGEON_LIST        = 0x42,  -- M+ dungeon list from DB
+    SMSG_RAID_LIST           = 0x43,  -- Raid list from DB
     
     -- Server -> Client: Spectating
     SMSG_SPECTATE_DATA       = 0x45,  -- Spectator live data
@@ -713,6 +717,11 @@ DC.GroupFinder = {
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_DELIST_GROUP, { listingId = listingId })
     end,
     
+    -- Alias for Delist (backward compatibility)
+    CancelListing = function(listingId)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_DELIST_GROUP, { listingId = listingId })
+    end,
+    
     -- Update group listing
     UpdateListing = function(listingId, data)
         data.listingId = listingId
@@ -722,6 +731,16 @@ DC.GroupFinder = {
     -- Get player's keystone info
     GetKeystoneInfo = function()
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+    end,
+    
+    -- Get M+ dungeon list from database (current season)
+    GetDungeonList = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_DUNGEON_LIST, {})
+    end,
+    
+    -- Get raid list from database (all eras)
+    GetRaidList = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_RAID_LIST, {})
     end,
     
     -- Spectator functions

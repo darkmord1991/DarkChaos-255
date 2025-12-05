@@ -606,7 +606,7 @@ public:
         bool hasIronMan = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player);
         
         // XP modes are mutually exclusive
-        bool hasAnyXPMode = hasSlowXP || hasVerySlowXP || hasQuestXPOnly;
+        [[maybe_unused]] bool hasAnyXPMode = hasSlowXP || hasVerySlowXP || hasQuestXPOnly;
         
         // Iron Man includes Hardcore, Self-Crafted, and Item Quality - blocks those individually
         // Hardcore and Semi-Hardcore are mutually exclusive

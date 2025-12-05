@@ -49,58 +49,104 @@ function GF:CreateMainFrame()
     frame:SetToplevel(true)
     frame:Hide()
     
-    -- Background
+    -- Dark background (retail-like)
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.05, 0.05, 0.1, 0.95)
+    frame.bg:SetColorTexture(0.04, 0.04, 0.05, 0.98)
     
-    -- Border
-    local border = CreateFrame("Frame", nil, frame, "BackdropTemplate" or nil)
-    border:SetAllPoints()
-    if border.SetBackdrop then
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        border:SetBackdropBorderColor(0.3, 0.6, 0.9, 0.8)
-    end
+    -- Border frame with backdrop
+    local border = CreateFrame("Frame", nil, frame)
+    border:SetPoint("TOPLEFT", -2, 2)
+    border:SetPoint("BOTTOMRIGHT", 2, -2)
+    border:SetBackdrop({
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 24,
+        insets = { left = 6, right = 6, top = 6, bottom = 6 }
+    })
+    border:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
     
-    -- Header bar
-    local headerBar = frame:CreateTexture(nil, "ARTWORK")
-    headerBar:SetPoint("TOPLEFT", 3, -3)
-    headerBar:SetPoint("TOPRIGHT", -3, -3)
-    headerBar:SetHeight(28)
-    headerBar:SetColorTexture(0.1, 0.2, 0.3, 0.8)
+    -- Top header bar (darker gradient feel)
+    local headerBar = CreateFrame("Frame", nil, frame)
+    headerBar:SetPoint("TOPLEFT", 0, 0)
+    headerBar:SetPoint("TOPRIGHT", 0, 0)
+    headerBar:SetHeight(40)
+    headerBar.bg = headerBar:CreateTexture(nil, "BACKGROUND", nil, 1)
+    headerBar.bg:SetAllPoints()
+    headerBar.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+    
+    -- Header bottom line
+    local headerLine = frame:CreateTexture(nil, "ARTWORK")
+    headerLine:SetPoint("TOPLEFT", headerBar, "BOTTOMLEFT", 0, 0)
+    headerLine:SetPoint("TOPRIGHT", headerBar, "BOTTOMRIGHT", 0, 0)
+    headerLine:SetHeight(2)
+    headerLine:SetColorTexture(0.2, 0.5, 0.8, 0.6)
+    
+    -- Icon (left of title)
+    local icon = headerBar:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(28, 28)
+    icon:SetPoint("LEFT", 12, 0)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_GroupLooking")
     
     -- Title
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", headerBar, "TOP", 0, -5)
-    title:SetText("|cff32c4ffDC|r Group Finder")
+    local title = headerBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+    title:SetText("|cffffffffGroup Finder|r")
     frame.title = title
     
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -4, -2)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Create tab buttons container
-    local tabContainer = CreateFrame("Frame", nil, frame)
-    tabContainer:SetPoint("TOPLEFT", 10, -34)
-    tabContainer:SetPoint("TOPRIGHT", -10, -34)
-    tabContainer:SetHeight(28)
-    frame.tabContainer = tabContainer
+    -- Legacy Dungeon Finder button (opens Blizzard's LFG frame)
+    local legacyBtn = CreateFrame("Button", nil, headerBar, "UIPanelButtonTemplate")
+    legacyBtn:SetSize(100, 20)
+    legacyBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
+    legacyBtn:SetText("LFG Tool")
+    legacyBtn:SetScript("OnClick", function()
+        -- Toggle the native Dungeon Finder (LFG) frame
+        if LFDParentFrame then
+            if LFDParentFrame:IsShown() then
+                HideUIPanel(LFDParentFrame)
+            else
+                ShowUIPanel(LFDParentFrame)
+            end
+        elseif LFGParentFrame then
+            ToggleLFGParentFrame()
+        else
+            -- Fallback: try to toggle via the PVE frame
+            ToggleLFDParentFrame()
+        end
+    end)
+    legacyBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Open Legacy Dungeon Finder")
+        GameTooltip:AddLine("The original Blizzard LFG tool", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    legacyBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.legacyBtn = legacyBtn
     
-    -- Create content container
+    -- Tab bar (below header)
+    local tabBar = CreateFrame("Frame", nil, frame)
+    tabBar:SetPoint("TOPLEFT", headerBar, "BOTTOMLEFT", 0, -2)
+    tabBar:SetPoint("TOPRIGHT", headerBar, "BOTTOMRIGHT", 0, -2)
+    tabBar:SetHeight(32)
+    tabBar.bg = tabBar:CreateTexture(nil, "BACKGROUND")
+    tabBar.bg:SetAllPoints()
+    tabBar.bg:SetColorTexture(0.06, 0.06, 0.07, 1)
+    frame.tabContainer = tabBar
+    
+    -- Content container
     local contentFrame = CreateFrame("Frame", nil, frame)
-    contentFrame:SetPoint("TOPLEFT", 10, -66)
-    contentFrame:SetPoint("BOTTOMRIGHT", -10, 10)
+    contentFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 8, -8)
+    contentFrame:SetPoint("BOTTOMRIGHT", -8, 8)
     frame.contentFrame = contentFrame
     
-    -- Content background
+    -- Content background (slightly lighter)
     local contentBg = contentFrame:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
-    contentBg:SetColorTexture(0.03, 0.03, 0.06, 0.9)
+    contentBg:SetColorTexture(0.05, 0.05, 0.06, 1)
     
     self.mainFrame = frame
     self:CreateTabButtons()
@@ -116,26 +162,43 @@ end
 -- =====================================================================
 
 function GF:CreateTabButtons()
-    local tabWidth = (self.FRAME_WIDTH - 30) / #self.TAB_NAMES
+    local tabWidth = (self.FRAME_WIDTH - 20) / #self.TAB_NAMES
     
     for i, tabName in ipairs(self.TAB_NAMES) do
         local btn = CreateFrame("Button", "DCGroupFinderTab" .. i, self.mainFrame.tabContainer)
-        btn:SetSize(tabWidth - 4, 24)
-        btn:SetPoint("LEFT", (i - 1) * tabWidth + 2, 0)
+        btn:SetSize(tabWidth - 2, 28)
+        btn:SetPoint("LEFT", (i - 1) * tabWidth + 10, 0)
         
-        -- Normal state
+        -- Background (darker inactive)
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.1, 0.15, 0.2, 0.8)
+        btn.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+        
+        -- Bottom accent line (shows when selected)
+        btn.accent = btn:CreateTexture(nil, "ARTWORK")
+        btn.accent:SetPoint("BOTTOMLEFT", 0, 0)
+        btn.accent:SetPoint("BOTTOMRIGHT", 0, 0)
+        btn.accent:SetHeight(3)
+        btn.accent:SetColorTexture(0.2, 0.5, 0.8, 1)
+        btn.accent:Hide()
         
         -- Text
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.text:SetPoint("CENTER")
+        btn.text:SetPoint("CENTER", 0, 1)
         btn.text:SetText(tabName)
+        btn.text:SetTextColor(0.6, 0.6, 0.6)
         
-        -- Highlight
-        btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        btn:GetHighlightTexture():SetBlendMode("ADD")
+        -- Highlight on hover
+        btn:SetScript("OnEnter", function(self)
+            if GF.currentTab ~= self.tabIndex then
+                self.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+            end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if GF.currentTab ~= self.tabIndex then
+                self.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+            end
+        end)
         
         btn.tabIndex = i
         btn:SetScript("OnClick", function(self)
@@ -152,11 +215,13 @@ function GF:SelectTab(index)
     -- Update tab visuals
     for i, btn in ipairs(self.TABS) do
         if i == index then
-            btn.bg:SetColorTexture(0.2, 0.4, 0.6, 0.9)
+            btn.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
             btn.text:SetTextColor(1, 1, 1)
+            btn.accent:Show()
         else
-            btn.bg:SetColorTexture(0.1, 0.15, 0.2, 0.8)
-            btn.text:SetTextColor(0.7, 0.7, 0.7)
+            btn.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+            btn.text:SetTextColor(0.6, 0.6, 0.6)
+            btn.accent:Hide()
         end
     end
     
@@ -219,6 +284,12 @@ function GF:ShowMythicTab()
     end
     if self.MythicTabContent then
         self.MythicTabContent:Show()
+        -- Select browse sub-tab and refresh groups if this is first show
+        if self.MythicBrowsePanel and not self.MythicBrowsePanel.hasInitialized then
+            self.MythicBrowsePanel.hasInitialized = true
+            self:SelectMythicSubTab(1)
+            self:RefreshMythicGroups()
+        end
     end
 end
 
@@ -246,6 +317,10 @@ function GF:ShowScheduledTab()
     end
     if self.ScheduledTabContent then
         self.ScheduledTabContent:Show()
+        -- Refresh events when tab is shown
+        if self.RefreshScheduledEvents then
+            self:RefreshScheduledEvents()
+        end
     end
 end
 

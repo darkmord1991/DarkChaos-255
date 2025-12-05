@@ -9,6 +9,7 @@
 #   2.  Hotspots System - Random XP bonus zones across the world
 #   3.  Hinterland Battleground - Custom 25v25 PvP battleground with affixes
 #   4.  Mythic+ Dungeon System - Scaled dungeons, keystones & spectating
+#   4B. Group Finder System - M+ Finder, Raid Finder, Scheduled Events
 #   5.  Prestige System - Reset level 255 players with permanent bonuses
 #   6.  Challenge Modes System - Hardcore and specialized challenge modes
 #   7.  Dungeon Quest NPC System - Daily/Weekly dungeon quests
@@ -1708,6 +1709,200 @@ MythicSpectator.Replay.RecordCombatLog = 0
 #        Default:     1 (Enabled)
 #
 MythicSpectator.SyncHudToSpectators = 1
+
+
+###########################################################################
+#
+#    SECTION 4B: GROUP FINDER SYSTEM (M+ / RAID FINDER)
+#
+#    Provides a comprehensive group-finding system for:
+#    - Mythic+ Dungeon Finder: Find groups for keystone runs
+#    - Raid Finder: Queue-based matching for raids
+#    - Scheduled Events: Calendar-based raid/dungeon scheduling
+#
+#    Features:
+#    - NPC-based queue system with gossip menu
+#    - Rating-based matchmaking for M+
+#    - Real-time notifications (new applications, status updates)
+#    - Cross-faction support (optional)
+#    - Scheduled events with signup system
+#    - Spectator integration for watching M+ runs
+#
+#    Related Addons:
+#    - DC-MythicPlus (client-side group finder UI)
+#    - DC-AddonProtocol (server communication)
+#
+###########################################################################
+
+#
+#    DC.GroupFinder.Enable
+#        Description: Master toggle for the Group Finder system
+#                     When disabled, all Group Finder features are unavailable.
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DC.GroupFinder.Enable = 1
+
+#
+#    DC.GroupFinder.CrossFaction
+#        Description: Allow cross-faction group finding
+#                     When enabled, Alliance and Horde players can be matched.
+#                     Requires additional handling for group invites.
+#        Default:     0 (Disabled - same faction only)
+#                     1 (Enabled - cross-faction matching)
+#
+DC.GroupFinder.CrossFaction = 0
+
+# -------------------------------------------------------------------------
+# Listing Management
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.MaxListingsPerPlayer
+#        Description: Maximum number of active group listings per player
+#                     Prevents spamming the listing system.
+#        Default:     3
+#        Range:       1 - 10
+#
+DC.GroupFinder.MaxListingsPerPlayer = 3
+
+#
+#    DC.GroupFinder.MaxApplicationsPerPlayer
+#        Description: Maximum number of pending applications per player
+#                     Prevents applying to too many groups at once.
+#        Default:     10
+#        Range:       5 - 25
+#
+DC.GroupFinder.MaxApplicationsPerPlayer = 10
+
+#
+#    DC.GroupFinder.ListingExpireMinutes
+#        Description: How long group listings stay active before auto-expiring
+#                     Expired listings are automatically removed and applicants notified.
+#        Default:     120 (2 hours)
+#        Range:       30 - 480 (30 minutes to 8 hours)
+#
+DC.GroupFinder.ListingExpireMinutes = 120
+
+# -------------------------------------------------------------------------
+# Matchmaking & Rating
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.RatingMatchRange
+#        Description: Maximum M+ rating difference for matchmaking suggestions
+#                     Players outside this range won't be suggested as matches.
+#                     Set to 0 to disable rating-based matching.
+#        Default:     200
+#        Range:       0 - 1000
+#
+DC.GroupFinder.RatingMatchRange = 200
+
+#
+#    DC.GroupFinder.KeyLevelMatchRange
+#        Description: Maximum keystone level difference for matchmaking
+#                     Groups with keys outside this range won't be shown in search.
+#                     Set to 0 to disable key level filtering.
+#        Default:     3
+#        Range:       0 - 10
+#
+DC.GroupFinder.KeyLevelMatchRange = 3
+
+# -------------------------------------------------------------------------
+# Cleanup & Maintenance
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.CleanupIntervalMs
+#        Description: Interval (in milliseconds) between cleanup cycles
+#                     Cleanup removes expired listings, old applications, and past events.
+#        Default:     60000 (1 minute)
+#        Range:       10000 - 300000 (10 seconds to 5 minutes)
+#
+DC.GroupFinder.CleanupIntervalMs = 60000
+
+#
+#    DC.GroupFinder.ApplicationExpireMinutes
+#        Description: How long pending applications stay before auto-expiring
+#                     Applications older than this are marked as expired.
+#        Default:     30
+#        Range:       10 - 120
+#
+DC.GroupFinder.ApplicationExpireMinutes = 30
+
+# -------------------------------------------------------------------------
+# Scheduled Events
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.Events.Enable
+#        Description: Enable scheduled events (calendar-like raid/dungeon scheduling)
+#                     Players can create events with future start times and collect signups.
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DC.GroupFinder.Events.Enable = 1
+
+#
+#    DC.GroupFinder.Events.MaxPerPlayer
+#        Description: Maximum number of active scheduled events per player
+#                     Prevents spam and ensures quality event organization.
+#        Default:     5
+#        Range:       1 - 20
+#
+DC.GroupFinder.Events.MaxPerPlayer = 5
+
+#
+#    DC.GroupFinder.Events.MaxSignupsDefault
+#        Description: Default maximum signups for new events
+#                     Event creators can set lower values, but not exceed this.
+#        Default:     25
+#        Range:       5 - 40
+#
+DC.GroupFinder.Events.MaxSignupsDefault = 25
+
+# -------------------------------------------------------------------------
+# Spectating Integration
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.Spectate.Enable
+#        Description: Enable spectating of M+ runs through the Group Finder
+#                     Players can browse and spectate active M+ runs.
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DC.GroupFinder.Spectate.Enable = 1
+
+#
+#    DC.GroupFinder.Spectate.MaxPerRun
+#        Description: Maximum number of spectators allowed per M+ run
+#                     Prevents performance issues from too many spectators.
+#        Default:     10
+#        Range:       1 - 50
+#
+DC.GroupFinder.Spectate.MaxPerRun = 10
+
+# -------------------------------------------------------------------------
+# NPC Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.NPC.Entry
+#        Description: Creature entry ID for the Group Finder NPC
+#                     This NPC provides the gossip-based Group Finder interface.
+#        Default:     600100
+#
+DC.GroupFinder.NPC.Entry = 600100
+
+#
+#    DC.GroupFinder.NPC.SpawnLocations
+#        Description: Semicolon-separated spawn locations for Group Finder NPCs
+#                     Format: mapId,x,y,z,o;mapId,x,y,z,o
+#                     Leave empty to manually spawn via DB or commands.
+#        Default:     "" (no auto-spawn, use DB entries)
+#
+DC.GroupFinder.NPC.SpawnLocations = ""
 
 
 ###########################################################################

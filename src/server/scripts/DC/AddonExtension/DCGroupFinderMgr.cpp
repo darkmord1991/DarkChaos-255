@@ -185,7 +185,7 @@ void GroupFinderMgr::CleanupExpiredListings()
 {
     std::lock_guard<std::mutex> lock(_mutex);
     
-    time_t now = GameTime::GetGameTime();
+    time_t now = GameTime::GetGameTime().count();
     std::vector<uint32> toRemove;
     
     for (auto& [id, listing] : _listings)
@@ -227,7 +227,7 @@ void GroupFinderMgr::CleanupExpiredListings()
 void GroupFinderMgr::CleanupExpiredApplications()
 {
     // Applications older than configured minutes that are still pending get expired
-    time_t cutoff = GameTime::GetGameTime() - (_applicationExpireMinutes * 60);
+    time_t cutoff = GameTime::GetGameTime().count() - (_applicationExpireMinutes * 60);
     
     CharacterDatabase.Execute(
         "UPDATE dc_group_finder_applications SET status = 4 "
@@ -239,7 +239,7 @@ void GroupFinderMgr::CleanupExpiredEvents()
 {
     std::lock_guard<std::mutex> lock(_mutex);
     
-    time_t now = GameTime::GetGameTime();
+    time_t now = GameTime::GetGameTime().count();
     std::vector<uint32> toRemove;
     
     for (auto& [id, event] : _events)
@@ -297,7 +297,7 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
         newListing.id = listingId;
         newListing.leaderGuid = guid;
         newListing.groupGuid = groupGuid;
-        newListing.createdAt = GameTime::GetGameTime();
+        newListing.createdAt = GameTime::GetGameTime().count();
         newListing.expiresAt = newListing.createdAt + (_listingExpireMinutes * 60);
         newListing.active = true;
         
@@ -460,7 +460,7 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
         app.playerRating = playerRating;
         app.note = note;
         app.status = GF_APP_PENDING;
-        app.createdAt = GameTime::GetGameTime();
+        app.createdAt = GameTime::GetGameTime().count();
         
         apps.push_back(app);
         
@@ -653,7 +653,7 @@ uint32 GroupFinderMgr::CreateEvent(Player* player, const ScheduledEvent& event)
         newEvent.id = eventId;
         newEvent.leaderGuid = guid;
         newEvent.status = GF_EVENT_OPEN;
-        newEvent.createdAt = GameTime::GetGameTime();
+        newEvent.createdAt = GameTime::GetGameTime().count();
         
         _events[eventId] = newEvent;
     }
@@ -700,7 +700,7 @@ bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, 
         signup.role = role;
         signup.note = note;
         signup.status = GF_APP_PENDING;
-        signup.createdAt = GameTime::GetGameTime();
+        signup.createdAt = GameTime::GetGameTime().count();
         
         signups.push_back(signup);
         
@@ -726,7 +726,7 @@ std::vector<ScheduledEvent> GroupFinderMgr::GetUpcomingEvents(uint8 eventType)
     std::lock_guard<std::mutex> lock(_mutex);
     
     std::vector<ScheduledEvent> results;
-    time_t now = GameTime::GetGameTime();
+    time_t now = GameTime::GetGameTime().count();
     
     for (const auto& [id, event] : _events)
     {
@@ -768,7 +768,7 @@ std::vector<EventSignup> GroupFinderMgr::GetEventSignups(uint32 eventId)
 uint16 GroupFinderMgr::GetPlayerMythicRating(uint32 playerGuid)
 {
     QueryResult result = CharacterDatabase.Query(
-        "SELECT rating FROM dc_mythic_player_rating WHERE player_guid = {}",
+        "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
         playerGuid);
     
     if (result)

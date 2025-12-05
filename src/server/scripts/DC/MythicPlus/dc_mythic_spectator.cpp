@@ -1063,7 +1063,7 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
     
     // Save to database
     CharacterDatabase.Execute(
-        "INSERT INTO dc_mythic_spectator_replays "
+        "INSERT INTO dc_mplus_spec_replays "
         "(map_id, keystone_level, leader_name, start_time, end_time, completed, replay_data) "
         "VALUES ({}, {}, '{}', {}, {}, {}, '{}')",
         replay.mapId, uint32(replay.keystoneLevel), replay.leaderName,
@@ -1071,8 +1071,8 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
     
     // Cleanup old replays if over limit
     CharacterDatabase.Execute(
-        "DELETE FROM dc_mythic_spectator_replays WHERE id NOT IN "
-        "(SELECT id FROM (SELECT id FROM dc_mythic_spectator_replays ORDER BY start_time DESC LIMIT {}) AS t)",
+        "DELETE FROM dc_mplus_spec_replays WHERE id NOT IN "
+        "(SELECT id FROM (SELECT id FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}) AS t)",
         _config.replayMaxStoredRuns);
     
     LOG_INFO("scripts", "MythicSpectator: Saved replay for run {} ({} events)", 
@@ -1087,7 +1087,7 @@ std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentRep
     
     QueryResult qr = CharacterDatabase.Query(
         "SELECT id, map_id, keystone_level, leader_name, start_time, completed "
-        "FROM dc_mythic_spectator_replays ORDER BY start_time DESC LIMIT {}",
+        "FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}",
         limit);
     
     if (!qr)
@@ -1399,7 +1399,7 @@ public:
 
         // Load replay from database
         QueryResult result = CharacterDatabase.Query(
-            "SELECT map_id, replay_data FROM dc_mythic_spectator_replays WHERE id = {}",
+            "SELECT map_id, replay_data FROM dc_mplus_spec_replays WHERE id = {}",
             replayId);
 
         if (!result)

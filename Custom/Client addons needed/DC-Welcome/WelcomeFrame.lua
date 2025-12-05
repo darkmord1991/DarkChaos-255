@@ -927,22 +927,25 @@ function DCWelcome:CreateWelcomeFrame()
     tabContainer:SetSize(FRAME_WIDTH - 30, TAB_HEIGHT)
     tabContainer:SetPoint("TOP", 0, -55)
     
-    -- Create tabs
+    -- Create tabs (7 tabs with adjusted width to fit)
     local tabs = {
         { id = "whatsnew", label = L["TAB_WHATS_NEW"], icon = "Interface\\Icons\\Spell_Holy_Restoration" },
         { id = "getstarted", label = L["TAB_GETTING_STARTED"], icon = "Interface\\Icons\\INV_Misc_Book_09" },
         { id = "features", label = L["TAB_FEATURES"], icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
-        { id = "addons", label = L["TAB_ADDONS"] or "DC Addons", icon = "Interface\\Icons\\Trade_Engineering" },
+        { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\Trade_Engineering" },
+        { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
         { id = "faq", label = L["TAB_FAQ"], icon = "Interface\\Icons\\INV_Misc_QuestionMark" },
         { id = "community", label = L["TAB_LINKS"], icon = "Interface\\Icons\\INV_Letter_15" },
     }
     
     frame.tabs = {}
     local tabX = 0
+    local TAB_BUTTON_WIDTH = 88  -- Reduced to fit 7 tabs (88 * 7 = 616, fits in ~620 frame)
     for _, tabInfo in ipairs(tabs) do
         local tab = CreateTabButton(tabContainer, tabInfo.id, tabInfo.label, tabInfo.icon, tabX)
+        tab:SetWidth(TAB_BUTTON_WIDTH)
         frame.tabs[tabInfo.id] = tab
-        tabX = tabX + 103  -- Reduced from 125 to fit 6 tabs
+        tabX = tabX + TAB_BUTTON_WIDTH + 2  -- Small spacing
     end
     
     -- Create content frames
@@ -950,6 +953,7 @@ function DCWelcome:CreateWelcomeFrame()
     contentFrames.getstarted = CreateScrollableContent(frame, "getstarted")
     contentFrames.features = CreateScrollableContent(frame, "features")
     contentFrames.addons = CreateScrollableContent(frame, "addons")
+    contentFrames.progress = CreateScrollableContent(frame, "progress")
     contentFrames.faq = CreateScrollableContent(frame, "faq")
     contentFrames.community = CreateScrollableContent(frame, "community")
     
@@ -961,6 +965,12 @@ function DCWelcome:CreateWelcomeFrame()
     PopulateGettingStarted(contentFrames.getstarted.scrollChild)
     PopulateFeatures(contentFrames.features.scrollChild)
     DCWelcome:PopulateAddonsPanel(contentFrames.addons.scrollChild)
+    
+    -- Populate progress panel if function exists
+    if DCWelcome.PopulateProgressPanel then
+        DCWelcome:PopulateProgressPanel(contentFrames.progress.scrollChild)
+    end
+    
     PopulateFAQ(contentFrames.faq.scrollChild)
     PopulateCommunity(contentFrames.community.scrollChild)
     

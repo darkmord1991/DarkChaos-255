@@ -2,7 +2,7 @@
 -- Host:                         192.168.178.45
 -- Server-Version:               8.0.44-0ubuntu0.24.04.1 - (Ubuntu)
 -- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.13.0.7157
+-- HeidiSQL Version:             12.13.0.7160
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -1076,7 +1076,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `account_id` int unsigned NOT NULL,
   `character_name` varchar(48) COLLATE utf8mb4_unicode_ci NOT NULL,
   `direction` enum('C2S','S2C') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Client to Server or Server to Client',
-  `request_type` enum('STANDARD','JSON','AIO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'STANDARD' COMMENT 'Protocol type: STANDARD (colon-delim), JSON, or AIO (Rochet2)',
+  `request_type` enum('STANDARD','DC_JSON','DC_PLAIN','AIO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC_PLAIN' COMMENT 'Protocol format: STANDARD=Blizz addon msg, DC_JSON=DC protocol+JSON, DC_PLAIN=DC protocol+plain, AIO=AIO framework',
   `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)',
   `opcode` tinyint unsigned NOT NULL COMMENT 'Message opcode within module',
   `data_size` int unsigned NOT NULL DEFAULT '0' COMMENT 'Size of payload in bytes',
@@ -1092,7 +1092,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=463 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=912 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1419,6 +1419,92 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_achievement_triggers
+CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID to grant',
+  `trigger_type` enum('total_stat','single_run','threshold','combination') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `stat_key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Stat key from dc_player_cross_system_stats',
+  `threshold_value` bigint unsigned NOT NULL DEFAULT '0',
+  `additional_conditions` json DEFAULT NULL COMMENT 'Additional conditions in JSON',
+  `title_reward_id` int unsigned DEFAULT NULL COMMENT 'Title to grant, if any',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_achievement` (`achievement_id`),
+  KEY `idx_enabled` (`enabled`),
+  KEY `idx_stat_key` (`stat_key`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system achievement trigger definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Ereignis acore_chars.dc_cross_system_cleanup
+DELIMITER //
+CREATE EVENT `dc_cross_system_cleanup` ON SCHEDULE EVERY 1 DAY STARTS '2025-12-04 13:09:05' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
+    DECLARE retention_days INT DEFAULT 30;
+    
+    -- Get retention period from config
+    SELECT CAST(`value` AS UNSIGNED) INTO retention_days
+    FROM `dc_cross_system_config`
+    WHERE `key` = 'event_log_retention_days';
+    
+    -- Delete old event logs
+    DELETE FROM `dc_cross_system_events`
+    WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL retention_days DAY);
+    
+    -- Delete expired multiplier overrides
+    DELETE FROM `dc_cross_system_multipliers`
+    WHERE `expires_at` IS NOT NULL AND `expires_at` < NOW();
+END//
+DELIMITER ;
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_config
+CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
+  `key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `value` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system configuration values';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_events
+CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_type` tinyint unsigned NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
+  `source_system` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'System that generated the event',
+  `player_guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player GUID if applicable',
+  `event_data` json DEFAULT NULL COMMENT 'Event-specific JSON data',
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_event_type` (`event_type`),
+  KEY `idx_source_system` (`source_system`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_timestamp` (`timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system event log for debugging and analytics';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_multipliers
+CREATE TABLE IF NOT EXISTS `dc_cross_system_multipliers` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `target_type` enum('global','player','account','guild') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'global',
+  `target_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player/Account/Guild GUID or 0 for global',
+  `source_system` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Specific system or NULL for all systems',
+  `reward_type` tinyint unsigned DEFAULT NULL COMMENT 'Specific reward type or NULL for all',
+  `multiplier` decimal(5,3) NOT NULL DEFAULT '1.000',
+  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Why this override exists',
+  `expires_at` timestamp NULL DEFAULT NULL COMMENT 'When this override expires, NULL = permanent',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_target` (`target_type`,`target_id`),
+  KEY `idx_expires` (`expires_at`),
+  KEY `idx_system` (`source_system`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player or per-system multiplier overrides';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_duel_class_matchups
 CREATE TABLE IF NOT EXISTS `dc_duel_class_matchups` (
   `winner_class` tinyint unsigned NOT NULL,
@@ -1491,6 +1577,115 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
   KEY `idx_reset_date` (`reset_date`),
   CONSTRAINT `fk_reset_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Track reset dates for daily/weekly quests';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_applications
+CREATE TABLE IF NOT EXISTS `dc_group_finder_applications` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `listing_id` int unsigned NOT NULL,
+  `player_guid` int unsigned NOT NULL,
+  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `role` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1=Tank, 2=Healer, 4=DPS',
+  `player_class` tinyint unsigned NOT NULL DEFAULT '0',
+  `player_level` tinyint unsigned NOT NULL DEFAULT '80',
+  `player_ilvl` smallint unsigned NOT NULL DEFAULT '0',
+  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Pending, 1=Accepted, 2=Declined, 3=Cancelled',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_unique_app` (`listing_id`,`player_guid`),
+  KEY `idx_listing` (`listing_id`),
+  KEY `idx_player` (`player_guid`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_event_signups
+CREATE TABLE IF NOT EXISTS `dc_group_finder_event_signups` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` int unsigned NOT NULL,
+  `player_guid` int unsigned NOT NULL,
+  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `role` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1=Tank, 2=Healer, 4=DPS',
+  `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Pending, 1=Confirmed, 2=Declined, 3=Cancelled',
+  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_unique_signup` (`event_id`,`player_guid`),
+  KEY `idx_event` (`event_id`),
+  KEY `idx_player` (`player_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_listings
+CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `leader_guid` int unsigned NOT NULL,
+  `group_guid` int unsigned NOT NULL DEFAULT '0',
+  `listing_type` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Mythic+, 2=Raid, 3=PvP, 4=Other',
+  `dungeon_id` int unsigned NOT NULL DEFAULT '0',
+  `dungeon_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
+  `difficulty` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Normal, 1=Heroic, 2=Mythic',
+  `keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
+  `min_ilvl` smallint unsigned NOT NULL DEFAULT '0',
+  `min_level` tinyint unsigned NOT NULL DEFAULT '80',
+  `current_tank` tinyint unsigned NOT NULL DEFAULT '0',
+  `current_healer` tinyint unsigned NOT NULL DEFAULT '0',
+  `current_dps` tinyint unsigned NOT NULL DEFAULT '0',
+  `need_tank` tinyint unsigned NOT NULL DEFAULT '1',
+  `need_healer` tinyint unsigned NOT NULL DEFAULT '1',
+  `need_dps` tinyint unsigned NOT NULL DEFAULT '3',
+  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Active, 0=Inactive/Expired',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_leader` (`leader_guid`),
+  KEY `idx_status_type` (`status`,`listing_type`),
+  KEY `idx_dungeon` (`dungeon_id`,`keystone_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_scheduled_events
+CREATE TABLE IF NOT EXISTS `dc_group_finder_scheduled_events` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `leader_guid` int unsigned NOT NULL,
+  `event_type` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Mythic+, 2=Raid, 3=PvP',
+  `dungeon_id` int unsigned NOT NULL DEFAULT '0',
+  `dungeon_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
+  `keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
+  `scheduled_time` timestamp NOT NULL,
+  `max_signups` tinyint unsigned NOT NULL DEFAULT '5',
+  `current_signups` tinyint unsigned NOT NULL DEFAULT '0',
+  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Open, 2=Full, 3=Started, 4=Cancelled, 5=Completed',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_leader` (`leader_guid`),
+  KEY `idx_scheduled` (`scheduled_time`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_spectators
+CREATE TABLE IF NOT EXISTS `dc_group_finder_spectators` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `run_id` int unsigned NOT NULL COMMENT 'References mythic+ run ID or custom session',
+  `spectator_guid` int unsigned NOT NULL,
+  `privacy_level` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Public, 2=Friends, 3=Guild, 4=Private',
+  `joined_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_unique_spec` (`run_id`,`spectator_guid`),
+  KEY `idx_run` (`run_id`),
+  KEY `idx_spectator` (`spectator_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1822,7 +2017,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=87 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -1968,6 +2163,35 @@ CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_dungeons
+CREATE TABLE IF NOT EXISTS `dc_mplus_dungeons` (
+  `map_id` int unsigned NOT NULL,
+  `dungeon_name` varchar(100) NOT NULL,
+  `short_name` varchar(10) NOT NULL,
+  `timer_seconds` int unsigned NOT NULL DEFAULT '1800',
+  `difficulty` tinyint unsigned NOT NULL DEFAULT '1',
+  `min_level` tinyint unsigned NOT NULL DEFAULT '80',
+  `enabled` tinyint unsigned NOT NULL DEFAULT '1',
+  PRIMARY KEY (`map_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mythic+ Dungeon definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_hud_cache
+CREATE TABLE IF NOT EXISTS `dc_mplus_hud_cache` (
+  `instance_key` bigint unsigned NOT NULL,
+  `map_id` int unsigned NOT NULL,
+  `instance_id` int unsigned NOT NULL,
+  `owner_guid` int unsigned NOT NULL,
+  `keystone_level` tinyint unsigned NOT NULL,
+  `season_id` int unsigned NOT NULL,
+  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `updated_at` bigint unsigned NOT NULL,
+  PRIMARY KEY (`instance_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_mplus_keystones
 CREATE TABLE IF NOT EXISTS `dc_mplus_keystones` (
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1980,6 +2204,20 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_keystones` (
   KEY `idx_season` (`season_id`),
   KEY `idx_expiration` (`expires_on`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Active Mythic+ keystones (one per player)';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_player_ratings
+CREATE TABLE IF NOT EXISTS `dc_mplus_player_ratings` (
+  `player_guid` int unsigned NOT NULL,
+  `rating` smallint unsigned NOT NULL DEFAULT '0',
+  `highest_key` tinyint unsigned NOT NULL DEFAULT '0',
+  `total_runs` int unsigned NOT NULL DEFAULT '0',
+  `timed_runs` int unsigned NOT NULL DEFAULT '0',
+  `season_id` tinyint unsigned NOT NULL DEFAULT '1',
+  `last_updated` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`player_guid`,`season_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player Mythic+ ratings';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2021,8 +2259,8 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mythic_spectator_invites
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_invites` (
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_invites
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_invites` (
   `code` varchar(8) NOT NULL,
   `instance_id` int unsigned NOT NULL,
   `created_by` int unsigned NOT NULL,
@@ -2037,8 +2275,8 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_invites` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mythic_spectator_popularity
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_popularity` (
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_popularity
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_popularity` (
   `map_id` int unsigned NOT NULL,
   `keystone_level` tinyint unsigned NOT NULL,
   `total_spectators` int unsigned NOT NULL DEFAULT '0',
@@ -2051,8 +2289,8 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_popularity` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mythic_spectator_replays
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_replays` (
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_replays
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_replays` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `map_id` int unsigned NOT NULL,
   `keystone_level` tinyint unsigned NOT NULL,
@@ -2070,8 +2308,8 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_replays` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mythic_spectator_sessions
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_sessions` (
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_sessions
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_sessions` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `spectator_guid` int unsigned NOT NULL,
   `instance_id` int unsigned NOT NULL,
@@ -2089,8 +2327,8 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_sessions` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mythic_spectator_settings
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_settings` (
+-- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_settings
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
   `player_guid` int unsigned NOT NULL,
   `allow_spectators` tinyint(1) NOT NULL DEFAULT '1',
   `allow_public_listing` tinyint(1) NOT NULL DEFAULT '1',
@@ -2099,21 +2337,6 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_settings` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Player Settings';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mythicplus_hud_cache
-CREATE TABLE IF NOT EXISTS `dc_mythicplus_hud_cache` (
-  `instance_key` bigint unsigned NOT NULL,
-  `map_id` int unsigned NOT NULL,
-  `instance_id` int unsigned NOT NULL,
-  `owner_guid` int unsigned NOT NULL,
-  `keystone_level` tinyint unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
-  `updated_at` bigint unsigned NOT NULL,
-  PRIMARY KEY (`instance_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2185,6 +2408,40 @@ CREATE TABLE IF NOT EXISTS `dc_player_claimed_chests` (
   KEY `idx_chest_id` (`chest_id`),
   KEY `idx_claimed_at` (`claimed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prevents duplicate chest claims';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_cross_system_stats
+CREATE TABLE IF NOT EXISTS `dc_player_cross_system_stats` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `total_dungeons_started` int unsigned NOT NULL DEFAULT '0',
+  `total_dungeons_completed` int unsigned NOT NULL DEFAULT '0',
+  `total_boss_kills` int unsigned NOT NULL DEFAULT '0',
+  `total_deaths` int unsigned NOT NULL DEFAULT '0',
+  `total_quests_completed` int unsigned NOT NULL DEFAULT '0',
+  `total_creatures_killed` bigint unsigned NOT NULL DEFAULT '0',
+  `total_gold_earned` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'In copper',
+  `total_tokens_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_essence_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_xp_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_honor_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_arena_points_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_rating_earned` bigint unsigned NOT NULL DEFAULT '0',
+  `total_dungeon_time_seconds` bigint unsigned NOT NULL DEFAULT '0',
+  `fastest_dungeon_seconds` int unsigned NOT NULL DEFAULT '0',
+  `average_dungeon_seconds` int unsigned NOT NULL DEFAULT '0',
+  `highest_mythic_level_cleared` tinyint unsigned NOT NULL DEFAULT '0',
+  `highest_prestige_level` tinyint unsigned NOT NULL DEFAULT '0',
+  `best_seasonal_rank` smallint unsigned NOT NULL DEFAULT '0',
+  `first_cross_system_event` timestamp NULL DEFAULT NULL COMMENT 'When player first triggered cross-system',
+  `last_cross_system_event` timestamp NULL DEFAULT NULL COMMENT 'Last cross-system activity',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`),
+  KEY `idx_dungeons_completed` (`total_dungeons_completed`),
+  KEY `idx_boss_kills` (`total_boss_kills`),
+  KEY `idx_mythic_level` (`highest_mythic_level_cleared`),
+  KEY `idx_prestige` (`highest_prestige_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Aggregated cross-system statistics per player';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2379,6 +2636,18 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats_history` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_seen_features
+CREATE TABLE IF NOT EXISTS `dc_player_seen_features` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `feature` varchar(50) NOT NULL COMMENT 'Feature identifier (hotspots, prestige, mythicplus, etc.)',
+  `seen_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When feature intro was shown',
+  `dismissed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether user explicitly dismissed',
+  PRIMARY KEY (`guid`,`feature`),
+  KEY `idx_feature` (`feature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tracks which feature intros players have seen';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_player_synthesis_cooldowns
 CREATE TABLE IF NOT EXISTS `dc_player_synthesis_cooldowns` (
   `player_guid` int unsigned NOT NULL,
@@ -2517,6 +2786,22 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_rewards` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
+-- Exportiere Struktur von Tabelle acore_chars.dc_player_welcome
+CREATE TABLE IF NOT EXISTS `dc_player_welcome` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `account_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account ID for account-wide tracking',
+  `is_new_character` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT NULL,
+  `dismissed_at` datetime DEFAULT NULL COMMENT 'When welcome was dismissed',
+  `first_login_at` datetime DEFAULT NULL COMMENT 'First character login timestamp',
+  `last_version_shown` varchar(20) DEFAULT NULL COMMENT 'Last addon version shown',
+  `show_on_login` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether to show welcome on login',
+  PRIMARY KEY (`guid`),
+  KEY `idx_account` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tracks player welcome screen interactions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
 -- Exportiere Struktur von Tabelle acore_chars.dc_prestige_challenge_rewards
 CREATE TABLE IF NOT EXISTS `dc_prestige_challenge_rewards` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2544,6 +2829,21 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_challenges` (
   KEY `idx_active` (`guid`,`active`),
   KEY `idx_completed` (`completed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige challenge progress';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_prestige_players
+CREATE TABLE IF NOT EXISTS `dc_prestige_players` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID from account table',
+  `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Highest prestige level achieved on this account',
+  `total_prestiges` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total number of prestiges across all characters',
+  `xp_bonus_percent` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Account-wide XP bonus percentage',
+  `gold_bonus_percent` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Account-wide gold find bonus percentage',
+  `reputation_bonus_percent` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Account-wide reputation bonus percentage',
+  `last_updated` int unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last update',
+  PRIMARY KEY (`account_id`),
+  KEY `idx_prestige_level` (`prestige_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Account-wide prestige tracking for cross-character bonuses';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2766,7 +3066,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=338 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=339 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -2858,6 +3158,42 @@ CREATE TABLE IF NOT EXISTS `dc_weekly_vault` (
   PRIMARY KEY (`character_guid`,`season_id`,`week_start`),
   KEY `idx_pending_rewards` (`season_id`,`week_start`,`reward_claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly Great Vault progress';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_welcome_faq
+CREATE TABLE IF NOT EXISTS `dc_welcome_faq` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(30) NOT NULL DEFAULT 'general' COMMENT 'Category: general, mythicplus, prestige, systems, community',
+  `question` varchar(255) NOT NULL COMMENT 'The FAQ question',
+  `answer` text NOT NULL COMMENT 'The answer (supports color codes)',
+  `priority` int NOT NULL DEFAULT '0' COMMENT 'Display order within category (higher = first)',
+  `active` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether to show this entry',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_category` (`category`),
+  KEY `idx_active_priority` (`active`,`category`,`priority` DESC)
+) ENGINE=InnoDB AUTO_INCREMENT=26 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Dynamic FAQ content';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_chars.dc_welcome_whats_new
+CREATE TABLE IF NOT EXISTS `dc_welcome_whats_new` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `version` varchar(20) NOT NULL COMMENT 'Server/addon version this applies to',
+  `title` varchar(100) NOT NULL COMMENT 'Entry title',
+  `content` text NOT NULL COMMENT 'Entry content (supports color codes)',
+  `icon` varchar(100) DEFAULT NULL COMMENT 'Icon path (Interface\\Icons\\...)',
+  `category` enum('feature','bugfix','balance','event','other') DEFAULT 'feature',
+  `priority` int NOT NULL DEFAULT '0' COMMENT 'Display order (higher = first)',
+  `active` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether to show this entry',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime DEFAULT NULL COMMENT 'Optional expiration date',
+  PRIMARY KEY (`id`),
+  KEY `idx_version` (`version`),
+  KEY `idx_active_priority` (`active`,`priority` DESC)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Dynamic What''s New content';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
@@ -3871,6 +4207,29 @@ CREATE TABLE `v_dc_addon_player_activity` (
 CREATE TABLE `v_dc_addon_recent_activity` 
 );
 
+-- Exportiere Struktur von View acore_chars.v_dc_dungeon_leaderboard
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_dc_dungeon_leaderboard` (
+	`guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
+	`character_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_bin',
+	`total_dungeons_completed` INT UNSIGNED NOT NULL,
+	`total_boss_kills` INT UNSIGNED NOT NULL,
+	`highest_mythic_level_cleared` TINYINT UNSIGNED NOT NULL,
+	`total_dungeon_time_seconds` BIGINT UNSIGNED NOT NULL,
+	`avg_dungeon_minutes` DECIMAL(12,1) NULL
+);
+
+-- Exportiere Struktur von View acore_chars.v_dc_recent_events
+-- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
+CREATE TABLE `v_dc_recent_events` (
+	`id` BIGINT UNSIGNED NOT NULL,
+	`event_type` TINYINT UNSIGNED NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
+	`source_system` VARCHAR(1) NOT NULL COMMENT 'System that generated the event' COLLATE 'utf8mb4_unicode_ci',
+	`character_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
+	`event_data` JSON NULL COMMENT 'Event-specific JSON data',
+	`timestamp` TIMESTAMP NOT NULL
+);
+
 -- Exportiere Struktur von View acore_chars.v_player_heirloom_upgrades
 -- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_player_heirloom_upgrades` (
@@ -4000,6 +4359,16 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_player_activity
 -- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_addon_recent_activity`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_recent_activity` AS select `l`.`timestamp` AS `timestamp`,`l`.`character_name` AS `character_name`,`l`.`direction` AS `direction`,`l`.`module` AS `module`,concat('0x',lpad(hex(`l`.`opcode`),2,'0')) AS `opcode_hex`,`l`.`opcode_name` AS `opcode_name`,`l`.`status` AS `status`,`l`.`response_time_ms` AS `response_time_ms`,`l`.`data_size` AS `data_size` from `dc_addon_protocol_log` `l` where (`l`.`timestamp` > (now() - interval 1 hour)) order by `l`.`timestamp` desc limit 100
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_dc_dungeon_leaderboard`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_dungeon_leaderboard` AS select `s`.`guid` AS `guid`,`c`.`name` AS `character_name`,`s`.`total_dungeons_completed` AS `total_dungeons_completed`,`s`.`total_boss_kills` AS `total_boss_kills`,`s`.`highest_mythic_level_cleared` AS `highest_mythic_level_cleared`,`s`.`total_dungeon_time_seconds` AS `total_dungeon_time_seconds`,round((`s`.`average_dungeon_seconds` / 60),1) AS `avg_dungeon_minutes` from (`dc_player_cross_system_stats` `s` join `characters` `c` on((`c`.`guid` = `s`.`guid`))) order by `s`.`total_dungeons_completed` desc limit 100
+;
+
+-- Entferne temporäre Tabelle und erstelle die eigentliche View
+DROP TABLE IF EXISTS `v_dc_recent_events`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_recent_events` AS select `e`.`id` AS `id`,`e`.`event_type` AS `event_type`,`e`.`source_system` AS `source_system`,`c`.`name` AS `character_name`,`e`.`event_data` AS `event_data`,`e`.`timestamp` AS `timestamp` from (`dc_cross_system_events` `e` left join `characters` `c` on((`c`.`guid` = `e`.`player_guid`))) where (`e`.`timestamp` > (now() - interval 24 hour)) order by `e`.`timestamp` desc limit 500
 ;
 
 -- Entferne temporäre Tabelle und erstelle die eigentliche View

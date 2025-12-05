@@ -41,7 +41,7 @@ constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over ba
 constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
 
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
-constexpr char const* HUD_CACHE_TABLE = "dc_mythicplus_hud_cache";
+constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
 
 std::string EscapeJson(std::string_view input)
 {

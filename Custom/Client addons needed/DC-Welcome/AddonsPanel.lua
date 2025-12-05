@@ -28,7 +28,7 @@ DCWelcome.RegisteredAddons = {
     -- DC-AOESettings, DC-HinterlandBG, DC-AddonProtocol
     -- 
     -- VERIFIED globals and slash commands:
-    -- - DCMythicPlusHUD + SlashCmdList["DCM"] (/dcm)
+    -- - DCMythicPlusHUD + SlashCmdList["DCM"] (/dcm) + SlashCmdList["DCGF"] (/dcgf)
     -- - DarkChaos_ItemUpgrade + SlashCmdList["DCUPGRADE"] (/dcu, /upgrade)
     -- - DCAoELootSettings + SlashCmdList["DCAOELOOT"] (/aoeloot, /dcaoe)
     -- - DCHotspot + SlashCmdList["DCHOTSPOT"] (/dchotspot, /dchs)
@@ -36,16 +36,24 @@ DCWelcome.RegisteredAddons = {
     -- =========================================================================
     {
         id = "dc-mythicplus",
-        name = "Mythic+ Dashboard",
-        description = "HUD auto-appears during M+ runs. Shows keystones, affixes, and timers.",
+        name = "Mythic+ Suite",
+        description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
         icon = "Interface\\Icons\\Achievement_challengemode_gold",
-        color = {1, 0.5, 0},  -- Orange
+        color = {0.2, 0.8, 1.0},  -- Cyan
         category = "Dungeons",
         minLevel = 1,
-        infoOnly = true,  -- No open button, starts automatically in M+ runs
-        openCommand = nil,
+        openCommand = "/dcgf",
         settingsCommand = "/dcm settings",
-        openFunc = nil,
+        openFunc = function()
+            -- Open Group Finder
+            if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder and DCMythicPlusHUD.GroupFinder.Toggle then
+                DCMythicPlusHUD.GroupFinder:Toggle()
+            elseif SlashCmdList["DCGF"] then
+                SlashCmdList["DCGF"]("")
+            else
+                DCWelcome.Print("Mythic+ addon not loaded. Try /dcm or /dcgf")
+            end
+        end,
         settingsFunc = function()
             -- Open Interface Options panel for Mythic+ settings
             local panel = _G["DCMythicPlus_InterfaceOptions"]
@@ -59,7 +67,7 @@ DCWelcome.RegisteredAddons = {
             end
         end,
         isLoaded = function()
-            return DCMythicPlusHUD ~= nil or SlashCmdList["DCM"] ~= nil
+            return DCMythicPlusHUD ~= nil or SlashCmdList["DCM"] ~= nil or SlashCmdList["DCGF"] ~= nil
         end,
     },
     {
@@ -283,42 +291,6 @@ DCWelcome.RegisteredAddons = {
             return HLBG ~= nil or SlashCmdList["HLBGSHOW"] ~= nil
         end,
     },
-    {
-        id = "dc-mythicplus",
-        name = "Mythic+ Suite",
-        description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
-        icon = "Interface\\Icons\\INV_Relics_Hourglass",
-        color = {0.2, 0.8, 1.0},  -- Cyan
-        category = "Dungeons",
-        minLevel = 1,
-        openCommand = "/dcgf",
-        settingsCommand = "/dcm help",
-        openFunc = function()
-            -- Open Group Finder
-            if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder then
-                DCMythicPlusHUD.GroupFinder:Toggle()
-            elseif SlashCmdList["DCGF"] then
-                SlashCmdList["DCGF"]("")
-            else
-                DCWelcome.Print("Mythic+ addon not loaded. Try /dcm or /dcgf")
-            end
-        end,
-        settingsFunc = function()
-            -- Open Interface Options panel for M+ settings
-            local panel = _G["DCMythicPlus_InterfaceOptions"]
-            if panel then
-                InterfaceOptionsFrame_OpenToCategory(panel)
-                InterfaceOptionsFrame_OpenToCategory(panel)  -- Call twice for WoW bug
-            elseif SlashCmdList["DCM"] then
-                SlashCmdList["DCM"]("help")
-            else
-                DCWelcome.Print("M+ settings not available. Use Interface > AddOns > DC Mythic+ HUD")
-            end
-        end,
-        isLoaded = function()
-            return DCMythicPlusHUD ~= nil or SlashCmdList["DCM"] ~= nil
-        end,
-    },
 }
 
 -- =============================================================================
@@ -426,6 +398,8 @@ local function CreateAddonCard(parent, addonInfo, yOffset)
         
         settingsBtn:SetScript("OnClick", function()
             if addonInfo.settingsFunc then
+                -- Close welcome window when opening addon settings
+                DCWelcome:HideWelcome()
                 addonInfo.settingsFunc()
             end
         end)
@@ -467,6 +441,8 @@ local function CreateAddonCard(parent, addonInfo, yOffset)
         
         secondBtn:SetScript("OnClick", function()
             if addonInfo.secondButtonFunc then
+                -- Close welcome window when opening addon feature
+                DCWelcome:HideWelcome()
                 addonInfo.secondButtonFunc()
             end
         end)
@@ -511,6 +487,8 @@ local function CreateAddonCard(parent, addonInfo, yOffset)
         
         openBtn:SetScript("OnClick", function()
             if addonInfo.openFunc then
+                -- Close welcome window when opening addon
+                DCWelcome:HideWelcome()
                 addonInfo.openFunc()
             end
         end)

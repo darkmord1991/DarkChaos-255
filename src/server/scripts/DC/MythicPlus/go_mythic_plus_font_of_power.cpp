@@ -17,6 +17,7 @@
 #include "ScriptedGossip.h"
 #include "Chat.h"
 #include "GameObject.h"
+#include "GameTime.h"
 #include "Group.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicPlusRunManager.h"

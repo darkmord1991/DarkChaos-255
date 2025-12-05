@@ -142,6 +142,60 @@ function GF:CreateLiveRunsTab()
     scrollFrame:SetScrollChild(scrollChild)
     frame.scrollChild = scrollChild
     
+    -- Join by Code section (above settings)
+    local joinFrame = CreateFrame("Frame", nil, frame)
+    joinFrame:SetPoint("BOTTOMLEFT", 5, 60)
+    joinFrame:SetPoint("BOTTOMRIGHT", -5, 60)
+    joinFrame:SetHeight(45)
+    
+    joinFrame.bg = joinFrame:CreateTexture(nil, "BACKGROUND")
+    joinFrame.bg:SetAllPoints()
+    joinFrame.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
+    
+    local joinLabel = joinFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    joinLabel:SetPoint("LEFT", 10, 0)
+    joinLabel:SetText("|cff32c4ffJoin by Spectator Code:|r")
+    
+    local codeEdit = CreateFrame("EditBox", nil, joinFrame, "InputBoxTemplate")
+    codeEdit:SetSize(120, 22)
+    codeEdit:SetPoint("LEFT", joinLabel, "RIGHT", 10, 0)
+    codeEdit:SetAutoFocus(false)
+    codeEdit:SetMaxLetters(16)
+    codeEdit:SetText("")
+    frame.codeEdit = codeEdit
+    
+    -- Placeholder text
+    codeEdit:SetScript("OnEditFocusGained", function(self)
+        if self:GetText() == "" then
+            self.placeholder:Hide()
+        end
+    end)
+    codeEdit:SetScript("OnEditFocusLost", function(self)
+        if self:GetText() == "" then
+            self.placeholder:Show()
+        end
+    end)
+    codeEdit.placeholder = codeEdit:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    codeEdit.placeholder:SetPoint("LEFT", 5, 0)
+    codeEdit.placeholder:SetText("Enter code...")
+    
+    local joinBtn = CreateFrame("Button", nil, joinFrame, "UIPanelButtonTemplate")
+    joinBtn:SetSize(80, 22)
+    joinBtn:SetPoint("LEFT", codeEdit, "RIGHT", 10, 0)
+    joinBtn:SetText("Join")
+    joinBtn:SetScript("OnClick", function()
+        local code = codeEdit:GetText()
+        if code and code ~= "" then
+            GF:JoinBySpectatorCode(code)
+        else
+            GF.Print("Please enter a spectator code!")
+        end
+    end)
+    
+    local joinHelp = joinFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    joinHelp:SetPoint("LEFT", joinBtn, "RIGHT", 10, 0)
+    joinHelp:SetText("|cff888888Ask your friend for their code|r")
+    
     -- My Run Settings section
     local settingsFrame = CreateFrame("Frame", nil, frame)
     settingsFrame:SetPoint("BOTTOMLEFT", 5, 5)
@@ -398,6 +452,68 @@ function GF:LeaveSpectate()
     
     if self.spectatorHUD then
         self.spectatorHUD:Hide()
+    end
+end
+
+-- =====================================================================
+-- Join by Spectator Code
+-- =====================================================================
+
+function GF:JoinBySpectatorCode(code)
+    if not code or code == "" then
+        GF.Print("|cffff4444Error:|r Please enter a valid spectator code!")
+        return
+    end
+    
+    -- Clean up the code (remove spaces, convert to uppercase)
+    code = code:gsub("%s+", ""):upper()
+    
+    GF.Print("Attempting to join run with code: |cff32c4ff" .. code .. "|r")
+    
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC then
+        DC:Request("MPLUS", 0x24, { 
+            action = "join_by_code",
+            code = code
+        })
+    else
+        -- Demo mode - simulate joining
+        GF.Print("|cff44ff44Demo mode:|r Would join spectate session with code " .. code)
+        
+        -- Show a fake spectator HUD for demo
+        C_Timer.After(1, function()
+            GF:ShowSpectatorHUD({
+                dungeon = "Halls of Lightning",
+                level = 20,
+                timer = "10:30",
+                progress = "55%",
+                deaths = 1
+            })
+        end)
+    end
+    
+    -- Clear the input
+    if self.LiveRunsTabContent and self.LiveRunsTabContent.codeEdit then
+        self.LiveRunsTabContent.codeEdit:SetText("")
+        self.LiveRunsTabContent.codeEdit.placeholder:Show()
+    end
+end
+
+-- Function to get your own spectator code (for sharing with friends)
+function GF:GetMySpectatorCode()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC then
+        DC:Request("MPLUS", 0x25, { action = "get_my_code" })
+    else
+        -- Demo mode - generate a fake code
+        local chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        local code = ""
+        for i = 1, 8 do
+            local idx = math.random(1, #chars)
+            code = code .. chars:sub(idx, idx)
+        end
+        GF.Print("Your spectator code: |cff32c4ff" .. code .. "|r (Demo mode)")
+        return code
     end
 end
 

@@ -11,13 +11,14 @@
  * - Progressive feature unlock notifications
  * - Level milestone messages
  * - FAQ data sync
+ * - Progress data sync (M+ rating, prestige, seasons)
  * 
  * Message Format:
  * - JSON format: WELC|OPCODE|J|{json}
  * 
  * Opcodes:
- * - CMSG: 0x01 (GET_SERVER_INFO), 0x02 (GET_FAQ), 0x03 (DISMISS), 0x04 (MARK_SEEN), 0x05 (GET_WHATS_NEW)
- * - SMSG: 0x10 (SHOW_WELCOME), 0x11 (SERVER_INFO), 0x12 (FAQ_DATA), 0x13 (FEATURE_UNLOCK), 0x14 (WHATS_NEW), 0x15 (LEVEL_MILESTONE)
+ * - CMSG: 0x01 (GET_SERVER_INFO), 0x02 (GET_FAQ), 0x03 (DISMISS), 0x04 (MARK_SEEN), 0x05 (GET_WHATS_NEW), 0x06 (GET_PROGRESS)
+ * - SMSG: 0x10 (SHOW_WELCOME), 0x11 (SERVER_INFO), 0x12 (FAQ_DATA), 0x13 (FEATURE_UNLOCK), 0x14 (WHATS_NEW), 0x15 (LEVEL_MILESTONE), 0x16 (PROGRESS_DATA)
  * 
  * Copyright (C) 2025 Dark Chaos Development Team
  */
@@ -47,6 +48,7 @@ namespace DCWelcome
         constexpr uint8 CMSG_DISMISS_WELCOME     = 0x03;
         constexpr uint8 CMSG_MARK_FEATURE_SEEN   = 0x04;
         constexpr uint8 CMSG_GET_WHATS_NEW       = 0x05;
+        constexpr uint8 CMSG_GET_PROGRESS        = 0x06;  // NEW: Request progress data
         
         // Server -> Client
         constexpr uint8 SMSG_SHOW_WELCOME        = 0x10;
@@ -55,6 +57,7 @@ namespace DCWelcome
         constexpr uint8 SMSG_FEATURE_UNLOCK      = 0x13;
         constexpr uint8 SMSG_WHATS_NEW           = 0x14;
         constexpr uint8 SMSG_LEVEL_MILESTONE     = 0x15;
+        constexpr uint8 SMSG_PROGRESS_DATA       = 0x16;  // NEW: Progress data response
     }
     
     // Configuration keys
@@ -353,6 +356,112 @@ namespace DCWelcome
         response.Send(player);
     }
     
+    // =======================================================================
+    // Progress Data Handler - NEW
+    // =======================================================================
+    
+    void HandleGetProgress(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        if (!player || !player->GetSession())
+            return;
+        
+        DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
+        
+        // Get M+ Rating from dc_mplus_player_rating table
+        uint32 mythicRating = 0;
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT rating FROM dc_mplus_player_rating WHERE guid = {}",
+                player->GetGUID().GetCounter()
+            );
+            if (result)
+                mythicRating = result->Fetch()[0].Get<uint32>();
+        }
+        response.Set("mythicRating", static_cast<int32>(mythicRating));
+        
+        // Get Prestige Level from dc_prestige_player table (if exists)
+        uint32 prestigeLevel = 0;
+        uint32 prestigeXP = 0;
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT prestige_level, prestige_xp FROM dc_prestige_player WHERE guid = {}",
+                player->GetGUID().GetCounter()
+            );
+            if (result)
+            {
+                prestigeLevel = result->Fetch()[0].Get<uint32>();
+                prestigeXP = result->Fetch()[1].Get<uint32>();
+            }
+        }
+        response.Set("prestigeLevel", static_cast<int32>(prestigeLevel));
+        response.Set("prestigeXP", static_cast<int32>(prestigeXP));
+        
+        // Get Season Rank/Points from dc_mplus_season_player table
+        uint32 seasonPoints = 0;
+        uint32 seasonRank = 0;
+        {
+            // Get active season first
+            QueryResult seasonResult = WorldDatabase.Query(
+                "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1"
+            );
+            if (seasonResult)
+            {
+                uint32 activeSeason = seasonResult->Fetch()[0].Get<uint32>();
+                
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT points FROM dc_mplus_season_player WHERE guid = {} AND season = {}",
+                    player->GetGUID().GetCounter(), activeSeason
+                );
+                if (result)
+                    seasonPoints = result->Fetch()[0].Get<uint32>();
+            }
+        }
+        response.Set("seasonPoints", static_cast<int32>(seasonPoints));
+        response.Set("seasonRank", static_cast<int32>(seasonRank));
+        
+        // Get Weekly Vault Progress (M+ runs this week)
+        uint32 weeklyVaultProgress = 0;
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM dc_mplus_runs WHERE guid = {} AND completed = 1 "
+                "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
+                player->GetGUID().GetCounter()
+            );
+            if (result)
+                weeklyVaultProgress = std::min(static_cast<uint32>(3), result->Fetch()[0].Get<uint32>());
+        }
+        response.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
+        
+        // Get Achievement Points
+        uint32 achievementPoints = 0;
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT SUM(COALESCE(a.points, 10)) FROM character_achievement ca "
+                "LEFT JOIN achievement a ON ca.achievement = a.id "
+                "WHERE ca.guid = {}",
+                player->GetGUID().GetCounter()
+            );
+            if (result && !result->Fetch()[0].IsNull())
+                achievementPoints = result->Fetch()[0].Get<uint32>();
+        }
+        response.Set("achievementPoints", static_cast<int32>(achievementPoints));
+        
+        // Keys completed this week
+        uint32 keysThisWeek = 0;
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM dc_mplus_runs WHERE guid = {} AND completed = 1 "
+                "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
+                player->GetGUID().GetCounter()
+            );
+            if (result)
+                keysThisWeek = result->Fetch()[0].Get<uint32>();
+        }
+        response.Set("keysThisWeek", static_cast<int32>(keysThisWeek));
+        
+        response.Send(player);
+    }
+    
     void RegisterHandlers()
     {
         using namespace DCAddon;
@@ -362,6 +471,7 @@ namespace DCWelcome
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_DISMISS_WELCOME, HandleDismissWelcome);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_MARK_FEATURE_SEEN, HandleMarkFeatureSeen);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_WHATS_NEW, HandleGetWhatsNew);
+        MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_PROGRESS, HandleGetProgress);
         
         MessageRouter::Instance().SetModuleEnabled(MODULE, true);
     }

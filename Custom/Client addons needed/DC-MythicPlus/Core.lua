@@ -2,6 +2,65 @@ local addonName = ... or "DC-MythicPlus"
 local namespace = _G.DCMythicPlusHUD or {}
 _G.DCMythicPlusHUD = namespace
 
+-- ============================================================================
+-- 3.3.5a Compatibility Polyfills
+-- ============================================================================
+
+-- Polyfill SetColorTexture (added in WoD+)
+local TextureMeta = getmetatable(CreateFrame("Frame"):CreateTexture()).__index
+if not TextureMeta.SetColorTexture then
+    -- Use a solid white texture and apply vertex color
+    TextureMeta.SetColorTexture = function(self, r, g, b, a)
+        self:SetTexture("Interface\\Buttons\\WHITE8x8")
+        self:SetVertexColor(r or 1, g or 1, b or 1, a or 1)
+    end
+end
+
+-- Polyfill C_Timer (added in WoD+)
+if not C_Timer then
+    C_Timer = {}
+    local timerFrame = CreateFrame("Frame")
+    local timers = {}
+    timerFrame:SetScript("OnUpdate", function(self, elapsed)
+        local now = GetTime()
+        local i = 1
+        while i <= #timers do
+            local t = timers[i]
+            if now >= t.expires then
+                local callback = t.callback
+                table.remove(timers, i)
+                callback()
+            else
+                i = i + 1
+            end
+        end
+        if #timers == 0 then
+            self:Hide()
+        end
+    end)
+    timerFrame:Hide()
+    
+    function C_Timer.After(delay, callback)
+        table.insert(timers, {
+            expires = GetTime() + delay,
+            callback = callback
+        })
+        timerFrame:Show()
+    end
+end
+
+-- Polyfill SetShown (added in MoP+)
+local FrameMeta = getmetatable(CreateFrame("Frame")).__index
+if not FrameMeta.SetShown then
+    FrameMeta.SetShown = function(self, shown)
+        if shown then
+            self:Show()
+        else
+            self:Hide()
+        end
+    end
+end
+
 -- DCAddonProtocol integration
 local DC = rawget(_G, "DCAddonProtocol")
 namespace.useDCProtocol = (DC ~= nil)
@@ -1207,6 +1266,40 @@ if DC then
             local data = args[1]
             if namespace.GroupFinder then
                 namespace.GroupFinder:UpdateKeystoneDisplay(data)
+            end
+        end
+    end)
+    
+    -- SMSG_DUNGEON_LIST (0x42) - M+ dungeon list from server
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_DUNGEON_LIST or 0x42, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            -- Parse the dungeons JSON array
+            local dungeons = data.dungeons
+            if type(dungeons) == "string" then
+                -- Need to parse JSON string
+                dungeons = DC:DecodeJSON(dungeons) or {}
+            end
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateDungeonList(dungeons)
+            end
+        end
+    end)
+    
+    -- SMSG_RAID_LIST (0x43) - Raid list from server
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_RAID_LIST or 0x43, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            -- Parse the raids JSON array
+            local raids = data.raids
+            if type(raids) == "string" then
+                -- Need to parse JSON string
+                raids = DC:DecodeJSON(raids) or {}
+            end
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateRaidList(raids)
             end
         end
     end)

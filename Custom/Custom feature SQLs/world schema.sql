@@ -2,7 +2,7 @@
 -- Host:                         192.168.178.45
 -- Server-Version:               8.0.44-0ubuntu0.24.04.1 - (Ubuntu)
 -- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.13.0.7157
+-- HeidiSQL Version:             12.13.0.7160
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -2124,48 +2124,8 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_affixes` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mplus_featured_dungeons
-CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
-  `season_id` int unsigned NOT NULL COMMENT 'Season from dc_mplus_seasons',
-  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
-  `sort_order` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Display order in UI',
-  `dungeon_name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Display name for UI/GM tools',
-  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional comments (e.g., rotation theme)',
-  PRIMARY KEY (`season_id`,`map_id`),
-  KEY `map_id` (`map_id`),
-  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons_archived_20251122` (`season_id`) ON DELETE CASCADE,
-  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_2` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Featured dungeons per season for Mythic+ rotation';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_mplus_seasons
-CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
-  `season` smallint unsigned NOT NULL COMMENT 'Season number',
-  `name` varchar(64) NOT NULL DEFAULT 'Season' COMMENT 'Display name',
-  `start_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start',
-  `end_date` datetime DEFAULT NULL COMMENT 'Season end (NULL = ongoing)',
-  `is_active` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 = current active season',
-  `description` text COMMENT 'Season description',
-  PRIMARY KEY (`season`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='M+ Season configuration';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_mplus_teleporter_npcs
-CREATE TABLE IF NOT EXISTS `dc_mplus_teleporter_npcs` (
-  `entry` int unsigned NOT NULL COMMENT 'NPC entry from creature_template',
-  `name` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'NPC display name',
-  `subname` varchar(60) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC subtitle',
-  `purpose` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC function description',
-  `gossip_menu_id` int unsigned DEFAULT NULL COMMENT 'Gossip menu ID',
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mythic+ hub NPC definitions';
-
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_plus_dungeons
-CREATE TABLE IF NOT EXISTS `dc_mythic_plus_dungeons` (
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_dungeons
+CREATE TABLE IF NOT EXISTS `dc_mplus_dungeons` (
   `dungeon_id` int unsigned NOT NULL COMMENT 'Map ID',
   `dungeon_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `short_name` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Abbreviation like UK, AN, etc.',
@@ -2188,27 +2148,23 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_plus_dungeons` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_plus_weekly_affixes
-CREATE TABLE IF NOT EXISTS `dc_mythic_plus_weekly_affixes` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `week_number` tinyint unsigned NOT NULL COMMENT 'Week of rotation (1-12)',
-  `affix1_id` int unsigned NOT NULL COMMENT 'Primary affix (always active 2+)',
-  `affix2_id` int unsigned DEFAULT NULL COMMENT 'Secondary affix (active 4+)',
-  `affix3_id` int unsigned DEFAULT NULL COMMENT 'Tertiary affix (active 7+)',
-  `affix4_id` int unsigned DEFAULT NULL COMMENT 'Seasonal affix (active 10+)',
-  `season_id` int unsigned NOT NULL DEFAULT '1',
-  `active` tinyint(1) NOT NULL DEFAULT '1',
-  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_week_season` (`week_number`,`season_id`),
-  KEY `idx_season` (`season_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly affix rotation schedule';
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_featured_dungeons
+CREATE TABLE IF NOT EXISTS `dc_mplus_featured_dungeons` (
+  `season_id` int unsigned NOT NULL COMMENT 'Season from dc_mplus_seasons',
+  `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
+  `sort_order` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Display order in UI',
+  `dungeon_name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Display name for UI/GM tools',
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional comments (e.g., rotation theme)',
+  PRIMARY KEY (`season_id`,`map_id`),
+  KEY `map_id` (`map_id`),
+  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `dc_mplus_seasons_archived_20251122` (`season_id`) ON DELETE CASCADE,
+  CONSTRAINT `dc_mplus_featured_dungeons_ibfk_2` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Featured dungeons per season for Mythic+ rotation';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_scaling_multipliers
-CREATE TABLE IF NOT EXISTS `dc_mythic_scaling_multipliers` (
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_scale_multipliers
+CREATE TABLE IF NOT EXISTS `dc_mplus_scale_multipliers` (
   `keystoneLevel` int unsigned NOT NULL COMMENT 'Keystone difficulty level (0-30+)',
   `hpMultiplier` float NOT NULL DEFAULT '1' COMMENT 'Health multiplier for creatures',
   `damageMultiplier` float NOT NULL DEFAULT '1' COMMENT 'Damage multiplier for creatures',
@@ -2219,8 +2175,21 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_scaling_multipliers` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_npcs
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_npcs` (
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_seasons
+CREATE TABLE IF NOT EXISTS `dc_mplus_seasons` (
+  `season` smallint unsigned NOT NULL COMMENT 'Season number',
+  `name` varchar(64) NOT NULL DEFAULT 'Season' COMMENT 'Display name',
+  `start_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Season start',
+  `end_date` datetime DEFAULT NULL COMMENT 'Season end (NULL = ongoing)',
+  `is_active` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 = current active season',
+  `description` text COMMENT 'Season description',
+  PRIMARY KEY (`season`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='M+ Season configuration';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_spec_npcs
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_npcs` (
   `entry` int unsigned NOT NULL,
   `name` varchar(100) NOT NULL,
   `subname` varchar(100) DEFAULT 'M+ Spectator',
@@ -2235,8 +2204,8 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_npcs` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_positions
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_positions` (
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_spec_positions
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_positions` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `map_id` int unsigned NOT NULL,
   `position_name` varchar(64) NOT NULL COMMENT 'e.g., "First Boss", "Entrance", "Final Boss"',
@@ -2252,13 +2221,44 @@ CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_positions` (
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 
--- Exportiere Struktur von Tabelle acore_world.dc_mythic_spectator_strings
-CREATE TABLE IF NOT EXISTS `dc_mythic_spectator_strings` (
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_spec_strings
+CREATE TABLE IF NOT EXISTS `dc_mplus_spec_strings` (
   `id` int unsigned NOT NULL,
   `locale` varchar(4) NOT NULL DEFAULT 'enUS',
   `text` varchar(255) NOT NULL,
   PRIMARY KEY (`id`,`locale`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Localized Strings';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_teleporter_npcs
+CREATE TABLE IF NOT EXISTS `dc_mplus_teleporter_npcs` (
+  `entry` int unsigned NOT NULL COMMENT 'NPC entry from creature_template',
+  `name` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'NPC display name',
+  `subname` varchar(60) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC subtitle',
+  `purpose` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NPC function description',
+  `gossip_menu_id` int unsigned DEFAULT NULL COMMENT 'Gossip menu ID',
+  PRIMARY KEY (`entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mythic+ hub NPC definitions';
+
+-- Daten-Export vom Benutzer nicht ausgewählt
+
+-- Exportiere Struktur von Tabelle acore_world.dc_mplus_weekly_affixes
+CREATE TABLE IF NOT EXISTS `dc_mplus_weekly_affixes` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `week_number` tinyint unsigned NOT NULL COMMENT 'Week of rotation (1-12)',
+  `affix1_id` int unsigned NOT NULL COMMENT 'Primary affix (always active 2+)',
+  `affix2_id` int unsigned DEFAULT NULL COMMENT 'Secondary affix (active 4+)',
+  `affix3_id` int unsigned DEFAULT NULL COMMENT 'Tertiary affix (active 7+)',
+  `affix4_id` int unsigned DEFAULT NULL COMMENT 'Seasonal affix (active 10+)',
+  `season_id` int unsigned NOT NULL DEFAULT '1',
+  `active` tinyint(1) NOT NULL DEFAULT '1',
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_week_season` (`week_number`,`season_id`),
+  KEY `idx_season` (`season_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly affix rotation schedule';
 
 -- Daten-Export vom Benutzer nicht ausgewählt
 

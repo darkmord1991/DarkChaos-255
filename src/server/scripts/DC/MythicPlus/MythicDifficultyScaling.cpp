@@ -139,7 +139,7 @@ void MythicDifficultyScaling::LoadScalingMultipliers()
     _scalingMultipliers.clear();
 
     if (QueryResult result = WorldDatabase.Query(
-            "SELECT keystoneLevel, hpMultiplier, damageMultiplier FROM dc_mythic_scaling_multipliers"))
+            "SELECT keystoneLevel, hpMultiplier, damageMultiplier FROM dc_mplus_scale_multipliers"))
     {
         do
         {
@@ -155,7 +155,7 @@ void MythicDifficultyScaling::LoadScalingMultipliers()
     }
     else
     {
-        LOG_WARN("server.loading", ">> No rows found in dc_mythic_scaling_multipliers; fallback math will be used");
+        LOG_WARN("server.loading", ">> No rows found in dc_mplus_scale_multipliers; fallback math will be used");
     }
 }
 

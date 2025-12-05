@@ -39,7 +39,7 @@ namespace MythicPlus
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE map_id = {}",
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE map_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
@@ -66,8 +66,8 @@ namespace MythicPlus
         // Get current affixes from MythicPlusRunManager or config
         // For now, query from database
         QueryResult result = WorldDatabase.Query(
-            "SELECT affix_id, affix_name, affix_description FROM dc_mythic_plus_weekly_affixes "
-            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mythic_plus_weekly_affixes)");
+            "SELECT affix_id, affix_name, affix_description FROM dc_mplus_weekly_affixes "
+            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mplus_weekly_affixes)");
         
         std::string affixList;
         if (result)
@@ -98,7 +98,7 @@ namespace MythicPlus
         
         QueryResult result = CharacterDatabase.Query(
             "SELECT dungeon_id, level, completion_time, deaths, season "
-            "FROM dc_mythic_plus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+            "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
             guid);
         
         std::string runList;
@@ -196,7 +196,7 @@ namespace MythicPlus
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE map_id = {}",
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE map_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
@@ -221,8 +221,8 @@ namespace MythicPlus
     void SendJsonAffixes(Player* player)
     {
         QueryResult result = WorldDatabase.Query(
-            "SELECT affix_id, affix_name, affix_description FROM dc_mythic_plus_weekly_affixes "
-            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mythic_plus_weekly_affixes)");
+            "SELECT affix_id, affix_name, affix_description FROM dc_mplus_weekly_affixes "
+            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mplus_weekly_affixes)");
         
         JsonValue affixArray;
         affixArray.SetArray();
@@ -257,7 +257,7 @@ namespace MythicPlus
         
         QueryResult result = CharacterDatabase.Query(
             "SELECT dungeon_id, level, completion_time, deaths, season "
-            "FROM dc_mythic_plus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+            "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
             guid);
         
         JsonValue runsArray;
@@ -278,7 +278,7 @@ namespace MythicPlus
                 // Get dungeon name
                 uint32 dungeonId = (*result)[0].Get<uint32>();
                 QueryResult nameResult = WorldDatabase.Query(
-                    "SELECT dungeon_name FROM dc_mythic_plus_dungeons WHERE dungeon_id = {}",
+                    "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
                     dungeonId);
                 if (nameResult)
                     run.Set("dungeonName", JsonValue((*nameResult)[0].Get<std::string>()));

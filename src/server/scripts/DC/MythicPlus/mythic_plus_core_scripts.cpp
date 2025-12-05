@@ -13,7 +13,7 @@
 #include "Creature.h"
 #include "Map.h"
 #include "DBCStores.h"
-#include "LFGMgr.h"
+#include "ObjectMgr.h"
 #include "Log.h"
 #include "Player.h"
 #include "Chat.h"
@@ -401,40 +401,22 @@ public:
         if (keystoneLevel == 0)
             return true;
 
-        // Get LFG dungeon data for entrance position
-        LFGDungeonEntry const* dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_EPIC);
-        if (!dungeonEntry)
+        // Get the dungeon entrance coordinates using GoBackTrigger (the exit trigger that leads to entrance)
+        AreaTriggerTeleport const* entranceTrigger = sObjectMgr->GetGoBackTrigger(map->GetId());
+        if (!entranceTrigger)
         {
-            // Try heroic difficulty as fallback
-            dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_HEROIC);
-        }
-        if (!dungeonEntry)
-        {
-            // Try normal difficulty as fallback
-            dungeonEntry = GetLFGDungeon(map->GetId(), DUNGEON_DIFFICULTY_NORMAL);
-        }
-
-        if (!dungeonEntry)
-        {
-            LOG_DEBUG("mythic.run", "No LFGDungeonEntry found for map {} - using default graveyard", map->GetId());
-            return true; // Allow normal graveyard behavior
-        }
-
-        // Get the dungeon data with entrance coordinates
-        lfg::LFGDungeonData const* dungeonData = sLFGMgr->GetLFGDungeon(dungeonEntry->ID);
-        if (!dungeonData || (dungeonData->x == 0.0f && dungeonData->y == 0.0f && dungeonData->z == 0.0f))
-        {
-            LOG_DEBUG("mythic.run", "No entrance position found for dungeon {} - using default graveyard", dungeonEntry->ID);
+            LOG_DEBUG("mythic.run", "No GoBackTrigger found for map {} - using default graveyard", map->GetId());
             return true; // Allow normal graveyard behavior
         }
 
         // Teleport player to dungeon entrance and resurrect them
         player->ResurrectPlayer(0.5f);  // Resurrect with 50% health
         player->SpawnCorpseBones();      // Remove corpse
-        player->TeleportTo(map->GetId(), dungeonData->x, dungeonData->y, dungeonData->z, dungeonData->o);
+        player->TeleportTo(entranceTrigger->target_mapId, entranceTrigger->target_X, 
+                          entranceTrigger->target_Y, entranceTrigger->target_Z, entranceTrigger->target_Orientation);
 
         LOG_DEBUG("mythic.run", "Player {} died in M+{} - resurrected at dungeon entrance ({}, {}, {})",
-                 player->GetName(), keystoneLevel, dungeonData->x, dungeonData->y, dungeonData->z);
+                 player->GetName(), keystoneLevel, entranceTrigger->target_X, entranceTrigger->target_Y, entranceTrigger->target_Z);
 
         ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r You have been resurrected at the dungeon entrance.");
 

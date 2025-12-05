@@ -73,12 +73,12 @@ if type(InterfaceOptions_AddCategory) == 'function' then
     
     -- Main panel
     local panel = CreateFrame('Frame', 'DCMythicPlus_InterfaceOptions', UIParent)
-    panel.name = 'DC Mythic+ HUD'
+    panel.name = 'DC Mythic+'
     panel:Hide()
     
     local title = panel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
     title:SetPoint('TOPLEFT', 16, -16)
-    title:SetText('DC Mythic+ HUD Settings')
+    title:SetText('DC Mythic+ Settings')
     
     local subtitle = panel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
     subtitle:SetPoint('TOPLEFT', title, 'BOTTOMLEFT', 0, -8)

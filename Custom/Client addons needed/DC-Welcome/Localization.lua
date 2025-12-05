@@ -26,9 +26,27 @@ L["WELCOME_SUBTITLE"] = "Your adventure begins here"
 L["TAB_WHATS_NEW"] = "What's New"
 L["TAB_GETTING_STARTED"] = "Getting Started"
 L["TAB_FEATURES"] = "Server Features"
-L["TAB_ADDONS"] = "DC Addons"
+L["TAB_ADDONS"] = "Addons"
+L["TAB_PROGRESS"] = "Progress"
 L["TAB_FAQ"] = "FAQ"
 L["TAB_LINKS"] = "Community"
+
+-- =============================================================================
+-- Progress Panel Content
+-- =============================================================================
+
+L["PROGRESS_TITLE"] = "Your Progress"
+L["PROGRESS_SUBTITLE"] = "Track your progression across all DarkChaos systems"
+L["PROGRESS_MYTHIC_RATING"] = "M+ Rating"
+L["PROGRESS_PRESTIGE"] = "Prestige"
+L["PROGRESS_SEASON_RANK"] = "Season Rank"
+L["PROGRESS_ACHIEVEMENTS"] = "Achievements"
+L["PROGRESS_WEEKLY_VAULT"] = "Weekly Vault"
+L["PROGRESS_SEASON_POINTS"] = "Season Points"
+L["PROGRESS_PRESTIGE_XP"] = "Prestige XP"
+L["PROGRESS_KEYS_WEEK"] = "M+ Keys This Week"
+L["PROGRESS_LOADING"] = "Loading..."
+L["PROGRESS_REFRESH"] = "Refresh"
 
 -- =============================================================================
 -- What's New Content
