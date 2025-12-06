@@ -190,6 +190,8 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_seasons.cpp
     AddonExtension/dc_addon_leaderboards.cpp
     AddonExtension/dc_addon_welcome.cpp
+    AddonExtension/dc_addon_duels.cpp
+    AddonExtension/dc_addon_prestige.cpp
 )
 
 # DC First Start System - First-start experience, login system

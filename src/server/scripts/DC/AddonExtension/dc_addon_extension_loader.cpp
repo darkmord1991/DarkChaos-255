@@ -20,10 +20,8 @@ void AddSC_dc_addon_leaderboards();
 void AddSC_dc_addon_welcome();
 void AddSC_dc_addon_groupfinder();
 void AddSC_npc_group_finder();
-
-// Future module handlers:
-// void AddSC_dc_addon_duels();
-// void AddSC_dc_addon_prestige();
+void AddSC_dc_addon_duels();
+void AddSC_dc_addon_prestige();
 
 void AddDCAddonExtensionScripts()
 {
@@ -45,7 +43,9 @@ void AddDCAddonExtensionScripts()
     // NPC scripts
     AddSC_npc_group_finder();
     
-    // Future module handlers:
-    // AddSC_dc_addon_duels();
-    // AddSC_dc_addon_prestige();
+    // Duel addon handler
+    AddSC_dc_addon_duels();
+    
+    // Prestige addon handler
+    AddSC_dc_addon_prestige();
 }
