@@ -29,6 +29,14 @@ set(SCRIPTS_DC_Jadeforest
     Jadeforest/jadeforest_guards.cpp
 )
 
+# Giant Isles Zone scripts (Ported from MoP Isle of Giants)
+set(SCRIPTS_DC_GiantIsles
+    GiantIsles/dc_giant_isles_zone.cpp
+    GiantIsles/boss_oondasta.cpp
+    GiantIsles/boss_thok.cpp
+    GiantIsles/boss_nalak.cpp
+)
+
 # AoE Loot System (Base + Extensions)
 set(SCRIPTS_DC_AoELoot
     ac_aoeloot.cpp
@@ -236,6 +244,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_DungeonEnhancement}
     ${SCRIPTS_DC_Jadeforest}
+    ${SCRIPTS_DC_GiantIsles}
     ${SCRIPTS_DC_AddonExtension}
     ${SCRIPTS_DC_FirstStart}
     ${SCRIPTS_DC_CrossSystem}

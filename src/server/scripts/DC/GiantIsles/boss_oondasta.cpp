@@ -1,0 +1,342 @@
+/*
+ * Giant Isles - Boss: Oondasta
+ * ============================================================================
+ * King of Dinosaurs - The apex predator of Giant Isles
+ * Based on MoP world boss mechanics adapted for WotLK 3.3.5a
+ * 
+ * ABILITIES:
+ *   - Crushing Charge: Charges a random target, dealing massive damage
+ *   - Frill Blast: Frontal cone attack dealing shadow damage
+ *   - Growing Fury: Enrage stacking buff the longer the fight goes
+ *   - Piercing Roar: Fear effect on all nearby players
+ *   - Alpha Predator: Summons Young Oondasta adds periodically
+ * ============================================================================
+ */
+
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "SpellScript.h"
+#include "SpellAuraEffects.h"
+#include "Player.h"
+#include "World.h"
+
+enum OondastaSpells
+{
+    // Main abilities
+    SPELL_CRUSHING_CHARGE       = 70988,  // Charge effect (from ICC bosses)
+    SPELL_CRUSHING_CHARGE_DMG   = 70292,  // Damage on charge impact
+    SPELL_FRILL_BLAST           = 69164,  // Shadow damage cone (like shadow breath)
+    SPELL_PIERCING_ROAR         = 36629,  // AoE fear
+    SPELL_GROWING_FURY          = 37540,  // Stacking damage buff (frenzy)
+    SPELL_ALPHA_PREDATOR        = 42705,  // Visual for summoning
+    
+    // Visual effects
+    SPELL_BERSERK               = 26662,  // Hard enrage
+    SPELL_CHAOS_AURA            = 28126,  // Chaos visual effect
+    
+    // Add spells
+    SPELL_YOUNG_BITE            = 49892,  // Young Oondasta basic attack
+};
+
+enum OondastaEvents
+{
+    EVENT_CRUSHING_CHARGE       = 1,
+    EVENT_FRILL_BLAST           = 2,
+    EVENT_PIERCING_ROAR         = 3,
+    EVENT_GROWING_FURY          = 4,
+    EVENT_SUMMON_ADDS           = 5,
+    EVENT_BERSERK               = 6,
+};
+
+enum OondastaTexts
+{
+    SAY_AGGRO                   = 0,
+    SAY_CHARGE                  = 1,
+    SAY_SUMMON                  = 2,
+    SAY_FRILL_BLAST             = 3,
+    SAY_BERSERK                 = 4,
+    SAY_DEATH                   = 5,
+    SAY_KILL                    = 6,
+};
+
+enum OondastaData
+{
+    NPC_OONDASTA                = 400100,
+    NPC_YOUNG_OONDASTA          = 400400,
+    
+    // Timers (in milliseconds)
+    TIMER_CRUSHING_CHARGE       = 25000,
+    TIMER_FRILL_BLAST           = 15000,
+    TIMER_PIERCING_ROAR         = 45000,
+    TIMER_GROWING_FURY          = 20000,
+    TIMER_SUMMON_ADDS           = 60000,
+    TIMER_BERSERK               = 600000, // 10 minutes enrage
+};
+
+// ============================================================================
+// BOSS AI: OONDASTA
+// ============================================================================
+
+class boss_oondasta : public CreatureScript
+{
+public:
+    boss_oondasta() : CreatureScript("boss_oondasta") { }
+
+    struct boss_oondastaAI : public ScriptedAI
+    {
+        boss_oondastaAI(Creature* creature) : ScriptedAI(creature), summons(me)
+        {
+            furyStacks = 0;
+            isEnraged = false;
+        }
+
+        EventMap events;
+        SummonList summons;
+        uint8 furyStacks;
+        bool isEnraged;
+
+        void Reset() override
+        {
+            events.Reset();
+            summons.DespawnAll();
+            furyStacks = 0;
+            isEnraged = false;
+            
+            me->RemoveAllAuras();
+            me->SetReactState(REACT_AGGRESSIVE);
+        }
+
+        void JustEngagedWith(Unit* /*who*/) override
+        {
+            // Zone-wide announcement
+            sWorld->SendServerMessage(SERVER_MSG_STRING,
+                "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r has been engaged! "
+                "The battle begins!");
+
+            Talk(SAY_AGGRO);
+            
+            // Schedule abilities
+            events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 10000);
+            events.ScheduleEvent(EVENT_FRILL_BLAST, 8000);
+            events.ScheduleEvent(EVENT_PIERCING_ROAR, 30000);
+            events.ScheduleEvent(EVENT_GROWING_FURY, TIMER_GROWING_FURY);
+            events.ScheduleEvent(EVENT_SUMMON_ADDS, TIMER_SUMMON_ADDS);
+            events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+        }
+
+        void JustDied(Unit* /*killer*/) override
+        {
+            Talk(SAY_DEATH);
+            summons.DespawnAll();
+            
+            // Server-wide announcement handled by zone script
+        }
+
+        void KilledUnit(Unit* victim) override
+        {
+            if (victim->IsPlayer())
+            {
+                if (urand(0, 100) < 30)
+                    Talk(SAY_KILL);
+            }
+        }
+
+        void JustSummoned(Creature* summon) override
+        {
+            summons.Summon(summon);
+            
+            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                summon->AI()->AttackStart(target);
+        }
+
+        void SummonedCreatureDespawn(Creature* summon) override
+        {
+            summons.Despawn(summon);
+        }
+
+        Unit* GetChargeTarget()
+        {
+            // Get a random ranged target for charge
+            std::vector<Unit*> targets;
+            ThreatContainer::StorageType const& threatList = me->GetThreatMgr().GetThreatList();
+            
+            for (auto itr = threatList.begin(); itr != threatList.end(); ++itr)
+            {
+                if (Unit* target = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
+                {
+                    if (target->IsPlayer() && me->GetDistance(target) > 15.0f)
+                        targets.push_back(target);
+                }
+            }
+            
+            if (targets.empty())
+                return SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true);
+            
+            return targets[urand(0, targets.size() - 1)];
+        }
+
+        void DoCrushingCharge()
+        {
+            if (Unit* target = GetChargeTarget())
+            {
+                Talk(SAY_CHARGE);
+                
+                // Face target and charge
+                me->SetFacingToObject(target);
+                DoCast(target, SPELL_CRUSHING_CHARGE);
+                
+                // Damage in area on landing
+                me->GetScheduler().Schedule(1500ms, [this, target](TaskContext /*context*/)
+                {
+                    if (target && target->IsAlive())
+                    {
+                        me->NearTeleportTo(target->GetPositionX(), target->GetPositionY(), 
+                            target->GetPositionZ(), me->GetOrientation());
+                        DoCastAOE(SPELL_CRUSHING_CHARGE_DMG);
+                    }
+                });
+            }
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                    case EVENT_CRUSHING_CHARGE:
+                        DoCrushingCharge();
+                        events.ScheduleEvent(EVENT_CRUSHING_CHARGE, TIMER_CRUSHING_CHARGE);
+                        break;
+                        
+                    case EVENT_FRILL_BLAST:
+                        Talk(SAY_FRILL_BLAST);
+                        DoCastVictim(SPELL_FRILL_BLAST);
+                        events.ScheduleEvent(EVENT_FRILL_BLAST, TIMER_FRILL_BLAST);
+                        break;
+                        
+                    case EVENT_PIERCING_ROAR:
+                        DoCastAOE(SPELL_PIERCING_ROAR);
+                        events.ScheduleEvent(EVENT_PIERCING_ROAR, TIMER_PIERCING_ROAR);
+                        break;
+                        
+                    case EVENT_GROWING_FURY:
+                        DoCastSelf(SPELL_GROWING_FURY);
+                        furyStacks++;
+                        
+                        // Announce at dangerous stacks
+                        if (furyStacks == 5)
+                        {
+                            me->Yell("Oondasta's fury grows!", LANG_UNIVERSAL);
+                        }
+                        else if (furyStacks == 10)
+                        {
+                            me->Yell("Oondasta enters a primal rage!", LANG_UNIVERSAL);
+                        }
+                        
+                        events.ScheduleEvent(EVENT_GROWING_FURY, TIMER_GROWING_FURY);
+                        break;
+                        
+                    case EVENT_SUMMON_ADDS:
+                        Talk(SAY_SUMMON);
+                        
+                        // Summon 2-3 Young Oondasta adds
+                        for (uint8 i = 0; i < urand(2, 3); ++i)
+                        {
+                            float angle = frand(0, 2 * M_PI);
+                            float dist = frand(10.0f, 20.0f);
+                            float x = me->GetPositionX() + dist * cos(angle);
+                            float y = me->GetPositionY() + dist * sin(angle);
+                            
+                            me->SummonCreature(NPC_YOUNG_OONDASTA, x, y, me->GetPositionZ(), 
+                                me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 120000);
+                        }
+                        
+                        events.ScheduleEvent(EVENT_SUMMON_ADDS, TIMER_SUMMON_ADDS);
+                        break;
+                        
+                    case EVENT_BERSERK:
+                        if (!isEnraged)
+                        {
+                            Talk(SAY_BERSERK);
+                            DoCastSelf(SPELL_BERSERK);
+                            isEnraged = true;
+                            
+                            sWorld->SendServerMessage(SERVER_MSG_STRING,
+                                "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta|r has gone BERSERK! "
+                                "Finish the fight quickly!");
+                        }
+                        break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new boss_oondastaAI(creature);
+    }
+};
+
+// ============================================================================
+// ADD AI: YOUNG OONDASTA
+// ============================================================================
+
+class npc_young_oondasta : public CreatureScript
+{
+public:
+    npc_young_oondasta() : CreatureScript("npc_young_oondasta") { }
+
+    struct npc_young_oondastaAI : public ScriptedAI
+    {
+        npc_young_oondastaAI(Creature* creature) : ScriptedAI(creature) { }
+
+        uint32 biteTimer;
+
+        void Reset() override
+        {
+            biteTimer = 3000;
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            if (biteTimer <= diff)
+            {
+                DoCastVictim(SPELL_YOUNG_BITE);
+                biteTimer = 5000;
+            }
+            else
+                biteTimer -= diff;
+
+            DoMeleeAttackIfReady();
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_young_oondastaAI(creature);
+    }
+};
+
+// ============================================================================
+// REGISTER SCRIPTS
+// ============================================================================
+
+void AddSC_boss_oondasta()
+{
+    new boss_oondasta();
+    new npc_young_oondasta();
+}

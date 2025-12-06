@@ -34,6 +34,12 @@ void AddSC_flightmasters();                   // AC\ac_flightmasters.cpp
 void AddSC_jadeforest_flightmaster();         // Jadeforest\jadeforest_flightmaster.cpp
 void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cpp
 
+// --- Giant Isles Zone (Ported from MoP Isle of Giants) ---
+void AddSC_giant_isles_zone();                // GiantIsles\dc_giant_isles_zone.cpp
+void AddSC_boss_oondasta();                   // GiantIsles\boss_oondasta.cpp
+void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
+void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
+
 // --- Map Extension (DISABLED - requires AIO which is not compiled) ---
 // void AddSC_cs_gps_test();                     // MapExtension\cs_gps_test.cpp
 // void AddSC_PlayerScript_MapExtension();       // MapExtension\PlayerScript_MapExtension.cpp
@@ -149,6 +155,25 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Jadeforest: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Jadeforest");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // GIANT ISLES ZONE (Ported from MoP Isle of Giants)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Giant Isles Zone (Isle of Giants Port)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_giant_isles_zone();
+        AddSC_boss_oondasta();
+        AddSC_boss_thok();
+        AddSC_boss_nalak();
+        LOG_INFO("scripts", ">>   ✓ Giant Isles zone scripts loaded");
+        LOG_INFO("scripts", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Giant Isles: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Giant Isles");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
