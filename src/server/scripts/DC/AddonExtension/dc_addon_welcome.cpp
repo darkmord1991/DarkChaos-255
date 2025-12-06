@@ -32,6 +32,7 @@
 #include "DCAddonNamespace.h"
 #include "Config.h"
 #include "World.h"
+#include "AchievementMgr.h"
 #include "../CrossSystem/DCSeasonHelper.h"
 #include <string>
 
@@ -352,7 +353,7 @@ namespace DCWelcome
         uint32 mythicRating = 0;
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT rating FROM dc_mplus_player_ratings WHERE guid = {}",
+                "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
                 player->GetGUID().GetCounter()
             );
             if (result)
@@ -360,35 +361,36 @@ namespace DCWelcome
         }
         response.Set("mythicRating", static_cast<int32>(mythicRating));
         
-        // Get Prestige Level from dc_prestige_player table (if exists)
+        // Get Prestige Level from dc_character_prestige table
         uint32 prestigeLevel = 0;
-        uint32 prestigeXP = 0;
+        uint32 prestigeXP = 0;  // Prestige XP not tracked in current schema, reserved for future
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT prestige_level, prestige_xp FROM dc_prestige_player WHERE guid = {}",
+                "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
                 player->GetGUID().GetCounter()
             );
             if (result)
             {
                 prestigeLevel = result->Fetch()[0].Get<uint32>();
-                prestigeXP = result->Fetch()[1].Get<uint32>();
             }
         }
         response.Set("prestigeLevel", static_cast<int32>(prestigeLevel));
         response.Set("prestigeXP", static_cast<int32>(prestigeXP));
         
-        // Get Season Rank/Points from dc_mplus_season_player table
+        // Get Season Rank/Points from dc_mplus_scores table (aggregate best scores)
         uint32 seasonPoints = 0;
         uint32 seasonRank = 0;
         {
             // Use unified season helper
             uint32 activeSeason = DarkChaos::GetActiveSeasonId();
             
+            // Sum best scores across all dungeons for the season
             QueryResult result = CharacterDatabase.Query(
-                "SELECT points FROM dc_mplus_season_player WHERE guid = {} AND season = {}",
+                "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
+                "WHERE character_guid = {} AND season_id = {}",
                 player->GetGUID().GetCounter(), activeSeason
             );
-            if (result)
+            if (result && !result->Fetch()[0].IsNull())
                 seasonPoints = result->Fetch()[0].Get<uint32>();
         }
         response.Set("seasonPoints", static_cast<int32>(seasonPoints));
@@ -398,7 +400,7 @@ namespace DCWelcome
         uint32 weeklyVaultProgress = 0;
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_mplus_runs WHERE guid = {} AND completed = 1 "
+                "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
                 "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
                 player->GetGUID().GetCounter()
             );
@@ -407,17 +409,21 @@ namespace DCWelcome
         }
         response.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
         
-        // Get Achievement Points
+        // Get Achievement Points - calculate from completed achievements
         uint32 achievementPoints = 0;
         {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT SUM(COALESCE(a.points, 10)) FROM character_achievement ca "
-                "LEFT JOIN achievement a ON ca.achievement = a.id "
-                "WHERE ca.guid = {}",
-                player->GetGUID().GetCounter()
-            );
-            if (result && !result->Fetch()[0].IsNull())
-                achievementPoints = result->Fetch()[0].Get<uint32>();
+            // Get completed achievements and sum up their points from DBC
+            if (AchievementMgr* achieveMgr = player->GetAchievementMgr())
+            {
+                CompletedAchievementMap const& completedAchievements = achieveMgr->GetCompletedAchievements();
+                for (auto const& [achievementId, completedData] : completedAchievements)
+                {
+                    if (AchievementEntry const* achievement = sAchievementStore.LookupEntry(achievementId))
+                    {
+                        achievementPoints += achievement->points;
+                    }
+                }
+            }
         }
         response.Set("achievementPoints", static_cast<int32>(achievementPoints));
         
@@ -425,7 +431,7 @@ namespace DCWelcome
         uint32 keysThisWeek = 0;
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_mplus_runs WHERE guid = {} AND completed = 1 "
+                "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
                 "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
                 player->GetGUID().GetCounter()
             );

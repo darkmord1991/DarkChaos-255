@@ -178,8 +178,8 @@ namespace Seasons
         uint32 bossesKilled = 0;
         
         if (QueryResult result = CharacterDatabase.Query(
-            "SELECT weekly_tokens, weekly_essence, quests_done, bosses_killed "
-            "FROM dc_player_seasonal_stats WHERE guid = {} AND season_id = {}",
+            "SELECT weekly_tokens_earned, weekly_essence_earned, quests_completed, bosses_killed "
+            "FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
             player->GetGUID().GetCounter(), seasonId))
         {
             Field* fields = result->Fetch();

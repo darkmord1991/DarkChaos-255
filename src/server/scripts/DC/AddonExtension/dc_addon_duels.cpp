@@ -57,7 +57,8 @@ namespace DCDuelAddon
     namespace Config
     {
         constexpr const char* ENABLED = "DCDuelAddon.Enable";
-        constexpr const char* LEADERBOARD_LIMIT = "DCDuelAddon.LeaderboardLimit";
+        // Note: LeaderboardLimit is currently unused but reserved for future config
+        // constexpr const char* LEADERBOARD_LIMIT = "DCDuelAddon.LeaderboardLimit";
     }
     
     // =======================================================================
@@ -312,7 +313,7 @@ namespace DCDuelAddon
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("targetGuid"))
         {
-            uint64 rawGuid = static_cast<uint64>(json.GetInt("targetGuid"));
+            uint64 rawGuid = static_cast<uint64>(json["targetGuid"].AsInt32());
             if (rawGuid > 0)
             {
                 targetGuid = ObjectGuid::Create<HighGuid::Player>(static_cast<uint32>(rawGuid));
@@ -335,11 +336,11 @@ namespace DCDuelAddon
         if (!json.IsNull())
         {
             if (json.HasKey("sortBy"))
-                sortBy = json.GetString("sortBy");
+                sortBy = json["sortBy"].AsString();
             if (json.HasKey("page"))
-                page = static_cast<uint32>(json.GetInt("page"));
+                page = json["page"].AsUInt32();
             if (json.HasKey("limit"))
-                limit = static_cast<uint32>(json.GetInt("limit"));
+                limit = json["limit"].AsUInt32();
         }
         
         SendLeaderboard(player, sortBy, page, limit);
@@ -355,7 +356,7 @@ namespace DCDuelAddon
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("targetGuid"))
         {
-            uint64 rawGuid = static_cast<uint64>(json.GetInt("targetGuid"));
+            uint64 rawGuid = static_cast<uint64>(json["targetGuid"].AsInt32());
             if (rawGuid > 0)
             {
                 targetGuid = ObjectGuid::Create<HighGuid::Player>(static_cast<uint32>(rawGuid));
