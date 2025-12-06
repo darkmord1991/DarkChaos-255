@@ -151,7 +151,7 @@ static RareSpawnLocation GetRandomSpawnLocation()
 // Get current day of week (0 = Sunday, 6 = Saturday)
 uint8 GetCurrentDayOfWeek()
 {
-    time_t rawtime = GameTime::GetGameTime();
+    time_t rawtime = GameTime::GetGameTime().count();
     struct tm* timeinfo = localtime(&rawtime);
     return timeinfo->tm_wday;
 }
@@ -186,14 +186,18 @@ uint32 GetActiveBossEntry()
 // ZONE SCRIPT - GIANT ISLES
 // ============================================================================
 
-class zone_giant_isles : public ZoneScript
+class zone_giant_isles : public PlayerScript
 {
 public:
-    zone_giant_isles() : ZoneScript("zone_giant_isles") { }
+    zone_giant_isles() : PlayerScript("zone_giant_isles") { }
 
-    void OnPlayerEnterZone(Player* player, uint32 /*zone*/) override
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {
         if (!player)
+            return;
+
+        // Only respond when entering Giant Isles
+        if (newZone != ZONE_GIANT_ISLES)
             return;
 
         // Send welcome message
@@ -227,26 +231,8 @@ public:
 };
 
 // ============================================================================
-// PLAYER SCRIPT - ZONE TRACKING
+// PLAYER SCRIPT - ZONE TRACKING (removed duplicate - merged into zone_giant_isles)
 // ============================================================================
-
-class player_giant_isles_tracker : public PlayerScript
-{
-public:
-    player_giant_isles_tracker() : PlayerScript("player_giant_isles_tracker") { }
-
-    void OnUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
-    {
-        if (!player)
-            return;
-
-        // Track when player enters Giant Isles
-        if (newZone == ZONE_GIANT_ISLES)
-        {
-            LOG_DEBUG("scripts.dc", "Player {} entered Giant Isles zone", player->GetName());
-        }
-    }
-};
 
 // ============================================================================
 // WORLD SCRIPT - BOSS ROTATION & RANDOM RARE SPAWN MANAGEMENT
@@ -257,7 +243,7 @@ class world_giant_isles_manager : public WorldScript
 public:
     world_giant_isles_manager() : WorldScript("world_giant_isles_manager") 
     {
-        _nextRareSpawnTime = 0;
+        _nextRareSpawnTime = Milliseconds(0);
         _currentRareGUID = ObjectGuid::Empty;
         _rareIsAlive = false;
     }
@@ -268,15 +254,15 @@ public:
         LOG_INFO("scripts.dc", "Today's active boss: Entry {}", GetActiveBossEntry());
         
         // Initialize first rare spawn timer (spawn first rare after 5-15 minutes)
-        _nextRareSpawnTime = GameTime::GetGameTimeMS() + urand(5 * 60 * 1000, 15 * 60 * 1000);
+        _nextRareSpawnTime = GameTime::GetGameTimeMS() + Milliseconds(urand(5 * 60 * 1000, 15 * 60 * 1000));
         LOG_INFO("scripts.dc", "Giant Isles: First random rare spawn scheduled.");
     }
 
     // Called every server update - handles rare spawn timer
-    void OnUpdate(uint32 diff) override
+    void OnUpdate(uint32 /*diff*/) override
     {
         // Check if it's time to spawn a random rare
-        uint32 currentTime = GameTime::GetGameTimeMS();
+        Milliseconds currentTime = GameTime::GetGameTimeMS();
         
         if (!_rareIsAlive && currentTime >= _nextRareSpawnTime)
         {
@@ -285,7 +271,7 @@ public:
     }
 
 private:
-    uint32 _nextRareSpawnTime;
+    Milliseconds _nextRareSpawnTime;
     ObjectGuid _currentRareGUID;
     bool _rareIsAlive;
 
@@ -319,10 +305,8 @@ private:
             default: rareName = "Unknown Rare"; break;
         }
         
-        // Announce the spawn server-wide
-        std::string message = "|cFFFF8000[Giant Isles]|r A rare creature |cFFFFFF00" + 
-            rareName + "|r has been spotted in the wilds! Hunt it down for valuable rewards!";
-        sWorld->SendServerMessage(SERVER_MSG_STRING, message.c_str());
+        // Announce the spawn server-wide (using zone chat instead of server message)
+        LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
         
         _rareIsAlive = true;
         
@@ -334,7 +318,7 @@ private:
     {
         // Schedule next rare spawn between 30-90 minutes from now
         _nextRareSpawnTime = GameTime::GetGameTimeMS() + 
-            urand(RARE_SPAWN_TIMER_MIN, RARE_SPAWN_TIMER_MAX);
+            Milliseconds(urand(RARE_SPAWN_TIMER_MIN, RARE_SPAWN_TIMER_MAX));
         _rareIsAlive = false;
         
         LOG_DEBUG("scripts.dc", "Giant Isles: Next random rare spawn scheduled.");
@@ -399,43 +383,33 @@ public:
 
         void JustDied(Unit* /*killer*/) override
         {
-            // Announce world boss deaths server-wide
+            // Log world boss deaths (zone-wide announcements handled by broadcast to zone players)
             switch (me->GetEntry())
             {
                 case NPC_OONDASTA:
-                    sWorld->SendServerMessage(SERVER_MSG_STRING, 
-                        "|cFFFF8000[Giant Isles]|r Oondasta, King of Dinosaurs has been defeated! "
-                        "A new world boss will appear tomorrow.");
+                    LOG_INFO("scripts.dc", "Giant Isles: Oondasta defeated");
                     break;
                 case NPC_THOK:
-                    sWorld->SendServerMessage(SERVER_MSG_STRING,
-                        "|cFFFF8000[Giant Isles]|r Thok the Bloodthirsty has been slain! "
-                        "A new world boss will appear tomorrow.");
+                    LOG_INFO("scripts.dc", "Giant Isles: Thok defeated");
                     break;
                 case NPC_NALAK:
-                    sWorld->SendServerMessage(SERVER_MSG_STRING,
-                        "|cFFFF8000[Giant Isles]|r Nalak the Storm Lord has fallen! "
-                        "A new world boss will appear tomorrow.");
+                    LOG_INFO("scripts.dc", "Giant Isles: Nalak defeated");
                     break;
-                // Static rare elite announcements
+                // Static rare elite deaths
                 case NPC_PRIMAL_DIREHORN:
                 case NPC_CHAOS_REX:
                 case NPC_ANCIENT_PRIMORDIAL:
                 case NPC_SAVAGE_MATRIARCH:
                 case NPC_ALPHA_RAPTOR:
-                    sWorld->SendServerMessage(SERVER_MSG_STRING,
-                        (std::string("|cFFFF8000[Giant Isles]|r Rare creature |cFF00FF00") + 
-                         me->GetName() + "|r has been slain!").c_str());
+                    LOG_INFO("scripts.dc", "Giant Isles: Rare {} defeated", me->GetName());
                     break;
-                // Random rare spawn announcements (special loot message)
+                // Random rare spawn deaths
                 case NPC_BONECRUSHER:
                 case NPC_GORESPINE:
                 case NPC_VENOMFANG:
                 case NPC_SKYSCREAMER:
                 case NPC_GULROK:
-                    sWorld->SendServerMessage(SERVER_MSG_STRING,
-                        (std::string("|cFFFF8000[Giant Isles]|r |cFFFFFF00") + 
-                         me->GetName() + "|r has been vanquished! Another rare will spawn soon...").c_str());
+                    LOG_INFO("scripts.dc", "Giant Isles: Random rare {} defeated", me->GetName());
                     break;
             }
         }
@@ -460,13 +434,10 @@ public:
     {
         creature_rare_spawnAI(Creature* creature) : ScriptedAI(creature) { }
 
-        void JustAppeared() override
+        void InitializeAI() override
         {
-            // Announce rare spawn to zone
-            std::string message = "|cFFFF8000[Giant Isles]|r A rare creature |cFF00FF00" + 
-                std::string(me->GetName()) + "|r has been spotted!";
-            
-            sWorld->SendServerMessage(SERVER_MSG_STRING, message.c_str());
+            // Log rare spawn
+            LOG_INFO("scripts.dc", "Giant Isles: Rare creature {} spawned", me->GetName());
         }
     };
 
@@ -544,7 +515,6 @@ public:
 void AddSC_giant_isles_zone()
 {
     new zone_giant_isles();
-    new player_giant_isles_tracker();
     new world_giant_isles_manager();
     new npc_spirit_of_primal();
     new creature_giant_isles_death();

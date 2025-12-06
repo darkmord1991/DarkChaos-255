@@ -1,0 +1,138 @@
+--[[
+    DC-InfoBar Gold Plugin
+    Shows current gold and session changes
+    
+    Data Source: WoW API (GetMoney)
+]]
+
+local addonName = "DC-InfoBar"
+local DCInfoBar = DCInfoBar or {}
+
+local GoldPlugin = {
+    id = "DCInfoBar_Gold",
+    name = "Gold",
+    category = "character",
+    type = "combo",
+    side = "right",
+    priority = 900,
+    icon = "Interface\\Icons\\INV_Misc_Coin_01",
+    updateInterval = 1.0,
+    
+    leftClickHint = "Toggle silver/copper display",
+    rightClickHint = "Show session summary",
+    
+    _sessionStart = 0,
+    _currentGold = 0,
+    _lastGold = 0,
+    _recentChange = 0,
+    _recentChangeTimer = 0,
+}
+
+function GoldPlugin:OnActivate()
+    -- Record starting gold for session tracking
+    self._sessionStart = GetMoney()
+    self._currentGold = self._sessionStart
+    self._lastGold = self._sessionStart
+end
+
+function GoldPlugin:OnUpdate(elapsed)
+    self._currentGold = GetMoney()
+    
+    -- Track recent changes for color feedback
+    if self._currentGold ~= self._lastGold then
+        self._recentChange = self._currentGold - self._lastGold
+        self._recentChangeTimer = 3  -- Show change for 3 seconds
+        self._lastGold = self._currentGold
+    end
+    
+    if self._recentChangeTimer > 0 then
+        self._recentChangeTimer = self._recentChangeTimer - elapsed
+    end
+    
+    -- Format display
+    local showSessionChange = DCInfoBar:GetPluginSetting(self.id, "showSessionChange")
+    local goldText = DCInfoBar:FormatGold(self._currentGold)
+    
+    -- Color based on recent change
+    local color = "white"
+    if self._recentChangeTimer > 0 then
+        if self._recentChange > 0 then
+            color = "green"
+        elseif self._recentChange < 0 then
+            color = "red"
+        end
+    end
+    
+    return "", goldText, color
+end
+
+function GoldPlugin:OnTooltip(tooltip)
+    tooltip:AddLine("Gold", 1, 0.82, 0)
+    DCInfoBar:AddTooltipSeparator(tooltip)
+    
+    -- Current gold breakdown
+    local gold = math.floor(self._currentGold / 10000)
+    local silver = math.floor((self._currentGold % 10000) / 100)
+    local copper = self._currentGold % 100
+    
+    tooltip:AddDoubleLine("Current:", 
+        string.format("%dg %ds %dc", gold, silver, copper),
+        0.7, 0.7, 0.7, 1, 0.82, 0)
+    
+    -- Session stats
+    tooltip:AddLine(" ")
+    tooltip:AddLine("|cff32c4ffSession|r")
+    
+    local sessionChange = self._currentGold - self._sessionStart
+    local sessionGold = math.floor(math.abs(sessionChange) / 10000)
+    
+    tooltip:AddDoubleLine("Started With:", 
+        DCInfoBar:FormatGold(self._sessionStart),
+        0.7, 0.7, 0.7, 1, 1, 1)
+    
+    if sessionChange >= 0 then
+        tooltip:AddDoubleLine("Gained:", 
+            "+" .. DCInfoBar:FormatGold(sessionChange),
+            0.7, 0.7, 0.7, 0.3, 1, 0.5)
+    else
+        tooltip:AddDoubleLine("Lost:", 
+            "-" .. DCInfoBar:FormatGold(math.abs(sessionChange)),
+            0.7, 0.7, 0.7, 1, 0.3, 0.3)
+    end
+    
+    -- Character total (this char only, no alts tracking in 3.3.5a without SavedVars)
+    tooltip:AddLine(" ")
+    tooltip:AddDoubleLine("This Character:", 
+        DCInfoBar:FormatGold(self._currentGold),
+        0.7, 0.7, 0.7, 1, 1, 1)
+end
+
+function GoldPlugin:OnClick(button)
+    if button == "LeftButton" then
+        -- Toggle silver/copper display
+        local current = DCInfoBar:GetPluginSetting(self.id, "showSilverCopper")
+        DCInfoBar:SetPluginSetting(self.id, "showSilverCopper", not current)
+        DCInfoBar:Print("Silver/copper display: " .. (not current and "ON" or "OFF"))
+    elseif button == "RightButton" then
+        -- Show session summary
+        local sessionChange = self._currentGold - self._sessionStart
+        local prefix = sessionChange >= 0 and "+" or ""
+        DCInfoBar:Print("Session gold: " .. prefix .. DCInfoBar:FormatGold(sessionChange))
+    end
+end
+
+function GoldPlugin:OnCreateOptions(parent, yOffset)
+    local silverCB = DCInfoBar:CreateCheckbox(parent, "Show silver and copper", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "showSilverCopper", checked)
+    end, DCInfoBar:GetPluginSetting(self.id, "showSilverCopper"))
+    yOffset = yOffset - 30
+    
+    local sessionCB = DCInfoBar:CreateCheckbox(parent, "Color based on recent change", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "showSessionChange", checked)
+    end, DCInfoBar:GetPluginSetting(self.id, "showSessionChange") ~= false)
+    
+    return yOffset - 30
+end
+
+-- Register plugin
+DCInfoBar:RegisterPlugin(GoldPlugin)

@@ -2045,6 +2045,26 @@ DarkChaos.Seasonal.TokenItemID = 300311
 #
 DarkChaos.Seasonal.EssenceItemID = 300312
 
+#
+#    DarkChaos.Seasonal.WeeklyTokenCap
+#        Description: Maximum number of Seasonal Tokens a player can earn per week
+#                     Prevents excessive farming and maintains economy balance.
+#                     Resets at weekly reset (configured in worldserver.conf).
+#        Default:     1000
+#        Range:       100 - 10000 (0 = unlimited)
+#
+DarkChaos.Seasonal.WeeklyTokenCap = 1000
+
+#
+#    DarkChaos.Seasonal.WeeklyEssenceCap
+#        Description: Maximum number of Seasonal Essence a player can earn per week
+#                     Essence is rarer than tokens - cap helps maintain value.
+#                     Resets at weekly reset (configured in worldserver.conf).
+#        Default:     1000
+#        Range:       100 - 5000 (0 = unlimited)
+#
+DarkChaos.Seasonal.WeeklyEssenceCap = 1000
+
 # -------------------------------------------------------------------------
 # Seasonal Reward System
 # -------------------------------------------------------------------------

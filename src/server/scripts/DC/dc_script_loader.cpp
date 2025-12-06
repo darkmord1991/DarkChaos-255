@@ -36,6 +36,7 @@ void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cp
 
 // --- Giant Isles Zone (Ported from MoP Isle of Giants) ---
 void AddSC_giant_isles_zone();                // GiantIsles\dc_giant_isles_zone.cpp
+void AddSC_giant_isles_cannon_quest();        // GiantIsles\dc_giant_isles_cannon_quest.cpp
 void AddSC_boss_oondasta();                   // GiantIsles\boss_oondasta.cpp
 void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
@@ -165,10 +166,12 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_giant_isles_zone();
+        AddSC_giant_isles_cannon_quest();
         AddSC_boss_oondasta();
         AddSC_boss_thok();
         AddSC_boss_nalak();
         LOG_INFO("scripts", ">>   ✓ Giant Isles zone scripts loaded");
+        LOG_INFO("scripts", ">>   ✓ Cannon quest loaded");
         LOG_INFO("scripts", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Giant Isles: {}", e.what());

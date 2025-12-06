@@ -19,6 +19,7 @@
 #include "SpellAuraEffects.h"
 #include "Player.h"
 #include "World.h"
+#include "Chat.h"
 
 enum OondastaSpells
 {
@@ -108,20 +109,15 @@ public:
 
         void JustEngagedWith(Unit* /*who*/) override
         {
-            // Zone-wide announcement
-            sWorld->SendServerMessage(SERVER_MSG_STRING,
-                "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r has been engaged! "
-                "The battle begins!");
-
             Talk(SAY_AGGRO);
             
             // Schedule abilities
-            events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 10000);
-            events.ScheduleEvent(EVENT_FRILL_BLAST, 8000);
-            events.ScheduleEvent(EVENT_PIERCING_ROAR, 30000);
-            events.ScheduleEvent(EVENT_GROWING_FURY, TIMER_GROWING_FURY);
-            events.ScheduleEvent(EVENT_SUMMON_ADDS, TIMER_SUMMON_ADDS);
-            events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+            events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 10s);
+            events.ScheduleEvent(EVENT_FRILL_BLAST, 8s);
+            events.ScheduleEvent(EVENT_PIERCING_ROAR, 30s);
+            events.ScheduleEvent(EVENT_GROWING_FURY, 20s);
+            events.ScheduleEvent(EVENT_SUMMON_ADDS, 60s);
+            events.ScheduleEvent(EVENT_BERSERK, 10min);
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -145,7 +141,7 @@ public:
         {
             summons.Summon(summon);
             
-            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 summon->AI()->AttackStart(target);
         }
 
@@ -170,7 +166,7 @@ public:
             }
             
             if (targets.empty())
-                return SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true);
+                return SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true);
             
             return targets[urand(0, targets.size() - 1)];
         }
@@ -185,16 +181,8 @@ public:
                 me->SetFacingToObject(target);
                 DoCast(target, SPELL_CRUSHING_CHARGE);
                 
-                // Damage in area on landing
-                me->GetScheduler().Schedule(1500ms, [this, target](TaskContext /*context*/)
-                {
-                    if (target && target->IsAlive())
-                    {
-                        me->NearTeleportTo(target->GetPositionX(), target->GetPositionY(), 
-                            target->GetPositionZ(), me->GetOrientation());
-                        DoCastAOE(SPELL_CRUSHING_CHARGE_DMG);
-                    }
-                });
+                // Do AoE damage immediately after charge cast
+                DoCastAOE(SPELL_CRUSHING_CHARGE_DMG);
             }
         }
 
@@ -214,18 +202,18 @@ public:
                 {
                     case EVENT_CRUSHING_CHARGE:
                         DoCrushingCharge();
-                        events.ScheduleEvent(EVENT_CRUSHING_CHARGE, TIMER_CRUSHING_CHARGE);
+                        events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 25s);
                         break;
                         
                     case EVENT_FRILL_BLAST:
                         Talk(SAY_FRILL_BLAST);
                         DoCastVictim(SPELL_FRILL_BLAST);
-                        events.ScheduleEvent(EVENT_FRILL_BLAST, TIMER_FRILL_BLAST);
+                        events.ScheduleEvent(EVENT_FRILL_BLAST, 15s);
                         break;
                         
                     case EVENT_PIERCING_ROAR:
                         DoCastAOE(SPELL_PIERCING_ROAR);
-                        events.ScheduleEvent(EVENT_PIERCING_ROAR, TIMER_PIERCING_ROAR);
+                        events.ScheduleEvent(EVENT_PIERCING_ROAR, 45s);
                         break;
                         
                     case EVENT_GROWING_FURY:
@@ -242,7 +230,7 @@ public:
                             me->Yell("Oondasta enters a primal rage!", LANG_UNIVERSAL);
                         }
                         
-                        events.ScheduleEvent(EVENT_GROWING_FURY, TIMER_GROWING_FURY);
+                        events.ScheduleEvent(EVENT_GROWING_FURY, 20s);
                         break;
                         
                     case EVENT_SUMMON_ADDS:
@@ -260,7 +248,7 @@ public:
                                 me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 120000);
                         }
                         
-                        events.ScheduleEvent(EVENT_SUMMON_ADDS, TIMER_SUMMON_ADDS);
+                        events.ScheduleEvent(EVENT_SUMMON_ADDS, 60s);
                         break;
                         
                     case EVENT_BERSERK:
@@ -269,10 +257,6 @@ public:
                             Talk(SAY_BERSERK);
                             DoCastSelf(SPELL_BERSERK);
                             isEnraged = true;
-                            
-                            sWorld->SendServerMessage(SERVER_MSG_STRING,
-                                "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta|r has gone BERSERK! "
-                                "Finish the fight quickly!");
                         }
                         break;
                 }

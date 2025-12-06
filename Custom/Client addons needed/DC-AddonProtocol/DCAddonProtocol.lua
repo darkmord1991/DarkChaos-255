@@ -64,6 +64,43 @@ DCAddonProtocol = {
 
 local DC = DCAddonProtocol
 
+-- ============================================================================
+-- ChatFrame Channel Name Protection (WoW 3.3.5a Bug Fix)
+-- ============================================================================
+-- Fixes: "bad argument #1 to 'format' (string expected, got nil)"
+-- This occurs when ChatFrame.lua tries to format a channel message
+-- but the channel name is nil (common after teleporting to a new map).
+-- We hook ChatFrame_MessageEventHandler to protect against nil channel names.
+-- ============================================================================
+do
+    local orig_ChatFrame_MessageEventHandler = ChatFrame_MessageEventHandler
+    if orig_ChatFrame_MessageEventHandler then
+        ChatFrame_MessageEventHandler = function(self, event, ...)
+            -- Only process CHAT_MSG_CHANNEL events for protection
+            if event == "CHAT_MSG_CHANNEL" then
+                -- arg7 is the channel number, arg8 is the channel name in 3.3.5a
+                local msg, sender, lang, channelString, _, _, channelNumber, channelName = ...
+                
+                -- If channel name is nil, the format() call in ChatFrame.lua will fail
+                -- We can either skip the message entirely or provide a fallback
+                if channelNumber and (not channelName or channelName == "") then
+                    -- Try to get the channel name ourselves
+                    local id, name = GetChannelName(channelNumber)
+                    if not name or name == "" then
+                        -- Channel not yet initialized, silently skip this message
+                        -- It's usually just a join/leave message during teleport
+                        return
+                    end
+                end
+            end
+            
+            -- Call original handler
+            return orig_ChatFrame_MessageEventHandler(self, event, ...)
+        end
+        DC._chatFrameProtected = true
+    end
+end
+
 -- Module names for display
 DC.ModuleNames = {
     CORE = "Core",
@@ -2048,4 +2085,4 @@ function DC:CountTable(t)
     return count
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r v" .. DC.VERSION .. " loaded")
+DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r v" .. DC.VERSION .. " loaded" .. (DC._chatFrameProtected and " (ChatFrame protected)" or ""))

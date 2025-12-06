@@ -20,6 +20,9 @@
 #include "SpellAuraEffects.h"
 #include "Player.h"
 #include "World.h"
+#include "Chat.h"
+#include <algorithm>
+#include <random>
 
 enum NalakSpells
 {
@@ -122,25 +125,21 @@ public:
 
         void JustEngagedWith(Unit* /*who*/) override
         {
-            sWorld->SendServerMessage(SERVER_MSG_STRING,
-                "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak the Storm Lord|r descends! "
-                "The storm has arrived!");
-
             Talk(SAY_AGGRO);
             
             // Apply storm visual
             DoCastSelf(SPELL_LIGHTNING_VISUAL);
             
             // Schedule abilities
-            events.ScheduleEvent(EVENT_STATIC_SHIELD, 5000); // Early shield
-            events.ScheduleEvent(EVENT_ARC_NOVA, 25000);
-            events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 15000);
-            events.ScheduleEvent(EVENT_STORM_CLOUD, 30000);
-            events.ScheduleEvent(EVENT_TEMPEST_WING, TIMER_TEMPEST_WING);
-            events.ScheduleEvent(EVENT_STORMSTRIKE, TIMER_STORMSTRIKE);
-            events.ScheduleEvent(EVENT_LIGHTNING_BOLT, TIMER_LIGHTNING_BOLT);
-            events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, TIMER_CHAIN_LIGHTNING);
-            events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+            events.ScheduleEvent(EVENT_STATIC_SHIELD, 5s); // Early shield
+            events.ScheduleEvent(EVENT_ARC_NOVA, 25s);
+            events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 15s);
+            events.ScheduleEvent(EVENT_STORM_CLOUD, 30s);
+            events.ScheduleEvent(EVENT_TEMPEST_WING, 18s);
+            events.ScheduleEvent(EVENT_STORMSTRIKE, 10s);
+            events.ScheduleEvent(EVENT_LIGHTNING_BOLT, 3s);
+            events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 15s);
+            events.ScheduleEvent(EVENT_BERSERK, 9min);
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -164,7 +163,7 @@ public:
             
             if (summon->GetEntry() == NPC_STORM_SPARK)
             {
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                     summon->AI()->AttackStart(target);
             }
         }
@@ -181,11 +180,8 @@ public:
             // Warning emote
             me->Yell("Nalak channels a massive Arc Nova!", LANG_UNIVERSAL);
             
-            // Cast after short delay for players to react
-            me->GetScheduler().Schedule(2s, [this](TaskContext /*context*/)
-            {
-                DoCastAOE(SPELL_ARC_NOVA);
-            });
+            // Cast AoE
+            DoCastAOE(SPELL_ARC_NOVA);
         }
 
         void DoLightningTether()
@@ -208,7 +204,9 @@ public:
             if (targets.size() >= 2)
             {
                 // Shuffle and pick 2-3
-                std::random_shuffle(targets.begin(), targets.end());
+                static std::random_device rd;
+                static std::mt19937 rng(rd());
+                std::shuffle(targets.begin(), targets.end(), rng);
                 uint8 numTargets = std::min((size_t)3, targets.size());
                 
                 for (uint8 i = 0; i < numTargets; ++i)
@@ -283,56 +281,52 @@ public:
                                 me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 30000);
                         }
                         
-                        events.ScheduleEvent(EVENT_STATIC_SHIELD, TIMER_STATIC_SHIELD);
+                        events.ScheduleEvent(EVENT_STATIC_SHIELD, 60s);
                         break;
                         
                     case EVENT_ARC_NOVA:
                         DoArcNova();
-                        events.ScheduleEvent(EVENT_ARC_NOVA, TIMER_ARC_NOVA);
+                        events.ScheduleEvent(EVENT_ARC_NOVA, 35s);
                         break;
                         
                     case EVENT_LIGHTNING_TETHER:
                         DoLightningTether();
-                        events.ScheduleEvent(EVENT_LIGHTNING_TETHER, TIMER_LIGHTNING_TETHER);
+                        events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 25s);
                         break;
                         
                     case EVENT_STORM_CLOUD:
                         DoStormCloud();
-                        events.ScheduleEvent(EVENT_STORM_CLOUD, TIMER_STORM_CLOUD);
+                        events.ScheduleEvent(EVENT_STORM_CLOUD, 20s);
                         break;
                         
                     case EVENT_TEMPEST_WING:
                         DoCastAOE(SPELL_TEMPEST_WING);
-                        events.ScheduleEvent(EVENT_TEMPEST_WING, TIMER_TEMPEST_WING);
+                        events.ScheduleEvent(EVENT_TEMPEST_WING, 18s);
                         break;
                         
                     case EVENT_STORMSTRIKE:
                         DoCastVictim(SPELL_STORMSTRIKE);
-                        events.ScheduleEvent(EVENT_STORMSTRIKE, TIMER_STORMSTRIKE);
+                        events.ScheduleEvent(EVENT_STORMSTRIKE, 10s);
                         break;
                         
                     case EVENT_LIGHTNING_BOLT:
                         // Cast at random ranged player
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40.0f, true,
-                            true, 0, 8.0f)) // Player between 8-40 yards
+                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true))
                         {
                             DoCast(target, SPELL_LIGHTNING_BOLT);
                         }
-                        events.ScheduleEvent(EVENT_LIGHTNING_BOLT, TIMER_LIGHTNING_BOLT);
+                        events.ScheduleEvent(EVENT_LIGHTNING_BOLT, 3s);
                         break;
                         
                     case EVENT_CHAIN_LIGHTNING:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40.0f, true))
+                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true))
                             DoCast(target, SPELL_CHAIN_LIGHTNING);
-                        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, TIMER_CHAIN_LIGHTNING);
+                        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 15s);
                         break;
                         
                     case EVENT_BERSERK:
                         Talk(SAY_BERSERK);
                         DoCastSelf(SPELL_BERSERK);
-                        
-                        sWorld->SendServerMessage(SERVER_MSG_STRING,
-                            "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak|r unleashes the full fury of the storm!");
                         break;
                 }
             }

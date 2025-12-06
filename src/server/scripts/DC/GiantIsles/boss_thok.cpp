@@ -20,6 +20,7 @@
 #include "SpellAuraEffects.h"
 #include "Player.h"
 #include "World.h"
+#include "Chat.h"
 
 enum ThokSpells
 {
@@ -127,19 +128,15 @@ public:
 
         void JustEngagedWith(Unit* /*who*/) override
         {
-            sWorld->SendServerMessage(SERVER_MSG_STRING,
-                "|cFFFF0000[World Boss]|r |cFFFFFF00Thok the Bloodthirsty|r begins the hunt! "
-                "Stay on your guard!");
-
             Talk(SAY_AGGRO);
             
             // Schedule abilities
-            events.ScheduleEvent(EVENT_DEAFENING_SCREECH, 20000);
-            events.ScheduleEvent(EVENT_TAIL_LASH, 8000);
-            events.ScheduleEvent(EVENT_ACCELERATION, TIMER_ACCELERATION);
-            events.ScheduleEvent(EVENT_SAVAGE_BITE, TIMER_SAVAGE_BITE);
-            events.ScheduleEvent(EVENT_FIXATE, 35000);
-            events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+            events.ScheduleEvent(EVENT_DEAFENING_SCREECH, 20s);
+            events.ScheduleEvent(EVENT_TAIL_LASH, 8s);
+            events.ScheduleEvent(EVENT_ACCELERATION, 45s);
+            events.ScheduleEvent(EVENT_SAVAGE_BITE, 8s);
+            events.ScheduleEvent(EVENT_FIXATE, 35s);
+            events.ScheduleEvent(EVENT_BERSERK, 8min);
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -164,7 +161,7 @@ public:
         {
             summons.Summon(summon);
             
-            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 summon->AI()->AttackStart(target);
         }
 
@@ -182,13 +179,9 @@ public:
                 // Summon pack of raptors
                 SummonPackRaptors();
                 
-                sWorld->SendServerMessage(SERVER_MSG_STRING,
-                    "|cFFFF0000[World Boss]|r |cFFFFFF00Thok|r enters a Blood Frenzy! "
-                    "His pack joins the hunt!");
-                
                 // Increase ability frequency in frenzy
                 events.CancelEvent(EVENT_SUMMON_PACK);
-                events.ScheduleEvent(EVENT_SUMMON_PACK, 30000);
+                events.ScheduleEvent(EVENT_SUMMON_PACK, 30s);
             }
         }
 
@@ -214,7 +207,7 @@ public:
             Talk(SAY_FIXATE);
             
             // Target random player who isn't the tank
-            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 100.0f, true))
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 1, 100.0f, true))
             {
                 fixateTarget = target->GetGUID();
                 
@@ -236,7 +229,7 @@ public:
                 me->SetSpeedRate(MOVE_RUN, 1.5f);
                 
                 // Schedule end of fixate
-                events.ScheduleEvent(EVENT_END_FIXATE, TIMER_FIXATE_DURATION);
+                events.ScheduleEvent(EVENT_END_FIXATE, 10s);
             }
         }
 
@@ -268,12 +261,12 @@ public:
                         Talk(SAY_SCREECH);
                         DoCastAOE(SPELL_DEAFENING_SCREECH);
                         events.ScheduleEvent(EVENT_DEAFENING_SCREECH, 
-                            inFrenzy ? 20000 : TIMER_DEAFENING_SCREECH);
+                            inFrenzy ? 20s : 30s);
                         break;
                         
                     case EVENT_TAIL_LASH:
                         DoCastSelf(SPELL_TAIL_LASH);
-                        events.ScheduleEvent(EVENT_TAIL_LASH, TIMER_TAIL_LASH);
+                        events.ScheduleEvent(EVENT_TAIL_LASH, 12s);
                         break;
                         
                     case EVENT_ACCELERATION:
@@ -292,7 +285,7 @@ public:
                             me->Yell("Thok reaches maximum speed!", LANG_UNIVERSAL);
                         }
                         
-                        events.ScheduleEvent(EVENT_ACCELERATION, TIMER_ACCELERATION);
+                        events.ScheduleEvent(EVENT_ACCELERATION, 45s);
                         break;
                         
                     case EVENT_SAVAGE_BITE:
@@ -303,12 +296,12 @@ public:
                             DoCast(victim, SPELL_CARNAGE);
                         
                         events.ScheduleEvent(EVENT_SAVAGE_BITE, 
-                            inFrenzy ? 5000 : TIMER_SAVAGE_BITE);
+                            inFrenzy ? 5s : 8s);
                         break;
                         
                     case EVENT_FIXATE:
                         DoFixate();
-                        events.ScheduleEvent(EVENT_FIXATE, TIMER_FIXATE);
+                        events.ScheduleEvent(EVENT_FIXATE, 40s);
                         break;
                         
                     case EVENT_END_FIXATE:
@@ -329,16 +322,13 @@ public:
                                 me->SummonCreature(NPC_PACK_RAPTOR, x, y, me->GetPositionZ(),
                                     me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
                             }
-                            events.ScheduleEvent(EVENT_SUMMON_PACK, 30000);
+                            events.ScheduleEvent(EVENT_SUMMON_PACK, 30s);
                         }
                         break;
                         
                     case EVENT_BERSERK:
                         Talk(SAY_BERSERK);
                         DoCastSelf(SPELL_BERSERK);
-                        
-                        sWorld->SendServerMessage(SERVER_MSG_STRING,
-                            "|cFFFF0000[World Boss]|r |cFFFFFF00Thok|r has gone BERSERK!");
                         break;
                 }
             }
@@ -386,7 +376,7 @@ public:
             if (leapTimer <= diff)
             {
                 // Leap to a random target
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40.0f, true))
+                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true))
                 {
                     me->GetMotionMaster()->MoveCharge(target->GetPositionX(), target->GetPositionY(),
                         target->GetPositionZ(), 42.0f);

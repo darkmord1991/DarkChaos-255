@@ -1,0 +1,37 @@
+## Interface: 30300
+## Title: DC-InfoBar
+## Notes: Server information bar for DarkChaos-255
+## Author: DarkChaos Development Team
+## Version: 1.0.0
+## SavedVariables: DCInfoBarDB
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: DC-MythicPlus
+
+# Utils first
+Utils.lua
+
+# Core framework
+Settings.lua
+Core.lua
+
+# UI components
+UI\Bar.lua
+UI\Tooltip.lua
+UI\Options.lua
+
+# Server plugins (require DCAddonProtocol)
+Plugins\Server\Season.lua
+Plugins\Server\Keystone.lua
+Plugins\Server\Affixes.lua
+Plugins\Server\WorldBoss.lua
+Plugins\Server\Events.lua
+
+# Character plugins (WoW API only)
+Plugins\Character\Location.lua
+Plugins\Character\Gold.lua
+Plugins\Character\Durability.lua
+Plugins\Character\Bags.lua
+
+# Misc plugins
+Plugins\Misc\Performance.lua
+Plugins\Misc\Clock.lua
