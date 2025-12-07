@@ -19,11 +19,15 @@
 #include "ScriptedCreature.h"
 #include "GameTime.h"
 #include "World.h"
+#include "WorldState.h"
 #include "Map.h"
 #include "InstanceScript.h"
 #include "ObjectAccessor.h"
 #include "Chat.h"
 #include "Log.h"
+
+// Forward declaration of map script used by gossip handler
+class giant_isles_invasion;
 
 // ============================================================================
 // INVASION CONSTANTS
@@ -156,58 +160,87 @@ public:
     struct npc_invasion_hornAI : public ScriptedAI
     {
         npc_invasion_hornAI(Creature* creature) : ScriptedAI(creature) { }
+        // AI-specific behaviour only (gossip handlers belong to CreatureScript)
+    };
 
-        bool OnGossipHello(Player* player) override
+    // Gossip handlers must be declared on the CreatureScript-derived class (not the AI)
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        // Check if invasion is already active
+        if (sWorldState->getWorldState(WORLD_STATE_INVASION_ACTIVE) == 1)
         {
-            // Check if invasion is already active
-            if (sWorld->getWorldState(WORLD_STATE_INVASION_ACTIVE) == 1)
-            {
-                player->GetSession()->SendNotification("An invasion is already in progress!");
-                return true;
-            }
-
-            // Check cooldown (stored in world state with timestamp)
-            uint32 lastInvasion = sWorld->getWorldState(WORLD_STATE_INVASION_ACTIVE + 10);
-            if (lastInvasion > 0 && GameTime::GetGameTime() < lastInvasion + INVASION_COOLDOWN)
-            {
-                uint32 remaining = (lastInvasion + INVASION_COOLDOWN) - GameTime::GetGameTime();
-                player->GetSession()->SendNotification("The invasion horn is on cooldown. Time remaining: %u minutes", remaining / 60);
-                return true;
-            }
-
-            // Add gossip option to start invasion
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Sound the horn! Rally the defenders!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "What is this horn for?", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, me->GetGUID());
+            ChatHandler(player->GetSession()).SendNotification("An invasion is already in progress!");
             return true;
         }
 
-        bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override
-        {
-            uint32 action = player->PlayerTalkClass->GetGossipOptionAction(gossipListId);
-            CloseGossipMenuFor(player);
-
-            if (action == GOSSIP_ACTION_INFO_DEF + 1)
+        // Check cooldown (stored in world state with timestamp)
+            uint32 lastInvasion = sWorldState->getWorldState(WORLD_STATE_INVASION_ACTIVE + 10);
+            if (lastInvasion > 0)
             {
-                // Start invasion event
-                if (Map* map = me->GetMap())
+                uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+                uint32 cooldownEnd = lastInvasion + INVASION_COOLDOWN;
+                if (nowSec < cooldownEnd)
                 {
-                    // Trigger invasion via map script (implemented below)
-                    if (auto* mapScript = dynamic_cast<giant_isles_invasion*>(map->GetInstanceScript()))
+                    uint32 remaining = cooldownEnd - nowSec;
+                    ChatHandler(player->GetSession()).SendNotification("The invasion horn is on cooldown. Time remaining: %u minutes", remaining / 60);
+                    return true;
+                }
+            }
+
+        // Add gossip option to start invasion
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Sound the horn! Rally the defenders!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "What is this horn for?", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        ClearGossipMenuFor(player);
+
+        if (action == GOSSIP_ACTION_INFO_DEF + 1)
+        {
+            // Start invasion event (inline fallback)
+            if (Map* map = creature->GetMap())
+            {
+                // Mark world state as active and initialize counters
+                sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 1);
+                sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
+                sWorldState->setWorldState(WORLD_STATE_INVASION_KILLS, 0);
+
+                // Announce and log
+                    if (player)
+                        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "The Zandalari invasion of Seeping Shores has begun! Defend the beach!");
+
+                LOG_INFO("scripts", "Giant Isles Invasion: Event started by player %s", player ? player->GetName() : "Unknown");
+
+                // Spawn defenders at defender points
+                for (uint8 i = 0; i < 6; ++i)
+                {
+                    const InvasionSpawnPoint& point = DEFENDER_POINTS[i];
+                    uint32 entry = NPC_PRIMAL_WARDEN;
+                    if (i == 0) entry = NPC_PRIMAL_WARDEN_CAPTAIN;
+                    else if (i == 3 || i == 4) entry = NPC_PRIMAL_WARDEN_SERGEANT;
+                    else if (i == 1 || i == 2) entry = NPC_PRIMAL_WARDEN_MARKSMAN;
+
                     {
-                        mapScript->StartInvasion(player);
+                        Position p(point.x, point.y, point.z, point.o);
+                        if (Creature* defender = map->SummonCreature(entry, p))
+                        {
+                            defender->SetFaction(35);
+                        }
                     }
                 }
             }
-            else if (action == GOSSIP_ACTION_INFO_DEF + 2)
-            {
-                // Info text
-                player->GetSession()->SendAreaTriggerMessage("The Invasion Horn summons defenders to fight off Zandalari attackers. Sound it to begin the defense event!");
-            }
-
-            return true;
         }
-    };
+        else if (action == GOSSIP_ACTION_INFO_DEF + 2)
+        {
+            // Info text
+            player->GetSession()->SendAreaTriggerMessage("The Invasion Horn summons defenders to fight off Zandalari attackers. Sound it to begin the defense event!");
+        }
+
+        return true;
+    }
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -263,7 +296,7 @@ public:
             Talk(SAY_INVASION_START); // Yell on engage
         }
 
-        void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/) override
+        void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/, DamageEffectType /*damagetype*/, SpellSchoolMask /*damageSchoolMask*/) override
         {
             if (!enraged && me->HealthBelowPct(25))
             {
@@ -275,13 +308,16 @@ public:
 
         void JustDied(Unit* /*killer*/) override
         {
-            // Notify map script of boss death (invasion victory)
+            // Notify: perform basic victory actions (inline fallback)
             if (Map* map = me->GetMap())
             {
-                if (auto* mapScript = dynamic_cast<giant_isles_invasion*>(map->GetInstanceScript()))
-                {
-                    mapScript->OnBossKilled();
-                }
+                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Victory! The Zandalari invasion has been repelled!");
+
+                // Set cooldown timestamp in world state
+                sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, static_cast<uint32>(GameTime::GetGameTime().count()));
+
+                // Placeholder for reward distribution
+                LOG_INFO("scripts", "Giant Isles Invasion: Boss killed, victory triggered by boss %u", me->GetEntry());
             }
         }
 
@@ -338,64 +374,48 @@ class giant_isles_invasion : public WorldMapScript
 public:
     giant_isles_invasion() : WorldMapScript("giant_isles_invasion", MAP_GIANT_ISLES) { }
 
-    class giant_isles_invasionMapScript : public WorldScript
+    class giant_isles_invasionMapScript : public InstanceScript
     {
     public:
-        giant_isles_invasionMapScript(Map* map) : WorldScript(map), _invasionPhase(INVASION_INACTIVE), 
-            _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID() { }
+        explicit giant_isles_invasionMapScript(Map* map) : InstanceScript(map), _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID() {}
 
-        // Public methods for event control
         void StartInvasion(Player* starter)
         {
             if (_invasionPhase != INVASION_INACTIVE)
                 return;
 
-            // Set world state
-            sWorld->setWorldState(WORLD_STATE_INVASION_ACTIVE, 1);
-            sWorld->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
-            sWorld->setWorldState(WORLD_STATE_INVASION_KILLS, 0);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 1);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_KILLS, 0);
 
             _invasionPhase = INVASION_WAVE_1;
             _waveTimer = WAVE_1_DURATION;
             _spawnTimer = SPAWN_DELAY_FAST;
             _killCount = 0;
 
-            // Zone-wide announcement
             if (starter)
-            {
-                sWorld->SendWorldText(LANG_EVENTMESSAGE, "The Zandalari invasion of Seeping Shores has begun! Defend the beach!");
-            }
+                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "The Zandalari invasion of Seeping Shores has begun! Defend the beach!");
 
-            // Spawn defenders
             SpawnDefenders();
-
             LOG_INFO("scripts", "Giant Isles Invasion: Event started by player {}", starter ? starter->GetName() : "Unknown");
         }
 
         void OnCreatureKill(Creature* victim)
         {
-            // Track kills for wave progression
             if (IsInvasionMob(victim->GetEntry()))
             {
                 _killCount++;
-                sWorld->setWorldState(WORLD_STATE_INVASION_KILLS, _killCount);
+                sWorldState->setWorldState(WORLD_STATE_INVASION_KILLS, _killCount);
             }
         }
 
         void OnBossKilled()
         {
             _invasionPhase = INVASION_VICTORY;
-            _waveTimer = 10 * IN_MILLISECONDS; // 10 second cleanup
-
-            // Victory announcement
-            sWorld->SendWorldText(LANG_EVENTMESSAGE, "Victory! The Zandalari invasion has been repelled!");
-
-            // Reward all participants
+            _waveTimer = 10 * IN_MILLISECONDS;
+            ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Victory! The Zandalari invasion has been repelled!");
             RewardParticipants();
-
-            // Set cooldown
-            sWorld->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, GameTime::GetGameTime());
-
+            sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, static_cast<uint32>(GameTime::GetGameTime().count()));
             LOG_INFO("scripts", "Giant Isles Invasion: Event completed successfully");
         }
 
@@ -404,32 +424,21 @@ public:
             if (_invasionPhase == INVASION_INACTIVE || _invasionPhase == INVASION_VICTORY)
                 return;
 
-            // Update wave timer
             if (_waveTimer <= diff)
-            {
                 AdvanceWave();
-            }
             else
-            {
                 _waveTimer -= diff;
-            }
 
-            // Update spawn timer
             if (_spawnTimer <= diff)
             {
                 SpawnWaveCreatures();
                 _spawnTimer = GetSpawnDelay();
             }
             else
-            {
                 _spawnTimer -= diff;
-            }
 
-            // Check for failure condition (all defenders dead)
             if (CheckDefendersAlive() == 0 && _invasionPhase < INVASION_VICTORY)
-            {
                 FailInvasion();
-            }
         }
 
     private:
@@ -449,31 +458,28 @@ public:
                     _invasionPhase = INVASION_WAVE_2;
                     _waveTimer = WAVE_2_DURATION;
                     _spawnTimer = SPAWN_DELAY_NORMAL;
-                    sWorld->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
-                    sWorld->SendWorldText(LANG_EVENTMESSAGE, "Wave 2: Zandalari warriors assault the shores!");
+                    sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
+                    ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Wave 2: Zandalari warriors assault the shores!");
                     break;
                 case INVASION_WAVE_2:
                     _invasionPhase = INVASION_WAVE_3;
                     _waveTimer = WAVE_3_DURATION;
                     _spawnTimer = SPAWN_DELAY_NORMAL;
-                    sWorld->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
-                    sWorld->SendWorldText(LANG_EVENTMESSAGE, "Wave 3: Elite Zandalari forces arrive!");
+                    sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
+                    ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Wave 3: Elite Zandalari forces arrive!");
                     break;
                 case INVASION_WAVE_3:
                     _invasionPhase = INVASION_WAVE_4_BOSS;
                     _waveTimer = WAVE_4_DURATION;
-                    sWorld->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
-                    sWorld->SendWorldText(LANG_EVENTMESSAGE, "BOSS WAVE: Warlord Zul'mar has arrived with his honor guard!");
+                    sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
+                    ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "BOSS WAVE: Warlord Zul'mar has arrived with his honor guard!");
                     SpawnBoss();
                     break;
                 case INVASION_WAVE_4_BOSS:
-                    // Boss wave - no automatic progression, must kill boss
-                    if (Creature* boss = ObjectAccessor::GetCreature(*instance->GetMap(), _bossGUID))
+                    if (Creature* boss = instance->GetCreature(_bossGUID))
                     {
                         if (!boss->IsAlive())
-                        {
                             OnBossKilled();
-                        }
                     }
                     break;
                 default:
@@ -483,20 +489,19 @@ public:
 
         void SpawnDefenders()
         {
-            // Spawn 6 defenders at defensive positions
             for (uint8 i = 0; i < 6; ++i)
             {
                 const InvasionSpawnPoint& point = DEFENDER_POINTS[i];
-                
                 uint32 entry = NPC_PRIMAL_WARDEN;
-                if (i == 0) entry = NPC_PRIMAL_WARDEN_CAPTAIN; // Center gets captain
-                else if (i == 3 || i == 4) entry = NPC_PRIMAL_WARDEN_SERGEANT; // Flanks get sergeants
-                else if (i == 1 || i == 2) entry = NPC_PRIMAL_WARDEN_MARKSMAN; // Sides get marksmen
+                if (i == 0) entry = NPC_PRIMAL_WARDEN_CAPTAIN;
+                else if (i == 3 || i == 4) entry = NPC_PRIMAL_WARDEN_SERGEANT;
+                else if (i == 1 || i == 2) entry = NPC_PRIMAL_WARDEN_MARKSMAN;
 
-                if (Creature* defender = instance->GetMap()->SummonCreature(entry, point.x, point.y, point.z, point.o))
+                Position p(point.x, point.y, point.z, point.o);
+                if (Creature* defender = instance->SummonCreature(entry, p))
                 {
                     _defenderGuids.push_back(defender->GetGUID());
-                    defender->SetFaction(35); // Friendly to all
+                    defender->SetFaction(35);
                 }
             }
         }
@@ -507,72 +512,51 @@ public:
             if (entry == 0)
                 return;
 
-            // Spawn at all 3 points
             for (uint8 i = 0; i < 3; ++i)
             {
                 const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[i];
                 const InvasionSpawnPoint& targetPoint = TARGET_POINTS[i];
-                
-                if (Creature* invader = instance->GetMap()->SummonCreature(entry, spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o))
+                Position p(spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o);
+                if (Creature* invader = instance->SummonCreature(entry, p))
                 {
                     _invaderGuids.push_back(invader->GetGUID());
-                    invader->SetFaction(16); // Hostile
-                    
-                    // Move to defensive target point first
+                    invader->SetFaction(16);
                     invader->GetMotionMaster()->MovePoint(1, targetPoint.x, targetPoint.y, targetPoint.z);
-                    
-                    // After reaching target, find nearest defender and attack
-                    // This will be handled by the creature's AI when it reaches the waypoint
                 }
             }
         }
 
         void SpawnBoss()
         {
-            // Spawn boss at middle point, move to center target
-            const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[1]; // Middle spawn
-            const InvasionSpawnPoint& targetPoint = TARGET_POINTS[1]; // Center target
-            
-            if (Creature* boss = instance->GetMap()->SummonCreature(NPC_WARLORD_ZULMAR, spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o))
+            const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[1];
+            const InvasionSpawnPoint& targetPoint = TARGET_POINTS[1];
+            Position p(spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o);
+            if (Creature* boss = instance->SummonCreature(NPC_WARLORD_ZULMAR, p))
             {
                 _bossGUID = boss->GetGUID();
                 boss->SetFaction(16);
-                
-                // Boss moves to defensive line
                 boss->GetMotionMaster()->MovePoint(1, targetPoint.x, targetPoint.y, targetPoint.z);
-                
-                // Spawn 4 honor guards in diamond formation around boss
-                // Front, Back, Left, Right positions (3 yards from boss)
+
                 const float guardDistance = 3.0f;
-                Position guardPositions[4] = 
+                Position guardPositions[4] =
                 {
-                    { spawnPoint.x, spawnPoint.y - guardDistance, spawnPoint.z, spawnPoint.o },      // Front
-                    { spawnPoint.x, spawnPoint.y + guardDistance, spawnPoint.z, spawnPoint.o },      // Back
-                    { spawnPoint.x - guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o },      // Left
-                    { spawnPoint.x + guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o }       // Right
+                    { spawnPoint.x, spawnPoint.y - guardDistance, spawnPoint.z, spawnPoint.o },
+                    { spawnPoint.x, spawnPoint.y + guardDistance, spawnPoint.z, spawnPoint.o },
+                    { spawnPoint.x - guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o },
+                    { spawnPoint.x + guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o }
                 };
-                
+
                 for (uint8 i = 0; i < 4; ++i)
                 {
-                    if (Creature* guard = instance->GetMap()->SummonCreature(NPC_ZANDALARI_HONOR_GUARD, 
-                        guardPositions[i].GetPositionX(), 
-                        guardPositions[i].GetPositionY(), 
-                        guardPositions[i].GetPositionZ(), 
-                        guardPositions[i].GetOrientation()))
+                    Position gp(guardPositions[i].GetPositionX(), guardPositions[i].GetPositionY(), guardPositions[i].GetPositionZ(), guardPositions[i].GetOrientation());
+                    if (Creature* guard = instance->SummonCreature(NPC_ZANDALARI_HONOR_GUARD, gp))
                     {
                         _invaderGuids.push_back(guard->GetGUID());
                         guard->SetFaction(16);
-                        
-                        // Guards follow boss in formation using MoveFollow
-                        // Distance 3.0, angle based on position (0°, 90°, 180°, 270°)
-                        float angle = i * M_PI / 2.0f; // 0, π/2, π, 3π/2
+                        float angle = i * M_PI / 2.0f;
                         guard->GetMotionMaster()->MoveFollow(boss, guardDistance, angle, MOTION_SLOT_ACTIVE);
-                        
-                        // Make guards assist boss when he enters combat
                         if (guard->AI())
-                        {
                             guard->AI()->SetGUID(boss->GetGUID(), 0);
-                        }
                     }
                 }
             }
@@ -611,10 +595,9 @@ public:
         {
             Creature* nearest = nullptr;
             float minDist = 999.0f;
-
             for (const auto& guid : _defenderGuids)
             {
-                if (Creature* defender = ObjectAccessor::GetCreature(*instance->GetMap(), guid))
+                if (Creature* defender = instance->GetCreature(guid))
                 {
                     if (defender->IsAlive())
                     {
@@ -627,7 +610,6 @@ public:
                     }
                 }
             }
-
             return nearest;
         }
 
@@ -636,7 +618,7 @@ public:
             uint32 count = 0;
             for (const auto& guid : _defenderGuids)
             {
-                if (Creature* defender = ObjectAccessor::GetCreature(*instance->GetMap(), guid))
+                if (Creature* defender = instance->GetCreature(guid))
                 {
                     if (defender->IsAlive())
                         count++;
@@ -653,50 +635,39 @@ public:
         void FailInvasion()
         {
             _invasionPhase = INVASION_FAILED;
-            
-            sWorld->SendWorldText(LANG_EVENTMESSAGE, "Defeat! The Zandalari have overrun Seeping Shores!");
-            sWorld->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
-            
-            // Despawn all invaders
+            ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Defeat! The Zandalari have overrun Seeping Shores!");
+            sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
             CleanupInvasion();
-            
             LOG_INFO("scripts", "Giant Isles Invasion: Event failed");
         }
 
         void RewardParticipants()
         {
-            // TODO: Implement reward distribution to nearby players
-            // Give invasion tokens, reputation, etc.
+            // Placeholder for reward distribution
         }
 
         void CleanupInvasion()
         {
-            // Despawn all invasion creatures
             for (const auto& guid : _invaderGuids)
             {
-                if (Creature* invader = ObjectAccessor::GetCreature(*instance->GetMap(), guid))
-                {
+                if (Creature* invader = instance->GetCreature(guid))
                     invader->DespawnOrUnsummon(5s);
-                }
             }
             _invaderGuids.clear();
 
-            // Despawn defenders after delay
             for (const auto& guid : _defenderGuids)
             {
-                if (Creature* defender = ObjectAccessor::GetCreature(*instance->GetMap(), guid))
-                {
+                if (Creature* defender = instance->GetCreature(guid))
                     defender->DespawnOrUnsummon(30s);
-                }
             }
             _defenderGuids.clear();
 
-            sWorld->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
             _invasionPhase = INVASION_INACTIVE;
         }
     };
 
-    InstanceScript* GetInstanceScript(Map* map) const override
+    InstanceScript* GetInstanceScript(Map* map) const
     {
         return new giant_isles_invasionMapScript(map);
     }
