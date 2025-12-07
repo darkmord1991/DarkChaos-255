@@ -25,7 +25,13 @@ local KeystonePlugin = {
 function KeystonePlugin:OnActivate()
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+        -- Try both Group Finder and MythicPlus modules for keystone info
+        if DC.GroupFinderOpcodes then
+            DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+        end
+        if DC.Opcode and DC.Opcode.MPlus then
+            DC:Request("MPLUS", DC.Opcode.MPlus.CMSG_GET_KEY_INFO, {})
+        end
     end
 end
 
@@ -93,12 +99,12 @@ end
 function KeystonePlugin:OnClick(button)
     if button == "LeftButton" then
         -- Open DC-MythicPlus Group Finder
-        if DCMythicPlusHUD and DCMythicPlusHUD.ShowGroupFinder then
-            DCMythicPlusHUD:ShowGroupFinder()
+        if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder and DCMythicPlusHUD.GroupFinder.Toggle then
+            DCMythicPlusHUD.GroupFinder:Toggle()
         elseif DCGroupFinder and DCGroupFinder.Toggle then
             DCGroupFinder:Toggle()
         else
-            DCInfoBar:Print("Group Finder not available")
+            DCInfoBar:Print("Group Finder not available - DC-MythicPlus addon required")
         end
     elseif button == "RightButton" then
         -- Link keystone in chat

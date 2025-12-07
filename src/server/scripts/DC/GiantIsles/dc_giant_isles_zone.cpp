@@ -80,19 +80,20 @@ enum GiantIslesData
 constexpr char const* ZONE_ENTER_MESSAGE = "|cFFFF8000[Giant Isles]|r Welcome to the |cFF00FF00Giant Isles|r! "
     "Ancient dinosaurs roam these primordial lands. Beware of world bosses!";
 
-constexpr char const* BOSS_OONDASTA_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r "
+// These messages are for future world boss spawn announcements
+[[maybe_unused]] constexpr char const* BOSS_OONDASTA_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r "
     "has awakened in |cFF00FF00Devilsaur Gorge|r! Rally your forces!";
 
-constexpr char const* BOSS_THOK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Thok the Bloodthirsty|r "
+[[maybe_unused]] constexpr char const* BOSS_THOK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Thok the Bloodthirsty|r "
     "stalks the hunt in |cFF00FF00Raptor Ridge|r! Prepare for battle!";
 
-constexpr char const* BOSS_NALAK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak the Storm Lord|r "
+[[maybe_unused]] constexpr char const* BOSS_NALAK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak the Storm Lord|r "
     "descends upon |cFF00FF00Thundering Peaks|r! The storm is coming!";
 
-constexpr char const* BOSS_KILLED_MESSAGE = "|cFFFF8000[Giant Isles]|r |cFF00FF00%s|r has been defeated! "
+[[maybe_unused]] constexpr char const* BOSS_KILLED_MESSAGE = "|cFFFF8000[Giant Isles]|r |cFF00FF00%s|r has been defeated! "
     "A new world boss will appear tomorrow.";
 
-constexpr char const* RARE_SPAWN_MESSAGE = "|cFFFF8000[Giant Isles]|r A rare creature |cFF00FF00%s|r "
+[[maybe_unused]] constexpr char const* RARE_SPAWN_MESSAGE = "|cFFFF8000[Giant Isles]|r A rare creature |cFF00FF00%s|r "
     "has been spotted! Hunt it down for valuable rewards!";
 
 // ============================================================================
@@ -461,8 +462,8 @@ public:
         if (!player || !go)
             return false;
 
-        // Check if world boss is already active
-        uint32 activeBoss = GetActiveBossEntry();
+        // Check if world boss is already active (used in gossip select)
+        [[maybe_unused]] uint32 activeBoss = GetActiveBossEntry();
         
         // Add gossip options
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Commune with the ancient spirits", 

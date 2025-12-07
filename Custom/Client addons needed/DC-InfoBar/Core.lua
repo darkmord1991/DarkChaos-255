@@ -210,8 +210,13 @@ function DCInfoBar:RequestServerData()
     -- Request seasonal info
     DC:Request("SEAS", DC.Opcode.Season.CMSG_GET_CURRENT, {})
     
-    -- Request keystone info
-    DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+    -- Request keystone info from both modules for redundancy
+    if DC.GroupFinderOpcodes then
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
+    end
+    if DC.Opcode and DC.Opcode.MPlus then
+        DC:Request("MPLUS", DC.Opcode.MPlus.CMSG_GET_KEY_INFO, {})
+    end
 end
 
 -- Handle incoming season data

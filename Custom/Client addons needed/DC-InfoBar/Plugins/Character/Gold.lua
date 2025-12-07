@@ -8,6 +8,10 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
+-- DC Currency Item IDs (from DarkChaos.Seasonal.TokenItemID/EssenceItemID)
+local SEASONAL_TOKEN_ID = 300311
+local SEASONAL_ESSENCE_ID = 300312
+
 local GoldPlugin = {
     id = "DCInfoBar_Gold",
     name = "Gold",
@@ -27,6 +31,25 @@ local GoldPlugin = {
     _recentChange = 0,
     _recentChangeTimer = 0,
 }
+
+-- Helper: Count items in bags
+local function GetItemCount(itemId)
+    local count = 0
+    for bag = 0, 4 do
+        local numSlots = GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local id = tonumber(link:match("item:(%d+)"))
+                if id == itemId then
+                    local _, itemCount = GetContainerItemInfo(bag, slot)
+                    count = count + (itemCount or 0)
+                end
+            end
+        end
+    end
+    return count
+end
 
 function GoldPlugin:OnActivate()
     -- Record starting gold for session tracking
@@ -105,6 +128,37 @@ function GoldPlugin:OnTooltip(tooltip)
     tooltip:AddDoubleLine("This Character:", 
         DCInfoBar:FormatGold(self._currentGold),
         0.7, 0.7, 0.7, 1, 1, 1)
+    
+    -- Currencies section
+    tooltip:AddLine(" ")
+    tooltip:AddLine("|cff32c4ffCurrencies|r")
+    
+    -- Seasonal Tokens (count from bags)
+    local tokenCount = GetItemCount(SEASONAL_TOKEN_ID)
+    local tokenColor = tokenCount > 0 and {1, 0.82, 0} or {0.5, 0.5, 0.5}
+    tooltip:AddDoubleLine("Upgrade Tokens:", 
+        DCInfoBar:FormatNumber(tokenCount) .. " |TInterface\\Icons\\INV_Misc_Token_ScarletCrusade:12|t",
+        0.7, 0.7, 0.7, tokenColor[1], tokenColor[2], tokenColor[3])
+    
+    -- Seasonal Essence (count from bags)
+    local essenceCount = GetItemCount(SEASONAL_ESSENCE_ID)
+    local essenceColor = essenceCount > 0 and {0.64, 0.21, 0.93} or {0.5, 0.5, 0.5}
+    tooltip:AddDoubleLine("Seasonal Essence:", 
+        DCInfoBar:FormatNumber(essenceCount) .. " |TInterface\\Icons\\Spell_Arcane_Arcane04:12|t",
+        0.7, 0.7, 0.7, essenceColor[1], essenceColor[2], essenceColor[3])
+    
+    -- Weekly caps from season data (if available)
+    local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season
+    if seasonData and seasonData.id > 0 then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cff888888Weekly Progress|r", 0.5, 0.5, 0.5)
+        tooltip:AddDoubleLine("  Tokens:", 
+            seasonData.weeklyTokens .. "/" .. seasonData.weeklyCap,
+            0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+        tooltip:AddDoubleLine("  Essence:", 
+            seasonData.weeklyEssence .. "/" .. seasonData.essenceCap,
+            0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+    end
 end
 
 function GoldPlugin:OnClick(button)

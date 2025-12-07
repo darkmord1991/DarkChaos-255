@@ -185,7 +185,8 @@ end
 
 function DCInfoBar:CreatePluginsTab(parent)
     -- Scrollable list of plugins
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    -- NOTE: UIPanelScrollFrameTemplate requires a named frame in WotLK 3.3.5a
+    local scrollFrame = CreateFrame("ScrollFrame", "DCInfoBarPluginsScrollFrame", parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", -30, 0)
     
