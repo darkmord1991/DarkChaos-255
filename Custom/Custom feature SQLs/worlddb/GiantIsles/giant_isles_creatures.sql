@@ -185,17 +185,101 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 
 -- Coastal Cannon - Vehicle (uses siege cannon model)
 -- VehicleId 554 is the ICC Gunship Cannon vehicle seat
+-- unit_flags = 4 (DISABLE_MOVE), npcflag = 16777216 (SPELLCLICK), flags_extra includes IMMOBILIZED
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400321,0,0,0,0,0,'Coastal Cannon',NULL,'VehicleCursor',0,80,80,2,35,16777216,0,0,1,0,0,2000,2000,1,1,1,33554432,2048,0,0,0,0,0,0,9,1024,0,0,0,0,554,0,0,'',0,1,100,1,1,1,0,0,0,1,0,0,2,'npc_coastal_cannon',12340);
+(400321,0,0,0,0,0,'Coastal Cannon',NULL,'VehicleCursor',0,80,80,2,35,16777216,0,0,1.5,0,0,2000,2000,1,1,1,4,2048,0,0,0,0,0,0,9,8,0,0,0,0,554,0,0,'',0,1,100,1,1,1,0,0,0,1,650854271,0,1073741826,'npc_coastal_cannon',12340);
 
--- Zandalari Scout Ship - Target (invisible creature with visual spell)
--- DisplayID 0 = invisible, visual from spell effects
+-- Spellclick entry for the cannon (same as ICC Gunship Cannon - spell 70510)
+DELETE FROM `npc_spellclick_spells` WHERE `npc_entry` = 400321;
+INSERT INTO `npc_spellclick_spells` (`npc_entry`, `spell_id`, `cast_flags`, `user_type`) VALUES
+(400321, 70510, 1, 0);
+
+-- Cannon spell action bar (same as ICC Gunship Cannon 36838)
+-- Spell 0 = 69399 (Cannon Blast), Spell 1 = 70174 (Incinerating Blast)
+DELETE FROM `creature_template_spell` WHERE `CreatureID` = 400321;
+INSERT INTO `creature_template_spell` (`CreatureID`, `Index`, `Spell`, `VerifiedBuild`) VALUES
+(400321, 0, 69399, 12340),
+(400321, 1, 70174, 12340);
+
+-- ============================================================================
+-- ZANDALARI SCOUT SHIP - GameObject + Hitbox Creature
+-- ============================================================================
+
+-- Zandalari Scout Ship - GameObject (visual ship model)
+-- Type 5 = GAMEOBJECT_TYPE_GENERIC (static decoration)
+-- DisplayID 9232 = Pirate Ship model
+DELETE FROM `gameobject_template` WHERE `entry` = 400322;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
+(400322, 5, 9232, 'Zandalari Scout Ship', '', '', '', 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
+
+-- Ship Hitbox - Invisible creature that takes cannon damage
+-- This creature is spawned at the ship's position and handles hit detection
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400322,0,0,0,0,0,'Zandalari Scout Ship',NULL,NULL,0,80,80,2,14,0,0.8,0.571429,3,0,0,2000,2000,1,1,1,33555200,2048,0,0,0,0,0,0,9,1024,0,0,0,0,0,0,0,'',0,1,50,1,1,1,0,0,0,0,617299967,0,128,'npc_zandalari_scout_ship',12340);
+(400324,0,0,0,0,0,'Zandalari Scout Ship',NULL,NULL,0,80,80,2,14,0,0,0,3,0,0,2000,2000,1,1,1,0,2048,0,0,0,0,0,0,9,0,0,0,0,0,0,0,0,'',0,1,50,1,1,1,0,0,0,0,617299967,0,0,'npc_zandalari_scout_ship',12340);
 
 -- Ship Visual Trigger - For explosion effects
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
 (400323,0,0,0,0,0,'Ship Explosion Trigger',NULL,NULL,0,80,80,2,35,0,0,0,1,0,0,2000,2000,1,1,1,33554944,2048,0,0,0,0,0,0,10,1024,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,0,0,0,0,128,'',12340);
+
+-- ============================================================================
+-- CONDITIONS - Allow cannon spells to target our ship (400324)
+-- ============================================================================
+-- The ICC cannon spells have conditions restricting them to specific creatures.
+-- We need to add conditions for our ship so it can be hit by cannon spells.
+-- ConditionTypeOrReference 31 = CONDITION_OBJECT_ENTRY_GUID
+-- ConditionValue1 = 3 (TYPEID_UNIT)
+-- ConditionValue2 = Creature Entry
+
+-- 69400 = Cannon Blast missile (triggers damage on impact)
+-- 69402 = Incinerating Blast missile
+DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 13 AND `SourceGroup` = 2 AND `SourceEntry` IN (69400, 69402) AND `ConditionValue2` = 400324;
+INSERT INTO `conditions` (`SourceTypeOrReferenceId`, `SourceGroup`, `SourceEntry`, `SourceId`, `ElseGroup`, `ConditionTypeOrReference`, `ConditionTarget`, `ConditionValue1`, `ConditionValue2`, `ConditionValue3`, `NegativeCondition`, `ErrorType`, `ErrorTextId`, `ScriptName`, `Comment`) VALUES
+(13, 2, 69400, 0, 1, 31, 0, 3, 400324, 0, 0, 0, 0, '', 'Cannon Blast - also target Zandalari Scout Ship'),
+(13, 2, 69402, 0, 1, 31, 0, 3, 400324, 0, 0, 0, 0, '', 'Incinerating Blast - also target Zandalari Scout Ship');
+
+-- ============================================================================
+-- ZANDALARI INVASION NPCs (400325-400340)
+-- ============================================================================
+-- Invasion system: Waves of Zandalari attackers assault Seeping Shores
+-- Triggered at coordinates:
+-- Middle: X: 5809.59 Y: 1200.97 Z: 7.04 O: 1.94
+-- Right:  X: 5844.46 Y: 1215.58 Z: 10.58 O: 2.29
+-- Left:   X: 5785.77 Y: 1203.52 Z: 2.84 O: 1.55
+-- ============================================================================
+
+-- Invasion Horn - Trigger object (GameObject converted to NPC for interaction)
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400325,0,0,0,0,0,'Invasion Warning Horn',NULL,'Interact',0,80,80,2,35,1,0,0,1.5,0,0,2000,2000,1,1,1,33554432,2048,0,0,0,0,0,0,10,16,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,0,0,0,0,2,'npc_invasion_horn',12340);
+
+-- Wave 1: Zandalari Scout Party (400326-400328) - Light scouts and basic troops
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400326,0,0,0,0,0,'Zandalari Invader',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400326,400326,0,0,0,300,600,'SmartAI',1,1,10,1,1,4,1,0,0,1,0,0,0,'',12340),
+(400327,0,0,0,0,0,'Zandalari Scout',NULL,NULL,0,80,80,2,16,0,1.4,1.42857,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400327,400327,0,0,0,250,500,'SmartAI',1,1,8,1,1,3.5,1,0,0,1,0,0,0,'',12340),
+(400328,0,0,0,0,0,'Zandalari Spearman',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400328,400328,0,0,0,300,600,'SmartAI',1,1,10,1,1.5,4,1,0,0,1,0,0,0,'',12340);
+
+-- Wave 2: Zandalari Warriors (400329-400331) - Hardened veterans, bigger and stronger
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400329,0,0,0,0,0,'Zandalari Warrior',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1.05,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400329,400329,0,0,0,400,700,'SmartAI',1,1,14,1,1.5,5,1,0,0,1,0,0,0,'',12340),
+(400330,0,0,0,0,0,'Zandalari Berserker',NULL,NULL,0,81,81,2,16,0,1.2,1.42857,1.1,1,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400330,400330,0,0,0,500,850,'SmartAI',1,1,18,1,1.5,6,1,0,0,1,0,0,0,'',12340),
+(400331,0,0,0,0,0,'Zandalari Shadow Hunter',NULL,NULL,0,80,80,2,16,0,1.2,1.14286,1.05,0,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400331,400331,0,0,0,350,650,'SmartAI',1,1,12,5,1,4.5,1,0,0,1,0,0,0,'',12340);
+
+-- Wave 3: Zandalari Elite Squad (400332-400334) - Elite troops, larger scale, deadlier
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400332,0,0,0,0,0,'Zandalari Blood Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.15,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400332,400332,0,0,0,600,1000,'SmartAI',1,1,22,1,2,7,1,0,0,1,0,0,0,'',12340),
+(400333,0,0,0,0,0,'Zandalari Witch Doctor',NULL,NULL,0,81,81,2,16,0,1,1.14286,1.1,1,5,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400333,400333,0,0,0,500,900,'SmartAI',1,1,18,8,1.5,5.5,1,0,0,1,0,0,0,'',12340),
+(400334,0,0,0,0,0,'Zandalari Beast Tamer',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400334,400334,0,0,0,550,950,'SmartAI',1,1,20,1,1.5,6.5,1,0,0,1,0,0,0,'',12340);
+
+-- Wave 3 Add: War Raptor (summoned by Beast Tamer)
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400335,0,0,0,0,0,'Zandalari War Raptor',NULL,NULL,0,80,80,2,16,0,2.0,1.71429,1,0,0,1500,2000,1,1,1,32832,2048,0,37,0,0,0,0,1,0,0,0,0,0,0,0,0,'SmartAI',1,1,10,1,1,5,1,0,0,1,0,0,0,'',12340);
+
+-- Wave 4: Invasion Commander (Mini-Boss) - Towering warlord, massive and terrifying
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400336,0,0,0,0,0,'Warlord Zul\'mar','Invasion Commander',NULL,0,82,82,2,16,0,1.2,1.28571,1.5,2,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,76,400336,400336,0,0,0,2000,3500,'',1,1,60,1,2.5,12,2,0,0,1,617299967,0,0,'npc_invasion_commander',12340);
+
+-- Wave 4 Guards (spawn with boss) - Elite bodyguards, large and heavily armored
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400337,0,0,0,0,0,'Zandalari Honor Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.2,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400337,400337,0,0,0,700,1200,'SmartAI',1,1,25,1,2,8,1,0,0,1,0,0,0,'',12340);
 
 -- ============================================================================
 -- BOSS ADDS / SPAWN CREATURES (400400-400450)
@@ -301,10 +385,26 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (400311, 0, 21286, 1, 1, 12340),   -- Windwalker Ta'zo
 
 -- Cannon Quest NPCs
-(400320, 0, 4422, 1, 1, 12340),    -- Captain Harlan (Human Male Sailor - DisplayID 4422)
-(400321, 0, 27101, 1.5, 1, 12340), -- Coastal Cannon (Siege Cannon - DisplayID 27101)
-(400322, 0, 0, 3, 1, 12340),       -- Zandalari Scout Ship (invisible - visual from spell)
-(400323, 0, 11686, 1, 1, 12340),   -- Ship Explosion Trigger (invisible trigger)
+(400320, 0, 4422, 1, 1, 12340),    -- Captain Harlan (human sailor)
+(400321, 0, 27101, 1.5, 1, 12340), -- Coastal Cannon (siege cannon)
+(400322, 0, 9232, 1.5, 1, 12340),  -- GameObject ship (placeholder)
+(400323, 0, 11686, 1, 1, 12340),   -- Ship Explosion Trigger (invisible)
+(400324, 0, 23278, 1.5, 1, 12340), -- Zandalari Scout Ship (large ship)
+
+-- Invasion NPCs - Mixed troll models for variety, boss has unique intimidating model
+(400325, 0, 3789, 1.5, 1, 12340),  -- Invasion Warning Horn (war drum)
+(400326, 0, 11288, 1, 1, 12340),   -- Zandalari Invader (ZG troll standard)
+(400327, 0, 11287, 1, 1, 12340),   -- Zandalari Scout (ZG troll leather)
+(400328, 0, 11288, 1, 1, 12340),   -- Zandalari Spearman (ZG troll standard)
+(400329, 0, 11290, 1.05, 1, 12340),   -- Zandalari Warrior (ZG troll plate, larger)
+(400330, 0, 11289, 1.1, 1, 12340),-- Zandalari Berserker (ZG troll naked, larger)
+(400331, 0, 11291, 1.05, 1, 12340),   -- Zandalari Shadow Hunter (ZG troll shaman, larger)
+(400332, 0, 11293, 1.15, 1, 12340), -- Zandalari Blood Guard (ZG troll champion, larger)
+(400333, 0, 11292, 1.1, 1, 12340),   -- Zandalari Witch Doctor (ZG troll priest, larger)
+(400334, 0, 11288, 1.1, 1, 12340),   -- Zandalari Beast Tamer (ZG troll standard, larger)
+(400335, 0, 5291, 1, 1, 12340),    -- Zandalari War Raptor
+(400336, 0, 11295, 1.5, 1, 12340), -- Warlord Zul'mar (ZG boss troll, LARGEST)
+(400337, 0, 11293, 1.2, 1, 12340),-- Zandalari Honor Guard (ZG champion, large)
 
 -- Boss Adds
 (400400, 0, 5239, 1.2, 1, 12340),  -- Young Oondasta
@@ -336,7 +436,12 @@ INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `b
 (400102, 0, 0, 0, 0, 0, 3, '28126'),   -- Nalak (max visibility)
 (400260, 0, 0, 0, 0, 0, 1, '28126'),   -- Warlord Gha'tul
 (400300, 0, 0, 0, 0, 0, 0, '10848'),   -- Spirit of the Primal (ghost aura)
-(400301, 0, 0, 0, 0, 0, 1, '28126');   -- Corrupted Direhorn Spirit
+(400301, 0, 0, 0, 0, 0, 1, '28126'),   -- Corrupted Direhorn Spirit
+-- Cannon Quest NPCs - Increased visibility for ship and cannon
+(400321, 0, 0, 0, 0, 0, 2, ''),        -- Coastal Cannon (Large visibility)
+(400324, 0, 0, 0, 0, 0, 2, ''),        -- Zandalari Scout Ship (Large visibility)
+-- Invasion Commander - Large visibility so players can spot the boss
+(400336, 0, 0, 0, 0, 0, 2, '28126');   -- Warlord Zul'mar (boss aura + visibility)
 
 -- ============================================================================
 -- GUARDS AND DEFENDERS (401000-401099)
@@ -643,7 +748,7 @@ INSERT INTO `quest_template` (
     'Captain Harlan has spotted a Zandalari scout ship approaching our waters. Man the coastal cannon and sink it before they can report back to their masters!$B$BThe cannon has enough firepower to sink the ship in just a few direct hits. Get in there and show them what we''re made of!',
     '',
     'You sank the Zandalari scout ship! That''ll teach them to spy on us.',
-    400322, 0, 0, 0,                 -- RequiredNpcOrGo 1-4 (400322 = ship)
+    400324, 0, 0, 0,                 -- RequiredNpcOrGo 1-4 (400324 = ship hitbox creature)
     1, 0, 0, 0,                      -- RequiredNpcOrGoCount 1-4
     0, 0, 0, 0, 0, 0,                -- RequiredItemId 1-6
     0, 0, 0, 0, 0, 0,                -- RequiredItemCount 1-6
@@ -658,20 +763,132 @@ DELETE FROM `creature_questender` WHERE `quest` = 80100;
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (400320, 80100);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES (400320, 80100);
 
--- Ship Waypoint Path (placeholder coordinates - UPDATE WITH REAL ZONE COORDS)
+-- Ship Waypoint Path - Giant Isles Map 1405
 -- Path ID: 4003220 (NPC Entry * 10)
 -- This defines the patrol route for the scout ship
 DELETE FROM `waypoint_data` WHERE `id` = 4003220;
 INSERT INTO `waypoint_data` (`id`, `point`, `position_x`, `position_y`, `position_z`, `orientation`, `delay`, `move_type`, `action`, `action_chance`, `wpguid`) VALUES
--- TODO: Replace with actual Giant Isles coordinates
--- These are placeholder waypoints forming a patrol path offshore
-(4003220, 1, 0, 0, 0, 0, 0, 0, 0, 100, 0),   -- Start position (spawned by script)
-(4003220, 2, 50, 0, 0, 0, 0, 0, 0, 100, 0),  -- Patrol point 1
-(4003220, 3, 100, -30, 0, 0, 0, 0, 0, 100, 0), -- Patrol point 2
-(4003220, 4, 150, 0, 0, 0, 0, 0, 0, 100, 0),   -- Patrol point 3
-(4003220, 5, 100, 30, 0, 0, 0, 0, 0, 100, 0),  -- Patrol point 4
-(4003220, 6, 50, 0, 0, 0, 0, 0, 0, 100, 0);    -- Return to start area
+-- Ship patrol route along the coast (Map 1405 - Giant Isles)
+(4003220, 1, 5835.31, 1738.56, -2.14912, 4.04833, 0, 0, 0, 100, 0),  -- ship1
+(4003220, 2, 5818.97, 1710.45, -2.14912, 4.45752, 0, 0, 0, 100, 0),  -- ship2
+(4003220, 3, 5810.44, 1682.94, -2.14912, 4.34914, 0, 0, 0, 100, 0),  -- ship3
+(4003220, 4, 5798.67, 1654.80, -2.14912, 4.22426, 0, 0, 0, 100, 0),  -- ship4
+(4003220, 5, 5760.13, 1617.10, -2.14912, 3.82842, 0, 0, 0, 100, 0),  -- ship5
+(4003220, 6, 5730.02, 1598.58, -2.14912, 3.61636, 0, 0, 0, 100, 0),  -- ship6
+(4003220, 7, 5702.56, 1587.03, -2.14912, 3.48441, 0, 0, 0, 100, 0),  -- ship7
+(4003220, 8, 5684.10, 1578.87, -2.14912, 3.65877, 0, 0, 0, 100, 0),  -- ship8
+(4003220, 9, 5665.86, 1563.35, -2.14912, 3.96272, 0, 0, 0, 100, 0);  -- ship9
+
+-- ============================================================================
+-- CREATURE SPAWNS - Cannon Quest NPCs
+-- Map 1405 (Giant Isles)
+-- ============================================================================
+
+DELETE FROM `creature` WHERE `guid` IN (9000132, 9000133);
+INSERT INTO `creature` (`guid`, `id1`, `id2`, `id3`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`, `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
+-- Coastal Cannon (Vehicle) - Entry 400321
+(9000132, 400321, 0, 0, 1405, 0, 0, 1, 1, 0, 5818.28, 1555.64, 46.1046, 2.40827, 300, 0, 0, 1260000, 0, 0, 0, 0, 0, '', NULL, 0, 'Giant Isles - Coastal Cannon'),
+-- Captain Harlan (Quest Giver) - Entry 400320 - Positioned near the cannon
+(9000133, 400320, 0, 0, 1405, 0, 0, 1, 1, 0, 5812.94, 1550.37, 45.5279, 5.60106, 300, 0, 0, 126000, 0, 0, 0, 0, 0, '', NULL, 0, NULL);
+
+-- ============================================================================
+-- CREATURE EQUIPMENT TEMPLATES
+-- ============================================================================
+-- Equipment IDs follow AzerothCore standard equipment_template table format
+-- Equipment slots: 1 = Main Hand, 2 = Off Hand, 3 = Ranged
+-- ============================================================================
+
+DELETE FROM `creature_equip_template` WHERE `CreatureID` BETWEEN 400000 AND 401999;
+
+-- Zandalari NPCs Equipment
+INSERT INTO `creature_equip_template` (`CreatureID`, `ID`, `ItemID1`, `ItemID2`, `ItemID3`, `VerifiedBuild`) VALUES
+-- Quest Givers
+(400200, 1, 12584, 0, 0, 12340),      -- Elder Zul'jin - Troll Staff
+(400201, 1, 5598, 0, 0, 12340),       -- Witch Doctor Tala'jin - Tribal Wand
+(400202, 1, 12748, 0, 2506, 12340),   -- Rokhan the Beast Tamer - Axe + Crossbow
+(400203, 1, 12584, 12651, 0, 12340),  -- Scout Zan'do - Spear + Shield
+
+-- Vendors
+(400210, 1, 12584, 0, 0, 12340),      -- Trader Zal'aman - Staff
+(400211, 1, 44504, 44504, 0, 12340),  -- Armsmaster Jin'kala - Dual Troll Axes
+
+-- Zandalari Guards
+(400220, 1, 12749, 12651, 0, 12340),  -- Zandalari Expedition Guard - Sword + Shield
+(400221, 1, 12748, 0, 2506, 12340),   -- Zandalari Beast Handler - Axe + Crossbow
+
+-- Hostile Primal Trolls
+(400250, 1, 12749, 12651, 0, 12340),  -- Primal Troll Warrior - Sword + Shield
+(400251, 1, 5598, 0, 0, 12340),       -- Primal Troll Shadowcaster - Wand
+(400252, 1, 12748, 12748, 0, 12340),  -- Primal Troll Berserker - Dual Axes
+(400253, 1, 12584, 0, 0, 12340),      -- Primal Troll Witch Doctor - Staff
+(400254, 1, 12584, 0, 2506, 12340),   -- Primal Troll Headhunter - Spear + Bow
+(400260, 1, 12756, 12651, 0, 12340),  -- Warlord Gha'tul - Large Axe + Shield
+
+-- Captain Harlan (Human Sailor)
+(400320, 1, 12756, 0, 2507, 12340),   -- Captain Harlan - Sword + Rifle
+
+-- Alliance Guards (Primal Wardens)
+(401000, 1, 12749, 12651, 0, 12340),  -- Primal Warden - Sword + Shield
+(401001, 1, 12756, 12651, 0, 12340),  -- Primal Warden Sergeant - Large Sword + Shield
+(401002, 1, 12749, 0, 2507, 12340),   -- Primal Warden Marksman - Sword + Rifle
+(401003, 1, 13160, 13160, 0, 12340),  -- Primal Warden Captain - Dual Epic Swords
+
+-- Horde Guards (Beast Hunters)
+(401004, 1, 12748, 12651, 0, 12340),  -- Beast Hunter - Axe + Shield
+(401005, 1, 12756, 12651, 0, 12340),  -- Beast Hunter Veteran - Large Axe + Shield
+(401006, 1, 12748, 0, 2506, 12340),   -- Beast Hunter Trapper - Axe + Crossbow
+(401007, 1, 13160, 13160, 0, 12340),  -- Beast Hunter Warlord - Dual Epic Axes
+
+-- Neutral Guards (Primal Guardians - Tauren)
+(401008, 1, 12756, 12651, 0, 12340),  -- Primal Guardian - Large Mace + Shield
+(401009, 1, 13160, 13160, 0, 12340),  -- Ancient Primal Guardian - Dual Epic Maces
+
+-- Alliance Service NPCs
+(401101, 1, 5956, 0, 0, 12340),       -- Tinker Sprocketwrench - Wrench
+(401102, 1, 0, 0, 0, 12340),          -- Emily Stormwind - No weapon
+(401103, 1, 12749, 0, 0, 12340),      -- Flight Master Aldric - Sword
+(401104, 1, 0, 0, 0, 12340),          -- Innkeeper Molly - No weapon
+
+-- Horde Service NPCs
+(401106, 1, 5956, 0, 0, 12340),       -- Grizzek Fizzlecrank - Wrench
+(401107, 1, 0, 0, 0, 12340),          -- Zasha - No weapon
+(401108, 1, 12748, 0, 0, 12340),      -- Flight Master Krag - Axe
+(401109, 1, 0, 0, 0, 12340),          -- Innkeeper Grok - No weapon
+
+-- Neutral Service NPCs
+(401110, 1, 12584, 0, 0, 12340),      -- Ku'ma (Bone Collector) - Staff
+(401111, 1, 12748, 0, 0, 12340),      -- Safari Trainer Rex - Axe
+(401112, 1, 12584, 0, 0, 12340),      -- Professor Ironpaw - Staff
+(401113, 1, 12749, 12651, 0, 12340),  -- Primal Quartermaster - Sword + Shield
+(401114, 1, 12748, 0, 0, 12340),      -- Stable Master Thornhide - Axe
+(401115, 1, 0, 0, 0, 12340),          -- Banker Goldtusk - No weapon
+
+-- Quest Givers
+(401200, 1, 12756, 12651, 0, 12340),  -- Commander Stonewall - Sword + Shield
+(401201, 1, 12584, 0, 0, 12340),      -- Dr. Zira Fossildigger - Staff
+(401202, 1, 12748, 0, 2506, 12340),   -- Huntmaster Grimtusk - Axe + Crossbow
+(401203, 1, 12584, 0, 0, 12340),      -- Sage Primalwisdom - Staff
+(401210, 1, 12584, 0, 2506, 12340),   -- Raptor Handler Ka'zak - Spear + Bow
+(401211, 1, 12584, 0, 0, 12340),      -- Bone Collector Maz'gor - Staff
+(401212, 1, 12749, 12651, 0, 12340),  -- Scout Shadowtooth - Sword + Shield
+(401220, 1, 12756, 0, 2506, 12340),   -- Oondasta Tracker Grull - Large Axe + Bow
+(401221, 1, 12584, 0, 2506, 12340),   -- Thok Pursuer Raz'jin - Spear + Bow
+(401222, 1, 12584, 0, 0, 12340),      -- Storm Chaser Volta - Staff
+
+-- Invasion NPCs Equipment - Better weapons for higher waves, EPIC for boss
+(400326, 1, 12749, 12651, 0, 12340),  -- Zandalari Invader - Sword + Shield
+(400327, 1, 12584, 0, 2506, 12340),   -- Zandalari Scout - Spear + Crossbow
+(400328, 1, 12584, 12651, 0, 12340),  -- Zandalari Spearman - Spear + Shield
+(400329, 1, 12756, 12651, 0, 12340),  -- Zandalari Warrior - Large Axe + Shield
+(400330, 1, 44504, 44504, 0, 12340),  -- Zandalari Berserker - Dual Axes
+(400331, 1, 12584, 0, 2506, 12340),   -- Zandalari Shadow Hunter - Staff + Bow
+(400332, 1, 13160, 12651, 0, 12340),  -- Zandalari Blood Guard - Epic Axe + Shield
+(400333, 1, 13396, 0, 0, 12340),       -- Zandalari Witch Doctor - Epic Staff
+(400334, 1, 12756, 0, 2506, 12340),   -- Zandalari Beast Tamer - Axe + Bow
+(400336, 1, 50730, 50729, 0, 12340),  -- Warlord Zul'mar - Dual Epic Blades (Glorenzelg)
+(400337, 1, 13160, 12651, 0, 12340);  -- Zandalari Honor Guard - Epic Axe + Shield
 
 -- ============================================================================
 -- END OF GIANT ISLES CREATURE TEMPLATES
 -- ============================================================================
+

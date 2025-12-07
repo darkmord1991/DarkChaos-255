@@ -286,6 +286,16 @@ function DCInfoBar:HandleSeasonProgressData(data)
         season.totalTokens = data.totalTokens
     end
     
+    -- If name is still Unknown, check DCWelcome
+    if (not season.name or season.name == "Unknown" or season.name == "Unknown Season") then
+        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
+            local D = DCWelcome.Seasons.Data
+            if D.seasonName and D.seasonName ~= "Unknown Season" then
+                season.name = D.seasonName
+            end
+        end
+    end
+    
     -- Notify season plugin
     if self.plugins["DCInfoBar_Season"] and self.plugins["DCInfoBar_Season"].OnServerData then
         self.plugins["DCInfoBar_Season"]:OnServerData(season)
@@ -302,13 +312,23 @@ function DCInfoBar:HandleSeasonData(data)
         id = data.seasonId or data.id or 0,
         name = data.seasonName or data.name or "Unknown",
         weeklyTokens = data.weeklyTokens or 0,
-        weeklyCap = data.weeklyCap or 500,
+        weeklyCap = data.weeklyCap or data.tokenCap or 1000,
         weeklyEssence = data.weeklyEssence or 0,
-        essenceCap = data.essenceCap or 200,
+        essenceCap = data.essenceCap or 1000,
         totalTokens = data.totalTokens or 0,
         endsIn = data.endsIn or 0,
         weeklyReset = data.weeklyReset or 0,
     }
+    
+    -- If name is still Unknown, check DCWelcome
+    if (self.serverData.season.name == "Unknown" or self.serverData.season.name == "Unknown Season") then
+        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
+            local D = DCWelcome.Seasons.Data
+            if D.seasonName and D.seasonName ~= "Unknown Season" then
+                self.serverData.season.name = D.seasonName
+            end
+        end
+    end
     
     -- Notify season plugin
     if self.plugins["DCInfoBar_Season"] and self.plugins["DCInfoBar_Season"].OnServerData then

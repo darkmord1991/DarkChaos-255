@@ -26,7 +26,7 @@ local LocationPlugin = {
     icon = "Interface\\Icons\\INV_Misc_Map01",
     updateInterval = 1.0,
     
-    leftClickHint = "Copy coordinates",
+    leftClickHint = "Get server GPS coordinates",
     rightClickHint = "Open world map",
     middleClickHint = "Teleport to hotspot",
     
@@ -37,6 +37,13 @@ local LocationPlugin = {
     _mapId = 0,
     _zoneId = 0,
     _areaId = 0,
+    
+    -- Server coordinates (XYZ from .gps command)
+    _serverX = 0,
+    _serverY = 0,
+    _serverZ = 0,
+    _orientation = 0,
+    _hasServerCoords = false,
     
     -- Hotspot tracking
     _hotspots = {},           -- All active hotspots
@@ -76,6 +83,30 @@ function LocationPlugin:OnActivate()
     -- Initialize serverData.hotspots if not exists
     DCInfoBar.serverData = DCInfoBar.serverData or {}
     DCInfoBar.serverData.hotspots = DCInfoBar.serverData.hotspots or {}
+    
+    -- Monitor chat for .gps command output to get server coordinates
+    local originalAddMessage = ChatFrame1.AddMessage
+    ChatFrame1.AddMessage = function(self, msg, ...)
+        if msg and type(msg) == "string" then
+            -- Parse .gps output: "X: 5752.5776 Y: 1325.3961 Z: 24.627499 Orientation: 5.4110045"
+            local x, y, z, o = string.match(msg, "X:%s*([%d%.%-]+)%s*Y:%s*([%d%.%-]+)%s*Z:%s*([%d%.%-]+)%s*Orientation:%s*([%d%.%-]+)")
+            if x and y and z and o then
+                LocationPlugin._serverX = tonumber(x) or 0
+                LocationPlugin._serverY = tonumber(y) or 0
+                LocationPlugin._serverZ = tonumber(z) or 0
+                LocationPlugin._orientation = tonumber(o) or 0
+                LocationPlugin._hasServerCoords = true
+            end
+            
+            -- Also parse ZoneX/ZoneY from .gps output
+            local zoneX, zoneY = string.match(msg, "ZoneX:%s*([%d%.%-]+)%s*ZoneY:%s*([%d%.%-]+)")
+            if zoneX and zoneY then
+                -- These match our calculated coordinates
+                -- Just validate they're consistent
+            end
+        end
+        return originalAddMessage(self, msg, ...)
+    end
     
     -- Register handlers for hotspot data
     local DC = rawget(_G, "DCAddonProtocol")
@@ -267,6 +298,17 @@ function LocationPlugin:OnTooltip(tooltip)
     local coords = string.format("%.1f, %.1f", self._x * 100, self._y * 100)
     tooltip:AddDoubleLine("Coordinates:", coords, 0.7, 0.7, 0.7, 0.5, 1, 0.5)
     
+    -- Show server XYZ coordinates if available (for debugging)
+    if self._hasServerCoords then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cff32c4ffServer Coordinates:|r")
+        tooltip:AddDoubleLine("  X:", string.format("%.2f", self._serverX), 0.7, 0.7, 0.7, 1, 1, 0)
+        tooltip:AddDoubleLine("  Y:", string.format("%.2f", self._serverY), 0.7, 0.7, 0.7, 1, 1, 0)
+        tooltip:AddDoubleLine("  Z:", string.format("%.2f", self._serverZ), 0.7, 0.7, 0.7, 1, 1, 0)
+        tooltip:AddDoubleLine("  Orientation:", string.format("%.2f", self._orientation), 0.7, 0.7, 0.7, 0.8, 0.8, 1)
+        tooltip:AddLine("|cff888888(Use .gps to update)|r", 0.5, 0.5, 0.5)
+    end
+    
     -- Current Hotspot section (if in one)
     if self._inHotspot and self._currentHotspot then
         tooltip:AddLine(" ")
@@ -382,17 +424,9 @@ end
 
 function LocationPlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Copy coordinates to clipboard (via chat input)
-        if self._x > 0 and self._y > 0 then
-            local coords = string.format("%.1f, %.1f", self._x * 100, self._y * 100)
-            local text = self._zone .. " " .. coords
-            
-            ChatFrame1EditBox:SetText(text)
-            ChatFrame1EditBox:SetFocus()
-            ChatFrame1EditBox:HighlightText()
-            
-            DCInfoBar:Print("Coordinates copied: " .. text)
-        end
+        -- Run .gps command to get server coordinates
+        SendChatMessage(".gps", "GUILD")
+        DCInfoBar:Print("Requesting GPS data from server...")
     elseif button == "RightButton" then
         -- Open world map (3.3.5a compatible)
         if WorldMapFrame then

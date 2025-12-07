@@ -16,6 +16,363 @@ Players must establish a foothold, push back the Zandalari invasion, and face th
 
 ---
 
+## 🏛️ Gameobject Decorations - Tribal & Prehistoric Theme
+
+### **Core Decoration Gameobjects**
+
+#### **Troll Structures (Buildings & Defenses)**
+- **19052** - Troll Ziggurat (Large temple structure)
+- **19142** - Troll Den (Basic dwelling)
+- **19143** - Troll Den 2 (Variant dwelling)
+- **19303** - Blackrock Troll Burrow (Dark-themed burrow)
+- **19304** - Troll Burrow (Swamp variant)
+- **19305** - Troll Burrow (Generic)
+- **19306** - Troll Hotel (Large building)
+- **19307** - Troll Shop House (Market structure)
+- **19308** - Troll Shopping Mall (Large marketplace)
+- **19309** - Troll Hut Desert (Sandy variant)
+- **19311** - Troll Hut (Standard dwelling)
+- **19312** - Troll Hut Small (Compact version)
+- **19382** - Troll City Arena (Combat arena)
+- **19064** - Bamboo House (Tribal housing)
+- **19482** - Troll Watch Tower (Guard tower)
+
+#### **Defensive Structures (Barricades & Walls)**
+- **19395** - Spike Wall (Scale: 1.8 - intimidating barrier)
+- **19434** - Fence Segment (Modular fencing)
+- **19454** - Fence (Basic perimeter)
+- **19455** - Stone Fence (Durable variant)
+
+#### **Tribal Decorations & Totems**
+- **19333** - Giant Totem (Massive tribal marker)
+- **50523** - Winterhoof Totems (Tauren-style totems)
+- **55774** - Ragetotem Arms (Weapon display totem)
+- **67234** - Fire Totem (Scale: 2.64 - burning ritual totem)
+- **103661** - Witherbark Totem Bundle TRAP (Decorative totem cluster)
+
+#### **Skull & Bone Decorations**
+- **2371** - Headhunter Skull (Trophy skull)
+- **2551** - Boiled Skull (Scale: 1.3 - processed remains)
+- **2891** - Balia'mah Trophy Skulls (Troll trophy display)
+- **2892** - Ziata'jai Trophy Skulls (Troll trophy display)
+- **2893** - Zul'Mamwe Trophy Skulls (Troll trophy display)
+- **105168** - Skull Key (Decorative skull item)
+- **20898** - Burning Pile of Bones (Scale: 0.74 - smoldering remains)
+
+#### **Fire & Ritual Objects**
+- **2914** - Tribal Fire (Scale: 1.02 - ritual flame)
+- **18035** - Tribal Fire (Scale: 0.4 - small campfire)
+- **20977** - Troll Bonfire (Standard)
+- **20978** - Troll Bonfire (Variant 1)
+- **20979** - Troll Bonfire (Variant 2)
+- **20980** - Troll Bonfire (Variant 3)
+- **43116** - Bone Fire (Standard)
+- **43117** - Bone Fire (Scale: 1.06)
+- **43118** - Bone Fire (Scale: 1.3)
+- **43119** - Bone Fire (Scale: 1.17)
+- **43120** - Bone Fire (Scale: 1.17)
+- **43121** - Bone Fire (Scale: 1.13)
+- **43122** - Bone Fire (Scale: 1.06)
+- **112879** - Bonefire (Heat effect)
+
+#### **Braziers & Altars**
+- **6291** - Smoldering Brazier (Standard flame brazier)
+- **6292** - Smoldering Brazier (Variant)
+- **20873** - Smoldering Brazier (Large)
+- **20874** - Smoldering Brazier (Variant 1)
+- **20875** - Smoldering Brazier (Variant 2)
+- **20876** - Smoldering Brazier (Variant 3)
+- **20975** - Brazier (Standard ritual brazier)
+- **22216** - Dwarven Brazier (Can be repurposed)
+- **22217** - Dwarven Brazier (Variant 1)
+- **22218** - Dwarven Brazier (Variant 2)
+- **22219** - Dwarven Brazier (Variant 3)
+- **22220** - Dwarven Brazier (Variant 4)
+- **22221** - Dwarven Brazier (Variant 5)
+- **2576** - Altar of the Tides (Elemental altar)
+- **2563** - Altar of the Tides - Focused (Ritual variant)
+- **2871** - Seaworn Altar (Scale: 1 - ancient altar)
+- **3525** - The Altar of Fire (Scale: 1.47 - fire ritual)
+- **19000** - Altar Of Storms (Dark ritual altar)
+- **19405** - Lava Altar (Volcanic theme)
+- **20807** - Ancient Brazier (Ancient ritual piece)
+
+#### **Cauldrons & Cooking Fires**
+- **2076** - Bubbling Cauldron (Scale: 1.42)
+- **2719** - Bubbling Cauldron (Scale: 1.4)
+- **3266** - Cauldron (Standard)
+- **3315** - Boiling Cauldron (Scale: 1.75)
+- **18079** - Bubbling Cauldron (Variant 1)
+- **18083** - Bubbling Cauldron (Variant 2)
+- **18084** - Bubbling Cauldron (Variant 3)
+- **18340** - Cauldron (Standard variant)
+- **18341** - Bubbling Cauldron (Variant 4)
+- **18342** - Boiling Cauldron (Extra hot)
+- **18345** - Bubbling Cauldron (Variant 5)
+- **19522** - Cauldron (Generic)
+- **20869** - Cauldron (Standard flame)
+- **20870** - Cauldron (Scale: 0.87 - heat effect)
+- **20871** - Cauldron (Scale: 0.87 - flame effect)
+- **20872** - Cauldron (Standard)
+- **20877** - Cauldron (Variant 1)
+- **20878** - Cauldron (Variant 2)
+- **20970** - Bubbling Cauldron (Extra bubbles)
+
+#### **Campfires & Cooking Stations**
+- **20981** - Campfire (Standard)
+- **3270** - Campfire (Variant 1)
+- **3636** - Campfire (Variant 2)
+- **6293** - Campfire (Variant 3)
+- **9847** - Cooking Fire (Scale: 1.21)
+- **15068** - Campfire (Variant 4)
+- **18085** - Campfire (Variant 5)
+- **18343** - Cooking Fire (Standard)
+- **18596** - Crackling Campfire (Loud crackle)
+- **20879** - Crackling Campfire (Extra loud)
+- **20972** - Campfire (Variant 6)
+- **20976** - Campfire (Variant 7)
+- **56809** - Campfire (Generic)
+- **112881** - Cooking Fire (Standard)
+
+#### **Cages & Traps**
+- **141070** - Troll Cage (Standard size)
+- **141071** - Troll Cage (Scale: 0.65 - small)
+- **141072** - Troll Cage (Standard variant)
+
+#### **Banners & Flags**
+- **13756** - Graveyard Banner (Territory marker)
+- **15001** - Mine Banner (Resource control)
+- **15002** - Lumber Mill Banner (Resource control)
+- **15003** - Farm Banner (Resource control)
+- **15004** - Blacksmith Banner (Crafting station)
+- **15005** - Stable Banner (Pet/mount area)
+- **19664** - Night Elf Owl Banner (Can be repurposed)
+- **19665** - Night Elf Tree Banner (Can be repurposed)
+- **21680** - Duel Flag (Combat arena marker)
+
+### **Zone-Specific Decoration Placement Guide**
+
+#### **Sector 1: Warden's Landing (Safe Hub)**
+**Theme:** Expedition camp with mixed Alliance/Horde/Neutral areas
+
+**Recommended Objects:**
+- Campfires (20981, 3270, 15068) for warmth and cooking
+- Braziers (20975, 6291, 6292) along pathways for lighting
+- Banners (15001-15005) to mark different faction areas
+- Tents and supply crates (use existing models)
+- Fences (19434, 19454) for camp perimeter
+- Totems (50523, 55774) at neutral Tauren areas
+
+**Key Placements:**
+- Alliance Camp: 3-4 campfires, 2 braziers, Alliance banners
+- Horde Camp: 3-4 campfires, 2 braziers, Horde banners
+- Neutral Zone: 5-6 braziers, trade totems, central bonfire (20977)
+
+#### **Sector 2: Raptor Beaches (Eastern Coastline)**
+**Theme:** Hunting grounds with scattered camps and bone piles
+
+**Recommended Objects:**
+- Small Troll Huts (19312, 19311) for raptor hunter camps
+- Bone Fires (43116-43122) scattered across beach
+- Skull decorations (2371, 2551, 105168) as territory markers
+- Spike Walls (19395) protecting small encampments
+- Campfires (18596, 20879) for crackling beach fires
+- Fence Segments (19434) creating raptor pens
+
+**Density:** Low to Medium - scattered hunting camps
+
+#### **Sector 3: Direhorn Valley (Western Grasslands)**
+**Theme:** Open plains with tribal totems and bone structures
+
+**Recommended Objects:**
+- Giant Totems (19333) as large tribal markers
+- Winterhoof Totems (50523) for Tauren aesthetic
+- Troll Burrows (19304, 19305) as basic shelters
+- Bonfires (20977-20980) for large gatherings
+- Trophy Skulls (2891, 2892, 2893) on display poles
+- Stone Fences (19455) for direhorn corrals
+
+**Key Features:**
+- Ku'ma's Cave entrance: Ancient braziers (20807), skull decorations
+- Open plains: Giant totems every 50-75 yards
+- Corral areas: Stone fences with campfires
+
+#### **Sector 4: Devilsaur Heights (Central-North Volcanic)**
+**Theme:** Volcanic chaos with lava and burning structures
+
+**Recommended Objects:**
+- Fire Totems (67234) with scale 2.64 for massive flames
+- Lava Altars (19405) as chaos ritual sites
+- Smoldering Braziers (20873-20876) along paths
+- Burning Bone Piles (20898) scattered throughout
+- Boiling Cauldrons (3315, 18342) with chaos effects
+- Spike Walls (19395) marking territory borders
+- Volcanic Den structures (19144) as monster lairs
+
+**Density:** Medium to High - chaotic volcanic atmosphere
+
+**Special Effects:**
+- Chaos Rift entrance: 4-6 smoldering braziers in circle
+- Devilsaur spawn points: Burning bone piles nearby
+- Patrol paths: Fire totems every 30 yards
+
+#### **Sector 5: Zandalari Warcamp (Southeast Peninsula)**
+**Theme:** Organized military encampment with troll architecture
+
+**Recommended Objects:**
+- Troll Watch Towers (19482) at camp perimeter
+- Troll Ziggurat (19052) as command center
+- Troll Huts (19306, 19307, 19308) for barracks/supplies
+- Troll Cages (141070, 141071, 141072) holding prisoners/beasts
+- Tribal Fires (2914, 18035) throughout camp
+- Banners (custom or repurposed) marking Zandalari territory
+- Bamboo Houses (19064) for officer quarters
+- Troll Burrows (19303) for guard posts
+- Bubbling Cauldrons (2719, 18079) for alchemy/ritual
+- Spike Walls (19395) as defensive barriers
+
+**Layout:**
+- **Outer Perimeter:** Watch towers + spike walls
+- **Inner Camp:** Huts + tribal fires + cauldrons
+- **Central Area:** Ziggurat + altar + braziers
+- **Beast Pens:** Troll cages with bonfires
+- **Training Grounds:** Open area with weapon racks
+
+**Density:** Very High - organized military camp
+
+#### **Sector 6: The Chaos Rift (Central Caldera)**
+**Theme:** Dark corruption with void effects and chaos energy
+
+**Recommended Objects:**
+- Altars (19000 Altar of Storms, 3525 Altar of Fire) for rituals
+- Ancient Braziers (20807) with purple chaos flames
+- Smoldering Braziers (6291, 6292) around rift edge
+- Lava Altars (19405) channeling chaos power
+- Giant Totems (19333) twisted by corruption
+- Bone Fires (43118 largest) burning with void flame
+- Cauldrons (20869-20872) bubbling with dark energy
+- Spike Walls (19395) warped by chaos
+
+**Special Chaos Effects:**
+- Rift Center: 6 altars in circle around void tear
+- Outer Ring: 12 braziers with purple flames (aura applied)
+- Approach Path: Twisted totems every 25 yards
+- Ritual Sites: Ancient braziers + cauldrons in triangular pattern
+
+**Nalak Spawn Area:**
+- Large altar platform (use 19000 Altar of Storms)
+- 4 braziers at corners with lightning effects
+- Bone fires scattered around perimeter
+
+**Density:** High - concentrated corruption
+
+#### **Sector 7: The King's Plateau (Northwest Mountains)**
+**Theme:** Ancient ruins with massive devilsaur territory markers
+
+**Recommended Objects:**
+- Giant Totems (19333) marking Oondasta's domain
+- Trophy Skull displays (2891, 2892, 2893) from past kills
+- Ancient Braziers (20807) at ruins
+- Bonefire piles (112879) as territory markers
+- Spike Walls (19395) protecting approach paths
+- Troll Ziggurat ruins (19052) as ancient structure
+- Stone Fences (19455) from old fortifications
+- Burning Bone Piles (20898) from recent kills
+
+**Key Areas:**
+- **Plateau Approach:** Spike walls + bone piles creating hazardous path
+- **Plateau Top:** Giant totems + skull displays showing power
+- **Ruins:** Ancient braziers + ziggurat remnants
+- **Oondasta Spawn:** Central clearing with 4 massive totems at cardinal directions
+
+**Density:** Medium - emphasizes open space for boss fight
+
+#### **Sector 8: The Bone Pit (Northeast)**
+**Theme:** Raptor graveyard with skeletal remains and bone structures
+
+**Recommended Objects:**
+- Burning Bone Piles (20898) everywhere
+- Bone Fires (43116-43122) various scales
+- Skull decorations (2371, 2551, 105168) on stakes
+- Trophy Skulls (2891, 2892, 2893) on bone altars
+- Tribal Fires (2914, 18035) in raptor nests
+- Troll Dens (19142, 19143) half-buried in bones
+- Campfires (18596, 20879) crackling with bone fuel
+- Spike Walls (19395) made from giant bones
+
+**Special Features:**
+- **Bone Walls:** Massive piles of dinosaur skeletons (use spike walls + skull decorations)
+- **Raptor Nests:** Tribal fires + bone piles + scattered skulls
+- **Thok's Lair:** Central bone pit with burning bone piles in circle
+- **Feeding Grounds:** Trophy skull displays showing Thok's victories
+
+**Thok Spawn Area:**
+- Circular arena of bones
+- 8 burning bone piles around perimeter
+- Giant skull trophies at 4 cardinal points
+- Bone fires lighting the center
+
+**Density:** Very High - overwhelming bone atmosphere
+
+### **Ambient Decoration Density Guidelines**
+
+| Zone Sector | Fire Objects | Structural | Totems/Skulls | Fences/Walls | Total Density |
+|-------------|-------------|------------|---------------|--------------|---------------|
+| Sector 1 (Hub) | 15-20 | 10-15 | 5-8 | 8-12 | Medium |
+| Sector 2 (Beach) | 12-18 | 8-12 | 10-15 | 6-10 | Medium |
+| Sector 3 (Valley) | 10-15 | 5-8 | 15-20 | 8-12 | Medium |
+| Sector 4 (Heights) | 25-35 | 8-12 | 8-12 | 10-15 | High |
+| Sector 5 (Warcamp) | 20-30 | 25-35 | 12-18 | 15-20 | Very High |
+| Sector 6 (Rift) | 30-40 | 12-18 | 10-15 | 6-10 | High |
+| Sector 7 (Plateau) | 15-20 | 10-15 | 12-18 | 8-12 | Medium |
+| Sector 8 (Bone Pit) | 35-45 | 8-12 | 25-35 | 8-12 | Very High |
+
+### **Color & Effect Variations**
+
+#### **Fire Colors by Zone:**
+- **Standard Zones (1-3):** Orange/yellow flames (default)
+- **Volcanic Zones (4):** Red/orange with ember particles
+- **Chaos Zones (5-6):** Purple/black flames (apply aura spell)
+- **Death Zones (7-8):** Green/sickly flames (apply death aura)
+
+#### **Recommended Aura Spells for Customization:**
+- Purple Chaos Flames: Spell ID 28126 (Spirit Particles Purple)
+- Green Death Flames: Spell ID 10848 (Ghost aura)
+- Lightning Effects: Spell ID 45537 (Lightning visual)
+
+### **Implementation Tips:**
+
+1. **Layering:** Combine multiple small objects for richer scenes
+   - Example: Campfire + cauldron + 2-3 skulls = cooking station
+
+2. **Scaling:** Use scale parameter to create variety
+   - Small fires (0.4-0.8) for intimate camps
+   - Medium fires (1.0-1.5) for standard lighting
+   - Large fires (1.8-2.6) for dramatic effect
+
+3. **Rotation:** Vary orientations to avoid repetitive patterns
+   - Rotate totems 45° from each other
+   - Stagger fence placement for organic look
+
+4. **Height Variation:** Place objects on terrain naturally
+   - Use slopes for skull piles tumbling down
+   - Elevated braziers on stone bases
+   - Sunken bonfires in pits
+
+5. **Cluster Placement:** Group decorations for visual interest
+   - 3-5 objects create micro-scenes
+   - Avoid single isolated objects unless intentional landmark
+
+### **Quest Integration Decorations:**
+
+- **Daily Quest Boards:** Use banners (15001-15005) with quest giver nearby
+- **Collection Points:** Skull piles (2371, 2551) for "Gather Trophies" quests
+- **Ritual Sites:** Altar + 4 braziers + cauldron for summoning quests
+- **Cage Liberation:** Troll cages (141070-141072) for rescue quests
+- **Fire Starting:** Unlit campfires that players light for objectives
+
+---
+
 ## 🎭 DarkChaos Lore Integration
 
 ### The Corruption of the Isles
@@ -508,6 +865,23 @@ public:
 | **Intel Gathering** | Collect 3 Zandalari War Plans | 22g, 350 rep |
 | **Kill the Beastmasters** | Kill 5 Zandalari Beastmasters | 25g, 400 rep |
 | **The Loa Must Fall** | Kill Loa Priest Zul'atha (Elite) | 30g, 500 rep |
+
+#### Vehicle Quests (Special)
+| Quest | Objective | Reward |
+|-------|-----------|--------|
+| **Sink the Zandalari Scout** | Use the Coastal Cannon to sink a Zandalari scout ship (5 hits) | 25g, 400 rep |
+
+> **Technical Details - Cannon Quest:**
+> - **Implementation:** C++ script using ICC Gunship-style vehicle cannon mechanics
+> - **Personal Phasing:** Each player spawns their own ship instance (not shared)
+> - **Files:** 
+>   - SQL: `giant_isles_creatures.sql` (entries 400320-400323)
+>   - C++: `dc_giant_isles_cannon_quest.cpp`
+> - **NPC Entries:** Captain Harlan (400320), Coastal Cannon (400321), Ship (400322)
+> - **Quest ID:** 80100
+> - **Visual System:** Invisible creature (DisplayID=0) with spell visual effects for ship appearance
+> - **Mechanics:** Player enters cannon → personal ship spawns → 5 successful hits sinks ship → quest complete
+> - **Timeout:** Ship despawns after 5 minutes if not destroyed
 
 #### World Boss Preparation
 | Quest | Objective | Reward |
@@ -1634,20 +2008,1831 @@ Your existing Battle for Gilneas uses this pattern:
 
 ---
 
-## 🔮 Future Expansion Ideas
+## 🔮 Zone Script Extension Ideas
 
-1. **Primal Dungeon** - 5-man instance in the Zandalari temple ruins
-2. **Raid: Temple of the Primordial Gods** - 10/25-man raid
-3. **Primal Arena** - PvP area for dueling among dinosaurs
-4. **Taming System** - Hunters can tame enhanced versions
-5. **Archaeology** - Dig sites for primordial artifacts
-6. **Seasonal Events** - Dinosaur stampede event, Chaos Invasion
+These are C++ script enhancements that extend the existing `dc_giant_isles_zone.cpp` and world boss scripts.
 
 ---
 
-*Document Version: 1.2*  
+### 1. **Dynamic Weather System** (`dc_giant_isles_weather.cpp`)
+
+Zone-specific weather that affects gameplay:
+
+```cpp
+// Weather states that cycle every 30-60 minutes
+enum GiantIslesWeather
+{
+    WEATHER_CLEAR           = 0,  // Normal
+    WEATHER_CHAOS_STORM     = 1,  // Purple lightning, +20% chaos creature spawn
+    WEATHER_PRIMAL_FOG      = 2,  // Reduced visibility, stealth bonus
+    WEATHER_VOLCANIC_ASH    = 3,  // DoT ticks, fire resist matters
+    WEATHER_TEMPORAL_RIFT   = 4,  // Rare spawn chance +50%, world boss timers reduced
+};
+
+class giant_isles_weather : public WorldMapScript
+{
+    // OnUpdate: Check timer, roll new weather
+    // Apply zone-wide aura based on weather state
+    // Announce weather changes to zone
+    // Modify creature spawn rates during storms
+};
+```
+
+**Features:**
+- Weather changes every 30-60 minutes randomly
+- Each weather type applies different zone buffs/debuffs
+- Chaos Storm increases rare spawn rates
+- Temporal Rift reduces world boss respawn timers
+- Players can track weather via addon protocol message
+
+---
+
+### 2. **Rare Elite Spawn System** (`dc_giant_isles_rares.cpp`)
+
+Enhanced rare spawn mechanics with tracking:
+
+```cpp
+struct RareSpawnData
+{
+    uint32 entry;
+    float x, y, z, o;
+    uint32 respawnMin;      // Minimum respawn time (seconds)
+    uint32 respawnMax;      // Maximum respawn time
+    uint32 announcementId;  // Zone broadcast on spawn
+    bool weatherLocked;     // Only spawns during specific weather
+    uint8 requiredWeather;  // Which weather unlocks this rare
+};
+
+class npc_giant_isles_rare : public CreatureScript
+{
+    // OnSpawn: Zone announcement
+    // OnDeath: 
+    //   - Roll bonus loot
+    //   - Grant achievement progress
+    //   - Send addon message for tracking
+    //   - Schedule next spawn with randomized timer
+    // OnCombatStart: Apply rare-specific mechanics
+};
+
+// Rare rotation: Some rares only spawn at certain times
+// Hidden rares: Require trigger (kill X creatures, weather, etc.)
+```
+
+**Rare List:**
+| Rare | Trigger | Special Mechanic |
+|------|---------|------------------|
+| Velociraptor Prime | Always | Summons pack on 50% HP |
+| Zagara the Corrupted | Chaos Storm weather | Void zones, teleports |
+| The Bonecrusher | Kill 50 dinosaurs | Enrage at 25%, huge damage |
+| Warlord Zul'kazak | Zandalari Warcamp clear | Calls reinforcements |
+| Primal Matriarch | All other rares dead | Secret boss, best loot |
+
+---
+
+### 3. **Zone Buff System** (`dc_giant_isles_buffs.cpp`)
+
+Location-based buffs that encourage exploration:
+
+```cpp
+// Subzone buff triggers
+enum ZoneBuffs
+{
+    BUFF_RAPTOR_AGILITY     = 90001,  // +15% haste in Raptor Beaches
+    BUFF_DEVILSAUR_MIGHT    = 90002,  // +10% damage in Devilsaur Heights
+    BUFF_CHAOS_RESISTANCE   = 90003,  // Shadow resist in Chaos Rift
+    BUFF_WARDEN_PROTECTION  = 90004,  // Regen in Warden's Landing
+    BUFF_PRIMAL_HUNTING     = 90005,  // +25% drop rate near rare spawns
+};
+
+class giant_isles_buff_zone : public ZoneScript
+{
+    void OnPlayerEnterZone(Player* player, uint32 areaId) override
+    {
+        // Apply appropriate buff based on subzone
+        // Stack with other buffs for exploration incentive
+        // Remove when leaving subzone
+    }
+};
+```
+
+**Buff Stacking:**
+- Visiting all subzones in 1 hour grants "Primal Explorer" (all buffs for 30 min)
+- Killing creatures while buffed grants bonus reputation
+
+---
+
+### 4. **Contribution & Kill Tracking** (`dc_giant_isles_contribution.cpp`)
+
+Track player contributions for rewards:
+
+```cpp
+struct PlayerContribution
+{
+    uint32 creaturesKilled;
+    uint32 raresKilled;
+    uint32 worldBossesParticipated;
+    uint32 dailiesCompleted;
+    uint32 materialsGathered;
+    time_t lastActivity;
+    uint32 weeklyScore;
+};
+
+class giant_isles_contribution : public PlayerScript
+{
+    // OnCreatureKill: Increment counters
+    // OnQuestComplete: Track dailies
+    // Weekly reset: Calculate rewards, reset counters
+    // Addon integration: Send contribution data to client
+};
+
+// Weekly rewards based on contribution tier:
+// Bronze (100 points): 10 tokens
+// Silver (500 points): 25 tokens + rare material
+// Gold (1000 points): 50 tokens + mount chance roll
+// Primal (2500 points): 100 tokens + guaranteed rare item
+```
+
+---
+
+### 5. **Dinosaur Pack AI with Formations** (`dc_giant_isles_pack_ai.cpp`)
+
+Enhanced creature behavior using AzerothCore's `creature_formations` table + custom scripts:
+
+#### **Formation System (SQL-Based)**
+
+AzerothCore supports creature formations via the `creature_formations` table:
+
+```sql
+-- creature_formations table structure:
+-- leaderGUID, memberGUID, dist, angle, groupAI, point_1, point_2
+
+-- GroupAI Flags:
+-- FLAG_MEMBERS_ASSIST_LEADER (0x01) - Members assist leader when attacked
+-- FLAG_LEADER_ASSISTS_MEMBERS (0x02) - Leader assists members when attacked
+-- FLAG_FOLLOW_LEADER (0x04) - Members follow the leader
+
+-- Example: Raptor Pack Formation (5 raptors in V-formation)
+INSERT INTO creature_formations (leaderGUID, memberGUID, dist, angle, groupAI, point_1, point_2) VALUES
+(LEADER_GUID, LEADER_GUID, 0, 0, 3, 0, 0),   -- Leader (groupAI 3 = assist both ways)
+(LEADER_GUID, MEMBER1_GUID, 5, 45, 7, 0, 0), -- Right flank (+follow)
+(LEADER_GUID, MEMBER2_GUID, 5, 315, 7, 0, 0),-- Left flank
+(LEADER_GUID, MEMBER3_GUID, 10, 30, 7, 0, 0),-- Far right
+(LEADER_GUID, MEMBER4_GUID, 10, 330, 7, 0, 0);-- Far left
+```
+
+#### **Custom Pack Behavior Script**
+
+```cpp
+#include "CreatureGroups.h"
+#include "FormationMgr.h"
+
+// Pack AI enhancement - works WITH formations
+class npc_primal_raptor_pack : public CreatureScript
+{
+public:
+    npc_primal_raptor_pack() : CreatureScript("npc_primal_raptor_pack") {}
+
+    struct npc_primal_raptor_packAI : public ScriptedAI
+    {
+        // ALPHA MECHANIC: Check if this is the leader
+        void JustEngagedWith(Unit* who) override
+        {
+            if (CreatureGroup* group = me->GetFormation())
+            {
+                // If leader, apply alpha buff to self
+                if (group->isLeader(me))
+                {
+                    me->CastSpell(me, SPELL_ALPHA_RAPTOR_BUFF, true);  // +20% damage/health
+                }
+            }
+            ScriptedAI::JustEngagedWith(who);
+        }
+
+        // FLEE & CALL: At low HP, flee and summon reinforcements
+        void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+        {
+            if (me->HealthBelowPctDamaged(20, damage) && !hasFled)
+            {
+                hasFled = true;
+                me->DoFleeToGetAssistance();  // Run toward nearby raptors
+                
+                // 50% chance to call additional pack members
+                if (roll_chance_i(50))
+                {
+                    for (uint8 i = 0; i < 2; ++i)
+                    {
+                        Position pos = me->GetRandomNearPosition(15.0f);
+                        me->SummonCreature(NPC_PACK_RAPTOR, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 30s);
+                    }
+                    me->Yell("SCREEEECH!", LANG_UNIVERSAL);  // Alert sound
+                }
+            }
+        }
+
+        bool hasFled = false;
+    };
+};
+
+// Devilsaur Territory AI
+class npc_devilsaur_territorial : public CreatureScript
+{
+public:
+    npc_devilsaur_territorial() : CreatureScript("npc_devilsaur_territorial") {}
+
+    struct npc_devilsaur_territorialAI : public ScriptedAI
+    {
+        // Extended aggro range (50 yards vs normal 20)
+        void MoveInLineOfSight(Unit* who) override
+        {
+            if (who->GetTypeId() == TYPEID_PLAYER && me->IsWithinDistInMap(who, 50.0f))
+            {
+                if (!me->IsInCombat() && me->CanStartAttack(who))
+                {
+                    me->AI()->AttackStart(who);
+                }
+            }
+        }
+
+        // Territorial Roar - AoE fear every 30 sec
+        void UpdateAI(uint32 diff) override
+        {
+            roarTimer -= diff;
+            if (roarTimer <= 0)
+            {
+                DoCastAOE(SPELL_PRIMAL_ROAR);  // Fear + damage
+                roarTimer = 30s;
+            }
+            ScriptedAI::UpdateAI(diff);
+        }
+
+        // Feed on kills - heal to full
+        void KilledUnit(Unit* victim) override
+        {
+            if (victim->GetTypeId() == TYPEID_UNIT)
+            {
+                me->SetFullHealth();
+                me->MonsterTextEmote("feeds on its prey.", nullptr);
+            }
+        }
+
+        Milliseconds roarTimer = 30s;
+    };
+};
+```
+
+#### **Formation Patterns**
+
+| Pack Type | Formation | GroupAI | Behavior |
+|-----------|-----------|---------|----------|
+| Raptor Pack (5) | V-Formation | 7 (all flags) | Alpha leads, flankers assist |
+| Devilsaur Pair | Side-by-side | 3 (assist only) | Both aggro together |
+| Pterrordax Flock | Circle | 7 | Swoop in formation |
+| Zandalari Patrol | Line | 7 | Scout leads, warriors follow |
+
+---
+
+### 6. **World Boss Enhancements** (`boss_*.cpp` extensions)
+
+Additional mechanics for existing bosses:
+
+```cpp
+// Oondasta Enhancement: Primal Fury stacks
+// - Each player death grants Oondasta +5% damage (stacks to 50%)
+// - Resets if no deaths for 2 minutes
+// - Encourages clean execution
+
+// Thok Enhancement: Blood Frenzy evolves
+// - Phase 1: Normal attacks
+// - Phase 2 (70%): Gains Bloodscent - targets lowest HP player
+// - Phase 3 (40%): Rampage - charges random players
+// - Phase 4 (15%): Primal Rage - must burn fast
+
+// Nalak Enhancement: Storm Intensity
+// - Storm damage increases over fight duration
+// - Every 2 minutes: +10% storm damage
+// - Soft enrage mechanic encouraging DPS checks
+```
+
+**Cross-Boss System:**
+```cpp
+// Killing all 3 bosses in one day grants "Primal Domination" buff
+// - 24-hour buff: +10% damage, +10% rep gains in zone
+// - Tracked via player flags, reset daily
+
+// Boss order bonus:
+// Nalak -> Thok -> Oondasta = Lightning damage buff
+// Oondasta -> Nalak -> Thok = Health buff
+// Thok -> Oondasta -> Nalak = Speed buff
+```
+
+---
+
+### 7. **Chaos Rift Event System** (`dc_giant_isles_rift.cpp`)
+
+Dynamic rift events in the Chaos Rift subzone:
+
+```cpp
+enum RiftEventPhase
+{
+    RIFT_DORMANT    = 0,  // No event, normal spawns
+    RIFT_AWAKENING  = 1,  // Warning phase, 5 minutes
+    RIFT_ACTIVE     = 2,  // Event in progress
+    RIFT_OVERFLOW   = 3,  // Failed event, zone-wide chaos
+    RIFT_SEALED     = 4,  // Success, bonus loot phase
+};
+
+class giant_isles_rift_event : public ZoneScript
+{
+    // Every 2-4 hours: Rift event triggers
+    // Awakening: Zone announcement, portal visual spawns
+    // Active: Waves of void creatures attack
+    // Players must kill waves and close portals
+    // Success: 15-minute bonus phase with extra loot
+    // Failure: Chaos creatures invade entire zone for 30 min
+};
+```
+
+**Wave Progression:**
+| Wave | Creatures | Time Limit |
+|------|-----------|------------|
+| 1 | 10 Void Spawns | 3 min |
+| 2 | 20 Void Spawns + 2 Rift Guardians | 4 min |
+| 3 | 30 Void Spawns + 4 Rift Guardians + 1 Rift Lord | 5 min |
+| Boss | Void Harbinger (mini-boss) | 6 min |
+
+---
+
+### 8. **Zandalari Invasion Events** (`dc_giant_isles_invasion.cpp`)
+
+Large-scale defense event where Zandalari trolls assault **Warden's Landing** (the player hub).
+
+#### **Event Location: Warden's Landing Defense**
+
+Based on the Isle of Giants map, Warden's Landing is the **southern beach hub** (Sector 1):
+
+```
+                          GIANT ISLES MAP
+                               
+                    ┌─────────────────────────┐
+                    │    INTERIOR ZONES       │
+                    │  (Dinosaur territories) │
+                    │                         │
+         ┌──────────┤                         ├──────────┐
+         │ WEST     │                         │ EAST     │
+         │ CLIFFS   │                         │ CLIFFS   │
+         └──────────┤                         ├──────────┘
+                    │                         │
+    [INVASION      │    OPEN GRASSLAND       │    [INVASION
+     SPAWN WEST]◄──┤   (Approach Zone)       ├──► SPAWN EAST]
+                    │                         │
+                    ├─────────────────────────┤
+                    │   WARDEN'S LANDING      │
+                    │   ┌─────────────────┐   │
+                    │   │  [DEFENSE LINE] │   │
+                    │   │   ═══════════   │   │
+                    │   │    BARRICADE    │   │
+                    │   └─────────────────┘   │
+                    │                         │
+                    │   [MAIN CAMP]           │
+                    │   • Vendors             │
+                    │   • Flight Master       │
+                    │   • Quest Givers        │
+                    │   • Repair NPCs         │
+                    │                         │
+                    └─────────────────────────┘
+                            BEACH
+                    ~~~~~~~~~~~~~~~~~~~~~~~~
+                          (Safe Zone)
+```
+
+#### **Invasion Wave System**
+
+```cpp
+#include "SeasonalRewardSystem.h"  // For seasonal token rewards
+
+enum InvasionPhase
+{
+    INVASION_INACTIVE     = 0,
+    INVASION_WARNING      = 1,  // 5 minute warning
+    INVASION_WAVE_1       = 2,  // Scout wave
+    INVASION_WAVE_2       = 3,  // War party
+    INVASION_WAVE_3       = 4,  // War-beast assault
+    INVASION_BOSS         = 5,  // Warlord boss
+    INVASION_SUCCESS      = 6,  // Victory state
+    INVASION_FAILED       = 7,  // Defeat state
+};
+
+struct InvasionWaveData
+{
+    uint32 waveNumber;
+    uint32 normalMobCount;
+    uint32 eliteMobCount;
+    uint32 beastMobCount;
+    Milliseconds spawnInterval;
+    Milliseconds waveDuration;
+};
+
+static const std::vector<InvasionWaveData> InvasionWaves = {
+    // Wave 1: Scout Party - fast, weak enemies
+    { 1, 15, 0, 0, 3s, 2min },
+    
+    // Wave 2: War Party - mix of normal and elites
+    { 2, 20, 4, 0, 4s, 3min },
+    
+    // Wave 3: War-Beast Assault - mounted trolls + dinosaurs
+    { 3, 10, 6, 8, 5s, 4min },
+    
+    // Wave 4 (Boss): Zandalari Warlord + honor guard
+    { 4, 0, 4, 2, 0s, 6min },  // Boss spawns with guards
+};
+
+class giant_isles_zandalari_invasion : public ZoneScript
+{
+public:
+    giant_isles_zandalari_invasion() : ZoneScript("giant_isles_zandalari_invasion") {}
+
+    // Track invasion state
+    static InvasionPhase currentPhase;
+    static uint32 currentWave;
+    static uint32 enemiesAlive;
+    static uint32 playerContributions[MAX_PLAYER_CONTRIBUTION];
+    static time_t invasionStartTime;
+
+    void OnCreatureCreate(Creature* creature) override
+    {
+        // Track invasion mobs
+        if (IsInvasionMob(creature->GetEntry()))
+        {
+            enemiesAlive++;
+        }
+    }
+
+    void OnCreatureDeath(Creature* creature, Unit* killer) override
+    {
+        if (!IsInvasionMob(creature->GetEntry()))
+            return;
+
+        enemiesAlive--;
+
+        // Award contribution points to killer
+        if (Player* player = killer->ToPlayer())
+        {
+            uint32 points = GetContributionPoints(creature->GetEntry());
+            AddPlayerContribution(player, points);
+            
+            // Seasonal token integration
+            if (creature->IsElite())
+            {
+                sSeasonalRewards->AwardTokens(player, 2, "Invasion Elite Kill", creature->GetEntry());
+            }
+            else
+            {
+                sSeasonalRewards->AwardTokens(player, 1, "Invasion Kill", creature->GetEntry());
+            }
+        }
+
+        // Check if wave complete
+        if (enemiesAlive == 0 && currentPhase >= INVASION_WAVE_1)
+        {
+            AdvanceWave();
+        }
+    }
+
+    void StartInvasion(Map* map)
+    {
+        currentPhase = INVASION_WARNING;
+        invasionStartTime = GameTime::GetGameTime().count();
+        
+        // Zone-wide announcement
+        map->DoForAllPlayers([](Player* player)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFFFF0000[INVASION WARNING]|r The Zandalari are preparing to attack "
+                "Warden's Landing! Defense begins in 5 minutes!");
+            player->PlayDirectSound(SOUND_WAR_DRUMS);
+        });
+        
+        // Spawn warning visual effects
+        SpawnWarningEffects(map);
+        
+        // Schedule wave 1 start
+        map->GetScheduler().Schedule(5min, [this](TaskContext /*context*/)
+        {
+            StartWave(1);
+        });
+    }
+
+    void StartWave(uint32 wave)
+    {
+        currentWave = wave;
+        currentPhase = static_cast<InvasionPhase>(INVASION_WAVE_1 + wave - 1);
+        
+        const InvasionWaveData& data = InvasionWaves[wave - 1];
+        
+        // Announce wave
+        BroadcastToZone(Acore::StringFormat(
+            "|cFFFF8000[INVASION]|r Wave %u begins! %s",
+            wave, GetWaveDescription(wave)));
+        
+        // Spawn enemies from both flanks
+        SpawnWaveEnemies(data, SPAWN_POINT_WEST);
+        SpawnWaveEnemies(data, SPAWN_POINT_EAST);
+        
+        // Activate NPC defenders
+        ActivateDefenders();
+    }
+
+    void AdvanceWave()
+    {
+        if (currentWave >= 4)
+        {
+            // Victory!
+            EndInvasion(true);
+            return;
+        }
+        
+        currentWave++;
+        
+        // Brief pause between waves
+        BroadcastToZone(Acore::StringFormat(
+            "|cFF00FF00[INVASION]|r Wave %u cleared! Next wave in 30 seconds...",
+            currentWave - 1));
+        
+        // Schedule next wave
+        // (use map scheduler or event system)
+    }
+
+    void EndInvasion(bool success)
+    {
+        currentPhase = success ? INVASION_SUCCESS : INVASION_FAILED;
+        
+        if (success)
+        {
+            BroadcastToZone("|cFF00FF00[INVASION REPELLED]|r The Zandalari have been driven back! "
+                "All defenders receive bonus rewards!");
+            
+            // Award bonus to all contributors
+            AwardInvasionRewards();
+            
+            // Apply zone-wide victory buff (1 hour)
+            ApplyZoneBuff(BUFF_WARDEN_VICTORY, 1h);
+        }
+        else
+        {
+            BroadcastToZone("|cFFFF0000[INVASION FAILED]|r Warden's Landing has fallen! "
+                "Vendors and services unavailable for 30 minutes.");
+            
+            // Disable hub NPCs temporarily
+            DisableHubNPCs(30min);
+        }
+        
+        // Reset for next invasion (random 2-4 hours)
+        ScheduleNextInvasion(urand(2, 4) * HOUR);
+    }
+
+    void AwardInvasionRewards()
+    {
+        // Iterate all contributors
+        for (auto& [guid, contribution] : playerContributions)
+        {
+            Player* player = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, guid));
+            if (!player)
+                continue;
+            
+            uint32 tier = CalculateRewardTier(contribution);
+            
+            // Seasonal token rewards based on contribution tier
+            uint32 tokenReward = 0;
+            switch (tier)
+            {
+                case 1: tokenReward = 10; break;  // Participated
+                case 2: tokenReward = 25; break;  // Contributor
+                case 3: tokenReward = 50; break;  // Defender
+                case 4: tokenReward = 100; break; // Champion
+            }
+            
+            sSeasonalRewards->AwardTokens(player, tokenReward, "Invasion Completion", tier);
+            sSeasonalRewards->AwardEssence(player, tokenReward / 2, "Invasion Completion", tier);
+            
+            // Bonus reputation
+            player->GetReputationMgr().ModifyReputation(
+                sFactionStore.LookupEntry(FACTION_PRIMAL_WARDENS), 
+                contribution * 2);
+        }
+    }
+
+private:
+    // Spawn point coordinates (placeholder - use actual map coords)
+    static constexpr Position SPAWN_POINT_WEST = { -100.0f, 50.0f, 10.0f, 0.0f };
+    static constexpr Position SPAWN_POINT_EAST = { 100.0f, 50.0f, 10.0f, 3.14f };
+    static constexpr Position DEFENSE_LINE = { 0.0f, 0.0f, 5.0f, 0.0f };
+};
+```
+
+#### **Invasion NPC Entries**
+
+| Entry | Name | Role | Stats |
+|-------|------|------|-------|
+| 401800 | Zandalari Scout | Wave 1 fodder | Low HP, fast |
+| 401801 | Zandalari Warrior | Normal enemy | Medium HP |
+| 401802 | Zandalari Berserker | Elite enemy | High HP, enrage |
+| 401803 | Zandalari Priest | Elite healer | Heals allies |
+| 401804 | War Raptor | Beast mount | Pounce attack |
+| 401805 | Armored Direhorn | Beast tank | Charge attack |
+| 401806 | Warlord Zul'garak | Boss | Multi-phase fight |
+
+#### **Defender NPCs (Friendly)**
+
+| Entry | Name | Role | Behavior |
+|-------|------|------|----------|
+| 401000 | Primal Warden Guard | Tank | Holds aggro, taunts |
+| 401001 | Expedition Ranger | DPS | Ranged attacks |
+| 401002 | Expedition Shaman | Healer | Heals players & NPCs |
+| 401003 | War Mammoth | Elite tank | AoE knockback |
+
+#### **Invasion Triggers**
+
+1. **Timed**: Random chance every 2-4 hours during peak times
+2. **Player-Triggered via Gossip**: Warden Commander NPC at hub
+3. **GM Command**: `.invasion start` for testing
+4. **Event**: During Primal Hunt seasonal event, invasion every hour
+
+#### **Gossip Trigger NPC: Warden Commander Zal'thok**
+
+```cpp
+// NPC Entry: 401250 - Warden Commander Zal'thok
+// Location: Warden's Landing command tent
+
+enum InvasionGossip
+{
+    GOSSIP_MENU_COMMANDER       = 90010,
+    GOSSIP_TEXT_INVASION_READY  = 90011,
+    GOSSIP_TEXT_INVASION_ACTIVE = 90012,
+    GOSSIP_TEXT_COOLDOWN        = 90013,
+    
+    NPC_WARDEN_COMMANDER        = 401250,
+    
+    // Cooldown between player-triggered invasions (1 hour)
+    INVASION_COOLDOWN           = 1 * HOUR,
+    
+    // Minimum players in zone to trigger
+    MIN_PLAYERS_FOR_INVASION    = 5,
+};
+
+class npc_warden_commander : public CreatureScript
+{
+public:
+    npc_warden_commander() : CreatureScript("npc_warden_commander") {}
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        // Check if invasion is already active
+        if (sGiantIslesInvasion->IsActive())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                "What is the status of the invasion?", 
+                GOSSIP_SENDER_MAIN, 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "I want to help defend!", 
+                GOSSIP_SENDER_MAIN, 2);
+            SendGossipMenuFor(player, GOSSIP_TEXT_INVASION_ACTIVE, creature->GetGUID());
+            return true;
+        }
+        
+        // Check cooldown
+        time_t lastInvasion = sGiantIslesInvasion->GetLastInvasionTime();
+        time_t now = GameTime::GetGameTime().count();
+        time_t remaining = (lastInvasion + INVASION_COOLDOWN) - now;
+        
+        if (remaining > 0)
+        {
+            // On cooldown
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                Acore::StringFormat("The defenses are still recovering. (%d minutes remaining)", 
+                    remaining / 60),
+                GOSSIP_SENDER_MAIN, 0);
+            SendGossipMenuFor(player, GOSSIP_TEXT_COOLDOWN, creature->GetGUID());
+            return true;
+        }
+        
+        // Check player count
+        uint32 playersInZone = GetPlayersInZone(ZONE_GIANT_ISLES);
+        
+        if (playersInZone < MIN_PLAYERS_FOR_INVASION)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                Acore::StringFormat("We need at least %d defenders. (Currently: %d)", 
+                    MIN_PLAYERS_FOR_INVASION, playersInZone),
+                GOSSIP_SENDER_MAIN, 0);
+        }
+        else
+        {
+            // Ready to trigger
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                "|cFFFF0000[DANGER]|r Sound the alarm! Call the Zandalari to attack!",
+                GOSSIP_SENDER_MAIN, 10);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "Tell me about the invasion defense.",
+                GOSSIP_SENDER_MAIN, 3);
+        }
+        
+        // Always available options
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+            "What rewards do defenders receive?",
+            GOSSIP_SENDER_MAIN, 4);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, 
+            "Show me your wares. (Defender Supplies)",
+            GOSSIP_SENDER_MAIN, 5);
+        
+        SendGossipMenuFor(player, GOSSIP_TEXT_INVASION_READY, creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        player->PlayerTalkClass->ClearMenus();
+        
+        switch (action)
+        {
+            case 0: // Just info, close
+                CloseGossipMenuFor(player);
+                break;
+                
+            case 1: // Invasion status
+            {
+                std::string status = Acore::StringFormat(
+                    "Current wave: %d of 4\nEnemies remaining: %d\nDefenders active: %d",
+                    sGiantIslesInvasion->GetCurrentWave(),
+                    sGiantIslesInvasion->GetEnemiesAlive(),
+                    sGiantIslesInvasion->GetActiveDefenders());
+                creature->Whisper(status, LANG_UNIVERSAL, player);
+                CloseGossipMenuFor(player);
+                break;
+            }
+            
+            case 2: // Join defense
+                creature->Whisper("Rally at the barricades! The Zandalari approach from the west and east!", 
+                    LANG_UNIVERSAL, player);
+                // Apply defender buff
+                player->CastSpell(player, SPELL_DEFENDER_BUFF, true);
+                CloseGossipMenuFor(player);
+                break;
+                
+            case 3: // Info about invasion
+                creature->Whisper(
+                    "The Zandalari attack in waves. First scouts, then warriors, then their war-beasts. "
+                    "Finally, their Warlord leads the final assault. Defeat all waves to repel them!", 
+                    LANG_UNIVERSAL, player);
+                CloseGossipMenuFor(player);
+                break;
+                
+            case 4: // Rewards info
+                creature->Whisper(
+                    "Defenders earn Seasonal Tokens based on contribution:\n"
+                    "• Kill enemies: 1-3 tokens each\n"
+                    "• Complete waves: 5 tokens per wave\n"
+                    "• Victory bonus: 20 tokens + reputation\n"
+                    "• Top contributors: Chance at rare mount!",
+                    LANG_UNIVERSAL, player);
+                CloseGossipMenuFor(player);
+                break;
+                
+            case 5: // Vendor
+                player->GetSession()->SendListInventory(creature->GetGUID());
+                break;
+                
+            case 10: // TRIGGER INVASION
+            {
+                // Confirmation dialog
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
+                    "|cFFFF0000CONFIRM:|r This will start the invasion NOW!", 
+                    GOSSIP_SENDER_MAIN, 11);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                    "Wait, I need more time to prepare.", 
+                    GOSSIP_SENDER_MAIN, 0);
+                SendGossipMenuFor(player, GOSSIP_TEXT_INVASION_READY, creature->GetGUID());
+                break;
+            }
+            
+            case 11: // CONFIRMED - Start invasion
+            {
+                CloseGossipMenuFor(player);
+                
+                // Zone-wide announcement
+                creature->Yell("DEFENDERS! TO ARMS! THE ZANDALARI ARE COMING!", LANG_UNIVERSAL);
+                
+                // Play war drums
+                creature->PlayDirectSound(SOUND_WAR_DRUMS);
+                
+                // Start the invasion
+                sGiantIslesInvasion->StartInvasion(creature->GetMap(), player);
+                
+                // Log who triggered it
+                LOG_INFO("module.giant_isles", "Zandalari Invasion triggered by {} (GUID: {})",
+                    player->GetName(), player->GetGUID().GetCounter());
+                
+                // Grant initiator bonus
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00FF00[Giant Isles]|r You have called the invasion! "
+                    "Rally the defenders and repel the Zandalari!");
+                    
+                break;
+            }
+        }
+        
+        return true;
+    }
+};
+
+// SQL for NPC
+/*
+INSERT INTO creature_template (entry, name, subname, minlevel, maxlevel, faction, npcflag, unit_class) VALUES
+(401250, 'Warden Commander Zal''thok', 'Invasion Defense', 80, 80, 35, 129, 1);
+-- npcflag 129 = Gossip (1) + Vendor (128)
+
+INSERT INTO npc_vendor (entry, item, maxcount, incrtime) VALUES
+(401250, 49426, 0, 0),  -- Seasonal Tokens
+(401250, 33447, 10, 3600),  -- Runic Healing Potion
+(401250, 33448, 10, 3600);  -- Runic Mana Potion
+*/
+```
+
+#### **Seasonal Integration**
+
+```cpp
+// In SeasonalRewardSystem.cpp, add invasion multiplier
+float GetInvasionMultiplier() const
+{
+    // During Primal Hunt season, +50% invasion rewards
+    if (sSeasonalSystem->IsEventActive(EVENT_PRIMAL_HUNT))
+        return 1.5f;
+    return 1.0f;
+}
+```
+
+---
+
+### 9. **Primal Essence System** (`dc_giant_isles_essence.cpp`)
+
+Currency/material system via scripts:
+
+```cpp
+// Creatures drop "Primal Essence" (item or currency)
+// Tracked per-player via custom data or item count
+
+class giant_isles_essence_collector : public PlayerScript
+{
+    // OnCreatureKill: Roll for essence drop based on creature type
+    // OnLootItem: Track essence totals
+    // Thresholds unlock zone features:
+    //   100 essence: Access to hidden vendor
+    //   500 essence: Unlock daily quest chain
+    //   1000 essence: Summon rare spawn (1/day)
+    //   2500 essence: Challenge world boss (solo instance)
+};
+
+// Essence Exchange NPC
+class npc_essence_exchanger : public CreatureScript
+{
+    // Gossip menu to exchange essence for:
+    // - Reputation tokens
+    // - Crafting materials  
+    // - Consumables
+    // - Mount/pet chances
+};
+```
+
+---
+
+### 10. **Achievement & Progress Tracking** (`dc_giant_isles_achievements.cpp`)
+
+Server-side achievement system:
+
+```cpp
+enum GiantIslesAchievements
+{
+    ACH_FIRST_BLOOD         = 1,   // Kill first creature in zone
+    ACH_RAPTOR_HUNTER       = 2,   // Kill 100 raptors
+    ACH_DEVILSAUR_SLAYER    = 3,   // Kill 50 devilsaurs
+    ACH_RARE_COLLECTOR      = 4,   // Kill all rare elites
+    ACH_OONDASTA_SLAIN      = 5,   // Defeat Oondasta
+    ACH_THOK_SLAIN          = 6,   // Defeat Thok
+    ACH_NALAK_SLAIN         = 7,   // Defeat Nalak
+    ACH_PRIMAL_MASTER       = 8,   // All world bosses in one day
+    ACH_RIFT_CLOSER         = 9,   // Complete 10 rift events
+    ACH_INVASION_DEFENDER   = 10,  // Repel 5 Zandalari invasions
+    ACH_ZONE_EXPLORER       = 11,  // Visit all subzones
+    ACH_CONTRIBUTION_GOLD   = 12,  // Reach Gold contribution tier
+};
+
+class giant_isles_achievement_tracker : public PlayerScript
+{
+    // Track progress in player custom data
+    // Grant titles/rewards on completion
+    // Sync to addon via DC protocol
+    // Meta achievement: Complete all = special mount
+};
+```
+
+---
+
+### 11. **Environmental Hazards** (`dc_giant_isles_hazards.cpp`)
+
+Scripted zone dangers:
+
+```cpp
+class AreaTrigger_tar_pit : public AreaTriggerScript
+{
+    // Tar Pits: Slow + DoT while standing in them
+    // Visual: Black ground texture
+    // Escape: Jump or movement ability
+};
+
+class AreaTrigger_lava_vent : public AreaTriggerScript
+{
+    // Volcanic Vents: Periodic eruption every 30 sec
+    // Warning: Ground rumble + visual 3 sec before
+    // Damage: High fire damage, knockup
+};
+
+class AreaTrigger_chaos_pool : public AreaTriggerScript
+{
+    // Chaos Pools: Shadow damage + debuff stacks
+    // Stacks: Each stack increases damage taken by 5%
+    // Cleanse: Leave pool, stacks decay over 10 sec
+};
+
+class npc_environmental_stampede : public CreatureScript
+{
+    // Stampede paths: Dinosaurs charge across zone
+    // Warning: Dust cloud visible 5 sec before
+    // Dodge: Get out of the path or take massive damage
+    // Timing: Random, more frequent during Primal Storm weather
+};
+```
+
+---
+
+### 12. **Daily Quest Rotation System** (`dc_giant_isles_dailies.cpp`)
+
+Script-driven daily quest availability:
+
+```cpp
+// 15 total dailies, only 8 available each day
+// Rotation ensures variety
+
+struct DailyQuestPool
+{
+    uint32 questId;
+    uint8 category;       // 0=kill, 1=collect, 2=explore, 3=event
+    uint8 difficulty;     // 1-3, affects rewards
+    bool requiresGroup;   // Solo or group quest
+};
+
+class giant_isles_daily_manager : public WorldScript
+{
+    // OnServerStartup: Select 8 random dailies for the day
+    // Balance: At least 2 from each category
+    // At least 1 group quest, at least 3 solo quests
+    
+    // Store selection in world state or custom table
+    // Quest givers check availability before offering
+};
+
+// Bonus daily: If a rare spawns, special daily unlocks
+// World boss daily: Participation in world boss grants bonus quest
+```
+
+---
+
+### 13. **Group Finder Integration** (`dc_giant_isles_groupfinder.cpp`)
+
+Full integration with the existing DC Group Finder addon system:
+
+```cpp
+#include "DCAddonProtocol.h"
+#include "SeasonalRewardSystem.h"
+
+// Giant Isles listing categories for Group Finder
+enum GiantIslesListingType
+{
+    LISTING_WORLD_BOSS_OONDASTA  = 100,
+    LISTING_WORLD_BOSS_THOK      = 101,
+    LISTING_WORLD_BOSS_NALAK     = 102,
+    LISTING_RARE_HUNTING         = 110,
+    LISTING_DAILY_QUESTS         = 120,
+    LISTING_RIFT_EVENT           = 130,
+    LISTING_INVASION_DEFENSE     = 140,
+};
+
+class giant_isles_groupfinder : public PlayerScript
+{
+public:
+    giant_isles_groupfinder() : PlayerScript("giant_isles_groupfinder") {}
+
+    // When player enters Giant Isles zone
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
+    {
+        if (newZone != ZONE_GIANT_ISLES)
+            return;
+
+        // Register player as available for Giant Isles groups
+        RegisterPlayerInZone(player);
+        
+        // Send zone status to client addon
+        SendZoneStatusToClient(player);
+    }
+
+    void RegisterPlayerInZone(Player* player)
+    {
+        // Store player GUID in zone-active list
+        sGiantIslesGroupFinder->AddActivePlayer(player->GetGUID());
+        
+        // Notify Group Finder system this player is in the zone
+        DCAddonProtocol::SendMessage(player, "GRPF", SMSG_PLAYER_ZONE_STATUS, 
+            { {"zone", "giant_isles"}, {"available", true} });
+    }
+
+    void SendZoneStatusToClient(Player* player)
+    {
+        // Build status JSON for client
+        nlohmann::json status;
+        status["zone"] = "giant_isles";
+        status["worldBosses"] = GetWorldBossStatus();
+        status["activeEvents"] = GetActiveEvents();
+        status["listings"] = GetAvailableListings();
+        
+        DCAddonProtocol::SendJSON(player, "GRPF", SMSG_ZONE_STATUS, status);
+    }
+
+    nlohmann::json GetWorldBossStatus()
+    {
+        nlohmann::json bosses;
+        
+        // Check if each world boss is spawned and alive
+        bosses["oondasta"] = {
+            {"spawned", IsWorldBossSpawned(NPC_OONDASTA)},
+            {"inCombat", IsWorldBossInCombat(NPC_OONDASTA)},
+            {"healthPct", GetWorldBossHealthPct(NPC_OONDASTA)},
+            {"listingCount", GetListingCount(LISTING_WORLD_BOSS_OONDASTA)}
+        };
+        bosses["thok"] = {
+            {"spawned", IsWorldBossSpawned(NPC_THOK)},
+            {"inCombat", IsWorldBossInCombat(NPC_THOK)},
+            {"healthPct", GetWorldBossHealthPct(NPC_THOK)},
+            {"listingCount", GetListingCount(LISTING_WORLD_BOSS_THOK)}
+        };
+        bosses["nalak"] = {
+            {"spawned", IsWorldBossSpawned(NPC_NALAK)},
+            {"inCombat", IsWorldBossInCombat(NPC_NALAK)},
+            {"healthPct", GetWorldBossHealthPct(NPC_NALAK)},
+            {"listingCount", GetListingCount(LISTING_WORLD_BOSS_NALAK)}
+        };
+        
+        return bosses;
+    }
+
+    nlohmann::json GetActiveEvents()
+    {
+        nlohmann::json events;
+        
+        // Check for active zone events
+        if (sGiantIslesRiftEvent->IsActive())
+        {
+            events["riftEvent"] = {
+                {"active", true},
+                {"wave", sGiantIslesRiftEvent->GetCurrentWave()},
+                {"timeRemaining", sGiantIslesRiftEvent->GetTimeRemaining()}
+            };
+        }
+        
+        if (sGiantIslesInvasion->IsActive())
+        {
+            events["invasion"] = {
+                {"active", true},
+                {"wave", sGiantIslesInvasion->GetCurrentWave()},
+                {"enemiesRemaining", sGiantIslesInvasion->GetEnemiesAlive()}
+            };
+        }
+        
+        return events;
+    }
+};
+
+// Auto-listing when events start
+class giant_isles_event_autolisting : public WorldScript
+{
+public:
+    giant_isles_event_autolisting() : WorldScript("giant_isles_event_autolisting") {}
+
+    void OnWorldBossSpawn(uint32 bossEntry)
+    {
+        uint32 listingType = 0;
+        std::string bossName;
+        
+        switch (bossEntry)
+        {
+            case NPC_OONDASTA:
+                listingType = LISTING_WORLD_BOSS_OONDASTA;
+                bossName = "Oondasta";
+                break;
+            case NPC_THOK:
+                listingType = LISTING_WORLD_BOSS_THOK;
+                bossName = "Thok";
+                break;
+            case NPC_NALAK:
+                listingType = LISTING_WORLD_BOSS_NALAK;
+                bossName = "Nalak";
+                break;
+        }
+        
+        if (listingType > 0)
+        {
+            // Broadcast to all players in zone
+            BroadcastToZone(ZONE_GIANT_ISLES, "GRPF", SMSG_WORLD_BOSS_SPAWNED,
+                { {"boss", bossName}, {"listingType", listingType} });
+            
+            // Create auto-listing visible to all servers (if cross-realm)
+            CreateAutoListing(listingType, bossName + " World Boss - Giant Isles");
+        }
+    }
+
+    void OnInvasionStart()
+    {
+        // Auto-create invasion defense listing
+        CreateAutoListing(LISTING_INVASION_DEFENSE, 
+            "Zandalari Invasion - Warden's Landing Defense");
+        
+        // Notify all zone players
+        BroadcastToZone(ZONE_GIANT_ISLES, "GRPF", SMSG_EVENT_STARTED,
+            { {"event", "invasion"}, {"listingType", LISTING_INVASION_DEFENSE} });
+    }
+
+    void OnRiftEventStart()
+    {
+        CreateAutoListing(LISTING_RIFT_EVENT, 
+            "Chaos Rift Event - Giant Isles");
+    }
+};
+
+// Quick-join handler for world boss attempts  
+class giant_isles_quickjoin : public CreatureScript
+{
+public:
+    giant_isles_quickjoin() : CreatureScript("giant_isles_quickjoin") {}
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        // Group Finder NPC at Warden's Landing
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join World Boss: Oondasta", 
+            GOSSIP_SENDER_MAIN, LISTING_WORLD_BOSS_OONDASTA);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join World Boss: Thok", 
+            GOSSIP_SENDER_MAIN, LISTING_WORLD_BOSS_THOK);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Join World Boss: Nalak", 
+            GOSSIP_SENDER_MAIN, LISTING_WORLD_BOSS_NALAK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Browse All Giant Isles Groups", 
+            GOSSIP_SENDER_MAIN, 999);
+        
+        SendGossipMenuFor(player, creature->GetEntry(), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
+    {
+        CloseGossipMenuFor(player);
+        
+        if (action == 999)
+        {
+            // Open Group Finder UI filtered to Giant Isles
+            DCAddonProtocol::SendMessage(player, "GRPF", SMSG_OPEN_GROUPFINDER,
+                { {"filter", "giant_isles"} });
+            return true;
+        }
+        
+        // Quick-join specific listing type
+        JoinOrCreateListing(player, action);
+        return true;
+    }
+
+    void JoinOrCreateListing(Player* player, uint32 listingType)
+    {
+        // Check if listing exists
+        if (auto* listing = sGroupFinder->FindListing(listingType, ZONE_GIANT_ISLES))
+        {
+            // Join existing listing
+            sGroupFinder->ApplyToListing(player, listing->id);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "Applied to group: %s", listing->title.c_str());
+        }
+        else
+        {
+            // Create new listing
+            std::string title = GetListingTitle(listingType);
+            sGroupFinder->CreateListing(player, listingType, title, ZONE_GIANT_ISLES);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "Created group listing: %s", title.c_str());
+        }
+    }
+};
+```
+
+#### **Client Addon Integration (DC-GroupFinder)**
+
+The client addon receives these messages and displays:
+
+```lua
+-- In DC-GroupFinder.lua
+
+-- Handle zone status updates
+DC:RegisterHandler("GRPF", SMSG_ZONE_STATUS, function(data)
+    if data.zone == "giant_isles" then
+        GiantIslesFrame:Show()
+        GiantIslesFrame:UpdateBossStatus(data.worldBosses)
+        GiantIslesFrame:UpdateEvents(data.activeEvents)
+        GiantIslesFrame:UpdateListings(data.listings)
+    end
+end)
+
+-- Handle world boss spawn notification
+DC:RegisterHandler("GRPF", SMSG_WORLD_BOSS_SPAWNED, function(data)
+    -- Show popup notification
+    PlaySound("RaidWarning")
+    UIErrorsFrame:AddMessage(
+        string.format("|cFFFF0000%s has spawned!|r Click to quick-join.", data.boss),
+        1.0, 0.0, 0.0)
+    
+    -- Add quick-join button to UI
+    GiantIslesFrame:ShowQuickJoinButton(data.boss, data.listingType)
+end)
+```
+
+#### **DC-MythicPlus Addon Enhancement**
+
+The existing `DC-MythicPlus` addon already has a tabbed Group Finder interface:
+- Tab 1: Mythic+ (dungeons)
+- Tab 2: Raids
+- Tab 3: Live Runs
+- Tab 4: Scheduled
+
+We can enhance this to include Giant Isles content:
+
+##### **Option A: Add "World Content" Tab** (Recommended)
+
+Add a new 5th tab for open-world group content:
+
+```lua
+-- In DC-MythicPlus/UI/GroupFinderFrame.lua
+-- Change TAB_NAMES to include world content:
+
+GF.TAB_NAMES = { "Mythic+", "Raids", "World Content", "Live Runs", "Scheduled" }
+
+-- Then create WorldContentTab.lua similar to MythicTab.lua
+```
+
+##### **Option B: Add Giant Isles Sub-Tab to Raids**
+
+The Raids tab already has era filters (Classic, TBC, WotLK). Add "World Bosses" as a sub-category:
+
+```lua
+-- In DC-MythicPlus/UI/RaidTab.lua
+-- Add after existing ERA constants:
+
+local CATEGORY_WORLD_BOSSES = 100
+
+-- Add to DIFFICULTY_BY_ERA equivalent:
+local WORLD_BOSS_ZONES = {
+    { id = 1, name = "Giant Isles", zoneId = 5000 },
+    -- Future: Wintergrasp, other world boss zones
+}
+
+-- World boss list similar to RAID_LIST:
+local WORLD_BOSS_LIST = {
+    { id = 100, name = "Oondasta", zone = "Giant Isles", minPlayers = 10, maxPlayers = 40 },
+    { id = 101, name = "Thok the Bloodthirsty", zone = "Giant Isles", minPlayers = 10, maxPlayers = 40 },
+    { id = 102, name = "Nalak the Storm Lord", zone = "Giant Isles", minPlayers = 10, maxPlayers = 40 },
+}
+```
+
+##### **New File: WorldContentTab.lua**
+
+```lua
+-- DC-MythicPlus/UI/WorldContentTab.lua
+-- World Content tab for Group Finder - Giant Isles world bosses, events
+
+local addonName = "DC-MythicPlus"
+local namespace = _G.DCMythicPlusHUD or {}
+_G.DCMythicPlusHUD = namespace
+
+local GF = namespace.GroupFinder
+if not GF then return end
+
+-- =====================================================================
+-- World Content Data
+-- =====================================================================
+
+local WORLD_ZONES = {
+    { id = 5000, name = "Giant Isles", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01" },
+}
+
+local WORLD_BOSSES = {
+    { id = 100, name = "Oondasta", zone = 5000, minPlayers = 10, icon = "Interface\\Icons\\Ability_Hunter_Pet_Devilsaur" },
+    { id = 101, name = "Thok", zone = 5000, minPlayers = 10, icon = "Interface\\Icons\\Ability_Hunter_Pet_Raptor" },
+    { id = 102, name = "Nalak", zone = 5000, minPlayers = 10, icon = "Interface\\Icons\\Spell_Nature_Thunderclap" },
+}
+
+local ZONE_EVENTS = {
+    { id = 130, name = "Chaos Rift Event", zone = 5000, type = "wave" },
+    { id = 140, name = "Zandalari Invasion", zone = 5000, type = "defense" },
+}
+
+-- Current zone status (updated from server)
+local zoneStatus = {}
+
+-- =====================================================================
+-- Create World Content Tab
+-- =====================================================================
+
+function GF:CreateWorldContentTab()
+    local parent = self.mainFrame.contentFrame
+    
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetAllPoints()
+    frame:Hide()
+    
+    -- Left panel: Zone/Boss selection
+    local leftPanel = CreateFrame("Frame", nil, frame)
+    leftPanel:SetPoint("TOPLEFT", 0, 0)
+    leftPanel:SetPoint("BOTTOMLEFT", 0, 0)
+    leftPanel:SetWidth(200)
+    
+    leftPanel.bg = leftPanel:CreateTexture(nil, "BACKGROUND")
+    leftPanel.bg:SetAllPoints()
+    leftPanel.bg:SetColorTexture(0.03, 0.03, 0.04, 1)
+    
+    -- Zone header
+    local zoneHeader = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    zoneHeader:SetPoint("TOPLEFT", 10, -10)
+    zoneHeader:SetText("|cffffffffWorld Zones|r")
+    
+    -- Zone buttons
+    local yOffset = -35
+    for _, zone in ipairs(WORLD_ZONES) do
+        local btn = CreateFrame("Button", nil, leftPanel)
+        btn:SetSize(180, 30)
+        btn:SetPoint("TOPLEFT", 10, yOffset)
+        
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+        
+        btn.icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.icon:SetSize(24, 24)
+        btn.icon:SetPoint("LEFT", 4, 0)
+        btn.icon:SetTexture(zone.icon)
+        
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.text:SetPoint("LEFT", btn.icon, "RIGHT", 6, 0)
+        btn.text:SetText(zone.name)
+        
+        -- Status indicator (green = active event)
+        btn.status = btn:CreateTexture(nil, "OVERLAY")
+        btn.status:SetSize(10, 10)
+        btn.status:SetPoint("RIGHT", -4, 0)
+        btn.status:SetTexture("Interface\\COMMON\\Indicator-Green")
+        btn.status:Hide()
+        
+        btn.zoneId = zone.id
+        btn:SetScript("OnClick", function(self)
+            GF:SelectWorldZone(self.zoneId)
+        end)
+        
+        yOffset = yOffset - 34
+    end
+    
+    -- Right panel: Boss/Event listings
+    local rightPanel = CreateFrame("Frame", nil, frame)
+    rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 4, 0)
+    rightPanel:SetPoint("BOTTOMRIGHT", 0, 0)
+    
+    rightPanel.bg = rightPanel:CreateTexture(nil, "BACKGROUND")
+    rightPanel.bg:SetAllPoints()
+    rightPanel.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+    
+    -- Content header
+    rightPanel.header = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    rightPanel.header:SetPoint("TOPLEFT", 10, -10)
+    rightPanel.header:SetText("|cffffffffSelect a Zone|r")
+    
+    -- Boss list scroll frame
+    rightPanel.scrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
+    rightPanel.scrollFrame:SetPoint("TOPLEFT", 10, -40)
+    rightPanel.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 50)
+    
+    rightPanel.content = CreateFrame("Frame", nil, rightPanel.scrollFrame)
+    rightPanel.content:SetSize(1, 1)
+    rightPanel.scrollFrame:SetScrollChild(rightPanel.content)
+    
+    -- Action buttons at bottom
+    local createBtn = CreateFrame("Button", nil, rightPanel, "UIPanelButtonTemplate")
+    createBtn:SetSize(120, 24)
+    createBtn:SetPoint("BOTTOMLEFT", 10, 10)
+    createBtn:SetText("Create Group")
+    createBtn:SetScript("OnClick", function() GF:CreateWorldBossGroup() end)
+    
+    local refreshBtn = CreateFrame("Button", nil, rightPanel, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(100, 24)
+    refreshBtn:SetPoint("LEFT", createBtn, "RIGHT", 10, 0)
+    refreshBtn:SetText("Refresh")
+    refreshBtn:SetScript("OnClick", function() GF:RefreshWorldContent() end)
+    
+    frame.leftPanel = leftPanel
+    frame.rightPanel = rightPanel
+    
+    self.WorldContentTabContent = frame
+    return frame
+end
+
+function GF:SelectWorldZone(zoneId)
+    -- Update header
+    local zoneName = "Unknown"
+    for _, z in ipairs(WORLD_ZONES) do
+        if z.id == zoneId then zoneName = z.name break end
+    end
+    self.WorldContentTabContent.rightPanel.header:SetText("|cffffffff" .. zoneName .. "|r")
+    
+    -- Clear existing boss buttons
+    local content = self.WorldContentTabContent.rightPanel.content
+    for i = content:GetNumChildren(), 1, -1 do
+        select(i, content:GetChildren()):Hide()
+    end
+    
+    -- Create boss buttons
+    local yOffset = 0
+    for _, boss in ipairs(WORLD_BOSSES) do
+        if boss.zone == zoneId then
+            local btn = self:CreateWorldBossButton(content, boss, yOffset)
+            yOffset = yOffset - 70
+        end
+    end
+    
+    -- Add active events
+    for _, event in ipairs(ZONE_EVENTS) do
+        if event.zone == zoneId then
+            local btn = self:CreateEventButton(content, event, yOffset)
+            yOffset = yOffset - 50
+        end
+    end
+    
+    content:SetHeight(math.abs(yOffset) + 20)
+end
+
+function GF:CreateWorldBossButton(parent, boss, yOffset)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(440, 60)
+    btn:SetPoint("TOPLEFT", 0, yOffset)
+    btn:Show()
+    
+    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+    btn.bg:SetAllPoints()
+    btn.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+    
+    -- Boss icon
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetSize(50, 50)
+    btn.icon:SetPoint("LEFT", 5, 0)
+    btn.icon:SetTexture(boss.icon)
+    
+    -- Boss name
+    btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    btn.name:SetPoint("TOPLEFT", btn.icon, "TOPRIGHT", 10, -5)
+    btn.name:SetText(boss.name)
+    
+    -- Status text (Spawned/In Combat/Dead)
+    btn.status = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn.status:SetPoint("TOPLEFT", btn.name, "BOTTOMLEFT", 0, -4)
+    btn.status:SetText("|cff888888Checking status...|r")
+    
+    -- Group count
+    btn.groups = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.groups:SetPoint("TOPRIGHT", -10, -10)
+    btn.groups:SetText("|cffaaaaaa0 groups|r")
+    
+    -- Quick join button
+    btn.joinBtn = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+    btn.joinBtn:SetSize(80, 22)
+    btn.joinBtn:SetPoint("BOTTOMRIGHT", -10, 8)
+    btn.joinBtn:SetText("Quick Join")
+    btn.joinBtn.bossId = boss.id
+    btn.joinBtn:SetScript("OnClick", function(self)
+        GF:QuickJoinWorldBoss(self.bossId)
+    end)
+    
+    btn.bossId = boss.id
+    btn:SetScript("OnClick", function(self)
+        GF:ShowWorldBossDetails(self.bossId)
+    end)
+    
+    return btn
+end
+
+function GF:RefreshWorldContent()
+    -- Request zone status from server via DCAddonProtocol
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and DC.GroupFinder then
+        DC.GroupFinder.GetZoneStatus("giant_isles")
+    end
+end
+
+-- Register for server messages
+local DC = rawget(_G, "DCAddonProtocol")
+if DC then
+    DC:RegisterHandler("GRPF", 0x47, function(data) -- SMSG_ZONE_STATUS
+        if data.zone == "giant_isles" then
+            GF:UpdateWorldZoneStatus(data)
+        end
+    end)
+end
+
+GF.Print("World Content tab module loaded")
+```
+
+##### **Update GroupFinderFrame.lua**
+
+```lua
+-- Add to GF.TAB_NAMES:
+GF.TAB_NAMES = { "Mythic+", "Raids", "World Content", "Live Runs", "Scheduled" }
+
+-- Add ShowWorldContentTab function:
+function GF:ShowWorldContentTab()
+    if not self.WorldContentTabContent and self.CreateWorldContentTab then
+        self:CreateWorldContentTab()
+    end
+    if self.WorldContentTabContent then
+        self.WorldContentTabContent:Show()
+        self:RefreshWorldContent()
+    end
+end
+
+-- Update SelectTab to handle index 3 as World Content:
+-- (shift Live Runs to 4, Scheduled to 5)
+```
+
+##### **Update DC-MythicPlus.toc**
+
+```toc
+## Interface: 30300
+## Title: DC-MythicPlus
+## Notes: Mythic+ HUD, Group Finder, and Raid Browser
+## Version: 2.1.0
+## Author: DarkChaos Development Team
+
+Core.lua
+Settings.lua
+UI/GroupFinderFrame.lua
+UI/MythicTab.lua
+UI/RaidTab.lua
+UI/WorldContentTab.lua      # NEW
+UI/LiveRunsTab.lua
+UI/ScheduledTab.lua
+UI/KeystoneActivation.lua
+```
+
+#### **Seasonal Token Integration for Group Activities**
+
+```cpp
+// Bonus tokens for group activities
+void AwardGroupActivityTokens(Player* player, uint32 activity)
+{
+    uint32 baseTokens = 0;
+    uint32 baseEssence = 0;
+    std::string source;
+    
+    switch (activity)
+    {
+        case ACTIVITY_WORLD_BOSS_KILL:
+            baseTokens = 25;
+            baseEssence = 10;
+            source = "World Boss Kill";
+            break;
+        case ACTIVITY_RARE_KILL_GROUP:
+            baseTokens = 10;
+            baseEssence = 5;
+            source = "Rare Elite (Group)";
+            break;
+        case ACTIVITY_RIFT_EVENT_COMPLETE:
+            baseTokens = 15;
+            baseEssence = 8;
+            source = "Rift Event";
+            break;
+        case ACTIVITY_INVASION_COMPLETE:
+            baseTokens = 20;
+            baseEssence = 10;
+            source = "Invasion Defense";
+            break;
+    }
+    
+    // Apply seasonal multiplier
+    float multiplier = sSeasonalRewards->GetConfig().eventBossMultiplier;
+    
+    sSeasonalRewards->AwardBoth(player, 
+        static_cast<uint32>(baseTokens * multiplier),
+        static_cast<uint32>(baseEssence * multiplier),
+        source, activity);
+}
+```
+
+---
+
+### 14. **Spectator Mode for World Bosses** (`dc_giant_isles_spectate.cpp`)
+
+Allow players to watch boss fights:
+
+```cpp
+class giant_isles_spectator : public PlayerScript
+{
+    // Command: .spectate oondasta
+    // Teleport to safe viewing platform (phased)
+    // See boss fight in real-time
+    // No participation, no loot eligibility
+    // Can leave anytime
+    
+    // Integration with DC-Spectator addon
+    // Live health/phase updates to spectators
+};
+```
+
+---
+
+### 15. **Seasonal System Integration** (`dc_giant_isles_seasonal.cpp`)
+
+Full integration with DarkChaos Seasonal Reward System:
+
+```cpp
+#include "SeasonalRewardSystem.h"
+#include "SeasonalSystem.h"
+
+// Zone-wide seasonal token rewards
+struct GiantIslesTokenRewards
+{
+    // Creature kills
+    uint32 normalCreatureTokens = 1;
+    uint32 eliteCreatureTokens = 3;
+    uint32 rareEliteTokens = 10;
+    uint32 worldBossTokens = 25;
+    
+    // Event participation
+    uint32 riftEventWaveTokens = 5;
+    uint32 riftEventCompleteTokens = 15;
+    uint32 invasionWaveTokens = 5;
+    uint32 invasionCompleteTokens = 20;
+    
+    // Daily activities
+    uint32 dailyQuestTokens = 5;
+    uint32 allDailiesBonus = 15;
+};
+
+class giant_isles_seasonal : public PlayerScript
+{
+public:
+    giant_isles_seasonal() : PlayerScript("giant_isles_seasonal") {}
+
+    void OnCreatureKill(Player* player, Creature* creature) override
+    {
+        // Only process in Giant Isles zone
+        if (player->GetZoneId() != ZONE_GIANT_ISLES)
+            return;
+
+        uint32 tokens = 0;
+        uint32 essence = 0;
+        std::string source;
+
+        if (IsWorldBoss(creature->GetEntry()))
+        {
+            tokens = rewards.worldBossTokens;
+            essence = rewards.worldBossTokens / 2;
+            source = "Giant Isles World Boss";
+        }
+        else if (IsRareElite(creature->GetEntry()))
+        {
+            tokens = rewards.rareEliteTokens;
+            essence = rewards.rareEliteTokens / 2;
+            source = "Giant Isles Rare Elite";
+        }
+        else if (creature->IsElite())
+        {
+            tokens = rewards.eliteCreatureTokens;
+            source = "Giant Isles Elite";
+        }
+        else
+        {
+            tokens = rewards.normalCreatureTokens;
+            source = "Giant Isles Creature";
+        }
+
+        if (tokens > 0)
+        {
+            sSeasonalRewards->AwardBoth(player, tokens, essence, source, creature->GetEntry());
+        }
+    }
+
+    void OnQuestComplete(Player* player, Quest const* quest) override
+    {
+        // Check if this is a Giant Isles daily quest
+        if (!IsGiantIslesQuest(quest->GetQuestId()))
+            return;
+
+        sSeasonalRewards->AwardTokens(player, rewards.dailyQuestTokens, 
+            "Giant Isles Daily Quest", quest->GetQuestId());
+
+        // Check for all-dailies bonus
+        if (HasCompletedAllDailies(player))
+        {
+            sSeasonalRewards->AwardBoth(player, rewards.allDailiesBonus, 
+                rewards.allDailiesBonus / 2, "Giant Isles All Dailies Bonus", 0);
+            
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFF00FF00[Giant Isles]|r All daily quests complete! Bonus tokens awarded!");
+        }
+    }
+
+private:
+    GiantIslesTokenRewards rewards;
+    
+    bool IsWorldBoss(uint32 entry) const
+    {
+        return entry == NPC_OONDASTA || entry == NPC_THOK || entry == NPC_NALAK;
+    }
+
+    bool IsRareElite(uint32 entry) const
+    {
+        return entry >= 400050 && entry <= 400059;  // Rare elite range
+    }
+
+    bool IsGiantIslesQuest(uint32 questId) const
+    {
+        return questId >= 90000 && questId <= 90100;  // Giant Isles quest range
+    }
+
+    bool HasCompletedAllDailies(Player* player) const
+    {
+        // Check if player has completed all 8 available dailies today
+        // (implementation depends on daily quest rotation system)
+        return false;  // Placeholder
+    }
+};
+
+// Register with Seasonal System for season start/end hooks
+class GiantIslesSeasonalParticipant : public Seasonal::SeasonalParticipant
+{
+public:
+    std::string GetSystemName() const override { return "giant_isles"; }
+    uint32 GetSystemVersion() const override { return 100; }
+
+    void OnSeasonStart(uint32 season_id) override
+    {
+        LOG_INFO("module.giant_isles", "Giant Isles: Season {} started, resetting zone progress", season_id);
+        ResetZoneProgress();
+    }
+
+    void OnSeasonEnd(uint32 season_id) override
+    {
+        LOG_INFO("module.giant_isles", "Giant Isles: Season {} ended, calculating final rewards", season_id);
+        CalculateFinalRewards();
+    }
+
+    bool InitializeForSeason(uint32 /*season_id*/) override
+    {
+        // Load season-specific configuration
+        return true;
+    }
+};
+```
+
+---
+
+### Script File Summary
+
+| Script File | Purpose | Priority |
+|-------------|---------|----------|
+| `dc_giant_isles_weather.cpp` | Dynamic weather affecting gameplay | Medium |
+| `dc_giant_isles_rares.cpp` | Enhanced rare spawn system | High |
+| `dc_giant_isles_buffs.cpp` | Location-based zone buffs | Medium |
+| `dc_giant_isles_contribution.cpp` | Player contribution tracking | High |
+| `dc_giant_isles_pack_ai.cpp` | Dinosaur pack behavior + formations | Medium |
+| `dc_giant_isles_rift.cpp` | Chaos Rift wave event | High |
+| `dc_giant_isles_invasion.cpp` | Zandalari invasion defense | High |
+| `dc_giant_isles_essence.cpp` | Primal Essence currency | Medium |
+| `dc_giant_isles_achievements.cpp` | Zone achievement tracking | Low |
+| `dc_giant_isles_hazards.cpp` | Environmental dangers | Low |
+| `dc_giant_isles_dailies.cpp` | Daily quest rotation | High |
+| `dc_giant_isles_groupfinder.cpp` | Group Finder integration | Medium |
+| `dc_giant_isles_spectate.cpp` | World boss spectating | Low |
+
+---
+
+*Document Version: 1.3*  
 *Created: December 2025*  
-*Updated: December 2025 - Added C++ scripts and SQL creature templates*  
+*Updated: December 2025 - Added zone script extension ideas*  
 *For: DarkChaos-255 Server*
 
 ---

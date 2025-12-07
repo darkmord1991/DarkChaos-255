@@ -10,6 +10,8 @@
 
 // Zone and general scripts
 void AddSC_giant_isles_zone();
+void AddSC_giant_isles_cannon_quest();
+void AddSC_giant_isles_invasion();
 
 // World Boss scripts
 void AddSC_boss_oondasta();
@@ -21,6 +23,12 @@ void AddGiantIslesScripts()
 {
     // Zone scripts (announcements, area triggers, etc.)
     AddSC_giant_isles_zone();
+    
+    // Cannon quest event
+    AddSC_giant_isles_cannon_quest();
+    
+    // Zandalari invasion event
+    AddSC_giant_isles_invasion();
     
     // World Boss: Oondasta - King of Dinosaurs
     AddSC_boss_oondasta();

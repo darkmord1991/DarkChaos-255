@@ -142,7 +142,11 @@ function SeasonPlugin:OnUpdate(elapsed)
             return "S" .. seasonData.id .. ": ", tokenText
         else
             -- Just show season name
-            return "", "S" .. seasonData.id .. ": " .. seasonData.name
+            local displayName = seasonData.name
+            if displayName == "Unknown" or displayName == "Unknown Season" then
+                displayName = "Season " .. seasonData.id
+            end
+            return "", "S" .. seasonData.id .. ": " .. displayName
         end
     else
         return "", "Season"
@@ -159,7 +163,30 @@ end
 function SeasonPlugin:OnTooltip(tooltip)
     local seasonData = DCInfoBar.serverData.season
     
-    tooltip:AddLine("Season " .. seasonData.id .. ": " .. seasonData.name, 1, 0.82, 0)
+    -- Fallback: Check DCWelcome.Seasons.Data if our data isn't populated
+    if (not seasonData.id or seasonData.id == 0 or seasonData.name == "Unknown") and DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
+        local D = DCWelcome.Seasons.Data
+        if D._loaded and D.seasonNumber and D.seasonNumber > 0 then
+            seasonData = {
+                id = D.seasonNumber,
+                name = D.seasonName or "Unknown Season",
+                weeklyTokens = D.weeklyTokens or D.tokens or 0,
+                weeklyCap = D.weeklyTokenCap or 1000,
+                weeklyEssence = D.weeklyEssence or D.essence or 0,
+                essenceCap = D.weeklyEssenceCap or 1000,
+                totalTokens = D.tokens or 0,
+                endsIn = 0,
+                weeklyReset = 0,
+            }
+        end
+    end
+    
+    local displayName = seasonData.name
+    if displayName == "Unknown" or displayName == "Unknown Season" then
+        displayName = "Season " .. (seasonData.id or 1)
+    end
+    
+    tooltip:AddLine(displayName, 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
     
     -- Weekly progress
@@ -179,18 +206,20 @@ function SeasonPlugin:OnTooltip(tooltip)
         "Essence")
     
     -- Total this season
-    tooltip:AddLine(" ")
-    tooltip:AddDoubleLine("Total Tokens:", DCInfoBar:FormatNumber(seasonData.totalTokens), 
-        0.7, 0.7, 0.7, 1, 1, 1)
+    if seasonData.totalTokens and seasonData.totalTokens > 0 then
+        tooltip:AddLine(" ")
+        tooltip:AddDoubleLine("Total Tokens:", DCInfoBar:FormatNumber(seasonData.totalTokens), 
+            0.7, 0.7, 0.7, 1, 1, 1)
+    end
     
     -- Time info
-    if seasonData.endsIn > 0 then
+    if seasonData.endsIn and seasonData.endsIn > 0 then
         tooltip:AddLine(" ")
         tooltip:AddDoubleLine("Season Ends:", DCInfoBar:FormatTimeShort(seasonData.endsIn),
             0.7, 0.7, 0.7, 1, 0.82, 0)
     end
     
-    if seasonData.weeklyReset > 0 then
+    if seasonData.weeklyReset and seasonData.weeklyReset > 0 then
         tooltip:AddDoubleLine("Weekly Reset:", DCInfoBar:FormatTimeShort(seasonData.weeklyReset),
             0.7, 0.7, 0.7, 0.5, 1, 0.5)
     end
