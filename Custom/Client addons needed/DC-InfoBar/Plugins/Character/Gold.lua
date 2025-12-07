@@ -12,6 +12,15 @@ local DCInfoBar = DCInfoBar or {}
 local SEASONAL_TOKEN_ID = 300311
 local SEASONAL_ESSENCE_ID = 300312
 
+-- Additional currency item IDs (common custom currencies)
+local CURRENCY_ITEMS = {
+    { id = 300311, name = "Upgrade Tokens", icon = "Interface\\Icons\\INV_Misc_Token_ScarletCrusade", color = {1, 0.82, 0} },
+    { id = 300312, name = "Seasonal Essence", icon = "Interface\\Icons\\Spell_Arcane_Arcane04", color = {0.64, 0.21, 0.93} },
+    { id = 300313, name = "Prestige Points", icon = "Interface\\Icons\\Achievement_Level_80", color = {0.5, 1, 0.5} },
+    { id = 300314, name = "PvP Tokens", icon = "Interface\\Icons\\INV_Jewelry_FrostwolfTrinket_05", color = {1, 0.3, 0.3} },
+    { id = 300315, name = "Dungeon Tokens", icon = "Interface\\Icons\\INV_Misc_Token_ArgentDawn", color = {0.3, 0.7, 1} },
+}
+
 local GoldPlugin = {
     id = "DCInfoBar_Gold",
     name = "Gold",
@@ -30,6 +39,7 @@ local GoldPlugin = {
     _lastGold = 0,
     _recentChange = 0,
     _recentChangeTimer = 0,
+    _currencyCache = {},
 }
 
 -- Helper: Count items in bags
@@ -129,35 +139,77 @@ function GoldPlugin:OnTooltip(tooltip)
         DCInfoBar:FormatGold(self._currentGold),
         0.7, 0.7, 0.7, 1, 1, 1)
     
-    -- Currencies section
+    -- Currencies section - scan inventory for all currency items
     tooltip:AddLine(" ")
     tooltip:AddLine("|cff32c4ffCurrencies|r")
     
-    -- Seasonal Tokens (count from bags)
-    local tokenCount = GetItemCount(SEASONAL_TOKEN_ID)
-    local tokenColor = tokenCount > 0 and {1, 0.82, 0} or {0.5, 0.5, 0.5}
-    tooltip:AddDoubleLine("Upgrade Tokens:", 
-        DCInfoBar:FormatNumber(tokenCount) .. " |TInterface\\Icons\\INV_Misc_Token_ScarletCrusade:12|t",
-        0.7, 0.7, 0.7, tokenColor[1], tokenColor[2], tokenColor[3])
+    local foundAny = false
+    for _, currency in ipairs(CURRENCY_ITEMS) do
+        local count = GetItemCount(currency.id)
+        if count > 0 then
+            foundAny = true
+            tooltip:AddDoubleLine(currency.name .. ":", 
+                DCInfoBar:FormatNumber(count) .. " |T" .. currency.icon .. ":12|t",
+                0.7, 0.7, 0.7, currency.color[1], currency.color[2], currency.color[3])
+        end
+    end
     
-    -- Seasonal Essence (count from bags)
+    -- Also check for core token/essence even if 0
+    local tokenCount = GetItemCount(SEASONAL_TOKEN_ID)
     local essenceCount = GetItemCount(SEASONAL_ESSENCE_ID)
-    local essenceColor = essenceCount > 0 and {0.64, 0.21, 0.93} or {0.5, 0.5, 0.5}
-    tooltip:AddDoubleLine("Seasonal Essence:", 
-        DCInfoBar:FormatNumber(essenceCount) .. " |TInterface\\Icons\\Spell_Arcane_Arcane04:12|t",
-        0.7, 0.7, 0.7, essenceColor[1], essenceColor[2], essenceColor[3])
+    
+    if not foundAny or tokenCount == 0 then
+        local tokenColor = tokenCount > 0 and {1, 0.82, 0} or {0.5, 0.5, 0.5}
+        tooltip:AddDoubleLine("Upgrade Tokens:", 
+            DCInfoBar:FormatNumber(tokenCount) .. " |TInterface\\Icons\\INV_Misc_Token_ScarletCrusade:12|t",
+            0.7, 0.7, 0.7, tokenColor[1], tokenColor[2], tokenColor[3])
+    end
+    
+    if not foundAny or essenceCount == 0 then
+        local essenceColor = essenceCount > 0 and {0.64, 0.21, 0.93} or {0.5, 0.5, 0.5}
+        tooltip:AddDoubleLine("Seasonal Essence:", 
+            DCInfoBar:FormatNumber(essenceCount) .. " |TInterface\\Icons\\Spell_Arcane_Arcane04:12|t",
+            0.7, 0.7, 0.7, essenceColor[1], essenceColor[2], essenceColor[3])
+    end
     
     -- Weekly caps from season data (if available)
     local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season
     if seasonData and seasonData.id > 0 then
         tooltip:AddLine(" ")
-        tooltip:AddLine("|cff888888Weekly Progress|r", 0.5, 0.5, 0.5)
+        tooltip:AddLine("|cff888888Weekly Progress (Server)|r", 0.5, 0.5, 0.5)
         tooltip:AddDoubleLine("  Tokens:", 
-            seasonData.weeklyTokens .. "/" .. seasonData.weeklyCap,
-            0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+            (seasonData.weeklyTokens or 0) .. "/" .. (seasonData.weeklyCap or 500),
+            0.5, 0.5, 0.5, 1, 0.82, 0)
         tooltip:AddDoubleLine("  Essence:", 
-            seasonData.weeklyEssence .. "/" .. seasonData.essenceCap,
-            0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+            (seasonData.weeklyEssence or 0) .. "/" .. (seasonData.essenceCap or 200),
+            0.5, 0.5, 0.5, 0.64, 0.21, 0.93)
+    end
+    
+    -- Prestige XP Bonus section
+    local prestigePlugin = DCInfoBar.plugins and DCInfoBar.plugins["DCInfoBar_Prestige"]
+    if prestigePlugin and prestigePlugin._dataReceived then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cffaa00ffPrestige Bonuses|r")
+        
+        if prestigePlugin._prestigeLevel > 0 then
+            tooltip:AddDoubleLine("  Prestige Level:", 
+                prestigePlugin._prestigeLevel .. "/" .. prestigePlugin._maxPrestigeLevel,
+                0.7, 0.7, 0.7, 0.8, 0.5, 1)
+        end
+        
+        if prestigePlugin._totalBonus > 0 then
+            tooltip:AddDoubleLine("  XP Bonus:", 
+                "+" .. prestigePlugin._totalBonus .. "%",
+                0.7, 0.7, 0.7, 0.5, 1, 0.5)
+            tooltip:AddDoubleLine("  Stat Bonus:", 
+                "+" .. prestigePlugin._totalBonus .. "%",
+                0.7, 0.7, 0.7, 0.5, 1, 0.5)
+        end
+        
+        if prestigePlugin._canPrestige then
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cff00ff00Ready to Prestige!|r")
+        end
     end
 end
 

@@ -18,21 +18,112 @@ local SeasonPlugin = {
     icon = "Interface\\Icons\\Achievement_Arena_2v2_1",
     updateInterval = 5.0,  -- Update every 5 seconds
     
-    leftClickHint = "Open Seasons panel",
+    leftClickHint = "Open Progress panel",
     rightClickHint = "View season leaderboard",
     
     -- Cached display data
     _displayText = "Season",
     _seasonName = "Unknown",
     _seasonId = 0,
+    _dataReceived = false,
 }
 
 function SeasonPlugin:OnActivate()
-    -- Request initial data
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("SEAS", DC.Opcode.Season.CMSG_GET_CURRENT, {})
+    local function RequestSeasonData()
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC then
+            DC:Request("SEAS", 0x01, {})  -- CMSG_GET_CURRENT
+            DC:Request("SEAS", 0x03, {})  -- CMSG_GET_PROGRESS
+        end
     end
+    
+    local function RegisterHandlers()
+        local DC = rawget(_G, "DCAddonProtocol")
+        if not DC then
+            -- Retry after delay
+            local retryFrame = CreateFrame("Frame")
+            retryFrame.elapsed = 0
+            retryFrame:SetScript("OnUpdate", function(self, elapsed)
+                self.elapsed = self.elapsed + elapsed
+                if self.elapsed >= 2 then
+                    self:SetScript("OnUpdate", nil)
+                    RegisterHandlers()
+                end
+            end)
+            return
+        end
+        
+        -- Register handler for season response (SMSG_CURRENT = 0x10)
+        DC:RegisterHandler("SEAS", 0x10, function(data)
+            if data then
+                DCInfoBar:HandleSeasonData(data)
+                SeasonPlugin._dataReceived = true
+                SeasonPlugin._elapsed = 999  -- Force update
+                
+                -- Also update DC-Welcome Seasons if loaded
+                if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
+                    DCWelcome.Seasons.Data.seasonNumber = data.seasonId or data.id
+                    DCWelcome.Seasons.Data.seasonName = data.seasonName or data.name
+                    DCWelcome.Seasons.Data._loaded = true
+                    if DCWelcome.Seasons.UpdateProgressTracker then
+                        DCWelcome.Seasons:UpdateProgressTracker()
+                    end
+                end
+            end
+        end)
+        
+        -- Also register for progress response (SMSG_PROGRESS = 0x12)
+        DC:RegisterHandler("SEAS", 0x12, function(data)
+            if data then
+                DCInfoBar:HandleSeasonProgressData(data)
+                SeasonPlugin._dataReceived = true
+                SeasonPlugin._elapsed = 999  -- Force update
+                
+                -- Also update DC-Welcome Seasons if loaded
+                if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
+                    local D = DCWelcome.Seasons.Data
+                    D.tokens = data.tokens or D.tokens
+                    D.essence = data.essence or D.essence
+                    D.weeklyTokens = data.weeklyTokens or data.tokens or D.weeklyTokens
+                    D.weeklyEssence = data.weeklyEssence or data.essence or D.weeklyEssence
+                    D.weeklyTokenCap = data.tokenCap or D.weeklyTokenCap
+                    D.weeklyEssenceCap = data.essenceCap or D.weeklyEssenceCap
+                    D._loaded = true
+                    if DCWelcome.Seasons.UpdateProgressTracker then
+                        DCWelcome.Seasons:UpdateProgressTracker()
+                    end
+                end
+            end
+        end)
+        
+        -- Request initial data
+        RequestSeasonData()
+        
+        -- Retry after delay if no data (increased retries)
+        local retryFrame = CreateFrame("Frame")
+        retryFrame.elapsed = 0
+        retryFrame.retries = 0
+        retryFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = self.elapsed + elapsed
+            if self.elapsed >= 3 then
+                self.elapsed = 0
+                self.retries = self.retries + 1
+                
+                if self.retries >= 5 then
+                    self:SetScript("OnUpdate", nil)
+                    return
+                end
+                
+                if not SeasonPlugin._dataReceived then
+                    RequestSeasonData()
+                else
+                    self:SetScript("OnUpdate", nil)
+                end
+            end
+        end)
+    end
+    
+    RegisterHandlers()
 end
 
 function SeasonPlugin:OnUpdate(elapsed)
@@ -107,16 +198,32 @@ end
 
 function SeasonPlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Open DC-Seasons panel if available
-        if DCSeasons and DCSeasons.Toggle then
+        -- Open DC-Welcome progress panel if available
+        if DCWelcome and DCWelcome.ShowProgress then
+            DCWelcome:ShowProgress()
+        elseif DCWelcome and DCWelcome.Toggle then
+            DCWelcome:Toggle()
+        elseif DC_Welcome_Frame and DC_Welcome_Frame.Show then
+            DC_Welcome_Frame:Show()
+        elseif DCSeasons and DCSeasons.Toggle then
+            -- Fallback to seasons panel
             DCSeasons:Toggle()
         else
-            DCInfoBar:Print("DC-Seasons addon not loaded")
+            -- Request progress data and show in chat
+            local DC = rawget(_G, "DCAddonProtocol")
+            if DC then
+                DC:Request("WELC", 0x06, {})  -- CMSG_GET_PROGRESS
+                DCInfoBar:Print("Requested progress data from server...")
+            else
+                DCInfoBar:Print("Progress panel not available")
+            end
         end
     elseif button == "RightButton" then
         -- Open leaderboard
         if DCLeaderboards and DCLeaderboards.Show then
             DCLeaderboards:Show("seasonal")
+        else
+            DCInfoBar:Print("Leaderboards addon not loaded")
         end
     end
 end

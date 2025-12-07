@@ -14,7 +14,7 @@ local GF = namespace.GroupFinder
 
 GF.FRAME_WIDTH = 700
 GF.FRAME_HEIGHT = 520
-GF.TAB_NAMES = { "Mythic+", "Raids", "Live Runs", "Scheduled" }
+GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled" }
 GF.TABS = {}
 GF.currentTab = 1
 
@@ -228,6 +228,7 @@ function GF:SelectTab(index)
     -- Hide all content frames
     if self.MythicTabContent then self.MythicTabContent:Hide() end
     if self.RaidTabContent then self.RaidTabContent:Hide() end
+    if self.WorldTabContent then self.WorldTabContent:Hide() end
     if self.LiveRunsTabContent then self.LiveRunsTabContent:Hide() end
     if self.ScheduledTabContent then self.ScheduledTabContent:Hide() end
     
@@ -237,8 +238,10 @@ function GF:SelectTab(index)
     elseif index == 2 then
         self:ShowRaidTab()
     elseif index == 3 then
-        self:ShowLiveRunsTab()
+        self:ShowWorldTab()
     elseif index == 4 then
+        self:ShowLiveRunsTab()
+    elseif index == 5 then
         self:ShowScheduledTab()
     end
 end
@@ -299,6 +302,19 @@ function GF:ShowRaidTab()
     end
     if self.RaidTabContent then
         self.RaidTabContent:Show()
+    end
+end
+
+function GF:ShowWorldTab()
+    if not self.WorldTabContent and self.CreateWorldTab then
+        self:CreateWorldTab()
+    end
+    if self.WorldTabContent then
+        self.WorldTabContent:Show()
+        -- Refresh world content when tab is shown
+        if self.RefreshWorldContent then
+            self:RefreshWorldContent()
+        end
     end
 end
 

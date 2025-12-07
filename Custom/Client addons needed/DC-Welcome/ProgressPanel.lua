@@ -415,16 +415,20 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         
         -- Update progress bars
         if self.progressBars then
-            if progress.weeklyVaultProgress then
+            if progress.weeklyVaultProgress ~= nil then
                 self.progressBars.vault:SetProgress(progress.weeklyVaultProgress, 3)
             end
-            if progress.seasonPoints then
-                self.progressBars.seasonPoints:SetProgress(progress.seasonPoints, 1000)
+            if progress.seasonPoints ~= nil then
+                -- Season points max defaults to 1000 but can be overridden
+                local maxPoints = progress.seasonPointsMax or 1000
+                self.progressBars.seasonPoints:SetProgress(progress.seasonPoints, maxPoints)
             end
-            if progress.prestigeXP then
-                self.progressBars.prestigeXP:SetProgress(progress.prestigeXP, 100)
+            if progress.prestigeXP ~= nil then
+                -- Prestige XP max defaults to 100 but can be overridden from server
+                local maxXP = progress.prestigeXPMax or 100
+                self.progressBars.prestigeXP:SetProgress(progress.prestigeXP, maxXP)
             end
-            if progress.keysThisWeek then
+            if progress.keysThisWeek ~= nil then
                 self.progressBars.keysWeek:SetProgress(progress.keysThisWeek, 10)
             end
         end

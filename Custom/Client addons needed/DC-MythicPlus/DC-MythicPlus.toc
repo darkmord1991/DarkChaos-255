@@ -18,6 +18,7 @@ Core.lua
 UI\GroupFinderFrame.lua
 UI\MythicTab.lua
 UI\RaidTab.lua
+UI\WorldTab.lua
 UI\LiveRunsTab.lua
 UI\ScheduledTab.lua
 UI\KeystoneActivation.lua

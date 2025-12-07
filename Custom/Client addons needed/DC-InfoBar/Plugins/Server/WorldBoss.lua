@@ -113,8 +113,17 @@ end
 function WorldBossPlugin:OnClick(button)
     if button == "LeftButton" then
         -- Open Group Finder to World Content tab
-        if DCMythicPlusHUD and DCMythicPlusHUD.ShowGroupFinder then
+        if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder and DCMythicPlusHUD.GroupFinder.Toggle then
+            DCMythicPlusHUD.GroupFinder:Toggle()
+        elseif DCMythicPlusHUD and DCMythicPlusHUD.ShowGroupFinder then
             DCMythicPlusHUD:ShowGroupFinder("world")
+        elseif DCGroupFinder and DCGroupFinder.Toggle then
+            DCGroupFinder:Toggle()
+        elseif LFDParentFrame then
+            -- Fallback to default LFD frame
+            ToggleLFDParentFrame()
+        else
+            DCInfoBar:Print("Group Finder not available")
         end
     elseif button == "RightButton" then
         -- Print all boss timers to chat
@@ -125,6 +134,8 @@ function WorldBossPlugin:OnClick(button)
                 local status = boss.status == "active" and "ACTIVE" or DCInfoBar:FormatTimeShort(boss.spawnIn or 0)
                 DCInfoBar:Print("  " .. boss.name .. ": " .. status)
             end
+        else
+            DCInfoBar:Print("No world boss data available")
         end
     end
 end

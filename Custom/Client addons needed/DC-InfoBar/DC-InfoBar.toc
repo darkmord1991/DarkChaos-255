@@ -21,6 +21,7 @@ UI\Options.lua
 
 # Server plugins (require DCAddonProtocol)
 Plugins\Server\Season.lua
+Plugins\Server\Prestige.lua
 Plugins\Server\Keystone.lua
 Plugins\Server\Affixes.lua
 Plugins\Server\WorldBoss.lua

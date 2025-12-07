@@ -16,7 +16,8 @@ function DCInfoBar:AddTooltipHeader(tooltip, text)
 end
 
 function DCInfoBar:AddTooltipSeparator(tooltip)
-    tooltip:AddLine("━━━━━━━━━━━━━━━━━━━━", 0.3, 0.3, 0.3)
+    -- Use simple dashes that render properly in all WoW fonts
+    tooltip:AddLine("------------------------", 0.3, 0.3, 0.3)
 end
 
 function DCInfoBar:AddTooltipDoubleLine(tooltip, left, right, lr, lg, lb, rr, rg, rb)
@@ -28,11 +29,12 @@ function DCInfoBar:AddTooltipProgressBar(tooltip, current, max, label)
     local percent = math.floor((current / max) * 100)
     local barWidth = 20
     local filled = math.floor((current / max) * barWidth)
-    local bar = string.rep("█", filled) .. string.rep("░", barWidth - filled)
+    -- Use pipe characters instead of Unicode block characters
+    local bar = string.rep("|", filled) .. string.rep(".", barWidth - filled)
     
     tooltip:AddDoubleLine(
         label or "",
-        string.format("%s %d/%d (%d%%)", bar, current, max, percent),
+        string.format("[%s] %d/%d (%d%%)", bar, current, max, percent),
         1, 1, 1,
         0.8, 0.8, 0.8
     )

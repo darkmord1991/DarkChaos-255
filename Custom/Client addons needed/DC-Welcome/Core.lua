@@ -415,6 +415,82 @@ local function RegisterHandlers()
         end
     end)
     
+    -- PRES module: SMSG_INFO (0x10) - Prestige info from server
+    DC:RegisterHandler("PRES", 0x10, function(data)
+        DebugPrint("Received PRES SMSG_INFO")
+        
+        if type(data) == "table" then
+            local progress = DCWelcome.Progress
+            
+            if data.level then
+                progress.prestigeLevel = data.level
+            end
+            if data.prestigeLevel then
+                progress.prestigeLevel = data.prestigeLevel
+            end
+            if data.currentXP then
+                progress.prestigeXP = data.currentXP
+            end
+            if data.prestigeXP then
+                progress.prestigeXP = data.prestigeXP
+            end
+            if data.xpToNext then
+                progress.prestigeXPMax = data.xpToNext
+            end
+            if data.altBonusLevel then
+                progress.altBonusLevel = data.altBonusLevel
+            end
+            if data.altBonusPercent then
+                progress.altBonusPercent = data.altBonusPercent
+            end
+            
+            progress._lastUpdate = time()
+            DCWelcome.ProgressCache = progress
+            DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
+            
+            DebugPrint("Prestige data updated: Level " .. tostring(progress.prestigeLevel))
+        end
+    end)
+    
+    -- SEAS module: SMSG_CURRENT (0x10) - Season info from server
+    DC:RegisterHandler("SEAS", 0x10, function(data)
+        DebugPrint("Received SEAS SMSG_CURRENT")
+        
+        if type(data) == "table" then
+            local progress = DCWelcome.Progress
+            
+            -- Update season rank from season ID
+            if data.seasonId or data.id then
+                progress.seasonRank = data.seasonId or data.id
+            end
+            
+            progress._lastUpdate = time()
+            DCWelcome.ProgressCache = progress
+        end
+    end)
+    
+    -- SEAS module: SMSG_PROGRESS (0x12) - Season progress from server
+    DC:RegisterHandler("SEAS", 0x12, function(data)
+        DebugPrint("Received SEAS SMSG_PROGRESS")
+        
+        if type(data) == "table" then
+            local progress = DCWelcome.Progress
+            
+            if data.tokens or data.weeklyTokens then
+                progress.seasonPoints = data.tokens or data.weeklyTokens
+            end
+            if data.seasonLevel then
+                progress.seasonRank = data.seasonLevel
+            end
+            
+            progress._lastUpdate = time()
+            DCWelcome.ProgressCache = progress
+            DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
+            
+            DebugPrint("Season progress updated")
+        end
+    end)
+    
     Print("Handlers registered (v" .. DCWelcome.VERSION .. ")")
 end
 
@@ -643,8 +719,18 @@ end
 -- Request progress data from server
 function DCWelcome:RequestProgressData()
     if DC then
+        -- Request main progress data
         DC:Request(self.Module, self.Opcode.CMSG_GET_PROGRESS, {})
         DebugPrint("Requested progress data from server")
+        
+        -- Also request prestige data from PRES module
+        DC:Request("PRES", 0x01, {})  -- CMSG_GET_INFO
+        DebugPrint("Requested prestige data from server")
+        
+        -- Request season data from SEAS module  
+        DC:Request("SEAS", 0x01, {})  -- CMSG_GET_CURRENT
+        DC:Request("SEAS", 0x03, {})  -- CMSG_GET_PROGRESS
+        DebugPrint("Requested season data from server")
     end
     
     -- Also try to get data from loaded addons
@@ -664,6 +750,21 @@ function DCWelcome:RefreshProgressFromAddons()
     if _G.DCPrestige and DCPrestige.GetPrestigeLevel then
         progress.prestigeLevel = DCPrestige:GetPrestigeLevel()
         progress.prestigeXP = DCPrestige:GetPrestigeXP()
+    end
+    
+    -- Fallback: Try to get prestige from DC-InfoBar's serverData
+    if not progress.prestigeLevel and _G.DCInfoBar and DCInfoBar.serverData and DCInfoBar.serverData.prestige then
+        local presData = DCInfoBar.serverData.prestige
+        progress.prestigeLevel = presData.level
+        progress.prestigeXP = presData.currentXP
+    end
+    
+    -- Fallback: Try to get season data from DCWelcome.Seasons.Data
+    if DCWelcome.Seasons and DCWelcome.Seasons.Data then
+        local seasData = DCWelcome.Seasons.Data
+        if seasData._loaded then
+            progress.seasonPoints = seasData.tokens or seasData.weeklyTokens or progress.seasonPoints
+        end
     end
     
     -- Get achievement points

@@ -173,6 +173,15 @@ end
 -- Server Communication (DCAddonProtocol)
 -- ============================================================================
 
+-- Season Opcodes (matches server-side dc_addon_season.cpp)
+local SEAS_CMSG_GET_CURRENT = 0x01
+local SEAS_SMSG_CURRENT     = 0x10
+local SEAS_SMSG_PROGRESS    = 0x12
+
+-- M+ Opcodes (if DC.Opcode.MPlus doesn't exist)
+local MPLUS_CMSG_GET_KEY_INFO = 0x01
+local MPLUS_SMSG_KEY_INFO     = 0x10
+
 function DCInfoBar:SetupServerCommunication()
     DC = rawget(_G, "DCAddonProtocol")
     
@@ -185,17 +194,25 @@ function DCInfoBar:SetupServerCommunication()
     
     -- Register handlers for server data
     
-    -- Season info
-    DC:RegisterHandler("SEAS", DC.Opcode.Season.SMSG_CURRENT, function(data)
+    -- Season info (using direct opcodes - not DC.Opcode.Season which doesn't exist)
+    DC:RegisterHandler("SEAS", SEAS_SMSG_CURRENT, function(data)
         DCInfoBar:HandleSeasonData(data)
     end)
     
-    -- Keystone info (from Group Finder or MythicPlus)
-    DC:RegisterHandler("GRPF", DC.GroupFinderOpcodes.SMSG_KEYSTONE_INFO, function(data)
-        DCInfoBar:HandleKeystoneData(data)
+    -- Also handle progress data for more detailed season info
+    DC:RegisterHandler("SEAS", SEAS_SMSG_PROGRESS, function(data)
+        DCInfoBar:HandleSeasonProgressData(data)
     end)
     
-    DC:RegisterHandler("MPLUS", DC.Opcode.MPlus.SMSG_KEY_INFO, function(data)
+    -- Keystone info (from Group Finder)
+    if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.SMSG_KEYSTONE_INFO then
+        DC:RegisterHandler("GRPF", DC.GroupFinderOpcodes.SMSG_KEYSTONE_INFO, function(data)
+            DCInfoBar:HandleKeystoneData(data)
+        end)
+    end
+    
+    -- Keystone info (from MythicPlus module)
+    DC:RegisterHandler("MPLUS", MPLUS_SMSG_KEY_INFO, function(data)
         DCInfoBar:HandleKeystoneData(data)
     end)
     
@@ -205,18 +222,76 @@ function DCInfoBar:SetupServerCommunication()
 end
 
 function DCInfoBar:RequestServerData()
-    if not DC then return end
+    if not DC then 
+        DC = rawget(_G, "DCAddonProtocol")
+    end
     
-    -- Request seasonal info
-    DC:Request("SEAS", DC.Opcode.Season.CMSG_GET_CURRENT, {})
+    if not DC then
+        self:Debug("DCAddonProtocol not available for RequestServerData")
+        return
+    end
+    
+    self:Debug("Requesting server data...")
+    
+    -- Request seasonal info (using direct opcode)
+    DC:Request("SEAS", SEAS_CMSG_GET_CURRENT, {})
+    DC:Request("SEAS", 0x03, {})  -- Also try CMSG_GET_PROGRESS
     
     -- Request keystone info from both modules for redundancy
-    if DC.GroupFinderOpcodes then
+    if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE then
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
     end
-    if DC.Opcode and DC.Opcode.MPlus then
-        DC:Request("MPLUS", DC.Opcode.MPlus.CMSG_GET_KEY_INFO, {})
+    
+    DC:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
+    
+    -- Request hotspot list
+    DC:Request("SPOT", 0x01, {})
+    if DC.Hotspot and DC.Hotspot.GetList then
+        DC.Hotspot.GetList()
     end
+    
+    -- Request prestige info
+    DC:Request("PRES", 0x01, {})
+end
+
+-- Handle season progress data (SMSG 0x12)
+function DCInfoBar:HandleSeasonProgressData(data)
+    if not data then return end
+    
+    -- Update season data with progress info
+    local season = self.serverData.season
+    
+    if data.seasonId or data.id then
+        season.id = data.seasonId or data.id
+    end
+    if data.tokens then
+        season.weeklyTokens = data.tokens
+    end
+    if data.weeklyTokens then
+        season.weeklyTokens = data.weeklyTokens
+    end
+    if data.essence then
+        season.weeklyEssence = data.essence
+    end
+    if data.weeklyEssence then
+        season.weeklyEssence = data.weeklyEssence
+    end
+    if data.tokenCap then
+        season.weeklyCap = data.tokenCap
+    end
+    if data.essenceCap then
+        season.essenceCap = data.essenceCap
+    end
+    if data.totalTokens then
+        season.totalTokens = data.totalTokens
+    end
+    
+    -- Notify season plugin
+    if self.plugins["DCInfoBar_Season"] and self.plugins["DCInfoBar_Season"].OnServerData then
+        self.plugins["DCInfoBar_Season"]:OnServerData(season)
+    end
+    
+    self:Debug("Season progress data received")
 end
 
 -- Handle incoming season data
