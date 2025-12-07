@@ -37,6 +37,7 @@ void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cp
 // --- Giant Isles Zone (Ported from MoP Isle of Giants) ---
 void AddSC_giant_isles_zone();                // GiantIsles\dc_giant_isles_zone.cpp
 void AddSC_giant_isles_cannon_quest();        // GiantIsles\dc_giant_isles_cannon_quest.cpp
+void AddSC_giant_isles_invasion();            // GiantIsles\dc_giant_isles_invasion.cpp
 void AddSC_boss_oondasta();                   // GiantIsles\boss_oondasta.cpp
 void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
@@ -167,6 +168,7 @@ void AddDCScripts()
     try {
         AddSC_giant_isles_zone();
         AddSC_giant_isles_cannon_quest();
+        AddSC_giant_isles_invasion();
         AddSC_boss_oondasta();
         AddSC_boss_thok();
         AddSC_boss_nalak();

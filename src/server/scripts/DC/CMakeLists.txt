@@ -32,6 +32,7 @@ set(SCRIPTS_DC_Jadeforest
 # Giant Isles Zone scripts (Ported from MoP Isle of Giants)
 set(SCRIPTS_DC_GiantIsles
     GiantIsles/dc_giant_isles_zone.cpp
+    GiantIsles/dc_giant_isles_invasion.cpp
     GiantIsles/boss_oondasta.cpp
     GiantIsles/boss_thok.cpp
     GiantIsles/boss_nalak.cpp
