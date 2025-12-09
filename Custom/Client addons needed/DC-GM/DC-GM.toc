@@ -1,0 +1,68 @@
+## Interface: 30300
+## Title: DC-GM
+## Author: SuperStyro Dev team + Manground Dev Team + Rochet2
+## Version: 3.3.5
+## Notes: Combined Admin Addon for DarkChaos (AzerothAdmin + GOMove)
+## Name: AzerothAdmin
+## License: GPLv3
+## OptionalDeps: AceLibrary,AceEvent-2.0,AceHook-2.1,AceDebug-2.0,AceLocale-2.2,AceConsole-2.0,AceAddon-2.0,DC-AddonProtocol
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## SavedVariables: AzerothAdminDb, GOMoveSV
+## SavedVariablesPerCharacter: AzerothAdminDbPerChar
+
+Libraries\AceLibrary\AceLibrary.lua
+Libraries\AceOO-2.0\AceOO-2.0.lua
+Libraries\AceEvent-2.0\AceEvent-2.0.lua
+Libraries\AceHook-2.1\AceHook-2.1.lua
+Libraries\AceDB-2.0\AceDB-2.0.lua
+Libraries\AceDebug-2.0\AceDebug-2.0.lua
+Libraries\AceLocale-2.2\AceLocale-2.2.lua
+Libraries\AceConsole-2.0\AceConsole-2.0.lua
+Libraries\AceAddon-2.0\AceAddon-2.0.lua
+Libraries\Tablet-2.0\Tablet-2.0.lua
+Libraries\DewDrop-2.0\DewDrop-2.0.lua
+Libraries\FrameLib-1.0\FrameLib-1.0.lua
+Libraries\Graph-1.0\Graph-1.0.lua
+Libraries\LibStub\LibStub.lua
+Locales\enUS.lua
+Locales\strings.lua
+Data\Models.lua
+Commands\Main.lua
+Commands\Tele.lua
+Commands\Char.lua
+Commands\Ticket.lua
+Commands\Misc.lua
+Commands\Server.lua
+Commands\NPC.lua
+Commands\GO.lua
+Commands\Who.lua
+Commands\DC.lua
+Data\DBC.lua
+Data\TeleportTable.lua
+Core\Init.lua
+Core\AzerothAdmin.lua
+Core\DropDownStyle.lua
+Modules\Linkifier.lua
+Frames\MangFrames_Start.lua
+Frames\MangFrames_Tabs.lua
+
+GOMove\GOMoveFunctions.lua
+GOMove\GOMoveScripts.lua
+GOMove\MapButton.xml
+
+Frames\MangFrames_MiniMenu.lua
+Frames\MangFrames_LookupButtons.lua
+Frames\MangFrames_PopupFrames.lua
+Frames\MangFrames_SmallPopupFrames.lua
+Frames\MangFrames_SectionMain.lua
+Frames\MangFrames_SectionTele.lua
+Frames\MangFrames_SectionLog.lua
+Frames\MangFrames_SectionChar.lua
+Frames\MangFrames_SectionTicket.lua
+Frames\MangFrames_SectionMisc.lua
+Frames\MangFrames_SectionServer.lua
+Frames\MangFrames_SectionNpc.lua
+Frames\MangFrames_SectionGO.lua
+Frames\MangFrames_SectionWho.lua
+Frames\MangFrames.lua

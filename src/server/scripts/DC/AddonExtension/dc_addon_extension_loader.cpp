@@ -19,6 +19,7 @@ void AddSC_dc_addon_seasons();
 void AddSC_dc_addon_leaderboards();
 void AddSC_dc_addon_welcome();
 void AddSC_dc_addon_groupfinder();
+void AddSC_DCAddon_GOMove();
 void AddSC_npc_group_finder();
 void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
@@ -39,6 +40,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_leaderboards();
     AddSC_dc_addon_welcome();
     AddSC_dc_addon_groupfinder();
+    AddSC_DCAddon_GOMove();
     
     // NPC scripts
     AddSC_npc_group_finder();

@@ -208,7 +208,13 @@ set(SCRIPTS_DC_FirstStart
     FirstStart/dc_firststart.cpp
 )
 
-# DC Cross-System Integration Framework
+# GOMove System
+set(SCRIPTS_DC_GOMove
+    GOMove/GOMove.cpp
+    GOMove/GOMoveScripts.cpp
+)
+
+# Cross-System Integration Framework
 set(SCRIPTS_DC_CrossSystem
     CrossSystem/SessionContext.cpp
     CrossSystem/EventBus.cpp
@@ -248,6 +254,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_GiantIsles}
     ${SCRIPTS_DC_AddonExtension}
     ${SCRIPTS_DC_FirstStart}
+    ${SCRIPTS_DC_GOMove}
     ${SCRIPTS_DC_CrossSystem}
 )
 

@@ -73,6 +73,7 @@ namespace DCAddon
         constexpr const char* LEADERBOARD   = "LBRD";   // Unified leaderboards
         constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
         constexpr const char* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
+        constexpr const char* GOMOVE        = "GOMV";   // GOMove Object Mover
     }
     
     // ========================================================================
@@ -111,6 +112,18 @@ namespace DCAddon
             constexpr uint8 SMSG_LOOT_RESULT       = 0x12;
             constexpr uint8 SMSG_GOLD_COLLECTED    = 0x13;
             constexpr uint8 SMSG_QUALITY_STATS     = 0x14;  // Quality breakdown response
+        }
+
+        // GOMove opcodes
+        namespace GOMove
+        {
+            constexpr uint8 CMSG_REQUEST_MOVE      = 0x01; // Standard move/spawn commands
+            constexpr uint8 CMSG_REQUEST_SEARCH    = 0x02; // Search for objects
+            constexpr uint8 CMSG_REQUEST_TELE_SYNC = 0x03; // Request teleport list
+
+            constexpr uint8 SMSG_MOVE_RESULT       = 0x10; // Result of move/spawn
+            constexpr uint8 SMSG_SEARCH_RESULT     = 0x11; // Search results
+            constexpr uint8 SMSG_TELE_LIST         = 0x12; // Teleport list data
         }
         
         // Spectator opcodes

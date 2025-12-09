@@ -86,6 +86,9 @@ void AddSC_spell_challenge_mode_auras();      // ChallengeMode\spell_challenge_m
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
 
+// --- GOMove System ---
+void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
+
 // --- Item Upgrade System ---
 void AddItemUpgradeGMCommandScript();         // ItemUpgrades\ItemUpgradeGMCommands.cpp
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
@@ -574,6 +577,18 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ CRASH in First-Start");
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // GOMOVE SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
+    try {
+        AddSC_GOMove_commandscript();
+        LOG_INFO("scripts", ">>   ✓ GOMove System loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GOMove: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in GOMove");
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // CROSS-SYSTEM INTEGRATION FRAMEWORK (Loaded Last - Coordinates All Systems)
