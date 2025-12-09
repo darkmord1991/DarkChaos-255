@@ -35,13 +35,14 @@ static void SendXPAddonToPlayerInternal(Player* player, const char* context, uin
         return;
     }
 
-    if (WorldSession* s = player->GetSession())
+    WorldSession* s = player->GetSession();
+    if (s)
     {
         // Log a confirmation so GiveXP -> addon packet flows can be correlated in server logs
         LOG_INFO("addons.dcrxp", "SendXPAddonToPlayer: sending DCRXP to {} (guid={}, xp={}, xpMax={}, level={})", player->GetName(), player->GetGUID().ToString(), xp, xpMax, level);
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        player->SendDirectMessage(&data);
+        s->SendPacket(&data);
         // Record the dedupe key/timestamp so subsequent identical sends can be deduped
         player->UpdateLastDCRXPPayload(dedupeKey);
     }

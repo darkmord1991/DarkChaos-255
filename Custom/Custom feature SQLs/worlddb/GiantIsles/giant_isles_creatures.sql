@@ -15,12 +15,8 @@
 -- 2. Raptor Beaches (Eastern Coastline)
 -- 3. Direhorn Valley (Western Grasslands)
 -- 4. Devilsaur Heights (Central-North Volcanic)
--- 5. Zandalari Warcamp (Southeast Peninsula)
--- 6. The Chaos Rift (Central Caldera)
--- 7. The King's Plateau (Northwest Mountains)
--- 8. The Bone Pit (Northeast)
 -- ============================================================================
-
+-- ============================================================================
 -- ============================================================================
 -- CLEANUP - Delete existing entries if re-running
 -- ============================================================================
@@ -92,7 +88,7 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 (400056,0,0,0,0,0,'Gorespine the Impaler','Spiked Nightmare',NULL,0,82,82,2,14,0,1.8,1.42857,1.7,2,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,1,76,0,0,0,0,0,8500,13000,'',1,1,130,1,5.5,20,2,0,0,1,617299967,0,0,'creature_giant_isles_rare_spawn',12340),
 (400057,0,0,0,0,0,'Venomfang','Toxic Terror',NULL,0,82,82,2,14,0,2.4,2.0,1.5,2,4,1500,2000,1,1,1,32832,2048,0,37,0,0,0,0,1,76,0,0,0,0,0,7500,11000,'',1,1,110,1,2.5,18,2,0,0,1,617299967,0,0,'creature_giant_isles_rare_spawn',12340),
 (400058,0,0,0,0,0,'Skyscreamer','Chaos Windlord',NULL,0,82,82,2,14,0,2.0,1.71429,1.4,2,4,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,1,76,0,0,0,0,0,7000,10500,'',1,1,100,5,2,16,2,0,0,1,617299967,0,0,'creature_giant_isles_rare_spawn',12340),
-(400059,0,0,0,0,0,'Gul\'rok the Cursed','Primal Witch Doctor',NULL,0,82,82,2,14,0,1.4,1.14286,1.2,2,5,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,76,0,0,0,0,0,10000,15000,'SmartAI',0,1,180,10,2,25,2.5,0,0,1,617299967,0,0,'creature_giant_isles_rare_spawn',12340);
+(400059,0,0,0,0,0,'Gul\'rok the Cursed','Primal Witch Doctor',NULL,0,82,82,2,14,0,1.4,1.14286,1.2,2,5,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,76,0,0,0,0,0,10000,15000,'',0,1,180,10,2,25,2.5,0,0,1,617299967,0,0,'creature_giant_isles_rare_spawn',12340);
 
 -- ============================================================================
 -- WORLD BOSSES (400100-400102)
@@ -122,22 +118,16 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 -- Based on Zandalari models from Zul'Gurub/Zul'Aman
 -- These are the expedition NPCs for the zone
 
--- Zandalari Quest Givers (Friendly to all)
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400200,0,0,0,0,0,'Elder Zul\'jin','Zandalari Expedition Leader','Speak',400000,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340),
-(400201,0,0,0,0,0,'Witch Doctor Tala\'jin','Zandalari Researcher','Speak',400001,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,2,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,8,5,1,1,1,0,0,1,0,0,2,'',12340),
-(400202,0,0,0,0,0,'Rokhan the Beast Tamer','Zandalari Beast Master','Speak',400002,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340),
-(400203,0,0,0,0,0,'Scout Zan\'do','Zandalari Scout','Speak',400003,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,5,1,1,1,1,0,0,1,0,0,2,'',12340);
+(400200,0,0,0,0,0,'Elder Zul\'jin','Zandalari Expedition Leader','Speak',400000,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340),
+(400202,0,0,0,0,0,'Rokhan the Beast Tamer','Zandalari Beast Master','Speak',400002,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340),
+(400203,0,0,0,0,0,'Scout Zan\'do','Zandalari Scout','Speak',400003,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,5,1,1,1,1,0,0,1,0,0,2,'',12340);
 
--- Zandalari Vendors
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400210,0,0,0,0,0,'Trader Zal\'aman','Zandalari Supplies','Speak',400010,80,80,2,35,129,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,8,1,1,1,1,0,0,1,0,0,2,'',12340),
-(400211,0,0,0,0,0,'Armsmaster Jin\'kala','Zandalari Weaponsmith','Speak',400011,80,80,2,35,131,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,8,1,1,1,1,0,0,1,0,0,2,'',12340);
+(400210,0,0,0,0,0,'Trader Zal\'aman','Zandalari Supplies','Speak',400010,80,80,2,35,129,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,8,1,1,1,1,0,0,1,0,0,2,'',12340);
 
--- Zandalari Guards (Neutral but protects camp) - Level 81 Elite
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400220,0,0,0,0,0,'Zandalari Expedition Guard',NULL,NULL,0,81,81,2,35,0,1.2,1.28571,1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',1,1,25,1,2,8,1,0,0,1,0,0,0,'',12340),
-(400221,0,0,0,0,0,'Zandalari Beast Handler',NULL,NULL,0,81,81,2,35,0,1.2,1.28571,1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',1,1,20,1,1.5,6,1,0,0,1,0,0,0,'',12340);
+(400220,0,0,0,0,0,'Zandalari Expedition Guard',NULL,NULL,0,81,81,2,35,0,1.2,1.28571,1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',1,1,25,1,2,8,1,0,0,1,0,0,0,'',12340);
 
 -- ============================================================================
 -- HOSTILE TROLLS - Primal Enemies (400250-400274)
@@ -146,33 +136,28 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 
 -- Primal Troll enemies (hostile to all)
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400250,0,0,0,0,0,'Primal Troll Warrior',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400250,0,0,0,0,600,1000,'',1,1,12,1,1.5,5,1,0,0,1,0,0,0,'',12340),
-(400251,0,0,0,0,0,'Primal Troll Shadowcaster',NULL,NULL,0,80,80,2,16,0,1.2,1.14286,1,0,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400251,0,0,0,0,600,1000,'',1,1,10,5,1,4.5,1,0,0,1,0,0,0,'',12340),
-(400252,0,0,0,0,0,'Primal Troll Berserker',NULL,NULL,0,81,81,2,16,0,1.4,1.42857,1.05,1,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400252,0,0,0,0,800,1200,'',1,1,15,1,1.2,6,1,0,0,1,0,0,0,'',12340),
-(400253,0,0,0,0,0,'Primal Troll Witch Doctor',NULL,NULL,0,81,81,2,16,0,1.2,1.14286,1,1,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400253,0,0,0,0,800,1200,'',1,1,12,8,1,5.5,1,0,0,1,0,0,0,'',12340),
-(400254,0,0,0,0,0,'Primal Troll Headhunter',NULL,NULL,0,81,81,2,16,0,1.3,1.42857,1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400254,0,0,0,0,900,1400,'',1,1,14,1,1.3,6,1,0,0,1,0,0,0,'',12340);
+(400250,0,0,0,0,0,'Primal Troll Warrior',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,600,1000,'',1,1,12,1,1.5,5,1,0,0,1,0,0,0,'',12340),
+(400251,0,0,0,0,0,'Primal Troll Shadowcaster',NULL,NULL,0,80,80,2,16,0,1.2,1.14286,1,0,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,600,1000,'',1,1,10,5,1,4.5,1,0,0,1,0,0,0,'',12340),
+(400252,0,0,0,0,0,'Primal Troll Berserker',NULL,NULL,0,81,81,2,16,0,1.4,1.42857,1.05,1,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,800,1200,'',1,1,15,1,1.2,6,1,0,0,1,0,0,0,'',12340),
+(400253,0,0,0,0,0,'Primal Troll Witch Doctor',NULL,NULL,0,81,81,2,16,0,1.2,1.14286,1,1,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,800,1200,'',1,1,12,8,1,5.5,1,0,0,1,0,0,0,'',12340),
+(400254,0,0,0,0,0,'Primal Troll Headhunter',NULL,NULL,0,81,81,2,16,0,1.3,1.42857,1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,900,1400,'',1,1,14,1,1.3,6,1,0,0,1,0,0,0,'',12340);
 
 -- Primal Troll Elite (mini-boss) - Level 82
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400260,0,0,0,0,0,'Warlord Gha\'tul','Primal Chieftain',NULL,0,82,82,2,16,0,1.4,1.42857,1.15,2,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,76,400260,0,0,0,0,3000,5000,'',1,1,60,1,2.5,12,2,0,0,1,617299967,0,0,'',12340);
+(400260,0,0,0,0,0,'Warlord Gha\'tul','Primal Chieftain',NULL,0,82,82,2,16,0,1.4,1.42857,1.15,2,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,76,0,0,0,0,0,3000,5000,'',1,1,60,1,2.5,12,2,0,0,1,617299967,0,0,'',12340);
 
--- ============================================================================
--- SPECIAL NPCS (400300-400349)
--- Level 80 for friendly/service NPCs, Level 82 for daily boss
--- ============================================================================
 
--- Dinosaur Trainers / Tameable beasts for hunters
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400300,0,0,0,0,0,'Spirit of the Primal',NULL,NULL,400020,80,80,2,35,1,1,1.14286,1.5,0,0,2000,2000,1,1,1,32768,2048,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,'SmartAI',0,1,50,1,1,5,1,0,0,1,0,0,2,'npc_spirit_of_primal',12340),
-(400301,0,0,0,0,0,'Corrupted Direhorn Spirit','Daily Boss',NULL,0,82,82,2,14,0,2,1.71429,1.8,2,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,1,76,0,0,0,0,0,4000,6000,'SmartAI',0,1,75,1,3,14,2,0,0,1,617299967,0,0,'',12340);
+(400300,0,0,0,0,0,'Spirit of the Primal',NULL,NULL,400020,80,80,2,35,1,1,1.14286,1.5,0,0,2000,2000,1,1,1,32768,2048,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,'',0,1,50,1,1,5,1,0,0,1,0,0,2,'npc_spirit_of_primal',12340);
+-- (400310 original SmartAI entry removed)
 
--- Innkeeper for the zone
+-- Bartender Zul'tik - Innkeeper for the zone
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400310,0,0,0,0,0,'Bartender Zul\'tik','Zandalari Innkeeper','Interact',400030,80,80,2,35,65539,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,8,1,1,1,1,0,0,1,0,0,2,'',12340);
+(400310,0,0,0,0,0,'Bartender Zul\'tik','Zandalari Innkeeper','Interact',400030,80,80,2,35,65539,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,8,1,1,1,1,0,0,1,0,0,2,'',12340);
 
--- Flightmaster
+-- Windwalker Ta'zo - Flight Master
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400311,0,0,0,0,0,'Windwalker Ta\'zo','Zandalari Flight Master','Taxi',400031,80,80,2,35,8201,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340);
+(400311,0,0,0,0,0,'Windwalker Ta\'zo','Zandalari Flight Master','Taxi',400031,80,80,2,35,8201,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,10,1,1,1,1,0,0,1,0,0,2,'',12340);
 
 -- ============================================================================
 -- CANNON QUEST NPCs (400320-400329)
@@ -181,13 +166,13 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 
 -- Captain Harlan - Quest giver (Human sailor model)
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400320,0,0,0,0,0,'Captain Harlan','Coastal Defense','Speak',400320,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'SmartAI',0,1,10,1,1,1,1,0,0,1,0,0,2,'npc_captain_harlan',12340);
+(400320,0,0,0,0,0,'Captain Harlan','Coastal Defense','Speak',400320,80,80,2,35,3,1,1.14286,1,0,0,2000,2000,1,1,1,768,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,10,1,1,1,1,0,0,1,0,0,2,'npc_captain_harlan',12340);
 
 -- Coastal Cannon - Vehicle (uses siege cannon model)
 -- VehicleId 554 is the ICC Gunship Cannon vehicle seat
 -- unit_flags = 4 (DISABLE_MOVE), npcflag = 16777216 (SPELLCLICK), flags_extra includes IMMOBILIZED
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400321,0,0,0,0,0,'Coastal Cannon',NULL,'VehicleCursor',0,80,80,2,35,16777216,1,1.14286,1.5,0,0,2000,2000,1,1,1,4,2048,0,0,0,0,0,0,9,8,0,0,0,0,554,0,0,'',0,1,100,1,1,1,0,0,0,1,650854271,0,1073741826,'npc_coastal_cannon',12340);
+(400321,0,0,0,0,0,'Coastal Cannon',NULL,'VehicleCursor',0,80,80,2,35,16777216,0,0,1.5,0,0,2000,2000,1,1,1,4,2048,0,0,0,0,0,0,9,8,0,0,0,0,554,0,0,'',0,1,100,1,1,1,0,0,0,1,650854271,0,1073741826,'npc_coastal_cannon',12340);
 
 -- Spellclick entry for the cannon (same as ICC Gunship Cannon - spell 70510)
 DELETE FROM `npc_spellclick_spells` WHERE `npc_entry` = 400321;
@@ -253,21 +238,21 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 
 -- Wave 1: Zandalari Scout Party (400326-400328) - Light scouts and basic troops
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400326,0,0,0,0,0,'Zandalari Invader',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400326,0,0,0,0,300,600,'',1,1,10,1,1,4,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400327,0,0,0,0,0,'Zandalari Scout',NULL,NULL,0,80,80,2,16,0,1.4,1.42857,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400327,0,0,0,0,250,500,'',1,1,8,1,1,3.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400328,0,0,0,0,0,'Zandalari Spearman',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400328,0,0,0,0,300,600,'',1,1,10,1,1.5,4,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
+(400326,0,0,0,0,0,'Zandalari Invader',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,300,600,'',1,1,10,1,1,4,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400327,0,0,0,0,0,'Zandalari Scout',NULL,NULL,0,80,80,2,16,0,1.4,1.42857,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,250,500,'',1,1,8,1,1,3.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400328,0,0,0,0,0,'Zandalari Spearman',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,300,600,'',1,1,10,1,1.5,4,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
 
 -- Wave 2: Zandalari Warriors (400329-400331) - Hardened veterans, bigger and stronger
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400329,0,0,0,0,0,'Zandalari Warrior',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1.05,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400329,0,0,0,0,400,700,'',1,1,14,1,1.5,5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400330,0,0,0,0,0,'Zandalari Berserker',NULL,NULL,0,81,81,2,16,0,1.2,1.42857,1.1,1,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400330,0,0,0,0,500,850,'',1,1,18,1,1.5,6,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400331,0,0,0,0,0,'Zandalari Shadow Hunter',NULL,NULL,0,80,80,2,16,0,1.2,1.14286,1.05,0,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400331,0,0,0,0,350,650,'',1,1,12,5,1,4.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
+(400329,0,0,0,0,0,'Zandalari Warrior',NULL,NULL,0,80,80,2,16,0,1.2,1.28571,1.05,0,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,400,700,'',1,1,14,1,1.5,5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400330,0,0,0,0,0,'Zandalari Berserker',NULL,NULL,0,81,81,2,16,0,1.2,1.42857,1.1,1,0,1800,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,500,850,'',1,1,18,1,1.5,6,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400331,0,0,0,0,0,'Zandalari Shadow Hunter',NULL,NULL,0,80,80,2,16,0,1.2,1.14286,1.05,0,0,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,350,650,'',1,1,12,5,1,4.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
 
 -- Wave 3: Zandalari Elite Squad (400332-400334) - Elite troops, larger scale, deadlier
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400332,0,0,0,0,0,'Zandalari Blood Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.15,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400332,0,0,0,0,600,1000,'',1,1,22,1,2,7,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400333,0,0,0,0,0,'Zandalari Witch Doctor',NULL,NULL,0,81,81,2,16,0,1,1.14286,1.1,1,5,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,400333,0,0,0,0,500,900,'',1,1,18,8,1.5,5.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
-(400334,0,0,0,0,0,'Zandalari Beast Tamer',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400334,0,0,0,0,550,950,'',1,1,20,1,1.5,6.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
+(400332,0,0,0,0,0,'Zandalari Blood Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.15,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,600,1000,'',1,1,22,1,2,7,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400333,0,0,0,0,0,'Zandalari Witch Doctor',NULL,NULL,0,81,81,2,16,0,1,1.14286,1.1,1,5,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,500,900,'',1,1,18,8,1.5,5.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340),
+(400334,0,0,0,0,0,'Zandalari Beast Tamer',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.1,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,550,950,'',1,1,20,1,1.5,6.5,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
 
 -- Wave 3 Add: War Raptor (summoned by Beast Tamer)
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
@@ -275,11 +260,11 @@ INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_
 
 -- Wave 4: Invasion Commander (Mini-Boss) - Towering warlord, massive and terrifying
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400336,0,0,0,0,0,'Warlord Zul\'mar','Invasion Commander',NULL,0,82,82,2,16,0,1.2,1.28571,1.5,2,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,76,400336,0,0,0,0,2000,3500,'',1,1,60,1,2.5,12,2,0,0,1,617299967,0,0,'npc_invasion_commander',12340);
+(400336,0,0,0,0,0,'Warlord Zul\'mar','Invasion Commander',NULL,0,82,82,2,16,0,1.2,1.28571,1.5,2,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,76,0,0,0,0,0,2000,3500,'',1,1,60,1,2.5,12,2,0,0,1,617299967,0,0,'npc_invasion_commander',12340);
 
 -- Wave 4 Guards (spawn with boss) - Elite bodyguards, large and heavily armored
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400337,0,0,0,0,0,'Zandalari Honor Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.2,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,400337,0,0,0,0,700,1200,'',1,1,25,1,2,8,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
+(400337,0,0,0,0,0,'Zandalari Honor Guard',NULL,NULL,0,81,81,2,16,0,1.2,1.28571,1.2,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,700,1200,'',1,1,25,1,2,8,1,0,0,1,0,0,0,'npc_invasion_mob',12340);
 
 -- ============================================================================
 -- INVASION CREATURE TEXTS - Yells, taunts, and death cries
@@ -353,16 +338,16 @@ INSERT INTO `creature_text` (`CreatureID`, `GroupID`, `ID`, `Text`, `Type`, `Lan
 
 -- Oondasta adds
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400400,0,0,0,0,0,'Young Oondasta','Spawn of Oondasta',NULL,0,80,80,2,14,0,2.0,1.71429,1.2,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,'SmartAI',0,1,20,1,1.5,8,1,0,0,1,0,0,0,'npc_young_oondasta',12340);
+(400400,0,0,0,0,0,'Young Oondasta','Spawn of Oondasta',NULL,0,80,80,2,14,0,2.0,1.71429,1.2,1,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,'',0,1,20,1,1.5,8,1,0,0,1,0,0,0,'npc_young_oondasta',12340);
 
 -- Thok adds
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400401,0,0,0,0,0,'Frenzied Pack Raptor','Thok\'s Brood',NULL,0,80,80,2,14,0,2.5,2.14286,0.9,0,0,1500,2000,1,1,1,32832,2048,0,37,0,0,0,0,1,0,0,0,0,0,0,0,0,'SmartAI',0,1,8,1,1,5,1,0,0,1,0,0,0,'npc_pack_raptor',12340);
+(400401,0,0,0,0,0,'Frenzied Pack Raptor','Thok\'s Brood',NULL,0,80,80,2,14,0,2.5,2.14286,0.9,0,0,1500,2000,1,1,1,32832,2048,0,37,0,0,0,0,1,0,0,0,0,0,0,0,0,'',0,1,8,1,1,5,1,0,0,1,0,0,0,'npc_pack_raptor',12340);
 
 -- Nalak adds
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
-(400402,0,0,0,0,0,'Storm Spark','Lightning Elemental',NULL,0,80,80,2,14,0,1.4,1.14286,0.8,0,4,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,'SmartAI',0,1,6,5,0.8,4,1,0,0,1,0,0,0,'npc_storm_spark',12340),
-(400403,0,0,0,0,0,'Static Cloud','Nalak\'s Essence',NULL,0,80,80,2,14,0,0.5,0.5,1,0,4,2000,2000,1,1,2,33554432,2048,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,'SmartAI',0,1,1,1,1,1,0,0,0,0,0,0,64,'npc_static_cloud',12340);
+(400402,0,0,0,0,0,'Storm Spark','Lightning Elemental',NULL,0,80,80,2,14,0,1.4,1.14286,0.8,0,4,2000,2000,1,1,2,32832,2048,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,'',0,1,6,5,0.8,4,1,0,0,1,0,0,0,'npc_storm_spark',12340),
+(400403,0,0,0,0,0,'Static Cloud','Nalak\'s Essence',NULL,0,80,80,2,14,0,0.5,0.5,1,0,4,2000,2000,1,1,2,33554432,2048,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,0,0,0,0,64,'npc_static_cloud',12340);
 
 -- ============================================================================
 -- CREATURE_TEMPLATE_MODEL - Assign display models to creatures
@@ -451,10 +436,12 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (400311, 0, 11288, 1, 1, 12340),   -- Windwalker Ta'zo
 
 -- Cannon Quest NPCs
+-- Display IDs: 4422 = Human Sailor, 26788 = ICC Gunship Cannon, 10527 = Small Boat (rowboat-style)
+-- Alternative displays: 21151 = Gnomish Cannon, 28535 = Northrend Ship, 30564 = Zeppelin Model
 (400320, 0, 4422, 1, 1, 12340),    -- Captain Harlan (human sailor)
-(400321, 0, 9286, 1.5, 1, 12340),  -- Coastal Cannon (cannon model)
+(400321, 0, 26788, 1.0, 1, 12340), -- Coastal Cannon (ICC Gunship Cannon model - working vehicle display)
 (400323, 0, 11686, 1, 1, 12340),   -- Ship Explosion Trigger (invisible)
-(400324, 0, 5233, 1.5, 1, 12340),  -- Zandalari Scout Ship (boat model)
+(400324, 0, 28535, 2.0, 1, 12340), -- Zandalari Scout Ship (Northrend ship model, scaled up)
 
 -- Invasion NPCs - Mixed troll models for variety, boss has unique intimidating model
 (400325, 0, 3789, 1.5, 1, 12340),  -- Invasion Warning Horn (war drum)
@@ -516,18 +503,18 @@ INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `b
 DELETE FROM `creature_template` WHERE `entry` BETWEEN 401000 AND 401099;
 INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `rank`, `type`, `unit_class`, `unit_flags`, `BaseAttackTime`, `RangeAttackTime`, `HealthModifier`, `DamageModifier`, `ArmorModifier`, `mingold`, `maxgold`, `AIName`, `MovementType`, `ScriptName`) VALUES
 -- Alliance Guards (Jurassic Expedition)
-(401000, 'Primal Warden', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, 'SmartAI', 1, ''),
-(401001, 'Primal Warden Sergeant', 'Jurassic Expedition', 81, 81, 1735, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, 'SmartAI', 1, ''),
-(401002, 'Primal Warden Marksman', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, 'SmartAI', 1, ''),
-(401003, 'Primal Warden Captain', 'Jurassic Expedition', 82, 82, 1735, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, 'SmartAI', 0, ''),
+(401000, 'Primal Warden', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
+(401001, 'Primal Warden Sergeant', 'Jurassic Expedition', 81, 81, 1735, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
+(401002, 'Primal Warden Marksman', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
+(401003, 'Primal Warden Captain', 'Jurassic Expedition', 82, 82, 1735, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
 -- Horde Guards (Beast Hunters)
-(401004, 'Beast Hunter', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, 'SmartAI', 1, ''),
-(401005, 'Beast Hunter Veteran', 'Primal Horde', 81, 81, 1734, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, 'SmartAI', 1, ''),
-(401006, 'Beast Hunter Trapper', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, 'SmartAI', 1, ''),
-(401007, 'Beast Hunter Warlord', 'Primal Horde', 82, 82, 1734, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, 'SmartAI', 0, ''),
+(401004, 'Beast Hunter', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
+(401005, 'Beast Hunter Veteran', 'Primal Horde', 81, 81, 1734, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
+(401006, 'Beast Hunter Trapper', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
+(401007, 'Beast Hunter Warlord', 'Primal Horde', 82, 82, 1734, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
 -- Neutral Guards (Primal Wardens Faction)
-(401008, 'Primal Guardian', 'Primal Wardens', 81, 81, 35, 0, 1, 7, 1, 0, 2000, 2000, 5.0, 2.5, 1.5, 0, 0, 'SmartAI', 1, ''),
-(401009, 'Ancient Primal Guardian', 'Primal Wardens', 82, 82, 35, 0, 2, 7, 1, 0, 2000, 2000, 10.0, 4.0, 2.0, 0, 0, 'SmartAI', 0, '');
+(401008, 'Primal Guardian', 'Primal Wardens', 81, 81, 35, 0, 1, 7, 1, 0, 2000, 2000, 5.0, 2.5, 1.5, 0, 0, '', 1, ''),
+(401009, 'Ancient Primal Guardian', 'Primal Wardens', 82, 82, 35, 0, 2, 7, 1, 0, 2000, 2000, 10.0, 4.0, 2.0, 0, 0, '', 0, '');
 
 -- ============================================================================
 -- VENDORS AND SERVICES (401100-401199)
@@ -1014,13 +1001,13 @@ UPDATE `creature_template` SET `gossip_menu_id` = 400325 WHERE `entry` = 400325;
 
 -- Add models for new creatures
 DELETE FROM `creature_template_model` WHERE `CreatureID` BETWEEN 400060 AND 400072;
-INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `Probability`, `VerifiedBuild`) VALUES
-(400060, 0, 995, 1, 12340),   -- Primal Threshadon (Threshadon model - verified)
-(400061, 0, 2549, 1, 12340),  -- Primal Crocodile (Crocolisk model - verified)
-(400062, 0, 15182, 1, 12340), -- Abyssal Sea Serpent (Razzashi Serpent - verified)
-(400070, 0, 8410, 1, 12340),  -- Cavernous Pterrordax (Using 8410 instead of 9166)
-(400071, 0, 11288, 1, 12340), -- Subterranean Saurok (Using ZG troll model instead of 46068)
-(400072, 0, 4263, 1, 12340);  -- Crystal Spine Spider (Crystal Spider - verified)
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(400060, 0, 995, 1.0, 1, 12340),   -- Primal Threshadon (Threshadon model - verified)
+(400061, 0, 2549, 1.0, 1, 12340),  -- Primal Crocodile (Crocolisk model - verified)
+(400062, 0, 15182, 1.0, 1, 12340), -- Abyssal Sea Serpent (Razzashi Serpent - verified)
+(400070, 0, 8410, 1.0, 1, 12340),  -- Cavernous Pterrordax (Using 8410 instead of 9166)
+(400071, 0, 11288, 1.0, 1, 12340), -- Subterranean Saurok (Using ZG troll model instead of 46068)
+(400072, 0, 4263, 1.0, 1, 12340);  -- Crystal Spine Spider (Crystal Spider - verified)
 
 -- Update InhabitType for Water Creatures
 -- Using creature_template_movement table (Ground, Swim, Flight, Rooted)
@@ -1149,4 +1136,8 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 -- ============================================================================
 -- END OF GIANT ISLES CREATURE TEMPLATES
 -- ============================================================================
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 400324) AND (`Idx` IN (0));
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(400324, 0, 23278, 2, 1, 12340);
 

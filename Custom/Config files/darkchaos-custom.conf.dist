@@ -5089,6 +5089,16 @@ DC.AddonProtocol.Leaderboard.Enable = 1
 #        Default:     1 (Enabled)
 DC.AddonProtocol.GOMove.Enable = 1
 
+#    DC.AddonProtocol.GroupFinder.Enable
+#        Description: Enable addon-based Group Finder integration (DC-MythicPlus addon)
+#        Default:     1 (Enabled)
+DC.AddonProtocol.GroupFinder.Enable = 1
+
+#    DC.AddonProtocol.Hotspot.Enable
+#        Description: Enable addon-based Hotspot integration (DC-MythicPlus addon)
+#        Default:     1 (Enabled)
+DC.AddonProtocol.Hotspot.Enable = 1
+
 #    DC.AddonProtocol.GOMove.MinSecurity
 #        Description: Minimum server security level required to issue GOMove addon commands
 #                     Default:     1 (SEC_GAMEMASTER)

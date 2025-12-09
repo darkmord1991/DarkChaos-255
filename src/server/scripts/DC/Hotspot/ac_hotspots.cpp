@@ -371,7 +371,7 @@ static void RecreateHotspotVisualMarkers()
             continue;
         }
         
-        if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+        if (sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
         {
             GameObject* go = new GameObject();
             float ang = 0.0f;
@@ -1545,7 +1545,7 @@ static bool SpawnHotspot()
             {
                 LOG_ERROR("scripts", "SpawnHotspot: sObjectMgr is null!");
             }
-            else if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+            else if (sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
             {
                 GameObject* go = new GameObject();
                 // Create expects: guidlow, entry, map, phaseMask, x,y,z, ang, rotation, animprogress, go_state
@@ -1826,7 +1826,7 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
     {
         LOG_DEBUG("scripts", "APPLYING BUFF: Player in hotspot but no aura yet");
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Hotspot DEBUG]|r immediate detected hotspot ID {} nearby (zone {})", hotspot->id, hotspot->zoneId);
-        if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+        if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
         {
             LOG_DEBUG("scripts", "Casting aura spell {}", sHotspotsConfig.auraSpell);
             player->CastSpell(player, sHotspotsConfig.auraSpell, true);
@@ -1834,7 +1834,7 @@ static void CheckPlayerHotspotStatusImmediate(Player* player)
         else
             LOG_WARN("scripts", "Aura spell {} not found", sHotspotsConfig.auraSpell);
             
-        if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        if (sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
         {
             LOG_DEBUG("scripts", "Casting buff spell {}", sHotspotsConfig.buffSpell);
             player->CastSpell(player, sHotspotsConfig.buffSpell, true);
@@ -2093,9 +2093,9 @@ public:
                 if (!player->HasAura(sHotspotsConfig.buffSpell) && it->second > 0)
                 {
                     LOG_INFO("scripts", "Retrying hotspot buff application for {} ({} retries left)", player->GetName(), it->second);
-                    if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+                    if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
                         player->CastSpell(player, sHotspotsConfig.auraSpell, true);
-                    if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+                    if (sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
                         player->CastSpell(player, sHotspotsConfig.buffSpell, true);
                     it->second -= 1;
                 }
@@ -2146,7 +2146,7 @@ public:
             // Remove any conflicting buffs that might interfere (e.g., Arcane Intellect if somehow applied)
             // This prevents buff replacement issues
             uint32 buffSpellId = sHotspotsConfig.buffSpell;
-            if (SpellInfo const* existingBuff = sSpellMgr->GetSpellInfo(42995)) // Arcane Intellect
+            if (sSpellMgr->GetSpellInfo(42995)) // Arcane Intellect
             {
                 if (player->HasAura(42995))
                 {
@@ -2156,12 +2156,12 @@ public:
             }
             
             // Apply persistent buff (this is the ONLY buff for XP bonus)
-            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
             {
                 LOG_DEBUG("scripts", "Casting aura spell {} on player {}", sHotspotsConfig.auraSpell, player->GetName());
                 player->CastSpell(player, sHotspotsConfig.auraSpell, true);
             }
-            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(buffSpellId))
+            if (sSpellMgr->GetSpellInfo(buffSpellId))
             {
                 LOG_DEBUG("scripts", "Casting buff spell {} on player {}", buffSpellId, player->GetName());
                 player->CastSpell(player, buffSpellId, true);
@@ -2431,7 +2431,7 @@ public:
         {
             if (Map* map = GetBaseMapSafe(mapId))
             {
-                if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+                if (sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
                 {
                     GameObject* go = new GameObject();
                     float ang = 0.0f;
@@ -2518,9 +2518,9 @@ public:
             if (!p || !p->IsInWorld())
                 continue;
 
-            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
                 p->CastSpell(p, sHotspotsConfig.auraSpell, true);
-            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            if (sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
                 p->CastSpell(p, sHotspotsConfig.buffSpell, true);
 
             if (p->GetSession())
@@ -2966,9 +2966,9 @@ public:
         std::string a = args;
         if (a == "me")
         {
-            if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+            if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
                 src->CastSpell(src, sHotspotsConfig.auraSpell, true);
-            if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+            if (sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
                 src->CastSpell(src, sHotspotsConfig.buffSpell, true);
             // set server-side hotspot expiry for the caller (duration from now)
             sPlayerHotspotExpiry[src->GetGUID()] = GameTime::GetGameTime().count() + (sHotspotsConfig.duration * MINUTE);
@@ -2984,9 +2984,9 @@ public:
             return true;
         }
 
-        if (SpellInfo const* auraInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
+        if (sSpellMgr->GetSpellInfo(sHotspotsConfig.auraSpell))
             target->CastSpell(target, sHotspotsConfig.auraSpell, true);
-        if (SpellInfo const* buffInfo = sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
+        if (sSpellMgr->GetSpellInfo(sHotspotsConfig.buffSpell))
             target->CastSpell(target, sHotspotsConfig.buffSpell, true);
         // set server-side hotspot expiry for target
         sPlayerHotspotExpiry[target->GetGUID()] = GameTime::GetGameTime().count() + (sHotspotsConfig.duration * MINUTE);
@@ -3057,7 +3057,7 @@ public:
             {
                 if (Map* map = GetBaseMapSafe(mapId))
                 {
-                    if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+                    if (sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
                     {
                         GameObject* go = new GameObject();
                         float ang = 0.0f; uint32 phaseMask = 0;

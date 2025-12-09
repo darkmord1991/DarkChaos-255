@@ -68,7 +68,7 @@ void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
 
     // Compose as addon whisper "HLBG\t<payload>" so client fires CHAT_MSG_ADDON with prefix="HLBG"
     std::string message = std::string("HLBG\t") + payload;
-    if (WorldSession* s = player->GetSession())
+    if (player->GetSession())
     {
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
@@ -92,7 +92,7 @@ void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
                         + "|H=" + std::to_string(_horde_gathered)
                         + "|END=" + std::to_string(endEpoch)
                         + "|LOCK=" + std::to_string(lock);
-    if (WorldSession* s = player->GetSession())
+    if (player->GetSession())
     {
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);

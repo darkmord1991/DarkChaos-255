@@ -31,6 +31,7 @@
 #include "GameObject.h"
 #include "Log.h"
 #include "ScriptedCreature.h"
+#include "Chat.h"
 
 // ============================================================================
 // CONSTANTS
@@ -109,6 +110,20 @@ public:
                 GOSSIP_SENDER_MAIN, 1);
         }
 
+        // GM/Admin menu for testing
+        if (player->IsGameMaster())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
+                "[GM] Spawn a scout ship manually", 
+                GOSSIP_SENDER_MAIN, 100);
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
+                "[GM] Despawn my current ship", 
+                GOSSIP_SENDER_MAIN, 101);
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
+                "[GM] Show ship/cannon debug info", 
+                GOSSIP_SENDER_MAIN, 102);
+        }
+
         // Default quest giver behavior
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
@@ -131,8 +146,115 @@ public:
                 "Get in there and show those Zandalari what we're made of!", 
                 LANG_UNIVERSAL, player);
         }
+        else if (action == 100 && player->IsGameMaster())
+        {
+            // GM: Manually spawn a ship
+            SpawnShipForPlayer(player, creature);
+        }
+        else if (action == 101 && player->IsGameMaster())
+        {
+            // GM: Despawn current ship
+            auto it = PlayerShipMap.find(player->GetGUID());
+            if (it != PlayerShipMap.end())
+            {
+                if (Creature* ship = ObjectAccessor::GetCreature(*creature, it->second))
+                {
+                    ship->DespawnOrUnsummon();
+                    ChatHandler(player->GetSession()).PSendSysMessage("Ship despawned.");
+                }
+                ShipHitCount.erase(it->second);
+                PlayerShipMap.erase(it);
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("No ship found for you.");
+            }
+        }
+        else if (action == 102 && player->IsGameMaster())
+        {
+            // GM: Debug info
+            ChatHandler(player->GetSession()).SendSysMessage("=== Cannon Quest Debug ===");
+            ChatHandler(player->GetSession()).SendSysMessage(fmt::format("NPC_CAPTAIN_HARLAN = {}", NPC_CAPTAIN_HARLAN));
+            ChatHandler(player->GetSession()).SendSysMessage(fmt::format("NPC_COASTAL_CANNON = {}", NPC_COASTAL_CANNON));
+            ChatHandler(player->GetSession()).SendSysMessage(fmt::format("NPC_SHIP_HITBOX = {}", NPC_SHIP_HITBOX));
+            ChatHandler(player->GetSession()).SendSysMessage(fmt::format("GO_ZANDALARI_SCOUT_SHIP = {}", GO_ZANDALARI_SCOUT_SHIP));
+            
+            auto it = PlayerShipMap.find(player->GetGUID());
+            if (it != PlayerShipMap.end())
+            {
+                ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Your ship GUID: {}", it->second.ToString()));
+                if (Creature* ship = ObjectAccessor::GetCreature(*creature, it->second))
+                {
+                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship entry: {}, DisplayID: {}", 
+                        ship->GetEntry(), ship->GetDisplayId()));
+                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship pos: {:.2f}, {:.2f}, {:.2f}", 
+                        ship->GetPositionX(), ship->GetPositionY(), ship->GetPositionZ()));
+                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship alive: {}", ship->IsAlive() ? "yes" : "no"));
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).SendSysMessage("Ship creature not found in world!");
+                }
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("No ship mapped to you.");
+            }
+            
+            // Find nearest cannon
+            if (Creature* cannon = creature->FindNearestCreature(NPC_COASTAL_CANNON, 200.0f))
+            {
+                ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Cannon found: entry={}, displayID={}, vehicleID={}", 
+                    cannon->GetEntry(), cannon->GetDisplayId(), cannon->GetCreatureTemplate()->VehicleId));
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("No cannon found within 200 yards.");
+            }
+        }
 
         return true;
+    }
+    
+    void SpawnShipForPlayer(Player* player, Creature* creature)
+    {
+        LOG_INFO("scripts.dc", "Giant Isles Captain: GM spawning ship for {}", player->GetName());
+
+        // Clean up any existing ship
+        auto it = PlayerShipMap.find(player->GetGUID());
+        if (it != PlayerShipMap.end())
+        {
+            if (Creature* oldShip = ObjectAccessor::GetCreature(*creature, it->second))
+            {
+                oldShip->DespawnOrUnsummon();
+            }
+            ShipHitCount.erase(it->second);
+            PlayerShipMap.erase(it);
+        }
+
+        // Spawn the ship at first waypoint position
+        float shipX = 5835.31f;
+        float shipY = 1738.56f;
+        float shipZ = -2.14f;
+        float shipO = 4.05f;
+
+        Creature* ship = creature->SummonCreature(NPC_SHIP_HITBOX,
+            shipX, shipY, shipZ, shipO,
+            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, SHIP_DESPAWN_TIMER);
+
+        if (!ship)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR:|r Failed to spawn ship! Check creature_template for entry %u", NPC_SHIP_HITBOX);
+            return;
+        }
+
+        ship->SetCreatorGUID(player->GetGUID());
+        PlayerShipMap[player->GetGUID()] = ship->GetGUID();
+        ShipHitCount[ship->GetGUID()] = 0;
+
+        ChatHandler(player->GetSession()).SendSysMessage(fmt::format("|cFF00FF00Ship spawned!|r Entry: {}, GUID: {}, DisplayID: {}", 
+            ship->GetEntry(), ship->GetGUID().ToString(), ship->GetDisplayId()));
+        ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Position: {:.2f}, {:.2f}, {:.2f}", shipX, shipY, shipZ));
     }
 
     bool OnQuestAccept(Player* player, Creature* creature, Quest const* quest) override
@@ -435,9 +557,10 @@ public:
             // Inform player of progress
             if (_hitCount < HITS_REQUIRED)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Direct hit!|r %u more hit%s to sink the ship!", 
+                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!", 
                     HITS_REQUIRED - _hitCount, 
                     (HITS_REQUIRED - _hitCount) > 1 ? "s" : "");
+                ChatHandler(player->GetSession()).SendSysMessage(msg);
             }
             else
             {
@@ -522,9 +645,10 @@ public:
             // Inform player of progress
             if (_hitCount < HITS_REQUIRED)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Direct hit!|r %u more hit%s to sink the ship!", 
+                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!", 
                     HITS_REQUIRED - _hitCount, 
                     (HITS_REQUIRED - _hitCount) > 1 ? "s" : "");
+                ChatHandler(player->GetSession()).SendSysMessage(msg);
             }
             else
             {
@@ -684,10 +808,21 @@ public:
                     {
                         LOG_INFO("scripts.dc", "Giant Isles Ship: Starting waypoint patrol");
                         // Use smooth path movement along a patrol route
-                        // Create waypoints dynamically for the ship to follow
                         me->GetMotionMaster()->Clear();
-                        // Use MoveWaypoint which accepts a repeatable flag (true = repeating patrol)
-                        me->GetMotionMaster()->MoveWaypoint(PATH_SHIP_PATROL, true);
+                        
+                        // Define a smooth patrol path
+                        std::vector<G3D::Vector3> path;
+                        path.push_back(G3D::Vector3(5835.31f, 1738.56f, -2.14f));
+                        path.push_back(G3D::Vector3(5860.0f, 1750.0f, -2.14f));
+                        path.push_back(G3D::Vector3(5900.0f, 1740.0f, -2.14f));
+                        path.push_back(G3D::Vector3(5920.0f, 1700.0f, -2.14f));
+                        path.push_back(G3D::Vector3(5900.0f, 1660.0f, -2.14f));
+                        path.push_back(G3D::Vector3(5860.0f, 1670.0f, -2.14f));
+                        path.push_back(G3D::Vector3(5835.31f, 1738.56f, -2.14f));
+
+                        // MoveSplinePath(path, cyclic, catmullrom)
+                        // Note: Passing address of local vector is safe as MotionMaster copies the points
+                        me->GetMotionMaster()->MoveSplinePath(&path, true, true);
                         break;
                     }
                     default:

@@ -17,6 +17,7 @@
 #include "Chat.h"
 #include "Log.h"
 #include "Config.h"
+#include "Language.h"
 #include "../GOMove/GOMove.h" // Include original GOMove header
 
 namespace DCAddon
@@ -32,6 +33,23 @@ namespace DCAddon
             Message response(Module::GOMOVE, Opcode::GOMove::SMSG_MOVE_RESULT);
             response.Add(msg);
             response.Send(player);
+        }
+
+        static void SendGOMoveSuccessMessage(Player* player, GameObject* object)
+        {
+            if (!player || !object) return;
+
+            GameObjectTemplate const* objectInfo = object->GetGOInfo();
+            if (!objectInfo) return;
+
+            ChatHandler(player->GetSession()).PSendSysMessage(LANG_GAMEOBJECT_ADD,
+                objectInfo->entry,
+                objectInfo->name,
+                object->GetSpawnId(),
+                object->GetPositionX(),
+                object->GetPositionY(),
+                object->GetPositionZ()
+            );
         }
 
         static void HandleRequestMove(Player* player, const ParsedMessage& msg)
@@ -75,14 +93,15 @@ namespace DCAddon
                     target->GetPosition(x, y, z, o);
                     uint32 p = target->GetPhaseMask();
 
+                    GameObject* newObject = nullptr;
                     switch (ID)
                     {
                         case DELET: ::GOMove::DeleteGameObject(target); ::GOMove::SendRemove(player, lowguid); break;
-                        case X: ::GOMove::MoveGameObject(player, player->GetPositionX(), y, z, o, p, lowguid); break;
-                        case Y: ::GOMove::MoveGameObject(player, x, player->GetPositionY(), z, o, p, lowguid); break;
-                        case Z: ::GOMove::MoveGameObject(player, x, y, player->GetPositionZ(), o, p, lowguid); break;
-                        case O: ::GOMove::MoveGameObject(player, x, y, z, player->GetOrientation(), p, lowguid); break;
-                        case RESPAWN: ::GOMove::SpawnGameObject(player, x, y, z, o, p, target->GetEntry()); break;
+                        case X: newObject = ::GOMove::MoveGameObject(player, player->GetPositionX(), y, z, o, p, lowguid); break;
+                        case Y: newObject = ::GOMove::MoveGameObject(player, x, player->GetPositionY(), z, o, p, lowguid); break;
+                        case Z: newObject = ::GOMove::MoveGameObject(player, x, y, player->GetPositionZ(), o, p, lowguid); break;
+                        case O: newObject = ::GOMove::MoveGameObject(player, x, y, z, player->GetOrientation(), p, lowguid); break;
+                        case RESPAWN: newObject = ::GOMove::SpawnGameObject(player, x, y, z, o, p, target->GetEntry()); break;
                         case GOTO:
                         {
                             if (player->IsInFlight()) player->CleanupAfterTaxiFlight();
@@ -92,14 +111,15 @@ namespace DCAddon
                         case GROUND:
                         {
                             float ground = target->GetMap()->GetHeight(target->GetPhaseMask(), x, y, MAX_HEIGHT);
-                            if (ground != INVALID_HEIGHT) ::GOMove::MoveGameObject(player, x, y, ground, o, p, lowguid);
+                            if (ground != INVALID_HEIGHT) newObject = ::GOMove::MoveGameObject(player, x, y, ground, o, p, lowguid);
                         } break;
                         case FLOOR:
                         {
                             float floor = target->GetMap()->GetHeight(target->GetPhaseMask(), x, y, z);
-                            if (floor != INVALID_HEIGHT) ::GOMove::MoveGameObject(player, x, y, floor, o, p, lowguid);
+                            if (floor != INVALID_HEIGHT) newObject = ::GOMove::MoveGameObject(player, x, y, floor, o, p, lowguid);
                         } break;
                     }
+                    if (newObject) SendGOMoveSuccessMessage(player, newObject);
                 }
                 else
                 {
@@ -141,22 +161,24 @@ namespace DCAddon
                     target->GetPosition(x, y, z, o);
                     uint32 p = target->GetPhaseMask();
 
+                    GameObject* newObject = nullptr;
                     switch (ID)
                     {
-                        case NORTH: ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y, z, o, p, lowguid); break;
-                        case EAST: ::GOMove::MoveGameObject(player, x, y - ((float)ARG / 100), z, o, p, lowguid); break;
-                        case SOUTH: ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y, z, o, p, lowguid); break;
-                        case WEST: ::GOMove::MoveGameObject(player, x, y + ((float)ARG / 100), z, o, p, lowguid); break;
-                        case NORTHEAST: ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y - ((float)ARG / 100), z, o, p, lowguid); break;
-                        case SOUTHEAST: ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y - ((float)ARG / 100), z, o, p, lowguid); break;
-                        case SOUTHWEST: ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y + ((float)ARG / 100), z, o, p, lowguid); break;
-                        case NORTHWEST: ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y + ((float)ARG / 100), z, o, p, lowguid); break;
-                        case UP: ::GOMove::MoveGameObject(player, x, y, z + ((float)ARG / 100), o, p, lowguid); break;
-                        case DOWN: ::GOMove::MoveGameObject(player, x, y, z - ((float)ARG / 100), o, p, lowguid); break;
-                        case RIGHT: ::GOMove::MoveGameObject(player, x, y, z, o - ((float)ARG / 100), p, lowguid); break;
-                        case LEFT: ::GOMove::MoveGameObject(player, x, y, z, o + ((float)ARG / 100), p, lowguid); break;
-                        case PHASE: ::GOMove::MoveGameObject(player, x, y, z, o, ARG, lowguid); break;
+                        case NORTH: newObject = ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y, z, o, p, lowguid); break;
+                        case EAST: newObject = ::GOMove::MoveGameObject(player, x, y - ((float)ARG / 100), z, o, p, lowguid); break;
+                        case SOUTH: newObject = ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y, z, o, p, lowguid); break;
+                        case WEST: newObject = ::GOMove::MoveGameObject(player, x, y + ((float)ARG / 100), z, o, p, lowguid); break;
+                        case NORTHEAST: newObject = ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y - ((float)ARG / 100), z, o, p, lowguid); break;
+                        case SOUTHEAST: newObject = ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y - ((float)ARG / 100), z, o, p, lowguid); break;
+                        case SOUTHWEST: newObject = ::GOMove::MoveGameObject(player, x - ((float)ARG / 100), y + ((float)ARG / 100), z, o, p, lowguid); break;
+                        case NORTHWEST: newObject = ::GOMove::MoveGameObject(player, x + ((float)ARG / 100), y + ((float)ARG / 100), z, o, p, lowguid); break;
+                        case UP: newObject = ::GOMove::MoveGameObject(player, x, y, z + ((float)ARG / 100), o, p, lowguid); break;
+                        case DOWN: newObject = ::GOMove::MoveGameObject(player, x, y, z - ((float)ARG / 100), o, p, lowguid); break;
+                        case RIGHT: newObject = ::GOMove::MoveGameObject(player, x, y, z, o - ((float)ARG / 100), p, lowguid); break;
+                        case LEFT: newObject = ::GOMove::MoveGameObject(player, x, y, z, o + ((float)ARG / 100), p, lowguid); break;
+                        case PHASE: newObject = ::GOMove::MoveGameObject(player, x, y, z, o, ARG, lowguid); break;
                     }
+                    if (newObject) SendGOMoveSuccessMessage(player, newObject);
                 }
                 else
                 {
@@ -164,8 +186,12 @@ namespace DCAddon
                     {
                         case SPAWN:
                         {
-                            if (::GOMove::SpawnGameObject(player, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation(), player->GetPhaseMaskForSpawn(), ARG))
+                            GameObject* newObject = ::GOMove::SpawnGameObject(player, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation(), player->GetPhaseMaskForSpawn(), ARG);
+                            if (newObject)
+                            {
                                 ::GOMove::Store.SpawnQueAdd(player->GetGUID(), ARG);
+                                SendGOMoveSuccessMessage(player, newObject);
+                            }
                         } break;
                         case SPAWNSPELL:
                         {
@@ -227,6 +253,7 @@ namespace DCAddon
 
         static void HandleRequestTeleSync(Player* player, const ParsedMessage& msg)
         {
+            (void)msg; // msg is intentionally unused in this handler
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
                 return;
             // Format: DC|GOMV|0x03

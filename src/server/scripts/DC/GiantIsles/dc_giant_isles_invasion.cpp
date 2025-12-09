@@ -70,13 +70,13 @@ enum InvasionData
     NPC_PRIMAL_WARDEN_CAPTAIN   = 401003, // Commander
 
     // Timers
-    INVASION_COOLDOWN           = 2 * HOUR,  // 2 hours between invasions
+    INVASION_COOLDOWN           = 2 * HOUR,  // 2 hours between invasions (Seconds)
     INVASION_WARNING_TIME       = 30 * IN_MILLISECONDS,  // 30 sec warning before start
-    WAVE_1_DURATION             = 2 * MINUTE,  // Scout wave (fast, weak)
-    WAVE_2_DURATION             = 3 * MINUTE,  // Warrior wave
-    WAVE_3_DURATION             = 4 * MINUTE,  // Elite wave
-    WAVE_4_DURATION             = 6 * MINUTE,  // Boss wave
-    INVASION_TOTAL_TIME         = 15 * MINUTE,  // Total event time
+    WAVE_1_DURATION             = 2 * MINUTE * IN_MILLISECONDS,  // Scout wave (fast, weak)
+    WAVE_2_DURATION             = 3 * MINUTE * IN_MILLISECONDS,  // Warrior wave
+    WAVE_3_DURATION             = 4 * MINUTE * IN_MILLISECONDS,  // Elite wave
+    WAVE_4_DURATION             = 6 * MINUTE * IN_MILLISECONDS,  // Boss wave
+    INVASION_TOTAL_TIME         = 15 * MINUTE * IN_MILLISECONDS,  // Total event time
 
     // Spawn timers within waves (how often to spawn new enemies)
     SPAWN_DELAY_WAVE_1          = 3 * IN_MILLISECONDS,  // Every 3 seconds
@@ -530,6 +530,7 @@ public:
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8174); });  // Orc battle cry
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
                 SpawnWaveCreatures(map);
+                SpawnReinforcements(map);
                 break;
                 
             case INVASION_WAVE_2:
@@ -541,6 +542,7 @@ public:
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8212); });  // Troll aggro
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
                 SpawnWaveCreatures(map);
+                SpawnReinforcements(map);
                 break;
                 
             case INVASION_WAVE_3:
@@ -578,9 +580,35 @@ public:
                 _defenderGuids.push_back(defender->GetGUID());
                 defender->SetFaction(14);  // Monster faction (hostile to invaders who are faction 16)
                 defender->SetReactState(REACT_AGGRESSIVE);
+                
+                // Move slightly forward to engage
+                float x = p.GetPositionX() + 5.0f * cos(p.GetOrientation());
+                float y = p.GetPositionY() + 5.0f * sin(p.GetOrientation());
+                defender->GetMotionMaster()->MovePoint(0, x, y, p.GetPositionZ());
+
                 LOG_INFO("scripts", "Giant Isles Invasion: Summoned defender entry {} at point {}", entry, i);
             }
         }
+    }
+
+    void SpawnReinforcements(Map* map)
+    {
+        // Spawn 3 guards running from the village/rear
+        Position spawnPos(5809.59f, 1150.0f, 7.5f, 1.94f); // Further back
+        for (int i = 0; i < 3; ++i)
+        {
+            float x = spawnPos.GetPositionX() + (i * 5.0f) - 5.0f;
+            Position guardPos(x, spawnPos.GetPositionY(), spawnPos.GetPositionZ(), spawnPos.GetOrientation());
+            if (Creature* guard = map->SummonCreature(NPC_PRIMAL_WARDEN, guardPos))
+            {
+                _defenderGuids.push_back(guard->GetGUID());
+                guard->SetFaction(14);
+                guard->SetReactState(REACT_AGGRESSIVE);
+                // Run to the front line
+                guard->GetMotionMaster()->MovePoint(0, 5809.59f, 1200.0f, 7.0f);
+            }
+        }
+        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Reinforcements have arrived!");
     }
 
     void SpawnWaveCreatures(Map* map)
@@ -609,10 +637,16 @@ public:
                 _invaderGuids.push_back(invader->GetGUID());
                 invader->SetFaction(16);
                 
+                // Move towards the defense line
+                const InvasionSpawnPoint& target = TARGET_POINTS[i];
+                invader->GetMotionMaster()->MovePoint(0, target.x, target.y, target.z);
+
                 // Find nearest Primal Warden and attack them
                 if (Creature* defender = GetNearestDefender(invader, map))
                 {
-                    invader->AI()->AttackStart(defender);
+                    // Only attack if close enough, otherwise keep moving
+                    if (invader->GetDistance2d(defender) < 20.0f)
+                        invader->AI()->AttackStart(defender);
                 }
                 LOG_INFO("scripts", "Giant Isles Invasion: Spawned invader entry {} at {} ({})", 
                     entry, spawnPoint.name, invader->GetGUID().ToString());
@@ -911,6 +945,7 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
+        (void)sender; // unused parameter - silence warning
         ClearGossipMenuFor(player);
 
         // Get MapScript via Global Pointer

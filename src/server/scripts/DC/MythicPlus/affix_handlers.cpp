@@ -68,7 +68,7 @@ public:
             ally->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, currentMaxDmg * 1.20f);
             
             // Visual: Cast buff spell
-            if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_BOLSTERING_AFFIX))
+            if (sSpellMgr->GetSpellInfo(SPELL_BOLSTERING_AFFIX))
                 ally->CastSpell(ally, SPELL_BOLSTERING_AFFIX, true);
         }
     }
@@ -111,7 +111,7 @@ public:
             return;
             
         // Apply Necrotic Wound debuff
-        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_NECROTIC_AFFIX))
+        if (sSpellMgr->GetSpellInfo(SPELL_NECROTIC_AFFIX))
         {
             if (Aura* aura = victim->GetAura(SPELL_NECROTIC_AFFIX))
             {

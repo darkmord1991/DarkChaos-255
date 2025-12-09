@@ -626,7 +626,7 @@ private:
     {
         for (uint8 i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_END; ++i)
         {
-            if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
+            if (player->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
             {
                 player->DestroyItem(INVENTORY_SLOT_BAG_0, i, true);
             }
@@ -639,7 +639,7 @@ private:
             {
                 for (uint32 j = 0; j < bag->GetBagSize(); ++j)
                 {
-                    if (Item* item = bag->GetItemByPos(j))
+                    if (bag->GetItemByPos(j))
                     {
                         player->DestroyItem(i, j, true);
                     }
@@ -653,7 +653,7 @@ private:
         {
             for (uint8 i = BANK_SLOT_ITEM_START; i < BANK_SLOT_ITEM_END; ++i)
             {
-                if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
+                if (player->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
                 {
                     player->DestroyItem(INVENTORY_SLOT_BAG_0, i, true);
                 }
