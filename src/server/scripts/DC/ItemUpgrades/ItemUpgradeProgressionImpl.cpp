@@ -23,6 +23,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstdlib>
 
 using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
@@ -477,7 +478,7 @@ public:
             return false;
         }
 
-        uint8 tier_id = atoi(args);
+        uint8 tier_id = static_cast<uint8>(std::strtoul(args, nullptr, 10));
         if (tier_id < 1 || tier_id > 5)
         {
             handler->PSendSysMessage("Invalid tier ID. Use 1-5.");
@@ -542,8 +543,8 @@ public:
             return false;
         }
 
-        uint8 tier_id = atoi(tier_str);
-        uint8 max_level = atoi(level_str);
+        uint8 tier_id = static_cast<uint8>(std::strtoul(tier_str, nullptr, 10));
+        uint8 max_level = static_cast<uint8>(std::strtoul(level_str, nullptr, 10));
 
         Player* target = handler->getSelectedPlayer();
         if (!target)

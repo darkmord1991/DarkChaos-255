@@ -2053,6 +2053,11 @@ DarkChaos.Seasonal.EssenceItemID = 300312
 #        Default:     1000
 #        Range:       100 - 10000 (0 = unlimited)
 #
+# NOTE: The server log may warn if this property is missing from your active
+#       `worldserver.conf`. You can either add this setting here (for module
+#       configuration) or set the environment variable:
+#         AC_DARK_CHAOS_SEASONAL_WEEKLY_TOKEN_CAP
+#
 DarkChaos.Seasonal.WeeklyTokenCap = 1000
 
 #
@@ -2062,6 +2067,11 @@ DarkChaos.Seasonal.WeeklyTokenCap = 1000
 #                     Resets at weekly reset (configured in worldserver.conf).
 #        Default:     1000
 #        Range:       100 - 5000 (0 = unlimited)
+#
+# NOTE: The server log may warn if this property is missing from your active
+#       `worldserver.conf`. You can either add this setting here (for module
+#       configuration) or set the environment variable:
+#         AC_DARK_CHAOS_SEASONAL_WEEKLY_ESSENCE_CAP
 #
 DarkChaos.Seasonal.WeeklyEssenceCap = 1000
 
@@ -5002,6 +5012,13 @@ DC.AddonProtocol.Upgrade.Enable = 1
 #
 DC.AddonProtocol.Duels.Enable = 1
 
+# -------------------------------------------------------------------------
+# DCDuelAddon compatibility toggle
+# Description: Backward-compatible toggle for the legacy duel addon interface
+#              Some DC addons expect DCDuelAddon.Enable in configs; set to 1 to enable
+# -------------------------------------------------------------------------
+DCDuelAddon.Enable = 1
+
 #
 #    DC.AddonProtocol.MythicPlus.Enable
 #        Description: Enable DC addon protocol for Mythic+ system
@@ -5021,6 +5038,13 @@ DC.AddonProtocol.MythicPlus.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Prestige.Enable = 1
+
+# -------------------------------------------------------------------------
+# DCPrestigeAddon compatibility toggle
+# Description: Backward-compatible toggle for the legacy prestige addon interface
+#              Some DC addons expect DCPrestigeAddon.Enable in configs; set to 1 to enable
+# -------------------------------------------------------------------------
+DCPrestigeAddon.Enable = 1
 
 #
 #    DC.AddonProtocol.Seasonal.Enable
@@ -5059,6 +5083,23 @@ DC.AddonProtocol.HinterlandBG.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Leaderboard.Enable = 1
+
+#    DC.AddonProtocol.GOMove.Enable
+#        Description: Enable addon-based GOMove integration (DC-GM addon)
+#        Default:     1 (Enabled)
+DC.AddonProtocol.GOMove.Enable = 1
+
+#    DC.AddonProtocol.GOMove.MinSecurity
+#        Description: Minimum server security level required to issue GOMove addon commands
+#                     Default:     1 (SEC_GAMEMASTER)
+#                     0 = allow all players, 1 = require GM level 1 or higher
+DC.AddonProtocol.GOMove.MinSecurity = 1
+
+#    DC.AddonProtocol.GOMove.MinSecurityMove
+#        Description: Minimum server security level required to execute GOMove 'move' commands (spawn/delete/move)
+#                     Default:     2 (SEC_GAMEMASTER) - stronger lock for server-altering commands
+#                     Use 1 to allow moderators as well, 0 to allow all players (not recommended)
+DC.AddonProtocol.GOMove.MinSecurityMove = 2
 
 #
 #    DC.AddonProtocol.Leaderboard.EntriesPerPage

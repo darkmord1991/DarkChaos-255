@@ -13,25 +13,35 @@
 #include "Player.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
-#include "MapManager.h"
+#include "MapMgr.h"
 #include "Chat.h"
 #include "Log.h"
+#include "Config.h"
 #include "../GOMove/GOMove.h" // Include original GOMove header
 
 namespace DCAddon
 {
     namespace GOMove
     {
+    static uint32 s_gomoveMinSecurity = 1;
+    static uint32 s_gomoveMoveMinSecurity = SEC_GAMEMASTER;
+    static bool s_gomoveEnabled = true; // fallback if router not configured
         // Helper to send GOMove specific messages wrapped in DC Protocol
         static void SendGOMoveMessage(Player* player, const std::string& msg)
         {
             Message response(Module::GOMOVE, Opcode::GOMove::SMSG_MOVE_RESULT);
-            response.AddData(msg);
+            response.Add(msg);
             response.Send(player);
         }
 
         static void HandleRequestMove(Player* player, const ParsedMessage& msg)
         {
+            // Quick guard: check module enabled + GM level
+            if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMoveMinSecurity))
+            {
+                DCAddon::SendPermissionDenied(player, Module::GOMOVE, "Insufficient GM level to use addon commands");
+                return;
+            }
             // Format: DC|GOMV|0x01|ID|LOWGUID|ARG
             // This maps to the original .gomove command args
             
@@ -75,7 +85,7 @@ namespace DCAddon
                         case RESPAWN: ::GOMove::SpawnGameObject(player, x, y, z, o, p, target->GetEntry()); break;
                         case GOTO:
                         {
-                            if (player->IsInFlight()) player->FinishTaxiFlight();
+                            if (player->IsInFlight()) player->CleanupAfterTaxiFlight();
                             else player->SaveRecallPosition();
                             player->TeleportTo(target->GetMapId(), x, y, z, o);
                         } break;
@@ -173,6 +183,8 @@ namespace DCAddon
 
         static void HandleRequestSearch(Player* player, const ParsedMessage& msg)
         {
+            if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
+                return;
             // Format: DC|GOMV|0x02|SEARCH_TERM
             if (msg.GetDataCount() < 1) return;
             
@@ -183,7 +195,7 @@ namespace DCAddon
             std::transform(searchTerm.begin(), searchTerm.end(), searchTerm.begin(), ::tolower);
             
             JsonValue response;
-            JsonValue results = JsonValue::CreateArray();
+            JsonValue results; results.SetArray();
             
             uint32 count = 0;
             
@@ -193,32 +205,34 @@ namespace DCAddon
                 do
                 {
                     Field* fields = result->Fetch();
-                    uint32 entry = fields[0].GetUInt32();
-                    std::string name = fields[1].GetString();
-                    uint32 displayId = fields[2].GetUInt32();
-                    
-                    JsonValue obj = JsonValue::CreateObject();
-                    obj.Add("id", entry);
-                    obj.Add("name", name);
-                    obj.Add("display", displayId);
-                    results.Add(obj);
+                    uint32 entry = fields[0].Get<uint32>();
+                    std::string name = fields[1].Get<std::string>();
+                    uint32 displayId = fields[2].Get<uint32>();
+
+                    JsonValue obj; obj.SetObject();
+                    obj.Set("id", JsonValue(entry));
+                    obj.Set("name", JsonValue(name));
+                    obj.Set("display", JsonValue(displayId));
+                    results.Push(obj);
                     
                     count++;
                 } while (result->NextRow());
             }
             
-            response.Add("results", results);
-            response.Add("count", count);
+            response.Set("results", results);
+            response.Set("count", JsonValue(count));
             
             JsonMessage(Module::GOMOVE, Opcode::GOMove::SMSG_SEARCH_RESULT, response).Send(player);
         }
 
         static void HandleRequestTeleSync(Player* player, const ParsedMessage& msg)
         {
+            if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
+                return;
             // Format: DC|GOMV|0x03
             
             JsonValue response;
-            JsonValue locations = JsonValue::CreateArray();
+            JsonValue locations; locations.SetArray();
             
             // Query game_tele table
             if (QueryResult result = WorldDatabase.Query("SELECT id, name, map, position_x, position_y, position_z, orientation FROM game_tele ORDER BY name"))
@@ -226,19 +240,19 @@ namespace DCAddon
                 do
                 {
                     Field* fields = result->Fetch();
-                    JsonValue loc = JsonValue::CreateObject();
-                    loc.Add("id", fields[0].GetUInt32());
-                    loc.Add("name", fields[1].GetString());
-                    loc.Add("map", fields[2].GetUInt16());
-                    loc.Add("x", fields[3].GetFloat());
-                    loc.Add("y", fields[4].GetFloat());
-                    loc.Add("z", fields[5].GetFloat());
-                    loc.Add("o", fields[6].GetFloat());
-                    locations.Add(loc);
+                    JsonValue loc; loc.SetObject();
+                    loc.Set("id", JsonValue(fields[0].Get<uint32>()));
+                    loc.Set("name", JsonValue(fields[1].Get<std::string>()));
+                    loc.Set("map", JsonValue(fields[2].Get<uint16>()));
+                    loc.Set("x", JsonValue(fields[3].Get<float>()));
+                    loc.Set("y", JsonValue(fields[4].Get<float>()));
+                    loc.Set("z", JsonValue(fields[5].Get<float>()));
+                    loc.Set("o", JsonValue(fields[6].Get<float>()));
+                    locations.Push(loc);
                 } while (result->NextRow());
             }
             
-            response.Add("locations", locations);
+            response.Set("locations", locations);
             
             // This might be large, so the chunking in DC Protocol will handle it
             JsonMessage(Module::GOMOVE, Opcode::GOMove::SMSG_TELE_LIST, response).Send(player);
@@ -246,6 +260,13 @@ namespace DCAddon
 
         void RegisterHandlers()
         {
+            // Load module-specific options
+            s_gomoveMinSecurity = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
+            s_gomoveMoveMinSecurity = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurityMove", SEC_GAMEMASTER);
+            s_gomoveEnabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
+
+            if (!s_gomoveEnabled)
+                return;
             DC_REGISTER_HANDLER(Module::GOMOVE, Opcode::GOMove::CMSG_REQUEST_MOVE, HandleRequestMove);
             DC_REGISTER_HANDLER(Module::GOMOVE, Opcode::GOMove::CMSG_REQUEST_SEARCH, HandleRequestSearch);
             DC_REGISTER_HANDLER(Module::GOMOVE, Opcode::GOMove::CMSG_REQUEST_TELE_SYNC, HandleRequestTeleSync);

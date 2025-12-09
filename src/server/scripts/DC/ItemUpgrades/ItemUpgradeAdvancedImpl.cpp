@@ -21,6 +21,7 @@
 #include "ItemUpgradeManager.h"
 #include <sstream>
 #include <iomanip>
+#include <cstdlib>
 
 using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
@@ -601,7 +602,7 @@ public:
         }
         else
         {
-            uint32 item_guid = atoi(args);
+            uint32 item_guid = static_cast<uint32>(std::strtoul(args, nullptr, 10));
             if (respecMgr.RespecItem(player->GetGUID().GetCounter(), item_guid))
             {
                 handler->PSendSysMessage("|cff00ff00Successfully reset item upgrade!|r");

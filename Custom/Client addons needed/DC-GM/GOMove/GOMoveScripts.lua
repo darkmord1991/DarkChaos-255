@@ -358,7 +358,26 @@ EventFrame:RegisterEvent("CHAT_MSG_ADDON")
 
 EventFrame:SetScript("OnEvent",
     function(self, event, MSG, MSG2, Type, Sender)
-        if(event == "CHAT_MSG_ADDON" and Sender == UnitName("player")) then
+        if(event == "CHAT_MSG_ADDON") then
+            -- Compatibility: handle DC protocol error responses for GOMove
+            if MSG == "DC" then
+                -- Format: MODULE|OPCODE|... - module for GOMove is GOMV
+                local parts = {}
+                for p in string.gmatch(MSG2, "([^|]+)") do table.insert(parts, p) end
+                if #parts >= 2 then
+                    local module = parts[1]
+                    local opcode = tonumber(parts[2]) or 0
+                    -- Error opcodes: Core.SMSG_PERMISSION_DENIED (0x1E) or SMSG_ERROR (0x1F)
+                    if module == "GOMV" and (opcode == 0x1E or opcode == 0x1F) then
+                        local errCode = tonumber(parts[3]) or 0
+                        local errMsg = parts[4] or "Unknown error"
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[GOMove] Error:|r " .. errMsg)
+                        return
+                    end
+                end
+            end
+            -- Legacy behaviour: original GOMove channel uses prefix "GOMOVE"
+            if Sender ~= UnitName("player") then return end
             if MSG ~= "GOMOVE" then return end
             local ID, ENTRYORGUID, ARG2, ARG3 = MSG2:match("^(.+)|([%a%d]+)|(.*)|([%a%d]+)$")
             if(ID) then
@@ -417,6 +436,12 @@ EventFrame:SetScript("OnEvent",
                 end
             end
             GOMove:Update()
+            -- Register DC protocol error handler if DC library is present
+            if DCAddonProtocol ~= nil and type(DC) == "table" and DC.RegisterErrorHandler then
+                DC:RegisterErrorHandler("GOMV", function(errCode, errMsg, opcode)
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[GOMove] Error:|r " .. (errMsg or "Unknown error"))
+                end)
+            end
         end
     end
 )

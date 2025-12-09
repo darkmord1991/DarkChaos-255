@@ -17,7 +17,7 @@ http://rochet2.github.io/
 class Player;
 class GameObject;
 
-class TC_GAME_API GameObjectStore
+class GameObjectStore
 {
 public:
     typedef std::mutex LockType;
@@ -32,7 +32,7 @@ private:
     std::unordered_map<ObjectGuid, uint32> objectsToSpawn;
 };
 
-class TC_GAME_API GOMove
+class GOMove
 {
 public:
     static GameObjectStore Store;

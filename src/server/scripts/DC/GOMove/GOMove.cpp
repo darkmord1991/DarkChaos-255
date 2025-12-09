@@ -14,7 +14,7 @@ http://rochet2.github.io/
 #include "GameObject.h"
 #include "Language.h"
 #include "Map.h"
-#include "MapManager.h"
+#include "MapMgr.h"
 #include "Object.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -45,9 +45,9 @@ void GOMove::SendAddonMessage(Player * player, const char * msg)
     data.Initialize(SMSG_MESSAGECHAT, 100);
     data << uint8(CHAT_MSG_SYSTEM);
     data << int32(LANG_ADDON);
-    data << uint64(player->GetGUID());
+    data << player->GetGUID().GetRawValue();
     data << uint32(0);
-    data << uint64(player->GetGUID());
+    data << player->GetGUID().GetRawValue();
     data << uint32(messageLength);
     data << buf;
     data << uint8(0);
@@ -103,7 +103,7 @@ GameObject * GOMove::SpawnGameObject(Player* player, float x, float y, float z, 
     if (!player || !entry)
         return nullptr;
 
-    if (!MapManager::IsValidMapCoord(player->GetMapId(), x, y, z))
+    if (!MapMgr::IsValidMapCoord(player->GetMapId(), x, y, z))
         return nullptr;
 
     Position pos(x, y, z, o);
@@ -121,8 +121,9 @@ GameObject * GOMove::SpawnGameObject(Player* player, float x, float y, float z, 
     GameObject* object = new GameObject();
     ObjectGuid::LowType guidLow = map->GenerateLowGuid<HighGuid::GameObject>();
 
-    QuaternionData rot = QuaternionData::fromEulerAnglesZYX(pos.GetOrientation(), 0.f, 0.f);
-    if (!object->Create(guidLow, objectInfo->entry, map, player->GetPhaseMaskForSpawn(), pos, rot, 255, GO_STATE_READY))
+    // Convert orientation to a G3D::Quat for GameObject rotation
+    G3D::Quat rot(G3D::Matrix3::fromEulerAnglesZYX(pos.GetOrientation(), 0.f, 0.f));
+    if (!object->Create(guidLow, objectInfo->entry, map, player->GetPhaseMaskForSpawn(), pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation(), rot, 255, GO_STATE_READY))
     {
         delete object;
         return nullptr;
@@ -138,7 +139,7 @@ GameObject * GOMove::SpawnGameObject(Player* player, float x, float y, float z, 
 
     object = new GameObject();
     // this will generate a new guid if the object is in an instance
-    if (!object->LoadFromDB(guidLow, map, true))
+    if (!object->LoadGameObjectFromDB(guidLow, map, true))
     {
         delete object;
         return nullptr;
@@ -164,13 +165,13 @@ GameObject * GOMove::MoveGameObject(Player* player, float x, float y, float z, f
     }
 
     Map* map = object->GetMap();
-    if (!MapManager::IsValidMapCoord(object->GetMapId(), x, y, z))
+    if (!MapMgr::IsValidMapCoord(object->GetMapId(), x, y, z))
         return nullptr;
 
     // copy paste .gob move command
     // copy paste .gob turn command
     object->Relocate(x, y, z, o);
-    object->SetWorldRotationAngles(o, 0, 0);
+    object->SetLocalRotationAngles(o, 0.0f, 0.0f);
     object->SaveToDB();
 
     // Generate a completely new spawn with new guid
@@ -180,7 +181,7 @@ GameObject * GOMove::MoveGameObject(Player* player, float x, float y, float z, f
     object->Delete();
 
     object = new GameObject();
-    if (!object->LoadFromDB(lowguid, map, true))
+    if (!object->LoadGameObjectFromDB(lowguid, map, true))
     {
         delete object;
         SendRemove(player, lowguid);
@@ -221,8 +222,9 @@ std::list<GameObject*> GOMove::GetNearbyGameObjects(Player* player, float range)
     player->GetPosition(x, y, z);
 
     std::list<GameObject*> objects;
-    Trinity::GameObjectInRangeCheck check(x, y, z, range);
-    Trinity::GameObjectListSearcher<Trinity::GameObjectInRangeCheck> searcher(player, objects, check);
-    Cell::VisitGridObjects(player, searcher, SIZE_OF_GRIDS);
+    Acore::GameObjectInRangeCheck check(x, y, z, range);
+    Acore::GameObjectListSearcher<Acore::GameObjectInRangeCheck> searcher(player, objects, check);
+    // Visit nearby objects using the modern Cell::VisitObjects API.
+    Cell::VisitObjects(player, searcher, range);
     return objects;
 }

@@ -93,6 +93,8 @@ namespace DCAddon
             constexpr uint8 SMSG_VERSION_RESULT    = 0x11;  // Server version check result
             constexpr uint8 SMSG_FEATURE_LIST      = 0x12;  // Server sends enabled features
             constexpr uint8 SMSG_RELOAD_UI         = 0x13;  // Server tells client to reload
+            constexpr uint8 SMSG_PERMISSION_DENIED = 0x1E;  // Permission denied specific
+            constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response (Generic)
         }
         
         // AOE Loot opcodes
@@ -346,6 +348,15 @@ namespace DCAddon
             constexpr uint8 SMSG_ERROR               = 0x5F;  // Error response
         }
     }
+
+    // Standard addon error codes
+    namespace ErrorCode
+    {
+        constexpr uint32 PERMISSION_DENIED = 1;
+        constexpr uint32 MODULE_DISABLED   = 2;
+        constexpr uint32 BAD_FORMAT        = 3;
+        constexpr uint32 UNKNOWN          = 255;
+    }
     
     // ========================================================================
     // MESSAGE UTILITIES
@@ -432,6 +443,13 @@ namespace DCAddon
         uint8 _opcode;
         std::vector<std::string> _data;
     };
+
+    // Forward declarations for helpers used by MessageRouter::Route
+    inline void SendError(Player* player, const std::string& module, const std::string& errorMsg, uint32 errorCode, uint8 opcode);
+    inline void SendPermissionDenied(Player* player, const std::string& module, const std::string& errorMsg);
+
+    // Quick permission helper: ensure module enabled and player has minimum security
+    // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)
     
     // Parse incoming message
     class ParsedMessage
@@ -604,10 +622,31 @@ namespace DCAddon
                 return false;
             
             std::string key = msg.GetModule() + "_" + std::to_string(msg.GetOpcode());
+
+            // If the module is disabled globally, send a structured addon error
+            if (!IsModuleEnabled(msg.GetModule()))
+            {
+                if (player && player->GetSession())
+                    SendError(player, msg.GetModule(), "Module is disabled on server", ErrorCode::MODULE_DISABLED, Opcode::Core::SMSG_ERROR);
+                return false;
+            }
             auto it = _handlers.find(key);
             
             if (it != _handlers.end())
             {
+                // Check module-wise min security if configured
+                uint32_t minSec = 0;
+                auto minIt = _moduleMinSecurity.find(msg.GetModule());
+                if (minIt != _moduleMinSecurity.end())
+                    minSec = minIt->second;
+
+                if (player && player->GetSession() && player->GetSession()->GetSecurity() < minSec)
+                {
+                    // Inform the player they lack sufficient permission via structured addon error
+                    DCAddon::SendPermissionDenied(player, msg.GetModule(), "Insufficient GM level to execute addon commands for this module");
+                    return false;
+                }
+
                 it->second(player, msg);
                 return true;
             }
@@ -626,12 +665,44 @@ namespace DCAddon
         {
             _enabledModules[module] = enabled;
         }
+
+        void SetModuleMinSecurity(const std::string& module, uint32 minSecurity)
+        {
+            _moduleMinSecurity[module] = minSecurity;
+        }
         
     private:
         MessageRouter() = default;
         std::unordered_map<std::string, MessageHandler> _handlers;
         std::unordered_map<std::string, bool> _enabledModules;
+        std::unordered_map<std::string, uint32_t> _moduleMinSecurity;
     };
+
+    // Quick permission helper: ensure module enabled and player has minimum security
+    inline bool CheckAddonPermission(Player* player, const std::string& module, uint32 minSecurity = SEC_MODERATOR)
+    {
+        if (!MessageRouter::Instance().IsModuleEnabled(module))
+            return false;
+        if (!player || !player->GetSession())
+            return false;
+        return (player->GetSession()->GetSecurity() >= minSecurity);
+    }
+
+    // Send a standard error response via addon protocol for module
+    inline void SendError(Player* player, const std::string& module, const std::string& errorMsg, uint32 errorCode = 1, uint8 opcode = Opcode::Core::SMSG_ERROR)
+    {
+        if (!player || !player->GetSession())
+            return;
+        Message errorMsgObj(module, opcode);
+        errorMsgObj.Add(std::to_string(errorCode));
+        errorMsgObj.Add(errorMsg);
+        errorMsgObj.Send(player);
+    }
+
+    inline void SendPermissionDenied(Player* player, const std::string& module, const std::string& errorMsg = "Permission denied")
+    {
+        SendError(player, module, errorMsg, ErrorCode::PERMISSION_DENIED, Opcode::Core::SMSG_PERMISSION_DENIED);
+    }
     
     // ========================================================================
     // HELPER MACROS FOR HANDLER REGISTRATION
@@ -992,6 +1063,9 @@ namespace DCAddon
     class JsonMessage
     {
     public:
+        JsonMessage(const std::string& module, uint8 opcode, const JsonValue& json)
+            : _module(module), _opcode(opcode), _json(json) {}
+
         JsonMessage(const std::string& module, uint8 opcode)
             : _module(module), _opcode(opcode) 
         {

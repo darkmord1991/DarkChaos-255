@@ -27,7 +27,12 @@ Libraries\Graph-1.0\Graph-1.0.lua
 Libraries\LibStub\LibStub.lua
 Locales\enUS.lua
 Locales\strings.lua
+Core\AzerothAdmin.lua
+Core\Init.lua
+Core\DropDownStyle.lua
 Data\Models.lua
+Data\DBC.lua
+Data\TeleportTable.lua
 Commands\Main.lua
 Commands\Tele.lua
 Commands\Char.lua
@@ -38,11 +43,6 @@ Commands\NPC.lua
 Commands\GO.lua
 Commands\Who.lua
 Commands\DC.lua
-Data\DBC.lua
-Data\TeleportTable.lua
-Core\Init.lua
-Core\AzerothAdmin.lua
-Core\DropDownStyle.lua
 Modules\Linkifier.lua
 Frames\MangFrames_Start.lua
 Frames\MangFrames_Tabs.lua

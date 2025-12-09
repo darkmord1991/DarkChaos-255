@@ -12,6 +12,7 @@
 #include "MythicPlusRunManager.h"
 #include "MythicPlusConstants.h"
 #include "StringFormat.h"
+#include <cstdlib>
 
 using namespace Acore::ChatCommands;
 using namespace MythicPlusConstants;
@@ -43,7 +44,7 @@ public:
             return false;
         }
 
-        uint8 level = atoi(args);
+        uint8 level = static_cast<uint8>(std::strtoul(args, nullptr, 10));
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
             handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
@@ -126,7 +127,7 @@ public:
             return true;
         }
 
-        uint8 level = atoi(args);
+        uint8 level = static_cast<uint8>(std::strtoul(args, nullptr, 10));
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
             handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
@@ -153,7 +154,7 @@ public:
             return false;
         }
 
-        uint8 level = atoi(args);
+        uint8 level = static_cast<uint8>(std::strtoul(args, nullptr, 10));
         if (level < MIN_KEYSTONE_LEVEL || level > MAX_KEYSTONE_LEVEL)
         {
             handler->SendSysMessage(Acore::StringFormat("Invalid keystone level. Must be between {} and {}.", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));

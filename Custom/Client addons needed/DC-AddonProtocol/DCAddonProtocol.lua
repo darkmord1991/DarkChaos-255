@@ -60,6 +60,8 @@ DCAddonProtocol = {
         moduleStats = {},
         sessionStart = 0,  -- Will be set to time() after load
     },
+    _errorHandlers = {},
+    _globalErrorHandlers = {},
 }
 
 local DC = DCAddonProtocol
@@ -301,6 +303,15 @@ function DC:RegisterHandler(module, opcode, handler)
     self._handlers[key] = handler
 end
 
+function DC:RegisterErrorHandler(module, handler)
+    if not DC._errorHandlers[module] then DC._errorHandlers[module] = {} end
+    table.insert(DC._errorHandlers[module], handler)
+end
+
+function DC:RegisterGlobalErrorHandler(handler)
+    table.insert(DC._globalErrorHandlers, handler)
+end
+
 function DC:RegisterJSONHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode) .. "_json"
     self._handlers[key] = handler
@@ -532,6 +543,7 @@ DC.Opcode = {
         SMSG_HANDSHAKE_ACK = 0x10,
         SMSG_FEATURE_LIST = 0x12,
         SMSG_ERROR = 0x1F,
+        SMSG_PERMISSION_DENIED = 0x1E,
     },
     AOE = {
         CMSG_TOGGLE_ENABLED = 0x01,
@@ -862,6 +874,29 @@ frame:SetScript("OnEvent", function()
                     DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Received: " .. module .. " opcode=" .. opcode .. " parts=" .. #parts)
                 end
                 
+                -- Early: detect core error codes (SMSG_ERROR / SMSG_PERMISSION_DENIED)
+                if opcode == DC.Opcode.Core.SMSG_ERROR or opcode == DC.Opcode.Core.SMSG_PERMISSION_DENIED then
+                    -- Parse error payload
+                    local errCode = tonumber(parts[3]) or 0
+                    local errMsg = parts[4] or ""
+                    -- Call module-specific error handlers
+                    local errHandlers = DC._errorHandlers[module]
+                    if errHandlers then
+                        for _, h in ipairs(errHandlers) do
+                            pcall(h, errCode, errMsg, opcode)
+                        end
+                    end
+                    -- Call global error handlers
+                    for _, h in ipairs(DC._globalErrorHandlers) do
+                        pcall(h, module, errCode, errMsg, opcode)
+                    end
+                    -- Default behavior: display error in chat
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module .. ": " .. (errMsg or "Unknown error"))
+                    -- Log response
+                    DC:LogResponse(module, opcode, {errCode, errMsg}, nil)
+                    return
+                end
+
                 -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json})
                 if #parts >= 4 and parts[3] == "J" then
                     -- JSON message - reconstruct JSON (in case it had | in it)

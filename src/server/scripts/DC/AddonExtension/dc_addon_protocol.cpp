@@ -92,6 +92,7 @@ struct DCAddonProtocolConfig
     bool EnableSeasonal;
     bool EnableHinterlandBG;
     bool EnableLeaderboard;
+    bool EnableGOMove;
     
     // Security settings
     bool EnableDebugLog;
@@ -99,6 +100,7 @@ struct DCAddonProtocolConfig
     uint32 MaxMessagesPerSecond;
     uint32 RateLimitAction;
     uint32 ChunkTimeoutMs;
+    uint32 MinGOMoveSecurity;
     
     // Version
     std::string ProtocolVersion;
@@ -118,12 +120,14 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableSeasonal    = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Seasonal.Enable", true);
     s_AddonConfig.EnableHinterlandBG= sConfigMgr->GetOption<bool>("DC.AddonProtocol.HinterlandBG.Enable", true);
     s_AddonConfig.EnableLeaderboard = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Leaderboard.Enable", true);
+    s_AddonConfig.EnableGOMove     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
     
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
     s_AddonConfig.MaxMessagesPerSecond  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Messages", 30);
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
     s_AddonConfig.ChunkTimeoutMs        = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.ChunkTimeout", 5000);
+    s_AddonConfig.MinGOMoveSecurity     = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
     
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
@@ -142,6 +146,8 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::SEASONAL, s_AddonConfig.EnableSeasonal);
     router.SetModuleEnabled(DCAddon::Module::HINTERLAND_BG, s_AddonConfig.EnableHinterlandBG);
     router.SetModuleEnabled(DCAddon::Module::LEADERBOARD, s_AddonConfig.EnableLeaderboard);
+    router.SetModuleEnabled(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
+    router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
 }
 
 // ============================================================================

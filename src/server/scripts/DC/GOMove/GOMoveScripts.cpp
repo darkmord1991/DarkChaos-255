@@ -11,19 +11,22 @@ http://rochet2.github.io/
 #include <sstream>
 #include <string>
 #include "Chat.h"
+#include "CommandScript.h"
+#include <cstdlib>
 #include "GameObject.h"
 #include "Language.h"
 #include "Map.h"
-#include "MapManager.h"
+#include "MapMgr.h"
 #include "Object.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Position.h"
-#include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SpellScript.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+
+using namespace Acore::ChatCommands;
 
 class GOMove_commandscript : public CommandScript
 {
@@ -81,17 +84,17 @@ public:
         char* ID_t = strtok((char*)args, " ");
         if (!ID_t)
             return false;
-        uint32 ID = static_cast<uint32>(atoul(ID_t));
+        uint32 ID = static_cast<uint32>(std::strtoul(ID_t, nullptr, 10));
 
         char* cLowguid = strtok(nullptr, " ");
         uint32 lowguid = 0;
         if (cLowguid)
-            lowguid = atoul(cLowguid);
+            lowguid = static_cast<uint32>(std::strtoul(cLowguid, nullptr, 10));
 
         char* ARG_t = strtok(nullptr, " ");
         uint32 ARG = 0;
         if (ARG_t)
-            ARG = static_cast<uint32>(atoul(ARG_t));
+            ARG = static_cast<uint32>(std::strtoul(ARG_t, nullptr, 10));
 
         WorldSession* session = handler->GetSession();
         if (!session)
@@ -122,7 +125,7 @@ public:
                     {
                         // stop flight if need
                         if (player->IsInFlight())
-                            player->FinishTaxiFlight();
+                            player->CleanupAfterTaxiFlight();
                         else
                             player->SaveRecallPosition(); // save only in non-flight case
                         player->TeleportTo(target->GetMapId(), x, y, z, o);
@@ -271,7 +274,7 @@ class GOMove_player_track : public PlayerScript
 public:
     GOMove_player_track() : PlayerScript("GOMove_player_track") { }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         GOMove::Store.SpawnQueRem(player->GetGUID());
     }

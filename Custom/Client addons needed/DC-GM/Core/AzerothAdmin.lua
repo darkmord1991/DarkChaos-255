@@ -552,6 +552,7 @@ function AzerothAdmin:HideAllGroups()
   FrameLib:HandleGroup("misc", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("log", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("who", function(frame) frame:Hide() end)
+  FrameLib:HandleGroup("dc", function(frame) frame:Hide() end)
 end
 
 --[[function WaitLoop(seconds)
@@ -2738,7 +2739,7 @@ local function CreateMinimapButton()
     local AzerothAdminLDB = ldb:NewDataObject("AzerothAdmin", {
         type = "launcher",
         text = "AzerothAdmin",
-        icon = "Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon",
+        icon = "Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon",
         OnClick = function(self, button)
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
@@ -2772,9 +2773,15 @@ else
 
     -- Set the minimap button icon
     local buttonIcon = minimapButton:CreateTexture(nil, "BACKGROUND")
-    buttonIcon:SetTexture("Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon")
+    buttonIcon:SetTexture("Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon")
     buttonIcon:SetSize(20, 20)
     buttonIcon:SetPoint("CENTER")
+
+    -- Add GM text overlay
+    local buttonText = minimapButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    buttonText:SetPoint("CENTER", 0, 0)
+    buttonText:SetText("GM")
+    buttonText:SetTextColor(1, 0.82, 0) -- Gold color
 
     -- Set the minimap button position (fixed)
     minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - (80 * cos(45)), (80 * sin(45)) - 52)

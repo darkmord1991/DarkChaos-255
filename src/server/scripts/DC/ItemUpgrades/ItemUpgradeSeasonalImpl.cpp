@@ -21,6 +21,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstdlib>
 
 using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
@@ -566,7 +567,7 @@ public:
 
         uint32 limit = 10;
         if (*args)
-            limit = atoi(args);
+            limit = static_cast<uint32>(std::strtoul(args, nullptr, 10));
 
         HistoryManagerImpl historyMgr;
         auto history = historyMgr.GetPlayerHistory(player->GetGUID().GetCounter(), limit);
@@ -598,7 +599,7 @@ public:
             return false;
         }
 
-        uint32 new_season_id = atoi(args);
+        uint32 new_season_id = static_cast<uint32>(std::strtoul(args, nullptr, 10));
 
         handler->PSendSysMessage("Starting global season reset to Season %u...", new_season_id);
 
