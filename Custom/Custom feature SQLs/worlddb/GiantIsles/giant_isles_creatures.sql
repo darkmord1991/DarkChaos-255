@@ -1140,4 +1140,4 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 400324) AND (`Idx` IN (0));
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (400324, 0, 23278, 2, 1, 12340);
-
+UPDATE `creature_template_addon` SET `visibilityDistanceType` = 4 WHERE (`entry` = 400324);

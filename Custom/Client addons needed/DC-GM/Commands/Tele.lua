@@ -109,7 +109,7 @@ function SubzoneScrollUpdate()
       if lineplusoffset <= subzoneCount then
         local teleobj = TeleTable[lineplusoffset]
         _G["ma_SubzoneScrollBarEntry"..line]:SetText(teleobj.name)
-        _G["ma_SubzoneScrollBarEntry"..line]:SetScript("OnClick", function() AzerothAdmin:ChatMsg(teleobj.command) end)
+        _G["ma_SubzoneScrollBarEntry"..line]:SetScript("OnClick", function() SendChatMessage(teleobj.command, "SAY") end)
         _G["ma_SubzoneScrollBarEntry"..line]:SetScript("OnEnter", function() cont = AzerothAdmin.db.char.selectedCont end)
         _G["ma_SubzoneScrollBarEntry"..line]:SetScript("OnLeave", function() cont = AzerothAdmin.db.char.selectedCont end)
         _G["ma_SubzoneScrollBarEntry"..line]:Enable()

@@ -28,6 +28,7 @@
 #include "MotionMaster.h"
 #include "MovementTypedefs.h"
 #include "WaypointMgr.h"
+#include "MoveSplineInit.h"
 #include "GameObject.h"
 #include "Log.h"
 #include "ScriptedCreature.h"
@@ -731,12 +732,10 @@ public:
             {
                 // Build message without printf-style percent placeholders to avoid
                 // client/server formatting issues leaving literal % sequences.
-                std::string msg = "Direct hit! ";
-                msg += std::to_string(HITS_REQUIRED - _hitCount);
-                msg += " more hit";
-                if ((HITS_REQUIRED - _hitCount) > 1)
-                    msg += "s";
-                msg += " to sink the ship!";
+                // Build color-coded message and whisper to the player's nearest cannon
+                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!",
+                    HITS_REQUIRED - _hitCount,
+                    (HITS_REQUIRED - _hitCount) > 1 ? "s" : "");
 
                 if (Creature* cannon = me->FindNearestCreature(NPC_COASTAL_CANNON, 200.0f))
                     cannon->Whisper(msg.c_str(), LANG_UNIVERSAL, player);
@@ -811,18 +810,48 @@ public:
                         me->GetMotionMaster()->Clear();
                         
                         // Define a smooth patrol path
-                        std::vector<G3D::Vector3> path;
-                        path.push_back(G3D::Vector3(5835.31f, 1738.56f, -2.14f));
-                        path.push_back(G3D::Vector3(5860.0f, 1750.0f, -2.14f));
-                        path.push_back(G3D::Vector3(5900.0f, 1740.0f, -2.14f));
-                        path.push_back(G3D::Vector3(5920.0f, 1700.0f, -2.14f));
-                        path.push_back(G3D::Vector3(5900.0f, 1660.0f, -2.14f));
-                        path.push_back(G3D::Vector3(5860.0f, 1670.0f, -2.14f));
-                        path.push_back(G3D::Vector3(5835.31f, 1738.56f, -2.14f));
+                        Movement::PointsArray path;
+                        auto appendPoint = [&path](float x, float y, float z)
+                        {
+                            if (!path.empty())
+                            {
+                                G3D::Vector3 const& last = path.back();
+                                float dx = last.x - x;
+                                float dy = last.y - y;
+                                float dz = last.z - z;
+                                constexpr float kDuplicateEpsilonSq = 0.0625f; // ~0.25 units tolerance
+                                if ((dx * dx + dy * dy + dz * dz) < kDuplicateEpsilonSq)
+                                    return;
+                            }
+                            path.emplace_back(x, y, z);
+                        };
+
+                        appendPoint(5835.31f, 1738.56f, -2.14f);
+                        appendPoint(5860.0f, 1750.0f, -2.14f);
+                        appendPoint(5900.0f, 1740.0f, -2.14f);
+                        appendPoint(5920.0f, 1700.0f, -2.14f);
+                        appendPoint(5900.0f, 1660.0f, -2.14f);
+                        appendPoint(5860.0f, 1670.0f, -2.14f);
+                        appendPoint(5835.31f, 1738.56f, -2.14f);
 
                         // MoveSplinePath(path, cyclic, catmullrom)
                         // Note: Passing address of local vector is safe as MotionMaster copies the points
-                        me->GetMotionMaster()->MoveSplinePath(&path, true, true);
+                        // Use MoveSplineInit to configure cyclic + smooth interpolation
+                        if (path.size() >= 2)
+                        {
+                            Movement::MoveSplineInit init(me);
+                            init.MovebyPath(path);
+                            init.SetCyclic();
+                            init.SetSmooth();
+                            init.SetVelocity(3.0f);
+                            init.Launch();
+                        }
+                        else
+                        {
+                            // If there are not enough points for spline, fallback to simple point
+                            if (!path.empty())
+                                me->GetMotionMaster()->MovePoint(0, path.back().x, path.back().y, path.back().z, FORCED_MOVEMENT_NONE, 3.0f, false);
+                        }
                         break;
                     }
                     default:
