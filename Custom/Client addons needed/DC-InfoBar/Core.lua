@@ -217,8 +217,86 @@ function DCInfoBar:SetupServerCommunication()
     end)
     
     -- We'll also hook into DCMythicPlusHUD if available for affix data
+    -- Event updates (legacy path via GRPF module)
+    if DC.RegisterJSONHandler then
+        DC:RegisterJSONHandler("GRPF", 0x70, function(data)
+            DCInfoBar:HandleEventData(data)
+        end)
+
+        -- Dedicated EVENTS module feed (preferred)
+        DC:RegisterJSONHandler("EVNT", 0x10, function(data) -- SMSG_EVENT_UPDATE
+            DCInfoBar:HandleEventData(data)
+        end)
+
+        DC:RegisterJSONHandler("EVNT", 0x12, function(data) -- SMSG_EVENT_REMOVE
+            DCInfoBar:HandleEventRemove(data)
+        end)
+        
+        self:Debug("Registered JSON handlers for events")
+    else
+        self:Debug("Warning: RegisterJSONHandler not available in DCAddonProtocol")
+    end
     
     return true
+end
+
+-- Handle event JSON payload from server and update serverData.events
+function DCInfoBar:HandleEventData(data)
+    if not data then return end
+
+    self.serverData.events = self.serverData.events or {}
+    local events = self.serverData.events
+
+    local eventId = data["eventId"] or data["id"] or 0
+    local record = {
+        id = eventId,
+        name = data["name"] or "Event",
+        zone = data["zone"] or data["zoneName"] or (data["mapId"] and ("Map " .. tostring(data["mapId"]))) or "Unknown",
+        type = data["type"] or "event",
+        state = data["state"] or data["status"] or "active",
+        active = data["active"] ~= false,
+        wave = data["wave"] or 0,
+        maxWaves = data["maxWaves"] or 4,
+        enemiesRemaining = data["enemiesRemaining"] or nil,
+        timeRemaining = data["timeRemaining"] or nil,
+        lane = data["lane"] or nil,
+        reason = data["reason"],
+    }
+
+    local updated = false
+    for index, existing in ipairs(events) do
+        if existing.id == record.id and record.id ~= 0 then
+            events[index] = record
+            updated = true
+            break
+        end
+    end
+
+    if not updated then
+        table.insert(events, record)
+    end
+end
+
+function DCInfoBar:HandleEventRemove(data)
+    self.serverData.events = self.serverData.events or {}
+    local events = self.serverData.events
+
+    if not data then
+        wipe(events)
+        return
+    end
+
+    local targetId = data["eventId"] or data["id"]
+    if not targetId then
+        wipe(events)
+        return
+    end
+
+    for index = #events, 1, -1 do
+        if events[index].id == targetId then
+            table.remove(events, index)
+        end
+    end
 end
 
 function DCInfoBar:RequestServerData()
@@ -254,6 +332,21 @@ function DCInfoBar:RequestServerData()
     DC:Request("PRES", 0x01, {})
 end
 
+-- Convenience getters for other addons/scripts to query current season token values
+function DCInfoBar:GetWeeklyTokens()
+    if self.serverData and self.serverData.season then
+        return self.serverData.season.weeklyTokens or 0
+    end
+    return 0
+end
+
+function DCInfoBar:GetInventoryTokens()
+    if self.serverData and self.serverData.season then
+        return self.serverData.season.totalTokens or 0
+    end
+    return 0
+end
+
 -- Handle season progress data (SMSG 0x12)
 function DCInfoBar:HandleSeasonProgressData(data)
     if not data then return end
@@ -264,17 +357,16 @@ function DCInfoBar:HandleSeasonProgressData(data)
     if data.seasonId or data.id then
         season.id = data.seasonId or data.id
     end
-    if data.tokens then
-        season.weeklyTokens = data.tokens
-    end
+    -- Prefer explicit weeklyTokens when provided, fall back to tokens only if weekly not present
     if data.weeklyTokens then
         season.weeklyTokens = data.weeklyTokens
-    end
-    if data.essence then
-        season.weeklyEssence = data.essence
+    elseif data.tokens then
+        season.weeklyTokens = data.tokens
     end
     if data.weeklyEssence then
         season.weeklyEssence = data.weeklyEssence
+    elseif data.essence then
+        season.weeklyEssence = data.essence
     end
     if data.tokenCap then
         season.weeklyCap = data.tokenCap
@@ -282,7 +374,10 @@ function DCInfoBar:HandleSeasonProgressData(data)
     if data.essenceCap then
         season.essenceCap = data.essenceCap
     end
-    if data.totalTokens then
+    -- Use `tokens` as the player's inventory total; `totalTokens` may be used for all-time totals
+    if data.tokens then
+        season.totalTokens = data.tokens
+    elseif data.totalTokens then
         season.totalTokens = data.totalTokens
     end
     
@@ -301,7 +396,10 @@ function DCInfoBar:HandleSeasonProgressData(data)
         self.plugins["DCInfoBar_Season"]:OnServerData(season)
     end
     
-    self:Debug("Season progress data received")
+    -- Print debug values for quick verification in the chat (when debug mode enabled)
+    self:Debug(string.format("HandleSeasonProgressData: seasonId=%d weeklyTokens=%d totalTokens=%d weeklyCap=%d", 
+        season.id or 0, season.weeklyTokens or 0, season.totalTokens or 0, season.weeklyCap or 0))
+    self:Debug('Full payload: ' .. (type(data) == "table" and (data.weeklyTokens or data.tokens or 0) or "(no-data)"))
 end
 
 -- Handle incoming season data
@@ -315,7 +413,7 @@ function DCInfoBar:HandleSeasonData(data)
         weeklyCap = data.weeklyCap or data.tokenCap or 1000,
         weeklyEssence = data.weeklyEssence or 0,
         essenceCap = data.essenceCap or 1000,
-        totalTokens = data.totalTokens or 0,
+        totalTokens = data.tokens or data.totalTokens or 0,
         endsIn = data.endsIn or 0,
         weeklyReset = data.weeklyReset or 0,
     }
@@ -541,6 +639,50 @@ function DCInfoBar:SetupSlashCommands()
         elseif cmd == "refresh" then
             self:RequestServerData()
             self:Print("Refreshing server data...")
+        elseif cmd == "testevent" then
+            -- Test event display
+            self:Print("Injecting test event...")
+            self:HandleEventData({
+                id = 999,
+                eventId = 999,
+                name = "Test Invasion",
+                zone = "Giant Isles",
+                type = "invasion",
+                state = "active",
+                active = true,
+                wave = 2,
+                maxWaves = 4,
+                enemiesRemaining = 15,
+                timeRemaining = 300
+            })
+            self:Print("Event count: " .. #(self.serverData.events or {}))
+        elseif cmd == "events" then
+            local events = self.serverData.events or {}
+            self:Print("Active events: " .. #events)
+            for i, event in ipairs(events) do
+                self:Print(string.format("  %d: %s (%s) - %s", i, event.name, event.zone, event.state))
+            end
+        elseif cmd == "testseason" then
+            -- Inject a season progress payload to test UI updates
+            local a, b, c = string.match(msg, "testseason%s+(%d+)%s*(%d*)%s*(%d*)")
+            local weekly = tonumber(a) or tonumber(b) or 0
+            local totalT = tonumber(b) or tonumber(c) or 0
+            local id = tonumber(c) or 1
+            if not weekly then weekly = 0 end
+            local payload = {
+                seasonId = id,
+                tokens = totalT,
+                weeklyTokens = weekly,
+                tokenCap = 1000,
+                essence = 0,
+                weeklyEssence = 0,
+                essenceCap = 1000
+            }
+            self:HandleSeasonProgressData(payload)
+            self:Print("Injected test season payload: weeklyTokens=" .. tostring(payload.weeklyTokens) .. ", totalTokens=" .. tostring(payload.tokens))
+        elseif cmd == "showseason" then
+            local s = self.serverData.season or {}
+            self:Print(string.format("Season ID: %s, Name: %s, weeklyTokens: %s, tokens: %s, weeklyCap: %s, essence: %s", tostring(s.id or 0), tostring(s.name or "Unknown"), tostring(s.weeklyTokens or 0), tostring(s.totalTokens or 0), tostring(s.weeklyCap or 0), tostring(s.weeklyEssence or 0)))
         else
             self:Print("Commands:")
             self:Print("  /infobar - Open options")
@@ -548,6 +690,8 @@ function DCInfoBar:SetupSlashCommands()
             self:Print("  /infobar reset - Reset to defaults")
             self:Print("  /infobar debug - Toggle debug mode")
             self:Print("  /infobar refresh - Refresh server data")
+            self:Print("  /infobar testevent - Inject test event")
+            self:Print("  /infobar events - List current events")
         end
     end
 end

@@ -95,6 +95,7 @@ struct DCAddonProtocolConfig
     bool EnableGOMove;
     bool EnableGroupFinder;
     bool EnableHotspot;
+    bool EnableEvents;
     
     // Security settings
     bool EnableDebugLog;
@@ -125,6 +126,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableGOMove     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
     s_AddonConfig.EnableGroupFinder = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GroupFinder.Enable", true);
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
+    s_AddonConfig.EnableEvents      = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Events.Enable", true);
     
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
@@ -153,6 +155,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
     router.SetModuleEnabled(DCAddon::Module::GROUP_FINDER, s_AddonConfig.EnableGroupFinder);
     router.SetModuleEnabled(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
+    router.SetModuleEnabled(DCAddon::Module::EVENTS, s_AddonConfig.EnableEvents);
     router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
 }
 
@@ -717,6 +720,7 @@ public:
         LOG_INFO("dc.addon", "  Seasonal:    {}", s_AddonConfig.EnableSeasonal ? "Yes" : "No");
         LOG_INFO("dc.addon", "  Hinterland:  {}", s_AddonConfig.EnableHinterlandBG ? "Yes" : "No");
         LOG_INFO("dc.addon", "  Leaderboard: {}", s_AddonConfig.EnableLeaderboard ? "Yes" : "No");
+        LOG_INFO("dc.addon", "  Events:      {}", s_AddonConfig.EnableEvents ? "Yes" : "No");
         LOG_INFO("dc.addon", "  DB Logging:  {}", s_AddonConfig.EnableProtocolLogging ? "Yes" : "No");
         LOG_INFO("dc.addon", "===========================================");
     }

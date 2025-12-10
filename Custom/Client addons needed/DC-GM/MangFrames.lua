@@ -38,7 +38,14 @@ function MangAdmin:CreateFrames()
   self:CreateNpcSection()
   self:CreateGOSection()
   self:CreateWhoSection()
-  self:CreateDCSection()
+  
+  if self.CreateDCTeleSection then
+      self:CreateDCTeleSection()
+  end
+
+  if self.CreateDCSection then
+      self:CreateDCSection()
+  end
 
 
   --FrameLib:HandleGroup("bg", function(frame) frame:Hide() end)

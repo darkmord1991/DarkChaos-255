@@ -34,6 +34,7 @@ DC|MODULE|OPCODE|DATA1|DATA2|...
 | Prestige | `PRES` | Prestige/rebirth system |
 | Seasonal | `SEAS` | Seasonal progression |
 | Hotspot | `SPOT` | XP bonus zones |
+| Events | `EVNT` | Global event feed (invasions, rifts, etc.) |
 
 ## Architecture
 
@@ -146,12 +147,17 @@ DC.AddonProtocol.MythicPlus.Enable = 1
 DC.AddonProtocol.Prestige.Enable = 1
 DC.AddonProtocol.Seasonal.Enable = 1
 DC.AddonProtocol.HinterlandBG.Enable = 1
+DC.AddonProtocol.Events.Enable = 1
 
 # Debug & rate limiting
 DC.AddonProtocol.Debug.Enable = 0
 DC.AddonProtocol.RateLimit.Messages = 30
 DC.AddonProtocol.RateLimit.Action = 0  # 0=drop, 1=kick, 2=mute
 DC.AddonProtocol.ChunkTimeout = 5000
+
+### Events module toggle
+
+`DC.AddonProtocol.Events.Enable` gates the `EVNT` module that streams dynamic world events (for example Giant Isles invasions) to DC addons. When enabled, scripts such as `dc_giant_isles_invasion.cpp` publish JSON payloads (`SMSG_EVENT_UPDATE`, `SMSG_EVENT_SPAWN`, `SMSG_EVENT_REMOVE`) and DC-InfoBar consumes them via its InfoBar feed. Disable this if you run without the DC-InfoBar client or do not want live world-event broadcasts.
 ```
 
 ## Coexistence with AIO

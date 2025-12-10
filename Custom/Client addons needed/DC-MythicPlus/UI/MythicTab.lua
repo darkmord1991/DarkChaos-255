@@ -1415,6 +1415,13 @@ function GF:RequestKeystoneInfo()
     if DC and DC.GroupFinder then
         DC.GroupFinder.GetKeystoneInfo()
     end
+    -- Also scan our local inventory for keystone immediately
+    local namespace = rawget(_G, "DCMythicPlusHUD")
+    if namespace and type(namespace) == "table" and type(namespace.ScanInventoryForKeystone) == "function" then
+        namespace.ScanInventoryForKeystone()
+    else
+        if ScanInventoryForKeystone then ScanInventoryForKeystone() end
+    end
 end
 
 function GF:UpdateKeystoneDisplay(data)
@@ -1423,10 +1430,26 @@ function GF:UpdateKeystoneDisplay(data)
     local panel = self.MythicKeystonePanel
     
     -- Handle keystone info (server sends keystoneDungeonName, keystoneLevel, hasKeystone)
-    if data.hasKeystone then
-        local dungeonName = data.keystoneDungeonName or data.dungeon or "Unknown"
-        local keystoneLevel = data.keystoneLevel or data.level or 0
-        
+    local namespace = rawget(_G, "DCMythicPlusHUD") or {}
+    data = data or (namespace and namespace.serverKeystone) or nil
+    local invKey = (namespace and namespace.inventoryKeystone) or nil
+    local hasKey = false
+    local keystoneDungeon = nil
+    local keystoneLevel = 0
+    if type(data) == "table" and data.hasKeystone then
+        hasKey = true
+        keystoneDungeon = data.keystoneDungeonName or data.dungeon
+        keystoneLevel = data.keystoneLevel or data.level or 0
+    end
+    -- If server doesn't indicate a key but we find one in inventory, use that
+    if (not hasKey) and invKey and invKey.hasKey then
+        hasKey = true
+        keystoneDungeon = keystoneDungeon or invKey.dungeonName
+        keystoneLevel = keystoneLevel or invKey.level or 0
+        GF.Print("Using inventory keystone fallback: +" .. tostring(keystoneLevel) .. " " .. tostring(keystoneDungeon))
+    end
+    if hasKey then
+        local dungeonName = keystoneDungeon or "Unknown"
         panel.keystoneDungeon:SetText("Dungeon: |cff32c4ff" .. dungeonName .. "|r")
         panel.keystoneLevel:SetText(string.format("Level: |cff32c4ff+%d|r", keystoneLevel))
         panel.keystoneName:SetText("|cff32c4ffMythic Keystone|r")

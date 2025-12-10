@@ -33,6 +33,7 @@ Core\DropDownStyle.lua
 Data\Models.lua
 Data\DBC.lua
 Data\TeleportTable.lua
+Data\DCTeleports.lua
 Commands\Main.lua
 Commands\Tele.lua
 Commands\Char.lua
@@ -65,4 +66,5 @@ Frames\MangFrames_SectionServer.lua
 Frames\MangFrames_SectionNpc.lua
 Frames\MangFrames_SectionGO.lua
 Frames\MangFrames_SectionWho.lua
+Frames\MangFrames_SectionDCTele.lua
 Frames\MangFrames.lua

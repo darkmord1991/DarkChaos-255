@@ -15,6 +15,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "../MythicPlus/MythicPlusRunManager.h"
+#include "../MythicPlus/MythicPlusConstants.h"
 
 namespace DCAddon
 {
@@ -90,6 +91,21 @@ namespace MythicPlus
             .Add(affixList)
             .Send(player);
     }
+
+    // Send canonical keystone item IDs as JSON list
+    static void SendJsonKeystoneList(Player* player)
+    {
+        JsonValue itemsArr;
+        itemsArr.SetArray();
+        for (uint8 i = 0; i < 19; ++i)
+        {
+            itemsArr.Push(JsonValue(static_cast<int32>(MythicPlusConstants::KEYSTONE_ITEM_IDS[i])));
+        }
+
+        JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEYSTONE_LIST)
+            .Set("items", itemsArr.Encode())
+            .Send(player);
+    }
     
     // Send player's best runs
     static void SendBestRuns(Player* player)
@@ -144,6 +160,12 @@ namespace MythicPlus
     {
         SendBestRuns(player);
     }
+
+    // Handler: Get canonical keystone list
+    static void HandleGetKeystoneList(Player* player, const ParsedMessage& /*msg*/)
+    {
+        SendJsonKeystoneList(player);
+    }
     
     // Register all handlers
     void RegisterHandlers()
@@ -151,6 +173,7 @@ namespace MythicPlus
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_KEY_INFO, HandleGetKeyInfo);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_AFFIXES, HandleGetAffixes);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_BEST_RUNS, HandleGetBestRuns);
+        DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_KEYSTONE_LIST, HandleGetKeystoneList);
         
         LOG_INFO("dc.addon", "Mythic+ module handlers registered");
     }
@@ -359,7 +382,24 @@ namespace MythicPlus
 }  // namespace MythicPlus
 }  // namespace DCAddon
 
+// Player script to auto-push the keystone list on login
+class MythicPlusKeystoneLoginPlayerScript : public PlayerScript
+{
+public:
+    MythicPlusKeystoneLoginPlayerScript() : PlayerScript("MythicPlusKeystoneLoginPlayerScript") {}
+
+    void OnLogin(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+        // Send the canonical keystone list to the player
+        DCAddon::MythicPlus::SendJsonKeystoneList(player);
+    }
+};
+
 void AddSC_dc_addon_mythicplus()
 {
     DCAddon::MythicPlus::RegisterHandlers();
+    // Auto-push keystone list on login for connected players
+    new MythicPlusKeystoneLoginPlayerScript();
 }

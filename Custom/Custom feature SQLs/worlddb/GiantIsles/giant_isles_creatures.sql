@@ -1099,6 +1099,10 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 (400337, 0, 0, 0, 0, 0, 100, 0, 4000, 6000, 0, 0, 11, 29426, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 'Honor Guard - Heroic Strike'),
 (400337, 0, 1, 0, 2, 0, 100, 0, 0, 20, 0, 0, 11, 871, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Honor Guard - Shield Wall');
 
+-- Invasion Leader (Ship Commander)
+INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`scale`,`rank`,`dmgschool`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`trainer_type`,`trainer_spell`,`trainer_class`,`trainer_race`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`DamageModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`mechanic_immune_mask`,`spell_school_immune_mask`,`flags_extra`,`ScriptName`,`VerifiedBuild`) VALUES
+(400338,0,0,0,0,0,'General Rak\'zor','Zandalari Invasion Commander',NULL,0,83,83,2,16,0,1.0,1.0,1.5,3,0,2000,2000,1,1,1,32832,2048,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,'',0,1,100,1,1,1,1,0,0,1,0,0,2,'npc_invasion_leader',12340);
+
 -- ============================================================================
 -- SMART_SCRIPTS - New Creatures (Water & Cave)
 -- ============================================================================
@@ -1141,3 +1145,7 @@ DELETE FROM `creature_template_model` WHERE (`CreatureID` = 400324) AND (`Idx` I
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (400324, 0, 23278, 2, 1, 12340);
 UPDATE `creature_template_addon` SET `visibilityDistanceType` = 4 WHERE (`entry` = 400324);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 400338) AND (`Idx` IN (0));
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(400338, 0, 21899, 1.5, 1, 12340);

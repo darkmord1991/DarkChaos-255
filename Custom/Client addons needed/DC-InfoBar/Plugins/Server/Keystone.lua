@@ -11,12 +11,13 @@ local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
 -- Keystone item IDs (custom DC keystone items)
-local KEYSTONE_ITEM_IDS = {
-    -- Custom keystone items from DC system
-    [60000] = true,  -- Basic keystone
-    [60001] = true,  -- Keystone variant
-    [60002] = true,  -- Higher tier keystone
-    -- Add more as needed
+-- Keystone item IDs: prefer central DC.KEYSTONE_ITEM_IDS, fallback to plugin-local mapping
+local DCproto = rawget(_G, "DCAddonProtocol")
+local DCCentral = rawget(_G, "DCCentral")
+local KEYSTONE_ITEM_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or (DCproto and DCproto.KEYSTONE_ITEM_IDS) or {
+    [60000] = true,
+    [60001] = true,
+    [60002] = true,
 }
 
 -- Dungeon name to abbreviation mapping
@@ -63,9 +64,34 @@ function KeystonePlugin:ScanInventoryForKeystone()
         for slot = 1, numSlots do
             local itemId = GetContainerItemID(bag, slot)
             if itemId then
-                -- Check item name for "Keystone" text
-                local itemName, itemLink = GetItemInfo(itemId)
-                if itemName and string.find(itemName, "Keystone") then
+                -- Fast path: check known keystone item IDs
+                if KEYSTONE_ITEM_IDS[itemId] then
+                    local itemName, itemLink = GetItemInfo(itemId)
+                    -- Extract level and dungeon and continue below
+                    local level = string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)")
+                    local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)")
+                    -- Also check item tooltip for additional info
+                    local tooltipData = self:GetItemTooltipData(bag, slot)
+                    if tooltipData then
+                        level = level or tooltipData.level
+                        dungeonName = dungeonName or tooltipData.dungeon
+                    end
+                    if level then
+                        self._inventoryKeystone = {
+                            hasKey = true,
+                            level = tonumber(level) or 0,
+                            dungeonName = dungeonName or "Unknown",
+                            dungeonAbbrev = DUNGEON_ABBREVS[dungeonName] or self:GenerateAbbrev(dungeonName),
+                            itemLink = itemLink,
+                            bag = bag,
+                            slot = slot,
+                        }
+                        return self._inventoryKeystone
+                    end
+                else
+                    -- Check item name for "Keystone" text
+                    local itemName, itemLink = GetItemInfo(itemId)
+                    if itemName and string.find(itemName, "Keystone") then
                     -- Parse keystone level from item name or tooltip
                     local level = string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)")
                     local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)")
@@ -89,6 +115,7 @@ function KeystonePlugin:ScanInventoryForKeystone()
                         }
                         return self._inventoryKeystone
                     end
+                    end
                 end
             end
         end
@@ -99,11 +126,18 @@ function KeystonePlugin:ScanInventoryForKeystone()
 end
 
 function KeystonePlugin:GetItemTooltipData(bag, slot)
-    -- Create a hidden tooltip to scan item data
-    local tooltip = _G["DCInfoBarKeystoneScanTooltip"]
-    if not tooltip then
-        tooltip = CreateFrame("GameTooltip", "DCInfoBarKeystoneScanTooltip", nil, "GameTooltipTemplate")
-        tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+    -- Prefer shared scan tooltip provided by DC or DCCentral
+    local tooltip
+    if DCproto and type(DCproto.GetScanTooltip) == 'function' then
+        tooltip = DCproto:GetScanTooltip()
+    elseif DCCentral and DCCentral.scanTooltip then
+        tooltip = DCCentral.scanTooltip
+    else
+        tooltip = _G["DCInfoBarKeystoneScanTooltip"]
+        if not tooltip then
+            tooltip = CreateFrame("GameTooltip", "DCInfoBarKeystoneScanTooltip", nil, "GameTooltipTemplate")
+            tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+        end
     end
     
     tooltip:ClearLines()

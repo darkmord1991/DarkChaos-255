@@ -1,10 +1,5 @@
 /*
- * Giant Isles - Zandalari Invasion Event
- * ============================================================================
- * Large-scale defense event where Zandalari trolls assault Seeping Shores
- * Players must defend against waves of invaders
- * 
- * Event Location: Seeping Shores (Area 5010)
+ * Giant Isles - Invasion: Zandalari Incursion
  * Spawn Points:
  *   Middle: X: 5809.59 Y: 1200.97 Z: 7.04 O: 1.94
  *   Right:  X: 5844.46 Y: 1215.58 Z: 10.58 O: 2.29
@@ -27,8 +22,11 @@
 #include "ObjectAccessor.h"
 #include "Chat.h"
 #include "Log.h"
+#include "../AddonExtension/DCAddonNamespace.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include <algorithm>
+#include "Random.h"
+#include <sstream>
 
 // ============================================================================
 // INVASION CONSTANTS
@@ -62,6 +60,7 @@ enum InvasionData
     // Wave 4: Boss Wave
     NPC_WARLORD_ZULMAR          = 400336, // Invasion Commander (boss)
     NPC_ZANDALARI_HONOR_GUARD   = 400337, // Boss guards (4 total)
+    NPC_ZANDALARI_INVASION_LEADER = 400338, // Ship Commander (Announcer)
 
     // Defender NPCs (Friendly)
     NPC_PRIMAL_WARDEN           = 401000, // Basic guard
@@ -132,6 +131,9 @@ enum InvaderYells
     YELL_INVADER_DEATH          = 1,  // Death cry
 };
 
+// Unique event identifier used by DC addon protocol (shared between spawns and status updates)
+constexpr uint32 GIANT_ISLES_INVASION_EVENT_ID = 1405001;
+
 // Spawn coordinates for the three attack points
 struct InvasionSpawnPoint
 {
@@ -139,11 +141,15 @@ struct InvasionSpawnPoint
     std::string name;
 };
 
-const InvasionSpawnPoint SPAWN_POINTS[3] = 
+constexpr uint32 MAX_ACTIVE_INVADERS = 20; // safety cap to avoid uncontrolled buildup
+
+const InvasionSpawnPoint SPAWN_POINTS[5] =
 {
-    { 5809.59f, 1200.97f, 7.04f, 1.94f, "Middle Beach" },
-    { 5844.46f, 1215.58f, 10.58f, 2.29f, "Right Flank" },
-    { 5785.77f, 1203.52f, 2.84f, 1.55f, "Left Flank" }
+    { 5838.9897f, 1180.7533f, 7.560014f, 2.3572648f, "Spawn 1" },
+    { 5809.9420f, 1158.8385f, 6.1723530f, 1.4477761f, "Spawn 2" },
+    { 5783.3540f, 1188.6102f, 2.4203668f, 1.1391146f, "Spawn 3" },
+    { 5766.6455f, 1156.6140f, 1.4760970f, 1.6464609f, "Spawn 4" },
+    { 5814.8574f, 1173.9581f, 7.8875175f, 1.9315608f, "Spawn 5" }
 };
 
 // Target waypoints - where invaders move to (defensive line)
@@ -155,14 +161,12 @@ const InvasionSpawnPoint TARGET_POINTS[3] =
 };
 
 // Defender spawn points (around the beach, facing outward)
-const InvasionSpawnPoint DEFENDER_POINTS[6] =
+const InvasionSpawnPoint DEFENDER_POINTS[4] =
 {
-    { 5809.59f, 1190.97f, 7.04f, 1.94f, "Center Defense" },
-    { 5820.0f, 1195.0f, 8.0f, 2.0f, "Right Center" },
-    { 5799.0f, 1195.0f, 6.0f, 1.8f, "Left Center" },
-    { 5844.46f, 1205.58f, 10.58f, 2.29f, "Right Defense" },
-    { 5785.77f, 1193.52f, 2.84f, 1.55f, "Left Defense" },
-    { 5809.59f, 1185.0f, 7.5f, 1.94f, "Rear Defense" }
+    { 5774.3030f, 1295.2063f, 13.849159f, 4.7393794f, "Defender 1" },
+    { 5787.0960f, 1291.3738f, 14.315049f, 4.3427534f, "Defender 2" },
+    { 5762.5030f, 1285.5364f, 11.072120f, 5.5499110f, "Defender 3" },
+    { 5770.7040f, 1281.0323f, 9.5231530f, 5.6661500f, "Defender 4" }
 };
 
 // ============================================================================
@@ -195,6 +199,10 @@ static giant_isles_invasion* sGiantIslesInvasion = nullptr;
 
 // Helper to avoid circular-forward-declaration issues: call this from AIs
 void GI_TrackPlayerKill(ObjectGuid playerGuid);
+void GI_RegisterSummonedInvader(Creature* creature);
+void GI_MaintainBossGuards(Map* map);
+void GI_BroadcastSpawn(Map* map, Creature* creature, uint8 waveId = 0, int8 laneIndex = -1);
+InvasionPhase GI_GetCurrentPhase();
 
 // ============================================================================
 // INVASION MOB AI - Generic script for tracking player participation
@@ -209,8 +217,21 @@ public:
     {
         npc_invasion_mobAI(Creature* creature) : ScriptedAI(creature) { }
 
+        void Reset() override
+        {
+            CleanupSummons();
+        }
+
+        void JustEngagedWith(Unit* who) override
+        {
+            if (me->GetEntry() == NPC_ZANDALARI_BEAST_TAMER && who)
+                SummonWarRaptors(who);
+        }
+
         void JustDied(Unit* killer) override
         {
+            DespawnSummons();
+
             // Regular invader killed - track single kill for the player
             if (killer)
             {
@@ -223,11 +244,159 @@ public:
                     GI_TrackPlayerKill(player->GetGUID());
             }
         }
+
+    private:
+        std::vector<ObjectGuid> _raptorGuids;
+
+        void CleanupSummons()
+        {
+            if (_raptorGuids.empty())
+                return;
+
+            Map* map = me->GetMap();
+            _raptorGuids.erase(std::remove_if(_raptorGuids.begin(), _raptorGuids.end(), [map](const ObjectGuid& guid)
+            {
+                if (!map)
+                    return true;
+                Creature* summon = map->GetCreature(guid);
+                return !summon || !summon->IsAlive();
+            }), _raptorGuids.end());
+        }
+
+        void DespawnSummons()
+        {
+            if (_raptorGuids.empty())
+                return;
+
+            Map* map = me->GetMap();
+            if (!map)
+            {
+                _raptorGuids.clear();
+                return;
+            }
+
+            for (ObjectGuid guid : _raptorGuids)
+                if (Creature* summon = map->GetCreature(guid))
+                    summon->DespawnOrUnsummon(5s);
+
+            _raptorGuids.clear();
+        }
+
+        void SummonWarRaptors(Unit* target)
+        {
+            CleanupSummons();
+
+            Map* map = me->GetMap();
+            if (!map)
+                return;
+
+            constexpr uint8 maxRaptors = 2;
+            while (_raptorGuids.size() < maxRaptors)
+            {
+                Position spawn = me->GetPosition();
+                spawn.m_positionX += frand(-2.0f, 2.0f);
+                spawn.m_positionY += frand(-2.0f, 2.0f);
+
+                Creature* raptor = nullptr;
+                for (uint8 attempt = 1; attempt <= 3 && !raptor; ++attempt)
+                {
+                    Position attemptPos = spawn;
+                    if (attempt > 1)
+                    {
+                        attemptPos.m_positionX += frand(-0.5f, 0.5f);
+                        attemptPos.m_positionY += frand(-0.5f, 0.5f);
+                    }
+                    raptor = me->SummonCreature(NPC_ZANDALARI_WAR_RAPTOR, attemptPos, TEMPSUMMON_CORPSE_DESPAWN, 10 * IN_MILLISECONDS);
+                    if (raptor)
+                        LOG_WARN("scripts", "Giant Isles Invasion: Beast Tamer raptor spawn attempt {}/3 failed for parent {}", attempt, me->GetGUID().ToString());
+                }
+                        // Use helper to avoid requiring class definition in this AI file
+                        GI_BroadcastSpawn(map, raptor, static_cast<uint8>(GI_GetCurrentPhase()), -1);
+                if (raptor)
+                {
+                    LOG_INFO("scripts", "Giant Isles Invasion: Beast Tamer {} summoned raptor {} at {}", me->GetGUID().ToString(), raptor->GetGUID().ToString(), raptor->GetPosition().ToString());
+                    _raptorGuids.push_back(raptor->GetGUID());
+                    raptor->SetFaction(16);
+                    raptor->SetReactState(REACT_AGGRESSIVE);
+                    if (target)
+                        raptor->AI()->AttackStart(target);
+                    raptor->AI()->DoZoneInCombat();
+                    GI_RegisterSummonedInvader(raptor);
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
     };
 
     CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_invasion_mobAI(creature);
+    }
+};
+
+// ============================================================================
+// INVASION LEADER (Announcer) - General Rak'zor
+// ============================================================================
+
+class npc_invasion_leader : public CreatureScript
+{
+public:
+    npc_invasion_leader() : CreatureScript("npc_invasion_leader") { }
+
+    struct npc_invasion_leaderAI : public ScriptedAI
+    {
+        npc_invasion_leaderAI(Creature* creature) : ScriptedAI(creature) { }
+
+        void Reset() override
+        {
+            me->SetReactState(REACT_PASSIVE);
+            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+        }
+
+        void InitializeAI() override
+        {
+            Reset();
+        }
+
+        // Called by map script to make announcements
+        void DoAnnouncement(uint8 waveId)
+        {
+            switch (waveId)
+            {
+                case 0: // Start / Warning
+                    me->Yell("Warriors of Zandalar! The shores are ours! Leave none alive!", LANG_UNIVERSAL);
+                    me->PlayDirectSound(8856); // Troll Aggro
+                    break;
+                case 1: // Wave 1
+                    me->Yell("Scouts, forward! Mark their positions! Let the slaughter begin!", LANG_UNIVERSAL);
+                    break;
+                case 2: // Wave 2
+                    me->Yell("Berserkers! Crush their defenses! Show them the fury of the Zandalari!", LANG_UNIVERSAL);
+                    break;
+                case 3: // Wave 3
+                    me->Yell("Elites, advance! Bring down their walls with dark voodoo!", LANG_UNIVERSAL);
+                    break;
+                case 4: // Boss
+                    me->Yell("Warlord Zul'mar, the honor is yours! Finish them!", LANG_UNIVERSAL);
+                    break;
+                case 5: // Victory (Players win)
+                    me->Yell("Impossible! Retreat! We will return!", LANG_UNIVERSAL);
+                    me->DespawnOrUnsummon(5s);
+                    break;
+                case 6: // Defeat (Players lose)
+                    me->Yell("Victory for Zandalar! This island is ours!", LANG_UNIVERSAL);
+                    me->DespawnOrUnsummon(10s);
+                    break;
+            }
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_invasion_leaderAI(creature);
     }
 };
 
@@ -342,8 +511,7 @@ public:
                         events.ScheduleEvent(EVENT_COMMANDING_SHOUT, 30s);
                         break;
                     case EVENT_CHECK_GUARDS:
-                        // Check if any guards are still alive, summon more if needed
-                        // TODO: Implement guard check logic
+                        GI_MaintainBossGuards(me->GetMap());
                         events.ScheduleEvent(EVENT_CHECK_GUARDS, 15s);
                         break;
                 }
@@ -367,7 +535,7 @@ class giant_isles_invasion : public WorldMapScript
 {
 public:
     giant_isles_invasion() : WorldMapScript("giant_isles_invasion", MAP_GIANT_ISLES),
-        _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID()
+        _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID(), _bossActivated(false)
     {
         sGiantIslesInvasion = this;
     }
@@ -387,11 +555,20 @@ public:
     InvasionPhase _invasionPhase;
     uint32 _waveTimer;
     uint32 _spawnTimer;
+    uint32 _invaderNudgeTimer;
     uint32 _killCount;
     ObjectGuid _bossGUID;
+    ObjectGuid _leaderGUID; // GUID of the ship commander
     std::vector<ObjectGuid> _defenderGuids;
     std::vector<ObjectGuid> _invaderGuids;
+    std::vector<ObjectGuid> _bossGuardGuids;
     std::map<ObjectGuid, uint32> _participantKills;
+    bool _bossActivated;
+    uint32 _spawnCounter;
+    std::map<ObjectGuid, uint32> _spawnIndex;
+
+    // Maintain boss guards is defined inline below to manage guard AI and respawn
+    // RegisterSummonedInvader is defined inline below as a convenience
 
     void StartInvasion(Player* starter, Map* map)
     {
@@ -405,7 +582,13 @@ public:
         _invasionPhase = INVASION_INACTIVE;  // Will change to WAVE_1 after warning
         _waveTimer = INVASION_WARNING_TIME;
         _spawnTimer = 0;
+        _invaderNudgeTimer = 2 * IN_MILLISECONDS;
         _killCount = 0;
+        _bossGUID.Clear();
+        _leaderGUID.Clear();
+        _bossGuardGuids.clear();
+        _bossActivated = false;
+        _spawnCounter = 0; // reset spawn numbering for clean debugging output
 
         // Dramatic warning announcement
         ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF0000[INVASION WARNING]|r War drums echo across Seeping Shores! The Zandalari fleet approaches!");
@@ -417,14 +600,22 @@ public:
         });
 
         SpawnDefenders(map);
+        SpawnBossSpectators(map);
+        SpawnInvasionLeader(map); // Spawn the announcer
+        
+        // Initial announcement
+        BossWaveComment(0);
+        LeaderAnnounce(0);
+        BroadcastEventStatus(map);
+
         LOG_INFO("scripts", "Giant Isles Invasion: Event starting with 30s warning. Triggered by {}", starter ? starter->GetName() : "System");
     }
 
     void StopInvasion(Map* map)
     {
         CleanupInvasion(map);
+        BroadcastEventRemoval(map, "cancelled");
     }
-
     void OnCreatureKill(Creature* victim)
     {
         if (IsInvasionMob(victim->GetEntry()))
@@ -446,6 +637,22 @@ public:
         ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Victory! The Zandalari invasion has been repelled!");
         RewardParticipants();
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, static_cast<uint32>(GameTime::GetGameTime().count()));
+        if (Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0))
+        {
+            for (const ObjectGuid& guid : _bossGuardGuids)
+                if (Creature* guard = map->GetCreature(guid))
+                    guard->DespawnOrUnsummon(5s);
+            
+            // Leader retreat
+            BossWaveComment(5);
+            LeaderAnnounce(5);
+                BroadcastEventStatus(map, "victory");
+                BroadcastEventRemoval(map, "victory");
+        }
+        _bossGuardGuids.clear();
+        _bossGUID.Clear();
+        _leaderGUID.Clear();
+        _bossActivated = false;
         LOG_INFO("scripts", "Giant Isles Invasion: Event completed successfully");
     }
 
@@ -462,14 +669,30 @@ public:
 
     InvasionPhase GetCurrentPhase() const { return _invasionPhase; }
 
+    uint32 GetActiveInvaderCount(Map* map) const
+    {
+        if (!map)
+            return 0;
+        uint32 count = 0;
+        for (const ObjectGuid& guid : _invaderGuids)
+        {
+            if (Creature* inv = map->GetCreature(guid))
+                if (inv->IsAlive())
+                    ++count;
+        }
+        return count;
+    }
+
     void OnUpdate(Map* map, uint32 diff) override
     {
-        if (_invasionPhase == INVASION_INACTIVE || _invasionPhase == INVASION_VICTORY)
+        // Allow processing during the 30s warning (phase initially INACTIVE) so waves actually start
+        if (_invasionPhase == INVASION_VICTORY)
             return;
 
         // Wave timer - advance wave when time expires
         if (_waveTimer <= diff)
         {
+            LOG_INFO("scripts", "Giant Isles Invasion: Wave timer expired at phase {} (wave state={})", _invasionPhase, sWorldState->getWorldState(WORLD_STATE_INVASION_WAVE));
             AdvanceWave(map);
         }
         else
@@ -486,6 +709,15 @@ public:
             else
                 _spawnTimer -= diff;
         }
+
+        // Periodically re-issue movement/target commands to idle invaders
+        if (_invaderNudgeTimer <= diff)
+        {
+            NudgeIdleInvaders(map);
+            _invaderNudgeTimer = 2 * IN_MILLISECONDS;
+        }
+        else
+            _invaderNudgeTimer -= diff;
 
         // Check if all defenders died - invasion fails
         if (CheckDefendersAlive(map) == 0 && _invasionPhase < INVASION_VICTORY)
@@ -519,6 +751,9 @@ public:
                 // Spawn the first wave batch immediately
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 1");
                 SpawnWaveCreatures(map);
+                BossWaveComment(1);
+                LeaderAnnounce(1);
+                BroadcastEventStatus(map);
                 break;
                 
             case INVASION_WAVE_1:
@@ -531,6 +766,9 @@ public:
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
                 SpawnWaveCreatures(map);
                 SpawnReinforcements(map);
+                BossWaveComment(2);
+                LeaderAnnounce(2);
+                BroadcastEventStatus(map);
                 break;
                 
             case INVASION_WAVE_2:
@@ -543,6 +781,9 @@ public:
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
                 SpawnWaveCreatures(map);
                 SpawnReinforcements(map);
+                BossWaveComment(3);
+                LeaderAnnounce(3);
+                BroadcastEventStatus(map);
                 break;
                 
             case INVASION_WAVE_3:
@@ -552,7 +793,10 @@ public:
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
                 ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8923); });  // Raid warning
-                SpawnBoss(map);
+                ActivateBossWave(map);
+                BossWaveComment(4);
+                LeaderAnnounce(4);
+                BroadcastEventStatus(map);
                 break;
                 
             case INVASION_WAVE_4_BOSS:
@@ -566,16 +810,18 @@ public:
 
     void SpawnDefenders(Map* map)
     {
-        for (uint8 i = 0; i < 6; ++i)
+        constexpr uint8 DEFENDER_POINT_COUNT = static_cast<uint8>(std::size(DEFENDER_POINTS));
+        for (uint8 i = 0; i < DEFENDER_POINT_COUNT; ++i)
         {
             const InvasionSpawnPoint& point = DEFENDER_POINTS[i];
             uint32 entry = NPC_PRIMAL_WARDEN;
             if (i == 0) entry = NPC_PRIMAL_WARDEN_CAPTAIN;
-            else if (i == 3 || i == 4) entry = NPC_PRIMAL_WARDEN_SERGEANT;
-            else if (i == 1 || i == 2) entry = NPC_PRIMAL_WARDEN_MARKSMAN;
+            else if (i == 1 || i == 3) entry = NPC_PRIMAL_WARDEN_MARKSMAN;
+            else if (i == 2) entry = NPC_PRIMAL_WARDEN_SERGEANT;
 
             Position p(point.x, point.y, point.z, point.o);
-            if (Creature* defender = map->SummonCreature(entry, p))
+            Creature* defender = TrySummonCreature(map, entry, p, 3, 1.5f);
+            if (defender)
             {
                 _defenderGuids.push_back(defender->GetGUID());
                 defender->SetFaction(14);  // Monster faction (hostile to invaders who are faction 16)
@@ -587,6 +833,11 @@ public:
                 defender->GetMotionMaster()->MovePoint(0, x, y, p.GetPositionZ());
 
                 LOG_INFO("scripts", "Giant Isles Invasion: Summoned defender entry {} at point {}", entry, i);
+                BroadcastSpawn(map, defender, 0, i);
+            }
+            else
+            {
+                LOG_WARN("scripts", "Giant Isles Invasion: Failed to summon defender entry {} at point {} pos=({}, {}, {}, {})", entry, i, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), p.GetOrientation());
             }
         }
     }
@@ -599,13 +850,15 @@ public:
         {
             float x = spawnPos.GetPositionX() + (i * 5.0f) - 5.0f;
             Position guardPos(x, spawnPos.GetPositionY(), spawnPos.GetPositionZ(), spawnPos.GetOrientation());
-            if (Creature* guard = map->SummonCreature(NPC_PRIMAL_WARDEN, guardPos))
+            Creature* guard = TrySummonCreature(map, NPC_PRIMAL_WARDEN, guardPos, 3, 1.5f);
+            if (guard)
             {
                 _defenderGuids.push_back(guard->GetGUID());
                 guard->SetFaction(14);
                 guard->SetReactState(REACT_AGGRESSIVE);
                 // Run to the front line
                 guard->GetMotionMaster()->MovePoint(0, 5809.59f, 1200.0f, 7.0f);
+                BroadcastSpawn(map, guard, 0, -1);
             }
         }
         ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Reinforcements have arrived!");
@@ -623,84 +876,286 @@ public:
             return;
         }
 
-        // Spawn different NPCs at each spawn point
-        for (uint8 i = 0; i < 3; ++i)
+        // Soft cap: if too many invaders are already active, skip spawning this tick
+        uint32 activeInvaders = GetActiveInvaderCount(map);
+        if (activeInvaders >= MAX_ACTIVE_INVADERS)
         {
-            // Cycle through NPC types for each spawn point
-            uint32 entry = waveEntries[i % waveEntries.size()];
-            
-            const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[i];
-            Position p(spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o);
-            
-            if (Creature* invader = map->SummonCreature(entry, p))
-            {
-                _invaderGuids.push_back(invader->GetGUID());
-                invader->SetFaction(16);
-                
-                // Move towards the defense line
-                const InvasionSpawnPoint& target = TARGET_POINTS[i];
-                invader->GetMotionMaster()->MovePoint(0, target.x, target.y, target.z);
+            LOG_WARN("scripts", "Giant Isles Invasion: Spawn skipped, active invaders {} >= cap {}", activeInvaders, MAX_ACTIVE_INVADERS);
+            return;
+        }
 
-                // Find nearest Primal Warden and attack them
-                if (Creature* defender = GetNearestDefender(invader, map))
-                {
-                    // Only attack if close enough, otherwise keep moving
-                    if (invader->GetDistance2d(defender) < 20.0f)
-                        invader->AI()->AttackStart(defender);
-                }
-                LOG_INFO("scripts", "Giant Isles Invasion: Spawned invader entry {} at {} ({})", 
-                    entry, spawnPoint.name, invader->GetGUID().ToString());
+        uint8 laneMultiplier = GetLaneSpawnMultiplier();
+        if (laneMultiplier == 0)
+            laneMultiplier = 1;
+
+        // Total mobs to spawn = 3 (original lanes) * multiplier, but respect cap
+        uint32 totalMobs = std::min<uint32>(3 * laneMultiplier, MAX_ACTIVE_INVADERS - activeInvaders);
+
+        LOG_INFO("scripts", "Giant Isles Invasion: Wave {} spawns={} lanesMultiplier={} entries={}", _invasionPhase, totalMobs, laneMultiplier, waveEntries.size());
+
+        constexpr uint8 SPAWN_POINT_COUNT = static_cast<uint8>(std::size(SPAWN_POINTS));
+
+        for (uint32 i = 0; i < totalMobs; ++i)
+        {
+            // Pick random spawn point
+            uint8 spawnIdx = urand(0, SPAWN_POINT_COUNT - 1);
+            const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[spawnIdx];
+            
+            // Pick random entry from wave entries
+            uint32 entry = waveEntries[urand(0, waveEntries.size() - 1)];
+
+            Position p(spawnPoint.x + frand(-1.5f, 1.5f), spawnPoint.y + frand(-1.5f, 1.5f), spawnPoint.z, spawnPoint.o);
+
+            Creature* invader = TrySummonCreature(map, entry, p, 3, 1.5f);
+                if (invader)
+            {
+                RegisterInvader(invader);
+                // Pick random target lane (0-2)
+                uint8 targetLane = urand(0, 2);
+
+                // Half of the spawns attack immediately; half wait for the nudge cycle
+                bool delayed = (i % 2) != 0;
+                if (!delayed)
+                    CommandInvader(invader, map, targetLane);
+
+                LOG_INFO("scripts", "Giant Isles Invasion: Spawned invader entry {} at spawn {} target {} delayed={} ({})", entry, spawnIdx, targetLane, delayed, invader->GetGUID().ToString());
+                BroadcastSpawn(map, invader, static_cast<uint8>(_invasionPhase), targetLane);
             }
             else
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Failed to summon invader entry {} at spawn {}", entry, i);
+                LOG_WARN("scripts", "Giant Isles Invasion: Spawn failed for entry {} at spawn {} pos=({}, {}, {}, {})", entry, spawnIdx, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), p.GetOrientation());
             }
         }
     }
 
-    void SpawnBoss(Map* map)
+    void SpawnBossSpectators(Map* map)
     {
-        const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[1];
-        Position p(spawnPoint.x, spawnPoint.y, spawnPoint.z, spawnPoint.o);
-        if (Creature* boss = map->SummonCreature(NPC_WARLORD_ZULMAR, p))
+        if (!map)
+            return;
+
+        Creature* boss = EnsureBossPresence(map);
+        if (!boss)
+            return;
+
+        _bossActivated = false;
+
+        // Boss idle location (spectator spot)
+        Position bossPos(5823.2993f, 1172.1396f, 8.596341f, 2.1467452f);
+
+        if (!boss->IsWithinDist2d(bossPos.GetPositionX(), bossPos.GetPositionY(), 1.0f))
+            boss->NearTeleportTo(bossPos.GetPositionX(), bossPos.GetPositionY(), bossPos.GetPositionZ(), bossPos.GetOrientation());
+        boss->SetHomePosition(bossPos);
+
+        ConfigureBossSpectatorState(boss, true);
+        BroadcastSpawn(map, boss, static_cast<uint8>(_invasionPhase), 1);
+
+        for (const ObjectGuid& guid : _bossGuardGuids)
+            if (Creature* guard = map->GetCreature(guid))
+                guard->DespawnOrUnsummon(1s);
+        _bossGuardGuids.clear();
+
+        const float guardDistance = 3.0f;
+        Position guardPositions[4] =
         {
-            _bossGUID = boss->GetGUID();
-            boss->SetFaction(16);
-            
-            // Boss should attack nearest Primal Warden, not move to waypoint
-            if (Creature* defender = GetNearestDefender(boss, map))
+            { bossPos.GetPositionX(), bossPos.GetPositionY() - guardDistance, bossPos.GetPositionZ(), bossPos.GetOrientation() },
+            { bossPos.GetPositionX(), bossPos.GetPositionY() + guardDistance, bossPos.GetPositionZ(), bossPos.GetOrientation() },
+            { bossPos.GetPositionX() - guardDistance, bossPos.GetPositionY(), bossPos.GetPositionZ(), bossPos.GetOrientation() },
+            { bossPos.GetPositionX() + guardDistance, bossPos.GetPositionY(), bossPos.GetPositionZ(), bossPos.GetOrientation() }
+        };
+
+        for (uint8 i = 0; i < 4; ++i)
+        {
+            Position gp(guardPositions[i].GetPositionX(), guardPositions[i].GetPositionY(), guardPositions[i].GetPositionZ(), guardPositions[i].GetOrientation());
+            Creature* guard = TrySummonCreature(map, NPC_ZANDALARI_HONOR_GUARD, gp, 3, 1.0f);
+            if (guard)
             {
-                boss->AI()->AttackStart(defender);
+                ConfigureBossSpectatorState(guard, true);
+                guard->SetHomePosition(gp);
+                _bossGuardGuids.push_back(guard->GetGUID());
+                BroadcastSpawn(map, guard, static_cast<uint8>(_invasionPhase), 1);
             }
+        }
+    }
 
-            const float guardDistance = 3.0f;
-            Position guardPositions[4] =
-            {
-                { spawnPoint.x, spawnPoint.y - guardDistance, spawnPoint.z, spawnPoint.o },
-                { spawnPoint.x, spawnPoint.y + guardDistance, spawnPoint.z, spawnPoint.o },
-                { spawnPoint.x - guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o },
-                { spawnPoint.x + guardDistance, spawnPoint.y, spawnPoint.z, spawnPoint.o }
-            };
+    void SpawnInvasionLeader(Map* map)
+    {
+        if (!map)
+            return;
 
-            for (uint8 i = 0; i < 4; ++i)
+        // Leader is now spawned manually; find the nearest leader to a valid WorldObject source
+        WorldObject* source = nullptr;
+        Map::PlayerList const& players = map->GetPlayers();
+        if (players.begin() != players.end())
+            source = players.begin()->GetSource();
+        else if (!_bossGUID.IsEmpty())
+            source = map->GetCreature(_bossGUID);
+        else if (!_defenderGuids.empty())
+            source = map->GetCreature(_defenderGuids.front());
+
+        if (!source)
+        {
+            LOG_WARN("scripts", "Giant Isles Invasion: No valid source to find invasion leader on map {}", map->GetId());
+            return;
+        }
+
+        if (Creature* leader = GetClosestCreatureWithEntry(source, NPC_ZANDALARI_INVASION_LEADER, 500.0f))
+        {
+            _leaderGUID = leader->GetGUID();
+            LOG_INFO("scripts", "Giant Isles Invasion: Found existing Invasion Leader at {}", leader->GetPosition().ToString());
+        }
+        else
+        {
+            LOG_WARN("scripts", "Giant Isles Invasion: Could not find Invasion Leader (Entry: {})", NPC_ZANDALARI_INVASION_LEADER);
+        }
+    }
+
+    void LeaderAnnounce(uint8 waveId)
+    {
+        Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+        if (!map || _leaderGUID.IsEmpty())
+            return;
+
+        if (Creature* leader = map->GetCreature(_leaderGUID))
+        {
+            switch (waveId)
             {
-                Position gp(guardPositions[i].GetPositionX(), guardPositions[i].GetPositionY(), guardPositions[i].GetPositionZ(), guardPositions[i].GetOrientation());
-                if (Creature* guard = map->SummonCreature(NPC_ZANDALARI_HONOR_GUARD, gp))
+                case 1: leader->Yell("We have sighted scouts! Wards man your posts!", LANG_UNIVERSAL); break;
+                case 2: leader->Yell("Warriors! Push back the horde and take no prisoners!", LANG_UNIVERSAL); break;
+                case 3: leader->Yell("Elite units incoming! Hold the line and stand firm!", LANG_UNIVERSAL); break;
+                case 4: leader->Yell("The Warlord approaches! All hands to battle stations!", LANG_UNIVERSAL); break;
+                case 5: leader->Yell("They are defeated! Well fought, defenders!", LANG_UNIVERSAL); break;
+                default: leader->Yell("Hold steady! Keep watch for new threats.", LANG_UNIVERSAL); break;
+            }
+        }
+    }
+
+    void ActivateBossWave(Map* map)
+    {
+        if (!map)
+            return;
+
+        Creature* boss = EnsureBossPresence(map);
+        if (!boss)
+        {
+            LOG_ERROR("scripts", "Giant Isles Invasion: Unable to activate boss wave - boss missing");
+            return;
+        }
+
+        _bossActivated = true;
+        ConfigureBossSpectatorState(boss, false);
+        RegisterInvader(boss);
+        CommandInvader(boss, map, 1);
+        // Broadcast boss activation spawn
+        BroadcastSpawn(map, boss, static_cast<uint8>(GetCurrentPhase()), 1);
+
+        for (const ObjectGuid& guid : _bossGuardGuids)
+        {
+            if (Creature* guard = map->GetCreature(guid))
+            {
+                ConfigureBossSpectatorState(guard, false);
+                RegisterInvader(guard);
+                CommandInvader(guard, map, 1);
+                BroadcastSpawn(map, guard, static_cast<uint8>(GetCurrentPhase()), 1);
+            }
+        }
+
+        MaintainBossGuards(map);
+    }
+
+    Creature* EnsureBossPresence(Map* map)
+    {
+        if (!map)
+            return nullptr;
+
+        Creature* boss = !_bossGUID.IsEmpty() ? map->GetCreature(_bossGUID) : nullptr;
+        if (!boss || !boss->IsAlive())
+        {
+            // Boss spawn location
+            Position p(5823.2993f, 1172.1396f, 8.596341f, 2.1467452f);
+            boss = TrySummonCreature(map, NPC_WARLORD_ZULMAR, p, 3, 1.0f);
+            if (boss)
+                _bossGUID = boss->GetGUID();
+            else
+                LOG_WARN("scripts", "Giant Isles Invasion: Boss spawn failed at {}, retries exhausted", p.ToString());
+        }
+        return boss;
+    }
+
+    void ConfigureBossSpectatorState(Creature* creature, bool spectator)
+    {
+        if (!creature)
+            return;
+
+        constexpr uint32 spectatorFlags = UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC;
+        if (spectator)
+        {
+            // Keep the boss hostile (faction 16) but non-attackable while spectating
+            creature->SetFaction(16);
+            creature->SetReactState(REACT_PASSIVE);
+            creature->AttackStop();
+            // Clear the threat list via ThreatMgr; DeleteThreatList was removed/unused.
+            creature->GetThreatMgr().ClearAllThreat();
+            // Also stop combat to ensure spectator state
+            creature->CombatStop();
+            creature->SetFlag(UNIT_FIELD_FLAGS, spectatorFlags);
+            creature->SetWalk(true);
+            creature->GetMotionMaster()->MoveIdle();
+            creature->SetHomePosition(creature->GetPosition());
+        }
+        else
+        {
+            creature->RemoveFlag(UNIT_FIELD_FLAGS, spectatorFlags);
+            creature->SetFaction(16);
+            creature->SetReactState(REACT_AGGRESSIVE);
+        }
+    }
+
+    void BossWaveComment(uint8 waveId)
+    {
+        Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+        if (!map)
+            return;
+
+        // Try to use the Invasion Leader first
+        if (!_leaderGUID.IsEmpty())
+        {
+            if (Creature* leader = map->GetCreature(_leaderGUID))
+            {
+                if (leader->IsAlive())
                 {
-                    _invaderGuids.push_back(guard->GetGUID());
-                    guard->SetFaction(16);
-                    float angle = i * M_PI / 2.0f;
-                    guard->GetMotionMaster()->MoveFollow(boss, guardDistance, angle, MOTION_SLOT_ACTIVE);
-                    if (guard->AI())
-                        guard->AI()->SetGUID(boss->GetGUID(), 0);
-                    
-                    // Guards should also attack defenders
-                    if (Creature* defender = GetNearestDefender(guard, map))
+                    if (npc_invasion_leader::npc_invasion_leaderAI* ai = CAST_AI(npc_invasion_leader::npc_invasion_leaderAI, leader->AI()))
                     {
-                        guard->AI()->AttackStart(defender);
+                        ai->DoAnnouncement(waveId);
+                        return; // Leader handled it
                     }
                 }
             }
+        }
+
+        // Fallback to Boss if Leader is missing (e.g. for Boss Wave specific lines)
+        if (_bossGUID.IsEmpty())
+            return;
+
+        Creature* boss = map->GetCreature(_bossGUID);
+        if (!boss)
+            return;
+
+        switch (waveId)
+        {
+            case 1:
+                boss->Yell("Scouts, measure their strength. I want every weakness exposed!", LANG_UNIVERSAL);
+                break;
+            case 2:
+                boss->Yell("Hah! Warriors, shatter their shields and bring me their heads!", LANG_UNIVERSAL);
+                break;
+            case 3:
+                boss->Yell("Blood Guard, prepare the ritual drums! Their doom draws near.", LANG_UNIVERSAL);
+                break;
+            case 4:
+                boss->Yell("Enough watching. I will end this assault myself!", LANG_UNIVERSAL);
+                break;
+            default:
+                break;
         }
     }
 
@@ -788,8 +1243,18 @@ public:
     {
         _invasionPhase = INVASION_FAILED;
         ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Defeat! The Zandalari have overrun Seeping Shores!");
+        
+            BroadcastEventStatus(map, "failed");
+            BroadcastEventRemoval(map, "failed");
+        BossWaveComment(6);
+
+        BroadcastEventStatus(map);
+
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
         CleanupInvasion(map);
+        _bossGuardGuids.clear();
+        _bossGUID.Clear();
+        _bossActivated = false;
         LOG_INFO("scripts", "Giant Isles Invasion: Event failed");
     }
 
@@ -860,6 +1325,13 @@ public:
         }
         _invaderGuids.clear();
 
+        for (const auto& guid : _bossGuardGuids)
+        {
+            if (Creature* guard = map->GetCreature(guid))
+                guard->DespawnOrUnsummon(5s);
+        }
+        _bossGuardGuids.clear();
+
         for (const auto& guid : _defenderGuids)
         {
             if (Creature* defender = map->GetCreature(guid))
@@ -867,8 +1339,377 @@ public:
         }
         _defenderGuids.clear();
 
+        if (!_leaderGUID.IsEmpty())
+        {
+            if (Creature* leader = map->GetCreature(_leaderGUID))
+                leader->DespawnOrUnsummon(5s);
+            _leaderGUID.Clear();
+        }
+
+        if (!_leaderGUID.IsEmpty())
+        {
+            if (Creature* leader = map->GetCreature(_leaderGUID))
+                leader->DespawnOrUnsummon(10s);
+            _leaderGUID.Clear();
+        }
+
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
         _invasionPhase = INVASION_INACTIVE;
+        _bossGUID.Clear();
+        _bossActivated = false;
+    }
+
+    // Broadcast as CHAT_MSG_ADDON to players on the map (clients can pick this up in addons)
+    void SendInvasionAddon(Player* player, std::string const& message)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_ADDON, LANG_ADDON, player, player, message);
+        player->SendDirectMessage(&data);
+    }
+
+    void BroadcastInvasionAddon(Map* map, std::string const& message)
+    {
+        if (!map)
+            return;
+
+        // Option toggle from config
+        if (!sConfigMgr->GetOption<bool>("Invasion.SendAddonPackets", false))
+            return;
+
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (player && player->IsInWorld() && player->GetSession())
+                SendInvasionAddon(player, message);
+        });
+    }
+
+    void BroadcastSpawn(Map* map, Creature* creature, uint8 waveId = 0, int8 laneIndex = -1)
+    {
+        if (!map || !creature)
+            return;
+
+        // Chat log toggle
+        if (sConfigMgr->GetOption<bool>("Invasion.ChatSpawnMessages", true))
+        {
+            std::ostringstream ss;
+            ss << "[INVASION SPAWN] Entry=" << creature->GetEntry()
+               << " GUID=" << creature->GetGUID().ToString()
+               << " Pos=" << creature->GetPosition().ToString()
+               << " Wave=" << static_cast<int>(waveId)
+               << " Lane=" << static_cast<int>(laneIndex);
+
+            map->DoForAllPlayers([&](Player* player)
+            {
+                if (player && player->GetSession())
+                    ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
+            });
+        }
+
+        // Send addon packet to clients that accept it
+        if (sConfigMgr->GetOption<bool>("Invasion.SendAddonPackets", false))
+        {
+            uint32 spawnNum = 0;
+            auto itr = _spawnIndex.find(creature->GetGUID());
+            if (itr != _spawnIndex.end())
+                spawnNum = itr->second;
+            uint32 activeCount = GetActiveInvaderCount(map);
+
+            DCAddon::JsonMessage msg(DCAddon::Module::EVENTS, DCAddon::Opcode::Events::SMSG_EVENT_SPAWN);
+            msg.Set("eventId", static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID));
+            msg.Set("type", "invasion");
+            msg.Set("name", "Zandalari Invasion");
+            msg.Set("mapId", static_cast<int32>(map->GetId()));
+            msg.Set("entry", static_cast<int32>(creature->GetEntry()));
+            msg.Set("guid", creature->GetGUID().ToString());
+            msg.Set("x", static_cast<double>(creature->GetPositionX()));
+            msg.Set("y", static_cast<double>(creature->GetPositionY()));
+            msg.Set("z", static_cast<double>(creature->GetPositionZ()));
+            msg.Set("wave", static_cast<int32>(waveId));
+            msg.Set("lane", static_cast<int32>(laneIndex));
+            msg.Set("spawnNum", static_cast<int32>(spawnNum));
+            msg.Set("enemiesRemaining", static_cast<int32>(activeCount));
+
+            map->DoForAllPlayers([&](Player* player)
+            {
+                if (player && player->IsInWorld() && player->GetSession())
+                    msg.Send(player);
+            });
+        }
+    }
+
+    // Broadcast event-level JSON status to players (startup / wave change / finish)
+    void BroadcastEventStatus(Map* map, const char* stateOverride = nullptr)
+    {
+        if (!map)
+            return;
+
+        if (!sConfigMgr->GetOption<bool>("Invasion.SendAddonPackets", false))
+            return;
+
+        std::string state;
+        if (stateOverride)
+            state = stateOverride;
+        else
+        {
+            switch (_invasionPhase)
+            {
+                case INVASION_INACTIVE:
+                    state = "warning";
+                    break;
+                case INVASION_VICTORY:
+                    state = "victory";
+                    break;
+                case INVASION_FAILED:
+                    state = "failed";
+                    break;
+                default:
+                    state = "active";
+                    break;
+            }
+        }
+
+        bool isActive = state == "active" || state == "warning";
+
+        DCAddon::JsonMessage msg(DCAddon::Module::EVENTS, DCAddon::Opcode::Events::SMSG_EVENT_UPDATE);
+        msg.Set("eventId", static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID));
+        msg.Set("type", "invasion");
+        msg.Set("name", "Zandalari Invasion");
+        msg.Set("mapId", static_cast<int32>(map->GetId()));
+        msg.Set("zoneId", static_cast<int32>(AREA_SEEPING_SHORES));
+        msg.Set("wave", static_cast<int32>(_invasionPhase));
+        msg.Set("maxWaves", static_cast<int32>(4));
+        msg.Set("enemiesRemaining", static_cast<int32>(GetActiveInvaderCount(map)));
+        msg.Set("timeRemaining", static_cast<int32>(_waveTimer / IN_MILLISECONDS));
+        msg.Set("state", state);
+        msg.Set("active", isActive);
+
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (player && player->IsInWorld() && player->GetSession())
+                msg.Send(player);
+        });
+    }
+
+    void BroadcastEventRemoval(Map* map, const char* reason = "expired")
+    {
+        if (!sConfigMgr->GetOption<bool>("Invasion.SendAddonPackets", false))
+            return;
+
+        if (!map)
+            map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+
+        if (!map)
+            return;
+
+        DCAddon::JsonMessage msg(DCAddon::Module::EVENTS, DCAddon::Opcode::Events::SMSG_EVENT_REMOVE);
+        msg.Set("eventId", static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID));
+        msg.Set("type", "invasion");
+        msg.Set("reason", reason ? reason : "expired");
+
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (player && player->IsInWorld() && player->GetSession())
+                msg.Send(player);
+        });
+    }
+
+    // Try to summon a creature up to `attempts` times with small jitter around position
+    Creature* TrySummonCreature(Map* map, uint32 entry, Position p, uint8 attempts = 3, float jitter = 1.5f, TempSummonType summonType = TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, uint32 despawnTime = 0)
+    {
+        if (!map)
+            return nullptr;
+
+        for (uint8 attempt = 1; attempt <= attempts; ++attempt)
+        {
+            Position attemptPos = p;
+            if (attempt > 1 && jitter > 0.0f)
+            {
+                attemptPos.m_positionX += frand(-jitter, jitter);
+                attemptPos.m_positionY += frand(-jitter, jitter);
+                // Keep Z the same since vertical jitter can cause ground intersection
+            }
+
+            Creature* meSummon = nullptr;
+            if (summonType == TEMPSUMMON_TIMED_OR_DEAD_DESPAWN || despawnTime == 0)
+            {
+                meSummon = map->SummonCreature(entry, attemptPos);
+            }
+            else
+            {
+                // Map::SummonCreature expects SummonPropertiesEntry const* rather than TempSummonType.
+                // We don't currently support custom SummonProperties here, so call the Map overload with nullptr properties
+                // and a duration in milliseconds.
+                meSummon = map->SummonCreature(entry, attemptPos, nullptr, despawnTime);
+            }
+
+            if (meSummon)
+            {
+                if (attempt > 1)
+                    LOG_INFO("scripts", "Giant Isles Invasion: Summon success after {} attempts for entry {} at {}", attempt, entry, attemptPos.ToString());
+                return meSummon;
+            }
+            else
+            {
+                LOG_WARN("scripts", "Giant Isles Invasion: Failed to summon entry {} at {} (attempt {}/{})", entry, attemptPos.ToString(), attempt, attempts);
+            }
+        }
+
+        LOG_ERROR("scripts", "Giant Isles Invasion: All summon attempts failed for entry {} at {}", entry, p.ToString());
+        return nullptr;
+    }
+
+    void MaintainBossGuards(Map* map)
+    {
+        if (!map || _bossGUID.IsEmpty() || !_bossActivated)
+            return;
+
+        Creature* boss = map->GetCreature(_bossGUID);
+        if (!boss || !boss->IsAlive())
+            return;
+
+        _bossGuardGuids.erase(std::remove_if(_bossGuardGuids.begin(), _bossGuardGuids.end(), [map](const ObjectGuid& guid)
+        {
+            Creature* guard = map->GetCreature(guid);
+            return !guard || !guard->IsAlive();
+        }), _bossGuardGuids.end());
+
+        constexpr float guardDistance = 3.0f;
+        while (_bossGuardGuids.size() < 4)
+        {
+            Position spawn = boss->GetPosition();
+            spawn.m_positionX += frand(-guardDistance, guardDistance);
+            spawn.m_positionY += frand(-guardDistance, guardDistance);
+            Creature* guard = TrySummonCreature(map, NPC_ZANDALARI_HONOR_GUARD, spawn, 3, 1.0f);
+            if (guard)
+            {
+            ConfigureBossSpectatorState(guard, false);
+                RegisterInvader(guard);
+                _bossGuardGuids.push_back(guard->GetGUID());
+                float angle = frand(0.0f, 6.283185307f);
+                guard->GetMotionMaster()->MoveFollow(boss, guardDistance, angle, MOTION_SLOT_ACTIVE);
+                CommandInvader(guard, map, 1);
+            }
+            else
+                break;
+        }
+
+        for (const ObjectGuid& guid : _bossGuardGuids)
+        {
+            if (Creature* guard = map->GetCreature(guid))
+            {
+                if (!guard->IsInCombat())
+                {
+                    if (Unit* target = SelectInvasionTarget(guard, map))
+                        guard->AI()->AttackStart(target);
+                }
+            }
+        }
+    }
+
+    void RegisterSummonedInvader(Creature* creature)
+    {
+        RegisterInvader(creature);
+    }
+
+    void RegisterInvader(Creature* creature)
+    {
+        if (!creature)
+            return;
+
+        _invaderGuids.push_back(creature->GetGUID());
+        creature->SetFaction(16);
+        creature->SetReactState(REACT_AGGRESSIVE);
+        // Assign sequential spawn number for this invader
+        _spawnCounter++;
+        _spawnIndex[creature->GetGUID()] = _spawnCounter;
+    }
+
+    void NudgeIdleInvaders(Map* map)
+    {
+        if (!map)
+            return;
+
+        constexpr float reassignRange = 200.0f;
+        for (const auto& guid : _invaderGuids)
+        {
+            Creature* inv = map->GetCreature(guid);
+            if (!inv || !inv->IsAlive())
+                continue;
+
+            if (inv->IsInCombat())
+                continue;
+
+            // If not moving, reissue movement and target
+            CommandInvader(inv, map, urand(0, 2));
+
+            if (Unit* target = SelectInvasionTarget(inv, map))
+            {
+                if (inv->GetDistance(target) < reassignRange)
+                    inv->AI()->AttackStart(target);
+            }
+        }
+    }
+
+    void CommandInvader(Creature* creature, Map* map, int8 laneIndex)
+    {
+        if (!creature || !map)
+            return;
+
+        creature->SetWalk(false);
+        creature->SetHomePosition(creature->GetPosition());
+
+        if (laneIndex >= 0 && laneIndex < 3)
+        {
+            const InvasionSpawnPoint& target = TARGET_POINTS[laneIndex];
+            creature->GetMotionMaster()->MovePoint(laneIndex + 1, target.x, target.y, target.z);
+        }
+
+        if (Unit* targetUnit = SelectInvasionTarget(creature, map))
+            creature->AI()->AttackStart(targetUnit);
+    }
+
+    Unit* SelectInvasionTarget(Creature* seeker, Map* map) const
+    {
+        if (!seeker || !map)
+            return nullptr;
+
+        if (Creature* defender = GetNearestDefender(seeker, map))
+            return defender;
+
+        Player* nearestPlayer = nullptr;
+        float bestDistance = 150.0f;
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (!player || !player->IsAlive())
+                return;
+
+            float dist = seeker->GetDistance(player);
+            if (dist < bestDistance)
+            {
+                bestDistance = dist;
+                nearestPlayer = player;
+            }
+        });
+
+        return nearestPlayer;
+    }
+
+    uint8 GetLaneSpawnMultiplier() const
+    {
+        switch (_invasionPhase)
+        {
+            case INVASION_WAVE_1:
+                return 1;
+            case INVASION_WAVE_2:
+                return 2;
+            case INVASION_WAVE_3:
+                return 3;
+            default:
+                return 1;
+        }
     }
 };
 
@@ -1033,10 +1874,36 @@ void GI_TrackPlayerKill(ObjectGuid playerGuid)
         sGiantIslesInvasion->TrackPlayerKill(playerGuid);
 }
 
+void GI_RegisterSummonedInvader(Creature* creature)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->RegisterSummonedInvader(creature);
+}
+
+void GI_MaintainBossGuards(Map* map)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->MaintainBossGuards(map);
+}
+
+void GI_BroadcastSpawn(Map* map, Creature* creature, uint8 waveId /*= 0*/, int8 laneIndex /*= -1*/)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->BroadcastSpawn(map, creature, waveId, laneIndex);
+}
+
+InvasionPhase GI_GetCurrentPhase()
+{
+    if (sGiantIslesInvasion)
+        return sGiantIslesInvasion->GetCurrentPhase();
+    return INVASION_INACTIVE;
+}
+
 void AddSC_giant_isles_invasion()
 {
     new npc_invasion_horn();
     new npc_invasion_mob();
+    new npc_invasion_leader();
     new npc_invasion_commander();
     new giant_isles_invasion();
     LOG_INFO("scripts", "Giant Isles Invasion: Scripts Registered");

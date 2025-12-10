@@ -234,10 +234,10 @@ public:
         }
 
         // Spawn the ship at first waypoint position
-        float shipX = 5835.31f;
-        float shipY = 1738.56f;
-        float shipZ = -2.14f;
-        float shipO = 4.05f;
+        float shipX = 5948.124f;
+        float shipY = 1763.0355f;
+        float shipZ = -1.4322f;
+        float shipO = 2.186f;
 
         Creature* ship = creature->SummonCreature(NPC_SHIP_HITBOX,
             shipX, shipY, shipZ, shipO,
@@ -363,11 +363,10 @@ public:
             LOG_INFO("scripts.dc", "Giant Isles Cannon: SpawnShipForPlayer called for {}", player->GetName());
 
             // Spawn the ship at first waypoint position
-            // Waypoint path 4003220 starts at (5835.31, 1738.56, -2.14912)
-            float shipX = 5835.31f;  // First waypoint X
-            float shipY = 1738.56f;  // First waypoint Y
-            float shipZ = -2.14f;    // Water level
-            float shipO = 4.05f;     // First waypoint orientation
+            float shipX = 5948.124f;  // First waypoint X
+            float shipY = 1763.0355f; // First waypoint Y
+            float shipZ = -1.4322f;   // Water level
+            float shipO = 2.186f;     // First waypoint orientation
 
             LOG_INFO("scripts.dc", "Giant Isles Cannon: Attempting to spawn ship at ({}, {}, {})", shipX, shipY, shipZ);
 
@@ -811,31 +810,29 @@ public:
                         
                         // Define a smooth patrol path
                         Movement::PointsArray path;
-                        auto appendPoint = [&path](float x, float y, float z)
-                        {
-                            if (!path.empty())
-                            {
-                                G3D::Vector3 const& last = path.back();
-                                float dx = last.x - x;
-                                float dy = last.y - y;
-                                float dz = last.z - z;
-                                constexpr float kDuplicateEpsilonSq = 0.0625f; // ~0.25 units tolerance
-                                if ((dx * dx + dy * dy + dz * dz) < kDuplicateEpsilonSq)
-                                    return;
-                            }
-                            path.emplace_back(x, y, z);
-                        };
+                        
+                        // Path points
+                        path.emplace_back(5948.124f, 1763.0355f, -1.4322f);
+                        path.emplace_back(5930.056f, 1764.0424f, -1.4322f);
+                        path.emplace_back(5905.918f, 1763.6592f, -1.4322f);
+                        path.emplace_back(5859.536f, 1752.5991f, -1.4322f);
+                        path.emplace_back(5831.5186f, 1748.3801f, -1.4322f);
+                        path.emplace_back(5816.903f, 1745.5958f, -1.4322f);
+                        path.emplace_back(5801.9736f, 1730.4703f, -1.4322f);
+                        path.emplace_back(5797.041f, 1706.3877f, -1.4322f);
+                        path.emplace_back(5791.5903f, 1688.3022f, -1.4322f);
+                        path.emplace_back(5786.14f, 1670.2169f, -1.4322f);
+                        path.emplace_back(5777.631f, 1647.6459f, -1.4322f);
+                        path.emplace_back(5774.5176f, 1641.5867f, -1.4322f);
+                        path.emplace_back(5764.3877f, 1628.0089f, -1.4322f);
+                        path.emplace_back(5746.2944f, 1613.2455f, -1.4322f);
+                        path.emplace_back(5732.8594f, 1605.9827f, -1.4322f);
+                        path.emplace_back(5707.597f, 1593.1533f, -1.4322f);
+                        path.emplace_back(5698.5215f, 1588.2218f, -1.4322f);
+                        path.emplace_back(5688.219f, 1578.5726f, -1.4322f);
+                        path.emplace_back(5681.7324f, 1568.8004f, -1.4322f);
+                        path.emplace_back(5675.2266f, 1551.0673f, -1.4322f);
 
-                        appendPoint(5835.31f, 1738.56f, -2.14f);
-                        appendPoint(5860.0f, 1750.0f, -2.14f);
-                        appendPoint(5900.0f, 1740.0f, -2.14f);
-                        appendPoint(5920.0f, 1700.0f, -2.14f);
-                        appendPoint(5900.0f, 1660.0f, -2.14f);
-                        appendPoint(5860.0f, 1670.0f, -2.14f);
-                        appendPoint(5835.31f, 1738.56f, -2.14f);
-
-                        // MoveSplinePath(path, cyclic, catmullrom)
-                        // Note: Passing address of local vector is safe as MotionMaster copies the points
                         // Use MoveSplineInit to configure cyclic + smooth interpolation
                         if (path.size() >= 2)
                         {
@@ -843,14 +840,9 @@ public:
                             init.MovebyPath(path);
                             init.SetCyclic();
                             init.SetSmooth();
-                            init.SetVelocity(3.0f);
+                            init.SetWalk(false);
+                            init.SetVelocity(5.0f);
                             init.Launch();
-                        }
-                        else
-                        {
-                            // If there are not enough points for spline, fallback to simple point
-                            if (!path.empty())
-                                me->GetMotionMaster()->MovePoint(0, path.back().x, path.back().y, path.back().z, FORCED_MOVEMENT_NONE, 3.0f, false);
                         }
                         break;
                     }

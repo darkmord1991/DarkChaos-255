@@ -308,6 +308,107 @@ local function SetFrameVisibility(shouldShow)
     end
 end
 
+-- =====================================================================
+-- Inventory Keystone Detection (fallback)
+-- =====================================================================
+namespace.inventoryKeystone = namespace.inventoryKeystone or nil
+
+local function ScanInventoryForKeystone()
+    -- Scan all bags (0-4) for keystone-like items; try to parse level/dungeon
+    local found = nil
+    -- Determine ID mapping from central DC addon protocol if available (fallback to small hardcoded set)
+    local DCproto = rawget(_G, "DCAddonProtocol")
+    local DCCentral = rawget(_G, "DCCentral")
+    local KEYSTONE_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or (DCproto and DCproto.KEYSTONE_ITEM_IDS) or { [60000] = true, [60001] = true, [60002] = true }
+    for bag = 0, 4 do
+        local numSlots = GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local itemId = GetContainerItemID(bag, slot)
+            if itemId then
+                local itemName, itemLink = GetItemInfo(itemId)
+                -- Fast path: check known keystone item IDs
+                local isKeystoneId = KEYSTONE_IDS[itemId]
+                if isKeystoneId or (itemName and string.find(itemName, "Keystone")) then
+                    -- Attempt to extract level
+                    local level = tonumber((itemName and (string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)"))) or nil) or nil
+                    local dungeon = (itemName and (string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)"))) or nil
+                    -- Fallback to tooltip parsing for more detailed info
+                    local tooltipLevel, tooltipDungeon
+                    -- Reuse a shared tooltip if available (DCCentral / DC addon-protocol), otherwise fallback to namespace local tooltip
+                    local tooltip
+                    if DCproto and type(DCproto.GetScanTooltip) == 'function' then
+                        tooltip = DCproto:GetScanTooltip()
+                    else
+                        tooltip = rawget(_G, "DCScanTooltip")
+                    end
+                    if not tooltip then
+                        if not namespace.keystoneTooltip then
+                            namespace.keystoneTooltip = CreateFrame("GameTooltip", "DCMythicPlusKeystoneScanTooltip", nil, "GameTooltipTemplate")
+                        end
+                        tooltip = namespace.keystoneTooltip
+                    end
+                    tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+                    tooltip:ClearLines()
+                    tooltip:SetBagItem(bag, slot)
+                    for i = 1, tooltip:NumLines() do
+                        local line = _G["DCMythicPlusKeystoneScanTooltipTextLeft" .. i]
+                        if line then
+                            local text = line:GetText()
+                            if text then
+                                local lvl = string.match(text, "Level:?%s*(%d+)") or string.match(text, "%+(%d+)")
+                                if lvl then tooltipLevel = tonumber(lvl) end
+                                local dng = string.match(text, "Dungeon:?%s*(.+)") or string.match(text, "Instance:?%s*(.+)")
+                                if dng then tooltipDungeon = dng end
+                            end
+                        end
+                    end
+                    if not level and tooltipLevel then level = tooltipLevel end
+                    if not dungeon and tooltipDungeon then dungeon = tooltipDungeon end
+                    found = {
+                        hasKey = true,
+                        level = level or 0,
+                        dungeonName = dungeon or "Unknown",
+                        itemLink = itemLink,
+                        bag = bag,
+                        slot = slot,
+                    }
+                    break
+                end
+            end
+        end
+        if found then break end
+    end
+
+    namespace.inventoryKeystone = found
+    if found then
+        Print("Inventory keystone detected: +" .. (found.level or 0) .. " " .. (found.dungeonName or "Unknown"))
+    else
+        Print("No inventory keystone detected")
+    end
+    -- If GroupFinder UI exists, update the keystone panel display immediately
+    if namespace.GroupFinder and type(namespace.GroupFinder.UpdateKeystoneDisplay) == "function" then
+        namespace.GroupFinder:UpdateKeystoneDisplay(found or {})
+    end
+    return found
+end
+
+local scanFrame = CreateFrame("Frame")
+scanFrame:RegisterEvent("BAG_UPDATE")
+scanFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+scanFrame:SetScript("OnEvent", function(self, event, ...)
+    ScanInventoryForKeystone()
+    if event == "PLAYER_ENTERING_WORLD" then
+        -- Request canonical keystone mapping from server to ensure client knows IDs
+        if DC and DC.MythicPlus and type(DC.MythicPlus.GetKeystoneList) == 'function' then
+            DC.MythicPlus.GetKeystoneList()
+        end
+    end
+end)
+
+-- Expose scanner function on namespace for other modules to call
+namespace.ScanInventoryForKeystone = ScanInventoryForKeystone
+
+
 local function ShowIdleState()
     local f = EnsureFrame()
     if not f then
@@ -811,6 +912,8 @@ loader:SetScript("OnEvent", function(self, event)
         BeginRetryLoop()
     else
         RequestServerSnapshot(event or "event")
+        -- Also scan inventory for keystone on startup
+        if ScanInventoryForKeystone then ScanInventoryForKeystone() end
     end
     if event == "PLAYER_ENTERING_WORLD" then
         if activeState then
@@ -984,12 +1087,17 @@ if DC then
     -- SMSG_KEY_INFO (0x10) - Key info response
     DC:RegisterHandler("MPLUS", 0x10, function(...)
         local args = {...}
+        local data = {}
         
         if type(args[1]) == "table" then
             local json = args[1]
-            if json.hasKey then
-                Print("Your key: +" .. (json.level or "?") .. " " .. (json.dungeonName or ""))
-                if json.depleted then
+            data.hasKeystone = json.hasKey or false
+            data.keystoneLevel = json.level or json.keyLevel or 0
+            data.keystoneDungeonName = json.dungeonName or json.dungeon
+            data.depleted = json.depleted
+            if data.hasKeystone then
+                Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
+                if data.depleted then
                     Print("(Depleted)")
                 end
             else
@@ -999,10 +1107,20 @@ if DC then
             -- Pipe-delimited format
             local hasKey, dungeonId, mapName, keyLevel, depleted = args[1], args[2], args[3], args[4], args[5]
             if hasKey == "1" or hasKey == 1 then
-                Print("Your key: +" .. (keyLevel or "?") .. " " .. (mapName or ""))
+                data.hasKeystone = true
+                data.keystoneLevel = tonumber(keyLevel) or 0
+                data.keystoneDungeonName = mapName
+                data.depleted = (depleted == "1" or depleted == 1)
+                Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
             else
+                data.hasKeystone = false
                 Print("No keystone in inventory")
             end
+        end
+        -- Store latest server-provided keystone data and update UI
+        namespace.serverKeystone = data
+        if namespace.GroupFinder and type(namespace.GroupFinder.UpdateKeystoneDisplay) == "function" then
+            namespace.GroupFinder:UpdateKeystoneDisplay(data)
         end
     end)
     

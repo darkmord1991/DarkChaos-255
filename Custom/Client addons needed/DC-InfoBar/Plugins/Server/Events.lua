@@ -22,15 +22,88 @@ local EventsPlugin = {
     rightClickHint = "Show event details",
 }
 
+local EVENT_TYPE_COLORS = {
+    invasion = "ffff5050",
+    rift = "ffa335ee",
+    stampede = "ffffd100",
+}
+
+local DEFAULT_EVENT_COLOR = "ff9d9d9d"
+
+local function GetSetting(key, default)
+    local value = DCInfoBar:GetPluginSetting(EventsPlugin.id, key)
+    if value == nil then
+        return default
+    end
+    return value
+end
+
+local function GetEventColor(event, flashCritical)
+    if flashCritical and event.type == "invasion" then
+        local wave = event.wave or 0
+        local maxWave = event.maxWaves or 0
+        if maxWave > 0 and wave >= maxWave then
+            return "ffff3030"
+        end
+    end
+    return EVENT_TYPE_COLORS[event.type or ""] or DEFAULT_EVENT_COLOR
+end
+
+local function BuildEventLine(event, showZone, showTimer)
+    if not event then
+        return ""
+    end
+
+    local text
+    if event.type == "invasion" then
+        text = string.format("Wave %d/%d", event.wave or 1, event.maxWaves or 4)
+        if event.enemiesRemaining then
+            text = text .. string.format(" (%d)", event.enemiesRemaining)
+        end
+    elseif event.type == "rift" then
+        text = "Rift"
+    elseif event.type == "stampede" then
+        text = "Stampede"
+    else
+        text = event.name or "Event"
+    end
+
+    if showTimer and event.timeRemaining and event.timeRemaining > 0 then
+        text = text .. " " .. DCInfoBar:FormatTime(event.timeRemaining)
+    end
+
+    if showZone and event.zone then
+        text = string.format("%s - %s", event.zone, text)
+    end
+
+    return text
+end
+
 function EventsPlugin:OnUpdate(elapsed)
+    -- Ensure events table exists
+    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
     local events = DCInfoBar.serverData.events
-    local hideWhenNone = DCInfoBar:GetPluginSetting(self.id, "hideWhenNone")
+    local hideWhenNone = GetSetting("hideWhenNone", true)
+    local showZone = GetSetting("showZone", true)
+    local showTimer = GetSetting("showTimer", true)
+    local flashCritical = GetSetting("flashCritical", true)
     
-    if not events or #events == 0 then
+    -- Filter to only active events
+    local activeEvents = {}
+    for _, event in ipairs(events) do
+        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
+            table.insert(activeEvents, event)
+        end
+    end
+    
+    if #activeEvents == 0 then
         if hideWhenNone and self.button then
             self.button:Hide()
         end
-        return "", ""
+        if hideWhenNone then
+            return "", ""
+        end
+        return "", "|cffbbbbbbNo active events|r"
     else
         if self.button and not self.button:IsShown() then
             self.button:Show()
@@ -38,46 +111,46 @@ function EventsPlugin:OnUpdate(elapsed)
     end
     
     -- Show first/most important event
-    local event = events[1]
+    local event = activeEvents[1]
+    local color = GetEventColor(event, flashCritical)
+    local text = BuildEventLine(event, showZone, showTimer)
     
-    if event.type == "invasion" then
-        local text = "Invasion: Wave " .. (event.wave or 1) .. "/" .. (event.maxWaves or 4)
-        return "", "|cffff5050" .. text .. "|r"
-    elseif event.type == "rift" then
-        local text = "Rift: " .. DCInfoBar:FormatTime(event.timeRemaining or 0)
-        return "", "|cffa335ee" .. text .. "|r"
-    elseif event.type == "stampede" then
-        local text = "Stampede: " .. DCInfoBar:FormatTime(event.timeRemaining or 0)
-        return "", "|cffffd100" .. text .. "|r"
-    else
-        return "", event.name or "Event"
-    end
+    return "", "|c" .. color .. text .. "|r"
 end
 
 function EventsPlugin:OnTooltip(tooltip)
     tooltip:AddLine("Zone Events", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
     
+    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
     local events = DCInfoBar.serverData.events
+    local showZone = GetSetting("showZone", true)
+    local showTimer = GetSetting("showTimer", true)
+    local maxEntries = tonumber(GetSetting("maxTooltipEntries", 4)) or 4
+    maxEntries = math.max(1, math.min(10, maxEntries))
     
-    if not events or #events == 0 then
+    -- Filter to only active events
+    local activeEvents = {}
+    for _, event in ipairs(events) do
+        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
+            table.insert(activeEvents, event)
+        end
+    end
+    
+    if #activeEvents == 0 then
         tooltip:AddLine("No active events", 0.7, 0.7, 0.7)
         return
     end
     
-    for _, event in ipairs(events) do
-        tooltip:AddLine(" ")
-        
-        -- Event name with color
-        local nameColor = "ffffff"
-        if event.type == "invasion" then nameColor = "ff5050"
-        elseif event.type == "rift" then nameColor = "a335ee"
-        elseif event.type == "stampede" then nameColor = "ffd100"
+    for index, event in ipairs(activeEvents) do
+        if index > maxEntries then
+            break
         end
+        tooltip:AddLine(" ")
+        local nameColor = GetEventColor(event, GetSetting("flashCritical", true))
+        tooltip:AddLine("|cff" .. nameColor .. (event.name or "Event") .. "|r")
         
-        tooltip:AddLine("|cff" .. nameColor .. event.name .. "|r")
-        
-        if event.zone then
+        if showZone and event.zone then
             tooltip:AddDoubleLine("  Location:", event.zone, 0.7, 0.7, 0.7, 1, 1, 1)
         end
         
@@ -90,26 +163,40 @@ function EventsPlugin:OnTooltip(tooltip)
             end
         end
         
-        if event.timeRemaining and event.timeRemaining > 0 then
+        if showTimer and event.timeRemaining and event.timeRemaining > 0 then
             tooltip:AddDoubleLine("  Time:", DCInfoBar:FormatTime(event.timeRemaining),
                 0.7, 0.7, 0.7, 1, 0.82, 0)
         end
     end
+
+    if #activeEvents > maxEntries then
+        tooltip:AddLine(" ")
+        tooltip:AddLine(string.format("+ %d more events", #activeEvents - maxEntries), 0.6, 0.6, 0.6)
+    end
 end
 
 function EventsPlugin:OnClick(button)
+    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
+    local events = DCInfoBar.serverData.events
+    
+    -- Filter to only active events
+    local activeEvents = {}
+    for _, event in ipairs(events) do
+        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
+            table.insert(activeEvents, event)
+        end
+    end
+    
     if button == "LeftButton" then
         -- Quick join event group
-        local events = DCInfoBar.serverData.events
-        if events and #events > 0 then
-            DCInfoBar:Print("Joining event: " .. events[1].name)
+        if #activeEvents > 0 then
+            DCInfoBar:Print("Joining event: " .. activeEvents[1].name)
             -- Would send join request to server
         end
     elseif button == "RightButton" then
         -- Show event details
-        local events = DCInfoBar.serverData.events
-        if events and #events > 0 then
-            for _, event in ipairs(events) do
+        if #activeEvents > 0 then
+            for _, event in ipairs(activeEvents) do
                 DCInfoBar:Print(event.name .. " - " .. (event.zone or "Unknown location"))
             end
         end
@@ -120,8 +207,33 @@ function EventsPlugin:OnCreateOptions(parent, yOffset)
     local hideCB = DCInfoBar:CreateCheckbox(parent, "Hide when no events active", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "hideWhenNone", checked)
     end, DCInfoBar:GetPluginSetting(self.id, "hideWhenNone") ~= false)
+    yOffset = yOffset - 30
+
+    local showZoneCB = DCInfoBar:CreateCheckbox(parent, "Show zone name in bar", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "showZone", checked)
+    end, GetSetting("showZone", true))
+    yOffset = yOffset - 30
+
+    local showTimerCB = DCInfoBar:CreateCheckbox(parent, "Show timers/countdowns", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "showTimer", checked)
+    end, GetSetting("showTimer", true))
+    yOffset = yOffset - 30
+
+    local flashCB = DCInfoBar:CreateCheckbox(parent, "Highlight critical invasion waves", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "flashCritical", checked)
+    end, GetSetting("flashCritical", true))
+    yOffset = yOffset - 40
+
+    local sliderLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sliderLabel:SetPoint("TOPLEFT", 20, yOffset)
+    sliderLabel:SetText("Max tooltip events:")
     
-    return yOffset - 30
+    local slider = DCInfoBar:CreateSlider(parent, 200, yOffset - 10, 1, 6, GetSetting("maxTooltipEntries", 4), function(value)
+        DCInfoBar:SetPluginSetting(self.id, "maxTooltipEntries", value)
+    end)
+    slider:SetPoint("LEFT", sliderLabel, "RIGHT", 20, 0)
+    
+    return yOffset - 40
 end
 
 -- Register plugin

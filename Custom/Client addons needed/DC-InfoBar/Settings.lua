@@ -72,6 +72,10 @@ local DEFAULTS = {
             priority = 50,
             showLabel = false,
             hideWhenNone = true,
+            showZone = true,
+            showTimer = true,
+            flashCritical = true,
+            maxTooltipEntries = 4,
         },
         ["DCInfoBar_Location"] = {
             enabled = true,

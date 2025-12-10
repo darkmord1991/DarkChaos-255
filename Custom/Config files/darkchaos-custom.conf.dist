@@ -5084,6 +5084,16 @@ DC.AddonProtocol.HinterlandBG.Enable = 1
 #
 DC.AddonProtocol.Leaderboard.Enable = 1
 
+#
+#    DC.AddonProtocol.Events.Enable
+#        Description: Enable DC addon protocol for dynamic world events feed (EVNT module)
+#                     When enabled, scripts like Giant Isles Invasion broadcast live JSON
+#                     updates (spawn, progress, removal) to addons such as DC-InfoBar.
+#                     Disable only if you do not ship the event-aware addons.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Events.Enable = 1
+
 #    DC.AddonProtocol.GOMove.Enable
 #        Description: Enable addon-based GOMove integration (DC-GM addon)
 #        Default:     1 (Enabled)
@@ -5110,6 +5120,37 @@ DC.AddonProtocol.GOMove.MinSecurity = 1
 #                     Default:     2 (SEC_GAMEMASTER) - stronger lock for server-altering commands
 #                     Use 1 to allow moderators as well, 0 to allow all players (not recommended)
 DC.AddonProtocol.GOMove.MinSecurityMove = 2
+
+###########################################################################
+#
+#    SECTION: GIANT ISLES / INVASION
+#
+#    Giant Isles Invasion - Dynamic world event system (Zandalari Invasions)
+#    Provides scheduled/conditional invasions, spawn waves, and JSON addon
+#    broadcasts for clientside consumption (via EVNT module / DC-InfoBar).
+#
+###########################################################################
+
+#
+#    Invasion.ChatSpawnMessages
+#        Description: Emit server chat messages (system chat) whenever invader
+#                     creatures spawn. This is helpful for console logs and
+#                     players without addon support to see spawn activity.
+#        Default:     1 (Enabled)
+#        Env:         AC_INVASION_CHAT_SPAWN_MESSAGES
+#
+Invasion.ChatSpawnMessages = 1
+
+#
+#    Invasion.SendAddonPackets
+#        Description: Send CHAT_MSG_ADDON JSON messages (EVNT module) to clients
+#                     on spawn/updates/complete events. This powers UI features
+#                     in DC-InfoBar and other event-capable addons.
+#        Default:     0 (Disabled - opt-in)
+#        Env:         AC_INVASION_SEND_ADDON_PACKETS
+#
+Invasion.SendAddonPackets = 0
+
 
 #
 #    DC.AddonProtocol.Leaderboard.EntriesPerPage

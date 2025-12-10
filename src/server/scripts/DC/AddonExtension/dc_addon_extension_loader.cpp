@@ -24,6 +24,8 @@ void AddSC_npc_group_finder();
 void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
 
+namespace DCAddon { void AddTeleportScripts(); }
+
 void AddDCAddonExtensionScripts()
 {
     // Core protocol router (must load first)
@@ -41,6 +43,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_welcome();
     AddSC_dc_addon_groupfinder();
     AddSC_DCAddon_GOMove();
+    DCAddon::AddTeleportScripts();
     
     // NPC scripts
     AddSC_npc_group_finder();

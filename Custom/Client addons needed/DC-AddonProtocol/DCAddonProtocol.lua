@@ -118,6 +118,57 @@ DC.ModuleNames = {
     GRPF = "Group Finder",
 }
 
+-- Shared Keystone item IDs mapping for client addons (faster inventory detection)
+-- Default placeholder. If DCCentral exists, prefer the canonical list from it.
+DC.KEYSTONE_ITEM_IDS = {
+    -- Placeholder IDs used in DC: update as needed
+    [60000] = true,
+    [60001] = true,
+    [60002] = true,
+}
+
+-- If DC Central is loaded, prefer its KEYSTONE_ITEM_IDS definition
+local central = rawget(_G, "DCCentral")
+if central and central.KEYSTONE_ITEM_IDS then
+    DC.KEYSTONE_ITEM_IDS = central.KEYSTONE_ITEM_IDS
+end
+
+-- Shared scan tooltip accessor. If DCCentral exposes one (DCScanTooltip), use it; otherwise DC will lazily create a fallback.
+function DC:GetScanTooltip()
+    if self.ScanTooltip and type(self.ScanTooltip) == "table" then
+        return self.ScanTooltip
+    end
+    -- Check for DCCentral provided tooltip first
+    local globalTT = rawget(_G, "DCScanTooltip")
+    if globalTT then
+        self.ScanTooltip = globalTT
+        return self.ScanTooltip
+    end
+    -- Create lazy fallback tooltip if not present
+    if not self.ScanTooltip then
+        local tt = CreateFrame("GameTooltip", "DCScanTooltip", nil, "GameTooltipTemplate")
+        tt:SetOwner(WorldFrame, "ANCHOR_NONE")
+        self.ScanTooltip = tt
+    end
+    return self.ScanTooltip
+end
+
+-- Ensure we link to DCCentral KEYSTONE mapping and shared tooltip if present after addon load
+do
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_LOGIN")
+    f:RegisterEvent("ADDON_LOADED")
+    f:SetScript("OnEvent", function(self, event, arg1)
+        local central = rawget(_G, "DCCentral")
+        if central and central.KEYSTONE_ITEM_IDS then
+            DC.KEYSTONE_ITEM_IDS = central.KEYSTONE_ITEM_IDS
+        end
+        if rawget(_G, "DCScanTooltip") then
+            DC.ScanTooltip = rawget(_G, "DCScanTooltip")
+        end
+    end)
+end
+
 -- Group Finder Opcodes
 DC.GroupFinderOpcodes = {
     -- Client -> Server: Listings
@@ -300,7 +351,34 @@ end
 
 function DC:RegisterHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode)
-    self._handlers[key] = handler
+    if not self._handlers[key] then self._handlers[key] = {} end
+    table.insert(self._handlers[key], handler)
+end
+
+function DC:UnregisterHandler(module, opcode, handler)
+    local key = module .. "_" .. tostring(opcode)
+    local h = self._handlers[key]
+    if not h then return false end
+    -- If specific handler is provided, try to remove it
+    if handler then
+        if type(h) == 'table' then
+            for i = #h, 1, -1 do
+                if h[i] == handler then
+                    table.remove(h, i)
+                end
+            end
+            if #h == 0 then self._handlers[key] = nil end
+            return true
+        elseif h == handler then
+            self._handlers[key] = nil
+            return true
+        else
+            return false
+        end
+    end
+    -- If no specific handler, remove all handlers for this key
+    self._handlers[key] = nil
+    return true
 end
 
 function DC:RegisterErrorHandler(module, handler)
@@ -314,12 +392,37 @@ end
 
 function DC:RegisterJSONHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode) .. "_json"
-    self._handlers[key] = handler
+    if not self._handlers[key] then self._handlers[key] = {} end
+    table.insert(self._handlers[key], handler)
+end
+
+function DC:UnregisterJSONHandler(module, opcode, handler)
+    local key = module .. "_" .. tostring(opcode) .. "_json"
+    local h = self._handlers[key]
+    if not h then return false end
+    if handler then
+        if type(h) == 'table' then
+            for i = #h, 1, -1 do
+                if h[i] == handler then
+                    table.remove(h, i)
+                end
+            end
+            if #h == 0 then self._handlers[key] = nil end
+            return true
+        elseif h == handler then
+            self._handlers[key] = nil
+            return true
+        else
+            return false
+        end
+    end
+    self._handlers[key] = nil
+    return true
 end
 
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local parts = {module, tostring(opcode)}
-    local args = {a1, a2, a3, a4, a5}
+        local args = {a1, a2, a3, a4, a5, nil}
     for i = 1, 5 do
         local v = args[i]
         if v ~= nil then
@@ -580,7 +683,9 @@ DC.Opcode = {
     },
     MPlus = {
         CMSG_GET_KEY_INFO = 0x01,
+        CMSG_GET_KEYSTONE_LIST = 0x04,
         SMSG_KEY_INFO = 0x10,
+        SMSG_KEYSTONE_LIST = 0x17,
     },
     Season = {
         CMSG_GET_CURRENT = 0x01,
@@ -647,6 +752,7 @@ DC.MythicPlus = {
     GetKeyInfo = function() DC:Request("MPLUS", 0x01, {}) end,
     GetAffixes = function() DC:Request("MPLUS", 0x02, {}) end,
     GetBestRuns = function() DC:Request("MPLUS", 0x03, {}) end,
+    GetKeystoneList = function() DC:Request("MPLUS", 0x04, {}) end,
 }
 
 DC.Season = {
@@ -918,19 +1024,35 @@ frame:SetScript("OnEvent", function()
                     local jsonKey = module .. "_" .. opcode .. "_json"
                     local jsonHandler = DC._handlers[jsonKey]
                     if jsonHandler then
-                        if DC._debug then
-                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. jsonKey)
+                        if type(jsonHandler) == 'table' then
+                            if DC._debug then
+                                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler(s) found: " .. jsonKey .. " (" .. tostring(#jsonHandler) .. ")")
+                            end
+                            for _, _h in ipairs(jsonHandler) do
+                                pcall(_h, data, jsonStr)
+                            end
+                        else
+                            if DC._debug then
+                                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. jsonKey)
+                            end
+                            pcall(jsonHandler, data, jsonStr)
                         end
-                        pcall(jsonHandler, data, jsonStr)
                     else
                         -- Fall back to regular handler with decoded data
                         local key = module .. "_" .. opcode
                         local h = DC._handlers[key]
                         if h then 
-                            if DC._debug then
-                                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
+                            if type(h) == 'table' then
+                                if DC._debug then
+                                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler(s) found: " .. key .. " (" .. tostring(#h) .. ")")
+                                end
+                                for _, handler in ipairs(h) do pcall(handler, data) end
+                            else
+                                if DC._debug then
+                                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
+                                end
+                                pcall(h, data)
                             end
-                            pcall(h, data) 
                         elseif DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                         end
@@ -941,14 +1063,18 @@ frame:SetScript("OnEvent", function()
                     
                     local key = module .. "_" .. opcode
                     local h = DC._handlers[key]
-                    if h then 
+                    if type(h) == 'table' then
                         if DC._debug then
-                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler(s) found: " .. key .. " (" .. tostring(#h) .. ")")
+                        end
+                        for _, handler in ipairs(h) do pcall(handler, parts[3], parts[4], parts[5], parts[6], parts[7]) end
+                    else
+                        if DC._debug then
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler found: " .. key)
                         end
                         pcall(h, parts[3], parts[4], parts[5], parts[6], parts[7]) 
-                    elseif DC._debug then
-                        DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                     end
+                    -- handlers already dispatched above
                 end
             end
         end
@@ -992,9 +1118,47 @@ SlashCmdList["DC"] = function(msg)
         DC:Send("CORE", 1, DC.VERSION)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handshake sent")
     elseif cmd == "handlers" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Registered handlers:")
-        for key, _ in pairs(DC._handlers) do
-            DEFAULT_CHAT_FRAME:AddMessage("  - " .. key)
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Registered handlers (key: count):")
+        for key, value in pairs(DC._handlers) do
+            if type(value) == 'table' then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("  - %s: %d", key, #value))
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("  - %s: 1", key))
+            end
+        end
+    elseif cmd == "unregister" then
+        local m = args[2] or ""
+        local oArg = args[3]
+        local o = nil
+        if oArg then
+            o = tonumber(oArg)
+            if not o then
+                -- Try hex 0xNN format
+                local s = string.lower(oArg)
+                if s:match("^0x[0-9a-f]+$") then
+                    o = tonumber(oArg:sub(3), 16)
+                else
+                    o = oArg -- fallback: treat as string opcode
+                end
+            end
+        end
+        local jsonflag = args[4]
+        if m == "" or not o then
+            DEFAULT_CHAT_FRAME:AddMessage("Usage: /dc unregister <MODULE> <OPCODE> [json]")
+        else
+            if jsonflag == "json" then
+                if DC:UnregisterJSONHandler(m, o) then
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("Unregistered JSON handlers for %s:%s", m, tostring(o)))
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("No JSON handlers found for %s:%s", m, tostring(o)))
+                end
+            else
+                if DC:UnregisterHandler(m, o) then
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("Unregistered handlers for %s:%s", m, tostring(o)))
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("No handlers found for %s:%s", m, tostring(o)))
+                end
+            end
         end
     elseif cmd == "panel" or cmd == "settings" or cmd == "config" then
         InterfaceOptionsFrame_OpenToCategory(DC.SettingsPanel)
@@ -1045,7 +1209,8 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc status - Show connection status")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc debug - Toggle debug mode")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc reconnect - Resend handshake")
-        DEFAULT_CHAT_FRAME:AddMessage("  /dc handlers - List registered handlers")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc handlers - List registered handlers (key: count)")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc unregister <MODULE> <OPCODE> [json] - Unregister handlers (use 'json' for JSON handlers)")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc json - Test JSON encode/decode")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc panel - Open settings/debug panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc log - Open request/response log panel")
@@ -1058,7 +1223,13 @@ end
 
 function DC:CountHandlers()
     local count = 0
-    for _ in pairs(self._handlers) do count = count + 1 end
+    for key, value in pairs(self._handlers) do
+        if type(value) == 'table' then
+            count = count + #value
+        else
+            count = count + 1
+        end
+    end
     return count
 end
 
@@ -1446,6 +1617,50 @@ DC:RegisterHandler("CORE", 0x63, function(...)
     else
         -- Pipe-delimited response
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Test Response]|r Server replied: " .. table.concat(args, ", "))
+    end
+end)
+
+-- SMSG_KEYSTONE_LIST: update client-side keystone mapping from server
+DC:RegisterHandler("MPLUS", 0x17, function(data)
+    -- Expect JSON payload: { items = [300313, 300314, ...] }
+    if type(data) ~= 'table' then
+        return
+    end
+    if data.items then
+        -- Support string-encoded arrays (server may send JSON encoded string) and table arrays
+        local itemsTbl = nil
+        if type(data.items) == 'table' then
+            itemsTbl = data.items
+        elseif type(data.items) == 'string' then
+            -- Try to decode JSON string to a table
+            local ok, decoded = pcall(function() return DC:DecodeJSON(data.items) end)
+            if ok and type(decoded) == 'table' then
+                itemsTbl = decoded
+            else
+                -- Fallback: parse comma-separated numbers
+                itemsTbl = {}
+                for num in string.gmatch(data.items, '(%d+)') do
+                    table.insert(itemsTbl, tonumber(num))
+                end
+            end
+        end
+        if itemsTbl and type(itemsTbl) == 'table' then
+        local newMap = {}
+        for _, id in ipairs(data.items) do
+            local num = tonumber(id)
+            if num then
+                newMap[num] = true
+            end
+        end
+        DC.KEYSTONE_ITEM_IDS = newMap
+        -- If the DC central module is present, copy to DCCentral too
+        local DCCentral = rawget(_G, "DCCentral")
+        if DCCentral then
+            DCCentral.KEYSTONE_ITEM_IDS = newMap
+        end
+        if DC._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Keystone ID list updated from server (" .. tostring(#itemsTbl) .. " items)")
+        end
     end
 end)
 

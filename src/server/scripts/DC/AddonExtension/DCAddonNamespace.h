@@ -74,6 +74,8 @@ namespace DCAddon
         constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
         constexpr const char* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
         constexpr const char* GOMOVE        = "GOMV";   // GOMove Object Mover
+        constexpr const char* TELEPORTS     = "TELE";   // Teleport system
+        constexpr const char* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
     }
     
     // ========================================================================
@@ -182,6 +184,7 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_KEY_INFO      = 0x01;
             constexpr uint8 CMSG_GET_AFFIXES       = 0x02;
             constexpr uint8 CMSG_GET_BEST_RUNS     = 0x03;
+            constexpr uint8 CMSG_GET_KEYSTONE_LIST = 0x04;  // Request canonical keystone item IDs
             
             constexpr uint8 SMSG_KEY_INFO          = 0x10;
             constexpr uint8 SMSG_AFFIXES           = 0x11;
@@ -190,6 +193,7 @@ namespace DCAddon
             constexpr uint8 SMSG_RUN_END           = 0x14;
             constexpr uint8 SMSG_TIMER_UPDATE      = 0x15;
             constexpr uint8 SMSG_OBJECTIVE_UPDATE  = 0x16;
+            constexpr uint8 SMSG_KEYSTONE_LIST     = 0x17;  // Server -> Client: JSON list of keystone item IDs
         }
         
         // Prestige opcodes
@@ -346,6 +350,24 @@ namespace DCAddon
             
             // Server -> Client: Errors
             constexpr uint8 SMSG_ERROR               = 0x5F;  // Error response
+        }
+
+        // Events opcodes (global event feeds for UI/addons)
+        namespace Events
+        {
+            constexpr uint8 CMSG_SUBSCRIBE      = 0x01;  // Subscribe to event feed
+            constexpr uint8 CMSG_UNSUBSCRIBE    = 0x02;  // Unsubscribe from feed
+
+            constexpr uint8 SMSG_EVENT_UPDATE   = 0x10;  // Event state/status update (JSON)
+            constexpr uint8 SMSG_EVENT_SPAWN    = 0x11;  // Event spawn notification (JSON)
+            constexpr uint8 SMSG_EVENT_REMOVE   = 0x12;  // Event removed/expired (JSON)
+        }
+
+        // Teleport opcodes
+        namespace Teleports
+        {
+            constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests list
+            constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends list (JSON)
         }
     }
 

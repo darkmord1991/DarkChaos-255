@@ -75,6 +75,14 @@ local Data = {
 DCWelcome.Seasons.Data = Data
 DCWelcome.Seasons.GetSetting = GetSetting
 DCWelcome.Seasons.SetSetting = SetSetting
+-- Convenience getter for other addons/scripts
+function DCWelcome.Seasons:GetWeeklyTokens()
+    return Data.weeklyTokens or 0
+end
+
+function DCWelcome.Seasons:GetInventoryTokens()
+    return Data.tokens or 0
+end
 
 -------------------------------------------------------------------------------
 -- Utility
@@ -315,13 +323,15 @@ function DCWelcome.Seasons:UpdateProgressTracker()
         frame.seasonName:SetText(string.format("|cff00ff00%s|r", Data.seasonName or ""))
     end
     
-    local tokenPercent = Data.tokens / math.max(Data.weeklyTokenCap, 1)
+    -- Use weeklyTokens for progress bar (weekly cap progress)
+    local tokenPercent = Data.weeklyTokens / math.max(Data.weeklyTokenCap, 1)
     frame.tokenBar:SetValue(math.min(tokenPercent, 1))
-    frame.tokenBarText:SetText(string.format("%d / %d Tokens", Data.tokens, Data.weeklyTokenCap))
+    frame.tokenBarText:SetText(string.format("%d / %d Tokens (Weekly)", Data.weeklyTokens, Data.weeklyTokenCap))
     
-    local essencePercent = Data.essence / math.max(Data.weeklyEssenceCap, 1)
+    -- Use weeklyEssence for progress bar (weekly cap progress)
+    local essencePercent = Data.weeklyEssence / math.max(Data.weeklyEssenceCap, 1)
     frame.essenceBar:SetValue(math.min(essencePercent, 1))
-    frame.essenceBarText:SetText(string.format("%d / %d Essence", Data.essence, Data.weeklyEssenceCap))
+    frame.essenceBarText:SetText(string.format("%d / %d Essence (Weekly)", Data.weeklyEssence, Data.weeklyEssenceCap))
     
     frame.statsText:SetText(string.format("Quests: %d | Bosses: %d", Data.quests, Data.worldBosses + Data.dungeonBosses))
 end

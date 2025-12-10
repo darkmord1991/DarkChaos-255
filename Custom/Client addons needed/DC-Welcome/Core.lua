@@ -476,8 +476,9 @@ local function RegisterHandlers()
         if type(data) == "table" then
             local progress = DCWelcome.Progress
             
-            if data.tokens or data.weeklyTokens then
-                progress.seasonPoints = data.tokens or data.weeklyTokens
+            if data.weeklyTokens or data.tokens then
+                -- Prefer weekly progress metric for season display
+                progress.seasonPoints = data.weeklyTokens or data.tokens
             end
             if data.seasonLevel then
                 progress.seasonRank = data.seasonLevel
@@ -488,6 +489,7 @@ local function RegisterHandlers()
             DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
             
             DebugPrint("Season progress updated")
+            DebugPrint("Progress payload: weeklyTokens=" .. tostring(data.weeklyTokens or "nil") .. ", tokens=" .. tostring(data.tokens or "nil") .. ", tokenCap=" .. tostring(data.tokenCap or "nil"))
         end
     end)
     

@@ -610,6 +610,14 @@ function LB:OnLeaderboardData(data)
     
     if self:GetSetting("verboseLogging") then
         Print("Received " .. #(data.entries or {}) .. " entries for " .. key)
+        if category == "hlbg" then
+            for i = 1, math.min(3, #(data.entries or {})) do
+                local e = data.entries[i]
+                if e then
+                    Print(string.format("  [%d] name=%s score=%s extra=%s", i, tostring(e.name or e.playerName or "?"), tostring(e.score or e.value or "nil"), tostring(e.extra or "nil")))
+                end
+            end
+        end
     end
 end
 
@@ -1471,6 +1479,9 @@ function LB:UpdateHeaderText()
     elseif subcat:find("_winrate") then
         header:SetText("|cffffd700Win Rate|r")
         extra:SetText("|cffffd700Games|r")
+    elseif subcat == "hlbg_games" then
+        header:SetText("|cffffd700Games|r")
+        extra:SetText("|cffffd700W/L|r")
     elseif subcat == "aoe_gold" then
         header:SetText("|cffffd700Gold|r")
         extra:SetText("|cffffd700Items Looted|r")
@@ -1659,6 +1670,10 @@ function LB:UpdateLeaderboardDisplay()
                 scoreText = FormatTime(scoreVal)
             elseif subcat:find("_winrate") or subcat:find("_efficiency") then
                 local scoreVal = entryData.score or entryData.value or 0
+                -- Server sends winrate scaled by 10 for precision; divide back
+                if self.currentCategory == "hlbg" and subcat:find("_winrate") then
+                    scoreVal = (tonumber(scoreVal) or 0) / 10
+                end
                 scoreText = FormatPercent(scoreVal)
             elseif subcat == "aoe_gold" then
                 -- v1.3.0: Gold is sent as score_str (string) to avoid uint32 truncation

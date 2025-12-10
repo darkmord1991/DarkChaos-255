@@ -82,17 +82,26 @@ function SeasonPlugin:OnActivate()
                 -- Also update DC-Welcome Seasons if loaded
                 if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
                     local D = DCWelcome.Seasons.Data
-                    D.tokens = data.tokens or D.tokens
-                    D.essence = data.essence or D.essence
+                    
+                    -- Weekly tokens/essence are the current week's progress
                     D.weeklyTokens = data.weeklyTokens or data.tokens or D.weeklyTokens
                     D.weeklyEssence = data.weeklyEssence or data.essence or D.weeklyEssence
+                    
+                    -- Total tokens/essence are inventory counts (sent as 'tokens' and 'essence')
+                    D.tokens = data.tokens or D.tokens
+                    D.essence = data.essence or D.essence
+                    
+                    -- Weekly caps
                     D.weeklyTokenCap = data.tokenCap or D.weeklyTokenCap
                     D.weeklyEssenceCap = data.essenceCap or D.weeklyEssenceCap
+                    
                     D._loaded = true
                     if DCWelcome.Seasons.UpdateProgressTracker then
                         DCWelcome.Seasons:UpdateProgressTracker()
                     end
                 end
+                    -- Debug print
+                    DCInfoBar:Debug(string.format("Season plugin received progress: weeklyTokens=%s tokens=%s weeklyCap=%s", tostring(data.weeklyTokens or "nil"), tostring(data.tokens or "nil"), tostring(data.tokenCap or "nil")))
             end
         end)
         

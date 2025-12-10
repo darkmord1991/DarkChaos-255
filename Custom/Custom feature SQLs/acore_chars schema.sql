@@ -1,10 +1,3 @@
--- --------------------------------------------------------
--- Host:                         192.168.178.45
--- Server-Version:               8.0.44-0ubuntu0.24.04.1 - (Ubuntu)
--- Server-Betriebssystem:        Linux
--- HeidiSQL Version:             12.13.0.7160
--- --------------------------------------------------------
-
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET NAMES utf8 */;
 /*!50503 SET NAMES utf8mb4 */;
@@ -14,7 +7,6 @@
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
--- Exportiere Struktur von Tabelle acore_chars.account_data
 CREATE TABLE IF NOT EXISTS `account_data` (
   `accountId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account Identifier',
   `type` tinyint unsigned NOT NULL DEFAULT '0',
@@ -23,9 +15,6 @@ CREATE TABLE IF NOT EXISTS `account_data` (
   PRIMARY KEY (`accountId`,`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.account_instance_times
 CREATE TABLE IF NOT EXISTS `account_instance_times` (
   `accountId` int unsigned NOT NULL,
   `instanceId` int unsigned NOT NULL DEFAULT '0',
@@ -33,9 +22,6 @@ CREATE TABLE IF NOT EXISTS `account_instance_times` (
   PRIMARY KEY (`accountId`,`instanceId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.account_tutorial
 CREATE TABLE IF NOT EXISTS `account_tutorial` (
   `accountId` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account Identifier',
   `tut0` int unsigned NOT NULL DEFAULT '0',
@@ -49,26 +35,17 @@ CREATE TABLE IF NOT EXISTS `account_tutorial` (
   PRIMARY KEY (`accountId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.active_arena_season
 CREATE TABLE IF NOT EXISTS `active_arena_season` (
   `season_id` tinyint unsigned NOT NULL,
   `season_state` tinyint unsigned NOT NULL COMMENT 'Supported 2 states: 0 - disabled; 1 - in progress.'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.addons
 CREATE TABLE IF NOT EXISTS `addons` (
   `name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `crc` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Addons';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.arena_team
 CREATE TABLE IF NOT EXISTS `arena_team` (
   `arenaTeamId` int unsigned NOT NULL DEFAULT '0',
   `name` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -88,9 +65,6 @@ CREATE TABLE IF NOT EXISTS `arena_team` (
   PRIMARY KEY (`arenaTeamId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.arena_team_member
 CREATE TABLE IF NOT EXISTS `arena_team_member` (
   `arenaTeamId` int unsigned NOT NULL DEFAULT '0',
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -102,9 +76,6 @@ CREATE TABLE IF NOT EXISTS `arena_team_member` (
   PRIMARY KEY (`arenaTeamId`,`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.auctionhouse
 CREATE TABLE IF NOT EXISTS `auctionhouse` (
   `id` int unsigned NOT NULL DEFAULT '0',
   `houseid` tinyint unsigned NOT NULL DEFAULT '7',
@@ -120,9 +91,6 @@ CREATE TABLE IF NOT EXISTS `auctionhouse` (
   UNIQUE KEY `item_guid` (`itemguid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.banned_addons
 CREATE TABLE IF NOT EXISTS `banned_addons` (
   `Id` int unsigned NOT NULL AUTO_INCREMENT,
   `Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -132,18 +100,12 @@ CREATE TABLE IF NOT EXISTS `banned_addons` (
   UNIQUE KEY `idx_name_ver` (`Name`,`Version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.battleground_deserters
 CREATE TABLE IF NOT EXISTS `battleground_deserters` (
   `guid` int unsigned NOT NULL COMMENT 'characters.guid',
   `type` tinyint unsigned NOT NULL COMMENT 'type of the desertion',
   `datetime` datetime NOT NULL COMMENT 'datetime of the desertion'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.beastmaster_tamed_pets
 CREATE TABLE IF NOT EXISTS `beastmaster_tamed_pets` (
   `owner_guid` int unsigned NOT NULL,
   `entry` int unsigned NOT NULL,
@@ -153,9 +115,6 @@ CREATE TABLE IF NOT EXISTS `beastmaster_tamed_pets` (
   KEY `idx_beastmaster_tamed_pets_owner_guid` (`owner_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.bugreport
 CREATE TABLE IF NOT EXISTS `bugreport` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Identifier',
   `type` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -163,9 +122,6 @@ CREATE TABLE IF NOT EXISTS `bugreport` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Debug System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.calendar_events
 CREATE TABLE IF NOT EXISTS `calendar_events` (
   `id` bigint unsigned NOT NULL DEFAULT '0',
   `creator` int unsigned NOT NULL DEFAULT '0',
@@ -179,9 +135,6 @@ CREATE TABLE IF NOT EXISTS `calendar_events` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.calendar_invites
 CREATE TABLE IF NOT EXISTS `calendar_invites` (
   `id` bigint unsigned NOT NULL DEFAULT '0',
   `event` bigint unsigned NOT NULL DEFAULT '0',
@@ -194,9 +147,6 @@ CREATE TABLE IF NOT EXISTS `calendar_invites` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.channels
 CREATE TABLE IF NOT EXISTS `channels` (
   `channelId` int unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -208,9 +158,6 @@ CREATE TABLE IF NOT EXISTS `channels` (
   PRIMARY KEY (`channelId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Channel System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.channels_bans
 CREATE TABLE IF NOT EXISTS `channels_bans` (
   `channelId` int unsigned NOT NULL,
   `playerGUID` int unsigned NOT NULL,
@@ -218,9 +165,6 @@ CREATE TABLE IF NOT EXISTS `channels_bans` (
   PRIMARY KEY (`channelId`,`playerGUID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.channels_rights
 CREATE TABLE IF NOT EXISTS `channels_rights` (
   `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `flags` int unsigned NOT NULL,
@@ -231,9 +175,6 @@ CREATE TABLE IF NOT EXISTS `channels_rights` (
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_account_data
 CREATE TABLE IF NOT EXISTS `character_account_data` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `type` tinyint unsigned NOT NULL DEFAULT '0',
@@ -242,9 +183,6 @@ CREATE TABLE IF NOT EXISTS `character_account_data` (
   PRIMARY KEY (`guid`,`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_achievement
 CREATE TABLE IF NOT EXISTS `character_achievement` (
   `guid` int unsigned NOT NULL,
   `achievement` smallint unsigned NOT NULL,
@@ -252,9 +190,6 @@ CREATE TABLE IF NOT EXISTS `character_achievement` (
   PRIMARY KEY (`guid`,`achievement`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_achievement_offline_updates
 CREATE TABLE IF NOT EXISTS `character_achievement_offline_updates` (
   `guid` int unsigned NOT NULL COMMENT 'Character''s GUID',
   `update_type` tinyint unsigned NOT NULL COMMENT 'Supported types: 1 - COMPLETE_ACHIEVEMENT; 2 - UPDATE_CRITERIA',
@@ -264,9 +199,6 @@ CREATE TABLE IF NOT EXISTS `character_achievement_offline_updates` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Stores updates to character achievements when the character was offline';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_achievement_progress
 CREATE TABLE IF NOT EXISTS `character_achievement_progress` (
   `guid` int unsigned NOT NULL,
   `criteria` smallint unsigned NOT NULL,
@@ -275,9 +207,6 @@ CREATE TABLE IF NOT EXISTS `character_achievement_progress` (
   PRIMARY KEY (`guid`,`criteria`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_action
 CREATE TABLE IF NOT EXISTS `character_action` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `spec` tinyint unsigned NOT NULL DEFAULT '0',
@@ -287,9 +216,6 @@ CREATE TABLE IF NOT EXISTS `character_action` (
   PRIMARY KEY (`guid`,`spec`,`button`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_arena_stats
 CREATE TABLE IF NOT EXISTS `character_arena_stats` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `slot` tinyint unsigned NOT NULL DEFAULT '0',
@@ -298,9 +224,6 @@ CREATE TABLE IF NOT EXISTS `character_arena_stats` (
   PRIMARY KEY (`guid`,`slot`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_aura
 CREATE TABLE IF NOT EXISTS `character_aura` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `casterGuid` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Full Global Unique Identifier',
@@ -321,9 +244,6 @@ CREATE TABLE IF NOT EXISTS `character_aura` (
   PRIMARY KEY (`guid`,`casterGuid`,`itemGuid`,`spell`,`effectMask`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_banned
 CREATE TABLE IF NOT EXISTS `character_banned` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `bandate` int unsigned NOT NULL DEFAULT '0',
@@ -334,26 +254,17 @@ CREATE TABLE IF NOT EXISTS `character_banned` (
   PRIMARY KEY (`guid`,`bandate`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Ban List';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_battleground_random
 CREATE TABLE IF NOT EXISTS `character_battleground_random` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_brew_of_the_month
 CREATE TABLE IF NOT EXISTS `character_brew_of_the_month` (
   `guid` int unsigned NOT NULL,
   `lastEventId` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_declinedname
 CREATE TABLE IF NOT EXISTS `character_declinedname` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `genitive` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
@@ -364,9 +275,6 @@ CREATE TABLE IF NOT EXISTS `character_declinedname` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_entry_point
 CREATE TABLE IF NOT EXISTS `character_entry_point` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `joinX` float NOT NULL DEFAULT '0',
@@ -380,9 +288,6 @@ CREATE TABLE IF NOT EXISTS `character_entry_point` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_equipmentsets
 CREATE TABLE IF NOT EXISTS `character_equipmentsets` (
   `guid` int NOT NULL DEFAULT '0',
   `setguid` bigint NOT NULL AUTO_INCREMENT,
@@ -414,9 +319,6 @@ CREATE TABLE IF NOT EXISTS `character_equipmentsets` (
   KEY `Idx_setindex` (`setindex`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_gifts
 CREATE TABLE IF NOT EXISTS `character_gifts` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `item_guid` int unsigned NOT NULL DEFAULT '0',
@@ -426,9 +328,6 @@ CREATE TABLE IF NOT EXISTS `character_gifts` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_glyphs
 CREATE TABLE IF NOT EXISTS `character_glyphs` (
   `guid` int unsigned NOT NULL,
   `talentGroup` tinyint unsigned NOT NULL DEFAULT '0',
@@ -441,9 +340,6 @@ CREATE TABLE IF NOT EXISTS `character_glyphs` (
   PRIMARY KEY (`guid`,`talentGroup`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_homebind
 CREATE TABLE IF NOT EXISTS `character_homebind` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `mapId` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Map Identifier',
@@ -454,9 +350,6 @@ CREATE TABLE IF NOT EXISTS `character_homebind` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_instance
 CREATE TABLE IF NOT EXISTS `character_instance` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `instance` int unsigned NOT NULL DEFAULT '0',
@@ -466,9 +359,6 @@ CREATE TABLE IF NOT EXISTS `character_instance` (
   KEY `instance` (`instance`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_inventory
 CREATE TABLE IF NOT EXISTS `character_inventory` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `bag` int unsigned NOT NULL DEFAULT '0',
@@ -479,9 +369,6 @@ CREATE TABLE IF NOT EXISTS `character_inventory` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_pet
 CREATE TABLE IF NOT EXISTS `character_pet` (
   `id` int unsigned NOT NULL DEFAULT '0',
   `entry` int unsigned NOT NULL DEFAULT '0',
@@ -505,9 +392,6 @@ CREATE TABLE IF NOT EXISTS `character_pet` (
   KEY `idx_slot` (`slot`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Pet System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_pet_declinedname
 CREATE TABLE IF NOT EXISTS `character_pet_declinedname` (
   `id` int unsigned NOT NULL DEFAULT '0',
   `owner` int unsigned NOT NULL DEFAULT '0',
@@ -520,9 +404,6 @@ CREATE TABLE IF NOT EXISTS `character_pet_declinedname` (
   KEY `owner_key` (`owner`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_prestige
 CREATE TABLE IF NOT EXISTS `character_prestige` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current prestige level (0-10)',
@@ -530,9 +411,6 @@ CREATE TABLE IF NOT EXISTS `character_prestige` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige levels for level 255 characters';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_prestige_stats
 CREATE TABLE IF NOT EXISTS `character_prestige_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `total_prestiges` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total number of prestige resets',
@@ -544,9 +422,6 @@ CREATE TABLE IF NOT EXISTS `character_prestige_stats` (
   KEY `idx_highest_prestige` (`highest_prestige`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige statistics and leaderboards';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus
 CREATE TABLE IF NOT EXISTS `character_queststatus` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -567,9 +442,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus` (
   PRIMARY KEY (`guid`,`quest`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus_daily
 CREATE TABLE IF NOT EXISTS `character_queststatus_daily` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -578,9 +450,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus_daily` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus_monthly
 CREATE TABLE IF NOT EXISTS `character_queststatus_monthly` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -588,9 +457,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus_monthly` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus_rewarded
 CREATE TABLE IF NOT EXISTS `character_queststatus_rewarded` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -598,9 +464,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus_rewarded` (
   PRIMARY KEY (`guid`,`quest`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus_seasonal
 CREATE TABLE IF NOT EXISTS `character_queststatus_seasonal` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -609,9 +472,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus_seasonal` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_queststatus_weekly
 CREATE TABLE IF NOT EXISTS `character_queststatus_weekly` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `quest` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quest Identifier',
@@ -619,9 +479,6 @@ CREATE TABLE IF NOT EXISTS `character_queststatus_weekly` (
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_reputation
 CREATE TABLE IF NOT EXISTS `character_reputation` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `faction` smallint unsigned NOT NULL DEFAULT '0',
@@ -630,9 +487,6 @@ CREATE TABLE IF NOT EXISTS `character_reputation` (
   PRIMARY KEY (`guid`,`faction`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_settings
 CREATE TABLE IF NOT EXISTS `character_settings` (
   `guid` int unsigned NOT NULL,
   `source` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -640,9 +494,6 @@ CREATE TABLE IF NOT EXISTS `character_settings` (
   PRIMARY KEY (`guid`,`source`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player Settings';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_skills
 CREATE TABLE IF NOT EXISTS `character_skills` (
   `guid` int unsigned NOT NULL COMMENT 'Global Unique Identifier',
   `skill` smallint unsigned NOT NULL,
@@ -651,9 +502,6 @@ CREATE TABLE IF NOT EXISTS `character_skills` (
   PRIMARY KEY (`guid`,`skill`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_social
 CREATE TABLE IF NOT EXISTS `character_social` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Character Global Unique Identifier',
   `friend` int unsigned NOT NULL DEFAULT '0' COMMENT 'Friend Global Unique Identifier',
@@ -663,9 +511,6 @@ CREATE TABLE IF NOT EXISTS `character_social` (
   KEY `friend` (`friend`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_spell
 CREATE TABLE IF NOT EXISTS `character_spell` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `spell` int unsigned NOT NULL DEFAULT '0' COMMENT 'Spell Identifier',
@@ -673,9 +518,6 @@ CREATE TABLE IF NOT EXISTS `character_spell` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_spell_cooldown
 CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier, Low part',
   `spell` int unsigned NOT NULL DEFAULT '0' COMMENT 'Spell Identifier',
@@ -686,9 +528,6 @@ CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_stats
 CREATE TABLE IF NOT EXISTS `character_stats` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier, Low part',
   `maxhealth` int unsigned NOT NULL DEFAULT '0',
@@ -725,9 +564,6 @@ CREATE TABLE IF NOT EXISTS `character_stats` (
   CONSTRAINT `character_stats_chk_1` CHECK (((`blockPct` >= 0) and (`dodgePct` >= 0) and (`parryPct` >= 0) and (`critPct` >= 0) and (`rangedCritPct` >= 0) and (`spellCritPct` >= 0)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_talent
 CREATE TABLE IF NOT EXISTS `character_talent` (
   `guid` int unsigned NOT NULL,
   `spell` int unsigned NOT NULL,
@@ -735,9 +571,6 @@ CREATE TABLE IF NOT EXISTS `character_talent` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.character_transmog
 CREATE TABLE IF NOT EXISTS `character_transmog` (
   `player_guid` int unsigned DEFAULT NULL,
   `slot` varchar(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
@@ -747,9 +580,6 @@ CREATE TABLE IF NOT EXISTS `character_transmog` (
   KEY `player_and_slot_key` (`player_guid`,`slot`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.characters
 CREATE TABLE IF NOT EXISTS `characters` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `account` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account Identifier',
@@ -837,9 +667,6 @@ CREATE TABLE IF NOT EXISTS `characters` (
   KEY `idx_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.characters_npcbot
 CREATE TABLE IF NOT EXISTS `characters_npcbot` (
   `entry` int unsigned NOT NULL COMMENT 'creature_template.entry',
   `owner` int unsigned NOT NULL DEFAULT '0' COMMENT 'characters.guid (lowguid)',
@@ -868,9 +695,6 @@ CREATE TABLE IF NOT EXISTS `characters_npcbot` (
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.characters_npcbot_group_member
 CREATE TABLE IF NOT EXISTS `characters_npcbot_group_member` (
   `guid` int unsigned NOT NULL,
   `entry` int unsigned NOT NULL,
@@ -880,9 +704,6 @@ CREATE TABLE IF NOT EXISTS `characters_npcbot_group_member` (
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.characters_npcbot_stats
 CREATE TABLE IF NOT EXISTS `characters_npcbot_stats` (
   `entry` int unsigned NOT NULL DEFAULT '0',
   `maxhealth` int unsigned NOT NULL DEFAULT '0',
@@ -914,9 +735,6 @@ CREATE TABLE IF NOT EXISTS `characters_npcbot_stats` (
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.characters_npcbot_transmog
 CREATE TABLE IF NOT EXISTS `characters_npcbot_transmog` (
   `entry` int unsigned NOT NULL,
   `slot` tinyint unsigned NOT NULL,
@@ -926,9 +744,6 @@ CREATE TABLE IF NOT EXISTS `characters_npcbot_transmog` (
   CONSTRAINT `bot_id` FOREIGN KEY (`entry`) REFERENCES `characters_npcbot` (`entry`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.corpse
 CREATE TABLE IF NOT EXISTS `corpse` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Character Global Unique Identifier',
   `posX` float NOT NULL DEFAULT '0',
@@ -953,9 +768,6 @@ CREATE TABLE IF NOT EXISTS `corpse` (
   KEY `idx_time` (`time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Death System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.creature_respawn
 CREATE TABLE IF NOT EXISTS `creature_respawn` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `respawnTime` int unsigned NOT NULL DEFAULT '0',
@@ -965,9 +777,6 @@ CREATE TABLE IF NOT EXISTS `creature_respawn` (
   KEY `idx_instance` (`instanceId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Grid Loading System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.custom_solocraft_character_stats
 CREATE TABLE IF NOT EXISTS `custom_solocraft_character_stats` (
   `GUID` bigint unsigned NOT NULL,
   `Difficulty` float NOT NULL,
@@ -977,9 +786,6 @@ CREATE TABLE IF NOT EXISTS `custom_solocraft_character_stats` (
   PRIMARY KEY (`GUID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.custom_transmogrification
 CREATE TABLE IF NOT EXISTS `custom_transmogrification` (
   `GUID` int unsigned NOT NULL COMMENT 'Item guidLow',
   `FakeEntry` int unsigned NOT NULL COMMENT 'Item entry',
@@ -988,9 +794,6 @@ CREATE TABLE IF NOT EXISTS `custom_transmogrification` (
   KEY `Owner` (`Owner`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='6_2';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.custom_transmogrification_sets
 CREATE TABLE IF NOT EXISTS `custom_transmogrification_sets` (
   `Owner` int unsigned NOT NULL COMMENT 'Player guidlow',
   `PresetID` tinyint unsigned NOT NULL COMMENT 'Preset identifier',
@@ -999,18 +802,12 @@ CREATE TABLE IF NOT EXISTS `custom_transmogrification_sets` (
   PRIMARY KEY (`Owner`,`PresetID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='6_1';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.custom_unlocked_appearances
 CREATE TABLE IF NOT EXISTS `custom_unlocked_appearances` (
   `account_id` int unsigned NOT NULL,
   `item_template_id` mediumint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`account_id`,`item_template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.daily_players_reports
 CREATE TABLE IF NOT EXISTS `daily_players_reports` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `creation_time` int unsigned NOT NULL DEFAULT '0',
@@ -1034,9 +831,6 @@ CREATE TABLE IF NOT EXISTS `daily_players_reports` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_achievement_definitions
 CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
   `achievement_id` int unsigned NOT NULL,
   `name` varchar(100) NOT NULL,
@@ -1049,9 +843,6 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
   PRIMARY KEY (`achievement_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Achievement definitions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_daily
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
   `date` date NOT NULL,
   `module` varchar(8) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -1066,9 +857,6 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
   KEY `idx_module` (`module`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily aggregated statistics for trend analysis';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_log
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1092,11 +880,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=912 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=2619 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_addon_protocol_stats
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code',
@@ -1113,9 +898,6 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   KEY `idx_last_request` (`last_request`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Aggregated protocol statistics per player per module';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_aoeloot_accumulated
 CREATE TABLE IF NOT EXISTS `dc_aoeloot_accumulated` (
   `player_guid` int unsigned NOT NULL,
   `accumulated_gold` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Total gold looted via AoE',
@@ -1124,9 +906,6 @@ CREATE TABLE IF NOT EXISTS `dc_aoeloot_accumulated` (
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Accumulated Gold';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_aoeloot_detailed_stats
 CREATE TABLE IF NOT EXISTS `dc_aoeloot_detailed_stats` (
   `player_guid` int unsigned NOT NULL,
   `total_items` int unsigned NOT NULL DEFAULT '0',
@@ -1158,9 +937,6 @@ CREATE TABLE IF NOT EXISTS `dc_aoeloot_detailed_stats` (
   KEY `idx_quality_legendary` (`quality_legendary`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Detailed Statistics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_aoeloot_preferences
 CREATE TABLE IF NOT EXISTS `dc_aoeloot_preferences` (
   `player_guid` int unsigned NOT NULL,
   `aoe_enabled` tinyint(1) NOT NULL DEFAULT '1',
@@ -1175,9 +951,6 @@ CREATE TABLE IF NOT EXISTS `dc_aoeloot_preferences` (
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos AoE Loot - Player Preferences';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_artifact_mastery_events
 CREATE TABLE IF NOT EXISTS `dc_artifact_mastery_events` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -1191,9 +964,6 @@ CREATE TABLE IF NOT EXISTS `dc_artifact_mastery_events` (
   KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical log of artifact mastery events';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_challenge_mode_log
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `character_guid` int unsigned NOT NULL,
@@ -1212,9 +982,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_log` (
   KEY `idx_completed_at` (`completed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode run history log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_challenge_mode_stats
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_stats` (
   `character_guid` int unsigned NOT NULL,
   `dungeon_id` int unsigned NOT NULL,
@@ -1233,9 +1000,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_stats` (
   KEY `idx_best_time` (`dungeon_id`,`best_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode statistics per character per dungeon';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_challenge_modes
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_modes` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `active_modes` int unsigned NOT NULL DEFAULT '0' COMMENT 'Bitwise flags for active challenge modes (1=Hardcore, 2=Semi-Hardcore, 4=Self-Crafted, 8=Iron Man, 16=Solo, 32=Dungeon Only, 64=PvP Only, 128=Quest Only)',
@@ -1253,9 +1017,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_challenge_modes` (
   KEY `idx_hardcore_deaths` (`hardcore_deaths`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Current challenge mode settings per character';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_difficulty_completions
 CREATE TABLE IF NOT EXISTS `dc_character_difficulty_completions` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID from characters table',
   `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon map ID from acore_world.dc_dungeon_npc_mapping',
@@ -1273,9 +1034,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_difficulty_completions` (
   CONSTRAINT `fk_diff_comp_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='v4.0 - Track per-difficulty dungeon completions for each player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_difficulty_streaks
 CREATE TABLE IF NOT EXISTS `dc_character_difficulty_streaks` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID from characters table',
   `difficulty` enum('Normal','Heroic','Mythic','Mythic+') COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -1289,9 +1047,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_difficulty_streaks` (
   CONSTRAINT `fk_diff_streak_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='v4.0 - Track consecutive completion streaks per difficulty';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_dungeon_npc_respawn
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_npc_respawn` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `npc_entry` int unsigned NOT NULL COMMENT 'NPC entry ID',
@@ -1307,9 +1062,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_npc_respawn` (
   CONSTRAINT `fk_respawn_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Track NPC despawn/respawn status for combat-based system';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_dungeon_progress
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon ID from dc_dungeon_quest_mapping',
@@ -1331,9 +1083,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_progress` (
   CONSTRAINT `fk_dungeon_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Track dungeon quest progress per character';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_dungeon_quests_completed
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_quests_completed` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1354,9 +1103,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_quests_completed` (
   CONSTRAINT `fk_completed_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical dungeon quest completion log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_dungeon_statistics
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_statistics` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `stat_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'total_quests_completed',
@@ -1380,9 +1126,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_statistics` (
   CONSTRAINT `fk_stat_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Overall statistics for dungeon quest achievements';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_prestige
 CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current prestige level (0-10)',
@@ -1391,9 +1134,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Tracks player prestige levels';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_prestige_log
 CREATE TABLE IF NOT EXISTS `dc_character_prestige_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1407,9 +1147,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_log` (
   KEY `idx_prestige_time` (`prestige_time`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige history log for all characters';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_character_prestige_stats
 CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
   `prestige_level` tinyint unsigned NOT NULL,
   `total_players` int unsigned NOT NULL DEFAULT '0',
@@ -1417,9 +1154,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
   PRIMARY KEY (`prestige_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Statistics for prestige levels';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_achievement_triggers
 CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID to grant',
@@ -1436,9 +1170,6 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
   KEY `idx_stat_key` (`stat_key`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system achievement trigger definitions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Ereignis acore_chars.dc_cross_system_cleanup
 DELIMITER //
 CREATE EVENT `dc_cross_system_cleanup` ON SCHEDULE EVERY 1 DAY STARTS '2025-12-04 13:09:05' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
     DECLARE retention_days INT DEFAULT 30;
@@ -1458,7 +1189,6 @@ CREATE EVENT `dc_cross_system_cleanup` ON SCHEDULE EVERY 1 DAY STARTS '2025-12-0
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_config
 CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
   `key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
   `value` text COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -1467,9 +1197,6 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
   PRIMARY KEY (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system configuration values';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_events
 CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `event_type` tinyint unsigned NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
@@ -1484,9 +1211,6 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
   KEY `idx_timestamp` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system event log for debugging and analytics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_cross_system_multipliers
 CREATE TABLE IF NOT EXISTS `dc_cross_system_multipliers` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `target_type` enum('global','player','account','guild') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'global',
@@ -1503,9 +1227,6 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_multipliers` (
   KEY `idx_system` (`source_system`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player or per-system multiplier overrides';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_duel_class_matchups
 CREATE TABLE IF NOT EXISTS `dc_duel_class_matchups` (
   `winner_class` tinyint unsigned NOT NULL,
   `loser_class` tinyint unsigned NOT NULL,
@@ -1516,9 +1237,6 @@ CREATE TABLE IF NOT EXISTS `dc_duel_class_matchups` (
   KEY `idx_matchups` (`winner_class`,`loser_class`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Class Matchup Stats';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_duel_history
 CREATE TABLE IF NOT EXISTS `dc_duel_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `winner_guid` int unsigned NOT NULL,
@@ -1540,9 +1258,6 @@ CREATE TABLE IF NOT EXISTS `dc_duel_history` (
   KEY `idx_time` (`duel_time` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Match History';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_duel_statistics
 CREATE TABLE IF NOT EXISTS `dc_duel_statistics` (
   `player_guid` int unsigned NOT NULL,
   `wins` int unsigned NOT NULL DEFAULT '0',
@@ -1561,9 +1276,6 @@ CREATE TABLE IF NOT EXISTS `dc_duel_statistics` (
   KEY `idx_last_duel` (`last_duel_time` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Player Statistics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_dungeon_instance_resets
 CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
   `reset_id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1578,9 +1290,6 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
   CONSTRAINT `fk_reset_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Track reset dates for daily/weekly quests';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_applications
 CREATE TABLE IF NOT EXISTS `dc_group_finder_applications` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `listing_id` int unsigned NOT NULL,
@@ -1601,9 +1310,6 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_applications` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_event_signups
 CREATE TABLE IF NOT EXISTS `dc_group_finder_event_signups` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `event_id` int unsigned NOT NULL,
@@ -1619,9 +1325,6 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_event_signups` (
   KEY `idx_player` (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_listings
 CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `leader_guid` int unsigned NOT NULL,
@@ -1647,11 +1350,8 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   KEY `idx_leader` (`leader_guid`),
   KEY `idx_status_type` (`status`,`listing_type`),
   KEY `idx_dungeon` (`dungeon_id`,`keystone_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_scheduled_events
 CREATE TABLE IF NOT EXISTS `dc_group_finder_scheduled_events` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `leader_guid` int unsigned NOT NULL,
@@ -1672,9 +1372,6 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_scheduled_events` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_group_finder_spectators
 CREATE TABLE IF NOT EXISTS `dc_group_finder_spectators` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `run_id` int unsigned NOT NULL COMMENT 'References mythic+ run ID or custom session',
@@ -1687,14 +1384,9 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_spectators` (
   KEY `idx_spectator` (`spectator_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_guild_leaderboard
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_guild_leaderboard` 
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_guild_upgrade_stats
 CREATE TABLE IF NOT EXISTS `dc_guild_upgrade_stats` (
   `guild_id` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL DEFAULT '1',
@@ -1712,9 +1404,6 @@ CREATE TABLE IF NOT EXISTS `dc_guild_upgrade_stats` (
   KEY `idx_total_upgrades` (`total_upgrades` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild-level upgrade statistics for leaderboards';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_heirloom_package_history
 CREATE TABLE IF NOT EXISTS `dc_heirloom_package_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID',
@@ -1733,9 +1422,6 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_package_history` (
   KEY `idx_timestamp` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='History of package changes for analytics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_heirloom_player_packages
 CREATE TABLE IF NOT EXISTS `dc_heirloom_player_packages` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -1754,9 +1440,6 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_player_packages` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player heirloom stat package selections and progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_heirloom_upgrade_log
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1776,9 +1459,6 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_log` (
   KEY `idx_timestamp` (`timestamp`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_heirloom_upgrades
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
   `player_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1796,9 +1476,6 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom stat package upgrade state';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_match_history
 CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
   `match_id` int unsigned NOT NULL AUTO_INCREMENT,
   `season_id` int unsigned NOT NULL,
@@ -1816,9 +1493,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
   KEY `idx_start_time` (`start_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG match history and results';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_history
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -1840,9 +1514,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
   KEY `idx_season_rank` (`season_id`,`final_rank`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived HLBG player stats from previous seasons';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_season_data
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -1867,9 +1538,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
   KEY `idx_player_guid` (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG player seasonal stats (rating, wins, losses, etc.)';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_player_stats
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
   `player_name` varchar(12) NOT NULL COMMENT 'Player character name',
@@ -1888,9 +1556,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_season_config
 CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
   `season_id` int unsigned NOT NULL,
   `base_rating` int unsigned NOT NULL DEFAULT '1500',
@@ -1906,9 +1571,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
   PRIMARY KEY (`season_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG-specific season configuration (base_rating, match settings, etc.)';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_hlbg_winner_history
 CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
   `season` smallint unsigned NOT NULL DEFAULT '1' COMMENT 'Season number (joins with hlbg_seasons)',
@@ -1933,9 +1595,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_costs
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL COMMENT 'Item tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
   `tier_name` varchar(50) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Human-readable tier name',
@@ -1951,9 +1610,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   PRIMARY KEY (`tier_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Item upgrade cost configuration per tier';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_currency_exchange_log
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_currency_exchange_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -1966,9 +1622,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_currency_exchange_log` (
   KEY `idx_exchange_time` (`exchange_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_log
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player performing upgrade',
@@ -1994,9 +1647,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   CONSTRAINT `fk_dc_item_upgrade_log_player` FOREIGN KEY (`player_guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_missing_items
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player who triggered the query',
@@ -2017,12 +1667,8 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=256 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_item_upgrade_missing_items_summary
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
 	`item_name` VARCHAR(1) NULL COMMENT 'Item name if template exists' COLLATE 'utf8mb4_general_ci',
@@ -2033,7 +1679,6 @@ CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`affected_players` TEXT NULL COLLATE 'utf8mb4_general_ci'
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_stat_scaling
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stat_scaling` (
   `scaling_id` tinyint unsigned NOT NULL COMMENT 'Unique scaling configuration ID',
   `base_multiplier_per_level` float DEFAULT '0.025' COMMENT 'Base stat multiplier per level (2.5% = 0.025)',
@@ -2044,9 +1689,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stat_scaling` (
   PRIMARY KEY (`scaling_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Item upgrade stat scaling configuration';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_state
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_state` (
   `item_guid` int unsigned NOT NULL COMMENT 'From item_instance.guid',
   `player_guid` int unsigned NOT NULL,
@@ -2066,9 +1708,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_state` (
   KEY `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Item upgrade states for each item';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_synthesis_cooldowns
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_cooldowns` (
   `player_guid` int unsigned NOT NULL,
   `recipe_id` int unsigned NOT NULL,
@@ -2077,9 +1716,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_cooldowns` (
   KEY `idx_cooldown_end` (`cooldown_end`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_synthesis_log
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2093,9 +1729,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_log` (
   KEY `idx_attempt_time` (`attempt_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrade_transmutation_sessions
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_transmutation_sessions` (
   `session_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2115,9 +1748,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_transmutation_sessions` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Session tracking for transmutation processes';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_item_upgrades
 CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
   `item_guid` int NOT NULL COMMENT 'Unique item GUID from player inventory',
@@ -2140,9 +1770,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   KEY `k_last_upgraded` (`last_upgraded_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_leaderboard_cache
 CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `leaderboard_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'upgrades, tokens, mythic, pvp, etc.',
@@ -2161,9 +1788,21 @@ CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cached leaderboard rankings for fast retrieval';
 
--- Daten-Export vom Benutzer nicht ausgewählt
+CREATE TABLE IF NOT EXISTS `dc_mplus_best_runs` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `player_guid` int unsigned NOT NULL,
+  `dungeon_id` int unsigned NOT NULL,
+  `level` tinyint unsigned NOT NULL DEFAULT '2',
+  `completion_time` int unsigned NOT NULL DEFAULT '0' COMMENT 'Time in seconds',
+  `deaths` tinyint unsigned NOT NULL DEFAULT '0',
+  `season` tinyint unsigned NOT NULL DEFAULT '1',
+  `completed_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_player_dungeon_season` (`player_guid`,`dungeon_id`,`season`),
+  KEY `idx_player_guid` (`player_guid`),
+  KEY `idx_level` (`level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player best Mythic+ run per dungeon per season';
 
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_dungeons
 CREATE TABLE IF NOT EXISTS `dc_mplus_dungeons` (
   `map_id` int unsigned NOT NULL,
   `dungeon_name` varchar(100) NOT NULL,
@@ -2175,9 +1814,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_dungeons` (
   PRIMARY KEY (`map_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mythic+ Dungeon definitions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_hud_cache
 CREATE TABLE IF NOT EXISTS `dc_mplus_hud_cache` (
   `instance_key` bigint unsigned NOT NULL,
   `map_id` int unsigned NOT NULL,
@@ -2190,9 +1826,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_hud_cache` (
   PRIMARY KEY (`instance_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_keystones
 CREATE TABLE IF NOT EXISTS `dc_mplus_keystones` (
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `map_id` smallint unsigned NOT NULL COMMENT 'Dungeon map ID',
@@ -2205,9 +1838,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_keystones` (
   KEY `idx_expiration` (`expires_on`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Active Mythic+ keystones (one per player)';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_player_ratings
 CREATE TABLE IF NOT EXISTS `dc_mplus_player_ratings` (
   `player_guid` int unsigned NOT NULL,
   `rating` smallint unsigned NOT NULL DEFAULT '0',
@@ -2219,9 +1849,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_player_ratings` (
   PRIMARY KEY (`player_guid`,`season_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player Mythic+ ratings';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_runs
 CREATE TABLE IF NOT EXISTS `dc_mplus_runs` (
   `run_id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique run identifier',
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2241,9 +1868,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_runs` (
   KEY `idx_vault_eligibility` (`character_guid`,`season_id`,`success`,`completed_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete Mythic+ run history for vault and statistics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_scores
 CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `season_id` int unsigned NOT NULL COMMENT 'Season ID',
@@ -2257,9 +1881,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
   KEY `idx_leaderboard` (`season_id`,`map_id`,`best_score` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-dungeon Mythic+ scores and best clears';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_invites
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_invites` (
   `code` varchar(8) NOT NULL,
   `instance_id` int unsigned NOT NULL,
@@ -2273,9 +1894,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_invites` (
   KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Invite Links';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_popularity
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_popularity` (
   `map_id` int unsigned NOT NULL,
   `keystone_level` tinyint unsigned NOT NULL,
@@ -2287,9 +1905,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_popularity` (
   KEY `idx_popularity` (`total_spectators` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Popularity Stats';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_replays
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_replays` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `map_id` int unsigned NOT NULL,
@@ -2306,9 +1921,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_replays` (
   KEY `idx_completed` (`completed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Replay Storage';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_sessions
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_sessions` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `spectator_guid` int unsigned NOT NULL,
@@ -2325,9 +1937,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_sessions` (
   KEY `idx_time` (`join_time` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Session Log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_mplus_spec_settings
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
   `player_guid` int unsigned NOT NULL,
   `allow_spectators` tinyint(1) NOT NULL DEFAULT '1',
@@ -2338,9 +1947,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Player Settings';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_achievements
 CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2360,9 +1966,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
   KEY `idx_completed` (`completed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player custom achievement progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_artifact_discoveries
 CREATE TABLE IF NOT EXISTS `dc_player_artifact_discoveries` (
   `player_guid` int unsigned NOT NULL,
   `artifact_id` int unsigned NOT NULL,
@@ -2373,9 +1976,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_artifact_discoveries` (
   KEY `idx_discovery_type` (`discovery_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks discovered artifacts per player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_artifact_mastery
 CREATE TABLE IF NOT EXISTS `dc_player_artifact_mastery` (
   `player_guid` int unsigned NOT NULL,
   `artifact_id` int unsigned NOT NULL,
@@ -2389,9 +1989,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_artifact_mastery` (
   KEY `idx_mastery_level` (`mastery_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Artifact mastery progression per player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_claimed_chests
 CREATE TABLE IF NOT EXISTS `dc_player_claimed_chests` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2409,9 +2006,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_claimed_chests` (
   KEY `idx_claimed_at` (`claimed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prevents duplicate chest claims';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_cross_system_stats
 CREATE TABLE IF NOT EXISTS `dc_player_cross_system_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `total_dungeons_started` int unsigned NOT NULL DEFAULT '0',
@@ -2443,9 +2037,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_cross_system_stats` (
   KEY `idx_prestige` (`highest_prestige_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Aggregated cross-system statistics per player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_daily_quest_progress
 CREATE TABLE IF NOT EXISTS `dc_player_daily_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `daily_quest_entry` int unsigned NOT NULL COMMENT 'Daily quest entry id',
@@ -2458,9 +2049,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_daily_quest_progress` (
   CONSTRAINT `fk_dc_player_daily_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player tracking for daily dungeon quest progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_dungeon_completion_stats
 CREATE TABLE IF NOT EXISTS `dc_player_dungeon_completion_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `last_activity` timestamp NULL DEFAULT NULL COMMENT 'Last dungeon-related activity',
@@ -2472,9 +2060,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_dungeon_completion_stats` (
   CONSTRAINT `fk_dc_player_dungeon_stats_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player dungeon completion stats and timestamps';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_item_upgrades
 CREATE TABLE IF NOT EXISTS `dc_player_item_upgrades` (
   `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
   `item_guid` int NOT NULL COMMENT 'Unique item GUID from player inventory',
@@ -2496,9 +2081,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_item_upgrades` (
   KEY `k_tier` (`tier_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player item upgrade state and history';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_keystones
 CREATE TABLE IF NOT EXISTS `dc_player_keystones` (
   `player_guid` int unsigned NOT NULL,
   `current_keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
@@ -2514,14 +2096,9 @@ CREATE TABLE IF NOT EXISTS `dc_player_keystones` (
   KEY `idx_keystone_level` (`current_keystone_level` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player M+ keystone progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_player_progression_summary
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_player_progression_summary` 
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_player_season_data
 CREATE TABLE IF NOT EXISTS `dc_player_season_data` (
   `player_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
@@ -2541,9 +2118,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_season_data` (
   KEY `idx_mastery` (`mastery_earned` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Per-season player statistics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_seasonal_achievements
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_achievements` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2563,9 +2137,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_achievements` (
   KEY `idx_achieved_at` (`achieved_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal achievements';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_seasonal_chests
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_chests` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2585,9 +2156,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_chests` (
   KEY `idx_uncollected` (`collected`,`season_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly seasonal reward chest tracking';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_seasonal_stats
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2613,9 +2181,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
   KEY `idx_last_activity` (`last_activity_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player seasonal statistics';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_seasonal_stats_history
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats_history` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2634,9 +2199,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats_history` (
   KEY `idx_archived_at` (`archived_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived player stats';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_seen_features
 CREATE TABLE IF NOT EXISTS `dc_player_seen_features` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `feature` varchar(50) NOT NULL COMMENT 'Feature identifier (hotspots, prestige, mythicplus, etc.)',
@@ -2646,18 +2208,12 @@ CREATE TABLE IF NOT EXISTS `dc_player_seen_features` (
   KEY `idx_feature` (`feature`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tracks which feature intros players have seen';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_synthesis_cooldowns
 CREATE TABLE IF NOT EXISTS `dc_player_synthesis_cooldowns` (
   `player_guid` int unsigned NOT NULL,
   `last_synthesis` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player synthesis cooldown tracking';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_tier_caps
 CREATE TABLE IF NOT EXISTS `dc_player_tier_caps` (
   `player_guid` int unsigned NOT NULL,
   `tier_id` tinyint unsigned NOT NULL,
@@ -2667,9 +2223,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_tier_caps` (
   PRIMARY KEY (`player_guid`,`tier_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Maximum achievable level per tier per player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_tier_unlocks
 CREATE TABLE IF NOT EXISTS `dc_player_tier_unlocks` (
   `player_guid` int unsigned NOT NULL,
   `tier_id` tinyint unsigned NOT NULL,
@@ -2680,9 +2233,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_tier_unlocks` (
   KEY `idx_tier_id` (`tier_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks which upgrade tiers players have unlocked';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_transmutation_cooldowns
 CREATE TABLE IF NOT EXISTS `dc_player_transmutation_cooldowns` (
   `player_guid` int unsigned NOT NULL,
   `transmutation_type` enum('standard','special','fusion','synthesis') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
@@ -2692,14 +2242,9 @@ CREATE TABLE IF NOT EXISTS `dc_player_transmutation_cooldowns` (
   PRIMARY KEY (`player_guid`,`transmutation_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Transmutation cooldown tracking per player';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_player_upgrade_summary
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_player_upgrade_summary` 
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_player_upgrade_tokens
 CREATE TABLE IF NOT EXISTS `dc_player_upgrade_tokens` (
   `player_guid` int unsigned NOT NULL,
   `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'upgrade_token',
@@ -2711,9 +2256,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_upgrade_tokens` (
   KEY `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player currency storage for upgrades';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_weekly_cap_snapshot
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2730,9 +2272,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   KEY `idx_week_ending` (`week_ending`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical snapshots of weekly caps';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_weekly_quest_progress
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `weekly_quest_entry` int unsigned NOT NULL COMMENT 'Weekly quest entry id',
@@ -2746,9 +2285,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   CONSTRAINT `fk_dc_player_weekly_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player tracking for weekly dungeon quest progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_weekly_rewards
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_rewards` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2784,9 +2320,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_rewards` (
   KEY `idx_pending_rewards` (`season_id`,`week_start`,`reward_claimed`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified weekly rewards tracking for all systems';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_player_welcome
 CREATE TABLE IF NOT EXISTS `dc_player_welcome` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `account_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account ID for account-wide tracking',
@@ -2800,9 +2333,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_welcome` (
   KEY `idx_account` (`account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tracks player welcome screen interactions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_prestige_challenge_rewards
 CREATE TABLE IF NOT EXISTS `dc_prestige_challenge_rewards` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `challenge_type` tinyint unsigned NOT NULL COMMENT '1=Iron, 2=Speed, 3=Solo',
@@ -2811,9 +2341,6 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_challenge_rewards` (
   PRIMARY KEY (`guid`,`challenge_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige challenge rewards';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_prestige_challenges
 CREATE TABLE IF NOT EXISTS `dc_prestige_challenges` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `prestige_level` tinyint unsigned NOT NULL COMMENT 'Prestige level when challenge started',
@@ -2830,9 +2357,6 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_challenges` (
   KEY `idx_completed` (`completed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige challenge progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_prestige_players
 CREATE TABLE IF NOT EXISTS `dc_prestige_players` (
   `account_id` int unsigned NOT NULL COMMENT 'Account ID from account table',
   `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Highest prestige level achieved on this account',
@@ -2845,14 +2369,9 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_players` (
   KEY `idx_prestige_level` (`prestige_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Account-wide prestige tracking for cross-character bonuses';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_recent_upgrades_feed
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_recent_upgrades_feed` 
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_respec_history
 CREATE TABLE IF NOT EXISTS `dc_respec_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2871,9 +2390,6 @@ CREATE TABLE IF NOT EXISTS `dc_respec_history` (
   KEY `idx_respec_at` (`respec_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade respec history';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_respec_log
 CREATE TABLE IF NOT EXISTS `dc_respec_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2890,9 +2406,6 @@ CREATE TABLE IF NOT EXISTS `dc_respec_log` (
   KEY `idx_logged_at` (`logged_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Respec action audit log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_reward_transactions
 CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2919,9 +2432,6 @@ CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
   KEY `idx_source_id` (`source_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Audit trail: all reward transactions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_season_history
 CREATE TABLE IF NOT EXISTS `dc_season_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `season_id` int unsigned NOT NULL,
@@ -2934,9 +2444,6 @@ CREATE TABLE IF NOT EXISTS `dc_season_history` (
   KEY `idx_event_type` (`event_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Season lifecycle history';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_seasons
 CREATE TABLE IF NOT EXISTS `dc_seasons` (
   `season_id` int unsigned NOT NULL,
   `season_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -2962,9 +2469,6 @@ CREATE TABLE IF NOT EXISTS `dc_seasons` (
   KEY `idx_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Season configuration';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_server_firsts
 CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `category` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -2975,9 +2479,6 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
   UNIQUE KEY `idx_category` (`category`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_spectator_settings
 CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -2990,9 +2491,6 @@ CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
   KEY `idx_player_guid` (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player spectator mode settings';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_tier_conversion_log
 CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -3007,9 +2505,6 @@ CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Audit trail for tier conversion events';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_token_event_config
 CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique event config ID',
   `event_type` enum('quest','creature','achievement','pvp','battleground','daily') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Type of event',
@@ -3031,9 +2526,6 @@ CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   KEY `idx_season` (`season`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Configuration for which events award tokens and how much';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_token_rewards_log
 CREATE TABLE IF NOT EXISTS `dc_token_rewards_log` (
   `log_id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry',
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -3049,9 +2541,6 @@ CREATE TABLE IF NOT EXISTS `dc_token_rewards_log` (
   KEY `idx_dungeon_stats` (`map_id`,`difficulty`,`awarded_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Token reward history for final boss kills';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_token_transaction_log
 CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   `transaction_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -3066,16 +2555,11 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=339 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=345 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_top_upgraders
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_top_upgraders` 
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_upgrade_history
 CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
@@ -3097,10 +2581,6 @@ CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
   KEY `idx_upgraded_at` (`upgraded_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete item upgrade history log';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von View acore_chars.dc_upgrade_speed_stats
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `dc_upgrade_speed_stats` (
 	`player_guid` INT UNSIGNED NOT NULL COMMENT 'Player performing upgrade',
 	`total_upgrades` BIGINT NOT NULL,
@@ -3110,7 +2590,6 @@ CREATE TABLE `dc_upgrade_speed_stats` (
 	`average_cost_per_upgrade` DECIMAL(15,4) NULL
 );
 
--- Exportiere Struktur von Tabelle acore_chars.dc_vault_reward_pool
 CREATE TABLE IF NOT EXISTS `dc_vault_reward_pool` (
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `season_id` int unsigned NOT NULL COMMENT 'Season ID',
@@ -3124,9 +2603,6 @@ CREATE TABLE IF NOT EXISTS `dc_vault_reward_pool` (
   KEY `idx_claimed` (`character_guid`,`season_id`,`week_start`,`claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Generated vault reward options with claim tracking';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_weekly_spending
 CREATE TABLE IF NOT EXISTS `dc_weekly_spending` (
   `player_guid` int unsigned NOT NULL,
   `week_start` date NOT NULL,
@@ -3138,9 +2614,6 @@ CREATE TABLE IF NOT EXISTS `dc_weekly_spending` (
   KEY `idx_week_start` (`week_start`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly spending tracking for progression and limits';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_weekly_vault
 CREATE TABLE IF NOT EXISTS `dc_weekly_vault` (
   `character_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
@@ -3159,9 +2632,6 @@ CREATE TABLE IF NOT EXISTS `dc_weekly_vault` (
   KEY `idx_pending_rewards` (`season_id`,`week_start`,`reward_claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly Great Vault progress';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_welcome_faq
 CREATE TABLE IF NOT EXISTS `dc_welcome_faq` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `category` varchar(30) NOT NULL DEFAULT 'general' COMMENT 'Category: general, mythicplus, prestige, systems, community',
@@ -3176,9 +2646,6 @@ CREATE TABLE IF NOT EXISTS `dc_welcome_faq` (
   KEY `idx_active_priority` (`active`,`category`,`priority` DESC)
 ) ENGINE=InnoDB AUTO_INCREMENT=26 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Dynamic FAQ content';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.dc_welcome_whats_new
 CREATE TABLE IF NOT EXISTS `dc_welcome_whats_new` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `version` varchar(20) NOT NULL COMMENT 'Server/addon version this applies to',
@@ -3195,23 +2662,18 @@ CREATE TABLE IF NOT EXISTS `dc_welcome_whats_new` (
   KEY `idx_active_priority` (`active`,`priority` DESC)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Dynamic What''s New content';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Ereignis acore_chars.evt_dc_addon_cleanup_logs
 DELIMITER //
 CREATE EVENT `evt_dc_addon_cleanup_logs` ON SCHEDULE EVERY 1 WEEK STARTS '2025-12-01 03:00:00' ON COMPLETION PRESERVE ENABLE DO BEGIN
     CALL `sp_dc_addon_cleanup_logs`(30);
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Ereignis acore_chars.evt_dc_addon_daily_aggregate
 DELIMITER //
 CREATE EVENT `evt_dc_addon_daily_aggregate` ON SCHEDULE EVERY 1 DAY STARTS '2025-11-30 02:00:00' ON COMPLETION PRESERVE ENABLE DO BEGIN
     CALL `sp_dc_addon_aggregate_daily`();
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Tabelle acore_chars.game_event_condition_save
 CREATE TABLE IF NOT EXISTS `game_event_condition_save` (
   `eventEntry` tinyint unsigned NOT NULL,
   `condition_id` int unsigned NOT NULL DEFAULT '0',
@@ -3219,9 +2681,6 @@ CREATE TABLE IF NOT EXISTS `game_event_condition_save` (
   PRIMARY KEY (`eventEntry`,`condition_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.game_event_save
 CREATE TABLE IF NOT EXISTS `game_event_save` (
   `eventEntry` tinyint unsigned NOT NULL,
   `state` tinyint unsigned NOT NULL DEFAULT '1',
@@ -3229,9 +2688,6 @@ CREATE TABLE IF NOT EXISTS `game_event_save` (
   PRIMARY KEY (`eventEntry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.gameobject_respawn
 CREATE TABLE IF NOT EXISTS `gameobject_respawn` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `respawnTime` int unsigned NOT NULL DEFAULT '0',
@@ -3241,9 +2697,6 @@ CREATE TABLE IF NOT EXISTS `gameobject_respawn` (
   KEY `idx_instance` (`instanceId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Grid Loading System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.gm_subsurvey
 CREATE TABLE IF NOT EXISTS `gm_subsurvey` (
   `surveyId` int unsigned NOT NULL AUTO_INCREMENT,
   `questionId` int unsigned NOT NULL DEFAULT '0',
@@ -3252,9 +2705,6 @@ CREATE TABLE IF NOT EXISTS `gm_subsurvey` (
   PRIMARY KEY (`surveyId`,`questionId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.gm_survey
 CREATE TABLE IF NOT EXISTS `gm_survey` (
   `surveyId` int unsigned NOT NULL AUTO_INCREMENT,
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -3265,9 +2715,6 @@ CREATE TABLE IF NOT EXISTS `gm_survey` (
   PRIMARY KEY (`surveyId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.gm_ticket
 CREATE TABLE IF NOT EXISTS `gm_ticket` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0 open, 1 closed, 2 character deleted',
@@ -3292,9 +2739,6 @@ CREATE TABLE IF NOT EXISTS `gm_ticket` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.group_member
 CREATE TABLE IF NOT EXISTS `group_member` (
   `guid` int unsigned NOT NULL,
   `memberGuid` int unsigned NOT NULL,
@@ -3304,9 +2748,6 @@ CREATE TABLE IF NOT EXISTS `group_member` (
   PRIMARY KEY (`memberGuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Groups';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.groups
 CREATE TABLE IF NOT EXISTS `groups` (
   `guid` int unsigned NOT NULL,
   `leaderGuid` int unsigned NOT NULL,
@@ -3329,9 +2770,6 @@ CREATE TABLE IF NOT EXISTS `groups` (
   KEY `leaderGuid` (`leaderGuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Groups';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild
 CREATE TABLE IF NOT EXISTS `guild` (
   `guildid` int unsigned NOT NULL DEFAULT '0',
   `name` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
@@ -3348,9 +2786,6 @@ CREATE TABLE IF NOT EXISTS `guild` (
   PRIMARY KEY (`guildid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_bank_eventlog
 CREATE TABLE IF NOT EXISTS `guild_bank_eventlog` (
   `guildid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Guild Identificator',
   `LogGuid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Log record identificator - auxiliary column',
@@ -3367,9 +2802,6 @@ CREATE TABLE IF NOT EXISTS `guild_bank_eventlog` (
   KEY `Idx_LogGuid` (`LogGuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_bank_item
 CREATE TABLE IF NOT EXISTS `guild_bank_item` (
   `guildid` int unsigned NOT NULL DEFAULT '0',
   `TabId` tinyint unsigned NOT NULL DEFAULT '0',
@@ -3380,9 +2812,6 @@ CREATE TABLE IF NOT EXISTS `guild_bank_item` (
   KEY `Idx_item_guid` (`item_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_bank_right
 CREATE TABLE IF NOT EXISTS `guild_bank_right` (
   `guildid` int unsigned NOT NULL DEFAULT '0',
   `TabId` tinyint unsigned NOT NULL DEFAULT '0',
@@ -3393,9 +2822,6 @@ CREATE TABLE IF NOT EXISTS `guild_bank_right` (
   KEY `guildid_key` (`guildid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_bank_tab
 CREATE TABLE IF NOT EXISTS `guild_bank_tab` (
   `guildid` int unsigned NOT NULL DEFAULT '0',
   `TabId` tinyint unsigned NOT NULL DEFAULT '0',
@@ -3406,9 +2832,6 @@ CREATE TABLE IF NOT EXISTS `guild_bank_tab` (
   KEY `guildid_key` (`guildid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_eventlog
 CREATE TABLE IF NOT EXISTS `guild_eventlog` (
   `guildid` int unsigned NOT NULL COMMENT 'Guild Identificator',
   `LogGuid` int unsigned NOT NULL COMMENT 'Log record identificator - auxiliary column',
@@ -3423,9 +2846,6 @@ CREATE TABLE IF NOT EXISTS `guild_eventlog` (
   KEY `Idx_LogGuid` (`LogGuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild Eventlog';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_member
 CREATE TABLE IF NOT EXISTS `guild_member` (
   `guildid` int unsigned NOT NULL COMMENT 'Guild Identificator',
   `guid` int unsigned NOT NULL,
@@ -3437,9 +2857,6 @@ CREATE TABLE IF NOT EXISTS `guild_member` (
   KEY `guildid_rank_key` (`guildid`,`rank`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_member_withdraw
 CREATE TABLE IF NOT EXISTS `guild_member_withdraw` (
   `guid` int unsigned NOT NULL,
   `tab0` int unsigned NOT NULL DEFAULT '0',
@@ -3452,9 +2869,6 @@ CREATE TABLE IF NOT EXISTS `guild_member_withdraw` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild Member Daily Withdraws';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.guild_rank
 CREATE TABLE IF NOT EXISTS `guild_rank` (
   `guildid` int unsigned NOT NULL DEFAULT '0',
   `rid` tinyint unsigned NOT NULL,
@@ -3465,9 +2879,6 @@ CREATE TABLE IF NOT EXISTS `guild_rank` (
   KEY `Idx_rid` (`rid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.instance
 CREATE TABLE IF NOT EXISTS `instance` (
   `id` int unsigned NOT NULL DEFAULT '0',
   `map` smallint unsigned NOT NULL DEFAULT '0',
@@ -3481,9 +2892,6 @@ CREATE TABLE IF NOT EXISTS `instance` (
   KEY `difficulty` (`difficulty`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.instance_reset
 CREATE TABLE IF NOT EXISTS `instance_reset` (
   `mapid` smallint unsigned NOT NULL DEFAULT '0',
   `difficulty` tinyint unsigned NOT NULL DEFAULT '0',
@@ -3492,9 +2900,6 @@ CREATE TABLE IF NOT EXISTS `instance_reset` (
   KEY `difficulty` (`difficulty`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.instance_saved_go_state_data
 CREATE TABLE IF NOT EXISTS `instance_saved_go_state_data` (
   `id` int unsigned NOT NULL COMMENT 'instance.id',
   `guid` int unsigned NOT NULL COMMENT 'gameobject.guid',
@@ -3502,9 +2907,6 @@ CREATE TABLE IF NOT EXISTS `instance_saved_go_state_data` (
   PRIMARY KEY (`id`,`guid`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.item_instance
 CREATE TABLE IF NOT EXISTS `item_instance` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `itemEntry` int unsigned DEFAULT '0',
@@ -3524,9 +2926,6 @@ CREATE TABLE IF NOT EXISTS `item_instance` (
   KEY `idx_owner_guid` (`owner_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.item_loot_storage
 CREATE TABLE IF NOT EXISTS `item_loot_storage` (
   `containerGUID` int unsigned NOT NULL,
   `itemid` int unsigned NOT NULL,
@@ -3543,9 +2942,6 @@ CREATE TABLE IF NOT EXISTS `item_loot_storage` (
   `conditionLootId` int NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.item_refund_instance
 CREATE TABLE IF NOT EXISTS `item_refund_instance` (
   `item_guid` int unsigned NOT NULL COMMENT 'Item GUID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
@@ -3554,18 +2950,12 @@ CREATE TABLE IF NOT EXISTS `item_refund_instance` (
   PRIMARY KEY (`item_guid`,`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Refund System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.item_soulbound_trade_data
 CREATE TABLE IF NOT EXISTS `item_soulbound_trade_data` (
   `itemGuid` int unsigned NOT NULL COMMENT 'Item GUID',
   `allowedPlayers` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Space separated GUID list of players who can receive this item in trade',
   PRIMARY KEY (`itemGuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Refund System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.lag_reports
 CREATE TABLE IF NOT EXISTS `lag_reports` (
   `reportId` int unsigned NOT NULL AUTO_INCREMENT,
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -3579,9 +2969,6 @@ CREATE TABLE IF NOT EXISTS `lag_reports` (
   PRIMARY KEY (`reportId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.lfg_data
 CREATE TABLE IF NOT EXISTS `lfg_data` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `dungeon` int unsigned NOT NULL DEFAULT '0',
@@ -3589,9 +2976,6 @@ CREATE TABLE IF NOT EXISTS `lfg_data` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LFG Data';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.log_arena_fights
 CREATE TABLE IF NOT EXISTS `log_arena_fights` (
   `fight_id` int unsigned NOT NULL,
   `time` datetime NOT NULL,
@@ -3609,9 +2993,6 @@ CREATE TABLE IF NOT EXISTS `log_arena_fights` (
   PRIMARY KEY (`fight_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.log_arena_memberstats
 CREATE TABLE IF NOT EXISTS `log_arena_memberstats` (
   `fight_id` int unsigned NOT NULL,
   `member_id` tinyint unsigned NOT NULL,
@@ -3626,9 +3007,6 @@ CREATE TABLE IF NOT EXISTS `log_arena_memberstats` (
   PRIMARY KEY (`fight_id`,`member_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.log_encounter
 CREATE TABLE IF NOT EXISTS `log_encounter` (
   `time` datetime NOT NULL,
   `map` smallint unsigned NOT NULL,
@@ -3638,9 +3016,6 @@ CREATE TABLE IF NOT EXISTS `log_encounter` (
   `playersInfo` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.log_money
 CREATE TABLE IF NOT EXISTS `log_money` (
   `sender_acc` int unsigned NOT NULL,
   `sender_guid` int unsigned NOT NULL,
@@ -3654,9 +3029,6 @@ CREATE TABLE IF NOT EXISTS `log_money` (
   `type` tinyint NOT NULL COMMENT '1=COD,2=AH,3=GB DEPOSIT,4=GB WITHDRAW,5=MAIL,6=TRADE'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail
 CREATE TABLE IF NOT EXISTS `mail` (
   `id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Identifier',
   `messageType` tinyint unsigned NOT NULL DEFAULT '0',
@@ -3676,9 +3048,6 @@ CREATE TABLE IF NOT EXISTS `mail` (
   KEY `idx_receiver` (`receiver`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mail System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail_items
 CREATE TABLE IF NOT EXISTS `mail_items` (
   `mail_id` int unsigned NOT NULL DEFAULT '0',
   `item_guid` int unsigned NOT NULL DEFAULT '0',
@@ -3688,9 +3057,6 @@ CREATE TABLE IF NOT EXISTS `mail_items` (
   KEY `idx_mail_id` (`mail_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail_server_character
 CREATE TABLE IF NOT EXISTS `mail_server_character` (
   `guid` int unsigned NOT NULL,
   `mailId` int unsigned NOT NULL,
@@ -3699,9 +3065,6 @@ CREATE TABLE IF NOT EXISTS `mail_server_character` (
   CONSTRAINT `fk_mail_server_character` FOREIGN KEY (`mailId`) REFERENCES `mail_server_template` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail_server_template
 CREATE TABLE IF NOT EXISTS `mail_server_template` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `moneyA` int unsigned NOT NULL DEFAULT '0',
@@ -3712,9 +3075,6 @@ CREATE TABLE IF NOT EXISTS `mail_server_template` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail_server_template_conditions
 CREATE TABLE IF NOT EXISTS `mail_server_template_conditions` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `templateID` int unsigned NOT NULL,
@@ -3726,9 +3086,6 @@ CREATE TABLE IF NOT EXISTS `mail_server_template_conditions` (
   CONSTRAINT `fk_mail_template_conditions` FOREIGN KEY (`templateID`) REFERENCES `mail_server_template` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.mail_server_template_items
 CREATE TABLE IF NOT EXISTS `mail_server_template_items` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `templateID` int unsigned NOT NULL,
@@ -3740,9 +3097,6 @@ CREATE TABLE IF NOT EXISTS `mail_server_template_items` (
   CONSTRAINT `fk_mail_template` FOREIGN KEY (`templateID`) REFERENCES `mail_server_template` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pet_aura
 CREATE TABLE IF NOT EXISTS `pet_aura` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `casterGuid` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Full Global Unique Identifier',
@@ -3762,9 +3116,6 @@ CREATE TABLE IF NOT EXISTS `pet_aura` (
   PRIMARY KEY (`guid`,`casterGuid`,`spell`,`effectMask`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Pet System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pet_spell
 CREATE TABLE IF NOT EXISTS `pet_spell` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `spell` int unsigned NOT NULL DEFAULT '0' COMMENT 'Spell Identifier',
@@ -3772,9 +3123,6 @@ CREATE TABLE IF NOT EXISTS `pet_spell` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Pet System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pet_spell_cooldown
 CREATE TABLE IF NOT EXISTS `pet_spell_cooldown` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier, Low part',
   `spell` int unsigned NOT NULL DEFAULT '0' COMMENT 'Spell Identifier',
@@ -3783,9 +3131,6 @@ CREATE TABLE IF NOT EXISTS `pet_spell_cooldown` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.petition
 CREATE TABLE IF NOT EXISTS `petition` (
   `ownerguid` int unsigned NOT NULL,
   `petitionguid` int unsigned DEFAULT '0',
@@ -3797,9 +3142,6 @@ CREATE TABLE IF NOT EXISTS `petition` (
   KEY `idx_petition_id` (`petition_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.petition_sign
 CREATE TABLE IF NOT EXISTS `petition_sign` (
   `ownerguid` int unsigned NOT NULL,
   `petitionguid` int unsigned NOT NULL DEFAULT '0',
@@ -3813,9 +3155,6 @@ CREATE TABLE IF NOT EXISTS `petition_sign` (
   KEY `idx_petition_id_player` (`petition_id`,`playerguid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.players_reports_status
 CREATE TABLE IF NOT EXISTS `players_reports_status` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `creation_time` int unsigned NOT NULL DEFAULT '0',
@@ -3839,26 +3178,17 @@ CREATE TABLE IF NOT EXISTS `players_reports_status` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pool_quest_save
 CREATE TABLE IF NOT EXISTS `pool_quest_save` (
   `pool_id` int unsigned NOT NULL DEFAULT '0',
   `quest_id` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`pool_id`,`quest_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.profanity_name
 CREATE TABLE IF NOT EXISTS `profanity_name` (
   `name` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pvpstats_battlegrounds
 CREATE TABLE IF NOT EXISTS `pvpstats_battlegrounds` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `winner_faction` tinyint NOT NULL,
@@ -3868,9 +3198,6 @@ CREATE TABLE IF NOT EXISTS `pvpstats_battlegrounds` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.pvpstats_players
 CREATE TABLE IF NOT EXISTS `pvpstats_players` (
   `battleground_id` bigint unsigned NOT NULL,
   `character_guid` int unsigned NOT NULL,
@@ -3889,9 +3216,6 @@ CREATE TABLE IF NOT EXISTS `pvpstats_players` (
   PRIMARY KEY (`battleground_id`,`character_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.quest_tracker
 CREATE TABLE IF NOT EXISTS `quest_tracker` (
   `id` int unsigned DEFAULT '0',
   `character_guid` int unsigned NOT NULL DEFAULT '0',
@@ -3903,9 +3227,6 @@ CREATE TABLE IF NOT EXISTS `quest_tracker` (
   `core_revision` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.recovery_item
 CREATE TABLE IF NOT EXISTS `recovery_item` (
   `Id` int unsigned NOT NULL AUTO_INCREMENT,
   `Guid` int unsigned NOT NULL DEFAULT '0',
@@ -3916,17 +3237,11 @@ CREATE TABLE IF NOT EXISTS `recovery_item` (
   KEY `idx_guid` (`Guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.reserved_name
 CREATE TABLE IF NOT EXISTS `reserved_name` (
   `name` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player Reserved Names';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Prozedur acore_chars.SelectHeirloomPackage
 DELIMITER //
 CREATE PROCEDURE `SelectHeirloomPackage`(
     IN p_item_guid INT UNSIGNED,
@@ -3989,7 +3304,6 @@ BEGIN
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Prozedur acore_chars.sp_dc_addon_aggregate_daily
 DELIMITER //
 CREATE PROCEDURE `sp_dc_addon_aggregate_daily`()
 BEGIN
@@ -4028,7 +3342,6 @@ BEGIN
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Prozedur acore_chars.sp_dc_addon_cleanup_logs
 DELIMITER //
 CREATE PROCEDURE `sp_dc_addon_cleanup_logs`(IN days_to_keep INT)
 BEGIN
@@ -4047,7 +3360,6 @@ BEGIN
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Prozedur acore_chars.sp_LogChallengeModeEvent
 DELIMITER //
 CREATE PROCEDURE `sp_LogChallengeModeEvent`(
     IN p_guid INT UNSIGNED,
@@ -4097,7 +3409,6 @@ BEGIN
 END//
 DELIMITER ;
 
--- Exportiere Struktur von Tabelle acore_chars.updates
 CREATE TABLE IF NOT EXISTS `updates` (
   `name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'filename with extension of the update.',
   `hash` char(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'sha1 hash of the sql file.',
@@ -4107,18 +3418,12 @@ CREATE TABLE IF NOT EXISTS `updates` (
   PRIMARY KEY (`name`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='List of all applied updates in this database.';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.updates_include
 CREATE TABLE IF NOT EXISTS `updates_include` (
   `path` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'directory to include. $ means relative to the source directory.',
   `state` enum('RELEASED','ARCHIVED','CUSTOM','PENDING') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'RELEASED' COMMENT 'defines if the directory contains released or archived updates.',
   PRIMARY KEY (`path`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='List of directories where we want to include sql updates.';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Prozedur acore_chars.UpgradeHeirloomPackage
 DELIMITER //
 CREATE PROCEDURE `UpgradeHeirloomPackage`(
     IN p_item_guid INT UNSIGNED,
@@ -4183,13 +3488,9 @@ BEGIN
 END//
 DELIMITER ;
 
--- Exportiere Struktur von View acore_chars.v_dc_addon_module_health
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_addon_module_health` 
 );
 
--- Exportiere Struktur von View acore_chars.v_dc_addon_player_activity
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_addon_player_activity` (
 	`guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
 	`character_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
@@ -4202,13 +3503,9 @@ CREATE TABLE `v_dc_addon_player_activity` (
 	`last_request` TIMESTAMP NULL COMMENT 'Most recent message'
 );
 
--- Exportiere Struktur von View acore_chars.v_dc_addon_recent_activity
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_addon_recent_activity` 
 );
 
--- Exportiere Struktur von View acore_chars.v_dc_dungeon_leaderboard
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_dungeon_leaderboard` (
 	`guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
 	`character_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_bin',
@@ -4219,8 +3516,6 @@ CREATE TABLE `v_dc_dungeon_leaderboard` (
 	`avg_dungeon_minutes` DECIMAL(12,1) NULL
 );
 
--- Exportiere Struktur von View acore_chars.v_dc_recent_events
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_dc_recent_events` (
 	`id` BIGINT UNSIGNED NOT NULL,
 	`event_type` TINYINT UNSIGNED NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
@@ -4230,8 +3525,6 @@ CREATE TABLE `v_dc_recent_events` (
 	`timestamp` TIMESTAMP NOT NULL
 );
 
--- Exportiere Struktur von View acore_chars.v_player_heirloom_upgrades
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_player_heirloom_upgrades` (
 	`player_guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
 	`item_guid` INT UNSIGNED NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -4245,8 +3538,6 @@ CREATE TABLE `v_player_heirloom_upgrades` (
 	`last_upgraded_at` TIMESTAMP NULL COMMENT 'When last upgraded'
 );
 
--- Exportiere Struktur von View acore_chars.v_seasonal_leaderboard
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_seasonal_leaderboard` (
 	`player_guid` INT UNSIGNED NOT NULL,
 	`season_id` INT UNSIGNED NOT NULL,
@@ -4259,8 +3550,6 @@ CREATE TABLE `v_seasonal_leaderboard` (
 	`boss_rank` BIGINT UNSIGNED NOT NULL
 );
 
--- Exportiere Struktur von View acore_chars.v_transaction_summary
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_transaction_summary` (
 	`transaction_type` ENUM('quest','creature','creature_group','chest','manual','adjustment') NOT NULL COLLATE 'utf8mb4_unicode_ci',
 	`total_transactions` BIGINT NOT NULL,
@@ -4271,8 +3560,6 @@ CREATE TABLE `v_transaction_summary` (
 	`last_transaction` BIGINT UNSIGNED NULL
 );
 
--- Exportiere Struktur von View acore_chars.v_weekly_top_performers
--- Erstelle temporäre Tabelle, um View-Abhängigkeiten zuvorzukommen
 CREATE TABLE `v_weekly_top_performers` (
 	`player_guid` INT UNSIGNED NOT NULL,
 	`season_id` INT UNSIGNED NOT NULL,
@@ -4283,25 +3570,18 @@ CREATE TABLE `v_weekly_top_performers` (
 	`weekly_rank` BIGINT UNSIGNED NOT NULL
 );
 
--- Exportiere Struktur von Tabelle acore_chars.warden_action
 CREATE TABLE IF NOT EXISTS `warden_action` (
   `wardenId` smallint unsigned NOT NULL,
   `action` tinyint unsigned DEFAULT NULL,
   PRIMARY KEY (`wardenId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.world_state
 CREATE TABLE IF NOT EXISTS `world_state` (
   `Id` int unsigned NOT NULL COMMENT 'Internal save ID',
   `Data` longtext,
   PRIMARY KEY (`Id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='WorldState save system';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Exportiere Struktur von Tabelle acore_chars.worldstates
 CREATE TABLE IF NOT EXISTS `worldstates` (
   `entry` int unsigned NOT NULL DEFAULT '0',
   `value` int unsigned NOT NULL DEFAULT '0',
@@ -4309,84 +3589,66 @@ CREATE TABLE IF NOT EXISTS `worldstates` (
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Variable Saves';
 
--- Daten-Export vom Benutzer nicht ausgewählt
-
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_guild_leaderboard`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_guild_leaderboard` AS select `g`.`guildid` AS `guildid`,`g`.`name` AS `guild_name`,`gs`.`total_members` AS `total_members`,`gs`.`members_with_upgrades` AS `members_with_upgrades`,`gs`.`total_guild_upgrades` AS `total_guild_upgrades`,`gs`.`total_items_upgraded` AS `total_items_upgraded`,`gs`.`average_ilvl_increase` AS `average_ilvl_increase`,`gs`.`total_essence_invested` AS `total_essence_invested`,`gs`.`total_tokens_invested` AS `total_tokens_invested` from (`guild` `g` join `dc_guild_upgrade_stats` `gs` on((`gs`.`guild_id` = `g`.`guildid`))) order by `gs`.`total_guild_upgrades` desc
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_chars`.`dc_guild_leaderboard` AS select `g`.`guildid` AS `guildid`,`g`.`name` AS `guild_name`,0 AS `total_members`,`gs`.`active_upgraders` AS `members_with_upgrades`,`gs`.`total_upgrades` AS `total_guild_upgrades`,`gs`.`total_upgrades` AS `total_items_upgraded`,0 AS `average_ilvl_increase`,0 AS `total_essence_invested`,`gs`.`total_tokens_spent` AS `total_tokens_invested` from (`acore_chars`.`guild` `g` join `acore_chars`.`dc_guild_upgrade_stats` `gs` on((`gs`.`guild_id` = `g`.`guildid`))) order by `gs`.`total_upgrades` desc
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_item_upgrade_missing_items_summary`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_item_upgrade_missing_items_summary` AS select `dc_item_upgrade_missing_items`.`item_id` AS `item_id`,max(`dc_item_upgrade_missing_items`.`item_name`) AS `item_name`,`dc_item_upgrade_missing_items`.`error_type` AS `error_type`,count(0) AS `occurrence_count`,max(`dc_item_upgrade_missing_items`.`timestamp`) AS `last_occurrence`,min(`dc_item_upgrade_missing_items`.`timestamp`) AS `first_occurrence`,group_concat(distinct `dc_item_upgrade_missing_items`.`player_name` order by `dc_item_upgrade_missing_items`.`player_name` ASC separator ', ') AS `affected_players` from `dc_item_upgrade_missing_items` where (`dc_item_upgrade_missing_items`.`resolved` = 0) group by `dc_item_upgrade_missing_items`.`item_id`,`dc_item_upgrade_missing_items`.`error_type` order by `occurrence_count` desc,`last_occurrence` desc
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_player_progression_summary`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_player_progression_summary` AS select `p`.`player_guid` AS `player_guid`,`p`.`total_mastery_points` AS `total_mastery_points`,`p`.`mastery_rank` AS `mastery_rank`,`p`.`items_fully_upgraded` AS `items_fully_upgraded`,`p`.`total_upgrades_applied` AS `total_upgrades_applied`,`s`.`essence_earned` AS `essence_earned`,`s`.`tokens_earned` AS `tokens_earned`,`s`.`essence_spent` AS `essence_spent`,`s`.`tokens_spent` AS `tokens_spent`,`s`.`items_upgraded` AS `items_upgraded`,`s`.`season_id` AS `season_id` from (`dc_player_artifact_mastery` `p` left join `dc_player_season_data` `s` on((`s`.`player_guid` = `p`.`player_guid`))) where (`s`.`season_id` = (select `dc_seasons`.`season_id` from `dc_seasons` where (`dc_seasons`.`is_active` = 1) limit 1))
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_player_progression_summary` AS select `p`.`player_guid` AS `player_guid`,`p`.`total_points_earned` AS `total_mastery_points`,`p`.`mastery_level` AS `mastery_rank`,0 AS `items_fully_upgraded`,0 AS `total_upgrades_applied`,`s`.`essence_earned` AS `essence_earned`,`s`.`tokens_earned` AS `tokens_earned`,`s`.`essence_spent` AS `essence_spent`,`s`.`tokens_spent` AS `tokens_spent`,`s`.`items_upgraded` AS `items_upgraded`,`s`.`season_id` AS `season_id` from (`dc_player_artifact_mastery` `p` left join `dc_player_season_data` `s` on((`s`.`player_guid` = `p`.`player_guid`))) where (`s`.`season_id` = (select `dc_seasons`.`season_id` from `dc_seasons` where (`dc_seasons`.`is_active` = 1) limit 1))
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_player_upgrade_summary`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_player_upgrade_summary` AS select `iu`.`player_guid` AS `player_guid`,count(distinct `iu`.`item_guid`) AS `items_upgraded`,sum(`iu`.`essence_invested`) AS `total_essence_spent`,sum(`iu`.`tokens_invested`) AS `total_tokens_spent`,avg(`iu`.`current_stat_multiplier`) AS `average_stat_multiplier`,avg((`iu`.`upgraded_item_level` - `iu`.`base_item_level`)) AS `average_ilvl_gain`,max(`iu`.`last_upgraded_timestamp`) AS `last_upgraded`,sum((case when (`iu`.`upgrade_level` = 15) then 1 else 0 end)) AS `fully_upgraded_items` from `dc_item_upgrades` `iu` group by `iu`.`player_guid`
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_player_upgrade_summary` AS select `iu`.`player_guid` AS `player_guid`,count(distinct `iu`.`item_guid`) AS `items_upgraded`,sum(`iu`.`essence_invested`) AS `total_essence_spent`,sum(`iu`.`tokens_invested`) AS `total_tokens_spent`,avg(`iu`.`stat_multiplier`) AS `average_stat_multiplier`,0 AS `average_ilvl_gain`,max(`iu`.`last_upgraded_at`) AS `last_upgraded`,sum((case when (`iu`.`upgrade_level` = 15) then 1 else 0 end)) AS `fully_upgraded_items` from `dc_item_upgrades` `iu` group by `iu`.`player_guid`
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_recent_upgrades_feed`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_recent_upgrades_feed` AS select `h`.`history_id` AS `history_id`,`h`.`player_guid` AS `player_guid`,`c`.`name` AS `player_name`,`h`.`item_id` AS `item_id`,`h`.`upgrade_from` AS `upgrade_from`,`h`.`upgrade_to` AS `upgrade_to`,`h`.`essence_cost` AS `essence_cost`,`h`.`token_cost` AS `token_cost`,`h`.`timestamp` AS `timestamp`,`h`.`season_id` AS `season_id` from (`dc_upgrade_history` `h` left join `characters` `c` on((`c`.`guid` = `h`.`player_guid`))) order by `h`.`timestamp` desc limit 50
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_recent_upgrades_feed` AS select `h`.`id` AS `history_id`,`h`.`player_guid` AS `player_guid`,`c`.`name` AS `player_name`,`h`.`item_entry` AS `item_id`,`h`.`old_value` AS `upgrade_from`,`h`.`new_value` AS `upgrade_to`,`h`.`cost_essence` AS `essence_cost`,`h`.`cost_tokens` AS `token_cost`,`h`.`upgraded_at` AS `timestamp`,`h`.`season_id` AS `season_id` from (`dc_upgrade_history` `h` left join `characters` `c` on((`c`.`guid` = `h`.`player_guid`))) order by `h`.`upgraded_at` desc limit 50
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_top_upgraders`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_top_upgraders` AS select `s`.`player_guid` AS `player_guid`,`c`.`name` AS `player_name`,`s`.`upgrades_applied` AS `upgrades_applied`,`s`.`items_upgraded` AS `items_upgraded`,`s`.`essence_spent` AS `essence_spent`,`s`.`tokens_spent` AS `tokens_spent`,`p`.`mastery_rank` AS `mastery_rank`,`p`.`total_mastery_points` AS `total_mastery_points`,`s`.`season_id` AS `season_id` from ((`dc_player_season_data` `s` left join `characters` `c` on((`c`.`guid` = `s`.`player_guid`))) left join `dc_player_artifact_mastery` `p` on((`p`.`player_guid` = `s`.`player_guid`))) where (`s`.`season_id` = (select `dc_seasons`.`season_id` from `dc_seasons` where (`dc_seasons`.`is_active` = 1) limit 1)) order by `s`.`upgrades_applied` desc limit 100
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_top_upgraders` AS select `s`.`player_guid` AS `player_guid`,`c`.`name` AS `player_name`,`s`.`upgrades_applied` AS `upgrades_applied`,`s`.`items_upgraded` AS `items_upgraded`,`s`.`essence_spent` AS `essence_spent`,`s`.`tokens_spent` AS `tokens_spent`,`p`.`mastery_level` AS `mastery_rank`,`p`.`total_points_earned` AS `total_mastery_points`,`s`.`season_id` AS `season_id` from ((`dc_player_season_data` `s` left join `characters` `c` on((`c`.`guid` = `s`.`player_guid`))) left join `dc_player_artifact_mastery` `p` on((`p`.`player_guid` = `s`.`player_guid`))) where (`s`.`season_id` = (select `dc_seasons`.`season_id` from `dc_seasons` where (`dc_seasons`.`is_active` = 1) limit 1)) order by `s`.`upgrades_applied` desc limit 100
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `dc_upgrade_speed_stats`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_upgrade_speed_stats` AS select `dc_item_upgrade_log`.`player_guid` AS `player_guid`,count(0) AS `total_upgrades`,((count(0) / ((unix_timestamp(max(`dc_item_upgrade_log`.`timestamp`)) - unix_timestamp(min(`dc_item_upgrade_log`.`timestamp`))) + 1)) * 86400) AS `upgrades_per_day`,min(`dc_item_upgrade_log`.`timestamp`) AS `first_upgrade`,max(`dc_item_upgrade_log`.`timestamp`) AS `last_upgrade`,avg((`dc_item_upgrade_log`.`essence_cost` + `dc_item_upgrade_log`.`token_cost`)) AS `average_cost_per_upgrade` from `dc_item_upgrade_log` group by `dc_item_upgrade_log`.`player_guid`
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_addon_module_health`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_module_health` AS select `dc_addon_protocol_log`.`module` AS `module`,count(0) AS `total_requests_24h`,sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) AS `completed`,sum((case when (`dc_addon_protocol_log`.`status` = 'timeout') then 1 else 0 end)) AS `timeouts`,sum((case when (`dc_addon_protocol_log`.`status` = 'error') then 1 else 0 end)) AS `errors`,round(((sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) / count(0)) * 100),2) AS `success_rate`,round(avg(`dc_addon_protocol_log`.`response_time_ms`),2) AS `avg_response_ms`,max(`dc_addon_protocol_log`.`response_time_ms`) AS `max_response_ms` from `dc_addon_protocol_log` where ((`dc_addon_protocol_log`.`timestamp` > (now() - interval 24 hour)) and (`dc_addon_protocol_log`.`direction` = 'C2S')) group by `dc_addon_protocol_log`.`module` order by `total_requests_24h` desc
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_module_health` AS select `dc_addon_protocol_log`.`module` AS `module`,count(0) AS `total_requests_24h`,sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) AS `completed`,sum((case when (`dc_addon_protocol_log`.`status` = 'timeout') then 1 else 0 end)) AS `timeouts`,sum((case when (`dc_addon_protocol_log`.`status` = 'error') then 1 else 0 end)) AS `errors`,round(((sum((case when (`dc_addon_protocol_log`.`status` = 'completed') then 1 else 0 end)) / count(0)) * 100),2) AS `success_rate`,round(avg(`dc_addon_protocol_log`.`processing_time_ms`),2) AS `avg_response_ms`,max(`dc_addon_protocol_log`.`processing_time_ms`) AS `max_response_ms` from `dc_addon_protocol_log` where ((`dc_addon_protocol_log`.`timestamp` > (now() - interval 24 hour)) and (`dc_addon_protocol_log`.`direction` = 'C2S')) group by `dc_addon_protocol_log`.`module` order by `total_requests_24h` desc
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_addon_player_activity`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_player_activity` AS select `s`.`guid` AS `guid`,`c`.`name` AS `character_name`,`s`.`module` AS `module`,`s`.`total_requests` AS `total_requests`,`s`.`total_responses` AS `total_responses`,`s`.`total_timeouts` AS `total_timeouts`,round(((`s`.`total_responses` / nullif(`s`.`total_requests`,0)) * 100),2) AS `success_rate`,round(`s`.`avg_response_time_ms`,2) AS `avg_response_ms`,`s`.`last_request` AS `last_request` from (`dc_addon_protocol_stats` `s` left join `characters` `c` on((`c`.`guid` = `s`.`guid`))) order by `s`.`last_request` desc
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_addon_recent_activity`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_recent_activity` AS select `l`.`timestamp` AS `timestamp`,`l`.`character_name` AS `character_name`,`l`.`direction` AS `direction`,`l`.`module` AS `module`,concat('0x',lpad(hex(`l`.`opcode`),2,'0')) AS `opcode_hex`,`l`.`opcode_name` AS `opcode_name`,`l`.`status` AS `status`,`l`.`response_time_ms` AS `response_time_ms`,`l`.`data_size` AS `data_size` from `dc_addon_protocol_log` `l` where (`l`.`timestamp` > (now() - interval 1 hour)) order by `l`.`timestamp` desc limit 100
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_addon_recent_activity` AS select `l`.`timestamp` AS `timestamp`,`l`.`character_name` AS `character_name`,`l`.`direction` AS `direction`,`l`.`module` AS `module`,concat('0x',lpad(hex(`l`.`opcode`),2,'0')) AS `opcode_hex`,'' AS `opcode_name`,`l`.`status` AS `status`,`l`.`processing_time_ms` AS `response_time_ms`,`l`.`data_size` AS `data_size` from `dc_addon_protocol_log` `l` where (`l`.`timestamp` > (now() - interval 1 hour)) order by `l`.`timestamp` desc limit 100
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_dungeon_leaderboard`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_dungeon_leaderboard` AS select `s`.`guid` AS `guid`,`c`.`name` AS `character_name`,`s`.`total_dungeons_completed` AS `total_dungeons_completed`,`s`.`total_boss_kills` AS `total_boss_kills`,`s`.`highest_mythic_level_cleared` AS `highest_mythic_level_cleared`,`s`.`total_dungeon_time_seconds` AS `total_dungeon_time_seconds`,round((`s`.`average_dungeon_seconds` / 60),1) AS `avg_dungeon_minutes` from (`dc_player_cross_system_stats` `s` join `characters` `c` on((`c`.`guid` = `s`.`guid`))) order by `s`.`total_dungeons_completed` desc limit 100
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_dc_recent_events`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_recent_events` AS select `e`.`id` AS `id`,`e`.`event_type` AS `event_type`,`e`.`source_system` AS `source_system`,`c`.`name` AS `character_name`,`e`.`event_data` AS `event_data`,`e`.`timestamp` AS `timestamp` from (`dc_cross_system_events` `e` left join `characters` `c` on((`c`.`guid` = `e`.`player_guid`))) where (`e`.`timestamp` > (now() - interval 24 hour)) order by `e`.`timestamp` desc limit 500
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_player_heirloom_upgrades`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_player_heirloom_upgrades` AS select `hu`.`player_guid` AS `player_guid`,`hu`.`item_guid` AS `item_guid`,`hu`.`item_entry` AS `item_entry`,`hu`.`upgrade_level` AS `upgrade_level`,`hu`.`package_id` AS `package_id`,`hu`.`enchant_id` AS `enchant_id`,`hu`.`essence_invested` AS `essence_invested`,`hu`.`tokens_invested` AS `tokens_invested`,`hu`.`first_upgraded_at` AS `first_upgraded_at`,`hu`.`last_upgraded_at` AS `last_upgraded_at` from `dc_heirloom_upgrades` `hu`
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_seasonal_leaderboard`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_seasonal_leaderboard` AS select `dc_player_seasonal_stats`.`player_guid` AS `player_guid`,`dc_player_seasonal_stats`.`season_id` AS `season_id`,`dc_player_seasonal_stats`.`total_tokens_earned` AS `total_tokens_earned`,`dc_player_seasonal_stats`.`total_essence_earned` AS `total_essence_earned`,`dc_player_seasonal_stats`.`quests_completed` AS `quests_completed`,`dc_player_seasonal_stats`.`bosses_killed` AS `bosses_killed`,`dc_player_seasonal_stats`.`chests_claimed` AS `chests_claimed`,row_number() OVER (PARTITION BY `dc_player_seasonal_stats`.`season_id` ORDER BY `dc_player_seasonal_stats`.`total_tokens_earned` desc )  AS `token_rank`,row_number() OVER (PARTITION BY `dc_player_seasonal_stats`.`season_id` ORDER BY `dc_player_seasonal_stats`.`bosses_killed` desc )  AS `boss_rank` from `dc_player_seasonal_stats` where (`dc_player_seasonal_stats`.`total_tokens_earned` > 0) order by `dc_player_seasonal_stats`.`season_id`,`dc_player_seasonal_stats`.`total_tokens_earned` desc
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_transaction_summary`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_transaction_summary` AS select `dc_reward_transactions`.`transaction_type` AS `transaction_type`,count(0) AS `total_transactions`,sum(`dc_reward_transactions`.`token_amount`) AS `total_tokens`,sum(`dc_reward_transactions`.`essence_amount`) AS `total_essence`,avg(`dc_reward_transactions`.`token_amount`) AS `avg_token_reward`,min(`dc_reward_transactions`.`transaction_at`) AS `first_transaction`,max(`dc_reward_transactions`.`transaction_at`) AS `last_transaction` from `dc_reward_transactions` group by `dc_reward_transactions`.`transaction_type`
 ;
 
--- Entferne temporäre Tabelle und erstelle die eigentliche View
 DROP TABLE IF EXISTS `v_weekly_top_performers`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_weekly_top_performers` AS select `dc_player_seasonal_stats`.`player_guid` AS `player_guid`,`dc_player_seasonal_stats`.`season_id` AS `season_id`,`dc_player_seasonal_stats`.`weekly_tokens_earned` AS `weekly_tokens_earned`,`dc_player_seasonal_stats`.`weekly_essence_earned` AS `weekly_essence_earned`,`dc_player_seasonal_stats`.`quests_completed` AS `quests_completed`,`dc_player_seasonal_stats`.`bosses_killed` AS `bosses_killed`,row_number() OVER (PARTITION BY `dc_player_seasonal_stats`.`season_id` ORDER BY `dc_player_seasonal_stats`.`weekly_tokens_earned` desc )  AS `weekly_rank` from `dc_player_seasonal_stats` where (`dc_player_seasonal_stats`.`weekly_reset_at` = (select max(`dc_player_seasonal_stats`.`weekly_reset_at`) from `dc_player_seasonal_stats` limit 1)) order by `dc_player_seasonal_stats`.`weekly_tokens_earned` desc
 ;

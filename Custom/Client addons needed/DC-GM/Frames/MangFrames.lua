@@ -38,8 +38,20 @@ function AzerothAdmin:CreateFrames()
   self:CreateNpcSection()
   self:CreateGOSection()
   self:CreateWhoSection()
-  self:CreateDCSection()
+  
+  -- Use pcall to prevent crashes if these sections fail
+  if self.CreateDCSection then
+      pcall(self.CreateDCSection, self)
+  end
+  
+  if self.CreateDCTeleSection then
+      pcall(self.CreateDCTeleSection, self)
+  end
 
+  -- Ensure DC group is hidden initially
+  if FrameLib and FrameLib.HandleGroup then
+      FrameLib:HandleGroup("dc", function(frame) frame:Hide() end)
+  end
 
   --FrameLib:HandleGroup("bg", function(frame) frame:Hide() end)
   --FrameLib:HandleGroup("main", function(frame) frame:Hide() end)

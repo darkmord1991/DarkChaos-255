@@ -40,7 +40,7 @@ Players must establish a foothold, push back the Zandalari invasion, and face th
 #### **Defensive Structures (Barricades & Walls)**
 - **19395** - Spike Wall (Scale: 1.8 - intimidating barrier)
 - **19434** - Fence Segment (Modular fencing)
-- **19454** - Fence (Basic perimeter)
+- **19434** - Fence (Basic perimeter)
 - **19455** - Stone Fence (Durable variant)
 
 #### **Tribal Decorations & Totems**
@@ -3860,18 +3860,16 @@ public:
 
 | Entry Range | Description |
 |-------------|-------------|
-| 400000-400002 | Chaos Devilsaurs |
-| 400003-400006 | Primal Stegodons |
-| 400007-400010 | Chaos Raptors |
-| 400011-400013 | Chaos Pterrordax |
-| 400014-400016 | Primal Diemetradons |
-| 400050-400054 | Rare Elite Dinosaurs |
+| 400000-400016 | Zone Dinosaurs (Normal/Elite) |
+| 400050-400059 | Rare Elite Dinosaurs |
 | 400100 | **World Boss: Oondasta** |
 | 400101 | **World Boss: Thok the Bloodthirsty** |
 | 400102 | **World Boss: Nalak the Storm Lord** |
 | 400200-400221 | Zandalari NPCs (friendly) |
 | 400250-400260 | Primal Troll enemies |
 | 400300-400311 | Special NPCs (Spirit, Innkeeper, Flight Master) |
+| 400320-400324 | Cannon Quest NPCs & Objects |
+| 400325-400337 | Invasion Event NPCs |
 | 400400-400403 | Boss adds (Young Oondasta, Pack Raptor, Storm Spark, Static Cloud) |
 
 ### TODO - Still Required
@@ -3889,12 +3887,14 @@ public:
 ### Base NPCs Created
 
 - [x] Guards and Defenders (401000-401009)
-- [x] Vendors and Services (401100-401123)
-- [x] Quest Givers (401200-401216)
-- [x] Expedition Members (401300-401324)
-- [x] Zandalari Enemies (401400-401432)
-- [x] Dinosaur Creatures - Normal (401500-401552)
-- [x] Dinosaur Creatures - Elite (401600-401613)
-- [x] Chaos Corrupted Creatures (401700-401733)
+- [x] Vendors and Services (401100-401115)
+- [x] Quest Givers (401200-401222)
+- [x] Zandalari NPCs (400200-400221)
+- [x] Hostile Trolls (400250-400260)
+- [x] Invasion NPCs (400325-400337)
+- [x] Cannon Quest NPCs (400320-400324)
+- [x] Dinosaur Creatures - Normal (400000-400016)
+- [x] Dinosaur Creatures - Rare/Elite (400050-400059)
+- [x] World Bosses (400100-400102)
 
-See: `Custom/Custom feature SQLs/worlddb/GiantIsles/giant_isles_base_npcs.sql`
+See: `Custom/Custom feature SQLs/worlddb/GiantIsles/giant_isles_creatures.sql`
