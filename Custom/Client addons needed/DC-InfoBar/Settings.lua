@@ -68,8 +68,8 @@ local DEFAULTS = {
         },
         ["DCInfoBar_Events"] = {
             enabled = true,
-            side = "left",
-            priority = 50,
+            side = "right",
+            priority = 890,
             showLabel = false,
             hideWhenNone = true,
             showZone = true,

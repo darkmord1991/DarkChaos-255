@@ -42,9 +42,10 @@ local GoldPlugin = {
     _currencyCache = {},
 }
 
--- Helper: Count items in bags
+-- Helper: Count items in bags, bank, and reagent bank
 local function GetItemCount(itemId)
     local count = 0
+    -- Check player bags (0-4)
     for bag = 0, 4 do
         local numSlots = GetContainerNumSlots(bag)
         for slot = 1, numSlots do
@@ -58,6 +59,40 @@ local function GetItemCount(itemId)
             end
         end
     end
+    -- Check bank bags (5-11) - these exist if player has opened bank
+    pcall(function()
+        for bag = 5, 11 do
+            local numSlots = GetContainerNumSlots(bag)
+            if numSlots and numSlots > 0 then
+                for slot = 1, numSlots do
+                    local link = GetContainerItemLink(bag, slot)
+                    if link then
+                        local id = tonumber(link:match("item:(%d+)"))
+                        if id == itemId then
+                            local _, itemCount = GetContainerItemInfo(bag, slot)
+                            count = count + (itemCount or 0)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    -- Check reagent bank (bag 98) if available
+    pcall(function()
+        local numSlots = GetContainerNumSlots(98)
+        if numSlots and numSlots > 0 then
+            for slot = 1, numSlots do
+                local link = GetContainerItemLink(98, slot)
+                if link then
+                    local id = tonumber(link:match("item:(%d+)"))
+                    if id == itemId then
+                        local _, itemCount = GetContainerItemInfo(98, slot)
+                        count = count + (itemCount or 0)
+                    end
+                end
+            end
+        end
+    end)
     return count
 end
 

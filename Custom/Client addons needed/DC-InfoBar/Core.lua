@@ -19,6 +19,41 @@ DCInfoBar.serverData = {}           -- Cached server data
 -- DCAddonProtocol reference
 local DC = nil
 
+-- Token info (from DCAddonProtocol if available)
+DCInfoBar.TokenInfo = nil
+
+-- ============================================================================
+-- Token Information Integration (DCAddonProtocol)
+-- ============================================================================
+
+function DCInfoBar:InitializeTokenInfo()
+    local DCProtocol = rawget(_G, "DCAddonProtocol")
+    if DCProtocol then
+        self.TokenInfo = DCProtocol
+    end
+end
+
+function DCInfoBar:GetTokenIcon(itemID)
+    if self.TokenInfo and self.TokenInfo.GetTokenIcon then
+        return self.TokenInfo:GetTokenIcon(itemID)
+    end
+    return "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"  -- Fallback
+end
+
+function DCInfoBar:GetTokenInfo(itemID)
+    if self.TokenInfo and self.TokenInfo.GetTokenInfo then
+        return self.TokenInfo:GetTokenInfo(itemID)
+    end
+    return nil
+end
+
+function DCInfoBar:FormatTokenDisplay(itemID, count, colorCode)
+    if self.TokenInfo and self.TokenInfo.FormatTokenDisplay then
+        return self.TokenInfo:FormatTokenDisplay(itemID, count, colorCode)
+    end
+    return tostring(count or 0)
+end
+
 -- ============================================================================
 -- Server Data Cache (populated by DCAddonProtocol)
 -- ============================================================================
@@ -540,10 +575,10 @@ function DCInfoBar:OnUpdate(elapsed)
         self.bar:Show()
     end
     
-    -- Update each active plugin
+    -- Update each active plugin (always, regardless of button visibility, so plugins can control their own visibility)
     for _, side in ipairs({"left", "right"}) do
         for _, plugin in ipairs(self.activePlugins[side]) do
-            if plugin.button and plugin.button:IsShown() then
+            if plugin.button then
                 plugin._elapsed = (plugin._elapsed or 0) + elapsed
                 
                 if plugin._elapsed >= (plugin.updateInterval or 1.0) then
@@ -566,6 +601,9 @@ end
 -- ============================================================================
 
 function DCInfoBar:Initialize()
+    -- Initialize token info from DC-Central
+    self:InitializeTokenInfo()
+    
     -- Initialize saved variables
     self:InitializeDB()
     
@@ -662,6 +700,16 @@ function DCInfoBar:SetupSlashCommands()
             for i, event in ipairs(events) do
                 self:Print(string.format("  %d: %s (%s) - %s", i, event.name, event.zone, event.state))
             end
+        elseif cmd == "showevent" then
+            -- Temporarily disable hideWhenNone to force show events
+            self:SetPluginSetting("DCInfoBar_Events", "hideWhenNone", false)
+            self:Print("Event display forced ON (hideWhenNone disabled)")
+            self:RefreshAllPlugins()
+        elseif cmd == "hideevent" then
+            -- Re-enable hideWhenNone
+            self:SetPluginSetting("DCInfoBar_Events", "hideWhenNone", true)
+            self:Print("Event display restored to normal (hideWhenNone enabled)")
+            self:RefreshAllPlugins()
         elseif cmd == "testseason" then
             -- Inject a season progress payload to test UI updates
             local a, b, c = string.match(msg, "testseason%s+(%d+)%s*(%d*)%s*(%d*)")
@@ -690,6 +738,12 @@ function DCInfoBar:SetupSlashCommands()
             self:Print("  /infobar reset - Reset to defaults")
             self:Print("  /infobar debug - Toggle debug mode")
             self:Print("  /infobar refresh - Refresh server data")
+            self:Print("  /infobar testevent - Inject test invasion event")
+            self:Print("  /infobar events - Show current events")
+            self:Print("  /infobar showevent - Force show event display")
+            self:Print("  /infobar hideevent - Hide event display")
+            self:Print("  /infobar testseason [weekly] [total] [id] - Test season data")
+            self:Print("  /infobar showseason - Show current season data")
             self:Print("  /infobar testevent - Inject test event")
             self:Print("  /infobar events - List current events")
         end

@@ -68,13 +68,39 @@ local Data = {
     quests = 0,
     worldBosses = 0,
     dungeonBosses = 0,
-    _loaded = false
+    _loaded = false,
+    _showWeeklyView = true,  -- Toggle between weekly and total view
 }
 
 -- Export data
 DCWelcome.Seasons.Data = Data
 DCWelcome.Seasons.GetSetting = GetSetting
 DCWelcome.Seasons.SetSetting = SetSetting
+
+-- Get token and essence info from DCAddonProtocol if available
+local function GetTokenInfo()
+    local DCProtocol = rawget(_G, "DCAddonProtocol")
+    if DCProtocol then
+        return {
+            tokenID = DCProtocol.TOKEN_ITEM_ID,
+            essenceID = DCProtocol.ESSENCE_ITEM_ID,
+            getTokenIcon = function() return DCProtocol:GetTokenIcon(DCProtocol.TOKEN_ITEM_ID) end,
+            getEssenceIcon = function() return DCProtocol:GetTokenIcon(DCProtocol.ESSENCE_ITEM_ID) end,
+            formatToken = function(count) return DCProtocol:FormatTokenDisplay(DCProtocol.TOKEN_ITEM_ID, count) end,
+            formatEssence = function(count) return DCProtocol:FormatTokenDisplay(DCProtocol.ESSENCE_ITEM_ID, count) end,
+        }
+    else
+        return {
+            tokenID = 300311,
+            essenceID = 300312,
+            getTokenIcon = function() return "Interface\\Icons\\INV_Misc_Token_ArgentCrusade" end,
+            getEssenceIcon = function() return "Interface\\Icons\\INV_Misc_Herb_Draenethisle" end,
+            formatToken = function(count) return "|cffffd700" .. count .. " Tokens|r" end,
+            formatEssence = function(count) return "|cff0070dd" .. count .. " Essence|r" end,
+        }
+    end
+end
+
 -- Convenience getter for other addons/scripts
 function DCWelcome.Seasons:GetWeeklyTokens()
     return Data.weeklyTokens or 0
@@ -82,6 +108,10 @@ end
 
 function DCWelcome.Seasons:GetInventoryTokens()
     return Data.tokens or 0
+end
+
+function DCWelcome.Seasons:GetTokenInfo()
+    return GetTokenInfo()
 end
 
 -------------------------------------------------------------------------------
@@ -109,6 +139,8 @@ function DCWelcome.Seasons:CreateRewardPopup()
     if Frames.rewardPopup then
         return Frames.rewardPopup
     end
+    
+    local tokenInfo = GetTokenInfo()
     
     local frame = CreateFrame("Frame", "DCWelcome_SeasonRewardPopup", UIParent)
     frame:SetSize(Config.FRAME_WIDTH, Config.FRAME_HEIGHT)
@@ -138,7 +170,7 @@ function DCWelcome.Seasons:CreateRewardPopup()
     local tokenIcon = frame:CreateTexture(nil, "OVERLAY")
     tokenIcon:SetSize(32, 32)
     tokenIcon:SetPoint("LEFT", frame, "LEFT", 20, 10)
-    tokenIcon:SetTexture("Interface\\Icons\\INV_Misc_Token_ArgentCrusade")
+    tokenIcon:SetTexture(tokenInfo.getTokenIcon())
     frame.tokenIcon = tokenIcon
     
     local tokenText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -150,7 +182,7 @@ function DCWelcome.Seasons:CreateRewardPopup()
     local essenceIcon = frame:CreateTexture(nil, "OVERLAY")
     essenceIcon:SetSize(32, 32)
     essenceIcon:SetPoint("LEFT", frame, "LEFT", 20, -25)
-    essenceIcon:SetTexture("Interface\\Icons\\INV_Misc_Token_Darkmoon")
+    essenceIcon:SetTexture(tokenInfo.getEssenceIcon())
     frame.essenceIcon = essenceIcon
     
     local essenceText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -261,6 +293,32 @@ function DCWelcome.Seasons:CreateProgressTracker()
     tokenBarText:SetText("0 / 5000 Tokens")
     frame.tokenBarText = tokenBarText
     
+    -- Make token bar clickable to toggle between weekly and total view
+    tokenBar:EnableMouse(true)
+    tokenBar:SetScript("OnMouseDown", function(self)
+        Data._showWeeklyView = not Data._showWeeklyView
+        DCWelcome.Seasons:UpdateProgressTracker()
+        if Data._showWeeklyView then
+            print("|cffFFD700[Seasons]|r Switched to |cffFFD700Weekly|r view")
+        else
+            print("|cffFFD700[Seasons]|r Switched to |cffffd700Total|r view - Total Tokens: " .. (Data.tokens or 0))
+        end
+    end)
+    tokenBar:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Token Progress", 1, 0.82, 0)
+        if Data._showWeeklyView then
+            GameTooltip:AddLine("Weekly: " .. (Data.weeklyTokens or 0) .. " / " .. (Data.weeklyTokenCap or 1000), 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Total Collected: " .. (Data.tokens or 0), 0.5, 0.5, 0.5)
+        else
+            GameTooltip:AddLine("Total Collected: " .. (Data.tokens or 0), 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Weekly: " .. (Data.weeklyTokens or 0) .. " / " .. (Data.weeklyTokenCap or 1000), 0.5, 0.5, 0.5)
+        end
+        GameTooltip:AddLine("Click to toggle view", 0.5, 1, 0.5)
+        GameTooltip:Show()
+    end)
+    tokenBar:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
+    
     -- Essence progress bar
     local essenceBar = CreateFrame("StatusBar", nil, frame)
     essenceBar:SetSize(220, 18)
@@ -280,6 +338,32 @@ function DCWelcome.Seasons:CreateProgressTracker()
     essenceBarText:SetPoint("CENTER", essenceBar, "CENTER")
     essenceBarText:SetText("0 / 2500 Essence")
     frame.essenceBarText = essenceBarText
+    
+    -- Make essence bar clickable to toggle between weekly and total view
+    essenceBar:EnableMouse(true)
+    essenceBar:SetScript("OnMouseDown", function(self)
+        Data._showWeeklyView = not Data._showWeeklyView
+        DCWelcome.Seasons:UpdateProgressTracker()
+        if Data._showWeeklyView then
+            print("|cffFFD700[Seasons]|r Switched to |cffFFD700Weekly|r view")
+        else
+            print("|cffFFD700[Seasons]|r Switched to |cff00ffff|cff00ffffTotal|r view - Total Essence: " .. (Data.essence or 0))
+        end
+    end)
+    essenceBar:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Essence Progress", 0, 1, 1)
+        if Data._showWeeklyView then
+            GameTooltip:AddLine("Weekly: " .. (Data.weeklyEssence or 0) .. " / " .. (Data.weeklyEssenceCap or 1000), 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Total Collected: " .. (Data.essence or 0), 0.5, 0.5, 0.5)
+        else
+            GameTooltip:AddLine("Total Collected: " .. (Data.essence or 0), 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Weekly: " .. (Data.weeklyEssence or 0) .. " / " .. (Data.weeklyEssenceCap or 1000), 0.5, 0.5, 0.5)
+        end
+        GameTooltip:AddLine("Click to toggle view", 0.5, 1, 0.5)
+        GameTooltip:Show()
+    end)
+    essenceBar:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
     
     -- Stats text
     local statsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -323,15 +407,28 @@ function DCWelcome.Seasons:UpdateProgressTracker()
         frame.seasonName:SetText(string.format("|cff00ff00%s|r", Data.seasonName or ""))
     end
     
-    -- Use weeklyTokens for progress bar (weekly cap progress)
-    local tokenPercent = Data.weeklyTokens / math.max(Data.weeklyTokenCap, 1)
-    frame.tokenBar:SetValue(math.min(tokenPercent, 1))
-    frame.tokenBarText:SetText(string.format("%d / %d Tokens (Weekly)", Data.weeklyTokens, Data.weeklyTokenCap))
-    
-    -- Use weeklyEssence for progress bar (weekly cap progress)
-    local essencePercent = Data.weeklyEssence / math.max(Data.weeklyEssenceCap, 1)
-    frame.essenceBar:SetValue(math.min(essencePercent, 1))
-    frame.essenceBarText:SetText(string.format("%d / %d Essence (Weekly)", Data.weeklyEssence, Data.weeklyEssenceCap))
+    -- Display bars in toggled view (weekly or total)
+    if Data._showWeeklyView then
+        -- Weekly view
+        local tokenPercent = Data.weeklyTokens / math.max(Data.weeklyTokenCap, 1)
+        frame.tokenBar:SetValue(math.min(tokenPercent, 1))
+        frame.tokenBarText:SetText(string.format("%d / %d Tokens (Weekly)", Data.weeklyTokens, Data.weeklyTokenCap))
+        
+        local essencePercent = Data.weeklyEssence / math.max(Data.weeklyEssenceCap, 1)
+        frame.essenceBar:SetValue(math.min(essencePercent, 1))
+        frame.essenceBarText:SetText(string.format("%d / %d Essence (Weekly)", Data.weeklyEssence, Data.weeklyEssenceCap))
+    else
+        -- Total collected view (use totalCap as reference, typically much higher)
+        local totalCap = math.max(Data.weeklyTokenCap * 10, 10000)  -- Assume total cap is 10x weekly cap
+        local tokenPercent = Data.tokens / totalCap
+        frame.tokenBar:SetValue(math.min(tokenPercent, 1))
+        frame.tokenBarText:SetText(string.format("%d Total Tokens Collected", Data.tokens or 0))
+        
+        local totalEssenceCap = math.max(Data.weeklyEssenceCap * 10, 10000)
+        local essencePercent = Data.essence / totalEssenceCap
+        frame.essenceBar:SetValue(math.min(essencePercent, 1))
+        frame.essenceBarText:SetText(string.format("%d Total Essence Collected", Data.essence or 0))
+    end
     
     frame.statsText:SetText(string.format("Quests: %d | Bosses: %d", Data.quests, Data.worldBosses + Data.dungeonBosses))
 end

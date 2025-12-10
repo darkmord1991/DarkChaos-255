@@ -84,7 +84,6 @@ function AzerothAdmin:CreateDCTeleSection()
     text = ""
   })
   ma_dctele_search:SetScript("OnTextChanged", function(self) AzerothAdmin:UpdateDCTeleList() end)
-  ma_dctele_search:SetAutoFocus(false)
 
   FrameLib:BuildFrame({
     type = "ScrollFrame",

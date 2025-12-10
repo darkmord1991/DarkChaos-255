@@ -5151,6 +5151,13 @@ Invasion.ChatSpawnMessages = 1
 #
 Invasion.SendAddonPackets = 0
 
+# Example: To enable this globally without editing worldserver.conf, set the environment
+# variable in your system or service configuration before starting the server:
+#   Linux (bash): export AC_INVASION_SEND_ADDON_PACKETS=1
+#   Windows (PowerShell): $env:AC_INVASION_SEND_ADDON_PACKETS = "1"
+# Or add the following line to your active worldserver.conf file under a relevant section:
+#   Invasion.SendAddonPackets = 1
+
 
 #
 #    DC.AddonProtocol.Leaderboard.EntriesPerPage

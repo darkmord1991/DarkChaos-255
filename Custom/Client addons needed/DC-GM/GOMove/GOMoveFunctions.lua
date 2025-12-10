@@ -139,7 +139,6 @@ function GOMove:CreateInput(Frame, name, width, height, Ox, Oy, letters, default
     local Input = CreateFrame("EditBox", Frame:GetName().."_"..name, Frame, "InputBoxTemplate")
     Input:SetSize(width, height)
     Input:SetPoint("TOP", Frame, "TOP", Ox+2.5, Oy-10)
-    Input:SetAutoFocus(false)
     Input:SetNumeric(true)
     Input:SetMaxLetters(letters)
     Input:SetScript("OnEnterPressed", function() Input:ClearFocus() end)

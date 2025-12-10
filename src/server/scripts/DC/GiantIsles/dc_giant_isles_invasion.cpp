@@ -27,6 +27,7 @@
 #include <algorithm>
 #include "Random.h"
 #include <sstream>
+#include <atomic>
 
 // ============================================================================
 // INVASION CONSTANTS
@@ -169,6 +170,11 @@ const InvasionSpawnPoint DEFENDER_POINTS[4] =
     { 5770.7040f, 1281.0323f, 9.5231530f, 5.6661500f, "Defender 4" }
 };
 
+// Cooldown in milliseconds between status broadcasts to prevent spam
+constexpr uint32 EVENT_STATUS_BROADCAST_COOLDOWN_MS = 2000;
+// Cooldown for ChatHandler world announcements (ms) to prevent duplicate world text spam
+constexpr uint32 EVENT_ANNOUNCE_COOLDOWN_MS = 2000;
+
 // ============================================================================
 // INVASION COMMANDER BOSS - Warlord Zul'mar
 // ============================================================================
@@ -196,6 +202,10 @@ enum WarlordEvents
 // Global pointer to the active map script (Singleton-like for World Map)
 class giant_isles_invasion;
 static giant_isles_invasion* sGiantIslesInvasion = nullptr;
+
+// Free helper wrapper that allows AIs to call this early. Forwards to the map script instance if loaded,
+// or falls back to immediate ChatHandler call if not (should be rare during initialization).
+static void SafeWorldAnnounce(Map* map, const char* text);
 
 // Helper to avoid circular-forward-declaration issues: call this from AIs
 void GI_TrackPlayerKill(ObjectGuid playerGuid);
@@ -468,7 +478,7 @@ public:
             // Notify: perform basic victory actions (inline fallback)
             if (Map* map = me->GetMap())
             {
-                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFF00FF00[VICTORY!]|r Warlord Zul'mar has fallen! The Zandalari invasion is repelled!");
+                SafeWorldAnnounce(map, "|cFF00FF00[VICTORY!]|r Warlord Zul'mar has fallen! The Zandalari invasion is repelled!");
                 
                 // Victory sound
                 map->DoForAllPlayers([](Player* player)
@@ -535,7 +545,8 @@ class giant_isles_invasion : public WorldMapScript
 {
 public:
     giant_isles_invasion() : WorldMapScript("giant_isles_invasion", MAP_GIANT_ISLES),
-        _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID(), _bossActivated(false)
+        _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID(), _bossActivated(false),
+        _broadcastedFailure(false), _broadcastedVictory(false), _spawnCounter(0), _failInvocationCount(0), _victoryInvocationCount(0), _spawnIndex(), _lastEventStatusBroadcastTime(0), _lastEventAnnouncementTime(0), _isFailing(false)
     {
         sGiantIslesInvasion = this;
     }
@@ -551,6 +562,42 @@ public:
         CleanupInvasion(map);
     }
 
+    // Ensure any previous event state is cleaned up on map creation (server restart or map reload)
+    void OnCreate(Map* map) override
+    {
+        // Reset world-state flags so the event doesn't auto-run or spam on restart.
+        if (sWorldState)
+        {
+            sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 0);
+            sWorldState->setWorldState(WORLD_STATE_INVASION_KILLS, 0);
+        }
+
+        // Attempt to clean up any leftover creatures or state for this map instance
+        CleanupInvasion(map);
+        // Also clear internal tracking structures in case of hot reload
+        _invasionPhase = INVASION_INACTIVE;
+        _waveTimer = 0;
+        _spawnTimer = 0;
+        _invaderNudgeTimer = 0;
+        _killCount = 0;
+        _bossGUID.Clear();
+        _leaderGUID.Clear();
+        _bossGuardGuids.clear();
+        _invaderGuids.clear();
+        _participantKills.clear();
+        _bossActivated = false;
+        _spawnCounter = 0;
+        _spawnIndex.clear();
+        _lastEventAnnouncementTime = 0;
+        _lastEventStatusBroadcastTime = 0;
+        _failInvocationCount = 0;
+        _isFailing.store(false);
+        _victoryInvocationCount = 0;
+
+        LOG_INFO("scripts", "Giant Isles Invasion: Map created - event state reset to inactive") ;
+    }
+
     // State variables
     InvasionPhase _invasionPhase;
     uint32 _waveTimer;
@@ -564,8 +611,15 @@ public:
     std::vector<ObjectGuid> _bossGuardGuids;
     std::map<ObjectGuid, uint32> _participantKills;
     bool _bossActivated;
+    std::atomic<bool> _isFailing;
+    bool _broadcastedFailure;
+    bool _broadcastedVictory;
     uint32 _spawnCounter;
+    uint32 _failInvocationCount;
+    uint32 _victoryInvocationCount;
     std::map<ObjectGuid, uint32> _spawnIndex;
+    uint64_t _lastEventStatusBroadcastTime;
+    uint64_t _lastEventAnnouncementTime;
 
     // Maintain boss guards is defined inline below to manage guard AI and respawn
     // RegisterSummonedInvader is defined inline below as a convenience
@@ -589,9 +643,25 @@ public:
         _bossGuardGuids.clear();
         _bossActivated = false;
         _spawnCounter = 0; // reset spawn numbering for clean debugging output
+        _broadcastedFailure = false;
+        _broadcastedVictory = false;
+        _lastEventAnnouncementTime = 0; // clear announcement cooldown for fresh event
+        _failInvocationCount = 0;
+        _victoryInvocationCount = 0;
 
-        // Dramatic warning announcement
-        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF0000[INVASION WARNING]|r War drums echo across Seeping Shores! The Zandalari fleet approaches!");
+        // Dramatic warning announcement (suppress rapid duplicates)
+        {
+            uint64_t now = GameTime::GetGameTime().count();
+            if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
+            {
+                SafeWorldAnnounce("|cFFFF0000[INVASION WARNING]|r War drums echo across Seeping Shores! The Zandalari fleet approaches!");
+                _lastEventAnnouncementTime = now;
+            }
+            else
+            {
+                LOG_DEBUG("scripts", "Giant Isles Invasion: Warning announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+            }
+        }
         
         // Play war horn sound to all players in zone
         map->DoForAllPlayers([](Player* player)
@@ -632,9 +702,29 @@ public:
 
     void OnBossKilled()
     {
+        _victoryInvocationCount++;
+        if (_victoryInvocationCount > 1)
+        {
+            LOG_WARN("scripts", "Giant Isles Invasion: OnBossKilled invoked multiple times (count={})", _victoryInvocationCount);
+            // Prevent double victory processing
+            if (_broadcastedVictory)
+                return;
+        }
+        _broadcastedVictory = true;
         _invasionPhase = INVASION_VICTORY;
         _waveTimer = 10 * IN_MILLISECONDS;
-        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Victory! The Zandalari invasion has been repelled!");
+        {
+            uint64_t now = GameTime::GetGameTime().count();
+            if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
+            {
+                SafeWorldAnnounce("Victory! The Zandalari invasion has been repelled!");
+                _lastEventAnnouncementTime = now;
+            }
+            else
+            {
+                LOG_DEBUG("scripts", "Giant Isles Invasion: Victory announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+            }
+        }
         RewardParticipants();
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, static_cast<uint32>(GameTime::GetGameTime().count()));
         if (Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0))
@@ -720,7 +810,8 @@ public:
             _invaderNudgeTimer -= diff;
 
         // Check if all defenders died - invasion fails
-        if (CheckDefendersAlive(map) == 0 && _invasionPhase < INVASION_VICTORY)
+        // Only fail the invasion if we are actually in a wave or boss phase
+        if (CheckDefendersAlive(map) == 0 && _invasionPhase >= INVASION_WAVE_1 && _invasionPhase < INVASION_VICTORY)
             FailInvasion(map);
             
         // Check boss death manually since we don't have InstanceScript hooks
@@ -746,7 +837,7 @@ public:
                 _waveTimer = WAVE_1_DURATION;
                 _spawnTimer = SPAWN_DELAY_WAVE_1;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
-                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF8000[INVASION - WAVE 1]|r Zandalari scouts storm the beach! Kill them quickly!");
+                SafeWorldAnnounce("|cFFFF8000[INVASION - WAVE 1]|r Zandalari scouts storm the beach! Kill them quickly!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8459); });  // Battle horn
                 // Spawn the first wave batch immediately
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 1");
@@ -761,7 +852,7 @@ public:
                 _waveTimer = WAVE_2_DURATION;
                 _spawnTimer = SPAWN_DELAY_WAVE_2;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
-                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF8000[INVASION - WAVE 2]|r Zandalari warriors and berserkers charge! Hold the line!");
+                SafeWorldAnnounce("|cFFFF8000[INVASION - WAVE 2]|r Zandalari warriors and berserkers charge! Hold the line!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8174); });  // Orc battle cry
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
                 SpawnWaveCreatures(map);
@@ -776,7 +867,7 @@ public:
                 _waveTimer = WAVE_3_DURATION;
                 _spawnTimer = SPAWN_DELAY_WAVE_3;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
-                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF4000[INVASION - WAVE 3]|r Elite Blood Guards and Witch Doctors arrive! Beware their dark magic!");
+                SafeWorldAnnounce("|cFFFF4000[INVASION - WAVE 3]|r Elite Blood Guards and Witch Doctors arrive! Beware their dark magic!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8212); });  // Troll aggro
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
                 SpawnWaveCreatures(map);
@@ -791,7 +882,7 @@ public:
                 _waveTimer = WAVE_4_DURATION;
                 _spawnTimer = 0;  // No more spawns, only boss
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
-                ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
+                SafeWorldAnnounce("|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8923); });  // Raid warning
                 ActivateBossWave(map);
                 BossWaveComment(4);
@@ -861,7 +952,7 @@ public:
                 BroadcastSpawn(map, guard, 0, -1);
             }
         }
-        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Reinforcements have arrived!");
+        SafeWorldAnnounce("Reinforcements have arrived!");
     }
 
     void SpawnWaveCreatures(Map* map)
@@ -1241,14 +1332,44 @@ public:
 
     void FailInvasion(Map* map)
     {
+        // Prevent re-entrancy from multiple triggers — atomic ensures a single thread proceeds.
+        bool expected = false;
+        if (!_isFailing.compare_exchange_strong(expected, true))
+        {
+            // Another thread is already handling the failure; ignore this invocation
+            LOG_WARN("scripts", "Giant Isles Invasion: FailInvasion re-entry suppressed (already handling)");
+            return;
+        }
+        _failInvocationCount++;
+        if (_failInvocationCount > 1)
+        {
+            LOG_WARN("scripts", "Giant Isles Invasion: FailInvasion invoked multiple times (count={})", _failInvocationCount);
+            if (_broadcastedFailure)
+            {
+                _isFailing.store(false);
+                return;
+            }
+        }
+        _broadcastedFailure = true;
         _invasionPhase = INVASION_FAILED;
-        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, "Defeat! The Zandalari have overrun Seeping Shores!");
+        {
+            uint64_t now = GameTime::GetGameTime().count();
+            if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
+            {
+                SafeWorldAnnounce("Defeat! The Zandalari have overrun Seeping Shores!");
+                _lastEventAnnouncementTime = now;
+            }
+            else
+            {
+                LOG_DEBUG("scripts", "Giant Isles Invasion: Failure announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+            }
+        }
         
             BroadcastEventStatus(map, "failed");
             BroadcastEventRemoval(map, "failed");
         BossWaveComment(6);
 
-        BroadcastEventStatus(map);
+        // removed duplicate BroadcastEventStatus to avoid repeated outputs
 
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
         CleanupInvasion(map);
@@ -1256,6 +1377,7 @@ public:
         _bossGUID.Clear();
         _bossActivated = false;
         LOG_INFO("scripts", "Giant Isles Invasion: Event failed");
+        _isFailing.store(false);
     }
 
     void RewardParticipants()
@@ -1357,6 +1479,25 @@ public:
         _invasionPhase = INVASION_INACTIVE;
         _bossGUID.Clear();
         _bossActivated = false;
+        _broadcastedFailure = false;
+        _broadcastedVictory = false;
+        _lastEventAnnouncementTime = 0;
+        _isFailing.store(false);
+    }
+
+    // Helper to post event messages safely with per-map cooldown to avoid chat spam
+    void SafeWorldAnnounce(const char* text)
+    {
+        uint64_t now = GameTime::GetGameTime().count();
+        if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
+        {
+            ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, text);
+            _lastEventAnnouncementTime = now;
+        }
+        else
+        {
+            LOG_DEBUG("scripts", "Giant Isles Invasion: Announce suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+        }
     }
 
     // Broadcast as CHAT_MSG_ADDON to players on the map (clients can pick this up in addons)
@@ -1448,6 +1589,15 @@ public:
 
         if (!sConfigMgr->GetOption<bool>("Invasion.SendAddonPackets", false))
             return;
+
+        // Apply a short cooldown to prevent duplicate rapid broadcasts (e.g., due to restart hooks)
+        uint64_t now = GameTime::GetGameTime().count();
+        if (_lastEventStatusBroadcastTime != 0 && (now - _lastEventStatusBroadcastTime) < EVENT_STATUS_BROADCAST_COOLDOWN_MS)
+        {
+            LOG_DEBUG("scripts", "Giant Isles Invasion: BroadcastEventStatus suppressed due to cooldown ({}ms)", (now - _lastEventStatusBroadcastTime));
+            return;
+        }
+        _lastEventStatusBroadcastTime = now;
 
         std::string state;
         if (stateOverride)
@@ -1907,4 +2057,17 @@ void AddSC_giant_isles_invasion()
     new npc_invasion_commander();
     new giant_isles_invasion();
     LOG_INFO("scripts", "Giant Isles Invasion: Scripts Registered");
+}
+
+// Free-level wrapper implemented after class definition to allow use in earlier AIs
+static void SafeWorldAnnounce(Map* map, const char* text)
+{
+    if (sGiantIslesInvasion)
+    {
+        sGiantIslesInvasion->SafeWorldAnnounce(text);
+    }
+    else
+    {
+        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, text);
+    }
 }

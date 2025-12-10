@@ -30,6 +30,15 @@ local EVENT_TYPE_COLORS = {
 
 local DEFAULT_EVENT_COLOR = "ff9d9d9d"
 
+function EventsPlugin:OnActivate()
+    DCInfoBar:Debug("Events plugin activated - waiting for server data")
+    -- Ensure serverData.events exists
+    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
+    
+    -- Register handler for test data injection
+    DCInfoBar._eventPluginActive = true
+end
+
 local function GetSetting(key, default)
     local value = DCInfoBar:GetPluginSetting(EventsPlugin.id, key)
     if value == nil then
@@ -88,13 +97,39 @@ function EventsPlugin:OnUpdate(elapsed)
     local showTimer = GetSetting("showTimer", true)
     local flashCritical = GetSetting("flashCritical", true)
     
+    -- Debug: log if no events exist
+    if #events == 0 then
+        DCInfoBar:Debug("Events plugin: No events in serverData.events")
+    else
+        DCInfoBar:Debug("Events plugin: " .. #events .. " event(s) in serverData.events")
+    end
+    
     -- Filter to only active events
     local activeEvents = {}
-    for _, event in ipairs(events) do
-        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
-            table.insert(activeEvents, event)
+    if events and type(events) == "table" then
+        for _, event in ipairs(events) do
+            if event then
+                -- Normalize state field (could be "state" or "status")
+                local state = event.state or event.status or "active"
+                local isActive = event.active ~= false  -- Default to true if not explicitly false
+                
+                DCInfoBar:Debug(string.format("Event check: %s, active=%s, state=%s", 
+                    event.name or "Unknown", tostring(event.active), tostring(state)))
+                
+                -- Include event if it's marked active and state is active/spawning/ongoing
+                local isActiveState = (state == "active" or state == "spawning" or state == "ongoing" or state == "progress" or state == nil)
+                
+                if isActive and isActiveState then
+                    table.insert(activeEvents, event)
+                    DCInfoBar:Debug("  -> Included in active events")
+                else
+                    DCInfoBar:Debug("  -> Filtered out (active=" .. tostring(isActive) .. ", state=" .. tostring(state) .. ")")
+                end
+            end
         end
     end
+    
+    DCInfoBar:Debug("Events plugin: " .. #activeEvents .. " active event(s)")
     
     if #activeEvents == 0 then
         if hideWhenNone and self.button then
@@ -106,6 +141,7 @@ function EventsPlugin:OnUpdate(elapsed)
         return "", "|cffbbbbbbNo active events|r"
     else
         if self.button and not self.button:IsShown() then
+            DCInfoBar:Debug("Showing Events button")
             self.button:Show()
         end
     end

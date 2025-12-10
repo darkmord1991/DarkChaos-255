@@ -888,7 +888,6 @@ local function createDonateFrame()
 	editBox:SetPoint("BOTTOM", 5, 0)
 	editBox:SetJustifyH("LEFT")
 	editBox:SetJustifyV("TOP")
-	editBox:SetAutoFocus(false)
 	editBox:SetScript("OnTextChanged", function(this)
 		if this:GetText() ~= this.text then
 			this:SetText(this.text)

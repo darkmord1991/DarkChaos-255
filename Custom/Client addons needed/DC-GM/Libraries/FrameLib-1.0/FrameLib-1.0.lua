@@ -27,6 +27,7 @@ local FrameLib = { group = {} }
 
 --[[ADD FRAME TO GROUP]]
 function FrameLib:AddGroupFrame(group, frame)
+  if not group then return end  -- Skip if group is nil
   if type(self.group[group]) ~= "table" then
     self.group[group] = {}
   end
@@ -177,7 +178,6 @@ function FrameLib:BuildFrame(def)
   end
   
   if def.type == "EditBox" then
-    frame:SetAutoFocus(false)
     frame:ClearFocus()
     --frame:SetScript("OnEnter", function() frame:SetFocus() end)
     --frame:SetScript("OnLeave", function() frame:ClearFocus() end)
@@ -330,7 +330,9 @@ end
 function FrameLib:BuildEditBox(def)	
   local editbox = CreateFrame("MessageFrame", def.name, def.parent, "InputBoxTemplate")
   self:AddGroupFrame(def.group, editbox)
-  editbox:SetAutoFocus(def.autofocus)
+  if def.autofocus then
+    editbox:SetFocus()
+  end
   editbox:SetMaxLetters(def.maxLetters)
   editbox:SetMultiLine(def.multiline)
   local t = def.size

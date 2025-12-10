@@ -68,7 +68,7 @@ function AzerothAdmin:CreateDCSection()
     },
     text = "Item Upgrade UI"
   })
-  AzerothAdmin:PrepareScript(ma_dc_itemupgrade_btn, "Open Item Upgrade UI (/dcu)", function() SlashCmdList.DCITEMUPGRADE("") end)
+  AzerothAdmin:PrepareScript(ma_dc_itemupgrade_btn, "Open Item Upgrade UI (/dcu)", function() SlashCmdList.DCUPGRADE("") end)
 
   FrameLib:BuildButton({
     name = "ma_dc_mplus_btn",
@@ -294,6 +294,7 @@ function AzerothAdmin:OpenDCHandlers()
 
   FrameLib:BuildFrame({
     name = "ma_dchandlers_window",
+    group = "dchandlers",
     parent = UIParent,
     texture = { color = {color.bg.r, color.bg.g, color.bg.b, transparency.bg} },
     size = { width = 700, height = 500 },
@@ -561,7 +562,6 @@ function AzerothAdmin:ExportDCHandlers()
     eb:SetMaxLetters(32768)
     eb:SetSize(560, 320)
     eb:SetPoint("TOPLEFT", 20, -36)
-    eb:SetAutoFocus(false)
     eb:SetScript("OnEscapePressed", function(self) ma_dchandlers_export_popup:Hide() end)
     ma_dchandlers_export_popup.editbox = eb
   end

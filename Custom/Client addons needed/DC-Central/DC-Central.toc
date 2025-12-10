@@ -1,7 +1,0 @@
-## Title: DC-Central
-## Notes: Central shared constants and utilities for DC addons (Keystone IDs, central tooltip)
-## Author: DarkChaos Team
-## Version: 1.0.0
-## SavedVariables: DCCentralDB
-
-DC-Central.lua

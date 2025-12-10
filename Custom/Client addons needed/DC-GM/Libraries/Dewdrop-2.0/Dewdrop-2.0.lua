@@ -2215,7 +2215,6 @@ function OpenSlider(self, parent)
 			self:Close(sliderFrame.level)
 			StartCounting(self, sliderFrame.level)
 		end)
-		editBox:SetAutoFocus(false)
 	end
 	sliderFrame.parent = parent
 	sliderFrame.level = parent.level.num + 1

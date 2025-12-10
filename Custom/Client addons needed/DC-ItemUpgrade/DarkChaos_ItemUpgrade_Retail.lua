@@ -1511,9 +1511,15 @@ DC.queryInFlight = DC.queryInFlight or nil;
 DC.itemUpgradeCache = DC.itemUpgradeCache or {};
 DC.itemLocationCache = DC.itemLocationCache or {};
 
--- Currency item IDs (hardcoded defaults, can be overridden by server)
-DC.TOKEN_ITEM_ID = DC.TOKEN_ITEM_ID or 300311;   -- Upgrade Token
-DC.ESSENCE_ITEM_ID = DC.ESSENCE_ITEM_ID or 300312; -- Upgrade Essence
+-- Currency item IDs: Initialize from DCAddonProtocol if available, otherwise use defaults
+local DCProtocol = rawget(_G, "DCAddonProtocol");
+if DCProtocol then
+    DC.TOKEN_ITEM_ID = DCProtocol.TOKEN_ITEM_ID;
+    DC.ESSENCE_ITEM_ID = DCProtocol.ESSENCE_ITEM_ID;
+else
+    DC.TOKEN_ITEM_ID = DC.TOKEN_ITEM_ID or 300311;   -- Upgrade Token
+    DC.ESSENCE_ITEM_ID = DC.ESSENCE_ITEM_ID or 300312; -- Upgrade Essence
+end
 
 local INVENTORY_SLOT_ITEM_START = _G.INVENTORY_SLOT_ITEM_START or 23;
 local INVENTORY_SLOT_ITEM_END = _G.INVENTORY_SLOT_ITEM_END or 39;

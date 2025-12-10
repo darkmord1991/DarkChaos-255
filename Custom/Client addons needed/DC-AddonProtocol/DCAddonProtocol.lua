@@ -1645,21 +1645,22 @@ DC:RegisterHandler("MPLUS", 0x17, function(data)
             end
         end
         if itemsTbl and type(itemsTbl) == 'table' then
-        local newMap = {}
-        for _, id in ipairs(data.items) do
-            local num = tonumber(id)
-            if num then
-                newMap[num] = true
+            local newMap = {}
+            for _, id in ipairs(itemsTbl) do
+                local num = tonumber(id)
+                if num then
+                    newMap[num] = true
+                end
             end
-        end
-        DC.KEYSTONE_ITEM_IDS = newMap
-        -- If the DC central module is present, copy to DCCentral too
-        local DCCentral = rawget(_G, "DCCentral")
-        if DCCentral then
-            DCCentral.KEYSTONE_ITEM_IDS = newMap
-        end
-        if DC._debug then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Keystone ID list updated from server (" .. tostring(#itemsTbl) .. " items)")
+            DC.KEYSTONE_ITEM_IDS = newMap
+            -- If the DC central module is present, copy to DCCentral too
+            local DCCentral = rawget(_G, "DCCentral")
+            if DCCentral then
+                DCCentral.KEYSTONE_ITEM_IDS = newMap
+            end
+            if DC._debug then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Keystone ID list updated from server (" .. tostring(#itemsTbl) .. " items)")
+            end
         end
     end
 end)
