@@ -162,6 +162,14 @@ namespace DCAddon
         uint32 _keyLevelMatchRange = 3;
         uint32 _cleanupIntervalMs = 60000;  // 1 minute
         
+        // Reward Config
+        bool _rewardEnabled = true;
+        uint32 _rewardItemId = 49426;
+        uint32 _rewardItemCount = 2;
+        uint32 _rewardCurrencyId = 0;
+        uint32 _rewardCurrencyCount = 0;
+        uint32 _rewardDailyLimit = 1;
+
         std::mutex _mutex;
         uint32 _lastCleanupTime = 0;
         
@@ -195,6 +203,11 @@ namespace DCAddon
         std::vector<GroupFinderApplication> GetApplicationsForListing(uint32 listingId);
         std::vector<GroupFinderApplication> GetPlayerApplications(uint32 playerGuid);
         
+        // Rewards
+        void HandleDungeonCompletion(Player* player, uint32 dungeonId, uint8 difficulty);
+        bool CanReceiveReward(Player* player);
+        void GiveReward(Player* player);
+
         // Matchmaking
         void TryAutoMatch(uint32 listingId);
         bool CheckRoleRequirements(const GroupFinderListing& listing);
@@ -224,6 +237,17 @@ namespace DCAddon
         bool IsEnabled() const { return _enabled; }
         bool IsCrossFaction() const { return _crossFaction; }
         uint32 GetListingExpireMinutes() const { return _listingExpireMinutes; }
+        
+        // Reward Getters
+        bool IsRewardEnabled() const { return _rewardEnabled; }
+        uint32 GetRewardItemId() const { return _rewardItemId; }
+        uint32 GetRewardItemCount() const { return _rewardItemCount; }
+        uint32 GetRewardCurrencyId() const { return _rewardCurrencyId; }
+        uint32 GetRewardCurrencyCount() const { return _rewardCurrencyCount; }
+        uint32 GetRewardDailyLimit() const { return _rewardDailyLimit; }
+
+        // Utility
+        uint32 FindListingIdForApplication(uint32 applicationId);
     };
     
     #define sGroupFinderMgr GroupFinderMgr::Instance()

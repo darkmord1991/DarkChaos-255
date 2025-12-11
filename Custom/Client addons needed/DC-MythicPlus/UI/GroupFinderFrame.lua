@@ -14,7 +14,7 @@ local GF = namespace.GroupFinder
 
 GF.FRAME_WIDTH = 700
 GF.FRAME_HEIGHT = 520
-GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled" }
+GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled", "My Queues" }
 GF.TABS = {}
 GF.currentTab = 1
 
@@ -35,8 +35,8 @@ GF.Print = Print
 
 function GF:CreateMainFrame()
     if self.mainFrame then return self.mainFrame end
-    
-    local frame = CreateFrame("Frame", "DCMythicPlusGroupFinderFrame", UIParent)
+
+    local frame = CreateFrame("Frame", "DCMythicPlusGroupFinderFrame", UIParent, "UIPanelDialogTemplate")
     frame:SetSize(self.FRAME_WIDTH, self.FRAME_HEIGHT)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
@@ -48,60 +48,21 @@ function GF:CreateMainFrame()
     frame:SetFrameStrata("HIGH")
     frame:SetToplevel(true)
     frame:Hide()
-    
-    -- Dark background (retail-like)
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.04, 0.04, 0.05, 0.98)
-    
-    -- Border frame with backdrop
-    local border = CreateFrame("Frame", nil, frame)
-    border:SetPoint("TOPLEFT", -2, 2)
-    border:SetPoint("BOTTOMRIGHT", 2, -2)
-    border:SetBackdrop({
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        edgeSize = 24,
-        insets = { left = 6, right = 6, top = 6, bottom = 6 }
-    })
-    border:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
-    
-    -- Top header bar (darker gradient feel)
-    local headerBar = CreateFrame("Frame", nil, frame)
-    headerBar:SetPoint("TOPLEFT", 0, 0)
-    headerBar:SetPoint("TOPRIGHT", 0, 0)
-    headerBar:SetHeight(40)
-    headerBar.bg = headerBar:CreateTexture(nil, "BACKGROUND", nil, 1)
-    headerBar.bg:SetAllPoints()
-    headerBar.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
-    
-    -- Header bottom line
-    local headerLine = frame:CreateTexture(nil, "ARTWORK")
-    headerLine:SetPoint("TOPLEFT", headerBar, "BOTTOMLEFT", 0, 0)
-    headerLine:SetPoint("TOPRIGHT", headerBar, "BOTTOMRIGHT", 0, 0)
-    headerLine:SetHeight(2)
-    headerLine:SetColorTexture(0.2, 0.5, 0.8, 0.6)
-    
-    -- Icon (left of title)
-    local icon = headerBar:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(28, 28)
-    icon:SetPoint("LEFT", 12, 0)
-    icon:SetTexture("Interface\\Icons\\INV_Misc_GroupLooking")
-    
-    -- Title
-    local title = headerBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("LEFT", icon, "RIGHT", 10, 0)
-    title:SetText("|cffffffffGroup Finder|r")
-    frame.title = title
-    
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -4, -4)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-    
+
+    if frame.TitleText then
+        frame.TitleText:SetText("Dungeon Finder")
+    end
+    if frame.portrait then
+        SetPortraitToTexture(frame.portrait, "Interface\\Icons\\Achievement_challengemode_gold")
+    end
+    if frame.CloseButton then
+        frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
+    end
+
     -- Legacy Dungeon Finder button (opens Blizzard's LFG frame)
-    local legacyBtn = CreateFrame("Button", nil, headerBar, "UIPanelButtonTemplate")
+    local legacyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     legacyBtn:SetSize(100, 20)
-    legacyBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
+    legacyBtn:SetPoint("TOPRIGHT", -58, -28)
     legacyBtn:SetText("LFG Tool")
     legacyBtn:SetScript("OnClick", function()
         -- Toggle the native Dungeon Finder (LFG) frame
@@ -129,12 +90,12 @@ function GF:CreateMainFrame()
     
     -- Tab bar (below header)
     local tabBar = CreateFrame("Frame", nil, frame)
-    tabBar:SetPoint("TOPLEFT", headerBar, "BOTTOMLEFT", 0, -2)
-    tabBar:SetPoint("TOPRIGHT", headerBar, "BOTTOMRIGHT", 0, -2)
+    tabBar:SetPoint("TOPLEFT", 12, -52)
+    tabBar:SetPoint("TOPRIGHT", -12, -52)
     tabBar:SetHeight(32)
     tabBar.bg = tabBar:CreateTexture(nil, "BACKGROUND")
     tabBar.bg:SetAllPoints()
-    tabBar.bg:SetColorTexture(0.06, 0.06, 0.07, 1)
+    tabBar.bg:SetColorTexture(0.06, 0.06, 0.07, 0.75)
     frame.tabContainer = tabBar
     
     -- Content container
@@ -150,6 +111,7 @@ function GF:CreateMainFrame()
     
     self.mainFrame = frame
     self:CreateTabButtons()
+    self:CreateRewardFrame()
     
     -- ESC to close
     tinsert(UISpecialFrames, "DCMythicPlusGroupFinderFrame")
@@ -243,6 +205,8 @@ function GF:SelectTab(index)
         self:ShowLiveRunsTab()
     elseif index == 5 then
         self:ShowScheduledTab()
+    elseif index == 6 then
+        self:ShowMyQueuesTab()
     end
 end
 
@@ -260,6 +224,11 @@ function GF:Toggle()
     else
         self.mainFrame:Show()
         self:SelectTab(1) -- Default to Mythic+ tab
+        
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC and DC.GroupFinder and DC.GroupFinder.GetSystemInfo then
+            DC.GroupFinder.GetSystemInfo()
+        end
     end
 end
 
@@ -269,6 +238,11 @@ function GF:Show()
     end
     self.mainFrame:Show()
     self:SelectTab(1)
+    
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and DC.GroupFinder and DC.GroupFinder.GetSystemInfo then
+        DC.GroupFinder.GetSystemInfo()
+    end
 end
 
 function GF:Hide()
@@ -337,6 +311,253 @@ function GF:ShowScheduledTab()
         if self.RefreshScheduledEvents then
             self:RefreshScheduledEvents()
         end
+    end
+end
+
+function GF:ShowMyQueuesTab()
+    if not self.MyQueuesTabContent then
+        self:CreateMyQueuesTab()
+    end
+    if self.MyQueuesTabContent then
+        self.MyQueuesTabContent:Show()
+        self:RefreshMyQueues()
+    end
+end
+
+function GF:CreateMyQueuesTab()
+    local frame = CreateFrame("Frame", nil, self.mainFrame.contentFrame)
+    frame:SetAllPoints()
+    frame:Hide()
+    
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 10, -10)
+    title:SetText("My Active Applications")
+    
+    -- Scroll frame for applications
+    local scrollFrame = CreateFrame("ScrollFrame", "DCGroupFinderMyQueuesScroll", frame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 10, -40)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
+    
+    local scrollChild = CreateFrame("Frame")
+    scrollChild:SetSize(scrollFrame:GetWidth(), 1)
+    scrollFrame:SetScrollChild(scrollChild)
+    frame.scrollChild = scrollChild
+    
+    self.MyQueuesTabContent = frame
+end
+
+function GF:RefreshMyQueues()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and DC.GroupFinder and DC.GroupFinder.GetMyApplications then
+        DC.GroupFinder.GetMyApplications()
+    end
+end
+
+-- Application Dialog
+function GF:ShowApplicationDialog(listingId, dungeonName)
+    if not self.appDialog then
+        local frame = CreateFrame("Frame", "DCGroupFinderAppDialog", UIParent)
+        frame:SetSize(300, 250)
+        frame:SetPoint("CENTER")
+        frame:SetFrameStrata("DIALOG")
+        frame:EnableMouse(true)
+        
+        -- Background
+        frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+        frame.bg:SetAllPoints()
+        frame.bg:SetColorTexture(0.1, 0.1, 0.12, 0.95)
+        
+        -- Border
+        local border = CreateFrame("Frame", nil, frame)
+        border:SetPoint("TOPLEFT", -2, 2)
+        border:SetPoint("BOTTOMRIGHT", 2, -2)
+        border:SetBackdrop({
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        border:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        
+        -- Title
+        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -15)
+        title:SetText("Apply to Group")
+        frame.title = title
+        
+        -- Role Checkboxes
+        local tankCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        tankCb:SetPoint("TOPLEFT", 40, -50)
+        _G[tankCb:GetName().."Text"]:SetText("Tank")
+        frame.tankCb = tankCb
+        
+        local healerCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        healerCb:SetPoint("TOPLEFT", 120, -50)
+        _G[healerCb:GetName().."Text"]:SetText("Healer")
+        frame.healerCb = healerCb
+        
+        local dpsCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        dpsCb:SetPoint("TOPLEFT", 200, -50)
+        _G[dpsCb:GetName().."Text"]:SetText("DPS")
+        frame.dpsCb = dpsCb
+        
+        -- Note EditBox
+        local noteLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noteLabel:SetPoint("TOPLEFT", 20, -90)
+        noteLabel:SetText("Note (optional):")
+        
+        local noteBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+        noteBox:SetSize(260, 20)
+        noteBox:SetPoint("TOPLEFT", 25, -110)
+        noteBox:SetAutoFocus(false)
+        frame.noteBox = noteBox
+        
+        -- Buttons
+        local applyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        applyBtn:SetSize(100, 25)
+        applyBtn:SetPoint("BOTTOMLEFT", 40, 20)
+        applyBtn:SetText("Apply")
+        applyBtn:SetScript("OnClick", function()
+            local roleMask = 0
+            if frame.tankCb:GetChecked() then roleMask = roleMask + 1 end
+            if frame.healerCb:GetChecked() then roleMask = roleMask + 2 end
+            if frame.dpsCb:GetChecked() then roleMask = roleMask + 4 end
+            
+            if roleMask == 0 then
+                GF.Print("Please select at least one role.")
+                return
+            end
+            
+            local note = frame.noteBox:GetText()
+            local DC = rawget(_G, "DCAddonProtocol")
+            if DC and DC.GroupFinder then
+                DC.GroupFinder.Apply(frame.listingId, roleMask, note)
+            end
+            frame:Hide()
+        end)
+        
+        local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        cancelBtn:SetSize(100, 25)
+        cancelBtn:SetPoint("BOTTOMRIGHT", -40, 20)
+        cancelBtn:SetText("Cancel")
+        cancelBtn:SetScript("OnClick", function() frame:Hide() end)
+        
+        self.appDialog = frame
+    end
+    
+    -- Update role checkboxes based on class
+    local _, classFilename = UnitClass("player")
+    local canTank = false
+    local canHeal = false
+    local canDPS = true -- Everyone can DPS
+    
+    if classFilename == "WARRIOR" or classFilename == "DEATHKNIGHT" or classFilename == "PALADIN" or classFilename == "DRUID" then
+        canTank = true
+    end
+    
+    if classFilename == "PRIEST" or classFilename == "SHAMAN" or classFilename == "PALADIN" or classFilename == "DRUID" then
+        canHeal = true
+    end
+    
+    -- Configure checkboxes
+    if canTank then
+        self.appDialog.tankCb:Enable()
+        self.appDialog.tankCb:SetAlpha(1)
+    else
+        self.appDialog.tankCb:Disable()
+        self.appDialog.tankCb:SetChecked(false)
+        self.appDialog.tankCb:SetAlpha(0.5)
+    end
+    
+    if canHeal then
+        self.appDialog.healerCb:Enable()
+        self.appDialog.healerCb:SetAlpha(1)
+    else
+        self.appDialog.healerCb:Disable()
+        self.appDialog.healerCb:SetChecked(false)
+        self.appDialog.healerCb:SetAlpha(0.5)
+    end
+    
+    -- Auto-select primary role if nothing selected
+    if not self.appDialog.tankCb:GetChecked() and not self.appDialog.healerCb:GetChecked() and not self.appDialog.dpsCb:GetChecked() then
+        if canTank then self.appDialog.tankCb:SetChecked(true)
+        elseif canHeal then self.appDialog.healerCb:SetChecked(true)
+        else self.appDialog.dpsCb:SetChecked(true) end
+    end
+    
+    self.appDialog.listingId = listingId
+    self.appDialog.title:SetText("Apply to " .. (dungeonName or "Group"))
+    self.appDialog.noteBox:SetText("")
+    self.appDialog:Show()
+end
+
+-- =====================================================================
+-- Reward Display
+-- =====================================================================
+
+function GF:CreateRewardFrame()
+    if self.rewardFrame then return end
+    
+    local frame = CreateFrame("Frame", nil, self.mainFrame)
+    frame:SetSize(300, 30)
+    frame:SetPoint("BOTTOMLEFT", 10, 5)
+    
+    -- Label
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", 0, 0)
+    label:SetText("Daily Reward:")
+    frame.label = label
+    
+    -- Icon
+    local icon = frame:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(20, 20)
+    icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+    frame.icon = icon
+    
+    -- Count
+    local count = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    count:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+    frame.count = count
+    
+    self.rewardFrame = frame
+    self.rewardFrame:Hide() -- Hide until data received
+end
+
+function GF:UpdateSystemInfo(data)
+    if not self.mainFrame then return end
+    if not self.rewardFrame then self:CreateRewardFrame() end
+    
+    if data.rewardEnabled then
+        self.rewardFrame:Show()
+        
+        local text = ""
+        local iconTexture = "Interface\\Icons\\INV_Misc_QuestionMark"
+        
+        if data.rewardItemId > 0 then
+            local itemName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(data.rewardItemId)
+            if itemIcon then
+                iconTexture = itemIcon
+            end
+            text = (data.rewardItemCount or 1) .. "x " .. (itemName or "Item")
+            
+            -- If item info not cached, query it
+            if not itemName then
+                -- WotLK doesn't have Item:CreateFromItemID mixin usually, just rely on GetItemInfo returning nil first time
+                -- We can try to query it again later or just show ID
+                text = (data.rewardItemCount or 1) .. "x Item " .. data.rewardItemId
+            end
+        elseif data.rewardCurrencyId > 0 then
+            -- Currency handling
+            local name, _, icon = GetCurrencyInfo(data.rewardCurrencyId)
+            if icon then
+                iconTexture = icon
+            end
+            text = (data.rewardCurrencyCount or 1) .. "x " .. (name or "Currency")
+        end
+        
+        self.rewardFrame.icon:SetTexture(iconTexture)
+        self.rewardFrame.count:SetText(text)
+    else
+        self.rewardFrame:Hide()
     end
 end
 

@@ -95,6 +95,7 @@ struct DCAddonProtocolConfig
     bool EnableGOMove;
     bool EnableGroupFinder;
     bool EnableHotspot;
+    bool EnableWorld;
     bool EnableEvents;
     
     // Security settings
@@ -126,6 +127,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableGOMove     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
     s_AddonConfig.EnableGroupFinder = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GroupFinder.Enable", true);
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
+    s_AddonConfig.EnableWorld       = sConfigMgr->GetOption<bool>("DC.AddonProtocol.World.Enable", true);
     s_AddonConfig.EnableEvents      = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Events.Enable", true);
     
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
@@ -155,6 +157,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
     router.SetModuleEnabled(DCAddon::Module::GROUP_FINDER, s_AddonConfig.EnableGroupFinder);
     router.SetModuleEnabled(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
+    router.SetModuleEnabled(DCAddon::Module::WORLD, s_AddonConfig.EnableWorld);
     router.SetModuleEnabled(DCAddon::Module::EVENTS, s_AddonConfig.EnableEvents);
     router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
 }
@@ -539,6 +542,7 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     featureMsg.Add(s_AddonConfig.EnablePrestige);
     featureMsg.Add(s_AddonConfig.EnableSeasonal);
     featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
+    featureMsg.Add(s_AddonConfig.EnableWorld);
     featureMsg.Send(player);
 }
 
@@ -567,6 +571,7 @@ static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage&
     featureMsg.Add(s_AddonConfig.EnablePrestige);
     featureMsg.Add(s_AddonConfig.EnableSeasonal);
     featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
+    featureMsg.Add(s_AddonConfig.EnableWorld);
     featureMsg.Send(player);
 }
 
@@ -721,6 +726,7 @@ public:
         LOG_INFO("dc.addon", "  Hinterland:  {}", s_AddonConfig.EnableHinterlandBG ? "Yes" : "No");
         LOG_INFO("dc.addon", "  Leaderboard: {}", s_AddonConfig.EnableLeaderboard ? "Yes" : "No");
         LOG_INFO("dc.addon", "  Events:      {}", s_AddonConfig.EnableEvents ? "Yes" : "No");
+        LOG_INFO("dc.addon", "  World:       {}", s_AddonConfig.EnableWorld ? "Yes" : "No");
         LOG_INFO("dc.addon", "  DB Logging:  {}", s_AddonConfig.EnableProtocolLogging ? "Yes" : "No");
         LOG_INFO("dc.addon", "===========================================");
     }

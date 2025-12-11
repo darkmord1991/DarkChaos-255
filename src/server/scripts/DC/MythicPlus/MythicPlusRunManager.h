@@ -111,8 +111,8 @@ public:
     void ResetWeeklyVaultProgress(Player* player);
     
     // Vault reward pool management
-    bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart, uint8 highestKeystoneLevel);
-    std::vector<std::pair<uint32, uint32>> GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
+    bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
+    std::vector<std::tuple<uint8, uint32, uint32>> GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
     bool ClaimVaultItemReward(Player* player, uint8 slot, uint32 itemId);
     uint32 GetCurrentSeasonId() const;
     uint32 GetWeekStartTimestamp() const;
@@ -147,6 +147,9 @@ public:
 
     // Spectator support - read-only state access
     InstanceState const* GetRunState(Map* map) const;
+
+    // Debug/Testing
+    void SimulateRun(Player* player, uint8 level, bool success);
 
 private:
     MythicPlusRunManager() = default;

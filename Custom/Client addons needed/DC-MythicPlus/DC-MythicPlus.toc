@@ -22,3 +22,4 @@ UI\WorldTab.lua
 UI\LiveRunsTab.lua
 UI\ScheduledTab.lua
 UI\KeystoneActivation.lua
+UI\GreatVaultFrame.lua

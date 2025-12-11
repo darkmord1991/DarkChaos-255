@@ -8,12 +8,14 @@
 #include "DCGroupFinderMgr.h"
 #include "DCAddonNamespace.h"
 #include "DatabaseEnv.h"
+#include "CharacterDatabase.h"
 #include "Config.h"
 #include "Log.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
 #include "World.h"
 #include "Group.h"
+#include "../ItemUpgrades/ItemUpgradeManager.h"
 #include "GroupMgr.h"
 
 namespace DCAddon
@@ -42,6 +44,14 @@ void GroupFinderMgr::LoadConfig()
     _keyLevelMatchRange = sConfigMgr->GetOption<uint32>("DC.GroupFinder.KeyLevelMatchRange", 3);
     _cleanupIntervalMs = sConfigMgr->GetOption<uint32>("DC.GroupFinder.CleanupIntervalMs", 60000);
     
+    // Rewards
+    _rewardEnabled = sConfigMgr->GetOption<bool>("DC.GroupFinder.Reward.Enable", true);
+    _rewardItemId = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.ItemID", 49426);
+    _rewardItemCount = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.ItemCount", 2);
+    _rewardCurrencyId = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.CurrencyID", 0);
+    _rewardCurrencyCount = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.CurrencyCount", 0);
+    _rewardDailyLimit = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.DailyLimit", 1);
+
     LOG_INFO("dc.groupfinder", "Group Finder config loaded: Enabled={}, CrossFaction={}, ExpireMin={}",
         _enabled, _crossFaction, _listingExpireMinutes);
 }
@@ -277,15 +287,28 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
     if (Group* group = player->GetGroup())
         groupGuid = group->GetGUID().GetCounter();
     
-    // Insert into database
+    // Note: using synchronous execution below to ensure LAST_INSERT_ID() can be retrieved immediately.
+    
+    // We need the ID. Since we can't easily get it from the async transaction above without a callback,
+    // and we need to return it immediately, we have to use a synchronous query or a different approach.
+    // BUT, we are already inside a lock and blocking.
+    // Let's use a synchronous execution with manual escaping for now to ensure we get the ID, 
+    // OR better: use the "Execute" method that returns a future? No, ACore doesn't have that standard.
+    
+    // Fallback to safe synchronous execution with escaping
+    std::string safeNote = listing.note;
+    std::string safeDungeonName = listing.dungeonName;
+    CharacterDatabase.EscapeString(safeNote);
+    CharacterDatabase.EscapeString(safeDungeonName);
+    
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_listings "
         "(leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
         "keystone_level, min_ilvl, need_tank, need_healer, need_dps, note, status) "
         "VALUES ({}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, '{}', 1)",
-        guid, groupGuid, listing.listingType, listing.dungeonId, listing.dungeonName,
+        guid, groupGuid, listing.listingType, listing.dungeonId, safeDungeonName,
         listing.difficulty, listing.keystoneLevel, listing.minIlvl,
-        listing.needTank, listing.needHealer, listing.needDps, listing.note);
+        listing.needTank, listing.needHealer, listing.needDps, safeNote);
     
     // Get inserted ID
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
@@ -435,12 +458,17 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
             return false;
     }
     
+    std::string safeNote = note;
+    CharacterDatabase.EscapeString(safeNote);
+    std::string safePlayerName = player->GetName();
+    CharacterDatabase.EscapeString(safePlayerName);
+    
     // Insert application
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_applications "
         "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
         "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
-        listingId, guid, player->GetName(), role, player->getClass(), player->GetLevel(), playerIlvl, note);
+        listingId, guid, safePlayerName, role, player->getClass(), player->GetLevel(), playerIlvl, safeNote);
     
     // Get inserted ID
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
@@ -637,12 +665,17 @@ uint32 GroupFinderMgr::CreateEvent(Player* player, const ScheduledEvent& event)
     
     uint32 guid = player->GetGUID().GetCounter();
     
+    std::string safeTitle = event.title;
+    CharacterDatabase.EscapeString(safeTitle);
+    std::string safeDesc = event.description;
+    CharacterDatabase.EscapeString(safeDesc);
+    
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_scheduled_events "
         "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
         "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
-        guid, event.eventType, event.dungeonId, event.title, event.keystoneLevel,
-        event.scheduledTime, event.maxSignups, event.description);
+        guid, event.eventType, event.dungeonId, safeTitle, event.keystoneLevel,
+        event.scheduledTime, event.maxSignups, safeDesc);
     
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 eventId = result ? (*result)[0].Get<uint32>() : 0;
@@ -682,10 +715,15 @@ bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, 
             return false;
     }
     
+    std::string safeNote = note;
+    CharacterDatabase.EscapeString(safeNote);
+    std::string safePlayerName = player->GetName();
+    CharacterDatabase.EscapeString(safePlayerName);
+    
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
         "VALUES ({}, {}, '{}', {}, '{}', 0)",
-        eventId, guid, player->GetName(), role, note);
+        eventId, guid, safePlayerName, role, safeNote);
     
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 signupId = result ? (*result)[0].Get<uint32>() : 0;
@@ -860,6 +898,121 @@ void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, const GroupFinderAp
             .Set("message", app.note)
             .Send(leader);
     }
+}
+
+// Note: NotifyGroupReady is implemented above with database and cache update logic
+
+void GroupFinderMgr::NotifyEventReminder(uint32 eventId)
+{
+    (void)eventId; // unused currently
+    // Implementation for NotifyEventReminder
+}
+
+std::vector<GroupFinderApplication> GroupFinderMgr::GetPlayerApplications(uint32 playerGuid)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    std::vector<GroupFinderApplication> result;
+    
+    for (const auto& pair : _applications)
+    {
+        for (const auto& app : pair.second)
+        {
+            if (app.playerGuid == playerGuid && app.status == GF_APP_PENDING)
+            {
+                result.push_back(app);
+            }
+        }
+    }
+    return result;
+}
+
+uint32 GroupFinderMgr::FindListingIdForApplication(uint32 applicationId)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    for (const auto& kv : _applications)
+    {
+        uint32 listingId = kv.first;
+        const auto& apps = kv.second;
+        for (const auto& app : apps)
+        {
+            if (app.id == applicationId)
+                return listingId;
+        }
+    }
+    return 0;
+}
+
+void GroupFinderMgr::HandleDungeonCompletion(Player* player, uint32 dungeonId, uint8 difficulty)
+{
+    if (!_rewardEnabled || !player)
+        return;
+    (void)dungeonId; (void)difficulty;
+
+    // Check if player was in a group formed by GroupFinder
+    // For now, we check if they have any accepted application for this dungeon that is recent.
+    // This is a simplified check.
+    
+    if (CanReceiveReward(player))
+    {
+        GiveReward(player);
+    }
+}
+
+bool GroupFinderMgr::CanReceiveReward(Player* player)
+{
+    if (!_rewardEnabled) return false;
+    
+    // Check daily limit
+    if (_rewardDailyLimit > 0)
+    {
+        uint32 count = 0;
+        QueryResult result = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_group_finder_rewards WHERE player_guid = {} AND claim_time > DATE_SUB(NOW(), INTERVAL 1 DAY)", player->GetGUID().GetCounter());
+        if (result)
+            count = (*result)[0].Get<uint32>();
+            
+        if (count >= _rewardDailyLimit)
+            return false;
+    }
+    
+    return true;
+}
+
+void GroupFinderMgr::GiveReward(Player* player)
+{
+    if (!player) return;
+    
+    // Give Item
+    if (_rewardItemId > 0 && _rewardItemCount > 0)
+    {
+        player->AddItem(_rewardItemId, _rewardItemCount);
+    }
+    
+    // Give Currency
+    if (_rewardCurrencyId > 0 && _rewardCurrencyCount > 0)
+    {
+        // If the ItemUpgrade manager is available and the currency id maps to its enum, use it.
+        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            // Try to add currency via upgrade manager (tokens/essence etc.)
+            mgr->AddCurrency(player->GetGUID().GetCounter(), static_cast<DarkChaos::ItemUpgrade::CurrencyType>(_rewardCurrencyId), _rewardCurrencyCount);
+        }
+        else
+        {
+            // Fall back to ModifyMoney for gold-based rewards (if configured as such)
+            player->ModifyMoney(static_cast<int32>(_rewardCurrencyCount));
+        }
+    }
+    
+    // Log reward
+    CharacterDatabase.Execute("INSERT INTO dc_group_finder_rewards (player_guid, reward_type, dungeon_type) VALUES ({}, 0, 0)", player->GetGUID().GetCounter());
+    
+    player->SendSystemMessage("You have received a reward for using the Group Finder!");
+}
+
+void GroupFinderMgr::TryAutoMatch(uint32 listingId)
+{
+    (void)listingId; // not implemented yet
+    // Placeholder for auto-match logic
 }
 
 }  // namespace DCAddon

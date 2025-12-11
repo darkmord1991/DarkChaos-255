@@ -655,14 +655,14 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         CONNECTION_ASYNC);
 
     PrepareStatement(CHAR_INS_MPLUS_WEEKLY_VAULT,
-        "INSERT INTO dc_weekly_vault (character_guid, season_id, week_start, runs_completed, highest_level, slot1_unlocked, slot2_unlocked, slot3_unlocked) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO dc_weekly_vault (character_guid, season_id, week_start, runs_completed, highest_level) "
+        "VALUES (?, ?, ?, ?, ?) "
         "ON DUPLICATE KEY UPDATE "
         "runs_completed = runs_completed + VALUES(runs_completed), "
         "highest_level = GREATEST(highest_level, VALUES(highest_level)), "
-        "slot1_unlocked = GREATEST(slot1_unlocked, VALUES(slot1_unlocked)), "
-        "slot2_unlocked = GREATEST(slot2_unlocked, VALUES(slot2_unlocked)), "
-        "slot3_unlocked = GREATEST(slot3_unlocked, VALUES(slot3_unlocked))",
+        "slot1_unlocked = GREATEST(slot1_unlocked, (runs_completed + VALUES(runs_completed) >= 1)), "
+        "slot2_unlocked = GREATEST(slot2_unlocked, (runs_completed + VALUES(runs_completed) >= 4)), "
+        "slot3_unlocked = GREATEST(slot3_unlocked, (runs_completed + VALUES(runs_completed) >= 8))",
         CONNECTION_ASYNC);
 
     PrepareStatement(CHAR_INS_MPLUS_TOKEN_LOG,
@@ -670,8 +670,14 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
 
+    // DC Group Finder: new listing added by players
+    PrepareStatement(CHAR_INS_GROUP_FINDER_LISTING,
+        "INSERT INTO dc_group_finder_listings (leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, keystone_level, min_ilvl, need_tank, need_healer, need_dps, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
+
     PrepareStatement(CHAR_SEL_MPLUS_VAULT_REWARDS,
-        "SELECT item_id, item_level FROM dc_vault_reward_pool WHERE character_guid = ? AND season_id = ? AND week_start = ? ORDER BY slot_index",
+        "SELECT slot_index, item_id, item_level FROM dc_vault_reward_pool WHERE character_guid = ? AND season_id = ? AND week_start = ? ORDER BY slot_index",
         CONNECTION_SYNCH);
 
     // Hinterland Battleground (HLBG)

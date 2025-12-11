@@ -11,6 +11,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
 
+#include <unordered_map>
+
 class npc_mythic_plus_great_vault : public CreatureScript
 {
 public:
@@ -51,22 +53,11 @@ public:
             claimedSlot = fields[6].Get<uint8>();
         }
 
-        // Fetch reward pool info
+        // Fetch reward pool info (global slot index -> reward)
         auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
-        uint32 itemLevel = 0;
-        
-        if (!rewards.empty())
-        {
-            itemLevel = rewards[0].second;  // Item level
-        }
-        else if (highestLevel > 0)
-        {
-            // Generate if not exists
-            itemLevel = GetItemLevelForKeystoneLevel(highestLevel);
-        }
-
-        // Calculate token count based on ilvl
-        uint32 tokenCount = itemLevel > 0 ? (10 + std::max(0, static_cast<int32>((itemLevel - 190) / 10))) : 0;
+        std::unordered_map<uint8, std::pair<uint32, uint32>> rewardBySlot;
+        for (auto const& [slotIndex, itemId, itemLevel] : rewards)
+            rewardBySlot[slotIndex] = { itemId, itemLevel };
 
         // Display header
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Great Vault ===|r", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
@@ -84,12 +75,13 @@ public:
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
 
-        // Display slots with token/ilvl info OR gear choices
+        // Display Mythic+ track slots (global slots 4-6)
         for (uint8 slot = 1; slot <= 3; ++slot)
         {
             uint8 threshold = sMythicRuns->GetVaultThreshold(slot);
+            uint8 globalSlot = static_cast<uint8>(3 + slot); // Track 1 (Mythic+)
             
-            if (claimed && claimedSlot == slot)
+            if (claimed && claimedSlot == globalSlot)
             {
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                     "|cff00ff00[Slot " + std::to_string(slot) + "]|r Already Claimed", 
@@ -97,52 +89,45 @@ public:
             }
             else if (unlocked[slot] && !claimed)
             {
-                // Group rewards by slot (0-2=slot1, 3-5=slot2, 6-8=slot3)
-                std::vector<std::pair<uint32, uint32>> slotRewards;
-                uint8 slotStartIdx = (slot - 1) * 3;
-                uint8 slotEndIdx = slot * 3;
-                
-                for (size_t i = slotStartIdx; i < rewards.size() && i < slotEndIdx; ++i)
+                auto itr = rewardBySlot.find(globalSlot);
+                if (itr == rewardBySlot.end())
                 {
-                    slotRewards.push_back(rewards[i]);
+                    // Try generating pool if missing
+                    sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart);
+                    rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+                    rewardBySlot.clear();
+                    for (auto const& [slotIndex, itemId, itemLevel] : rewards)
+                        rewardBySlot[slotIndex] = { itemId, itemLevel };
+                    itr = rewardBySlot.find(globalSlot);
                 }
 
-                if (!slotRewards.empty())
+                if (itr != rewardBySlot.end())
                 {
-                    // Check if first reward is token (MYTHIC_VAULT_TOKEN = 101000)
-                    if (slotRewards[0].first == 101000)
+                    uint32 itemId = itr->second.first;
+                    uint32 itemLevel = itr->second.second;
+                    uint32 tokenCount = itemLevel > 0 ? (10 + std::max(0, static_cast<int32>((itemLevel - 190) / 10))) : 0;
+
+                    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+                    std::string name = itemTemplate ? std::string(itemTemplate->Name1) : ("Item " + std::to_string(itemId));
+
+                    std::string rewardText;
+                    if (itemId == MythicPlusConstants::ITEM_MYTHIC_TOKEN)
                     {
-                        // Token mode display (backward compatible)
-                        std::string rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cffffffff" + 
-                                                std::to_string(tokenCount) + " Tokens|r |cffff8000(ilvl " + 
-                                                std::to_string(itemLevel) + " equivalent)|r";
-                        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, rewardText, GOSSIP_SENDER_MAIN, 1000 + slotStartIdx);
+                        rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cffffffff" +
+                            std::to_string(tokenCount) + " Tokens|r |cffff8000(ilvl " + std::to_string(itemLevel) + " equivalent)|r";
                     }
                     else
                     {
-                        // Gear mode display (Blizzlike)
-                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                            "|cff00ff00[Slot " + std::to_string(slot) + "]|r Choose Your Reward:", 
-                            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
-
-                        for (size_t i = 0; i < slotRewards.size(); ++i)
-                        {
-                            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(slotRewards[i].first);
-                            if (itemTemplate)
-                            {
-                                std::string itemText = "  |cff0070dd→ " + std::string(itemTemplate->Name1) + 
-                                                      "|r |cffaaaaaa(ilvl " + std::to_string(slotRewards[i].second) + ")|r";
-                                AddGossipItemFor(player, GOSSIP_ICON_VENDOR, itemText,
-                                               GOSSIP_SENDER_MAIN, 1000 + slotStartIdx + i);
-                            }
-                        }
+                        rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cff0070dd" + name +
+                            "|r |cffff8000(ilvl " + std::to_string(itemLevel) + ")|r";
                     }
+
+                    AddGossipItemFor(player, GOSSIP_ICON_VENDOR, rewardText, GOSSIP_SENDER_MAIN, 2000 + slot);
                 }
                 else
                 {
-                    // Fallback if no rewards generated (should not happen with TokenFallback=1)
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                        "|cffaaaaaa[Slot " + std::to_string(slot) + "]|r No rewards available", 
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "|cffaaaaaa[Slot " + std::to_string(slot) + "]|r No rewards available",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
                 }
             }
@@ -176,13 +161,11 @@ public:
 
         ClearGossipMenuFor(player);
 
-        // Claim slot (action 1000-1029 for gear choices, or legacy GOSSIP_ACTION_INFO_DEF+slot for tokens)
-        if (action >= 1000 && action < 1030)
+        // Claim Mythic+ track slot (UI shows 1-3, but vault pool uses global slots 4-6)
+        if (action >= 2001 && action <= 2003)
         {
-            // New action range: 1000-1029 (3 slots × 3 choices × 3 max + buffer)
-            // slot_index encoding: 0-2=slot1, 3-5=slot2, 6-8=slot3
-            uint8 rewardIndex = action - 1000;
-            uint8 slot = (rewardIndex / 3) + 1;  // Which vault slot (1-3)
+            uint8 slotInTrack = static_cast<uint8>(action - 2000); // 1..3
+            uint8 globalSlot = static_cast<uint8>(3 + slotInTrack);
             
             // Get reward info
             uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
@@ -190,48 +173,30 @@ public:
             uint32 guidLow = player->GetGUID().GetCounter();
             
             auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
-            if (rewardIndex < rewards.size())
+
+            uint32 itemId = 0;
+            for (auto const& [slotIndex, rewardItemId, /*ilvl*/ _] : rewards)
             {
-                uint32 itemId = rewards[rewardIndex].first;
-                if (sMythicRuns->ClaimVaultItemReward(player, slot, itemId))
+                if (slotIndex == globalSlot)
                 {
-                    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
-                    std::string itemName = itemTemplate ? std::string(itemTemplate->Name1) : "Item";
-                    std::string message = "|cff00ff00Great Vault:|r Claimed " + itemName + " successfully!";
-                    ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
+                    itemId = rewardItemId;
+                    break;
                 }
             }
-            else
+
+            if (!itemId)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r Invalid reward selection.");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r No reward available for this slot.");
+                CloseGossipMenuFor(player);
+                return true;
             }
-            
-            CloseGossipMenuFor(player);
-            return true;
-        }
-        
-        // Legacy claim action for backward compatibility
-        if (action >= GOSSIP_ACTION_INFO_DEF + 1 && action <= GOSSIP_ACTION_INFO_DEF + 3)
-        {
-            uint8 slot = action - GOSSIP_ACTION_INFO_DEF;
-            
-            // Get reward info
-            uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
-            uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
-            uint32 guidLow = player->GetGUID().GetCounter();
-            
-            auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
-            if (!rewards.empty())
+
+            if (sMythicRuns->ClaimVaultItemReward(player, globalSlot, itemId))
             {
-                uint32 tokenItemId = rewards[0].first;
-                if (sMythicRuns->ClaimVaultItemReward(player, slot, tokenItemId))
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Great Vault:|r Reward claimed successfully!");
-                }
-            }
-            else
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Error:|r No rewards available.");
+                ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+                std::string itemName = itemTemplate ? std::string(itemTemplate->Name1) : "Item";
+                std::string message = "|cff00ff00Great Vault:|r Claimed " + itemName + " successfully!";
+                ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
             }
             
             CloseGossipMenuFor(player);

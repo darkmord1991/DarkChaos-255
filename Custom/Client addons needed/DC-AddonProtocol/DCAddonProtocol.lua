@@ -180,12 +180,14 @@ DC.GroupFinderOpcodes = {
     CMSG_DECLINE_APPLICATION = 0x15,  -- Leader declines an applicant
     CMSG_DELIST_GROUP        = 0x16,  -- Remove group listing
     CMSG_UPDATE_LISTING      = 0x17,  -- Update group listing
+    CMSG_GET_MY_APPLICATIONS = 0x18,  -- Get my active applications
     
     -- Client -> Server: Keystone & Difficulty
     CMSG_GET_MY_KEYSTONE     = 0x20,  -- Request player's keystone info
     CMSG_SET_DIFFICULTY      = 0x21,  -- Request difficulty change
     CMSG_GET_DUNGEON_LIST    = 0x22,  -- Get M+ dungeon list from DB
     CMSG_GET_RAID_LIST       = 0x23,  -- Get raid list from DB
+    CMSG_GET_SYSTEM_INFO     = 0x24,  -- Get system config (rewards, etc)
     
     -- Client -> Server: Spectating
     CMSG_START_SPECTATE      = 0x25,  -- Request to spectate a run
@@ -206,12 +208,14 @@ DC.GroupFinderOpcodes = {
     SMSG_APPLICATION_STATUS  = 0x32,  -- Application accepted/declined
     SMSG_NEW_APPLICATION     = 0x33,  -- Leader: new applicant
     SMSG_GROUP_UPDATED       = 0x34,  -- Group composition changed
+    SMSG_MY_APPLICATIONS     = 0x35,  -- List of my active applications
     
     -- Server -> Client: Keystone & Difficulty
     SMSG_KEYSTONE_INFO       = 0x40,  -- Player's keystone data
     SMSG_DIFFICULTY_CHANGED  = 0x41,  -- Confirm difficulty changed
     SMSG_DUNGEON_LIST        = 0x42,  -- M+ dungeon list from DB
     SMSG_RAID_LIST           = 0x43,  -- Raid list from DB
+    SMSG_SYSTEM_INFO         = 0x44,  -- System config (rewards, etc)
     
     -- Server -> Client: Spectating
     SMSG_SPECTATE_DATA       = 0x45,  -- Spectator live data
@@ -889,11 +893,21 @@ DC.GroupFinder = {
     CancelListing = function(listingId)
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_DELIST_GROUP, { listingId = listingId })
     end,
+
+    -- Get system info (rewards, etc)
+    GetSystemInfo = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_SYSTEM_INFO, {})
+    end,
     
     -- Update group listing
     UpdateListing = function(listingId, data)
         data.listingId = listingId
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_UPDATE_LISTING, data)
+    end,
+    
+    -- Get my active applications
+    GetMyApplications = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_APPLICATIONS, {})
     end,
     
     -- Get player's keystone info

@@ -1644,6 +1644,35 @@ public:
                 if (player && player->IsInWorld() && player->GetSession())
                     msg.Send(player);
             });
+
+            // Also send aggregated WRLD update for this event spawn
+            {
+                DCAddon::JsonValue eventsArr; eventsArr.SetArray();
+                DCAddon::JsonValue e; e.SetObject();
+                e.Set("eventId", DCAddon::JsonValue(static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID)));
+                e.Set("type", DCAddon::JsonValue("invasion"));
+                e.Set("name", DCAddon::JsonValue("Zandalari Invasion"));
+                e.Set("mapId", DCAddon::JsonValue(static_cast<int32>(map->GetId())));
+                e.Set("entry", DCAddon::JsonValue(static_cast<int32>(creature->GetEntry())));
+                e.Set("guid", DCAddon::JsonValue(creature->GetGUID().ToString()));
+                e.Set("x", DCAddon::JsonValue(static_cast<double>(creature->GetPositionX())));
+                e.Set("y", DCAddon::JsonValue(static_cast<double>(creature->GetPositionY())));
+                e.Set("z", DCAddon::JsonValue(static_cast<double>(creature->GetPositionZ())));
+                e.Set("wave", DCAddon::JsonValue(static_cast<int32>(waveId)));
+                e.Set("lane", DCAddon::JsonValue(static_cast<int32>(laneIndex)));
+                e.Set("spawnNum", DCAddon::JsonValue(static_cast<int32>(spawnNum)));
+                e.Set("enemiesRemaining", DCAddon::JsonValue(static_cast<int32>(activeCount)));
+                e.Set("action", DCAddon::JsonValue("spawn"));
+                eventsArr.Push(e);
+
+                DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+                wmsg.Set("events", eventsArr);
+                map->DoForAllPlayers([&](Player* player)
+                {
+                    if (player && player->IsInWorld() && player->GetSession())
+                        wmsg.Send(player);
+                });
+            }
         }
     }
 
@@ -1707,6 +1736,52 @@ public:
             if (player && player->IsInWorld() && player->GetSession())
                 msg.Send(player);
         });
+
+        // Also send aggregated WRLD update to map players
+        {
+            DCAddon::JsonValue eventsArr; eventsArr.SetArray();
+            DCAddon::JsonValue e; e.SetObject();
+            e.Set("eventId", DCAddon::JsonValue(static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID)));
+            e.Set("type", DCAddon::JsonValue("invasion"));
+            e.Set("reason", DCAddon::JsonValue(reason ? reason : "expired"));
+            e.Set("action", DCAddon::JsonValue("remove"));
+            eventsArr.Push(e);
+
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("events", eventsArr);
+            map->DoForAllPlayers([&](Player* player)
+            {
+                if (player && player->IsInWorld() && player->GetSession())
+                    wmsg.Send(player);
+            });
+        }
+
+        // Also send as a WRLD update (events array) limited to same map players
+        {
+            DCAddon::JsonValue eventsArr; eventsArr.SetArray();
+            DCAddon::JsonValue e; e.SetObject();
+            e.Set("eventId", DCAddon::JsonValue(static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID)));
+            e.Set("type", DCAddon::JsonValue("invasion"));
+            e.Set("name", DCAddon::JsonValue("Zandalari Invasion"));
+            e.Set("mapId", DCAddon::JsonValue(static_cast<int32>(map->GetId())));
+            e.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(AREA_SEEPING_SHORES)));
+            e.Set("wave", DCAddon::JsonValue(static_cast<int32>(_invasionPhase)));
+            e.Set("maxWaves", DCAddon::JsonValue(static_cast<int32>(4)));
+            e.Set("enemiesRemaining", DCAddon::JsonValue(static_cast<int32>(GetActiveInvaderCount(map))));
+            e.Set("timeRemaining", DCAddon::JsonValue(static_cast<int32>(_waveTimer / IN_MILLISECONDS)));
+            e.Set("state", DCAddon::JsonValue(state));
+            e.Set("active", DCAddon::JsonValue(isActive));
+            e.Set("action", DCAddon::JsonValue("status"));
+            eventsArr.Push(e);
+
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("events", eventsArr);
+            map->DoForAllPlayers([&](Player* player)
+            {
+                if (player && player->IsInWorld() && player->GetSession())
+                    wmsg.Send(player);
+            });
+        }
     }
 
     void BroadcastEventRemoval(Map* map, const char* reason = "expired")

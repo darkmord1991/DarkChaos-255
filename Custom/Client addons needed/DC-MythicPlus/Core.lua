@@ -931,6 +931,12 @@ SlashCmdList.DCM = function(msg)
         Print("  DCAddonProtocol: " .. dcAvail)
         Print("  AIO: " .. aioAvail)
         Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+    elseif msg == "vault" then
+        if namespace.GreatVault then
+            namespace.GreatVault:Toggle()
+        else
+            Print("Great Vault UI not loaded")
+        end
     elseif msg == "finder" or msg == "gf" then
         -- Open Group Finder
         if namespace.GroupFinder then
@@ -1006,8 +1012,7 @@ end)
 -- =====================================================================
 
 -- Settings toggle for JSON vs pipe-delimited
-DCMythicPlusHUDDB = DCMythicPlusHUDDB or {}
-DCMythicPlusHUDDB.useDCProtocolJSON = DCMythicPlusHUDDB.useDCProtocolJSON or true  -- Prefer JSON by default
+DCMythicPlusHUDDB.useDCProtocolJSON = (DCMythicPlusHUDDB.useDCProtocolJSON ~= false)  -- Prefer JSON by default
 
 if DC then
     -- Helper to get value from table or raw args depending on format
@@ -1088,6 +1093,13 @@ if DC then
         else
             Print("Run failed.")
         end
+
+        -- Event-driven Vault refresh: runs affect Vault progress
+        if namespace.GreatVault and namespace.GreatVault.IsShown and namespace.GreatVault:IsShown() then
+            if namespace.RequestVaultInfo then
+                namespace.RequestVaultInfo()
+            end
+        end
         activeState = nil
         ShowIdleState()
     end)
@@ -1119,6 +1131,13 @@ if DC then
             
             if json.completed then
                 Print("Run completed!")
+
+                -- Event-driven Vault refresh: completion affects Vault progress
+                if namespace.GreatVault and namespace.GreatVault.IsShown and namespace.GreatVault:IsShown() then
+                    if namespace.RequestVaultInfo then
+                        namespace.RequestVaultInfo()
+                    end
+                end
             end
             
             UpdateFrameFromState(activeState)
@@ -1278,6 +1297,37 @@ if DC then
                         idx = idx + 1
                     end
                 end
+            end
+        end
+    end)
+
+    -- SMSG_VAULT_INFO (0x18) - Great Vault Data
+    DC:RegisterHandler("MPLUS", 0x18, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GreatVault then
+                namespace.GreatVault:Update(data)
+            end
+        end
+    end)
+
+    -- SMSG_VAULT_REWARD_CLAIMED (0x19) - Reward Claimed Confirmation
+    DC:RegisterHandler("MPLUS", 0x19, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if data.success then
+                Print("Reward claimed successfully!")
+                -- Refresh Vault state after claim
+                if namespace.RequestVaultInfo then
+                    namespace.RequestVaultInfo()
+                end
+                if namespace.GreatVault and namespace.GreatVault.Hide then
+                    namespace.GreatVault:Hide()
+                end
+            else
+                Print("Failed to claim reward.")
             end
         end
     end)
@@ -1498,6 +1548,17 @@ if DC then
             end
         end
     end)
+
+    -- SMSG_SYSTEM_INFO (0x44) - System config (rewards, etc)
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SYSTEM_INFO or 0x44, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if namespace.GroupFinder then
+                namespace.GroupFinder:UpdateSystemInfo(data)
+            end
+        end
+    end)
     
     -- SMSG_SPECTATE_DATA (0x45) - Spectator live data
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_DATA or 0x45, function(...)
@@ -1552,6 +1613,18 @@ if DC then
             DC:Send("MPLUS", 0x03)  -- CMSG_GET_BEST_RUNS
         end
     end
+
+    namespace.RequestVaultInfo = function()
+        if DC then
+            DC:Send("MPLUS", 0x06)  -- CMSG_GET_VAULT_INFO
+        end
+    end
+
+    namespace.ClaimVaultReward = function(slotIndex, itemId)
+        if DC then
+            DC:Send("MPLUS", 0x07, { slot = slotIndex, item = itemId })  -- CMSG_CLAIM_VAULT_REWARD
+        end
+    end
     
     -- Respond to keystone activation
     namespace.RespondToKeystone = function(accepted)
@@ -1573,5 +1646,101 @@ if DC then
     end
     
     Print("DCAddonProtocol v" .. (DC.VERSION or "?") .. " handlers registered")
+end
+
+-- =====================================================================
+-- Blizzard LFG integration (add Mythic+ button to default Dungeon Finder)
+-- =====================================================================
+
+do
+    if not namespace._dcMplusLfgButtonInstallerStarted then
+        namespace._dcMplusLfgButtonInstallerStarted = true
+
+        local function GetBlizzardLFGFrame()
+            return _G.LFDParentFrame or _G.LookingForGroupFrame or _G.LFGParentFrame
+        end
+
+        local function InstallButton()
+            if namespace._dcMplusLfgButtonInstalled then
+                return true
+            end
+
+            local parent = GetBlizzardLFGFrame()
+            if not parent then
+                return false
+            end
+
+            local btn = _G.DCMythicPlus_LFG_MythicButton
+            if not btn then
+                btn = CreateFrame("Button", "DCMythicPlus_LFG_MythicButton", parent, "UIPanelButtonTemplate")
+            end
+
+            btn:SetSize(110, 22)
+            btn:SetText("Mythic+")
+            btn:ClearAllPoints()
+
+            -- Anchor near the close button to avoid overlapping the bottom action buttons
+            local closeBtn = parent.CloseButton
+                or (parent.GetName and _G[parent:GetName() .. "CloseButton"])
+                or _G.LFDParentFrameCloseButton
+                or _G.LookingForGroupFrameCloseButton
+                or _G.LFGParentFrameCloseButton
+
+            if closeBtn and closeBtn.GetObjectType then
+                btn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -6, -2)
+            else
+                btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -52, -28)
+            end
+
+            btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText("Mythic+ Dungeon Finder", 1, 1, 1)
+                GameTooltip:AddLine("Open the Mythic+ Group Finder UI", 0.7, 0.7, 0.7, true)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            btn:SetScript("OnClick", function()
+                if namespace.GroupFinder and namespace.GroupFinder.Show then
+                    namespace.GroupFinder:Show()
+                elseif SlashCmdList and SlashCmdList["DCGF"] then
+                    SlashCmdList["DCGF"]("")
+                end
+            end)
+
+            namespace._dcMplusLfgButtonInstalled = true
+            return true
+        end
+
+        local function TryInstallWithRetry(attempt)
+            attempt = (attempt or 0) + 1
+            if InstallButton() then
+                return
+            end
+            if attempt < 20 then
+                C_Timer.After(1.0, function() TryInstallWithRetry(attempt) end)
+            end
+        end
+
+        local installerFrame = CreateFrame("Frame")
+        installerFrame:RegisterEvent("PLAYER_LOGIN")
+        installerFrame:RegisterEvent("ADDON_LOADED")
+        installerFrame:SetScript("OnEvent", function()
+            C_Timer.After(0.2, function() TryInstallWithRetry(0) end)
+        end)
+    end
+end
+
+-- Fallback definitions if DC is not available
+if not namespace.RequestVaultInfo then
+    namespace.RequestVaultInfo = function()
+        print("DC-MythicPlus: DCAddonProtocol not loaded, cannot request vault info.")
+    end
+end
+
+if not namespace.ClaimVaultReward then
+    namespace.ClaimVaultReward = function()
+        print("DC-MythicPlus: DCAddonProtocol not loaded, cannot claim reward.")
+    end
 end
 

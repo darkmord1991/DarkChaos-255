@@ -76,6 +76,7 @@ namespace DCAddon
         constexpr const char* GOMOVE        = "GOMV";   // GOMove Object Mover
         constexpr const char* TELEPORTS     = "TELE";   // Teleport system
         constexpr const char* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
+        constexpr const char* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
     }
     
     // ========================================================================
@@ -188,6 +189,8 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_BEST_RUNS     = 0x03;
             constexpr uint8 CMSG_GET_KEYSTONE_LIST = 0x04;  // Request canonical keystone item IDs
             constexpr uint8 CMSG_REQUEST_HUD       = 0x05;  // Request HUD snapshot (force refresh)
+            constexpr uint8 CMSG_GET_VAULT_INFO    = 0x06;  // Request Great Vault info
+            constexpr uint8 CMSG_CLAIM_VAULT_REWARD = 0x07; // Claim a vault reward
             
             constexpr uint8 SMSG_KEY_INFO          = 0x10;
             constexpr uint8 SMSG_AFFIXES           = 0x11;
@@ -197,6 +200,8 @@ namespace DCAddon
             constexpr uint8 SMSG_TIMER_UPDATE      = 0x15;  // HUD updates (periodic + on-demand)
             constexpr uint8 SMSG_OBJECTIVE_UPDATE  = 0x16;
             constexpr uint8 SMSG_KEYSTONE_LIST     = 0x17;  // Server -> Client: JSON list of keystone item IDs
+            constexpr uint8 SMSG_VAULT_INFO        = 0x18;  // Great Vault info (JSON)
+            constexpr uint8 SMSG_CLAIM_VAULT_RESULT = 0x19; // Claim result
         }
         
         // Prestige opcodes
@@ -306,12 +311,14 @@ namespace DCAddon
             constexpr uint8 CMSG_DECLINE_APPLICATION = 0x15;  // Leader declines an applicant
             constexpr uint8 CMSG_DELIST_GROUP        = 0x16;  // Remove group listing
             constexpr uint8 CMSG_UPDATE_LISTING      = 0x17;  // Update group listing
+            constexpr uint8 CMSG_GET_MY_APPLICATIONS = 0x18;  // Get my active applications
             
             // Client -> Server: Keystone & Difficulty
             constexpr uint8 CMSG_GET_MY_KEYSTONE     = 0x20;  // Request player's keystone info
             constexpr uint8 CMSG_SET_DIFFICULTY      = 0x21;  // Request difficulty change
             constexpr uint8 CMSG_GET_DUNGEON_LIST    = 0x22;  // Get M+ dungeon list from DB
             constexpr uint8 CMSG_GET_RAID_LIST       = 0x23;  // Get raid list from DB
+            constexpr uint8 CMSG_GET_SYSTEM_INFO     = 0x24;  // Get system config (rewards, etc)
             
             // Client -> Server: Spectating
             constexpr uint8 CMSG_START_SPECTATE      = 0x25;  // Request to spectate a run
@@ -332,12 +339,14 @@ namespace DCAddon
             constexpr uint8 SMSG_APPLICATION_STATUS  = 0x32;  // Application accepted/declined
             constexpr uint8 SMSG_NEW_APPLICATION     = 0x33;  // Leader: new applicant
             constexpr uint8 SMSG_GROUP_UPDATED       = 0x34;  // Group composition changed
+            constexpr uint8 SMSG_MY_APPLICATIONS     = 0x35;  // List of my active applications
             
             // Server -> Client: Keystone & Difficulty
             constexpr uint8 SMSG_KEYSTONE_INFO       = 0x40;  // Player's keystone data
             constexpr uint8 SMSG_DIFFICULTY_CHANGED  = 0x41;  // Confirm difficulty changed
             constexpr uint8 SMSG_DUNGEON_LIST        = 0x42;  // M+ dungeon list from DB
             constexpr uint8 SMSG_RAID_LIST           = 0x43;  // Raid list from DB
+            constexpr uint8 SMSG_SYSTEM_INFO         = 0x44;  // System config (rewards, etc)
             
             // Server -> Client: Spectating
             constexpr uint8 SMSG_SPECTATE_DATA       = 0x45;  // Spectator live data
@@ -371,6 +380,14 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests list
             constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends list (JSON)
+        }
+
+        // World Content opcodes (hotspots, world bosses, events aggregated)
+        namespace World
+        {
+            constexpr uint8 CMSG_GET_CONTENT = 0x01; // Request all world content
+            constexpr uint8 SMSG_CONTENT     = 0x10; // Full content (JSON)
+            constexpr uint8 SMSG_UPDATE      = 0x11; // Partial update/push
         }
     }
 
@@ -1103,6 +1120,7 @@ namespace DCAddon
         JsonMessage& Set(const std::string& key, double v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, const std::string& v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, const char* v) { _json.Set(key, JsonValue(v)); return *this; }
+        JsonMessage& Set(const std::string& key, const JsonValue& v) { _json.Set(key, v); return *this; }
         
         std::string Build() const
         {

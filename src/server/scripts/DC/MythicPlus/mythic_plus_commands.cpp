@@ -21,11 +21,19 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        static ChatCommandTable vaultCommandTable =
+        {
+            { "generate",   HandleMPlusVaultGenerateCommand, SEC_GAMEMASTER, Console::No },
+            { "addrun",     HandleMPlusVaultAddRunCommand,   SEC_GAMEMASTER, Console::No },
+            { "reset",      HandleMPlusVaultResetCommand,    SEC_GAMEMASTER, Console::No },
+            { "",           HandleMPlusVaultGenerateCommand, SEC_GAMEMASTER, Console::No }
+        };
+
         static ChatCommandTable mplusCommandTable =
         {
             { "keystone",   HandleMPlusKeystoneCommand,     SEC_GAMEMASTER, Console::No },
             { "give",       HandleMPlusGiveCommand,         SEC_GAMEMASTER, Console::No },
-            { "vault",      HandleMPlusVaultCommand,        SEC_GAMEMASTER, Console::No },
+            { "vault",      vaultCommandTable },
             { "affix",      HandleMPlusAffixCommand,        SEC_GAMEMASTER, Console::No },
             { "scaling",    HandleMPlusScalingCommand,      SEC_GAMEMASTER, Console::No },
             { "season",     HandleMPlusSeasonCommand,       SEC_GAMEMASTER, Console::No },
@@ -121,39 +129,32 @@ public:
         return false;
     }
 
-    // .mplus vault [slot] [level] - Generate test vault rewards
-    static bool HandleMPlusVaultCommand(ChatHandler* handler, Optional<uint8> slot, Optional<uint8> keystoneLevel)
+    // .mplus vault generate [level] - Generate test vault rewards
+    static bool HandleMPlusVaultGenerateCommand(ChatHandler* handler, Optional<uint8> keystoneLevel)
     {
-        (void)slot;  // Currently unused, reserved for future vault slot selection
-        
         Player* player = handler->GetPlayer();
         if (!player)
             return false;
 
-        uint8 level = keystoneLevel.value_or(10);
-        if (level < 2 || level > 30)
-        {
-            handler->SendSysMessage("|cffff0000Error:|r Keystone level must be between 2 and 30.");
-            return false;
-        }
+        (void)keystoneLevel;
 
         uint32 guidLow = player->GetGUID().GetCounter();
         uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
         uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
 
         // Generate vault reward pool
-        if (sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart, level))
+        if (sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart))
         {
-            handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Generated vault rewards for M+{}", level));
+            handler->SendSysMessage("|cff00ff00Mythic+|r: Generated weekly vault reward pool.");
             
             // Show available rewards
             auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
-            for (const auto& [itemId, itemLevel] : rewards)
+            for (auto const& [slotIndex, itemId, itemLevel] : rewards)
             {
                 ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
                 if (itemTemplate)
                 {
-                    std::string rewardMsg = "  - [" + std::string(itemTemplate->Name1) + "] (ilvl " + std::to_string(itemLevel) + ")";
+                    std::string rewardMsg = "  - Slot " + std::to_string(slotIndex) + ": [" + std::string(itemTemplate->Name1) + "] (ilvl " + std::to_string(itemLevel) + ")";
                     handler->SendSysMessage(rewardMsg.c_str());
                 }
             }
@@ -163,6 +164,33 @@ public:
 
         handler->SendSysMessage("|cffff0000Error:|r Failed to generate vault rewards.");
         return false;
+    }
+
+    // .mplus vault addrun [level] [success] - Simulate a run completion
+    static bool HandleMPlusVaultAddRunCommand(ChatHandler* handler, Optional<uint8> keystoneLevel, Optional<bool> success)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        uint8 level = keystoneLevel.value_or(10);
+        bool isSuccess = success.value_or(true);
+
+        sMythicRuns->SimulateRun(player, level, isSuccess);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Simulated run completion (Level {}, Success: {})", level, isSuccess));
+        return true;
+    }
+
+    // .mplus vault reset - Reset weekly vault progress
+    static bool HandleMPlusVaultResetCommand(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        sMythicRuns->ResetWeeklyVaultProgress(player);
+        handler->SendSysMessage("|cff00ff00Mythic+|r: Weekly vault progress reset.");
+        return true;
     }
 
     // .mplus affix [type] - Test specific affix

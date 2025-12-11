@@ -25,6 +25,7 @@
 #include "GameObject.h"
 #include "ObjectAccessor.h"
 #include "DBCStores.h"
+#include "AddonExtension/DCAddonNamespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 
@@ -1704,6 +1705,52 @@ static bool SpawnHotspot()
           }
       }
       LOG_DEBUG("scripts", "Hotspot #{} broadcast: {} players notified on map {}", hotspot.id, announcedCount, hotspot.mapId);
+
+    // Send a WRLD update containing this hotspot (spawn action) to players on same map/within announce radius
+    {
+        DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
+        DCAddon::JsonValue h; h.SetObject();
+        h.Set("id", DCAddon::JsonValue(static_cast<int32>(hotspot.id)));
+        h.Set("mapId", DCAddon::JsonValue(static_cast<int32>(hotspot.mapId)));
+        h.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(hotspot.zoneId)));
+        // Zone name
+        {
+            std::string zname = "Unknown";
+            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+            {
+                if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
+            }
+            h.Set("zone", DCAddon::JsonValue(zname));
+        }
+        h.Set("x", DCAddon::JsonValue(hotspot.x));
+        h.Set("y", DCAddon::JsonValue(hotspot.y));
+        h.Set("z", DCAddon::JsonValue(hotspot.z));
+        h.Set("timeLeft", DCAddon::JsonValue(static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count())));
+        h.Set("xpBonus", DCAddon::JsonValue(static_cast<int32>(GetHotspotXPBonusPercentage())));
+        h.Set("action", DCAddon::JsonValue("spawn"));
+        hotspotsArr.Push(h);
+
+        DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+        wmsg.Set("hotspots", hotspotsArr);
+
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+        {
+            WorldSession* sess = itr->second;
+            if (!sess) continue;
+            Player* plr = sess->GetPlayer();
+            if (!plr) continue;
+            if (plr->GetMapId() != hotspot.mapId) continue;
+            if (announceRadius > 0.0f)
+            {
+                float dx = plr->GetPositionX() - hotspot.x;
+                float dy = plr->GetPositionY() - hotspot.y;
+                float dz = plr->GetPositionZ() - hotspot.z;
+                float dist2 = dx*dx + dy*dy + dz*dz;
+                if (dist2 > announceRadius2) continue;
+            }
+            wmsg.Send(plr);
+        }
+    }
     }
 
     return true;
@@ -1743,6 +1790,37 @@ static void CleanupExpiredHotspots()
 
             // Delete from database
             DeleteHotspotFromDB(it->id);
+
+            // Send WRLD update for hotspot expire (limit to the hotspot's map)
+            {
+                DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
+                DCAddon::JsonValue h; h.SetObject();
+                h.Set("id", DCAddon::JsonValue(static_cast<int32>(it->id)));
+                h.Set("mapId", DCAddon::JsonValue(static_cast<int32>(it->mapId)));
+                h.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(it->zoneId)));
+                {
+                    std::string zname = "Unknown";
+                    if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(it->zoneId))
+                    {
+                        if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
+                    }
+                    h.Set("zone", DCAddon::JsonValue(zname));
+                }
+                h.Set("action", DCAddon::JsonValue("expire"));
+                hotspotsArr.Push(h);
+
+                DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+                wmsg.Set("hotspots", hotspotsArr);
+
+                if (Map* m = GetBaseMapSafe(it->mapId))
+                {
+                    m->DoForAllPlayers([&](Player* player)
+                    {
+                        if (player && player->IsInWorld() && player->GetSession())
+                            wmsg.Send(player);
+                    });
+                }
+            }
 
             if (sHotspotsConfig.announceExpire)
             {

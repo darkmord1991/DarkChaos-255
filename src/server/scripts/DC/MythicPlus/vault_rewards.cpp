@@ -7,6 +7,7 @@
 #include "MythicPlusRewards.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
@@ -15,10 +16,48 @@
 #include "StringFormat.h"
 #include <algorithm>
 #include <random>
+#include <tuple>
+#include <unordered_set>
 #include <vector>
 
 // Universal token that players can exchange for class/spec-appropriate items
 constexpr uint32 MYTHIC_VAULT_TOKEN = 101000; // Your existing token item ID
+
+namespace
+{
+    enum VaultTrack : uint8
+    {
+        TRACK_RAID  = 0,
+        TRACK_MPLUS = 1,
+        TRACK_PVP   = 2
+    };
+
+    constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
+
+    uint8 MakeGlobalSlotIndex(uint8 trackId, uint8 slotInTrack) // slotInTrack: 1..3
+    {
+        return static_cast<uint8>(trackId * 3 + slotInTrack);
+    }
+
+    void DecodeGlobalSlotIndex(uint8 globalSlot, uint8& outTrackId, uint8& outSlotInTrack)
+    {
+        // globalSlot is 1..9
+        uint8 idx = static_cast<uint8>(globalSlot - 1);
+        outTrackId = idx / 3;
+        outSlotInTrack = static_cast<uint8>((idx % 3) + 1);
+    }
+
+    uint32 CountBits32(uint32 value)
+    {
+        uint32 count = 0;
+        while (value)
+        {
+            value &= (value - 1);
+            ++count;
+        }
+        return count;
+    }
+}
 
 // Vault reward mode configuration
 enum VaultRewardMode
@@ -37,7 +76,7 @@ std::string GetPlayerSpec(Player* player)
     uint8 classId = player->getClass();
     uint8 primaryTree = player->GetMostPointsTalentTree(); // Returns 0, 1, or 2
     
-    // Map class + tree index to spec name
+    // Map class + tree index to spec name (must match dc_vault_loot_table.spec_name)
     switch (classId)
     {
         case CLASS_WARRIOR:
@@ -78,7 +117,7 @@ std::string GetPlayerSpec(Player* player)
             return "Destruction";
         case CLASS_DRUID:
             if (primaryTree == 0) return "Balance";
-            if (primaryTree == 1) return "Feral Combat";
+            if (primaryTree == 1) return "Feral";
             return "Restoration";
         default:
             return "Unknown";
@@ -112,13 +151,137 @@ std::string GetPlayerArmorType(Player* player)
     }
 }
 
-bool MythicPlusRunManager::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart, uint8 highestKeystoneLevel)
+uint32 GetPlayerClassMask(Player* player)
 {
-    if (highestKeystoneLevel == 0)
-        return false;
-    
-    uint32 itemLevel = GetItemLevelForKeystoneLevel(highestKeystoneLevel);
-    
+    if (!player)
+        return 0;
+
+    switch (player->getClass())
+    {
+        case CLASS_WARRIOR:      return 1;
+        case CLASS_PALADIN:      return 2;
+        case CLASS_HUNTER:       return 4;
+        case CLASS_ROGUE:        return 8;
+        case CLASS_PRIEST:       return 16;
+        case CLASS_DEATH_KNIGHT: return 32;
+        case CLASS_SHAMAN:       return 64;
+        case CLASS_DRUID:        return 128;
+        case CLASS_MAGE:         return 256;
+        case CLASS_WARLOCK:      return 512;
+        default:                 return 0;
+    }
+}
+
+uint8 GetPlayerRoleMask(Player* player)
+{
+    if (!player)
+        return 7;
+
+    std::string spec = GetPlayerSpec(player);
+    // Role mask: 1=Tank, 2=Healer, 4=DPS, 7=All
+    if (spec == "Protection" || spec == "Blood")
+        return 1;
+    if (spec == "Holy" || spec == "Discipline" || spec == "Restoration")
+        return 2;
+    if (spec == "Feral")
+        return 5; // Tank + DPS
+    return 4;
+}
+
+uint32 GetRaidBossProgressForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
+{
+    uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
+
+    // Use instance binds + instance.completedEncounters bitmask to approximate raid boss kills.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT i.map, i.completedEncounters, i.resettime "
+        "FROM character_instance ci "
+        "JOIN instance i ON i.id = ci.instance "
+        "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
+        playerGuid, weekStart, weekEnd);
+
+    if (!result)
+        return 0;
+
+    uint32 bossesKilled = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 mapId = fields[0].Get<uint32>();
+        uint32 completedEncounters = fields[1].Get<uint32>();
+
+        MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+        if (!mapEntry || !mapEntry->IsRaid())
+            continue;
+
+        bossesKilled += CountBits32(completedEncounters);
+    } while (result->NextRow());
+
+    return bossesKilled;
+}
+
+uint32 GetPvpWinsForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
+{
+    uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT COUNT(*) FROM pvpstats_players p "
+        "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
+        "WHERE p.character_guid = {} AND p.winner = 1 "
+        "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({})",
+        playerGuid, weekStart, weekEnd);
+
+    if (!result)
+        return 0;
+
+    return (*result)[0].Get<uint32>();
+}
+
+struct WeeklyMPlusSummary
+{
+    uint8 runs = 0;
+    uint8 slotKeyLevel[4] = { 0, 0, 0, 0 }; // 1..3
+};
+
+WeeklyMPlusSummary GetMPlusSummaryForWeek(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+{
+    WeeklyMPlusSummary out;
+    uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT keystone_level FROM dc_mplus_runs "
+        "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+        "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
+        "ORDER BY keystone_level DESC LIMIT 8",
+        playerGuid, seasonId, weekStart, weekEnd);
+
+    if (!result)
+        return out;
+
+    std::vector<uint8> levels;
+    do
+    {
+        levels.push_back((*result)[0].Get<uint8>());
+    } while (result->NextRow());
+
+    out.runs = static_cast<uint8>(levels.size());
+    if (levels.size() >= 1)
+        out.slotKeyLevel[1] = levels[0];
+    if (levels.size() >= 4)
+        out.slotKeyLevel[2] = levels[3];
+    if (levels.size() >= 8)
+        out.slotKeyLevel[3] = levels[7];
+
+    return out;
+}
+
+bool MythicPlusRunManager::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+{
+    // Compute weekly progress for all 3 tracks
+    WeeklyMPlusSummary mplus = GetMPlusSummaryForWeek(playerGuid, seasonId, weekStart);
+    uint32 raidBosses = GetRaidBossProgressForWeek(playerGuid, weekStart);
+    uint32 pvpWins = GetPvpWinsForWeek(playerGuid, weekStart);
+
     // Get config for vault reward mode
     VaultRewardMode rewardMode = static_cast<VaultRewardMode>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.RewardMode", VAULT_MODE_TOKENS));
     
@@ -128,98 +291,198 @@ bool MythicPlusRunManager::GenerateVaultRewardPool(ObjectGuid::LowType playerGui
     
     // Get player info for spec-based loot
     Player* player = ObjectAccessor::FindPlayerByLowGUID(playerGuid);
-    
-    if (rewardMode == VAULT_MODE_TOKENS)
+
+    uint32 classMask = GetPlayerClassMask(player);
+    uint8 roleMask = GetPlayerRoleMask(player);
+    std::string playerSpec = GetPlayerSpec(player);
+    std::string armorType = GetPlayerArmorType(player);
+
+    uint8 mplusThresholds[4] = { 0, GetVaultThreshold(1), GetVaultThreshold(2), GetVaultThreshold(3) };
+    uint8 raidThresholds[4] =
     {
-        // TOKEN MODE: Insert token reward option with calculated item level
-        CharacterDatabase.DirectExecute(
-            "INSERT INTO dc_vault_reward_pool (character_guid, season_id, week_start, item_id, item_level, slot_index) "
-            "VALUES ({}, {}, {}, {}, {}, 0)",
-            playerGuid, seasonId, weekStart, MYTHIC_VAULT_TOKEN, itemLevel);
-        
-        LOG_INFO("mythic.vault", "Generated vault token reward (ilvl {}) for player {} (season {}, week {}, keystone level {})",
-                 itemLevel, playerGuid, seasonId, weekStart, highestKeystoneLevel);
-    }
-    else if (rewardMode == VAULT_MODE_GEAR && player)
+        0,
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold1", 2)),
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold2", 4)),
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold3", 6))
+    };
+
+    uint8 pvpThresholds[4] =
     {
-        // GEAR MODE: Generate 3 random items per slot based on player's spec/class
-        std::string playerSpec = GetPlayerSpec(player);
-        std::string armorType = GetPlayerArmorType(player);
-        uint8 classId = player->getClass();
-        
-        // Query eligible items from loot table using direct query
+        0,
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold1", 1)),
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold2", 4)),
+        static_cast<uint8>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold3", 8))
+    };
+
+    uint32 raidItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.ItemLevel", 264);
+    uint32 pvpItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.ItemLevel", 264);
+
+    struct Candidate
+    {
+        uint32 itemId;
+        uint16 weight;
+    };
+
+    auto fetchCandidates = [&](uint32 targetIlvl) -> std::vector<Candidate>
+    {
+        std::vector<Candidate> candidates;
+        if (!player || !targetIlvl)
+            return candidates;
+
         std::string query = Acore::StringFormat(
-            "SELECT item_id FROM dc_vault_loot_table "
-            "WHERE (class_id = {} OR class_id = 0) "
-            "AND (spec_name = '{}' OR spec_name = 'All') "
-            "AND (armor_type = '{}' OR armor_type = 'All') "
-            "AND item_level >= {} AND item_level <= {} "
-            "ORDER BY RAND() LIMIT 50",
-            classId, playerSpec, armorType, itemLevel - 5, itemLevel + 5);
-        
+            "SELECT item_id, weight FROM dc_vault_loot_table "
+            "WHERE (class_mask = 0 OR (class_mask & {}) != 0) "
+            "AND (spec_name IS NULL OR spec_name = '{}') "
+            "AND ((role_mask & {}) != 0) "
+            "AND (armor_type = 'Misc' OR armor_type = '{}') "
+            "AND item_level_min <= {} AND item_level_max >= {} "
+            "LIMIT 500",
+            classMask, playerSpec, uint32(roleMask), armorType, targetIlvl, targetIlvl);
+
         if (QueryResult result = WorldDatabase.Query(query.c_str()))
         {
-            std::vector<uint32> eligibleItems;
-            do {
-                Field* fields = result->Fetch();
-                eligibleItems.push_back(fields[0].Get<uint32>());
-            } while (result->NextRow());
-            
-            // Generate 3 random items per unlocked slot (up to 9 total for 3 slots)
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::shuffle(eligibleItems.begin(), eligibleItems.end(), gen);
-            
-            uint8 slotIndex = 0;
-            for (uint8 slot = 0; slot < 3 && slot < eligibleItems.size(); ++slot)
+            do
             {
-                // Insert 3 choices per slot
-                for (uint8 choice = 0; choice < 3 && slotIndex < eligibleItems.size(); ++choice)
+                Field* fields = result->Fetch();
+                candidates.push_back({ fields[0].Get<uint32>(), fields[1].Get<uint16>() });
+            } while (result->NextRow());
+        }
+
+        return candidates;
+    };
+
+    auto pickWeighted = [&](std::vector<Candidate> const& candidates, std::mt19937& rng, std::unordered_set<uint32>& used) -> uint32
+    {
+        if (candidates.empty())
+            return 0;
+
+        uint32 totalWeight = 0;
+        for (Candidate const& c : candidates)
+            totalWeight += std::max<uint16>(c.weight, 1);
+
+        std::uniform_int_distribution<uint32> dist(1, std::max<uint32>(totalWeight, 1));
+
+        for (uint32 attempt = 0; attempt < 50; ++attempt)
+        {
+            uint32 roll = dist(rng);
+            uint32 running = 0;
+            for (Candidate const& c : candidates)
+            {
+                running += std::max<uint16>(c.weight, 1);
+                if (roll <= running)
                 {
-                    CharacterDatabase.DirectExecute(
-                        "INSERT INTO dc_vault_reward_pool (character_guid, season_id, week_start, item_id, item_level, slot_index) "
-                        "VALUES ({}, {}, {}, {}, {}, {})",
-                        playerGuid, seasonId, weekStart, eligibleItems[slotIndex], itemLevel, slot * 3 + choice);
-                    slotIndex++;
+                    if (!used.count(c.itemId))
+                    {
+                        used.insert(c.itemId);
+                        return c.itemId;
+                    }
+                    break;
                 }
             }
-            
-            LOG_INFO("mythic.vault", "Generated {} spec-based gear options (ilvl {}, spec: {}) for player {} (season {}, week {})",
-                     slotIndex, itemLevel, playerSpec, playerGuid, seasonId, weekStart);
         }
-        else
+
+        // Fallback: first unused
+        for (Candidate const& c : candidates)
         {
-            // Fallback to tokens if no gear found
-            CharacterDatabase.DirectExecute(
-                "INSERT INTO dc_vault_reward_pool (character_guid, season_id, week_start, item_id, item_level, slot_index) "
-                "VALUES ({}, {}, {}, {}, {}, 0)",
-                playerGuid, seasonId, weekStart, MYTHIC_VAULT_TOKEN, itemLevel);
-            
-            LOG_WARN("mythic.vault", "No gear found for spec {}, falling back to tokens for player {}", playerSpec, playerGuid);
+            if (!used.count(c.itemId))
+            {
+                used.insert(c.itemId);
+                return c.itemId;
+            }
         }
-    }
-    else if (rewardMode == VAULT_MODE_BOTH && player)
+        return 0;
+    };
+
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::unordered_set<uint32> usedItems;
+
+    auto insertReward = [&](uint8 slotIndex, uint32 itemId, uint32 ilvl)
     {
-        // BOTH MODE: Give tokens AND gear choices
-        // Token at slot 0
         CharacterDatabase.DirectExecute(
             "INSERT INTO dc_vault_reward_pool (character_guid, season_id, week_start, item_id, item_level, slot_index) "
-            "VALUES ({}, {}, {}, {}, {}, 0)",
-            playerGuid, seasonId, weekStart, MYTHIC_VAULT_TOKEN, itemLevel);
-        
-        // Gear items at slots 1-9 (handled by gear generation code above)
-        // ... (implement similar to GEAR mode)
-        
-        LOG_INFO("mythic.vault", "Generated hybrid token+gear rewards for player {} (season {}, week {})",
-                 playerGuid, seasonId, weekStart);
+            "VALUES ({}, {}, {}, {}, {}, {})",
+            playerGuid, seasonId, weekStart, itemId, ilvl, slotIndex);
+    };
+    
+    // Insert up to 9 vault choices (3 tracks x 3 slots), each slot yields ONE reward.
+    // Slot indices: 1-3 Raid, 4-6 Mythic+, 7-9 PvP.
+    for (uint8 slotInTrack = 1; slotInTrack <= 3; ++slotInTrack)
+    {
+        // RAID
+        if (raidBosses >= raidThresholds[slotInTrack])
+        {
+            uint8 globalSlot = MakeGlobalSlotIndex(TRACK_RAID, slotInTrack);
+            uint32 targetIlvl = raidItemLevel;
+            if (rewardMode == VAULT_MODE_TOKENS || !player)
+            {
+                insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+            }
+            else
+            {
+                auto candidates = fetchCandidates(targetIlvl);
+                uint32 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+                else
+                    insertReward(globalSlot, itemId, targetIlvl);
+            }
+        }
+
+        // MYTHIC+
+        if (mplus.runs >= mplusThresholds[slotInTrack])
+        {
+            uint8 globalSlot = MakeGlobalSlotIndex(TRACK_MPLUS, slotInTrack);
+            uint8 keyLevel = mplus.slotKeyLevel[slotInTrack];
+            if (!keyLevel)
+                keyLevel = 2;
+            uint32 targetIlvl = GetItemLevelForKeystoneLevel(keyLevel);
+
+            if (rewardMode == VAULT_MODE_TOKENS || !player)
+            {
+                insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+            }
+            else
+            {
+                auto candidates = fetchCandidates(targetIlvl);
+                uint32 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+                else
+                    insertReward(globalSlot, itemId, targetIlvl);
+            }
+        }
+
+        // PVP
+        if (pvpWins >= pvpThresholds[slotInTrack])
+        {
+            uint8 globalSlot = MakeGlobalSlotIndex(TRACK_PVP, slotInTrack);
+            uint32 targetIlvl = pvpItemLevel;
+            if (rewardMode == VAULT_MODE_TOKENS || !player)
+            {
+                insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+            }
+            else
+            {
+                auto candidates = fetchCandidates(targetIlvl);
+                uint32 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    insertReward(globalSlot, MYTHIC_VAULT_TOKEN, targetIlvl);
+                else
+                    insertReward(globalSlot, itemId, targetIlvl);
+            }
+        }
     }
+
+    LOG_INFO("mythic.vault", "Generated weekly vault pool for player {} (season {}, week {}): raidBosses={}, mplusRuns={}, pvpWins={}, rewardMode={}",
+        playerGuid, seasonId, weekStart, raidBosses, mplus.runs, pvpWins, uint32(rewardMode));
     
     return true;
 }
 
-std::vector<std::pair<uint32, uint32>> MythicPlusRunManager::GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+std::vector<std::tuple<uint8, uint32, uint32>> MythicPlusRunManager::GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
 {
-    std::vector<std::pair<uint32, uint32>> rewards; // pair<itemId, itemLevel>
+    std::vector<std::tuple<uint8, uint32, uint32>> rewards; // tuple<slotIndex, itemId, itemLevel>
     
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_VAULT_REWARDS);
     stmt->SetData(0, playerGuid);
@@ -231,9 +494,10 @@ std::vector<std::pair<uint32, uint32>> MythicPlusRunManager::GetVaultRewardPool(
         do
         {
             Field* fields = result->Fetch();
-            uint32 itemId = fields[0].Get<uint32>();
-            uint32 itemLevel = fields[1].Get<uint32>();
-            rewards.emplace_back(itemId, itemLevel);
+            uint8 slotIndex = fields[0].Get<uint8>();
+            uint32 itemId = fields[1].Get<uint32>();
+            uint32 itemLevel = fields[2].Get<uint32>();
+            rewards.emplace_back(slotIndex, itemId, itemLevel);
         } while (result->NextRow());
     }
     
@@ -244,19 +508,74 @@ bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint
 {
     if (!player)
         return false;
+
+    if (slot < 1 || slot > 9)
+    {
+        SendVaultError(player, "Invalid slot selection.");
+        return false;
+    }
         
     uint32 guidLow = player->GetGUID().GetCounter();
     uint32 seasonId = GetCurrentSeasonId();
     uint32 weekStart = GetWeekStartTimestamp();
+
+    // Ensure weekly vault row exists so claim state is consistent even if player only does Raid/PvP.
+    CharacterDatabase.DirectExecute(
+        "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
+        guidLow, seasonId, weekStart);
+
+    // Check claim state
+    QueryResult claimRow = CharacterDatabase.Query(
+        "SELECT reward_claimed FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+        guidLow, seasonId, weekStart);
+    if (claimRow && (*claimRow)[0].Get<bool>())
+    {
+        SendVaultError(player, "You have already claimed your weekly vault reward.");
+        return false;
+    }
+
+    // Validate slot is unlocked right now
+    uint8 trackId = 0;
+    uint8 slotInTrack = 0;
+    DecodeGlobalSlotIndex(slot, trackId, slotInTrack);
+
+    bool unlocked = false;
+    if (trackId == TRACK_MPLUS)
+    {
+        WeeklyMPlusSummary mplus = GetMPlusSummaryForWeek(guidLow, seasonId, weekStart);
+        unlocked = (mplus.runs >= GetVaultThreshold(slotInTrack));
+    }
+    else if (trackId == TRACK_RAID)
+    {
+        uint32 raidBosses = GetRaidBossProgressForWeek(guidLow, weekStart);
+        uint32 threshold = sConfigMgr->GetOption<uint32>(
+            slotInTrack == 1 ? "MythicPlus.Vault.Raid.Threshold1" : (slotInTrack == 2 ? "MythicPlus.Vault.Raid.Threshold2" : "MythicPlus.Vault.Raid.Threshold3"),
+            slotInTrack == 1 ? 2u : (slotInTrack == 2 ? 4u : 6u));
+        unlocked = (raidBosses >= threshold);
+    }
+    else if (trackId == TRACK_PVP)
+    {
+        uint32 pvpWins = GetPvpWinsForWeek(guidLow, weekStart);
+        uint32 threshold = sConfigMgr->GetOption<uint32>(
+            slotInTrack == 1 ? "MythicPlus.Vault.PvP.Threshold1" : (slotInTrack == 2 ? "MythicPlus.Vault.PvP.Threshold2" : "MythicPlus.Vault.PvP.Threshold3"),
+            slotInTrack == 1 ? 1u : (slotInTrack == 2 ? 4u : 8u));
+        unlocked = (pvpWins >= threshold);
+    }
+
+    if (!unlocked)
+    {
+        SendVaultError(player, "This slot is not unlocked.");
+        return false;
+    }
     
     // Verify the item is in the player's reward pool
     auto rewards = GetVaultRewardPool(guidLow, seasonId, weekStart);
     bool validReward = false;
     uint32 itemLevel = 0;
-    
-    for (const auto& [rewardItemId, rewardItemLevel] : rewards)
+
+    for (auto const& [slotIndex, rewardItemId, rewardItemLevel] : rewards)
     {
-        if (rewardItemId == itemId)
+        if (slotIndex == slot && rewardItemId == itemId)
         {
             validReward = true;
             itemLevel = rewardItemLevel;
@@ -269,67 +588,58 @@ bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint
         SendVaultError(player, "Invalid item selection.");
         return false;
     }
-    
-    // Create and give the token with the appropriate item level
+
+    VaultRewardMode rewardMode = static_cast<VaultRewardMode>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.RewardMode", VAULT_MODE_TOKENS));
+
+    bool isToken = (itemId == MYTHIC_VAULT_TOKEN) || (rewardMode == VAULT_MODE_TOKENS);
+
+    // Validate template
     ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
     if (!itemTemplate)
     {
         SendVaultError(player, "Item template not found.");
         return false;
     }
-    
-    // Calculate token count based on item level (higher ilvl = more tokens)
-    // Base: 10 tokens, +1 per 10 ilvl above 190
-    uint32 tokenCount = 10 + std::max(0, static_cast<int32>((itemLevel - 190) / 10));
-    
+
+    uint32 countToGive = 1;
+    if (isToken)
+    {
+        // Base: 10 tokens, +1 per 10 ilvl above 190
+        countToGive = 10 + std::max(0, static_cast<int32>((itemLevel - 190) / 10));
+    }
+
     ItemPosCountVec dest;
-    uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, tokenCount);
-    
+    uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, countToGive);
+
     if (msg == EQUIP_ERR_OK)
     {
-        if (Item* item = player->StoreNewItem(dest, itemId, true))
-        {
-            player->SendNewItem(item, tokenCount, true, false);
-            
-            // Log the claim to database
-            CharacterDatabase.DirectExecute(
-                "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_item_id = {}, claimed_tokens = {}, claimed_at = UNIX_TIMESTAMP() "
-                "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                slot, itemId, tokenCount, guidLow, seasonId, weekStart);
-            
-            // Also log to reward pool table for history tracking
-            CharacterDatabase.DirectExecute(
-                "UPDATE dc_vault_reward_pool SET claimed = 1, claimed_at = UNIX_TIMESTAMP() "
-                "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND item_id = {}",
-                guidLow, seasonId, weekStart, itemId);
-            
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed %u tokens (ilvl %u equivalent).", tokenCount, itemLevel);
-            LOG_INFO("mythic.vault", "Player {} claimed vault reward: {} tokens (ilvl {}) for season {}, week {}",
-                     guidLow, tokenCount, itemLevel, seasonId, weekStart);
-            
-            return true;
-        }
+        if (Item* newItem = player->StoreNewItem(dest, itemId, true))
+            player->SendNewItem(newItem, countToGive, true, false);
     }
     else
     {
-        // Inventory full - mail the tokens
-        player->SendItemRetrievalMail(itemId, tokenCount);
-        
-        CharacterDatabase.DirectExecute(
-            "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_item_id = {}, claimed_tokens = {}, claimed_at = UNIX_TIMESTAMP() "
-            "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-            slot, itemId, tokenCount, guidLow, seasonId, weekStart);
-        
-        CharacterDatabase.DirectExecute(
-            "UPDATE dc_vault_reward_pool SET claimed = 1, claimed_at = UNIX_TIMESTAMP() "
-            "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND item_id = {}",
-            guidLow, seasonId, weekStart, itemId);
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Inventory full, %u tokens mailed (ilvl %u equivalent).", tokenCount, itemLevel);
-        LOG_INFO("mythic.vault", "Player {} claimed vault reward (mailed): {} tokens (ilvl {}) for season {}, week {}",
-                 guidLow, tokenCount, itemLevel, seasonId, weekStart);
-        return true;
+        player->SendItemRetrievalMail(itemId, countToGive);
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Inventory full; your vault reward was mailed.");
     }
-    
-    return false;
+
+    // Log the claim to database
+    CharacterDatabase.DirectExecute(
+        "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_item_id = {}, claimed_tokens = {}, claimed_at = UNIX_TIMESTAMP() "
+        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+        slot, itemId, (isToken ? countToGive : 0), guidLow, seasonId, weekStart);
+
+    CharacterDatabase.DirectExecute(
+        "UPDATE dc_vault_reward_pool SET claimed = 1, claimed_at = UNIX_TIMESTAMP() "
+        "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND slot_index = {} AND item_id = {}",
+        guidLow, seasonId, weekStart, slot, itemId);
+
+    if (isToken)
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed %u tokens (ilvl %u equivalent).", countToGive, itemLevel);
+    else
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r You claimed your Great Vault reward.");
+
+    LOG_INFO("mythic.vault", "Player {} claimed vault reward: slot={}, itemId={}, count={}, ilvl={}, season={}, week={}",
+        guidLow, uint32(slot), itemId, countToGive, itemLevel, seasonId, weekStart);
+
+    return true;
 }

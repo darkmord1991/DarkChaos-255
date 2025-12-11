@@ -59,8 +59,8 @@ KUI.Print = Print
 
 function KUI:CreateActivationFrame()
     if self.frame then return self.frame end
-    
-    local frame = CreateFrame("Frame", "DCKeystoneActivationFrame", UIParent)
+
+    local frame = CreateFrame("Frame", "DCKeystoneActivationFrame", UIParent, "UIPanelDialogTemplate")
     frame:SetSize(500, 400)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -71,50 +71,33 @@ function KUI:CreateActivationFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
-    
-    -- Dark background
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.02, 0.02, 0.05, 0.98)
-    
-    -- Glowing border (mythic+ theme) - 3.3.5a compatible
-    local border = CreateFrame("Frame", nil, frame)
-    border:SetPoint("TOPLEFT", -3, 3)
-    border:SetPoint("BOTTOMRIGHT", 3, -3)
-    border:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16,
-    })
-    border:SetBackdropBorderColor(0.2, 0.6, 1.0, 0.9)
-    
-    -- Top decorative bar
-    local topBar = frame:CreateTexture(nil, "ARTWORK")
-    topBar:SetPoint("TOPLEFT", 2, -2)
-    topBar:SetPoint("TOPRIGHT", -2, -2)
-    topBar:SetHeight(4)
-    topBar:SetColorTexture(0.2, 0.6, 1.0, 0.8)
-    
-    -- Title: "MYTHIC KEYSTONE"
+
+    if frame.TitleText then
+        frame.TitleText:SetText("Dungeon Finder")
+    end
+    if frame.portrait then
+        SetPortraitToTexture(frame.portrait, "Interface\\Icons\\INV_Relics_Hourglass")
+    end
+    if frame.CloseButton then
+        frame.CloseButton:SetScript("OnClick", function()
+            KUI:CancelActivation()
+        end)
+    end
+
+    -- Title: "MYTHIC KEYSTONE" (keep the internal title, positioned below the dialog title)
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont("Fonts\\FRIZQT__.TTF", 20, "OUTLINE")
-    title:SetPoint("TOP", 0, -20)
-    title:SetText("|cff32c4ffMYTHIC KEYSTONE|r")
+    title:SetFont("Fonts\\FRIZQT__.TTF", 18, "OUTLINE")
+    title:SetPoint("TOP", 0, -48)
+    title:SetText("MYTHIC KEYSTONE")
     frame.title = title
-    
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    closeBtn:SetScript("OnClick", function()
-        KUI:CancelActivation()
-    end)
     
     -- =====================================================
     -- Keystone Display Section (top half)
     -- =====================================================
     
     local keystoneSection = CreateFrame("Frame", nil, frame)
-    keystoneSection:SetPoint("TOPLEFT", 20, -50)
-    keystoneSection:SetPoint("TOPRIGHT", -20, -50)
+    keystoneSection:SetPoint("TOPLEFT", 20, -70)
+    keystoneSection:SetPoint("TOPRIGHT", -20, -70)
     keystoneSection:SetHeight(150)
     
     -- Keystone icon (large)

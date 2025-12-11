@@ -11,6 +11,7 @@
 #include "DCAddonNamespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "DCGroupFinderMgr.h"
 #include "Group.h"
 #include "DatabaseEnv.h"
 #include "Config.h"
@@ -101,6 +102,7 @@ namespace GroupFinder
         }
         
         auto json = GetJsonData(msg);
+        // Player GUID used to check limits, ownership and DB queries
         uint32 guid = player->GetGUID().GetCounter();
         
         // Check if player already has max listings
@@ -137,30 +139,38 @@ namespace GroupFinder
         if (Group* group = player->GetGroup())
             groupGuid = group->GetGUID().GetCounter();
         
-        // Escape note for SQL
-        CharacterDatabase.EscapeString(note);
-        CharacterDatabase.EscapeString(dungeonName);
+        // Create listing object
+        DCAddon::GroupFinderListing listing;
+        listing.listingType = listingType;
+        listing.dungeonId = dungeonId;
+        listing.dungeonName = dungeonName;
+        listing.difficulty = player->GetDungeonDifficulty();
+        listing.keystoneLevel = keystoneLevel;
+        listing.minIlvl = minIlvl;
+        listing.needTank = needTank;
+        listing.needHealer = needHealer;
+        listing.needDps = needDps;
+        listing.note = note;
+        listing.groupGuid = groupGuid;
         
-        // Insert listing
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_group_finder_listings "
-            "(leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
-            "keystone_level, min_ilvl, need_tank, need_healer, need_dps, note, status) "
-            "VALUES ({}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, '{}', 1)",
-            guid, groupGuid, listingType, dungeonId, dungeonName,
-            player->GetDungeonDifficulty(), keystoneLevel, minIlvl,
-            needTank, needHealer, needDps, note);
+        // Create listing via manager (handles DB and cache)
+        uint32 listingId = sGroupFinderMgr.CreateListing(player, listing);
         
-        // Get the inserted ID
-        QueryResult idResult = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
-        uint32 listingId = idResult ? (*idResult)[0].Get<uint32>() : 0;
-        
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_LISTING_CREATED)
-            .Set("success", true)
-            .Set("listingId", static_cast<int32>(listingId))
-            .Send(player);
-        
-        LOG_DEBUG("dc.groupfinder", "Player {} created listing #{}", player->GetName(), listingId);
+        if (listingId > 0)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_LISTING_CREATED)
+                .Set("success", true)
+                .Set("listingId", static_cast<int32>(listingId))
+                .Send(player);
+            
+            LOG_DEBUG("dc.groupfinder", "Player {} created listing #{}", player->GetName(), listingId);
+        }
+        else
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Failed to create listing")
+                .Send(player);
+        }
     }
     
     // Search for available listings
@@ -243,7 +253,20 @@ namespace GroupFinder
         auto json = GetJsonData(msg);
         
         int32 listingId = JsonGetInt(json, "listingId", 0);
-        std::string role = JsonGetString(json, "role", "dps");
+        // Support both string (legacy) and int (mask) for role
+        uint8 roleMask = 4; // Default DPS
+        
+        if (json["role"].IsString())
+        {
+            std::string roleStr = json["role"].AsString();
+            if (roleStr == "tank") roleMask = 1;
+            else if (roleStr == "healer") roleMask = 2;
+        }
+        else if (json["role"].IsNumber())
+        {
+            roleMask = static_cast<uint8>(json["role"].AsInt32());
+        }
+        
         std::string message = JsonGetString(json, "message", "");
         
         if (listingId <= 0)
@@ -254,104 +277,89 @@ namespace GroupFinder
             return;
         }
         
-        uint32 guid = player->GetGUID().GetCounter();
+        // Validate role against class
+        uint8 classId = player->getClass();
+        bool roleValid = true;
         
-        // Check if listing exists and is active
-        QueryResult listingResult = CharacterDatabase.Query(
-            "SELECT leader_guid FROM dc_group_finder_listings WHERE id = {} AND status = 1",
-            listingId);
-        
-        if (!listingResult)
+        // Check Tank role
+        if (roleMask & 1) // GF_ROLE_TANK
         {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-                .Set("success", false)
-                .Set("status", "failed")
-                .Set("message", "Listing not found or expired")
+            if (classId != CLASS_WARRIOR && classId != CLASS_PALADIN && 
+                classId != CLASS_DEATH_KNIGHT && classId != CLASS_DRUID)
+                roleValid = false;
+        }
+        
+        // Check Healer role
+        if (roleMask & 2) // GF_ROLE_HEALER
+        {
+            if (classId != CLASS_PALADIN && classId != CLASS_PRIEST && 
+                classId != CLASS_SHAMAN && classId != CLASS_DRUID)
+                roleValid = false;
+        }
+        
+        // Check DPS role (everyone can DPS)
+        if (roleMask & 4) // GF_ROLE_DPS
+        {
+            // All classes can DPS
+        }
+        
+        if (!roleValid)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Invalid role selection for your class")
                 .Send(player);
             return;
         }
         
-        uint32 leaderGuid = (*listingResult)[0].Get<uint32>();
-        
-        // Can't apply to own listing
-        if (leaderGuid == guid)
+        if (sGroupFinderMgr.ApplyToListing(player, listingId, roleMask, message))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
+                .Set("success", true)
+                .Set("status", "pending")
+                .Set("message", "Application submitted")
+                .Send(player);
+        }
+        else
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
                 .Set("success", false)
                 .Set("status", "failed")
-                .Set("message", "Cannot apply to your own listing")
+                .Set("message", "Failed to apply (already applied, requirements not met, or listing expired)")
                 .Send(player);
-            return;
         }
+    }
+
+    static void HandleGetMyApplications(Player* player, const ParsedMessage& /*msg*/)
+    {
+        auto apps = sGroupFinderMgr.GetPlayerApplications(player->GetGUID().GetCounter());
         
-        // Check if already applied
-        QueryResult existingApp = CharacterDatabase.Query(
-            "SELECT id FROM dc_group_finder_applications WHERE listing_id = {} AND player_guid = {}",
-            listingId, guid);
+        JsonValue appsArray;
+        appsArray.SetArray();
         
-        if (existingApp)
+        for (const auto& app : apps)
         {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-                .Set("success", false)
-                .Set("status", "failed")
-                .Set("message", "Already applied to this group")
-                .Send(player);
-            return;
+            JsonValue appObj;
+            appObj.SetObject();
+            appObj.Set("id", JsonValue(static_cast<int32>(app.id)));
+            appObj.Set("listingId", JsonValue(static_cast<int32>(app.listingId)));
+            appObj.Set("role", JsonValue(static_cast<int32>(app.role)));
+            appObj.Set("status", JsonValue(static_cast<int32>(app.status)));
+            appObj.Set("note", JsonValue(app.note));
+            
+            // Get listing details for context
+            if (DCAddon::GroupFinderListing* listing = sGroupFinderMgr.GetListing(app.listingId))
+            {
+                appObj.Set("dungeonName", JsonValue(listing->dungeonName));
+                appObj.Set("dungeonId", JsonValue(static_cast<int32>(listing->dungeonId)));
+                appObj.Set("keystoneLevel", JsonValue(static_cast<int32>(listing->keystoneLevel)));
+            }
+            
+            appsArray.Push(appObj);
         }
         
-        // Determine role ID
-        uint8 roleId = 4;  // DPS default
-        if (role == "tank") roleId = 1;
-        else if (role == "healer") roleId = 2;
-        
-        // Escape message
-        CharacterDatabase.EscapeString(message);
-        
-        // Get player's average item level
-        uint16 playerIlvl = static_cast<uint16>(player->GetAverageItemLevel());
-        
-        // Get player's M+ rating (if available)
-        uint32 mplusRating = 0;
-        QueryResult ratingResult = CharacterDatabase.Query(
-            "SELECT score FROM dc_mplus_scores WHERE character_guid = {} ORDER BY season_id DESC LIMIT 1",
-            guid);
-        if (ratingResult)
-            mplusRating = (*ratingResult)[0].Get<uint32>();
-        
-        // Insert application
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_group_finder_applications "
-            "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
-            "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
-            listingId, guid, player->GetName(),
-            roleId, player->getClass(), player->GetLevel(),
-            playerIlvl,
-            message);
-        
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-            .Set("success", true)
-            .Set("status", "pending")
-            .Set("message", "Application submitted")
+        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_MY_APPLICATIONS)
+            .Set("applications", appsArray.Encode())
             .Send(player);
-        
-        // Notify leader if online
-        if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(leaderGuid)))
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_NEW_APPLICATION)
-                .Set("listingId", listingId)
-                .Set("playerGuid", static_cast<int32>(guid))
-                .Set("playerName", player->GetName())
-                .Set("role", role)
-                .Set("playerClass", static_cast<int32>(player->getClass()))
-                .Set("playerLevel", static_cast<int32>(player->GetLevel()))
-                .Set("itemLevel", static_cast<int32>(playerIlvl))
-                .Set("rating", static_cast<int32>(mplusRating))
-                .Set("message", message)
-                .Send(leader);
-        }
-        
-        LOG_DEBUG("dc.groupfinder", "Player {} applied to listing #{} (iLvl: {}, Rating: {})", 
-            player->GetName(), listingId, playerIlvl, mplusRating);
     }
     
     // Accept an application (leader only)
@@ -362,58 +370,23 @@ namespace GroupFinder
         int32 applicationId = JsonGetInt(json, "applicationId", 0);
         uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
         
-        uint32 leaderGuid = player->GetGUID().GetCounter();
+        // leaderGuid not required here; manager validates leader permissions internally
         
-        // Verify player is the listing leader
-        QueryResult appResult = CharacterDatabase.Query(
-            "SELECT a.player_guid, l.id FROM dc_group_finder_applications a "
-            "JOIN dc_group_finder_listings l ON a.listing_id = l.id "
-            "WHERE (a.id = {} OR a.player_guid = {}) AND l.leader_guid = {} AND a.status = 0",
-            applicationId, applicantGuid, leaderGuid);
-        
-        if (!appResult)
+        uint32 listingId = sGroupFinderMgr.FindListingIdForApplication(static_cast<uint32>(applicationId));
+        // Use manager to accept application (handles DB, cache, and notifications)
+        if (listingId != 0 && sGroupFinderMgr.AcceptApplication(player, listingId, applicantGuid))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                .Set("action", "accepted")
+                .Set("playerGuid", static_cast<int32>(applicantGuid))
+                .Send(player);
+        }
+        else
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Application not found or you are not the leader")
+                .Set("error", "Failed to accept application (not found or not leader)")
                 .Send(player);
-            return;
         }
-        
-        uint32 playerGuid = (*appResult)[0].Get<uint32>();
-        
-        // Update application status
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_applications SET status = 1 WHERE player_guid = {} AND status = 0",
-            playerGuid);
-        
-        // Notify applicant if online
-        if (Player* applicant = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid)))
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-                .Set("success", true)
-                .Set("status", "accepted")
-                .Set("message", "Your application was accepted!")
-                .Set("leaderName", player->GetName())
-                .Send(applicant);
-            
-            // Invite to group
-            if (Group* group = player->GetGroup())
-            {
-                group->AddMember(applicant);
-            }
-            else
-            {
-                // Create new group
-                Group* newGroup = new Group();
-                newGroup->Create(player);
-                newGroup->AddMember(applicant);
-            }
-        }
-        
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
-            .Set("action", "accepted")
-            .Set("playerGuid", static_cast<int32>(playerGuid))
-            .Send(player);
     }
     
     // Decline an application (leader only)
@@ -424,44 +397,23 @@ namespace GroupFinder
         int32 applicationId = JsonGetInt(json, "applicationId", 0);
         uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
         
-        uint32 leaderGuid = player->GetGUID().GetCounter();
+        // leaderGuid not required here; manager validates leader permissions internally
         
-        // Verify player is the listing leader
-        QueryResult appResult = CharacterDatabase.Query(
-            "SELECT a.player_guid FROM dc_group_finder_applications a "
-            "JOIN dc_group_finder_listings l ON a.listing_id = l.id "
-            "WHERE (a.id = {} OR a.player_guid = {}) AND l.leader_guid = {} AND a.status = 0",
-            applicationId, applicantGuid, leaderGuid);
-        
-        if (!appResult)
+        // Use manager to decline application
+        uint32 listingId = sGroupFinderMgr.FindListingIdForApplication(static_cast<uint32>(applicationId));
+        if (listingId != 0 && sGroupFinderMgr.DeclineApplication(player, listingId, applicantGuid))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                .Set("action", "declined")
+                .Set("playerGuid", static_cast<int32>(applicantGuid))
+                .Send(player);
+        }
+        else
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Application not found or you are not the leader")
+                .Set("error", "Failed to decline application")
                 .Send(player);
-            return;
         }
-        
-        uint32 playerGuid = (*appResult)[0].Get<uint32>();
-        
-        // Update application status
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_applications SET status = 2 WHERE player_guid = {} AND status = 0",
-            playerGuid);
-        
-        // Notify applicant if online
-        if (Player* applicant = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid)))
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-                .Set("success", true)
-                .Set("status", "declined")
-                .Set("message", "Your application was declined.")
-                .Send(applicant);
-        }
-        
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
-            .Set("action", "declined")
-            .Set("playerGuid", static_cast<int32>(playerGuid))
-            .Send(player);
     }
     
     // Remove a listing
@@ -472,20 +424,20 @@ namespace GroupFinder
         int32 listingId = JsonGetInt(json, "listingId", 0);
         uint32 guid = player->GetGUID().GetCounter();
         
-        // Verify player owns the listing
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_listings SET status = 0 WHERE id = {} AND leader_guid = {}",
-            listingId, guid);
-        
-        // Cancel all pending applications
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_applications SET status = 3 WHERE listing_id = {} AND status = 0",
-            listingId);
-        
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
-            .Set("action", "delisted")
-            .Set("listingId", listingId)
-            .Send(player);
+        // Use manager to delete listing
+        if (sGroupFinderMgr.DeleteListing(player, listingId))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                .Set("action", "delisted")
+                .Set("listingId", listingId)
+                .Send(player);
+        }
+        else
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Failed to delist group (not found or not leader)")
+                .Send(player);
+        }
     }
     
     // ========================================================================
@@ -1272,6 +1224,22 @@ namespace GroupFinder
         LOG_DEBUG("dc.addon", "Sent {} raids to player {}", raidCount, player->GetName());
     }
     
+    // Get system configuration (rewards, etc)
+    static void HandleGetSystemInfo(Player* player, const ParsedMessage& /*msg*/)
+    {
+        JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SYSTEM_INFO);
+        
+        // Reward config
+        json.Set("rewardEnabled", sGroupFinderMgr.IsRewardEnabled());
+        json.Set("rewardItemId", static_cast<int32>(sGroupFinderMgr.GetRewardItemId()));
+        json.Set("rewardItemCount", static_cast<int32>(sGroupFinderMgr.GetRewardItemCount()));
+        json.Set("rewardCurrencyId", static_cast<int32>(sGroupFinderMgr.GetRewardCurrencyId()));
+        json.Set("rewardCurrencyCount", static_cast<int32>(sGroupFinderMgr.GetRewardCurrencyCount()));
+        json.Set("rewardDailyLimit", static_cast<int32>(sGroupFinderMgr.GetRewardDailyLimit()));
+        
+        json.Send(player);
+    }
+    
     // ========================================================================
     // REGISTRATION
     // ========================================================================
@@ -1287,12 +1255,14 @@ namespace GroupFinder
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_ACCEPT_APPLICATION, HandleAcceptApplication);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_DECLINE_APPLICATION, HandleDeclineApplication);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_DELIST_GROUP, HandleDelistGroup);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_MY_APPLICATIONS, HandleGetMyApplications);
         
         // Keystone & difficulty
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_MY_KEYSTONE, HandleGetMyKeystone);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_SET_DIFFICULTY, HandleSetDifficulty);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_DUNGEON_LIST, HandleGetDungeonList);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_RAID_LIST, HandleGetRaidList);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_SYSTEM_INFO, HandleGetSystemInfo);
         
         // Spectating
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_SPECTATE_LIST, HandleGetSpectateList);

@@ -69,6 +69,19 @@ DCWelcome.RegisteredAddons = {
         isLoaded = function()
             return DCMythicPlusHUD ~= nil or SlashCmdList["DCM"] ~= nil or SlashCmdList["DCGF"] ~= nil
         end,
+        -- Great Vault Button
+        hasSecondButton = true,
+        secondButtonName = "Great Vault",
+        secondButtonIcon = "Interface\\Icons\\INV_Box_04",
+        secondButtonFunc = function()
+            if DCMythicPlusHUD and DCMythicPlusHUD.GreatVault and DCMythicPlusHUD.GreatVault.Toggle then
+                DCMythicPlusHUD.GreatVault:Toggle()
+            elseif SlashCmdList["DCM"] then
+                SlashCmdList["DCM"]("vault")
+            else
+                DCWelcome.Print("Great Vault UI not available")
+            end
+        end,
     },
     {
         id = "dc-leaderboards",

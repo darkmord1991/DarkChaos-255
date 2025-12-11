@@ -91,6 +91,10 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_guild_upgrade_stats", "Leaderboards", false},
         {"acore_chars", "dc_leaderboard_cache", "Leaderboards", false},
         
+        -- Group Finder
+        {"acore_chars", "dc_group_finder_listings", "Group Finder", true},
+        {"acore_chars", "dc_group_finder_rewards", "Group Finder", false},
+        
         -- Heirloom System
         {"acore_chars", "dc_heirloom_package_history", "Heirloom", false},
         {"acore_chars", "dc_heirloom_player_packages", "Heirloom", false},

@@ -18,6 +18,7 @@ void AddSC_dc_addon_hlbg();
 void AddSC_dc_addon_seasons();
 void AddSC_dc_addon_leaderboards();
 void AddSC_dc_addon_welcome();
+void AddSC_dc_addon_world();
 void AddSC_dc_addon_groupfinder();
 void AddSC_DCAddon_GOMove();
 void AddSC_npc_group_finder();
@@ -42,6 +43,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_leaderboards();
     AddSC_dc_addon_welcome();
     AddSC_dc_addon_groupfinder();
+    AddSC_dc_addon_world();
     AddSC_DCAddon_GOMove();
     DCAddon::AddTeleportScripts();
     

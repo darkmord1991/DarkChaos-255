@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "World.h"
+#include "../AddonExtension/DCGroupFinderMgr.h"
 #ifdef HAS_AIO
 #include "AIO.h"
 #endif
@@ -549,6 +550,12 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
             {
                 SendRunSummary(state, player);
                 ProcessAchievements(state, player, true);
+                
+                // Group Finder Reward
+                if (DCAddon::sGroupFinderMgr.IsEnabled())
+                {
+                    DCAddon::sGroupFinderMgr.HandleDungeonCompletion(player, state->mapId, state->difficulty);
+                }
             }
         }
     }
@@ -1038,19 +1045,12 @@ void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uin
         return;
 
     uint32 weekStart = GetWeekStartTimestamp();
-    uint8 slot1 = (1 >= GetVaultThreshold(1)) ? 1 : 0;
-    uint8 slot2 = (1 >= GetVaultThreshold(2)) ? 1 : 0;
-    uint8 slot3 = (1 >= GetVaultThreshold(3)) ? 1 : 0;
-
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_WEEKLY_VAULT);
     stmt->SetData(0, playerGuid);
     stmt->SetData(1, seasonId);
     stmt->SetData(2, weekStart);
     stmt->SetData(3, 1); // runs completed delta
     stmt->SetData(4, keystoneLevel);
-    stmt->SetData(5, slot1);
-    stmt->SetData(6, slot2);
-    stmt->SetData(7, slot3);
     CharacterDatabase.Execute(stmt);
 }
 
@@ -2457,5 +2457,18 @@ bool MythicPlusRunManager::ShouldSuppressReputation(Player* player) const
         return false;
 
     return true;
+}
+
+void MythicPlusRunManager::SimulateRun(Player* player, uint8 level, bool success)
+{
+    if (!player)
+        return;
+    
+    // Simulate a run completion for vault progress
+    // Using mapId 0 as it's not critical for vault progress tracking (only used for history/score which we skip here)
+    UpdateWeeklyVault(player->GetGUID().GetCounter(), GetCurrentSeasonId(), 0, level, success, 0, 0, 1800);
+    
+    LOG_INFO("mythic.debug", "Simulated Mythic+ run for player {} (Level {}, Success {})", 
+             player->GetName(), level, success);
 }
 

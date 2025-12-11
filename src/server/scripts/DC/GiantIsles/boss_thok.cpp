@@ -21,6 +21,7 @@
 #include "Player.h"
 #include "World.h"
 #include "Chat.h"
+#include "AddonExtension/DCAddonNamespace.h"
 
 enum ThokSpells
 {
@@ -50,7 +51,7 @@ enum ThokEvents
     EVENT_FIXATE                = 5,
     EVENT_SUMMON_PACK           = 6,
     EVENT_BERSERK               = 7,
-    EVENT_END_FIXATE            = 8,
+    EVENT_HP_CHECK              = 9,
 };
 
 enum ThokTexts
@@ -102,6 +103,7 @@ public:
             accelerationStacks = 0;
             inFrenzy = false;
             fixateTarget = ObjectGuid::Empty;
+            hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         }
 
         EventMap events;
@@ -124,6 +126,7 @@ public:
             me->RemoveAllAuras();
             me->SetReactState(REACT_AGGRESSIVE);
             me->SetSpeedRate(MOVE_RUN, 1.0f);
+            hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         }
 
         void JustEngagedWith(Unit* /*who*/) override
@@ -136,13 +139,63 @@ public:
             events.ScheduleEvent(EVENT_ACCELERATION, 45s);
             events.ScheduleEvent(EVENT_SAVAGE_BITE, 8s);
             events.ScheduleEvent(EVENT_FIXATE, 35s);
-            events.ScheduleEvent(EVENT_BERSERK, 8min);
+            events.ScheduleEvent(EVENT_BERSERK, 10min);
+
+            // schedule HP check to send threshold updates
+            events.ScheduleEvent(EVENT_HP_CHECK, 5s);
+
+            // WRLD: boss engaged
+            DCAddon::JsonValue bossesArr; bossesArr.SetArray();
+            DCAddon::JsonValue b; b.SetObject();
+            b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+            b.Set("name", DCAddon::JsonValue(me->GetName()));
+            b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
+            // Zone name
+            uint32 zoneId = me->GetZoneId();
+            std::string zoneName = "Unknown";
+            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(zoneId))
+            {
+                if (area->area_name[0] && area->area_name[0][0])
+                    zoneName = area->area_name[0];
+            }
+            b.Set("zone", DCAddon::JsonValue(zoneName));
+            b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
+            b.Set("active", DCAddon::JsonValue(true));
+            b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(me->GetHealthPct())));
+            b.Set("action", DCAddon::JsonValue("engage"));
+            bossesArr.Push(b);
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("bosses", bossesArr);
+            if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
         }
 
         void JustDied(Unit* /*killer*/) override
         {
             Talk(SAY_DEATH);
+            // WRLD: boss died
+            DCAddon::JsonValue bossesArr; bossesArr.SetArray();
+            DCAddon::JsonValue b; b.SetObject();
+            b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+            b.Set("name", DCAddon::JsonValue(me->GetName()));
+            b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
+            uint32 zoneIdD = me->GetZoneId();
+            std::string zoneNameD = "Unknown";
+            if (const AreaTableEntry* areaD = sAreaTableStore.LookupEntry(zoneIdD))
+            {
+                if (areaD->area_name[0] && areaD->area_name[0][0])
+                    zoneNameD = areaD->area_name[0];
+            }
+            b.Set("zone", DCAddon::JsonValue(zoneNameD));
+            b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
+            b.Set("active", DCAddon::JsonValue(false));
+            b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(me->GetHealthPct())));
+            b.Set("action", DCAddon::JsonValue("death"));
+            bossesArr.Push(b);
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("bosses", bossesArr);
+            if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
             summons.DespawnAll();
+            hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         }
 
         void KilledUnit(Unit* victim) override
@@ -330,6 +383,34 @@ public:
                         Talk(SAY_BERSERK);
                         DoCastSelf(SPELL_BERSERK);
                         break;
+                    case EVENT_HP_CHECK:
+                    {
+                        int hpPct = me->GetHealthPct();
+                        const int thresholds[3] = {75, 50, 25};
+                        for (int i = 0; i < 3; ++i)
+                        {
+                            if (!hpTriggered[i] && hpPct <= thresholds[i])
+                            {
+                                hpTriggered[i] = true;
+                                DCAddon::JsonValue bossesArr; bossesArr.SetArray();
+                                DCAddon::JsonValue b; b.SetObject();
+                                b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+                                b.Set("name", DCAddon::JsonValue(me->GetName()));
+                                b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
+                                b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
+                                b.Set("active", DCAddon::JsonValue(true));
+                                b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(hpPct)));
+                                b.Set("action", DCAddon::JsonValue("hp_update"));
+                                b.Set("threshold", DCAddon::JsonValue(static_cast<int32>(thresholds[i])));
+                                bossesArr.Push(b);
+                                DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+                                wmsg.Set("bosses", bossesArr);
+                                if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
+                            }
+                        }
+                        if (!me->IsDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
+                    }
+                    break;
                 }
             }
 

@@ -880,7 +880,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=7398 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=7631 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1344,6 +1344,7 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   `need_dps` tinyint unsigned NOT NULL DEFAULT '3',
   `note` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Active, 0=Inactive/Expired',
+  `auto_group` tinyint unsigned NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -1485,11 +1486,34 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom stat package upgrade state';
 
-IF NOT EXISTS ;
-
-IF NOT EXISTS ;
-
-IF NOT EXISTS ;
+CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique participant record ID',
+  `match_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_hlbg_winner_history.id (the match ID)',
+  `guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `player_name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Player name (denormalized for convenience)',
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID (denormalized)',
+  `account_name` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Account name (denormalized)',
+  `team` tinyint NOT NULL COMMENT 'Team number (1=Horde, 2=Alliance)',
+  `season_id` int unsigned NOT NULL DEFAULT '1' COMMENT 'Season when match occurred',
+  `match_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When match was played',
+  `kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player kills in match',
+  `deaths` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player deaths in match',
+  `healing_done` int unsigned NOT NULL DEFAULT '0' COMMENT 'Healing dealt to allies',
+  `damage_done` int unsigned NOT NULL DEFAULT '0' COMMENT 'Damage done to enemies',
+  `resources_captured` int unsigned NOT NULL DEFAULT '0' COMMENT 'Resources collected (flags/resources)',
+  `flags_returned` int unsigned NOT NULL DEFAULT '0' COMMENT 'For CTF-style: flags returned',
+  `objectives_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Any objective-based points',
+  `rating_change` int NOT NULL DEFAULT '0' COMMENT 'Positive or negative rating change',
+  PRIMARY KEY (`id`),
+  KEY `idx_guid` (`guid`),
+  KEY `idx_match_id` (`match_id`),
+  KEY `idx_account` (`account_id`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_date` (`match_date`),
+  KEY `idx_participant_season_guid` (`season_id`,`guid`),
+  KEY `idx_participant_team_date` (`team`,`match_date`),
+  KEY `idx_participant_match_guid` (`match_id`,`guid`)
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
@@ -1508,8 +1532,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_total_kills` (`total_kills`) COMMENT 'Kill count leaderboard',
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
-
-IF NOT EXISTS ;
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
@@ -3520,6 +3542,51 @@ CREATE TABLE `v_dc_recent_events` (
 	`timestamp` TIMESTAMP NOT NULL
 );
 
+CREATE TABLE `v_hlbg_player_alltime_stats` (
+	`guid` INT UNSIGNED NOT NULL COMMENT 'Player GUID',
+	`account_id` INT UNSIGNED NOT NULL COMMENT 'Account ID (denormalized)',
+	`player_name` VARCHAR(1) NOT NULL COMMENT 'Player name (denormalized for convenience)' COLLATE 'utf8mb4_unicode_ci',
+	`account_name` VARCHAR(1) NOT NULL COMMENT 'Account name (denormalized)' COLLATE 'utf8mb4_unicode_ci',
+	`total_wins` BIGINT NOT NULL,
+	`total_losses` BIGINT NOT NULL,
+	`total_games_played` BIGINT NOT NULL,
+	`overall_win_rate` DECIMAL(26,2) NULL,
+	`total_kills` DECIMAL(32,0) NULL,
+	`total_deaths` DECIMAL(32,0) NULL,
+	`overall_kd_ratio` DECIMAL(35,2) NULL,
+	`avg_kills_per_game` DECIMAL(35,2) NULL,
+	`avg_damage_per_game` DECIMAL(33,0) NULL,
+	`total_healing` DECIMAL(32,0) NULL,
+	`total_resources_captured` DECIMAL(32,0) NULL,
+	`total_flags_returned` DECIMAL(32,0) NULL,
+	`current_rating` DECIMAL(33,0) NULL,
+	`seasons_participated` BIGINT NOT NULL,
+	`first_match_date` TIMESTAMP NULL COMMENT 'When match was played',
+	`last_match_date` TIMESTAMP NULL COMMENT 'When match was played'
+);
+
+CREATE TABLE `v_hlbg_player_seasonal_stats` (
+	`guid` INT UNSIGNED NOT NULL COMMENT 'Player GUID',
+	`account_id` INT UNSIGNED NOT NULL COMMENT 'Account ID (denormalized)',
+	`player_name` VARCHAR(1) NOT NULL COMMENT 'Player name (denormalized for convenience)' COLLATE 'utf8mb4_unicode_ci',
+	`account_name` VARCHAR(1) NOT NULL COMMENT 'Account name (denormalized)' COLLATE 'utf8mb4_unicode_ci',
+	`season_id` INT UNSIGNED NOT NULL COMMENT 'Season when match occurred',
+	`wins` BIGINT NOT NULL,
+	`losses` BIGINT NOT NULL,
+	`games_played` BIGINT NOT NULL,
+	`win_rate` DECIMAL(26,2) NULL,
+	`total_kills` DECIMAL(32,0) NULL,
+	`total_deaths` DECIMAL(32,0) NULL,
+	`kd_ratio` DECIMAL(35,2) NULL,
+	`avg_kills_per_game` DECIMAL(35,2) NULL,
+	`avg_damage_per_game` DECIMAL(33,0) NULL,
+	`total_healing` DECIMAL(32,0) NULL,
+	`total_resources_captured` DECIMAL(32,0) NULL,
+	`total_flags_returned` DECIMAL(32,0) NULL,
+	`current_rating` DECIMAL(33,0) NOT NULL,
+	`last_match_date` TIMESTAMP NULL COMMENT 'When match was played'
+);
+
 CREATE TABLE `v_player_heirloom_upgrades` (
 	`player_guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
 	`item_guid` INT UNSIGNED NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -3630,6 +3697,14 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_dungeon_leaderboard` 
 
 DROP TABLE IF EXISTS `v_dc_recent_events`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_dc_recent_events` AS select `e`.`id` AS `id`,`e`.`event_type` AS `event_type`,`e`.`source_system` AS `source_system`,`c`.`name` AS `character_name`,`e`.`event_data` AS `event_data`,`e`.`timestamp` AS `timestamp` from (`dc_cross_system_events` `e` left join `characters` `c` on((`c`.`guid` = `e`.`player_guid`))) where (`e`.`timestamp` > (now() - interval 24 hour)) order by `e`.`timestamp` desc limit 500
+;
+
+DROP TABLE IF EXISTS `v_hlbg_player_alltime_stats`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_hlbg_player_alltime_stats` AS select `p`.`guid` AS `guid`,`p`.`account_id` AS `account_id`,`p`.`player_name` AS `player_name`,`p`.`account_name` AS `account_name`,count((case when (`wh`.`winner_tid` = `p`.`team`) then 1 end)) AS `total_wins`,count((case when ((`wh`.`winner_tid` <> `p`.`team`) and (`wh`.`winner_tid` <> 0)) then 1 end)) AS `total_losses`,count(0) AS `total_games_played`,round(((count((case when (`wh`.`winner_tid` = `p`.`team`) then 1 end)) * 100.0) / count(0)),2) AS `overall_win_rate`,sum(`p`.`kills`) AS `total_kills`,sum(`p`.`deaths`) AS `total_deaths`,round((sum(`p`.`kills`) / nullif(sum(`p`.`deaths`),0)),2) AS `overall_kd_ratio`,round((sum(`p`.`kills`) / nullif(count(0),0)),2) AS `avg_kills_per_game`,round((sum(`p`.`damage_done`) / nullif(count(0),0)),0) AS `avg_damage_per_game`,sum(`p`.`healing_done`) AS `total_healing`,sum(`p`.`resources_captured`) AS `total_resources_captured`,sum(`p`.`flags_returned`) AS `total_flags_returned`,(select (coalesce(sum(`p2`.`rating_change`),0) + 1200) from `dc_hlbg_match_participants` `p2` where ((`p2`.`guid` = `p`.`guid`) and (`p2`.`season_id` = (select max(`dc_hlbg_match_participants`.`season_id`) from `dc_hlbg_match_participants` where (`dc_hlbg_match_participants`.`guid` = `p`.`guid`))))) AS `current_rating`,count(distinct `p`.`season_id`) AS `seasons_participated`,min(`p`.`match_date`) AS `first_match_date`,max(`p`.`match_date`) AS `last_match_date` from (`dc_hlbg_match_participants` `p` left join `dc_hlbg_winner_history` `wh` on((`p`.`match_id` = `wh`.`id`))) group by `p`.`guid`,`p`.`account_id`,`p`.`player_name`,`p`.`account_name`
+;
+
+DROP TABLE IF EXISTS `v_hlbg_player_seasonal_stats`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_hlbg_player_seasonal_stats` AS select `p`.`guid` AS `guid`,`p`.`account_id` AS `account_id`,`p`.`player_name` AS `player_name`,`p`.`account_name` AS `account_name`,`p`.`season_id` AS `season_id`,count((case when (`wh`.`winner_tid` = `p`.`team`) then 1 end)) AS `wins`,count((case when ((`wh`.`winner_tid` <> `p`.`team`) and (`wh`.`winner_tid` <> 0)) then 1 end)) AS `losses`,count(0) AS `games_played`,round(((count((case when (`wh`.`winner_tid` = `p`.`team`) then 1 end)) * 100.0) / count(0)),2) AS `win_rate`,sum(`p`.`kills`) AS `total_kills`,sum(`p`.`deaths`) AS `total_deaths`,round((sum(`p`.`kills`) / nullif(sum(`p`.`deaths`),0)),2) AS `kd_ratio`,round((sum(`p`.`kills`) / nullif(count(0),0)),2) AS `avg_kills_per_game`,round((sum(`p`.`damage_done`) / nullif(count(0),0)),0) AS `avg_damage_per_game`,sum(`p`.`healing_done`) AS `total_healing`,sum(`p`.`resources_captured`) AS `total_resources_captured`,sum(`p`.`flags_returned`) AS `total_flags_returned`,coalesce(((select sum(`p2`.`rating_change`) from `dc_hlbg_match_participants` `p2` where ((`p2`.`guid` = `p`.`guid`) and (`p2`.`season_id` = `p`.`season_id`))) + 1200),1200) AS `current_rating`,max(`p`.`match_date`) AS `last_match_date` from (`dc_hlbg_match_participants` `p` left join `dc_hlbg_winner_history` `wh` on((`p`.`match_id` = `wh`.`id`))) group by `p`.`guid`,`p`.`account_id`,`p`.`player_name`,`p`.`account_name`,`p`.`season_id`
 ;
 
 DROP TABLE IF EXISTS `v_player_heirloom_upgrades`;

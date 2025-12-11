@@ -304,6 +304,26 @@ function DCInfoBar:SetupServerCommunication()
         end)
     end
 
+    -- Register world content handlers (WRLD module)
+    if DC.RegisterJSONHandler then
+        DC:RegisterJSONHandler("WRLD", 0x10, function(data) -- SMSG_CONTENT
+            DCInfoBar:HandleWorldContent(data)
+        end)
+        DC:RegisterJSONHandler("WRLD", 0x11, function(data) -- SMSG_UPDATE
+            DCInfoBar:HandleWorldUpdate(data)
+        end)
+    elseif DC.RegisterHandler then
+        -- Fallback to legacy handlers if JSON not supported
+        DC:RegisterHandler("WRLD", 0x10, function(data)
+            DCInfoBar:Debug("Received legacy WRLD content payload (fallback)")
+            DCInfoBar:HandleWorldContent(data)
+        end)
+        DC:RegisterHandler("WRLD", 0x11, function(data)
+            DCInfoBar:Debug("Received legacy WRLD update payload (fallback)")
+            DCInfoBar:HandleWorldUpdate(data)
+        end)
+    end
+
     return true
 end
 
@@ -380,6 +400,173 @@ function DCInfoBar:HandleEventRemove(data)
     DCInfoBar:RefreshAllPlugins()
 end
 
+-- Handle world content payload: hotspots, bosses, events
+function DCInfoBar:HandleWorldContent(data)
+    if not data then return end
+    -- Hotspots (not currently shown in DC-InfoBar but store for completeness)
+    if data.hotspots then
+        self.serverData.hotspots = data.hotspots
+    end
+
+    -- Bosses
+    if data.bosses then
+        self.serverData.worldBosses = self.serverData.worldBosses or {}
+        local bosses = self.serverData.worldBosses
+        for _, b in ipairs(data.bosses) do
+            local record = {}
+            record.name = b.name or b.displayName or b.entry or b.guid or "Unknown"
+            record.zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown"
+            -- Map status: prefer explicit status field, otherwise derive from active/action
+            if b.status or b.state then
+                record.status = b.status or b.state
+            elseif b.active ~= nil then
+                record.status = b.active and "active" or "inactive"
+            elseif b.action then
+                if b.action == "engage" then record.status = "active"
+                elseif b.action == "death" or b.action == "despawn" then record.status = "inactive"
+                else record.status = "spawning" end
+            else
+                record.status = (b.active == false) and "inactive" or "spawning"
+            end
+            -- spawnIn/timeLeft
+            record.spawnIn = b.spawnIn or b.timeLeft or nil
+            -- hp percent
+            if b.hpPct then record.hp = b.hpPct end
+            if b.hp then record.hp = b.hp end
+            record.guid = b.guid
+
+            -- Upsert by guid or name
+            local replaced = false
+            if record.guid then
+                for i, ex in ipairs(bosses) do
+                    if ex.guid == record.guid then
+                        bosses[i] = record; replaced = true; break
+                    end
+                end
+            end
+            if not replaced then
+                for i, ex in ipairs(bosses) do
+                    if ex.name == record.name then
+                        bosses[i] = record; replaced = true; break
+                    end
+                end
+            end
+            if not replaced then
+                table.insert(bosses, record)
+            end
+        end
+    end
+
+    -- Events
+    if data.events then
+        self.serverData.events = self.serverData.events or {}
+        local events = self.serverData.events
+        for _, e in ipairs(data.events) do
+            local eventId = e.id or e.eventId or 0
+            local state = e.state or e.status or e.action or "active"
+            if state == "spawn" then state = "spawning" end
+            local record = {
+                id = eventId,
+                name = e.name or e.displayName or "Event",
+                zone = e.zone or e.zoneName or (e.mapId and ("Map " .. tostring(e.mapId))) or "Unknown",
+                type = e.type or "event",
+                state = state,
+                active = (e.active == nil) and true or (e.active ~= false),
+                wave = e.wave,
+                maxWaves = e.maxWaves,
+                enemiesRemaining = e.enemiesRemaining,
+                timeRemaining = e.timeRemaining or e.timeLeft,
+            }
+
+            -- Upsert
+            local updated = false
+            for i, ex in ipairs(events) do
+                if ex.id ~= 0 and ex.id == record.id and record.id ~= 0 then
+                    events[i] = record; updated = true; break
+                end
+            end
+            if not updated then table.insert(events, record) end
+        end
+    end
+
+    -- Trigger UI refresh
+    self:Debug("HandleWorldContent: world content updated (bosses/events/hotspots)")
+    DCInfoBar:RefreshAllPlugins()
+end
+
+-- Handle world content updates (partial updates - merge with existing state)
+function DCInfoBar:HandleWorldUpdate(data)
+    if not data then return end
+    -- Boss updates
+    if data.bosses then
+        self.serverData.worldBosses = self.serverData.worldBosses or {}
+        local bosses = self.serverData.worldBosses
+        for _, b in ipairs(data.bosses) do
+            local guid = b.guid
+            local name = b.name
+            local up = {}
+            if b.action == "engage" or b.action == "spawn" then
+                up.status = "active"
+                up.hp = b.hpPct or b.hp
+            end
+            if b.action == "death" or b.action == "remove" or b.action == "despawn" then
+                up.status = "inactive"
+            end
+            if b.hpPct then up.hp = b.hpPct end
+            if b.timeLeft then up.spawnIn = b.timeLeft end
+            if b.spawnIn then up.spawnIn = b.spawnIn end
+            if b.threshold then up.lastThreshold = b.threshold end
+
+            local matched = false
+            for i, ex in ipairs(bosses) do
+                if (guid and ex.guid == guid) or (name and ex.name == name) then
+                    for k, v in pairs(up) do ex[k] = v end
+                    matched = true; break
+                end
+            end
+            if not matched then
+                local record = { name = name or "Unknown", guid = guid, zone = b.zone or b.zoneName }
+                for k,v in pairs(up) do record[k] = v end
+                table.insert(bosses, record)
+            end
+        end
+    end
+
+    -- Event updates
+    if data.events then
+        self.serverData.events = self.serverData.events or {}
+        local events = self.serverData.events
+        for _, e in ipairs(data.events) do
+            local id = e.id or e.eventId or 0
+            local state = e.state or e.status or e.action
+            if state == "spawn" then state = "spawning" end
+            local record = {
+                id = id,
+                name = e.name,
+                zone = e.zone or e.zoneName,
+                type = e.type or "event",
+                state = state,
+                active = (e.active == nil) and true or (e.active ~= false),
+                wave = e.wave,
+                maxWaves = e.maxWaves,
+                enemiesRemaining = e.enemiesRemaining,
+                timeRemaining = e.timeRemaining or e.timeLeft,
+            }
+            -- Upsert by id
+            local matched = false
+            if id ~= 0 then
+                for i, ex in ipairs(events) do
+                    if ex.id == id then events[i] = record; matched = true; break end
+                end
+            end
+            if not matched then table.insert(events, record) end
+        end
+    end
+
+    self:Debug("HandleWorldUpdate: world updates merged")
+    DCInfoBar:RefreshAllPlugins()
+end
+
 function DCInfoBar:RequestServerData()
     if not DC then 
         DC = rawget(_G, "DCAddonProtocol")
@@ -407,6 +594,11 @@ function DCInfoBar:RequestServerData()
     DC:Request("SPOT", 0x01, {})
     if DC.Hotspot and DC.Hotspot.GetList then
         DC.Hotspot.GetList()
+    end
+
+    -- Request world content (hotspots, bosses, events)
+    if DC.RegisterJSONHandler then
+        DC:Request("WRLD", 0x01, {})
     end
     
     -- Request prestige info

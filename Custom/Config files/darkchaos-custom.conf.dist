@@ -1793,6 +1793,56 @@ DC.GroupFinder.MaxApplicationsPerPlayer = 10
 DC.GroupFinder.ListingExpireMinutes = 120
 
 # -------------------------------------------------------------------------
+# Rewards System
+# -------------------------------------------------------------------------
+
+#
+#    DC.GroupFinder.Reward.Enable
+#        Description: Enable rewards for completing dungeons found via Group Finder
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+DC.GroupFinder.Reward.Enable = 1
+
+#
+#    DC.GroupFinder.Reward.ItemID
+#        Description: Item ID to reward (e.g., Emblem of Frost, Custom Token)
+#                     Set to 0 to disable item rewards.
+#        Default:     49426 (Emblem of Frost)
+#
+DC.GroupFinder.Reward.ItemID = 49426
+
+#
+#    DC.GroupFinder.Reward.ItemCount
+#        Description: Number of items to reward
+#        Default:     2
+#
+DC.GroupFinder.Reward.ItemCount = 2
+
+#
+#    DC.GroupFinder.Reward.CurrencyID
+#        Description: Currency ID to reward (e.g., Honor Points, Arena Points)
+#                     Set to 0 to disable currency rewards.
+#        Default:     0
+#
+DC.GroupFinder.Reward.CurrencyID = 0
+
+#
+#    DC.GroupFinder.Reward.CurrencyCount
+#        Description: Amount of currency to reward
+#        Default:     0
+#
+DC.GroupFinder.Reward.CurrencyCount = 0
+
+#
+#    DC.GroupFinder.Reward.DailyLimit
+#        Description: Maximum number of times a player can receive rewards per day
+#                     Set to 0 for unlimited.
+#        Default:     1
+#
+DC.GroupFinder.Reward.DailyLimit = 1
+
+# -------------------------------------------------------------------------
 # Matchmaking & Rating
 # -------------------------------------------------------------------------
 
@@ -5108,6 +5158,11 @@ DC.AddonProtocol.GroupFinder.Enable = 1
 #        Description: Enable addon-based Hotspot integration (DC-MythicPlus addon)
 #        Default:     1 (Enabled)
 DC.AddonProtocol.Hotspot.Enable = 1
+
+#    DC.AddonProtocol.World.Enable
+#        Description: Enable the World Content module for aggregated world info (hotspots, world bosses, rares, events)
+#        Default:     1 (Enabled)
+DC.AddonProtocol.World.Enable = 1
 
 #    DC.AddonProtocol.GOMove.MinSecurity
 #        Description: Minimum server security level required to issue GOMove addon commands

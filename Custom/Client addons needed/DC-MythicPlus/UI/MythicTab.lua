@@ -612,10 +612,8 @@ end
 
 function GF:ApplyToGroup(groupId)
     GF.Print("Applying to group #" .. groupId .. "...")
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and DC.GroupFinder then
-        DC.GroupFinder.Apply(groupId, nil, "")  -- role auto-detected, no message
-    end
+    -- Show dialog to select roles
+    GF:ShowApplicationDialog(groupId)
 end
 
 function GF:CancelGroup(groupId)
