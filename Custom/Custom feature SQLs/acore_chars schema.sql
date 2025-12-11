@@ -845,7 +845,7 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
   `date` date NOT NULL,
-  `module` varchar(8) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `module` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `total_c2s` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total client-to-server messages',
   `total_s2c` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total server-to-client messages',
   `unique_players` int unsigned NOT NULL DEFAULT '0' COMMENT 'Distinct player count',
@@ -862,15 +862,15 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `account_id` int unsigned NOT NULL,
-  `character_name` varchar(48) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `direction` enum('C2S','S2C') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Client to Server or Server to Client',
-  `request_type` enum('STANDARD','DC_JSON','DC_PLAIN','AIO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC_PLAIN' COMMENT 'Protocol format: STANDARD=Blizz addon msg, DC_JSON=DC protocol+JSON, DC_PLAIN=DC protocol+plain, AIO=AIO framework',
-  `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)',
+  `character_name` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `direction` enum('C2S','S2C') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Client to Server or Server to Client',
+  `request_type` enum('STANDARD','DC_JSON','DC_PLAIN','AIO') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC_PLAIN' COMMENT 'Protocol format: STANDARD=Blizz addon msg, DC_JSON=DC protocol+JSON, DC_PLAIN=DC protocol+plain, AIO=AIO framework',
+  `module` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)',
   `opcode` tinyint unsigned NOT NULL COMMENT 'Message opcode within module',
   `data_size` int unsigned NOT NULL DEFAULT '0' COMMENT 'Size of payload in bytes',
-  `data_preview` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'First 255 chars of payload for debugging',
-  `status` enum('pending','completed','error','timeout') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
-  `error_message` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Error description if status=error',
+  `data_preview` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'First 255 chars of payload for debugging',
+  `status` enum('pending','completed','error','timeout') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `error_message` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Error description if status=error',
   `processing_time_ms` int unsigned DEFAULT NULL COMMENT 'Time to process message in ms',
   PRIMARY KEY (`id`),
   KEY `idx_timestamp` (`timestamp`),
@@ -880,11 +880,11 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=2619 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=7398 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code',
+  `module` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Module code',
   `total_requests` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total C2S messages',
   `total_responses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total S2C messages',
   `total_errors` int unsigned NOT NULL DEFAULT '0' COMMENT 'Messages that resulted in error',
@@ -955,7 +955,7 @@ CREATE TABLE IF NOT EXISTS `dc_artifact_mastery_events` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `artifact_id` int unsigned NOT NULL,
-  `event_type` enum('unlock','level_up','ability_gained','milestone_reached','reset','rank_up') COLLATE utf8mb4_unicode_ci DEFAULT 'level_up',
+  `event_type` enum('unlock','level_up','ability_gained','milestone_reached','reset','rank_up') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'level_up',
   `event_data` json DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`event_id`),
@@ -1020,7 +1020,7 @@ CREATE TABLE IF NOT EXISTS `dc_character_challenge_modes` (
 CREATE TABLE IF NOT EXISTS `dc_character_difficulty_completions` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID from characters table',
   `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon map ID from acore_world.dc_dungeon_npc_mapping',
-  `difficulty` enum('Normal','Heroic','Mythic','Mythic+') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `difficulty` enum('Normal','Heroic','Mythic','Mythic+') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `total_completions` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total times completed at this difficulty',
   `best_time_seconds` int unsigned NOT NULL DEFAULT '0' COMMENT '0 = no timed run yet',
   `fastest_completion_date` timestamp NULL DEFAULT NULL,
@@ -1036,7 +1036,7 @@ CREATE TABLE IF NOT EXISTS `dc_character_difficulty_completions` (
 
 CREATE TABLE IF NOT EXISTS `dc_character_difficulty_streaks` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID from characters table',
-  `difficulty` enum('Normal','Heroic','Mythic','Mythic+') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `difficulty` enum('Normal','Heroic','Mythic','Mythic+') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `current_streak` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Current consecutive completions',
   `longest_streak` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Longest streak ever achieved',
   `last_completion_date` timestamp NULL DEFAULT NULL,
@@ -1066,8 +1066,8 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon ID from dc_dungeon_quest_mapping',
   `quest_id` int unsigned NOT NULL COMMENT 'Quest ID',
-  `quest_type` enum('DAILY','WEEKLY','SPECIAL') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DAILY' COMMENT 'Quest type',
-  `status` enum('AVAILABLE','IN_PROGRESS','COMPLETED','FAILED') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'AVAILABLE' COMMENT 'Current quest status',
+  `quest_type` enum('DAILY','WEEKLY','SPECIAL') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DAILY' COMMENT 'Quest type',
+  `status` enum('AVAILABLE','IN_PROGRESS','COMPLETED','FAILED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'AVAILABLE' COMMENT 'Current quest status',
   `completion_count` int unsigned NOT NULL DEFAULT '0' COMMENT 'Times completed in this cycle',
   `last_completed` timestamp NULL DEFAULT NULL COMMENT 'Last completion time',
   `rewards_claimed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Reward items claimed (0=no, 1=yes)',
@@ -1091,10 +1091,10 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_quests_completed` (
   `completion_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `duration_seconds` int unsigned NOT NULL DEFAULT '0' COMMENT 'Time taken to complete',
   `party_size` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Party/group size',
-  `difficulty` enum('NORMAL','HEROIC','MYTHIC') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'NORMAL',
+  `difficulty` enum('NORMAL','HEROIC','MYTHIC') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'NORMAL',
   `tokens_earned` int unsigned NOT NULL DEFAULT '0',
   `gold_earned` int unsigned NOT NULL DEFAULT '0',
-  `item_drops` text COLLATE utf8mb4_unicode_ci COMMENT 'JSON array of item IDs dropped',
+  `item_drops` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'JSON array of item IDs dropped',
   `achievement_triggered` tinyint unsigned DEFAULT '0' COMMENT 'Any achievement unlocked this run',
   PRIMARY KEY (`id`),
   KEY `idx_guid` (`guid`),
@@ -1105,7 +1105,7 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_quests_completed` (
 
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_statistics` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `stat_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'total_quests_completed',
+  `stat_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'total_quests_completed',
   `stat_value` int unsigned NOT NULL DEFAULT '0',
   `last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `total_quests_completed` int unsigned NOT NULL DEFAULT '0',
@@ -1157,13 +1157,13 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
 CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID to grant',
-  `trigger_type` enum('total_stat','single_run','threshold','combination') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `stat_key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Stat key from dc_player_cross_system_stats',
+  `trigger_type` enum('total_stat','single_run','threshold','combination') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `stat_key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Stat key from dc_player_cross_system_stats',
   `threshold_value` bigint unsigned NOT NULL DEFAULT '0',
   `additional_conditions` json DEFAULT NULL COMMENT 'Additional conditions in JSON',
   `title_reward_id` int unsigned DEFAULT NULL COMMENT 'Title to grant, if any',
   `enabled` tinyint(1) NOT NULL DEFAULT '1',
-  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_achievement` (`achievement_id`),
   KEY `idx_enabled` (`enabled`),
@@ -1190,9 +1190,9 @@ END//
 DELIMITER ;
 
 CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
-  `key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `value` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `value` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system configuration values';
@@ -1200,7 +1200,7 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
 CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `event_type` tinyint unsigned NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
-  `source_system` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'System that generated the event',
+  `source_system` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'System that generated the event',
   `player_guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player GUID if applicable',
   `event_data` json DEFAULT NULL COMMENT 'Event-specific JSON data',
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1213,12 +1213,12 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
 
 CREATE TABLE IF NOT EXISTS `dc_cross_system_multipliers` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `target_type` enum('global','player','account','guild') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'global',
+  `target_type` enum('global','player','account','guild') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'global',
   `target_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player/Account/Guild GUID or 0 for global',
-  `source_system` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Specific system or NULL for all systems',
+  `source_system` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Specific system or NULL for all systems',
   `reward_type` tinyint unsigned DEFAULT NULL COMMENT 'Specific reward type or NULL for all',
   `multiplier` decimal(5,3) NOT NULL DEFAULT '1.000',
-  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Why this override exists',
+  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Why this override exists',
   `expires_at` timestamp NULL DEFAULT NULL COMMENT 'When this override expires, NULL = permanent',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -1280,7 +1280,7 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
   `reset_id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon ID',
-  `reset_type` enum('DAILY','WEEKLY') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `reset_type` enum('DAILY','WEEKLY') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `reset_date` date NOT NULL,
   `reset_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`reset_id`),
@@ -1294,12 +1294,12 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_applications` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `listing_id` int unsigned NOT NULL,
   `player_guid` int unsigned NOT NULL,
-  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `player_name` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `role` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1=Tank, 2=Healer, 4=DPS',
   `player_class` tinyint unsigned NOT NULL DEFAULT '0',
   `player_level` tinyint unsigned NOT NULL DEFAULT '80',
   `player_ilvl` smallint unsigned NOT NULL DEFAULT '0',
-  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `note` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Pending, 1=Accepted, 2=Declined, 3=Cancelled',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1314,10 +1314,10 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_event_signups` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `event_id` int unsigned NOT NULL,
   `player_guid` int unsigned NOT NULL,
-  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `player_name` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `role` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1=Tank, 2=Healer, 4=DPS',
   `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Pending, 1=Confirmed, 2=Declined, 3=Cancelled',
-  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `note` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_unique_signup` (`event_id`,`player_guid`),
@@ -1331,7 +1331,7 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   `group_guid` int unsigned NOT NULL DEFAULT '0',
   `listing_type` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Mythic+, 2=Raid, 3=PvP, 4=Other',
   `dungeon_id` int unsigned NOT NULL DEFAULT '0',
-  `dungeon_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
+  `dungeon_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
   `difficulty` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Normal, 1=Heroic, 2=Mythic',
   `keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
   `min_ilvl` smallint unsigned NOT NULL DEFAULT '0',
@@ -1342,7 +1342,7 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   `need_tank` tinyint unsigned NOT NULL DEFAULT '1',
   `need_healer` tinyint unsigned NOT NULL DEFAULT '1',
   `need_dps` tinyint unsigned NOT NULL DEFAULT '3',
-  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `note` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Active, 0=Inactive/Expired',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1357,12 +1357,12 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_scheduled_events` (
   `leader_guid` int unsigned NOT NULL,
   `event_type` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Mythic+, 2=Raid, 3=PvP',
   `dungeon_id` int unsigned NOT NULL DEFAULT '0',
-  `dungeon_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
+  `dungeon_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Unknown',
   `keystone_level` tinyint unsigned NOT NULL DEFAULT '0',
   `scheduled_time` timestamp NOT NULL,
   `max_signups` tinyint unsigned NOT NULL DEFAULT '5',
   `current_signups` tinyint unsigned NOT NULL DEFAULT '0',
-  `note` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `note` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1=Open, 2=Full, 3=Started, 4=Cancelled, 5=Completed',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1384,7 +1384,16 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_spectators` (
   KEY `idx_spectator` (`spectator_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `dc_guild_leaderboard` 
+CREATE TABLE `dc_guild_leaderboard` (
+	`guildid` INT UNSIGNED NOT NULL,
+	`guild_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`total_members` INT NOT NULL,
+	`members_with_upgrades` INT UNSIGNED NOT NULL,
+	`total_guild_upgrades` BIGINT UNSIGNED NOT NULL,
+	`total_items_upgraded` BIGINT UNSIGNED NOT NULL,
+	`average_ilvl_increase` INT NOT NULL,
+	`total_essence_invested` INT NOT NULL,
+	`total_tokens_invested` BIGINT UNSIGNED NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `dc_guild_upgrade_stats` (
@@ -1476,67 +1485,11 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom stat package upgrade state';
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
-  `match_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `season_id` int unsigned NOT NULL,
-  `start_time` bigint unsigned NOT NULL,
-  `end_time` bigint unsigned DEFAULT NULL,
-  `winner_team` tinyint unsigned DEFAULT NULL COMMENT '0 = draw, 1 = team1, 2 = team2',
-  `team1_score` int unsigned NOT NULL DEFAULT '0',
-  `team2_score` int unsigned NOT NULL DEFAULT '0',
-  `player_count` tinyint unsigned NOT NULL DEFAULT '0',
-  `map_id` int unsigned DEFAULT NULL,
-  `match_duration` int unsigned DEFAULT NULL COMMENT 'In seconds',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`match_id`),
-  KEY `idx_season` (`season_id`),
-  KEY `idx_start_time` (`start_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG match history and results';
+IF NOT EXISTS ;
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `joined_at` bigint unsigned NOT NULL,
-  `rating` int unsigned NOT NULL,
-  `completed_games` int unsigned NOT NULL,
-  `wins` int unsigned NOT NULL,
-  `losses` int unsigned NOT NULL,
-  `highest_rating` int unsigned NOT NULL,
-  `lowest_rating` int unsigned NOT NULL,
-  `total_score` bigint unsigned NOT NULL,
-  `average_score` int unsigned NOT NULL,
-  `final_rank` int unsigned DEFAULT NULL,
-  `archived_at` bigint unsigned NOT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_player_season` (`player_guid`,`season_id`),
-  KEY `idx_season_rank` (`season_id`,`final_rank`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived HLBG player stats from previous seasons';
+IF NOT EXISTS ;
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `joined_at` bigint unsigned NOT NULL,
-  `rating` int unsigned NOT NULL DEFAULT '1500',
-  `completed_games` int unsigned NOT NULL DEFAULT '0',
-  `wins` int unsigned NOT NULL DEFAULT '0',
-  `losses` int unsigned NOT NULL DEFAULT '0',
-  `highest_rating` int unsigned NOT NULL DEFAULT '1500',
-  `lowest_rating` int unsigned NOT NULL DEFAULT '1500',
-  `total_score` bigint unsigned NOT NULL DEFAULT '0',
-  `average_score` int unsigned NOT NULL DEFAULT '0',
-  `win_streak` int unsigned NOT NULL DEFAULT '0',
-  `best_win_streak` int unsigned NOT NULL DEFAULT '0',
-  `last_game_at` bigint unsigned DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_player_season` (`player_guid`,`season_id`),
-  KEY `idx_season_rating` (`season_id`,`rating` DESC),
-  KEY `idx_player_guid` (`player_guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG player seasonal stats (rating, wins, losses, etc.)';
+IF NOT EXISTS ;
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
@@ -1556,20 +1509,7 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
-  `season_id` int unsigned NOT NULL,
-  `base_rating` int unsigned NOT NULL DEFAULT '1500',
-  `max_rating_change` int unsigned NOT NULL DEFAULT '50',
-  `min_players_per_team` tinyint unsigned NOT NULL DEFAULT '5',
-  `max_players_per_team` tinyint unsigned NOT NULL DEFAULT '10',
-  `match_duration` int unsigned NOT NULL DEFAULT '1800' COMMENT 'In seconds',
-  `rating_decay_enabled` tinyint(1) NOT NULL DEFAULT '0',
-  `rating_decay_threshold` int unsigned DEFAULT '0' COMMENT 'Days inactive before decay',
-  `rating_decay_amount` int unsigned DEFAULT '0' COMMENT 'Rating lost per decay period',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG-specific season configuration (base_rating, match settings, etc.)';
+IF NOT EXISTS ;
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
@@ -1597,7 +1537,7 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL COMMENT 'Item tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
-  `tier_name` varchar(50) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Human-readable tier name',
+  `tier_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Human-readable tier name',
   `base_essence_cost` float NOT NULL COMMENT 'Base essence cost for level 0→1',
   `base_token_cost` float NOT NULL COMMENT 'Base token cost for level 0→1',
   `escalation_rate` float DEFAULT '1.1' COMMENT 'Cost multiplier per level (1.1 = 10% increase)',
@@ -1613,7 +1553,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_currency_exchange_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
-  `exchange_type` enum('tokens_to_essence','essence_to_tokens') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `exchange_type` enum('tokens_to_essence','essence_to_tokens') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `amount` int unsigned NOT NULL,
   `exchange_rate` decimal(5,2) NOT NULL,
   `exchange_time` int unsigned NOT NULL,
@@ -1650,24 +1590,24 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player who triggered the query',
-  `player_name` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Player name for easy reference',
+  `player_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Player name for easy reference',
   `item_id` int unsigned NOT NULL COMMENT 'Item template ID that failed',
   `item_guid` int unsigned DEFAULT NULL COMMENT 'Item instance GUID if available',
-  `item_name` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Item name if template exists',
-  `error_type` enum('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Type of failure',
-  `error_detail` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Additional error details',
+  `item_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Item name if template exists',
+  `error_type` enum('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Type of failure',
+  `error_detail` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Additional error details',
   `bag_slot` tinyint unsigned DEFAULT NULL COMMENT 'Bag slot requested',
   `item_slot` tinyint unsigned DEFAULT NULL COMMENT 'Item slot requested',
   `timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When error occurred',
   `resolved` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether issue has been resolved',
-  `resolution_notes` text COLLATE utf8mb4_general_ci COMMENT 'Notes on how issue was fixed',
+  `resolution_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT 'Notes on how issue was fixed',
   PRIMARY KEY (`log_id`),
   KEY `idx_item_id` (`item_id`),
   KEY `idx_error_type` (`error_type`),
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=256 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=315 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
@@ -1722,7 +1662,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_log` (
   `recipe_id` int unsigned NOT NULL,
   `success` tinyint unsigned NOT NULL,
   `attempt_time` int unsigned NOT NULL,
-  `consumed_items` text COLLATE utf8mb4_unicode_ci,
+  `consumed_items` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`log_id`),
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_recipe_id` (`recipe_id`),
@@ -1733,8 +1673,8 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_transmutation_sessions` (
   `session_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `item_guid` int unsigned NOT NULL,
-  `transmutation_type` enum('standard','special','fusion','synthesis') COLLATE utf8mb4_unicode_ci DEFAULT 'standard',
-  `status` enum('pending','in_progress','completed','failed','cancelled') COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
+  `transmutation_type` enum('standard','special','fusion','synthesis') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'standard',
+  `status` enum('pending','in_progress','completed','failed','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
   `target_tier` tinyint unsigned DEFAULT '1',
   `target_level` tinyint unsigned DEFAULT '1',
   `tokens_required` int unsigned DEFAULT '0',
@@ -1752,7 +1692,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
   `item_guid` int NOT NULL COMMENT 'Unique item GUID from player inventory',
   `player_guid` int NOT NULL COMMENT 'Character GUID (from characters table)',
-  `base_item_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Base item name for display and reference',
+  `base_item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Base item name for display and reference',
   `tier_id` tinyint NOT NULL DEFAULT '1' COMMENT 'Upgrade tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
   `upgrade_level` tinyint NOT NULL DEFAULT '0' COMMENT 'Current upgrade level (0-15 per tier, 0=no upgrade)',
   `tokens_invested` int NOT NULL DEFAULT '0' COMMENT 'Total upgrade tokens spent on this item',
@@ -1772,12 +1712,12 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
 
 CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `leaderboard_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'upgrades, tokens, mythic, pvp, etc.',
+  `leaderboard_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'upgrades, tokens, mythic, pvp, etc.',
   `season_id` int unsigned NOT NULL DEFAULT '1',
   `rank` int unsigned NOT NULL,
   `entity_guid` int unsigned NOT NULL COMMENT 'Player or guild GUID',
-  `entity_type` enum('player','guild') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'player',
-  `entity_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `entity_type` enum('player','guild') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'player',
+  `entity_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `score` bigint unsigned NOT NULL DEFAULT '0',
   `secondary_score` bigint unsigned DEFAULT NULL,
   `cached_at` bigint unsigned NOT NULL,
@@ -1821,7 +1761,7 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_hud_cache` (
   `owner_guid` int unsigned NOT NULL,
   `keystone_level` tinyint unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
-  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `updated_at` bigint unsigned NOT NULL,
   PRIMARY KEY (`instance_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1951,7 +1891,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `achievement_id` int unsigned NOT NULL,
-  `achievement_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `achievement_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `progress` int unsigned NOT NULL DEFAULT '0',
   `max_progress` int unsigned NOT NULL DEFAULT '1',
   `completed` tinyint(1) NOT NULL DEFAULT '0',
@@ -1969,7 +1909,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
 CREATE TABLE IF NOT EXISTS `dc_player_artifact_discoveries` (
   `player_guid` int unsigned NOT NULL,
   `artifact_id` int unsigned NOT NULL,
-  `discovery_type` enum('quest','craft','purchase','event','admin') COLLATE utf8mb4_unicode_ci DEFAULT 'craft',
+  `discovery_type` enum('quest','craft','purchase','event','admin') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'craft',
   `discovered_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `completion_percentage` tinyint unsigned DEFAULT '0',
   PRIMARY KEY (`player_guid`,`artifact_id`),
@@ -1982,7 +1922,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_artifact_mastery` (
   `mastery_level` tinyint unsigned DEFAULT '0',
   `mastery_points` int unsigned DEFAULT '0',
   `total_points_earned` int unsigned DEFAULT '0',
-  `unlocked_abilities` text COLLATE utf8mb4_unicode_ci,
+  `unlocked_abilities` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `unlocked_at` timestamp NULL DEFAULT NULL,
   `last_updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`,`artifact_id`),
@@ -1993,7 +1933,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_claimed_chests` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
-  `chest_id` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `chest_id` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `chest_tier` tinyint NOT NULL,
   `items_received` json DEFAULT NULL,
   `claimed_at` bigint unsigned NOT NULL,
@@ -2064,7 +2004,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_item_upgrades` (
   `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
   `item_guid` int NOT NULL COMMENT 'Unique item GUID from player inventory',
   `player_guid` int NOT NULL COMMENT 'Character GUID (from characters table)',
-  `base_item_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Base item name for display',
+  `base_item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Base item name for display',
   `tier_id` tinyint NOT NULL DEFAULT '1' COMMENT 'Upgrade tier (1-5)',
   `upgrade_level` tinyint NOT NULL DEFAULT '0' COMMENT 'Current upgrade level (0-15 per tier)',
   `tokens_invested` int NOT NULL DEFAULT '0' COMMENT 'Total upgrade tokens spent',
@@ -2096,7 +2036,18 @@ CREATE TABLE IF NOT EXISTS `dc_player_keystones` (
   KEY `idx_keystone_level` (`current_keystone_level` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player M+ keystone progress';
 
-CREATE TABLE `dc_player_progression_summary` 
+CREATE TABLE `dc_player_progression_summary` (
+	`player_guid` INT UNSIGNED NOT NULL,
+	`total_mastery_points` INT UNSIGNED NULL,
+	`mastery_rank` TINYINT UNSIGNED NULL,
+	`items_fully_upgraded` INT NOT NULL,
+	`total_upgrades_applied` INT NOT NULL,
+	`essence_earned` INT UNSIGNED NULL,
+	`tokens_earned` INT UNSIGNED NULL,
+	`essence_spent` INT UNSIGNED NULL,
+	`tokens_spent` INT UNSIGNED NULL,
+	`items_upgraded` INT UNSIGNED NULL,
+	`season_id` INT UNSIGNED NULL
 );
 
 CREATE TABLE IF NOT EXISTS `dc_player_season_data` (
@@ -2122,9 +2073,9 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_achievements` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
-  `achievement_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `achievement_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `achievement_description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `achievement_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `achievement_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `achievement_description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `progress_value` int unsigned DEFAULT NULL,
   `reward_tokens` int unsigned DEFAULT '0',
   `reward_essence` int unsigned DEFAULT '0',
@@ -2168,7 +2119,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
   `weekly_tokens_earned` int unsigned DEFAULT '0',
   `weekly_essence_earned` int unsigned DEFAULT '0',
   `weekly_reset_at` bigint unsigned DEFAULT NULL,
-  `season_best_run` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `season_best_run` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `last_reward_at` bigint unsigned DEFAULT NULL,
   `last_activity_at` bigint unsigned DEFAULT NULL,
   `joined_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2235,19 +2186,27 @@ CREATE TABLE IF NOT EXISTS `dc_player_tier_unlocks` (
 
 CREATE TABLE IF NOT EXISTS `dc_player_transmutation_cooldowns` (
   `player_guid` int unsigned NOT NULL,
-  `transmutation_type` enum('standard','special','fusion','synthesis') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
+  `transmutation_type` enum('standard','special','fusion','synthesis') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
   `cooldown_until` timestamp NULL DEFAULT NULL,
   `daily_uses` int unsigned DEFAULT '0',
   `last_reset` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`,`transmutation_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Transmutation cooldown tracking per player';
 
-CREATE TABLE `dc_player_upgrade_summary` 
+CREATE TABLE `dc_player_upgrade_summary` (
+	`player_guid` INT NOT NULL COMMENT 'Character GUID (from characters table)',
+	`items_upgraded` BIGINT NOT NULL,
+	`total_essence_spent` DECIMAL(32,0) NULL,
+	`total_tokens_spent` DECIMAL(32,0) NULL,
+	`average_stat_multiplier` DOUBLE NULL,
+	`average_ilvl_gain` INT NOT NULL,
+	`last_upgraded` BIGINT UNSIGNED NULL COMMENT 'Unix timestamp when item was last upgraded (64-bit)',
+	`fully_upgraded_items` DECIMAL(23,0) NULL
 );
 
 CREATE TABLE IF NOT EXISTS `dc_player_upgrade_tokens` (
   `player_guid` int unsigned NOT NULL,
-  `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'upgrade_token',
+  `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'upgrade_token',
   `amount` int unsigned DEFAULT '0',
   `weekly_earned` int unsigned DEFAULT '0',
   `season` int unsigned DEFAULT '1',
@@ -2290,7 +2249,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_rewards` (
   `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `season_id` int unsigned NOT NULL COMMENT 'Season ID',
   `week_start` bigint unsigned NOT NULL COMMENT 'Week start timestamp (Unix Tuesday reset)',
-  `system_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'mythic_plus, seasonal_rewards, pvp, hlbg',
+  `system_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'mythic_plus, seasonal_rewards, pvp, hlbg',
   `mplus_runs_completed` tinyint unsigned DEFAULT '0' COMMENT 'Mythic+ runs this week',
   `mplus_highest_level` tinyint unsigned DEFAULT '0' COMMENT 'Highest keystone cleared',
   `tokens_earned` int unsigned DEFAULT '0' COMMENT 'Total tokens earned this week',
@@ -2369,7 +2328,17 @@ CREATE TABLE IF NOT EXISTS `dc_prestige_players` (
   KEY `idx_prestige_level` (`prestige_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Account-wide prestige tracking for cross-character bonuses';
 
-CREATE TABLE `dc_recent_upgrades_feed` 
+CREATE TABLE `dc_recent_upgrades_feed` (
+	`history_id` BIGINT UNSIGNED NOT NULL,
+	`player_guid` INT UNSIGNED NOT NULL,
+	`player_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
+	`item_id` INT UNSIGNED NOT NULL,
+	`upgrade_from` INT UNSIGNED NULL,
+	`upgrade_to` INT UNSIGNED NULL,
+	`essence_cost` INT UNSIGNED NOT NULL,
+	`token_cost` INT UNSIGNED NOT NULL,
+	`timestamp` BIGINT UNSIGNED NOT NULL,
+	`season_id` INT UNSIGNED NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `dc_respec_history` (
@@ -2379,7 +2348,7 @@ CREATE TABLE IF NOT EXISTS `dc_respec_history` (
   `item_entry` int unsigned NOT NULL,
   `old_stats` json DEFAULT NULL COMMENT 'Stats before respec',
   `new_stats` json DEFAULT NULL COMMENT 'Stats after respec',
-  `respec_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'full',
+  `respec_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'full',
   `cost_tokens` int unsigned NOT NULL DEFAULT '0',
   `cost_gold` int unsigned NOT NULL DEFAULT '0',
   `respec_at` bigint unsigned NOT NULL,
@@ -2393,11 +2362,11 @@ CREATE TABLE IF NOT EXISTS `dc_respec_history` (
 CREATE TABLE IF NOT EXISTS `dc_respec_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
-  `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'respec, refund, reset, etc.',
+  `action` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'respec, refund, reset, etc.',
   `item_entry` int unsigned DEFAULT NULL,
   `tokens_refunded` int unsigned NOT NULL DEFAULT '0',
   `gold_refunded` int unsigned NOT NULL DEFAULT '0',
-  `details` text COLLATE utf8mb4_unicode_ci,
+  `details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `logged_at` bigint unsigned NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -2410,9 +2379,9 @@ CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
-  `transaction_type` enum('quest','creature','creature_group','chest','manual','adjustment') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `transaction_type` enum('quest','creature','creature_group','chest','manual','adjustment') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `source_id` int unsigned DEFAULT NULL,
-  `source_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `source_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `reward_type` tinyint DEFAULT NULL,
   `token_amount` int unsigned DEFAULT '0',
   `essence_amount` int unsigned DEFAULT '0',
@@ -2421,7 +2390,7 @@ CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
   `season_multiplier` float DEFAULT '1',
   `final_multiplier` float DEFAULT '1',
   `weekly_total_after` int unsigned DEFAULT NULL,
-  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `notes` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `transaction_at` bigint unsigned NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -2435,9 +2404,9 @@ CREATE TABLE IF NOT EXISTS `dc_reward_transactions` (
 CREATE TABLE IF NOT EXISTS `dc_season_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `season_id` int unsigned NOT NULL,
-  `event_type` enum('created','started','ended','archived') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `event_type` enum('created','started','ended','archived') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `event_timestamp` bigint unsigned NOT NULL,
-  `notes` text COLLATE utf8mb4_unicode_ci,
+  `notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_season_id` (`season_id`),
@@ -2446,8 +2415,8 @@ CREATE TABLE IF NOT EXISTS `dc_season_history` (
 
 CREATE TABLE IF NOT EXISTS `dc_seasons` (
   `season_id` int unsigned NOT NULL,
-  `season_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `season_description` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Season description text',
+  `season_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `season_description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Season description text',
   `season_type` tinyint unsigned DEFAULT '0' COMMENT '0=Normal, 1=Special, 2=Event',
   `season_state` tinyint unsigned DEFAULT '0' COMMENT '0=Inactive, 1=Active, 2=Transitioning, 3=Maintenance',
   `start_timestamp` bigint unsigned NOT NULL,
@@ -2456,13 +2425,13 @@ CREATE TABLE IF NOT EXISTS `dc_seasons` (
   `allow_carryover` tinyint(1) DEFAULT '0' COMMENT 'Allow stats to carry over to next season',
   `carryover_percentage` float DEFAULT '0' COMMENT 'Percentage of stats to carry over (0.0-1.0)',
   `reset_on_end` tinyint(1) DEFAULT '1' COMMENT 'Reset all stats when season ends',
-  `theme_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Season theme identifier',
-  `banner_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Path to season banner image',
+  `theme_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Season theme identifier',
+  `banner_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT 'Path to season banner image',
   `is_active` tinyint(1) NOT NULL DEFAULT '0',
   `max_upgrade_level` tinyint unsigned NOT NULL DEFAULT '15',
   `cost_multiplier` float NOT NULL DEFAULT '1',
   `reward_multiplier` float NOT NULL DEFAULT '1',
-  `theme` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `theme` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `milestone_essence_cap` int unsigned NOT NULL DEFAULT '50000',
   `milestone_token_cap` int unsigned NOT NULL DEFAULT '25000',
   PRIMARY KEY (`season_id`),
@@ -2471,9 +2440,9 @@ CREATE TABLE IF NOT EXISTS `dc_seasons` (
 
 CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `category` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `category` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `player_guid` int unsigned NOT NULL,
-  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `player_name` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `achievement_time` int unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_category` (`category`)
@@ -2482,8 +2451,8 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
 CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
-  `setting_key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `setting_value` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `setting_key` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `setting_value` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -2496,9 +2465,9 @@ CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   `player_guid` int unsigned NOT NULL,
   `from_tier` tinyint unsigned NOT NULL,
   `to_tier` tinyint unsigned NOT NULL,
-  `conversion_type` enum('upgrade','downgrade','reset','skip') COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade',
+  `conversion_type` enum('upgrade','downgrade','reset','skip') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade',
   `tokens_spent` int unsigned DEFAULT '0',
-  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`log_id`),
   KEY `idx_player_guid` (`player_guid`),
@@ -2507,7 +2476,7 @@ CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
 
 CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique event config ID',
-  `event_type` enum('quest','creature','achievement','pvp','battleground','daily') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Type of event',
+  `event_type` enum('quest','creature','achievement','pvp','battleground','daily') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Type of event',
   `event_source_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Source ID (quest_id, creature_id, achievement_id, etc.; 0 for general PvP)',
   `token_reward` int unsigned NOT NULL DEFAULT '0' COMMENT 'Base upgrade tokens awarded',
   `essence_reward` int unsigned NOT NULL DEFAULT '0' COMMENT 'Base artifact essence awarded',
@@ -2516,7 +2485,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   `is_active` tinyint unsigned DEFAULT '1' COMMENT 'Is this event currently active',
   `is_repeatable` tinyint unsigned DEFAULT '1' COMMENT 'Can award be earned multiple times (0 = one-time like achievements)',
   `season` int unsigned NOT NULL DEFAULT '1' COMMENT 'Season this config applies to',
-  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Notes about this event config',
+  `notes` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Notes about this event config',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this config was created',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'When last updated',
   PRIMARY KEY (`event_id`),
@@ -2544,10 +2513,10 @@ CREATE TABLE IF NOT EXISTS `dc_token_rewards_log` (
 CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   `transaction_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
-  `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade_token',
+  `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade_token',
   `amount` int unsigned NOT NULL,
-  `transaction_type` enum('earn','spend','admin_add','admin_remove','transfer','reward','penalty') COLLATE utf8mb4_unicode_ci DEFAULT 'earn',
-  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `transaction_type` enum('earn','spend','admin_add','admin_remove','transfer','reward','penalty') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'earn',
+  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `balance_before` int unsigned DEFAULT '0',
   `balance_after` int unsigned DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2557,7 +2526,16 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_transaction_type` (`transaction_type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=345 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
-CREATE TABLE `dc_top_upgraders` 
+CREATE TABLE `dc_top_upgraders` (
+	`player_guid` INT UNSIGNED NOT NULL,
+	`player_name` VARCHAR(1) NULL COLLATE 'utf8mb4_bin',
+	`upgrades_applied` INT UNSIGNED NOT NULL,
+	`items_upgraded` INT UNSIGNED NOT NULL,
+	`essence_spent` INT UNSIGNED NOT NULL,
+	`tokens_spent` INT UNSIGNED NOT NULL,
+	`mastery_rank` TINYINT UNSIGNED NULL,
+	`total_mastery_points` INT UNSIGNED NULL,
+	`season_id` INT UNSIGNED NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
@@ -2565,7 +2543,7 @@ CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
   `player_guid` int unsigned NOT NULL,
   `item_guid` int unsigned NOT NULL,
   `item_entry` int unsigned NOT NULL,
-  `upgrade_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'tier, stat, socket, enchant, etc.',
+  `upgrade_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'tier, stat, socket, enchant, etc.',
   `old_value` int unsigned DEFAULT NULL,
   `new_value` int unsigned DEFAULT NULL,
   `cost_tokens` int unsigned NOT NULL DEFAULT '0',
@@ -3488,7 +3466,15 @@ BEGIN
 END//
 DELIMITER ;
 
-CREATE TABLE `v_dc_addon_module_health` 
+CREATE TABLE `v_dc_addon_module_health` (
+	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)' COLLATE 'utf8mb4_unicode_ci',
+	`total_requests_24h` BIGINT NOT NULL,
+	`completed` DECIMAL(23,0) NULL,
+	`timeouts` DECIMAL(23,0) NULL,
+	`errors` DECIMAL(23,0) NULL,
+	`success_rate` DECIMAL(29,2) NULL,
+	`avg_response_ms` DECIMAL(13,2) NULL,
+	`max_response_ms` INT UNSIGNED NULL COMMENT 'Time to process message in ms'
 );
 
 CREATE TABLE `v_dc_addon_player_activity` (
@@ -3503,7 +3489,16 @@ CREATE TABLE `v_dc_addon_player_activity` (
 	`last_request` TIMESTAMP NULL COMMENT 'Most recent message'
 );
 
-CREATE TABLE `v_dc_addon_recent_activity` 
+CREATE TABLE `v_dc_addon_recent_activity` (
+	`timestamp` TIMESTAMP NOT NULL,
+	`character_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`direction` ENUM('C2S','S2C') NOT NULL COMMENT 'Client to Server or Server to Client' COLLATE 'utf8mb4_unicode_ci',
+	`module` VARCHAR(1) NOT NULL COMMENT 'Module code (CORE, AOE, SPEC, LBRD, etc.)' COLLATE 'utf8mb4_unicode_ci',
+	`opcode_hex` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`opcode_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`status` ENUM('pending','completed','error','timeout') NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`response_time_ms` INT UNSIGNED NULL COMMENT 'Time to process message in ms',
+	`data_size` INT UNSIGNED NOT NULL COMMENT 'Size of payload in bytes'
 );
 
 CREATE TABLE `v_dc_dungeon_leaderboard` (
@@ -3590,7 +3585,7 @@ CREATE TABLE IF NOT EXISTS `worldstates` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Variable Saves';
 
 DROP TABLE IF EXISTS `dc_guild_leaderboard`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_chars`.`dc_guild_leaderboard` AS select `g`.`guildid` AS `guildid`,`g`.`name` AS `guild_name`,0 AS `total_members`,`gs`.`active_upgraders` AS `members_with_upgrades`,`gs`.`total_upgrades` AS `total_guild_upgrades`,`gs`.`total_upgrades` AS `total_items_upgraded`,0 AS `average_ilvl_increase`,0 AS `total_essence_invested`,`gs`.`total_tokens_spent` AS `total_tokens_invested` from (`acore_chars`.`guild` `g` join `acore_chars`.`dc_guild_upgrade_stats` `gs` on((`gs`.`guild_id` = `g`.`guildid`))) order by `gs`.`total_upgrades` desc
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `dc_guild_leaderboard` AS select `g`.`guildid` AS `guildid`,`g`.`name` AS `guild_name`,0 AS `total_members`,`gs`.`active_upgraders` AS `members_with_upgrades`,`gs`.`total_upgrades` AS `total_guild_upgrades`,`gs`.`total_upgrades` AS `total_items_upgraded`,0 AS `average_ilvl_increase`,0 AS `total_essence_invested`,`gs`.`total_tokens_spent` AS `total_tokens_invested` from (`guild` `g` join `dc_guild_upgrade_stats` `gs` on((`gs`.`guild_id` = `g`.`guildid`))) order by `gs`.`total_upgrades` desc
 ;
 
 DROP TABLE IF EXISTS `dc_item_upgrade_missing_items_summary`;

@@ -359,8 +359,24 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
         seasonId = seasonId,
     }
     
-    -- Always show request being made for debugging
-    Print("|cff00ccffRequesting:|r " .. category .. "/" .. subcategory .. " (page " .. page .. ", season " .. seasonId .. ")")
+    -- For HLBG category, translate subcategory to leaderboard type
+    if category == "hlbg" then
+        local leaderboardType = self.HLBGLeaderboardTypes[subcategory]
+        if leaderboardType then
+            request.leaderboardType = leaderboardType
+            Print("|cff00ccffRequesting:|r HLBG/" .. subcategory .. " (type " .. leaderboardType .. ", page " .. page .. ")")
+        else
+            Print("|cffff0000Error:|r Unknown HLBG subcategory: " .. tostring(subcategory))
+            return false
+        end
+    else
+        -- Always show request being made for debugging
+        local reqStr = "|cff00ccffRequesting:|r " .. category .. "/" .. subcategory .. " (page " .. page .. ", season " .. seasonId .. ")"
+        if category == "seasons" then
+            reqStr = "|cff00ffffSeasons: " .. reqStr .. "|r"
+        end
+        Print(reqStr)
+    end
     
     DC:Request(self.MODULE, self.Opcode.CMSG_GET_LEADERBOARD, request)
     
@@ -417,6 +433,22 @@ function LB:ForceRefresh()
     Print("Leaderboard data refreshed")
     return true
 end
+
+-- =====================================================================
+-- HLBG SUBCATEGORY MAPPING
+-- =====================================================================
+
+-- Maps DC-Leaderboards HLBG subcategory IDs to server leaderboard type numbers
+-- These match the unified HLBG protocol leaderboard types (1-7)
+LB.HLBGLeaderboardTypes = {
+    hlbg_rating = 1,        -- Season Rating
+    hlbg_wins = 2,          -- Season Wins
+    hlbg_winrate = 3,       -- Win Rate %
+    hlbg_games = 4,         -- Games Played
+    hlbg_kills = 5,         -- Total Kills (all-time)
+    hlbg_alltime_wins = 6,  -- All-Time Wins
+    hlbg_resources = 7,     -- Resources Captured
+}
 
 -- =====================================================================
 -- PROTOCOL HANDLERS
@@ -580,6 +612,7 @@ function LB:OnLeaderboardData(data)
         Print("OnLeaderboardData called with type: " .. type(data))
         if type(data) == "table" then
             Print("  category: " .. tostring(data.category))
+            Print("  subcategory: " .. tostring(data.subcategory))
             Print("  totalEntries: " .. tostring(data.totalEntries))
             Print("  entries count: " .. tostring(data.entries and #data.entries or "nil"))
         end
@@ -603,13 +636,15 @@ function LB:OnLeaderboardData(data)
     self.Cache.currentPage = data.page or 1
     self.Cache.totalPages = data.totalPages or 1
     
+    -- Always print successful receive
+    Print("|cff00ff00Received " .. #(data.entries or {}) .. " entries for " .. key .. "|r")
+    
     -- Update UI if visible
     if self.Frames.main and self.Frames.main:IsShown() then
         self:UpdateLeaderboardDisplay()
     end
     
     if self:GetSetting("verboseLogging") then
-        Print("Received " .. #(data.entries or {}) .. " entries for " .. key)
         if category == "hlbg" then
             for i = 1, math.min(3, #(data.entries or {})) do
                 local e = data.entries[i]
@@ -1347,9 +1382,16 @@ function LB:UpdateSubCategoryTabs()
     local xOffset = 0
     self.subCategoryButtons = {}
     
+    -- Calculate button width based on number of subcategories to fit in frame
+    local frameWidth = 700
+    local spacing = 5
+    local numSubcats = #category.subcats
+    local btnWidth = math.floor((frameWidth - (numSubcats - 1) * spacing) / numSubcats)
+    -- Minimum width of 80px, maximum 120px
+    btnWidth = math.max(80, math.min(120, btnWidth))
+    
     for i, subcat in ipairs(category.subcats) do
         local btn = CreateFrame("Button", nil, subTabFrame)
-        local btnWidth = 120
         btn:SetSize(btnWidth, 25)
         btn:SetPoint("LEFT", xOffset, 0)
         
@@ -1473,24 +1515,42 @@ function LB:UpdateHeaderText()
     if subcat:find("_time") then
         header:SetText("|cffffd700Time|r")
         extra:SetText("|cffffd700Dungeon|r")
+    elseif subcat == "hlbg_rating" then
+        header:SetText("|cffffd700Rating|r")
+        extra:SetText("|cffffd700Win/Loss|r")
+    elseif subcat == "hlbg_wins" then
+        header:SetText("|cffffd700Wins|r")
+        extra:SetText("|cffffd700Total Games|r")
+    elseif subcat == "hlbg_winrate" then
+        header:SetText("|cffffd700Win Rate|r")
+        extra:SetText("|cffffd700W/L|r")
+    elseif subcat == "hlbg_games" then
+        header:SetText("|cffffd700Games|r")
+        extra:SetText("|cffffd700W/L|r")
+    elseif subcat == "hlbg_kills" then
+        header:SetText("|cffffd700Kills|r")
+        extra:SetText("|cffffd700K/D Ratio|r")
+    elseif subcat == "hlbg_alltime_wins" then
+        header:SetText("|cffffd700All-Time Wins|r")
+        extra:SetText("|cffffd700K/D Ratio|r")
+    elseif subcat == "hlbg_resources" then
+        header:SetText("|cffffd700Resources|r")
+        extra:SetText("|cffffd700K/D Ratio|r")
     elseif subcat:find("_rating") then
         header:SetText("|cffffd700Rating|r")
         extra:SetText("|cffffd700Win/Loss|r")
     elseif subcat:find("_winrate") then
         header:SetText("|cffffd700Win Rate|r")
         extra:SetText("|cffffd700Games|r")
-    elseif subcat == "hlbg_games" then
-        header:SetText("|cffffd700Games|r")
-        extra:SetText("|cffffd700W/L|r")
     elseif subcat == "aoe_gold" then
         header:SetText("|cffffd700Gold|r")
         extra:SetText("|cffffd700Items Looted|r")
     elseif subcat == "aoe_items" then
         header:SetText("|cffffd700Items|r")
-        extra:SetText("|cffffd700Class|r")
+        extra:SetText("|cffffd700Quality Breakdown|r")
     elseif subcat == "aoe_filtered" then
         header:SetText("|cffffd700Filtered|r")
-        extra:SetText("|cffffd700Class|r")
+        extra:SetText("|cffffd700Quality Breakdown|r")
     elseif subcat == "mplus_bestruns" then
         -- v1.3.0: Best runs with dungeon names
         header:SetText("|cffffd700Key Level|r")
@@ -1598,8 +1658,16 @@ function LB:UpdateLeaderboardDisplay()
     local key = (self.currentCategory or "mplus") .. "_" .. (self.currentSubCategory or "mplus_key")
     local data = self.Cache.data[key] or {}
     
-    -- Debug output
+    -- Debug output - always show what we're displaying
     Print("|cff888888Displaying:|r " .. #data .. " entries for " .. key)
+    
+    -- Debug: List cache contents
+    if self:GetSetting("verboseLogging") then
+        Print("|cff888888Cache keys:|r")
+        for cacheKey, cacheData in pairs(self.Cache.data) do
+            Print("  " .. cacheKey .. ": " .. #cacheData .. " entries")
+        end
+    end
     
     -- Hide all existing entries first
     for i, entry in pairs(self.entryPool) do
@@ -1694,8 +1762,42 @@ function LB:UpdateLeaderboardDisplay()
             -- Class
             entry.class:SetText(entryData.class or "")
             
-            -- Extra info
-            entry.extra:SetText(entryData.extra or entryData.details or "")
+            -- Extra info (formatted based on category)
+            local extraText = ""
+            if self.currentCategory == "hlbg" then
+                -- Format HLBG extra data
+                if subcat == "hlbg_winrate" then
+                    -- Show W/L for winrate category
+                    local wins = entryData.wins or 0
+                    local losses = entryData.losses or 0
+                    extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
+                elseif subcat == "hlbg_games" then
+                    -- Show W/L for games category
+                    local wins = entryData.wins or 0
+                    local losses = entryData.losses or 0
+                    extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
+                elseif subcat == "hlbg_kills" or subcat == "hlbg_alltime_wins" or subcat == "hlbg_resources" then
+                    -- Show K/D ratio for kill-based categories
+                    if entryData.kdRatio then
+                        extraText = string.format("K/D: |cffffffff%.2f|r", tonumber(entryData.kdRatio) or 0)
+                    elseif entryData.kills and entryData.deaths then
+                        local kdRatio = (tonumber(entryData.deaths) or 1) > 0 and (tonumber(entryData.kills) or 0) / (tonumber(entryData.deaths) or 1) or 0
+                        extraText = string.format("K/D: |cffffffff%.2f|r", kdRatio)
+                    end
+                elseif subcat == "hlbg_rating" then
+                    -- Show W/L for rating category
+                    local wins = entryData.wins or 0
+                    local losses = entryData.losses or 0
+                    extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
+                elseif subcat == "hlbg_wins" then
+                    -- Show total games
+                    local totalGames = (tonumber(entryData.wins) or 0) + (tonumber(entryData.losses) or 0)
+                    extraText = "Total: " .. totalGames
+                end
+            else
+                extraText = entryData.extra or entryData.details or ""
+            end
+            entry.extra:SetText(extraText)
             
             -- Quality breakdown columns (for AOE Loot category)
             local isAOE = (self.currentCategory == "aoe")
@@ -1728,6 +1830,11 @@ function LB:UpdateLeaderboardDisplay()
     
     -- Show/hide quality header columns based on category (3.3.5a compatible)
     local isAOEItems = (self.currentCategory == "aoe" and (self.currentSubCategory == "aoe_items" or self.currentSubCategory == "aoe_filtered"))
+    
+    if self:GetSetting("verboseLogging") and self.currentCategory == "aoe" then
+        Print("|cffff8000AOE Loot Debug:|r isAOEItems=" .. tostring(isAOEItems) .. ", subcat=" .. tostring(self.currentSubCategory))
+    end
+    
     if self.Frames.legHeader then
         if isAOEItems then self.Frames.legHeader:Show() else self.Frames.legHeader:Hide() end
     end

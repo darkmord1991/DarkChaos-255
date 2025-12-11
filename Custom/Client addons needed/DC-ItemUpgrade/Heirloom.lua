@@ -666,6 +666,14 @@ end
 function DarkChaos_ItemUpgrade_SendPackageSelection(packageId)
 	if not packageId then return end
 	
+	-- Try DCAddonProtocol first (new C++ backend)
+	if DCProtocol and DCProtocol.Upgrade and DCProtocol.Upgrade.SelectPackage then
+		DCProtocol.Upgrade.SelectPackage(packageId)
+		DC.Debug("Sent package selection via DCAddonProtocol: " .. packageId)
+		return
+	end
+	
+	-- Fallback to old addon message format (for compatibility)
 	local message = string.format("DCUPGRADE:PACKAGE:%d", packageId);
 	
 	if ChatThrottleLib then
@@ -674,7 +682,7 @@ function DarkChaos_ItemUpgrade_SendPackageSelection(packageId)
 		SendAddonMessage("DCUPGRADE", message, "WHISPER", UnitName("player"));
 	end
 	
-	DC.Debug("Sent package selection: " .. message);
+	DC.Debug("Sent package selection (fallback): " .. message);
 end
 
 function DarkChaos_ItemUpgrade_UpdateStatPackageSelector()

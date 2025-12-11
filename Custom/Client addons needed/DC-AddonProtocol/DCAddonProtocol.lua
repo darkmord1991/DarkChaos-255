@@ -671,10 +671,12 @@ DC.Opcode = {
         CMSG_DO_UPGRADE = 0x02,
         CMSG_BATCH_REQUEST = 0x03,
         CMSG_GET_CURRENCY = 0x04,
+        CMSG_PACKAGE_SELECT = 0x05,
         SMSG_ITEM_INFO = 0x10,
         SMSG_UPGRADE_RESULT = 0x11,
         SMSG_BATCH_ITEM_INFO = 0x12,
         SMSG_CURRENCY_UPDATE = 0x14,
+        SMSG_PACKAGE_SELECTED = 0x15,
     },
     Spec = {
         CMSG_REQUEST_SPECTATE = 0x01,
@@ -683,8 +685,17 @@ DC.Opcode = {
     },
     MPlus = {
         CMSG_GET_KEY_INFO = 0x01,
+        CMSG_GET_AFFIXES = 0x02,
+        CMSG_GET_BEST_RUNS = 0x03,
         CMSG_GET_KEYSTONE_LIST = 0x04,
+        CMSG_REQUEST_HUD = 0x05,
         SMSG_KEY_INFO = 0x10,
+        SMSG_AFFIXES = 0x11,
+        SMSG_BEST_RUNS = 0x12,
+        SMSG_RUN_START = 0x13,
+        SMSG_RUN_END = 0x14,
+        SMSG_TIMER_UPDATE = 0x15,
+        SMSG_OBJECTIVE_UPDATE = 0x16,
         SMSG_KEYSTONE_LIST = 0x17,
     },
     Season = {
@@ -739,6 +750,7 @@ DC.Upgrade = {
     DoUpgrade = function(bag, slot, level) DC:Request("UPG", 0x02, { bag = bag, slot = slot, targetLevel = level }) end,
     BatchRequest = function(items) DC:Request("UPG", 0x03, { items = items }) end,
     GetCurrency = function() DC:Request("UPG", 0x04, {}) end,
+    SelectPackage = function(packageId) DC:Request("UPG", 0x05, { packageId = packageId }) end,
 }
 
 DC.Spectator = {
@@ -753,6 +765,7 @@ DC.MythicPlus = {
     GetAffixes = function() DC:Request("MPLUS", 0x02, {}) end,
     GetBestRuns = function() DC:Request("MPLUS", 0x03, {}) end,
     GetKeystoneList = function() DC:Request("MPLUS", 0x04, {}) end,
+    RequestHUD = function(reason) DC:Request("MPLUS", 0x05, { reason = reason or "client" }) end,
 }
 
 DC.Season = {

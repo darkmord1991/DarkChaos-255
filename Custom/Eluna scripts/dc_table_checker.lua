@@ -7,6 +7,13 @@
     
     Updated: 2025-12-XX (consolidated season tables, unified rating table)
     
+    DEPRECATION NOTES:
+    ==================
+    - HLBG_AIO.lua is OBSOLETE (superseded by DCAddonProtocol unified handler)
+      Use: dc_addon_hlbg_unified.cpp (server) + HLBG_LeaderboardAdapter.lua (client)
+      Old file location: Custom/Eluna scripts/HLBG_AIO.lua
+    - Legacy HLBG tables (dc_hlbg_player_history, dc_hlbg_player_season_data, dc_hlbg_match_history) were removed in the schema consolidation and are now listed as deprecated in DEPRECATED_TABLES.
+    
     IMPORTANT - TABLE CONSOLIDATION NOTES:
     =====================================
     1. SEASON TABLES: The primary season table is dc_seasons (acore_chars).
@@ -90,11 +97,12 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_heirloom_upgrade_log", "Heirloom", false},
         {"acore_chars", "dc_heirloom_upgrades", "Heirloom", true},
         
-        -- HLBG (Hinterlands BG) System - Player data in chars, seasons in world
-        {"acore_chars", "dc_hlbg_player_history", "HLBG System", false},
-        {"acore_chars", "dc_hlbg_player_season_data", "HLBG System", true},
-        {"acore_chars", "dc_hlbg_player_stats", "HLBG System", true},     -- All-time stats
-        {"acore_chars", "dc_hlbg_match_history", "HLBG System", false},
+        -- HLBG (Hinterlands BG) System - Unified leaderboard with participant tracking
+        {"acore_chars", "dc_hlbg_match_participants", "HLBG System", true},  -- NEW: unified participant table
+        {"acore_chars", "dc_hlbg_winner_history", "HLBG System", true},      -- Existing: match results
+        {"acore_chars", "dc_hlbg_player_stats", "HLBG System", false},       -- Legacy: can be deprecated
+
+        -- HLBG: legacy tables removed from REQUIRED_TABLES; if you depend on them, add to DEPRECATED_TABLES above.
         
         -- Item Upgrade System
         {"acore_chars", "dc_item_upgrade_costs", "Item Upgrade", false},
@@ -271,11 +279,21 @@ local DC_TABLE_CHECKER = {
         -- Vault Config
         {"acore_world", "dc_vault_loot_table", "Weekly Vault", false},
     },
-    
+
+    -- Deprecated tables (optional - not required for functionality)
+    DEPRECATED_TABLES = {
+        {"acore_chars", "dc_hlbg_player_history", "HLBG System"},
+        {"acore_chars", "dc_hlbg_player_season_data", "HLBG System"},
+        {"acore_chars", "dc_hlbg_match_history", "HLBG System"},
+    },
+
     -- Results storage
     missing_tables = {},
     missing_critical = {},
+    missing_deprecated = {},
     features_affected = {},
+    
+    -- For optional check-only lists (deprecated tables) - they won't be counted as missing errors.
 }
 
 -- Check if a table exists
@@ -308,6 +326,7 @@ local function CheckAllTables()
     
     DC_TABLE_CHECKER.missing_tables = {}
     DC_TABLE_CHECKER.missing_critical = {}
+    DC_TABLE_CHECKER.missing_deprecated = {}
     DC_TABLE_CHECKER.features_affected = {}
     
     for _, tableInfo in ipairs(DC_TABLE_CHECKER.REQUIRED_TABLES) do
@@ -344,17 +363,36 @@ local function CheckAllTables()
             end
         end
     end
-    
+
+    -- Check deprecated/optional tables but do not count them as critical or 'missing' errors
+    if DC_TABLE_CHECKER.DEPRECATED_TABLES then
+        for _, tbl in ipairs(DC_TABLE_CHECKER.DEPRECATED_TABLES) do
+            local schema = tbl[1]
+            local tableName = tbl[2]
+            local feature = tbl[3]
+            if not TableExists(schema, tableName) then
+                table.insert(DC_TABLE_CHECKER.missing_deprecated, {
+                    schema = schema,
+                    name = tableName,
+                    feature = feature
+                })
+            end
+        end
+    end
+
+    -- Print deprecated table results (informational only)
+    if #DC_TABLE_CHECKER.missing_deprecated > 0 then
+        print("")
+        print("[DC TableChecker] MISSING DEPRECATED TABLES (optional):")
+        for _, tbl in ipairs(DC_TABLE_CHECKER.missing_deprecated) do
+            print(string.format("  [%s] %s (%s) [DEPRECATED]", tbl.schema, tbl.name, tbl.feature))
+        end
+        print("")
+    end
+
     -- Output results
-    print("")
-    print("[DC TableChecker] Results:")
-    print(string.format("  Tables Checked: %d", checked))
-    print(string.format("  Tables Present: %d", present))
-    print(string.format("  Tables Missing: %d", missing))
-    print(string.format("  Critical Missing: %d", criticalMissing))
-    print("")
-    
     if missing > 0 then
+        print("")
         print("[DC TableChecker] MISSING TABLES:")
         for _, tbl in ipairs(DC_TABLE_CHECKER.missing_tables) do
             local criticalTag = tbl.critical and " [CRITICAL]" or ""

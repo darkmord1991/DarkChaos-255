@@ -28,6 +28,9 @@ namespace Upgrade
     static uint32 s_TokenId = 300311;
     static uint32 s_EssenceId = 300312;
     
+    // Player package selections (migrated from itemupgrade_communication.lua)
+    static std::unordered_map<uint32, uint32> s_PlayerPackageSelections;
+    
     // Load config
     static void LoadConfig()
     {
@@ -372,6 +375,52 @@ namespace Upgrade
         // For now, we let that continue - in future could intercept and convert
     }
     
+    // Handler: Package selection (migrated from itemupgrade_communication.lua)
+    static void HandlePackageSelect(Player* player, const ParsedMessage& msg)
+    {
+        uint32 packageId = msg.GetUInt32(0);
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        
+        // Validate package ID (1-12)
+        if (packageId < 1 || packageId > 12)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Invalid package ID.|r");
+            return;
+        }
+        
+        // Store selection
+        s_PlayerPackageSelections[playerGuid] = packageId;
+        
+        LOG_DEBUG("dc.addon.upgrade", "Player {} selected heirloom package {}", 
+            player->GetName(), packageId);
+        
+        // Send confirmation
+        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_PACKAGE_SELECTED)
+            .Add(packageId)
+            .Send(player);
+    }
+    
+    // Get player's selected package (exported for other systems)
+    uint32 GetPlayerSelectedPackage(Player* player)
+    {
+        if (!player)
+            return 0;
+        
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        auto it = s_PlayerPackageSelections.find(playerGuid);
+        return (it != s_PlayerPackageSelections.end()) ? it->second : 0;
+    }
+    
+    // Clear player package selection on logout
+    void OnPlayerLogout(Player* player)
+    {
+        if (!player)
+            return;
+        
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        s_PlayerPackageSelections.erase(playerGuid);
+    }
+    
     // Register all handlers
     void RegisterHandlers()
     {
@@ -381,15 +430,20 @@ namespace Upgrade
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_COSTS, HandleGetCosts);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_LIST_UPGRADEABLE, HandleListUpgradeable);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_DO_UPGRADE, HandleDoUpgrade);
+        DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_PACKAGE_SELECT, HandlePackageSelect);
         
-        LOG_INFO("dc.addon", "Item Upgrade module handlers registered");
+        LOG_INFO("dc.addon", "Item Upgrade module handlers registered (includes heirloom package handler)");
     }
     
-    // Player login hook - send currency update
+    // Player login hook - send currency update and initialize package selection
     void OnPlayerLogin(Player* player)
     {
         if (!MessageRouter::Instance().IsModuleEnabled(Module::UPGRADE))
             return;
+        
+        // Initialize package selection to 0 (none)
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        s_PlayerPackageSelections[playerGuid] = 0;
         
         SendCurrencyUpdate(player);
     }
@@ -406,6 +460,11 @@ public:
     void OnPlayerLogin(Player* player) override
     {
         DCAddon::Upgrade::OnPlayerLogin(player);
+    }
+    
+    void OnPlayerLogout(Player* player) override
+    {
+        DCAddon::Upgrade::OnPlayerLogout(player);
     }
 };
 

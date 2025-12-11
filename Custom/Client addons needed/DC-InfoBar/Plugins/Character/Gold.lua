@@ -193,17 +193,30 @@ function GoldPlugin:OnTooltip(tooltip)
     local tokenCount = GetItemCount(SEASONAL_TOKEN_ID)
     local essenceCount = GetItemCount(SEASONAL_ESSENCE_ID)
     
+    -- Use server-provided inventory counts as a fallback if we didn't find any in bags
+    local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season
+    local serverTokens = seasonData and seasonData.totalTokens
+    local serverEssence = seasonData and seasonData.totalEssence
+    
     if not foundAny or tokenCount == 0 then
-        local tokenColor = tokenCount > 0 and {1, 0.82, 0} or {0.5, 0.5, 0.5}
+        local displayTokens = tokenCount
+        if (displayTokens or 0) == 0 and serverTokens and serverTokens > 0 then
+            displayTokens = serverTokens
+        end
+        local tokenColor = (displayTokens and displayTokens > 0) and {1, 0.82, 0} or {0.5, 0.5, 0.5}
         tooltip:AddDoubleLine("Upgrade Tokens:", 
-            DCInfoBar:FormatNumber(tokenCount) .. " |TInterface\\Icons\\INV_Misc_Token_ScarletCrusade:12|t",
+            DCInfoBar:FormatNumber(displayTokens or 0) .. " |TInterface\\Icons\\INV_Misc_Token_ScarletCrusade:12|t",
             0.7, 0.7, 0.7, tokenColor[1], tokenColor[2], tokenColor[3])
     end
     
     if not foundAny or essenceCount == 0 then
-        local essenceColor = essenceCount > 0 and {0.64, 0.21, 0.93} or {0.5, 0.5, 0.5}
+        local displayEssence = essenceCount
+        if (displayEssence or 0) == 0 and serverEssence and serverEssence > 0 then
+            displayEssence = serverEssence
+        end
+        local essenceColor = (displayEssence and displayEssence > 0) and {0.64, 0.21, 0.93} or {0.5, 0.5, 0.5}
         tooltip:AddDoubleLine("Seasonal Essence:", 
-            DCInfoBar:FormatNumber(essenceCount) .. " |TInterface\\Icons\\Spell_Arcane_Arcane04:12|t",
+            DCInfoBar:FormatNumber(displayEssence or 0) .. " |TInterface\\Icons\\Spell_Arcane_Arcane04:12|t",
             0.7, 0.7, 0.7, essenceColor[1], essenceColor[2], essenceColor[3])
     end
     
@@ -218,6 +231,16 @@ function GoldPlugin:OnTooltip(tooltip)
         tooltip:AddDoubleLine("  Essence:", 
             (seasonData.weeklyEssence or 0) .. "/" .. (seasonData.essenceCap or 200),
             0.5, 0.5, 0.5, 0.64, 0.21, 0.93)
+
+        -- Show inventory counts reported by server if available (fallback to client found counts)
+        if seasonData.totalTokens and seasonData.totalTokens > 0 then
+            tooltip:AddDoubleLine("  Inventory Tokens (Server):", 
+                DCInfoBar:FormatNumber(seasonData.totalTokens), 0.5, 0.5, 0.5, 1, 0.82, 0)
+        end
+        if seasonData.totalEssence and seasonData.totalEssence > 0 then
+            tooltip:AddDoubleLine("  Inventory Essence (Server):", 
+                DCInfoBar:FormatNumber(seasonData.totalEssence), 0.5, 0.5, 0.5, 0.64, 0.21, 0.93)
+        end
     end
     
     -- Prestige XP Bonus section

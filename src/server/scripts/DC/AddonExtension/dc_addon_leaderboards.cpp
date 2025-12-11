@@ -437,27 +437,27 @@ namespace
         }
         else
         {
-            // Use dc_hlbg_player_season_data for seasonal stats
-            std::string orderBy = "h.rating DESC";
+            // Use v_hlbg_player_seasonal_stats view for seasonal stats (unified schema)
+            std::string orderBy = "v.current_rating DESC";
             
             if (subcat == "hlbg_wins")
             {
-                orderBy = "h.wins DESC";
+                orderBy = "v.wins DESC";
             }
             else if (subcat == "hlbg_winrate")
             {
-                orderBy = "(CAST(h.wins AS FLOAT) / GREATEST(h.wins + h.losses, 1)) DESC";
+                orderBy = "v.win_rate DESC";
             }
             else if (subcat == "hlbg_games")
             {
-                orderBy = "h.completed_games DESC";
+                orderBy = "v.games_played DESC";
             }
             
             QueryResult result = CharacterDatabase.Query(
-                "SELECT c.name, c.class, h.rating, h.wins, h.losses "
-                "FROM dc_hlbg_player_season_data h "
-                "JOIN characters c ON h.player_guid = c.guid "
-                "WHERE h.season_id = {} "
+                "SELECT c.name, c.class, v.current_rating, v.wins, v.losses "
+                "FROM v_hlbg_player_seasonal_stats v "
+                "JOIN characters c ON v.guid = c.guid "
+                "WHERE v.season_id = {} "
                 "ORDER BY {} "
                 "LIMIT {} OFFSET {}",
                 seasonId, orderBy, limit, offset);
@@ -924,7 +924,7 @@ namespace
             else
             {
                 result = CharacterDatabase.Query(
-                    "SELECT COUNT(*) FROM dc_hlbg_player_season_data WHERE season_id = {}", seasonId);
+                    "SELECT COUNT(DISTINCT guid) FROM v_hlbg_player_seasonal_stats WHERE season_id = {}", seasonId);
             }
         }
         else if (category == "prestige")
@@ -1239,11 +1239,11 @@ namespace
         
         LOG_INFO("server.scripts", "DC-Leaderboards: Testing database tables for player {}", player->GetName());
         
-        // Test all leaderboard-related tables
+        // Test all leaderboard-related tables and views
         std::vector<std::string> tables = {
             "dc_mplus_scores",
             "dc_player_seasonal_stats",
-            "dc_hlbg_player_season_data",
+            "v_hlbg_player_seasonal_stats",
             "dc_hlbg_player_stats",
             "dc_character_prestige",
             "dc_item_upgrades",

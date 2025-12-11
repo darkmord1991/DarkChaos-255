@@ -297,11 +297,57 @@ local function ApplySavedPosition()
     f:SetPoint(pos.point or "CENTER", UIParent, pos.relativePoint or "CENTER", pos.x or 0, pos.y or 120)
 end
 
+local function IsInMythicOrMythicPlusInstance()
+    -- Ensure we are in an instance and check for mythic or mythic+ difficulty
+    if not activeState or not activeState.inProgress then
+        return false
+    end
+    -- If the state indicates a key level, it's a mythic+ run
+    if activeState.keyLevel and tonumber(activeState.keyLevel) and tonumber(activeState.keyLevel) > 0 then
+        -- Still ensure player is actually inside an instance
+        if type(IsInInstance) == "function" then
+            local inInstance = select(1, IsInInstance())
+            if inInstance then return true end
+        end
+        return false
+    end
+    -- Fallback: check instance difficulty (requires GetInstanceInfo)
+    if type(GetInstanceInfo) == "function" and type(IsInInstance) == "function" then
+        local inInstance = select(1, IsInInstance())
+        if not inInstance then return false end
+        local _, instanceType, difficultyID, difficultyName = GetInstanceInfo()
+        -- First, check difficultyName for 'mythic' (supports localized names)
+        if difficultyName and type(difficultyName) == "string" and string.find(string.lower(difficultyName), "mythic") then
+            return true
+        end
+        -- A broader set of difficulty IDs that have been used across expansions for mythic/mythic+ modes
+        local mythicDifficultyIds = {
+            [8] = true,  -- some expansions
+            [16] = true, -- mythic
+            [23] = true, -- mythic+ on certain patches
+            [15] = true, -- possible mythic mapping
+            [14] = true, -- possible mythic mapping
+            [6] = true,  -- trial / other
+            [24] = true, -- miscellaneous
+        }
+        if difficultyID and mythicDifficultyIds[difficultyID] then
+            return true
+        end
+        -- As a last resort, assume party-type instances are dungeons; if activeState indicates a run
+        if instanceType and instanceType == "party" and activeState and activeState.inProgress then
+            return true
+        end
+    end
+    return false
+end
+
 local function SetFrameVisibility(shouldShow)
     if not frame then
         return
     end
-    if shouldShow and not DCMythicPlusHUDDB.hidden then
+    -- Only show if explicitly requested AND user hasn't hidden it AND a run is actually active
+    -- AND the player is in a mythic or mythic+ dungeon instance
+    if shouldShow and not DCMythicPlusHUDDB.hidden and IsInMythicOrMythicPlusInstance() then
         frame:Show()
     else
         frame:Hide()
@@ -452,6 +498,23 @@ local function UpdateReason(reason)
 end
 
 local function RequestServerSnapshot(reason)
+    -- Try DCAddonProtocol first (new C++ backend)
+    if namespace.useDCProtocol and DC and DC.MythicPlus and DC.MythicPlus.RequestHUD then
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now <= 0 and type(time) == "function" then
+            now = time()
+        end
+        if REQUEST_COOLDOWN > 0 and lastRequestTime > 0 and now > 0 then
+            if (now - lastRequestTime) < REQUEST_COOLDOWN then
+                return
+            end
+        end
+        lastRequestTime = now > 0 and now or lastRequestTime
+        DC.MythicPlus.RequestHUD(reason or "client")
+        return
+    end
+    
+    -- Fallback to AIO (old Lua backend)
     if not AIO or type(AIO.Handle) ~= "function" then
         return
     end
@@ -694,7 +757,12 @@ local function UpdateFrameFromState(data)
     UpdateReason(data.reason)
 
     lastPayload = data
-    SetFrameVisibility(true)
+    -- Only show frame if the data indicates an active run
+    if data and data.inProgress then
+        SetFrameVisibility(true)
+    else
+        SetFrameVisibility(false)
+    end
 end
 
 local function HandleIncomingPayload(payload)
@@ -808,11 +876,13 @@ SlashCmdList.DCM = function(msg)
         Print("Frame unlocked")
     elseif msg == "show" then
         DCMythicPlusHUDDB.hidden = false
-        if not activeState then
-            ShowIdleState()
+        -- Only show if a run is active
+        if IsInMythicOrMythicPlusInstance() then
+            SetFrameVisibility(true)
+            Print("HUD shown")
+        else
+            Print("HUD will show when you enter a Mythic/Mythic+ dungeon with an active run")
         end
-        SetFrameVisibility(true)
-        Print("HUD shown")
         RequestServerSnapshot("slash")
     elseif msg == "hide" then
         DCMythicPlusHUDDB.hidden = true
@@ -906,8 +976,14 @@ local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_LOGIN")
 loader:RegisterEvent("PLAYER_ENTERING_WORLD")
 loader:SetScript("OnEvent", function(self, event)
+    -- Clear any stale activeState on login
+    if event == "PLAYER_LOGIN" then
+        activeState = nil
+    end
+    
     EnsureFrame()
     ApplySavedPosition()
+    frame:Hide()  -- Hide on startup; only show when run is active
     if not TryRegisterHandlers() then
         BeginRetryLoop()
     else
@@ -916,10 +992,11 @@ loader:SetScript("OnEvent", function(self, event)
         if ScanInventoryForKeystone then ScanInventoryForKeystone() end
     end
     if event == "PLAYER_ENTERING_WORLD" then
-        if activeState then
+        if activeState and activeState.inProgress then
             UpdateFrameFromState(activeState)
         else
-            ShowIdleState()
+            -- Don't show idle state - only show when a run is active
+            frame:Hide()
         end
     end
 end)

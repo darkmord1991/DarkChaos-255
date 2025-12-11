@@ -138,7 +138,7 @@ function DCInfoBar:FormatGold(copper)
     
     if self.db and self.db.plugins and self.db.plugins["DCInfoBar_Gold"] then
         local goldSettings = self.db.plugins["DCInfoBar_Gold"]
-        if goldSettings.showSilverCopper and gold < 10000 then
+        if goldSettings.showSilverCopper then
             return string.format("%dg %ds %dc", gold, silver, copperRem)
         end
     end

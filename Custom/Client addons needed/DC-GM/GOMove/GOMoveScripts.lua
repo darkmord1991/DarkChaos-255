@@ -38,6 +38,8 @@ end
 -- FAVOURITE LIST
 local FavFrame = GOMove:CreateFrame("Favourite_List", 200, 280, GOMove.FavL, true)
 FavFrame:Position("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
+FavFrame:Hide()  -- Hide at startup
+FavFrame:Hide()  -- Hide at startup
 function FavFrame:ButtonOnClick(ID)
     GOMove:Move("SPAWN", self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2])
 end
@@ -49,6 +51,8 @@ end
 -- SELECTION LIST
 local SelFrame = GOMove:CreateFrame("Selection_List", 250, 280, GOMove.SelL, true)
 SelFrame:Position("BOTTOMRIGHT", FavFrame, "TOPRIGHT", 0, 0)
+SelFrame:Hide()  -- Hide at startup
+SelFrame:Hide()  -- Hide at startup
 function SelFrame:ButtonOnClick(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
     if(GOMove.Selected[self.DataTable[DATAID][2]]) then
@@ -156,6 +160,7 @@ end)
 local MainFrame = GOMove:CreateFrame("GOMove_UI", 170, 455)
 GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
+MainFrame:Hide()  -- Hide at startup; open only via /gomove command
 
 local NEWS = GOMove:CreateInput(MainFrame, "NEWS", 40, 25, 0, -50, 4, 30)
 
@@ -347,8 +352,12 @@ function SlashCmdList.GOMOVE(msg, editBox)
     end
     if(MainFrame:IsVisible()) then
         MainFrame:Hide()
+        FavFrame:Hide()
+        SelFrame:Hide()
     else
         MainFrame:Show()
+        FavFrame:Show()
+        SelFrame:Show()
     end
 end
 

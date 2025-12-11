@@ -37,6 +37,9 @@ HLBG_Settings.lua
 # Handlers for data processing
 HLBG_Handlers.lua
 
+# Leaderboard adapter for unified protocol
+HLBG_LeaderboardAdapter.lua
+
 # Queue system client
 HLBG_Queue_Client.lua
 

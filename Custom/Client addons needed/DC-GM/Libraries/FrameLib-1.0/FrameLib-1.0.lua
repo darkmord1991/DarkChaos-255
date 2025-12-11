@@ -327,8 +327,8 @@ function FrameLib:BuildTexture(def)
 end
 
 --[[BUILD EDITBOX]]
-function FrameLib:BuildEditBox(def)	
-  local editbox = CreateFrame("MessageFrame", def.name, def.parent, "InputBoxTemplate")
+function FrameLib:BuildEditBox(def)
+  local editbox = CreateFrame("EditBox", def.name, def.parent, "InputBoxTemplate")
   self:AddGroupFrame(def.group, editbox)
   if def.autofocus then
     editbox:SetFocus()

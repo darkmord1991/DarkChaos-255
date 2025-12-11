@@ -471,29 +471,80 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 DELETE FROM `creature_template_addon` WHERE `entry` BETWEEN 400000 AND 400999;
 
 INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `bytes2`, `emote`, `visibilityDistanceType`, `auras`) VALUES
--- Chaos visual aura (28126 = Spirit Particles Purple) on elite/rare creatures
-(400002, 0, 0, 0, 0, 0, 0, '28126'),   -- Tyrant Chaos Devilsaur
-(400050, 0, 0, 0, 0, 0, 1, '28126'),   -- Primal Direhorn
-(400051, 0, 0, 0, 0, 0, 1, '28126'),   -- Chaos Rex
-(400052, 0, 0, 0, 0, 0, 1, '28126'),   -- Ancient Primordial
-(400053, 0, 0, 0, 0, 0, 1, '28126'),   -- Savage Stegodon Matriarch
-(400054, 0, 0, 0, 0, 0, 1, '28126'),   -- Alpha Chaos Raptor
+-- Basic Dinosaurs - Extended visibility (normal creatures get visibility type 1)
+(400000, 0, 0, 0, 0, 0, 1, ''),        -- Chaos Devilsaur
+(400001, 0, 0, 0, 0, 0, 1, ''),        -- Ironhide Chaos Devilsaur
+(400002, 0, 0, 0, 0, 0, 1, '28126'),   -- Tyrant Chaos Devilsaur
+(400003, 0, 0, 0, 0, 0, 1, ''),        -- Primal Stegodon
+(400004, 0, 0, 0, 0, 0, 1, ''),        -- Elder Stegodon
+(400005, 0, 0, 0, 0, 0, 1, ''),        -- Armored Stegodon
+(400006, 0, 0, 0, 0, 0, 1, ''),        -- Ancient Stegodon
+(400007, 0, 0, 0, 0, 0, 1, ''),        -- Chaos Raptor
+(400008, 0, 0, 0, 0, 0, 1, ''),        -- Chaos Raptor Runner
+(400009, 0, 0, 0, 0, 0, 1, ''),        -- Chaos Raptor Hunter
+(400010, 0, 0, 0, 0, 0, 1, ''),        -- Venomhide Chaos Raptor
+(400011, 0, 0, 0, 0, 0, 1, ''),        -- Fledgling Chaos Pterrordax
+(400012, 0, 0, 0, 0, 0, 1, ''),        -- Chaos Pterrordax
+(400013, 0, 0, 0, 0, 0, 1, ''),        -- Frenzied Chaos Pterrordax
+(400014, 0, 0, 0, 0, 0, 1, ''),        -- Young Primal Diemetradon
+(400015, 0, 0, 0, 0, 0, 1, ''),        -- Primal Diemetradon
+(400016, 0, 0, 0, 0, 0, 1, ''),        -- Elder Primal Diemetradon
+-- Rare Elite Dinosaurs - Large visibility (rare spawns get visibility type 2)
+(400050, 0, 0, 0, 0, 0, 2, '28126'),   -- Primal Direhorn
+(400051, 0, 0, 0, 0, 0, 2, '28126'),   -- Chaos Rex
+(400052, 0, 0, 0, 0, 0, 2, '28126'),   -- Ancient Primordial
+(400053, 0, 0, 0, 0, 0, 2, '28126'),   -- Savage Stegodon Matriarch
+(400054, 0, 0, 0, 0, 0, 2, '28126'),   -- Alpha Chaos Raptor
 (400055, 0, 0, 0, 0, 0, 2, '28126'),   -- Bonecrusher (random rare)
 (400056, 0, 0, 0, 0, 0, 2, '28126'),   -- Gorespine (random rare)
 (400057, 0, 0, 0, 0, 0, 2, '28126'),   -- Venomfang (random rare)
 (400058, 0, 0, 0, 0, 0, 2, '28126'),   -- Skyscreamer (random rare)
 (400059, 0, 0, 0, 0, 0, 2, '28126'),   -- Gul'rok the Cursed (random rare)
+-- World Bosses - Maximum visibility (bosses get visibility type 3)
 (400100, 0, 0, 0, 0, 0, 3, '28126'),   -- Oondasta (max visibility)
 (400101, 0, 0, 0, 0, 0, 3, '28126'),   -- Thok (max visibility)
 (400102, 0, 0, 0, 0, 0, 3, '28126'),   -- Nalak (max visibility)
-(400260, 0, 0, 0, 0, 0, 1, '28126'),   -- Warlord Gha'tul
-(400300, 0, 0, 0, 0, 0, 0, '10848'),   -- Spirit of the Primal (ghost aura)
-(400301, 0, 0, 0, 0, 0, 1, '28126'),   -- Corrupted Direhorn Spirit
+-- Zandalari Friendly NPCs - Extended visibility (NPCs get visibility type 2)
+(400200, 0, 0, 0, 0, 0, 2, ''),        -- Elder Zul'jin
+(400202, 0, 0, 0, 0, 0, 2, ''),        -- Rokhan the Beast Tamer
+(400203, 0, 0, 0, 0, 0, 2, ''),        -- Scout Zan'do
+(400210, 0, 0, 0, 0, 0, 2, ''),        -- Trader Zal'aman
+(400220, 0, 0, 0, 0, 0, 2, ''),        -- Zandalari Expedition Guard
+-- Hostile Primal Trolls - Extended visibility (mob creatures get visibility type 1)
+(400250, 0, 0, 0, 0, 0, 1, ''),        -- Primal Troll Warrior
+(400251, 0, 0, 0, 0, 0, 1, ''),        -- Primal Troll Shadowcaster
+(400252, 0, 0, 0, 0, 0, 1, ''),        -- Primal Troll Berserker
+(400253, 0, 0, 0, 0, 0, 1, ''),        -- Primal Troll Witch Doctor
+(400254, 0, 0, 0, 0, 0, 1, ''),        -- Primal Troll Headhunter
+(400260, 0, 0, 0, 0, 0, 2, '28126'),   -- Warlord Gha'tul
+-- Special NPCs - Extended visibility
+(400300, 0, 0, 0, 0, 0, 2, '10848'),   -- Spirit of the Primal (ghost aura)
+(400301, 0, 0, 0, 0, 0, 2, '28126'),   -- Corrupted Direhorn Spirit
+(400310, 0, 0, 0, 0, 0, 2, ''),        -- Bartender Zul'tik
+(400311, 0, 0, 0, 0, 0, 2, ''),        -- Windwalker Ta'zo
 -- Cannon Quest NPCs - Increased visibility for ship and cannon
-(400321, 0, 0, 0, 0, 0, 2, ''),        -- Coastal Cannon (Large visibility)
-(400324, 0, 0, 0, 0, 0, 2, ''),        -- Zandalari Scout Ship (Large visibility)
--- Invasion Commander - Large visibility so players can spot the boss
-(400336, 0, 0, 0, 0, 0, 2, '28126');   -- Warlord Zul'mar (boss aura + visibility)
+(400321, 0, 0, 0, 0, 0, 3, ''),        -- Coastal Cannon (max visibility)
+(400323, 0, 0, 0, 0, 0, 3, ''),        -- Ship Explosion Trigger
+(400324, 0, 0, 0, 0, 0, 3, ''),        -- Zandalari Scout Ship (max visibility)
+(400325, 0, 0, 0, 0, 0, 2, ''),        -- Invasion Warning Horn
+-- Invasion NPCs - Extended visibility (mobs get type 1, NPCs get type 2, boss gets type 3)
+(400326, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Invader
+(400327, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Scout
+(400328, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Spearman
+(400329, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Warrior
+(400330, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Berserker
+(400331, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Shadow Hunter
+(400332, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Blood Guard
+(400333, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Witch Doctor
+(400334, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Beast Tamer
+(400335, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari War Raptor
+(400336, 0, 0, 0, 0, 0, 3, '28126'),   -- Warlord Zul'mar (boss aura + max visibility)
+(400337, 0, 0, 0, 0, 0, 1, ''),        -- Zandalari Honor Guard
+-- Boss Adds - Large visibility for visibility
+(400400, 0, 0, 0, 0, 0, 1, ''),        -- Young Oondasta
+(400401, 0, 0, 0, 0, 0, 1, ''),        -- Frenzied Pack Raptor
+(400402, 0, 0, 0, 0, 0, 1, ''),        -- Storm Spark
+(400403, 0, 0, 0, 0, 0, 1, '');        -- Static Cloud
 
 -- ============================================================================
 -- GUARDS AND DEFENDERS (401000-401099)

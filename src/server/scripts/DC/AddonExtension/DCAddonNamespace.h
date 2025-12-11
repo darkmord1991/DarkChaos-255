@@ -156,12 +156,14 @@ namespace DCAddon
             constexpr uint8 CMSG_DO_UPGRADE        = 0x02;
             constexpr uint8 CMSG_LIST_UPGRADEABLE  = 0x03;
             constexpr uint8 CMSG_GET_COSTS         = 0x04;
+            constexpr uint8 CMSG_PACKAGE_SELECT    = 0x05;  // Heirloom package selection
             
             constexpr uint8 SMSG_ITEM_INFO         = 0x10;
             constexpr uint8 SMSG_UPGRADE_RESULT    = 0x11;
             constexpr uint8 SMSG_UPGRADEABLE_LIST  = 0x12;
             constexpr uint8 SMSG_COST_INFO         = 0x13;
             constexpr uint8 SMSG_CURRENCY_UPDATE   = 0x14;
+            constexpr uint8 SMSG_PACKAGE_SELECTED  = 0x15;  // Confirm package selection
         }
         
         // Phased Duels opcodes
@@ -185,13 +187,14 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_AFFIXES       = 0x02;
             constexpr uint8 CMSG_GET_BEST_RUNS     = 0x03;
             constexpr uint8 CMSG_GET_KEYSTONE_LIST = 0x04;  // Request canonical keystone item IDs
+            constexpr uint8 CMSG_REQUEST_HUD       = 0x05;  // Request HUD snapshot (force refresh)
             
             constexpr uint8 SMSG_KEY_INFO          = 0x10;
             constexpr uint8 SMSG_AFFIXES           = 0x11;
             constexpr uint8 SMSG_BEST_RUNS         = 0x12;
             constexpr uint8 SMSG_RUN_START         = 0x13;
             constexpr uint8 SMSG_RUN_END           = 0x14;
-            constexpr uint8 SMSG_TIMER_UPDATE      = 0x15;
+            constexpr uint8 SMSG_TIMER_UPDATE      = 0x15;  // HUD updates (periodic + on-demand)
             constexpr uint8 SMSG_OBJECTIVE_UPDATE  = 0x16;
             constexpr uint8 SMSG_KEYSTONE_LIST     = 0x17;  // Server -> Client: JSON list of keystone item IDs
         }

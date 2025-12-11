@@ -9,6 +9,7 @@
  */
 
 #include "DCAddonNamespace.h"
+#include "WorldSessionMgr.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -167,6 +168,9 @@ namespace MythicPlus
         SendJsonKeystoneList(player);
     }
     
+    // Forward declaration for HUD handler (defined later)
+    static void HandleRequestHud(Player* player, const ParsedMessage& msg);
+
     // Register all handlers
     void RegisterHandlers()
     {
@@ -174,8 +178,9 @@ namespace MythicPlus
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_AFFIXES, HandleGetAffixes);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_BEST_RUNS, HandleGetBestRuns);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_KEYSTONE_LIST, HandleGetKeystoneList);
+        DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_REQUEST_HUD, HandleRequestHud);
         
-        LOG_INFO("dc.addon", "Mythic+ module handlers registered");
+        LOG_INFO("dc.addon", "Mythic+ module handlers registered (includes HUD cache manager)");
     }
     
     // Broadcast run update to all party members
@@ -195,6 +200,302 @@ namespace MythicPlus
         Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
             .Add(jsonData)
             .Send(player);
+    }
+    
+    // ========================================================================
+    // HUD CACHE MANAGER - Migrated from DCMythicPlusHUD.lua
+    // ========================================================================
+    
+    class HudCacheMgr
+    {
+    private:
+        struct CacheEntry
+        {
+            std::string payload;
+            uint64 updatedAt;
+            uint64 instanceKey;
+        };
+        
+        struct PlayerSnapshot
+        {
+            uint64 instanceKey = 0;
+            uint64 lastUpdated = 0;
+            std::string idleReason;
+        };
+        
+        std::unordered_map<uint64, CacheEntry> m_cache;
+        std::unordered_map<uint32, PlayerSnapshot> m_playerSnapshots;  // playerGuid -> snapshot
+        std::unordered_map<uint64, time_t> m_missingKeys;  // backoff tracking
+        uint64 m_lastSeenUpdate = 0;
+        bool m_tableEnsured = false;
+        
+        static constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
+        static constexpr uint32 POLL_INTERVAL_MS = 1000;
+        static constexpr uint64 INSTANCE_KEY_FACTOR = 4294967296ULL;  // 2^32
+        static constexpr uint32 BACKOFF_SECONDS = 2;
+        
+        HudCacheMgr() = default;
+        
+        void EnsureTable()
+        {
+            if (m_tableEnsured)
+                return;
+            
+            CharacterDatabase.DirectExecute(
+                "CREATE TABLE IF NOT EXISTS `{}` ("
+                "  `instance_key` BIGINT UNSIGNED NOT NULL,"
+                "  `map_id` INT UNSIGNED NOT NULL,"
+                "  `instance_id` INT UNSIGNED NOT NULL,"
+                "  `owner_guid` INT UNSIGNED NOT NULL,"
+                "  `keystone_level` TINYINT UNSIGNED NOT NULL,"
+                "  `season_id` INT UNSIGNED NOT NULL,"
+                "  `payload` LONGTEXT NOT NULL,"
+                "  `updated_at` BIGINT UNSIGNED NOT NULL,"
+                "  PRIMARY KEY (`instance_key`)"
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+                HUD_CACHE_TABLE);
+            
+            m_tableEnsured = true;
+            LOG_INFO("dc.addon.mplus", "HudCacheMgr: Table `{}` ensured", HUD_CACHE_TABLE);
+        }
+        
+        uint64 MakeInstanceKey(Player* player) const
+        {
+            if (!player || !player->IsInWorld())
+                return 0;
+            
+            uint32 mapId = player->GetMapId();
+            uint32 instanceId = player->GetInstanceId();
+            
+            if (instanceId == 0)
+                return 0;
+            
+            Map* map = player->GetMap();
+            if (!map || (!map->IsDungeon() && !map->IsRaid()))
+                return 0;
+            
+            return static_cast<uint64>(mapId) * INSTANCE_KEY_FACTOR + instanceId;
+        }
+        
+        void SendIdle(Player* player, const std::string& reason)
+        {
+            if (!player)
+                return;
+            
+            uint32 guid = player->GetGUID().GetCounter();
+            PlayerSnapshot& prev = m_playerSnapshots[guid];
+            
+            if (prev.idleReason == reason)
+                return;  // Already sent this idle reason
+            
+            // Build JSON payload
+            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
+                .Set("op", "idle")
+                .Set("reason", reason)
+                .Send(player);
+            
+            prev.idleReason = reason;
+            prev.instanceKey = 0;
+            prev.lastUpdated = 0;
+        }
+        
+        void StoreSnapshot(uint32 playerGuid, uint64 instanceKey, uint64 updatedAt)
+        {
+            PlayerSnapshot& snap = m_playerSnapshots[playerGuid];
+            snap.instanceKey = instanceKey;
+            snap.lastUpdated = updatedAt;
+            snap.idleReason.clear();
+        }
+        
+        bool SendPayload(Player* player, const CacheEntry& record)
+        {
+            if (!player || record.payload.empty())
+                return false;
+            
+            // Send raw JSON payload
+            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
+                .Add(record.payload)
+                .Send(player);
+            
+            StoreSnapshot(player->GetGUID().GetCounter(), record.instanceKey, record.updatedAt);
+            return true;
+        }
+        
+        bool CacheMissBackoff(uint64 instanceKey)
+        {
+            time_t now = time(nullptr);
+            auto it = m_missingKeys.find(instanceKey);
+            
+            if (it != m_missingKeys.end() && (now - it->second) < BACKOFF_SECONDS)
+                return true;  // Still in backoff
+            
+            m_missingKeys[instanceKey] = now;
+            return false;
+        }
+        
+        CacheEntry* FetchSnapshot(uint64 instanceKey)
+        {
+            if (instanceKey == 0)
+                return nullptr;
+            
+            // Check cache first
+            auto it = m_cache.find(instanceKey);
+            if (it != m_cache.end())
+                return &it->second;
+            
+            // Check backoff
+            if (CacheMissBackoff(instanceKey))
+                return nullptr;
+            
+            EnsureTable();
+            
+            // Query database
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
+                HUD_CACHE_TABLE, instanceKey);
+            
+            if (!result)
+                return nullptr;
+            
+            Field* fields = result->Fetch();
+            std::string payload = fields[0].Get<std::string>();
+            uint64 updated = fields[1].Get<uint64>();
+            
+            if (payload.empty())
+                return nullptr;
+            
+            // Cache it
+            CacheEntry& entry = m_cache[instanceKey];
+            entry.payload = payload;
+            entry.updatedAt = updated;
+            entry.instanceKey = instanceKey;
+            
+            if (updated > m_lastSeenUpdate)
+                m_lastSeenUpdate = updated;
+            
+            m_missingKeys.erase(instanceKey);
+            return &entry;
+        }
+        
+        void PullCacheUpdates()
+        {
+            EnsureTable();
+            
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT instance_key, payload, updated_at FROM `{}` WHERE updated_at > {} ORDER BY updated_at",
+                HUD_CACHE_TABLE, m_lastSeenUpdate);
+            
+            if (!result)
+                return;
+            
+            do
+            {
+                Field* fields = result->Fetch();
+                uint64 key = fields[0].Get<uint64>();
+                std::string payload = fields[1].Get<std::string>();
+                uint64 updated = fields[2].Get<uint64>();
+                
+                if (key > 0 && !payload.empty())
+                {
+                    CacheEntry& entry = m_cache[key];
+                    entry.payload = payload;
+                    entry.updatedAt = updated;
+                    entry.instanceKey = key;
+                    
+                    if (updated > m_lastSeenUpdate)
+                        m_lastSeenUpdate = updated;
+                    
+                    m_missingKeys.erase(key);
+                }
+            } while (result->NextRow());
+        }
+        
+        bool DeliverSnapshot(Player* player, bool force = false, const std::string& reason = "")
+        {
+            uint64 instanceKey = MakeInstanceKey(player);
+            
+            if (instanceKey == 0)
+            {
+                SendIdle(player, reason.empty() ? "not_in_mythic" : reason);
+                return false;
+            }
+            
+            CacheEntry* record = FetchSnapshot(instanceKey);
+            if (!record)
+            {
+                SendIdle(player, "no_snapshot");
+                return false;
+            }
+            
+            uint32 guid = player->GetGUID().GetCounter();
+            PlayerSnapshot& previous = m_playerSnapshots[guid];
+            
+            if (!force && previous.instanceKey == instanceKey && previous.lastUpdated == record->updatedAt)
+                return true;  // Already sent, no changes
+            
+            return SendPayload(player, *record);
+        }
+        
+    public:
+        static HudCacheMgr& Instance()
+        {
+            static HudCacheMgr instance;
+            return instance;
+        }
+        
+        // Main update loop (called periodically)
+        void Update()
+        {
+            PullCacheUpdates();
+            
+            // Iterate all online players
+            auto const& sessions = sWorldSessionMgr->GetAllSessions();
+            for (auto const& pair : sessions)
+            {
+                if (WorldSession* session = pair.second)
+                {
+                    if (Player* player = session->GetPlayer())
+                    {
+                        if (player->IsInWorld())
+                            DeliverSnapshot(player);
+                    }
+                }
+            }
+        }
+        
+        // Client-requested snapshot (force refresh)
+        void RequestHud(Player* player, const std::string& reason = "client")
+        {
+            DeliverSnapshot(player, true, reason);
+        }
+        
+        // Clear cache (for instance resets)
+        void ClearCache()
+        {
+            m_cache.clear();
+            m_missingKeys.clear();
+            LOG_INFO("dc.addon.mplus", "HudCacheMgr: Cache cleared");
+        }
+        
+        // Clear player snapshot on logout
+        void OnPlayerLogout(Player* player)
+        {
+            if (!player)
+                return;
+            
+            uint32 guid = player->GetGUID().GetCounter();
+            m_playerSnapshots.erase(guid);
+        }
+    };
+    
+    // Handler: Client requests HUD snapshot
+    static void HandleRequestHud(Player* player, const ParsedMessage& msg)
+    {
+        std::string reason = msg.GetString(0);
+        if (reason.empty())
+            reason = "client_request";
+        
+        HudCacheMgr::Instance().RequestHud(player, reason);
     }
     
     // ========================================================================
@@ -382,18 +683,46 @@ namespace MythicPlus
 }  // namespace MythicPlus
 }  // namespace DCAddon
 
-// Player script to auto-push the keystone list on login
+// Player script to auto-push the keystone list on login and handle logout
 class MythicPlusKeystoneLoginPlayerScript : public PlayerScript
 {
 public:
     MythicPlusKeystoneLoginPlayerScript() : PlayerScript("MythicPlusKeystoneLoginPlayerScript") {}
 
-    void OnLogin(Player* player)
+    void OnPlayerLogin(Player* player) override
     {
         if (!player || !player->GetSession())
             return;
         // Send the canonical keystone list to the player
         DCAddon::MythicPlus::SendJsonKeystoneList(player);
+    }
+    
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!player)
+            return;
+        // Clean up player's HUD snapshot
+        DCAddon::MythicPlus::HudCacheMgr::Instance().OnPlayerLogout(player);
+    }
+};
+
+// World script for HUD cache polling
+class MythicPlusHudCacheWorldScript : public WorldScript
+{
+public:
+    MythicPlusHudCacheWorldScript() : WorldScript("MythicPlusHudCacheWorldScript") {}
+    
+    void OnUpdate(uint32 /*diff*/) override
+    {
+        // Poll every 1 second
+        static uint32 lastUpdate = 0;
+        uint32 now = getMSTime();
+        
+        if (now - lastUpdate >= 1000)
+        {
+            DCAddon::MythicPlus::HudCacheMgr::Instance().Update();
+            lastUpdate = now;
+        }
     }
 };
 
@@ -402,4 +731,6 @@ void AddSC_dc_addon_mythicplus()
     DCAddon::MythicPlus::RegisterHandlers();
     // Auto-push keystone list on login for connected players
     new MythicPlusKeystoneLoginPlayerScript();
+    // Start HUD cache polling
+    new MythicPlusHudCacheWorldScript();
 }

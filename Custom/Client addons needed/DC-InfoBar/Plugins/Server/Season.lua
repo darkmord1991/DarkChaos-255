@@ -84,8 +84,8 @@ function SeasonPlugin:OnActivate()
                     local D = DCWelcome.Seasons.Data
                     
                     -- Weekly tokens/essence are the current week's progress
-                    D.weeklyTokens = data.weeklyTokens or data.tokens or D.weeklyTokens
-                    D.weeklyEssence = data.weeklyEssence or data.essence or D.weeklyEssence
+                    D.weeklyTokens = data.weeklyTokens or D.weeklyTokens
+                    D.weeklyEssence = data.weeklyEssence or D.weeklyEssence
                     
                     -- Total tokens/essence are inventory counts (sent as 'tokens' and 'essence')
                     D.tokens = data.tokens or D.tokens

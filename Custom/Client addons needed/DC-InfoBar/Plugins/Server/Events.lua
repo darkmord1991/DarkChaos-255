@@ -35,6 +35,9 @@ function EventsPlugin:OnActivate()
     -- Ensure serverData.events exists
     DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
     
+    -- Force an initial UI update in case events are already present
+    DCInfoBar:RefreshAllPlugins()
+
     -- Register handler for test data injection
     DCInfoBar._eventPluginActive = true
 end

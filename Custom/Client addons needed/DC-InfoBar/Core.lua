@@ -266,12 +266,44 @@ function DCInfoBar:SetupServerCommunication()
         DC:RegisterJSONHandler("EVNT", 0x12, function(data) -- SMSG_EVENT_REMOVE
             DCInfoBar:HandleEventRemove(data)
         end)
-        
-        self:Debug("Registered JSON handlers for events")
+
+        -- Fallback: also register non-JSON handlers for legacy server payloads
+        DC:RegisterHandler("EVNT", 0x10, function(data)
+            DCInfoBar:Debug("Received legacy EVNT handler payload")
+            DCInfoBar:HandleEventData(data)
+        end)
+        DC:RegisterHandler("EVNT", 0x12, function(data)
+            DCInfoBar:Debug("Received legacy EVNT remove payload")
+            DCInfoBar:HandleEventRemove(data)
+        end)
+
+        -- Also fallback for GRPF events if plain handler used
+        DC:RegisterHandler("GRPF", 0x70, function(data)
+            DCInfoBar:Debug("Received legacy GRPF event payload")
+            DCInfoBar:HandleEventData(data)
+        end)
+
+        self:Debug("Registered JSON handlers for events (and legacy fallbacks)")
     else
         self:Debug("Warning: RegisterJSONHandler not available in DCAddonProtocol")
     end
-    
+
+    -- Fallback: register non-JSON handlers if available (ensure events are handled as well)
+    if DC.RegisterHandler then
+        DC:RegisterHandler("EVNT", 0x10, function(data)
+            DCInfoBar:Debug("Received legacy EVNT handler payload (fallback)")
+            DCInfoBar:HandleEventData(data)
+        end)
+        DC:RegisterHandler("EVNT", 0x12, function(data)
+            DCInfoBar:Debug("Received legacy EVNT remove payload (fallback)")
+            DCInfoBar:HandleEventRemove(data)
+        end)
+        DC:RegisterHandler("GRPF", 0x70, function(data)
+            DCInfoBar:Debug("Received legacy GRPF event payload (fallback)")
+            DCInfoBar:HandleEventData(data)
+        end)
+    end
+
     return true
 end
 
@@ -310,6 +342,12 @@ function DCInfoBar:HandleEventData(data)
     if not updated then
         table.insert(events, record)
     end
+
+    -- Debug: announce event data arrival and refresh UI immediately
+    DCInfoBar:Debug(string.format("HandleEventData: id=%s name=%s type=%s state=%s active=%s", tostring(record.id or "0"), tostring(record.name), tostring(record.type), tostring(record.state), tostring(record.active)))
+
+    -- Force plugin refresh so UI updates immediately
+    DCInfoBar:RefreshAllPlugins()
 end
 
 function DCInfoBar:HandleEventRemove(data)
@@ -318,20 +356,28 @@ function DCInfoBar:HandleEventRemove(data)
 
     if not data then
         wipe(events)
+        DCInfoBar:Debug("HandleEventRemove: wiped all events")
+        DCInfoBar:RefreshAllPlugins()
         return
     end
 
     local targetId = data["eventId"] or data["id"]
     if not targetId then
         wipe(events)
+        DCInfoBar:Debug("HandleEventRemove: no target id, wiped all events")
+        DCInfoBar:RefreshAllPlugins()
         return
     end
 
     for index = #events, 1, -1 do
         if events[index].id == targetId then
             table.remove(events, index)
+            DCInfoBar:Debug("HandleEventRemove: removed event id=" .. tostring(targetId))
+            break
         end
     end
+
+    DCInfoBar:RefreshAllPlugins()
 end
 
 function DCInfoBar:RequestServerData()
@@ -392,16 +438,12 @@ function DCInfoBar:HandleSeasonProgressData(data)
     if data.seasonId or data.id then
         season.id = data.seasonId or data.id
     end
-    -- Prefer explicit weeklyTokens when provided, fall back to tokens only if weekly not present
+    -- Prefer explicit weeklyTokens when provided
     if data.weeklyTokens then
         season.weeklyTokens = data.weeklyTokens
-    elseif data.tokens then
-        season.weeklyTokens = data.tokens
     end
     if data.weeklyEssence then
         season.weeklyEssence = data.weeklyEssence
-    elseif data.essence then
-        season.weeklyEssence = data.essence
     end
     if data.tokenCap then
         season.weeklyCap = data.tokenCap
@@ -409,12 +451,16 @@ function DCInfoBar:HandleSeasonProgressData(data)
     if data.essenceCap then
         season.essenceCap = data.essenceCap
     end
-    -- Use `tokens` as the player's inventory total; `totalTokens` may be used for all-time totals
+    -- Use `tokens`/`totalTokens` as the player's inventory total
     if data.tokens then
         season.totalTokens = data.tokens
     elseif data.totalTokens then
         season.totalTokens = data.totalTokens
     end
+    if data.essence then
+        season.totalEssence = data.essence
+    end
+
     
     -- If name is still Unknown, check DCWelcome
     if (not season.name or season.name == "Unknown" or season.name == "Unknown Season") then

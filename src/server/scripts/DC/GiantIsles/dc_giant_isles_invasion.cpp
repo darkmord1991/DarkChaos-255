@@ -17,6 +17,7 @@
 #include "WorldState.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include <cmath>
 #include <map>
 #include "InstanceScript.h"
 #include "ObjectAccessor.h"
@@ -425,11 +426,13 @@ public:
 
         EventMap events;
         bool enraged;
+        uint64 _lastAggroYellTime = 0;
 
         void Reset() override
         {
             events.Reset();
             enraged = false;
+            _lastAggroYellTime = 0;
         }
 
         void JustEngagedWith(Unit* /*who*/) override
@@ -439,8 +442,24 @@ public:
             events.ScheduleEvent(EVENT_COMMANDING_SHOUT, 5s);
             events.ScheduleEvent(EVENT_CHECK_GUARDS, 2s);
 
-            // Dramatic boss yell
-            me->Yell("You dare challenge Zul'mar?! Your bones will join the pile!", LANG_UNIVERSAL);
+            // Dramatic boss yell with cooldown and varied lines to avoid spam
+            uint64 now = GameTime::GetGameTime().count();
+            if (_lastAggroYellTime == 0 || now - _lastAggroYellTime >= 15000)
+            {
+                _lastAggroYellTime = now;
+                switch (urand(0, 2))
+                {
+                    case 0:
+                        me->Yell("You dare challenge Zul'mar?! Your bones will join the pile!", LANG_UNIVERSAL);
+                        break;
+                    case 1:
+                        me->Yell("I will break your spirit and claim these shores!", LANG_UNIVERSAL);
+                        break;
+                    default:
+                        me->Yell("Kneel before Zul'mar or be crushed!", LANG_UNIVERSAL);
+                        break;
+                }
+            }
             me->PlayDirectSound(8856);  // Troll male aggro
         }
 
@@ -620,6 +639,8 @@ public:
     std::map<ObjectGuid, uint32> _spawnIndex;
     uint64_t _lastEventStatusBroadcastTime;
     uint64_t _lastEventAnnouncementTime;
+    uint8 _lastSpawnPointIndex = 0;  // For round-robin spawn points
+    std::vector<Position> _generatedSpawnPoints;  // Dynamically generated at invasion start
 
     // Maintain boss guards is defined inline below to manage guard AI and respawn
     // RegisterSummonedInvader is defined inline below as a convenience
@@ -648,6 +669,18 @@ public:
         _lastEventAnnouncementTime = 0; // clear announcement cooldown for fresh event
         _failInvocationCount = 0;
         _victoryInvocationCount = 0;
+        _lastSpawnPointIndex = 0;
+        _generatedSpawnPoints.clear();
+
+        // Generate invasion spawn points at map corners/edges - these are stable points where invaders arrive from
+        // Using the perimeter of the Seeping Shores area, spaced out for wave variety
+        _generatedSpawnPoints.push_back(Position(5838.99f, 1180.75f, 7.56f, 2.36f));   // East point
+        _generatedSpawnPoints.push_back(Position(5809.94f, 1158.84f, 6.17f, 1.45f));   // Center-North point
+        _generatedSpawnPoints.push_back(Position(5783.35f, 1188.61f, 2.42f, 1.14f));   // West-North point
+        _generatedSpawnPoints.push_back(Position(5766.65f, 1156.61f, 1.48f, 1.65f));   // South-West point
+        _generatedSpawnPoints.push_back(Position(5814.86f, 1173.96f, 7.89f, 1.93f));   // Center point
+
+        LOG_INFO("scripts", "Giant Isles Invasion: Generated {} spawn points", _generatedSpawnPoints.size());
 
         // Dramatic warning announcement (suppress rapid duplicates)
         {
@@ -984,37 +1017,49 @@ public:
 
         LOG_INFO("scripts", "Giant Isles Invasion: Wave {} spawns={} lanesMultiplier={} entries={}", _invasionPhase, totalMobs, laneMultiplier, waveEntries.size());
 
-        constexpr uint8 SPAWN_POINT_COUNT = static_cast<uint8>(std::size(SPAWN_POINTS));
+        // Fallback to generated points, or populate them if missing
+        if (_generatedSpawnPoints.empty())
+        {
+            LOG_WARN("scripts", "Giant Isles Invasion: Generated spawn points empty, initializing fallback points");
+            _generatedSpawnPoints.push_back(Position(5838.99f, 1180.75f, 7.56f, 2.36f));
+            _generatedSpawnPoints.push_back(Position(5809.94f, 1158.84f, 6.17f, 1.45f));
+            _generatedSpawnPoints.push_back(Position(5783.35f, 1188.61f, 2.42f, 1.14f));
+            _generatedSpawnPoints.push_back(Position(5766.65f, 1156.61f, 1.48f, 1.65f));
+            _generatedSpawnPoints.push_back(Position(5814.86f, 1173.96f, 7.89f, 1.93f));
+        }
 
         for (uint32 i = 0; i < totalMobs; ++i)
         {
-            // Pick random spawn point
-            uint8 spawnIdx = urand(0, SPAWN_POINT_COUNT - 1);
-            const InvasionSpawnPoint& spawnPoint = SPAWN_POINTS[spawnIdx];
+            // Use round-robin through generated spawn points
+            uint8 spawnIdx = _lastSpawnPointIndex % _generatedSpawnPoints.size();
+            _lastSpawnPointIndex++;
+            
+            const Position& spawnPoint = _generatedSpawnPoints[spawnIdx];
             
             // Pick random entry from wave entries
             uint32 entry = waveEntries[urand(0, waveEntries.size() - 1)];
 
-            Position p(spawnPoint.x + frand(-1.5f, 1.5f), spawnPoint.y + frand(-1.5f, 1.5f), spawnPoint.z, spawnPoint.o);
+            // Slight position variance from the base spawn point
+            Position p(spawnPoint.GetPositionX() + frand(-2.0f, 2.0f), 
+                      spawnPoint.GetPositionY() + frand(-2.0f, 2.0f), 
+                      spawnPoint.GetPositionZ(), 
+                      spawnPoint.GetOrientation());
 
-            Creature* invader = TrySummonCreature(map, entry, p, 3, 1.5f);
-                if (invader)
+            // Invaders persist until manually despawned at invasion end (30 min timeout as safety)
+            Creature* invader = TrySummonCreature(map, entry, p, 3, 1.5f, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 30 * MINUTE * IN_MILLISECONDS);
+            if (invader)
             {
                 RegisterInvader(invader);
-                // Pick random target lane (0-2)
+                // Pick random target lane (0-2) and immediately send invader running
                 uint8 targetLane = urand(0, 2);
+                CommandInvader(invader, map, targetLane);
 
-                // Half of the spawns attack immediately; half wait for the nudge cycle
-                bool delayed = (i % 2) != 0;
-                if (!delayed)
-                    CommandInvader(invader, map, targetLane);
-
-                LOG_INFO("scripts", "Giant Isles Invasion: Spawned invader entry {} at spawn {} target {} delayed={} ({})", entry, spawnIdx, targetLane, delayed, invader->GetGUID().ToString());
+                LOG_INFO("scripts", "Giant Isles Invasion: Spawned invader entry {} at generated point {} target {} ({})", entry, spawnIdx, targetLane, invader->GetGUID().ToString());
                 BroadcastSpawn(map, invader, static_cast<uint8>(_invasionPhase), targetLane);
             }
             else
             {
-                LOG_WARN("scripts", "Giant Isles Invasion: Spawn failed for entry {} at spawn {} pos=({}, {}, {}, {})", entry, spawnIdx, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), p.GetOrientation());
+                LOG_WARN("scripts", "Giant Isles Invasion: Spawn failed for entry {} at generated point {} pos=({}, {}, {})", entry, spawnIdx, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ());
             }
         }
     }
@@ -1065,6 +1110,26 @@ public:
                 _bossGuardGuids.push_back(guard->GetGUID());
                 BroadcastSpawn(map, guard, static_cast<uint8>(_invasionPhase), 1);
             }
+        }
+
+        // If some guard slots failed (blocked terrain), try a few jittered attempts around the boss so the wave always has escorts.
+        uint8 safety = 0;
+        while (_bossGuardGuids.size() < 4 && safety < 6)
+        {
+            Position fallback = boss->GetPosition();
+            fallback.m_positionX += frand(-2.5f, 2.5f);
+            fallback.m_positionY += frand(-2.5f, 2.5f);
+            Creature* guard = TrySummonCreature(map, NPC_ZANDALARI_HONOR_GUARD, fallback, 4, 1.0f);
+            if (!guard)
+            {
+                ++safety;
+                continue;
+            }
+
+            ConfigureBossSpectatorState(guard, true);
+            guard->SetHomePosition(fallback);
+            _bossGuardGuids.push_back(guard->GetGUID());
+            BroadcastSpawn(map, guard, static_cast<uint8>(_invasionPhase), 1);
         }
     }
 
@@ -1475,6 +1540,7 @@ public:
             _leaderGUID.Clear();
         }
 
+        _generatedSpawnPoints.clear();
         sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
         _invasionPhase = INVASION_INACTIVE;
         _bossGUID.Clear();
@@ -1682,6 +1748,15 @@ public:
                 // Keep Z the same since vertical jitter can cause ground intersection
             }
 
+            // Snap Z to the terrain height to avoid failed summons from bad coordinates
+            float groundZ = map->GetHeight(attemptPos.GetPositionX(), attemptPos.GetPositionY(), attemptPos.GetPositionZ(), true);
+            if (std::isfinite(groundZ))
+            {
+                float zDiff = std::fabs(groundZ - attemptPos.GetPositionZ());
+                if (zDiff > 0.25f && zDiff < 50.0f)
+                    attemptPos.m_positionZ = groundZ;
+            }
+
             Creature* meSummon = nullptr;
             if (summonType == TEMPSUMMON_TIMED_OR_DEAD_DESPAWN || despawnTime == 0)
             {
@@ -1810,6 +1885,9 @@ public:
 
         creature->SetWalk(false);
         creature->SetHomePosition(creature->GetPosition());
+
+        // Clear any stale movement generators before issuing a new run command
+        creature->GetMotionMaster()->Clear();
 
         if (laneIndex >= 0 && laneIndex < 3)
         {
