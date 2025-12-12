@@ -30,13 +30,27 @@ local EVENT_TYPE_COLORS = {
 
 local DEFAULT_EVENT_COLOR = "ff9d9d9d"
 
+local function Now()
+    if GetTime then
+        return GetTime()
+    end
+    return 0
+end
+
+local function IsStoppedState(state)
+    return state == "victory" or state == "failed" or state == "stopped" or state == "cancelled" or state == "ended"
+end
+
 function EventsPlugin:OnActivate()
     DCInfoBar:Debug("Events plugin activated - waiting for server data")
     -- Ensure serverData.events exists
     DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
     
     -- Force an initial UI update in case events are already present
-    DCInfoBar:RefreshAllPlugins()
+    -- IMPORTANT: do NOT call RefreshAllPlugins() here (it causes re-entrant activation recursion)
+    if DCInfoBar.ForceUpdateAllPlugins then
+        DCInfoBar:ForceUpdateAllPlugins()
+    end
 
     -- Register handler for test data injection
     DCInfoBar._eventPluginActive = true
@@ -66,11 +80,28 @@ local function BuildEventLine(event, showZone, showTimer)
         return ""
     end
 
+    local state = event.state or event.status
+
     local text
     if event.type == "invasion" then
-        text = string.format("Wave %d/%d", event.wave or 1, event.maxWaves or 4)
-        if event.enemiesRemaining then
-            text = text .. string.format(" (%d)", event.enemiesRemaining)
+        if state == "warning" or (event.wave or 0) == 0 then
+            text = "Incoming"
+        elseif IsStoppedState(state) then
+            if state == "victory" then
+                text = "Stopped (Victory)"
+            elseif state == "failed" then
+                text = "Stopped (Failed)"
+            else
+                text = "Stopped"
+            end
+        else
+            local wave = tonumber(event.wave) or 1
+            local maxWaves = tonumber(event.maxWaves) or 4
+            wave = math.max(1, math.min(maxWaves, wave))
+            text = string.format("Wave %d/%d", wave, maxWaves)
+            if event.enemiesRemaining then
+                text = text .. string.format(" (%d)", event.enemiesRemaining)
+            end
         end
     elseif event.type == "rift" then
         text = "Rift"
@@ -80,8 +111,14 @@ local function BuildEventLine(event, showZone, showTimer)
         text = event.name or "Event"
     end
 
-    if showTimer and event.timeRemaining and event.timeRemaining > 0 then
-        text = text .. " " .. DCInfoBar:FormatTime(event.timeRemaining)
+    if showTimer then
+        local remaining = tonumber(event.timeRemaining)
+        if (not remaining or remaining <= 0) and event.hideAt then
+            remaining = math.floor((tonumber(event.hideAt) or 0) - Now())
+        end
+        if remaining and remaining > 0 then
+            text = text .. " " .. DCInfoBar:FormatTime(remaining)
+        end
     end
 
     if showZone and event.zone then
@@ -107,7 +144,18 @@ function EventsPlugin:OnUpdate(elapsed)
         DCInfoBar:Debug("Events plugin: " .. #events .. " event(s) in serverData.events")
     end
     
-    -- Filter to only active events
+    -- Prune expired stopped events
+    do
+        local t = Now()
+        for i = #events, 1, -1 do
+            local e = events[i]
+            if e and e.hideAt and t >= (tonumber(e.hideAt) or 0) then
+                table.remove(events, i)
+            end
+        end
+    end
+
+    -- Filter to active events (plus recently stopped events)
     local activeEvents = {}
     if events and type(events) == "table" then
         for _, event in ipairs(events) do
@@ -119,10 +167,10 @@ function EventsPlugin:OnUpdate(elapsed)
                 DCInfoBar:Debug(string.format("Event check: %s, active=%s, state=%s", 
                     event.name or "Unknown", tostring(event.active), tostring(state)))
                 
-                -- Include event if it's marked active and state is active/spawning/ongoing
-                local isActiveState = (state == "active" or state == "spawning" or state == "ongoing" or state == "progress" or state == nil)
-                
-                if isActive and isActiveState then
+                local isActiveState = (state == "active" or state == "warning" or state == "spawning" or state == "ongoing" or state == "progress" or state == nil)
+                local isStoppedButVisible = (not isActive) and IsStoppedState(state) and event.hideAt and (Now() < (tonumber(event.hideAt) or 0))
+
+                if (isActive and isActiveState) or isStoppedButVisible then
                     table.insert(activeEvents, event)
                     DCInfoBar:Debug("  -> Included in active events")
                 else
@@ -168,10 +216,14 @@ function EventsPlugin:OnTooltip(tooltip)
     local maxEntries = tonumber(GetSetting("maxTooltipEntries", 4)) or 4
     maxEntries = math.max(1, math.min(10, maxEntries))
     
-    -- Filter to only active events
+    -- Filter to active events (plus recently stopped events)
     local activeEvents = {}
     for _, event in ipairs(events) do
-        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
+        local state = (event and (event.state or event.status)) or nil
+        local isActive = event and (event.active ~= false)
+        local isActiveState = (state == "active" or state == "warning" or state == "spawning" or not state)
+        local isStoppedButVisible = (event and (not isActive) and IsStoppedState(state) and event.hideAt and (Now() < (tonumber(event.hideAt) or 0)))
+        if (isActive and isActiveState) or isStoppedButVisible then
             table.insert(activeEvents, event)
         end
     end
@@ -194,8 +246,15 @@ function EventsPlugin:OnTooltip(tooltip)
         end
         
         if event.type == "invasion" then
-            tooltip:AddDoubleLine("  Wave:", event.wave .. " of " .. event.maxWaves,
-                0.7, 0.7, 0.7, 1, 1, 1)
+            local state = event.state or event.status
+            if state == "warning" or (tonumber(event.wave) or 0) == 0 then
+                tooltip:AddDoubleLine("  Status:", "Incoming", 0.7, 0.7, 0.7, 1, 1, 1)
+            elseif IsStoppedState(state) then
+                tooltip:AddDoubleLine("  Status:", "Stopped", 0.7, 0.7, 0.7, 1, 1, 1)
+            else
+                tooltip:AddDoubleLine("  Wave:", (tonumber(event.wave) or 1) .. " of " .. (tonumber(event.maxWaves) or 4),
+                    0.7, 0.7, 0.7, 1, 1, 1)
+            end
             if event.enemiesRemaining then
                 tooltip:AddDoubleLine("  Enemies:", event.enemiesRemaining,
                     0.7, 0.7, 0.7, 1, 1, 1)
@@ -218,10 +277,10 @@ function EventsPlugin:OnClick(button)
     DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
     local events = DCInfoBar.serverData.events
     
-    -- Filter to only active events
+    -- Filter to active events (ignore stopped)
     local activeEvents = {}
     for _, event in ipairs(events) do
-        if event.active ~= false and (event.state == "active" or event.state == "spawning" or not event.state) then
+        if event.active ~= false and (event.state == "active" or event.state == "warning" or event.state == "spawning" or not event.state) then
             table.insert(activeEvents, event)
         end
     end

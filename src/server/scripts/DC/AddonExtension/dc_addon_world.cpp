@@ -187,10 +187,17 @@ namespace World
         if (active)
         {
             JsonValue e; e.SetObject();
-            e.Set("id", JsonValue("giant_invasion"));
-            e.Set("name", JsonValue("Giant Isles Invasion"));
+            // Align with the EVNT invasion feed so UI clients can upsert/merge by eventId.
+            e.Set("eventId", JsonValue(static_cast<int32>(1405001)));
+            e.Set("type", JsonValue("invasion"));
+            e.Set("name", JsonValue("Zandalari Invasion"));
+            e.Set("zoneName", JsonValue("Seeping Shores"));
+            e.Set("zone", JsonValue("Seeping Shores"));
+            int32 wave = static_cast<int32>(sWorldState->getWorldState(WORLD_STATE_INVASION_WAVE));
+            e.Set("wave", JsonValue(wave));
+            e.Set("maxWaves", JsonValue(static_cast<int32>(4)));
+            e.Set("state", JsonValue(wave > 0 ? "active" : "warning"));
             e.Set("active", JsonValue(true));
-            e.Set("wave", JsonValue(static_cast<int32>(sWorldState->getWorldState(WORLD_STATE_INVASION_WAVE))));
             arr.Push(e);
         }
 

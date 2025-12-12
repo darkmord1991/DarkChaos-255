@@ -362,6 +362,20 @@ public:
         {
             LOG_INFO("scripts.dc", "Giant Isles Cannon: SpawnShipForPlayer called for {}", player->GetName());
 
+            // Safety check: despawn any existing ship for this player first
+            auto it = PlayerShipMap.find(player->GetGUID());
+            if (it != PlayerShipMap.end())
+            {
+                Creature* oldShip = ObjectAccessor::GetCreature(*me, it->second);
+                if (oldShip)
+                {
+                    LOG_INFO("scripts.dc", "Giant Isles Cannon: Despawning old ship {} before spawning new one", oldShip->GetGUID().ToString());
+                    oldShip->DespawnOrUnsummon();
+                }
+                ShipHitCount.erase(it->second);
+                PlayerShipMap.erase(it);
+            }
+
             // Spawn the ship at first waypoint position
             float shipX = 5948.124f;  // First waypoint X
             float shipY = 1763.0355f; // First waypoint Y

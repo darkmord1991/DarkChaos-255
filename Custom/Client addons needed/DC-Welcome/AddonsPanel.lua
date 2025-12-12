@@ -227,6 +227,38 @@ DCWelcome.RegisteredAddons = {
         end,
     },
     {
+        id = "dc-infobar",
+        name = "Info Bar",
+        description = "Top/Bottom info bar (season, keystone, events, character stats).",
+        icon = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+        color = {0.2, 0.8, 1.0},
+        category = "UI",
+        minLevel = 1,
+        openCommand = "/infobar toggle",
+        settingsCommand = "/infobar",
+        openFunc = function()
+            if SlashCmdList["DCINFOBAR"] then
+                SlashCmdList["DCINFOBAR"]("toggle")
+            elseif DCInfoBar and DCInfoBar.bar then
+                DCInfoBar.bar:SetShown(not DCInfoBar.bar:IsShown())
+            else
+                DCWelcome.Print("DC-InfoBar not loaded")
+            end
+        end,
+        settingsFunc = function()
+            if SlashCmdList["DCINFOBAR"] then
+                SlashCmdList["DCINFOBAR"]("")
+            elseif DCInfoBar and DCInfoBar.OpenOptions then
+                DCInfoBar:OpenOptions()
+            else
+                DCWelcome.Print("DC-InfoBar settings not available")
+            end
+        end,
+        isLoaded = function()
+            return DCInfoBar ~= nil or SlashCmdList["DCINFOBAR"] ~= nil
+        end,
+    },
+    {
         id = "dc-hinterlandbg",
         name = "Hinterland BG",
         description = "Open-world PvP battleground in The Hinterlands zone.",

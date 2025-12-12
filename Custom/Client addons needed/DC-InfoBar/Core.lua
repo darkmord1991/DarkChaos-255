@@ -23,6 +23,40 @@ local DC = nil
 DCInfoBar.TokenInfo = nil
 
 -- ============================================================================
+-- Timers (WotLK-safe)
+-- ============================================================================
+
+-- WotLK 3.3.5a does not provide C_Timer; some clients/backports do.
+-- Use C_Timer.After when available, otherwise fallback to a lightweight OnUpdate timer.
+function DCInfoBar:After(seconds, fn)
+    if type(fn) ~= "function" then
+        return
+    end
+
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(seconds or 0, fn)
+        return
+    end
+
+    local delay = tonumber(seconds) or 0
+    if delay <= 0 then
+        pcall(fn)
+        return
+    end
+
+    local f = CreateFrame("Frame")
+    f._remaining = delay
+    f:SetScript("OnUpdate", function(self, elapsed)
+        self._remaining = self._remaining - (elapsed or 0)
+        if self._remaining <= 0 then
+            self:SetScript("OnUpdate", nil)
+            self:Hide()
+            pcall(fn)
+        end
+    end)
+end
+
+-- ============================================================================
 -- Token Information Integration (DCAddonProtocol)
 -- ============================================================================
 
@@ -127,6 +161,11 @@ function DCInfoBar:RegisterPlugin(plugin)
 end
 
 function DCInfoBar:ActivatePlugin(pluginId)
+    if self._activatingPluginId == pluginId then
+        -- Prevent recursive activation loops caused by plugin callbacks.
+        return
+    end
+
     local plugin = self.plugins[pluginId]
     if not plugin then return end
     
@@ -158,7 +197,9 @@ function DCInfoBar:ActivatePlugin(pluginId)
     
     -- Call plugin's OnActivate if exists
     if plugin.OnActivate then
+        self._activatingPluginId = pluginId
         plugin:OnActivate()
+        self._activatingPluginId = nil
     end
     
     self:Debug("Activated plugin: " .. pluginId)
@@ -190,6 +231,17 @@ function DCInfoBar:DeactivatePlugin(pluginId)
 end
 
 function DCInfoBar:RefreshAllPlugins()
+    -- Never rebuild while a plugin is mid-activation (can cause recursion / empty bar).
+    if self._activatingPluginId then
+        return
+    end
+
+    if self._refreshingPlugins then
+        return
+    end
+
+    self._refreshingPlugins = true
+
     -- Clear active lists
     self.activePlugins = { left = {}, right = {} }
     
@@ -202,6 +254,8 @@ function DCInfoBar:RefreshAllPlugins()
     if self.bar then
         self.bar:RefreshLayout()
     end
+
+    self._refreshingPlugins = false
 end
 
 -- ============================================================================
@@ -263,6 +317,10 @@ function DCInfoBar:SetupServerCommunication()
             DCInfoBar:HandleEventData(data)
         end)
 
+        DC:RegisterJSONHandler("EVNT", 0x11, function(data) -- SMSG_EVENT_SPAWN
+            DCInfoBar:HandleEventData(data)
+        end)
+
         DC:RegisterJSONHandler("EVNT", 0x12, function(data) -- SMSG_EVENT_REMOVE
             DCInfoBar:HandleEventRemove(data)
         end)
@@ -270,6 +328,10 @@ function DCInfoBar:SetupServerCommunication()
         -- Fallback: also register non-JSON handlers for legacy server payloads
         DC:RegisterHandler("EVNT", 0x10, function(data)
             DCInfoBar:Debug("Received legacy EVNT handler payload")
+            DCInfoBar:HandleEventData(data)
+        end)
+        DC:RegisterHandler("EVNT", 0x11, function(data)
+            DCInfoBar:Debug("Received legacy EVNT spawn payload")
             DCInfoBar:HandleEventData(data)
         end)
         DC:RegisterHandler("EVNT", 0x12, function(data)
@@ -292,6 +354,10 @@ function DCInfoBar:SetupServerCommunication()
     if DC.RegisterHandler then
         DC:RegisterHandler("EVNT", 0x10, function(data)
             DCInfoBar:Debug("Received legacy EVNT handler payload (fallback)")
+            DCInfoBar:HandleEventData(data)
+        end)
+        DC:RegisterHandler("EVNT", 0x11, function(data)
+            DCInfoBar:Debug("Received legacy EVNT spawn payload (fallback)")
             DCInfoBar:HandleEventData(data)
         end)
         DC:RegisterHandler("EVNT", 0x12, function(data)
@@ -350,9 +416,31 @@ function DCInfoBar:HandleEventData(data)
         reason = data["reason"],
     }
 
+    -- If an event ends, keep it visible briefly with a countdown, then prune.
+    do
+        local state = record.state
+        local ended = (record.active == false) or (state == "victory" or state == "failed" or state == "stopped" or state == "cancelled" or state == "ended")
+        if ended then
+            local now = GetTime and GetTime() or 0
+            record.hideAt = now + 30
+            -- If the server doesn't provide a timer, show the remaining time until hide.
+            if not record.timeRemaining or record.timeRemaining <= 0 then
+                record.timeRemaining = 30
+            end
+        end
+    end
+
     local updated = false
     for index, existing in ipairs(events) do
         if existing.id == record.id and record.id ~= 0 then
+            -- If the event became active again, clear any prior hideAt.
+            if record.active ~= false then
+                record.hideAt = nil
+            elseif existing and existing.hideAt and record.hideAt then
+                -- Preserve the later hideAt if multiple end messages arrive.
+                record.hideAt = math.max(existing.hideAt, record.hideAt)
+            end
+
             events[index] = record
             updated = true
             break
@@ -401,11 +489,35 @@ function DCInfoBar:HandleEventRemove(data)
 end
 
 -- Handle world content payload: hotspots, bosses, events
+local function NormalizeHotspotItem(h)
+    if not h or type(h) ~= "table" then return nil end
+    local id = tonumber(h.id or h.hotspotId)
+    if not id then return nil end
+    return {
+        id = id,
+        name = h.name or "Hotspot",
+        mapId = tonumber(h.mapId or h.map) or 0,
+        zoneId = tonumber(h.zoneId or h.zone) or 0,
+        zoneName = h.zoneName or h.zone or "Unknown Zone",
+        x = tonumber(h.x) or 0,
+        y = tonumber(h.y) or 0,
+        z = tonumber(h.z) or 0,
+        bonusPercent = tonumber(h.bonusPercent or h.xpBonus or h.bonus) or 0,
+        timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur) or 0,
+        action = h.action,
+    }
+end
+
 function DCInfoBar:HandleWorldContent(data)
     if not data then return end
     -- Hotspots (not currently shown in DC-InfoBar but store for completeness)
     if data.hotspots then
-        self.serverData.hotspots = data.hotspots
+        local hotspots = {}
+        for _, h in ipairs(data.hotspots) do
+            local rec = NormalizeHotspotItem(h)
+            if rec then table.insert(hotspots, rec) end
+        end
+        self.serverData.hotspots = hotspots
     end
 
     -- Bosses
@@ -497,6 +609,39 @@ end
 -- Handle world content updates (partial updates - merge with existing state)
 function DCInfoBar:HandleWorldUpdate(data)
     if not data then return end
+
+    -- Hotspot updates
+    if data.hotspots then
+        self.serverData.hotspots = self.serverData.hotspots or {}
+        local hotspots = self.serverData.hotspots
+
+        for _, h in ipairs(data.hotspots) do
+            local rec = NormalizeHotspotItem(h)
+            if rec then
+                if rec.action == "expire" or rec.action == "remove" then
+                    for i = #hotspots, 1, -1 do
+                        if hotspots[i].id == rec.id then
+                            table.remove(hotspots, i)
+                            break
+                        end
+                    end
+                else
+                    local replaced = false
+                    for i, ex in ipairs(hotspots) do
+                        if ex.id == rec.id then
+                            hotspots[i] = rec
+                            replaced = true
+                            break
+                        end
+                    end
+                    if not replaced then
+                        table.insert(hotspots, rec)
+                    end
+                end
+            end
+        end
+    end
+
     -- Boss updates
     if data.bosses then
         self.serverData.worldBosses = self.serverData.worldBosses or {}
@@ -595,6 +740,10 @@ function DCInfoBar:RequestServerData()
     if DC.Hotspot and DC.Hotspot.GetList then
         DC.Hotspot.GetList()
     end
+
+    -- Request aggregated world content snapshot (includes events like invasions)
+    -- This is an important fallback if a specific event script has addon-push disabled.
+    DC:Request("WRLD", 0x01, {})
 
     -- Request world content (hotspots, bosses, events)
     if DC.RegisterJSONHandler then
@@ -834,50 +983,153 @@ function DCInfoBar:OnUpdate(elapsed)
     end
 end
 
+function DCInfoBar:ForceUpdateAllPlugins()
+    if not self.bar then
+        return
+    end
+
+    for _, side in ipairs({"left", "right"}) do
+        for _, plugin in ipairs(self.activePlugins[side] or {}) do
+            if plugin and plugin.button and plugin.OnUpdate then
+                local ok, label, value, color = pcall(plugin.OnUpdate, plugin, 0)
+                if ok then
+                    self.bar:UpdatePluginText(plugin, label, value, color)
+                end
+            end
+        end
+    end
+end
+
 -- ============================================================================
 -- Initialization
 -- ============================================================================
 
 function DCInfoBar:Initialize()
     -- Initialize token info from DC-Central
-    self:InitializeTokenInfo()
+    local function SafeStep(label, fn)
+        local ok, err = xpcall(fn, function(e)
+            local trace = ""
+            if debugstack then
+                trace = debugstack(2, 8, 8)
+            end
+            return tostring(e) .. (trace ~= "" and (" | " .. trace) or "")
+        end)
+        if not ok then
+            self:Print("Init ERROR in " .. label .. ": " .. tostring(err))
+        end
+        return ok
+    end
+
+    SafeStep("InitializeTokenInfo", function()
+        self:InitializeTokenInfo()
+    end)
     
     -- Initialize saved variables
-    self:InitializeDB()
+    SafeStep("InitializeDB", function()
+        self:InitializeDB()
+    end)
+
+    -- Lightweight runtime diagnostics (helps when the bar appears empty)
+    do
+        local enabled = (self.db and self.db.global and self.db.global.enabled) and "true" or "false"
+        self:Print("Init: global.enabled=" .. enabled)
+    end
     
     -- Setup server communication
-    self:SetupServerCommunication()
-    
-    -- Create the bar
-    if self.CreateBar then
-        self.bar = self:CreateBar()
-    end
-    
-    -- Activate all enabled plugins
-    for id, plugin in pairs(self.plugins) do
-        if self:IsPluginEnabled(id) then
-            self:ActivatePlugin(id)
-        end
-    end
-    
-    -- Refresh bar layout
-    if self.bar then
-        self.bar:RefreshLayout()
-    end
-    
-    -- Create update frame
-    local updateFrame = CreateFrame("Frame")
-    local updateElapsed = 0
-    updateFrame:SetScript("OnUpdate", function(_, elapsed)
-        updateElapsed = updateElapsed + elapsed
-        if updateElapsed >= 0.1 then  -- Update at 10 FPS max
-            DCInfoBar:OnUpdate(updateElapsed)
-            updateElapsed = 0
+    SafeStep("SetupServerCommunication", function()
+        local ok = self:SetupServerCommunication()
+        self:Print("Init: DCAddonProtocol=" .. (ok and "found" or "missing"))
+        local DCProtocol = rawget(_G, "DCAddonProtocol")
+        if DCProtocol then
+            self:Print("Init: DC.RegisterJSONHandler=" .. (DCProtocol.RegisterJSONHandler and "yes" or "no"))
+            self:Print("Init: DC.PREFIX=" .. tostring(DCProtocol.PREFIX))
         end
     end)
     
+    -- Create the bar
+    SafeStep("CreateBar", function()
+        if self.CreateBar then
+            self.bar = self:CreateBar()
+        else
+            self:Print("Init: CreateBar() missing - UI/Bar.lua not loaded?")
+        end
+
+        if self.bar then
+            self:Print("Init: bar created, shown=" .. (self.bar:IsShown() and "true" or "false") .. ", h=" .. tostring(self.bar:GetHeight()) .. ", strata=" .. tostring(self.bar:GetFrameStrata()))
+        else
+            self:Print("Init: bar NOT created")
+        end
+    end)
+
+    -- Ensure Interface Options panel is registered (so it shows under Interface -> AddOns)
+    SafeStep("CreateOptionsPanel", function()
+        if self.CreateOptionsPanel and not self.optionsPanel then
+            self:CreateOptionsPanel()
+        end
+    end)
+    
+    SafeStep("ActivatePlugins", function()
+        -- Count registered plugins before activation
+        local registeredCount = 0
+        for _ in pairs(self.plugins or {}) do
+            registeredCount = registeredCount + 1
+        end
+        self:Print("Init: registered plugins=" .. tostring(registeredCount))
+
+        -- Activate all enabled plugins
+        for id, plugin in pairs(self.plugins or {}) do
+            if self:IsPluginEnabled(id) then
+                self:ActivatePlugin(id)
+            end
+        end
+
+        local leftCount = (self.activePlugins and self.activePlugins.left and #self.activePlugins.left) or 0
+        local rightCount = (self.activePlugins and self.activePlugins.right and #self.activePlugins.right) or 0
+        self:Print("Init: active plugins left=" .. tostring(leftCount) .. " right=" .. tostring(rightCount))
+    end)
+
+    -- If nothing is active, tell the user how to recover.
+    do
+        local leftCount = (self.activePlugins and self.activePlugins.left and #self.activePlugins.left) or 0
+        local rightCount = (self.activePlugins and self.activePlugins.right and #self.activePlugins.right) or 0
+        local activeCount = leftCount + rightCount
+
+        local registeredCount = 0
+        for _ in pairs(self.plugins or {}) do
+            registeredCount = registeredCount + 1
+        end
+
+        if activeCount == 0 then
+            self:Print("Init: no active plugins (registered=" .. tostring(registeredCount) .. "). Try /infobar reset.")
+        end
+    end
+    
+    SafeStep("RefreshLayout", function()
+        if self.bar then
+            self.bar:RefreshLayout()
+        end
+    end)
+    
+    SafeStep("UpdateFrame", function()
+        -- Create update frame
+        local updateFrame = CreateFrame("Frame")
+        self._updateFrame = updateFrame
+        local updateElapsed = 0
+        updateFrame:SetScript("OnUpdate", function(_, elapsed)
+            updateElapsed = updateElapsed + elapsed
+            if updateElapsed >= 0.1 then  -- Update at 10 FPS max
+                DCInfoBar:OnUpdate(updateElapsed)
+                updateElapsed = 0
+            end
+        end)
+
+        -- Ensure all plugins have initial text immediately (before the first OnUpdate tick)
+        self:ForceUpdateAllPlugins()
+        self:Print("Init: ForceUpdateAllPlugins done")
+    end)
+    
     -- Request server data after a short delay (wait for connection)
-    C_Timer.After(2, function()
+    self:After(2, function()
         DCInfoBar:RequestServerData()
     end)
     
@@ -989,7 +1241,15 @@ function DCInfoBar:SetupSlashCommands()
 end
 
 function DCInfoBar:OpenOptions()
-    if InterfaceOptionsFrame and InterfaceOptionsFrame_OpenToCategory then
+    if not self.optionsPanel and self.CreateOptionsPanel then
+        pcall(function() self:CreateOptionsPanel() end)
+    end
+
+    if (not InterfaceOptionsFrame_OpenToCategory or not InterfaceOptionsFrame) and UIParentLoadAddOn then
+        pcall(UIParentLoadAddOn, "Blizzard_InterfaceOptions")
+    end
+
+    if InterfaceOptionsFrame and InterfaceOptionsFrame_OpenToCategory and self.optionsPanel then
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)  -- Called twice due to WoW bug
     elseif self.optionsPanel then
@@ -1004,12 +1264,22 @@ end
 -- ============================================================================
 
 local eventFrame = CreateFrame("Frame")
+DCInfoBar._eventFrame = eventFrame
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        C_Timer.After(0.5, function()
-            DCInfoBar:Initialize()
+        DCInfoBar:Print("PLAYER_LOGIN")
+        DCInfoBar:After(0.5, function()
+            xpcall(function()
+                DCInfoBar:Initialize()
+            end, function(e)
+                local trace = ""
+                if debugstack then
+                    trace = debugstack(2, 8, 8)
+                end
+                DCInfoBar:Print("Init ERROR (top-level): " .. tostring(e) .. (trace ~= "" and (" | " .. trace) or ""))
+            end)
         end)
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Refresh location data

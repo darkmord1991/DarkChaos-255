@@ -15,6 +15,15 @@ local DCInfoBar = DCInfoBar or {}
 -- ============================================================================
 
 function DCInfoBar:CreateOptionsPanel()
+    if self.optionsPanel then
+        return self.optionsPanel
+    end
+
+    -- Ensure saved vars are available before building UI.
+    if not self.db and self.InitializeDB then
+        pcall(function() self:InitializeDB() end)
+    end
+
     -- Main panel for Interface Options
     local panel = CreateFrame("Frame", "DCInfoBarOptionsPanel", UIParent)
     panel.name = "DC-InfoBar"
@@ -84,18 +93,41 @@ function DCInfoBar:CreateOptionsPanel()
         tabFrames[i] = content
     end
     
-    -- Create tab contents
-    self:CreateGeneralTab(tabFrames[1])
-    self:CreatePluginsTab(tabFrames[2])
-    self:CreatePositionTab(tabFrames[3])
-    self:CreateCommunicationTab(tabFrames[4])
+    -- Create tab contents (guarded so options still register even if a tab errors)
+    local ok, err = pcall(function()
+        self:CreateGeneralTab(tabFrames[1])
+        self:CreatePluginsTab(tabFrames[2])
+        self:CreatePositionTab(tabFrames[3])
+        self:CreateCommunicationTab(tabFrames[4])
+    end)
+    if not ok then
+        if self.Print then
+            self:Print("Options UI build error: " .. tostring(err))
+        end
+    end
     
     -- Show first tab
     self:RefreshTabDisplay(tabFrames, 1, tabs)
     
     -- Register with Interface Options
+    -- On some 3.3.5a clients, Blizzard_InterfaceOptions may not be loaded yet at login.
+    if not InterfaceOptions_AddCategory and UIParentLoadAddOn then
+        pcall(UIParentLoadAddOn, "Blizzard_InterfaceOptions")
+    end
+
     if InterfaceOptions_AddCategory then
         InterfaceOptions_AddCategory(panel)
+    else
+        -- Defer until the Blizzard options addon is loaded.
+        local reg = CreateFrame("Frame")
+        reg:RegisterEvent("ADDON_LOADED")
+        reg:SetScript("OnEvent", function(self, _, name)
+            if name == "Blizzard_InterfaceOptions" and InterfaceOptions_AddCategory then
+                InterfaceOptions_AddCategory(panel)
+                self:UnregisterEvent("ADDON_LOADED")
+                self:SetScript("OnEvent", nil)
+            end
+        end)
     end
     
     self.optionsPanel = panel
@@ -767,9 +799,23 @@ end
 -- ============================================================================
 
 local optionsInitFrame = CreateFrame("Frame")
+DCInfoBar._optionsInitFrame = optionsInitFrame
 optionsInitFrame:RegisterEvent("PLAYER_LOGIN")
 optionsInitFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function()
-        DCInfoBar:CreateOptionsPanel()
-    end)
+    local delay = 1
+    if C_Timer and C_Timer.After then
+        C_Timer.After(delay, function()
+            if DCInfoBar and DCInfoBar.CreateOptionsPanel and not DCInfoBar.optionsPanel then
+                pcall(function()
+                    DCInfoBar:CreateOptionsPanel()
+                end)
+            end
+        end)
+    else
+        if DCInfoBar and DCInfoBar.CreateOptionsPanel and not DCInfoBar.optionsPanel then
+            pcall(function()
+                DCInfoBar:CreateOptionsPanel()
+            end)
+        end
+    end
 end)

@@ -42,6 +42,25 @@ local function Print(msg)
     end
 end
 
+local function NormalizeHotspotItem(h)
+    if not h or type(h) ~= "table" then return nil end
+    local id = tonumber(h.id or h.hotspotId)
+    if not id then return nil end
+    return {
+        id = id,
+        name = h.name or "Hotspot",
+        mapId = tonumber(h.mapId or h.map) or 0,
+        zoneId = tonumber(h.zoneId or h.zone) or 0,
+        zoneName = h.zoneName or h.zone or "Unknown Zone",
+        x = tonumber(h.x) or 0,
+        y = tonumber(h.y) or 0,
+        z = tonumber(h.z) or 0,
+        bonusPercent = tonumber(h.bonusPercent or h.xpBonus or h.bonus) or 0,
+        timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur) or 0,
+        action = h.action,
+    }
+end
+
 -- =====================================================================
 -- World Tab Content Creation
 -- =====================================================================
@@ -223,8 +242,7 @@ function GF:RefreshWorldContent()
     end
     
     -- Request world content data
-    DC:Request("SPOT", 0x01, {})  -- Hotspots
-    DC:Request("WRLD", 0x01, {})  -- World bosses (if module exists)
+    DC:Request("WRLD", 0x01, {})  -- Hotspots + bosses + events
     DC:Request("GRPF", 0x11, { category = "world" })  -- World groups
     
     Print("Refreshing world content...")
@@ -438,30 +456,26 @@ local function RegisterWorldHandlers()
         return
     end
     
-    -- Handle hotspot list
-    DC:RegisterHandler("SPOT", 0x10, function(data)
-        if data and data.hotspots then
-            worldContent.hotspots = data.hotspots
-        elseif data and type(data) == "table" then
-            worldContent.hotspots = data
-        end
-        
-        if GF.selectedWorldFilter == "hotspot" then
-            GF:RefreshWorldContentList()
-        end
-    end)
-    
-    -- Handle world boss list (if WRLD module exists)
+    -- Handle WRLD content snapshot (bosses + hotspots + events)
     DC:RegisterHandler("WRLD", 0x10, function(data)
-        if data and data.bosses then
-            worldContent.bosses = data.bosses
-        elseif data and type(data) == "table" then
-            worldContent.bosses = data
+        if data and type(data) == "table" then
+            if data.bosses then
+                worldContent.bosses = data.bosses
+            end
+            if data.events then
+                worldContent.events = data.events
+            end
+            if data.hotspots then
+                local hotspots = {}
+                for _, h in ipairs(data.hotspots) do
+                    local rec = NormalizeHotspotItem(h)
+                    if rec then table.insert(hotspots, rec) end
+                end
+                worldContent.hotspots = hotspots
+            end
         end
-        
-        if GF.selectedWorldFilter == "boss" then
-            GF:RefreshWorldContentList()
-        end
+
+        GF:RefreshWorldContentList()
     end)
     
     -- Handle group search results for world category
