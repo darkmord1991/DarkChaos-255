@@ -21,7 +21,7 @@
 #include "Player.h"
 #include "World.h"
 #include "Chat.h"
-#include "AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/DCAddonNamespace.h"
 
 enum ThokSpells
 {
@@ -49,8 +49,9 @@ enum ThokEvents
     EVENT_ACCELERATION          = 3,
     EVENT_SAVAGE_BITE           = 4,
     EVENT_FIXATE                = 5,
-    EVENT_SUMMON_PACK           = 6,
-    EVENT_BERSERK               = 7,
+    EVENT_END_FIXATE            = 6,
+    EVENT_SUMMON_PACK           = 7,
+    EVENT_BERSERK               = 8,
     EVENT_HP_CHECK              = 9,
 };
 
@@ -112,6 +113,7 @@ public:
         uint8 accelerationStacks;
         bool inFrenzy;
         ObjectGuid fixateTarget;
+        bool hpTriggered[3];
 
         void Reset() override
         {
@@ -408,7 +410,7 @@ public:
                                 if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
                             }
                         }
-                        if (!me->IsDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
+                        if (!me->isDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
                     }
                     break;
                 }

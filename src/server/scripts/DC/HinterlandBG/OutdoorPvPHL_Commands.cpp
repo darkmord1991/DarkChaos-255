@@ -294,6 +294,8 @@ bool OutdoorPvPHL::HandleAdminCommand(Player* admin, const std::string& command,
         {
             // Parse config command: config <setting> [value]
             std::string configArgs = args.substr(6); // Remove "config"
+            // Trim leading whitespace (args is usually "config <setting> [value]")
+            configArgs.erase(0, configArgs.find_first_not_of(" \t"));
             if (configArgs.empty())
             {
                 HandleAdminQueueConfig(admin, "", "");
@@ -305,6 +307,7 @@ bool OutdoorPvPHL::HandleAdminCommand(Player* admin, const std::string& command,
             {
                 std::string setting = configArgs.substr(0, spacePos);
                 std::string value = configArgs.substr(spacePos + 1);
+                value.erase(0, value.find_first_not_of(" \t"));
                 HandleAdminQueueConfig(admin, setting.c_str(), value.c_str());
             }
             else

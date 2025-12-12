@@ -23,6 +23,7 @@
 #include "Chat.h"
 #include <algorithm>
 #include <random>
+#include "../AddonExtension/DCAddonNamespace.h"
 
 enum NalakSpells
 {
@@ -401,7 +402,7 @@ public:
                                 if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
                             }
                         }
-                        if (!me->IsDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
+                        if (!me->isDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
                     }
                     break;
                         

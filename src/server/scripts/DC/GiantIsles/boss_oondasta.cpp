@@ -20,7 +20,7 @@
 #include "Player.h"
 #include "World.h"
 #include "Chat.h"
-#include "AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/DCAddonNamespace.h"
 
 enum OondastaSpells
 {
@@ -109,9 +109,8 @@ public:
             
             me->RemoveAllAuras();
             me->SetReactState(REACT_AGGRESSIVE);
+            hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         }
-
-                hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         void JustEngagedWith(Unit* /*who*/) override
         {
             Talk(SAY_AGGRO);
@@ -338,7 +337,7 @@ public:
                                 if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
                             }
                         }
-                        if (!me->IsDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
+                        if (!me->isDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
                     }
                     break;
                         

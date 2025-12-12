@@ -172,7 +172,7 @@ uint32 GetPlayerClassMask(Player* player)
     }
 }
 
-uint8 GetPlayerRoleMask(Player* player)
+static uint8 GetPlayerRoleMask(Player* player)
 {
     if (!player)
         return 7;

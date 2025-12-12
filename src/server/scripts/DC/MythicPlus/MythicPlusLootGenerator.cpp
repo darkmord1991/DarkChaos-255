@@ -111,7 +111,7 @@ std::string GetPlayerArmorTypeForLoot(Player* player)
         }
 
 // Helper: Get role mask for player
-uint8 GetPlayerRoleMask(Player* player)
+static uint8 GetPlayerRoleMask(Player* player)
         {
             if (!player)
                 return 7; // Universal

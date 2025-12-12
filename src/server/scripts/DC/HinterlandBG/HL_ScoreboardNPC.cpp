@@ -13,8 +13,10 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "HinterlandBGConstants.h"
+#include "Timer.h"
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 // Expose constants at file scope to allow usage inside classes (avoid in-class using namespace)
 using namespace HinterlandBGConstants;
@@ -25,6 +27,28 @@ namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
 static OutdoorPvPHL* GetHL()
 {
     return HLBGUtils::GetHinterlandBG();
+}
+
+static bool TryConsumeGossipCooldown(Player* player, uint32 cooldownMs)
+{
+    if (!player)
+        return false;
+
+    static std::unordered_map<uint64, uint32> s_lastUseMs;
+    uint64 key = player->GetGUID().GetCounter();
+
+    uint32 now = getMSTime();
+    auto it = s_lastUseMs.find(key);
+    if (it != s_lastUseMs.end())
+    {
+        if (getMSTimeDiff(it->second, now) < cooldownMs)
+            return false;
+        it->second = now;
+        return true;
+    }
+
+    s_lastUseMs.emplace(key, now);
+    return true;
 }
 
 class npc_hl_scoreboard : public CreatureScript
@@ -203,45 +227,78 @@ public:
         QueryResult rs = CharacterDatabase.Query(query2);
         if (rs)
         {
-            bool first = true;
-            TeamId prev = TEAM_NEUTRAL;
-            do {
+            bool currentActive = true;
+            bool currentSeeded = false;
+
+            TeamId runTeam = TEAM_NEUTRAL;
+            uint32 runLen = 0;
+
+            do
+            {
                 Field* f = rs->Fetch();
                 TeamId t = static_cast<TeamId>(f[0].Get<uint8>());
-                if (t != TEAM_ALLIANCE && t != TEAM_HORDE)
+
+                bool isWin = (t == TEAM_ALLIANCE || t == TEAM_HORDE);
+                if (!isWin)
                 {
-                    // draw/manual: break streak
-                    if (first) { currCount = 0; currTeam = TEAM_NEUTRAL; first = false; }
-                    prev = TEAM_NEUTRAL; // reset chain for longest
+                    if (runLen > bestCount)
+                    {
+                        bestCount = runLen;
+                        bestTeam = runTeam;
+                    }
+                    runTeam = TEAM_NEUTRAL;
+                    runLen = 0;
+
+                    if (!currentSeeded)
+                    {
+                        currCount = 0;
+                        currTeam = TEAM_NEUTRAL;
+                    }
+                    currentActive = false;
                     continue;
                 }
-                if (first)
+
+                // Current streak (from the newest row)
+                if (!currentSeeded)
                 {
-                    currTeam = t; currCount = 1; first = false;
+                    currTeam = t;
+                    currCount = 1;
+                    currentSeeded = true;
                 }
-                if (prev == t)
+                else if (currentActive)
                 {
-                    // continue longest chain
-                    ++currCount;
+                    if (t == currTeam)
+                        ++currCount;
+                    else
+                        currentActive = false;
                 }
-                else if (prev == TEAM_NEUTRAL)
+
+                // Longest streak within the sample
+                if (runLen == 0)
                 {
-                    currCount = 1; currTeam = t;
+                    runTeam = t;
+                    runLen = 1;
+                }
+                else if (t == runTeam)
+                {
+                    ++runLen;
                 }
                 else
                 {
-                    // reset streak length for longest tracking
-                    if (currCount > bestCount)
+                    if (runLen > bestCount)
                     {
-                        bestCount = currCount; bestTeam = prev;
+                        bestCount = runLen;
+                        bestTeam = runTeam;
                     }
-                    currCount = 1; currTeam = t;
+                    runTeam = t;
+                    runLen = 1;
                 }
-                prev = t;
             } while (rs->NextRow());
-            if (currCount > bestCount)
+
+            if (runLen > bestCount)
             {
-                bestCount = currCount; bestTeam = currTeam;
+                bestCount = runLen;
+                bestTeam = runTeam;
             }
         }
         else
@@ -524,6 +581,18 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
+        // Throttle DB-heavy gossip actions to avoid spam/DoS.
+        // Stats is significantly heavier than history/status.
+        if (action != ACTION_CLOSE)
+        {
+            uint32 cd = (action == ACTION_STATS) ? 5000u : 1500u;
+            if (!TryConsumeGossipCooldown(player, cd))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Please wait a moment before using this again.");
+                return true;
+            }
+        }
+
         if (action == ACTION_CLOSE)
         {
             CloseGossipMenuFor(player);

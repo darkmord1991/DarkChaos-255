@@ -159,6 +159,7 @@ public:
     uint32 GetRequiredLevel() const { return requireLevel; }
     uint32 GetMaxPrestigeLevel() const { return maxPrestigeLevel; }
     uint32 GetStatBonusPercent() const { return statBonusPercent; }
+    uint32 GetResetLevel() const { return resetLevel; }
 
     uint32 GetPrestigeLevel(Player* player)
     {
@@ -464,11 +465,9 @@ public:
         if (!player)
             return;
 
-        // Remove all prestige auras
-        for (uint32 i = SPELL_PRESTIGE_BONUS_1; i <= SPELL_PRESTIGE_BONUS_10; ++i)
-        {
-            player->RemoveAura(i);
-        }
+        // Remove all prestige auras (do not assume contiguous spell IDs)
+        for (uint32 spellId : PRESTIGE_SPELLS)
+            player->RemoveAura(spellId);
     }
 
     uint32 GetPrestigeSpell(uint32 prestigeLevel)
@@ -530,13 +529,15 @@ public:
 
         // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
         uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
+
+        if (DEBUG_MODE && player->IsGameMaster())
+            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
         AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
         if (achievementEntry)
         {
             player->CompletedAchievement(achievementEntry);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
+            if (DEBUG_MODE && player->IsGameMaster())
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
         }
         else
         {
@@ -607,12 +608,14 @@ private:
         uint32 titleId = GetPrestigeTitle(prestigeLevel);
         if (titleId)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant title ID: {}", titleId);
+            if (DEBUG_MODE && player->IsGameMaster())
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant title ID: {}", titleId);
             CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
             if (titleEntry)
             {
                 player->SetTitle(titleEntry);
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title granted!|r");
+                if (DEBUG_MODE && player->IsGameMaster())
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title granted!|r");
             }
             else
             {
@@ -874,9 +877,10 @@ public:
 
         uint32 nextPrestige = PrestigeSystem::instance()->GetPrestigeLevel(player) + 1;
         uint32 newBonus = nextPrestige * PrestigeSystem::instance()->GetStatBonusPercent();
+        uint32 resetLevel = PrestigeSystem::instance()->GetResetLevel();
 
         handler->PSendSysMessage("|cFFFF0000WARNING: Prestiging will:|r");
-        handler->PSendSysMessage("- Reset you to level 1");
+        handler->PSendSysMessage("- Reset you to level {}", resetLevel);
         handler->PSendSysMessage("- Grant you Prestige Level {} with {}% permanent stat bonus", nextPrestige, newBonus);
         handler->PSendSysMessage("- Grant you an exclusive title");
         handler->PSendSysMessage("|cFFFFD700Type .prestige confirm to proceed.|r");
@@ -886,16 +890,9 @@ public:
 
     static bool HandlePrestigeConfirmCommand(ChatHandler* handler, char const* /*args*/)
     {
-        handler->PSendSysMessage("DEBUG: HandlePrestigeConfirmCommand called");
-        
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
-        {
-            handler->PSendSysMessage("DEBUG: Player is NULL!");
             return false;
-        }
-
-        handler->PSendSysMessage("DEBUG: Player found: {}", player->GetName());
 
         if (!PrestigeSystem::instance()->CanPrestige(player))
         {
@@ -903,33 +900,25 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("DEBUG: CanPrestige passed, calling PerformPrestige...");
-        
-    // No need to store player GUID here; session's player pointer will be re-queried after PerformPrestige
+        // No need to store player GUID here; session's player pointer will be re-queried after PerformPrestige
         
         try
         {
             PrestigeSystem::instance()->PerformPrestige(player);
-            
-            // Re-get player after prestige in case of any issues
-            player = handler->GetSession()->GetPlayer();
-            if (player)
-            {
-                handler->PSendSysMessage("DEBUG: PerformPrestige completed successfully");
-            }
+            return true;
         }
         catch (std::exception const& e)
         {
-            handler->PSendSysMessage("DEBUG: EXCEPTION in PerformPrestige: {}", e.what());
-            return false;
+            LOG_ERROR("scripts", "Prestige: Exception in PerformPrestige for player {}: {}", handler->GetNameLink(), e.what());
+            handler->SendSysMessage("An internal error occurred while processing prestige. Check server logs.");
+            return true;
         }
         catch (...)
         {
-            handler->PSendSysMessage("DEBUG: UNKNOWN EXCEPTION in PerformPrestige!");
-            return false;
+            LOG_ERROR("scripts", "Prestige: Unknown exception in PerformPrestige for player {}", handler->GetNameLink());
+            handler->SendSysMessage("An internal error occurred while processing prestige. Check server logs.");
+            return true;
         }
-        
-        return true;
     }
 
     static bool HandlePrestigeDisableCommand(ChatHandler* handler, char const* args)
@@ -986,12 +975,15 @@ public:
                     return true;
                 }
 
-                PrestigeSystem::instance()->SetPrestigeLevel(target, *level);
+                uint32 maxLevel = PrestigeSystem::instance()->GetMaxPrestigeLevel();
+                uint32 clampedLevel = std::min(*level, maxLevel);
+
+                PrestigeSystem::instance()->SetPrestigeLevel(target, clampedLevel);
                 PrestigeSystem::instance()->RemovePrestigeBuffs(target);
                 PrestigeSystem::instance()->ApplyPrestigeBuffs(target);
 
-                handler->PSendSysMessage("Set {}'s prestige level to {}.", playerName, *level);
-                ChatHandler(target->GetSession()).PSendSysMessage("Your prestige level has been set to {} by a GM.", *level);
+                handler->PSendSysMessage("Set {}'s prestige level to {}.", playerName, clampedLevel);
+                ChatHandler(target->GetSession()).PSendSysMessage("Your prestige level has been set to {} by a GM.", clampedLevel);
                 return true;
             }
         }

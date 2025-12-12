@@ -65,10 +65,7 @@ set(SCRIPTS_DC_AC
     HinterlandBG/npc_hinterlands_battlemaster.cpp
     HinterlandBG/hlbg_addon.cpp
     HinterlandBG/hlbg_native_broadcast.cpp
-    HinterlandBG/HL_StatsAIO.cpp
     HinterlandBG/HL_ScoreboardNPC.cpp
-    HinterlandBG/HLBG_Integration_Helper.cpp
-    HinterlandBG/HLBG_Queue_AIO_Extension.cpp
     HinterlandBG/HLBG_AIO_Handlers.cpp
     AIO/aio_bridge.cpp
     # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled

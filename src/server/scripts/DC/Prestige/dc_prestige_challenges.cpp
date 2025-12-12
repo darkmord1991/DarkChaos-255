@@ -17,9 +17,12 @@
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Group.h"
+#include "GroupScript.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "dc_prestige_api.h"
 #include <sstream>
 
 namespace
@@ -312,7 +315,8 @@ namespace
             {
                 if (challenge.challengeType == CHALLENGE_SPEED && challenge.active)
                 {
-                    uint32 playedTime = player->GetTotalPlayedTime() - challenge.startPlayTime;
+                    uint32 totalPlayed = player->GetTotalPlayedTime();
+                    uint32 playedTime = (totalPlayed >= challenge.startPlayTime) ? (totalPlayed - challenge.startPlayTime) : 0;
                     
                     if (playedTime <= speedTimeLimit)
                     {
@@ -497,6 +501,24 @@ namespace
             PrestigeChallengeSystem::instance()->CheckChallengeCompletion(player);
         }
     };
+
+    class PrestigeChallengeGroupScript : public GroupScript
+    {
+    public:
+        PrestigeChallengeGroupScript() : GroupScript("PrestigeChallengeGroupScript", { GROUPHOOK_ON_ADD_MEMBER }) { }
+
+        void OnAddMember(Group* group, ObjectGuid guid) override
+        {
+            if (!group || !PrestigeChallengeSystem::instance()->IsEnabled())
+                return;
+
+            Player* player = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!player)
+                return;
+
+            PrestigeChallengeSystem::instance()->OnJoinGroup(player);
+        }
+    };
     
     class PrestigeChallengeWorldScript : public WorldScript
     {
@@ -575,7 +597,18 @@ namespace
             }
             
             // TODO: Get current prestige level from prestige system
-            uint32 prestigeLevel = 1; // Placeholder
+            if (!PrestigeAPI::IsEnabled())
+            {
+                handler->SendSysMessage("Prestige system is currently disabled.");
+                return true;
+            }
+
+            uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
+            if (prestigeLevel == 0)
+            {
+                handler->SendSysMessage("You must be at least Prestige Level 1 to start prestige challenges.");
+                return true;
+            }
             
             if (PrestigeChallengeSystem::instance()->StartChallenge(player, challengeType, prestigeLevel))
             {
@@ -638,7 +671,9 @@ namespace
                     if (challenge.challengeType == CHALLENGE_SPEED)
                     {
                         uint32 elapsed = player->GetTotalPlayedTime() - challenge.startPlayTime;
-                        uint32 remaining = PrestigeChallengeSystem::instance()->GetSpeedTimeLimit() - elapsed;
+                        uint32 remaining = 0;
+                        if (elapsed < PrestigeChallengeSystem::instance()->GetSpeedTimeLimit())
+                            remaining = PrestigeChallengeSystem::instance()->GetSpeedTimeLimit() - elapsed;
                         handler->PSendSysMessage("  Time remaining: {}h {}m", 
                             remaining / 3600, (remaining % 3600) / 60);
                     }
@@ -712,6 +747,7 @@ namespace
 void AddSC_dc_prestige_challenges()
 {
     new PrestigeChallengePlayerScript();
+    new PrestigeChallengeGroupScript();
     new PrestigeChallengeWorldScript();
     new PrestigeChallengeCommandScript();
 }

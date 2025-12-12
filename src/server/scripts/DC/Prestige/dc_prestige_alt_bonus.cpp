@@ -69,6 +69,8 @@ namespace
         }
         
         bool IsEnabled() const { return enabled; }
+
+        uint32 GetMaxLevel() const { return maxLevel; }
         
         uint32 GetMaxLevelCharCount(uint32 accountId)
         {
@@ -245,7 +247,7 @@ namespace
                 return;
             
             // Clear cache and update buff when player reaches max level
-            if (player->GetLevel() >= 255)
+            if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
             {
                 PrestigeAltBonusSystem::instance()->InvalidateCacheForPlayer(player);
                 PrestigeAltBonusSystem::instance()->RemoveVisualBuff(player);
@@ -316,7 +318,7 @@ namespace
             handler->PSendSysMessage("|cFFFFD700=== Alt-Friendly XP Bonus ===|r");
             handler->PSendSysMessage("Max-level characters on account: |cFF00FF00{}|r", maxLevelCount);
             
-            if (player->GetLevel() >= 255)
+            if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
             {
                 handler->PSendSysMessage("|cFFFFFF00You are max level and do not receive the bonus.|r");
             }

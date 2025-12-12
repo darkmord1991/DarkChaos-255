@@ -231,16 +231,18 @@ namespace DCAddon
         // Hotspot opcodes (XP bonus zones)
         namespace Hotspot
         {
-            constexpr uint8 CMSG_REQUEST_LIST      = 0x01;
-            constexpr uint8 CMSG_TELEPORT          = 0x02;
-            constexpr uint8 CMSG_TOGGLE_PINS       = 0x03;
-            
-            constexpr uint8 SMSG_LIST              = 0x10;
-            constexpr uint8 SMSG_NEW_HOTSPOT       = 0x11;
-            constexpr uint8 SMSG_HOTSPOT_EXPIRED   = 0x12;
-            constexpr uint8 SMSG_TELEPORT_RESULT   = 0x13;
-            constexpr uint8 SMSG_ENTERED_HOTSPOT   = 0x14;
-            constexpr uint8 SMSG_LEFT_HOTSPOT      = 0x15;
+            // Client-side reference: Custom/Client addons needed/DC-AddonProtocol/DCAddonProtocol.lua
+            // Keep these aligned with the Lua wrapper opcodes.
+            constexpr uint8 CMSG_GET_LIST          = 0x01;
+            constexpr uint8 CMSG_GET_INFO          = 0x02;
+            constexpr uint8 CMSG_TELEPORT          = 0x03;
+            constexpr uint8 CMSG_TOGGLE_PINS       = 0x04;
+
+            constexpr uint8 SMSG_HOTSPOT_LIST      = 0x10;
+            constexpr uint8 SMSG_HOTSPOT_INFO      = 0x11;
+            constexpr uint8 SMSG_HOTSPOT_SPAWN     = 0x12;
+            constexpr uint8 SMSG_HOTSPOT_EXPIRE    = 0x13;
+            constexpr uint8 SMSG_TELEPORT_RESULT   = 0x14;
         }
         
         // Hinterland BG opcodes

@@ -25,7 +25,7 @@
 #include "GameObject.h"
 #include "ObjectAccessor.h"
 #include "DBCStores.h"
-#include "AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/DCAddonNamespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 
@@ -1720,13 +1720,14 @@ static bool SpawnHotspot()
             {
                 if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
             }
-            h.Set("zone", DCAddon::JsonValue(zname));
+            h.Set("zoneName", DCAddon::JsonValue(zname));
         }
         h.Set("x", DCAddon::JsonValue(hotspot.x));
         h.Set("y", DCAddon::JsonValue(hotspot.y));
         h.Set("z", DCAddon::JsonValue(hotspot.z));
-        h.Set("timeLeft", DCAddon::JsonValue(static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count())));
-        h.Set("xpBonus", DCAddon::JsonValue(static_cast<int32>(GetHotspotXPBonusPercentage())));
+        h.Set("timeRemaining", DCAddon::JsonValue(static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count())));
+        h.Set("bonusPercent", DCAddon::JsonValue(static_cast<int32>(GetHotspotXPBonusPercentage())));
+        h.Set("name", DCAddon::JsonValue("Hotspot"));
         h.Set("action", DCAddon::JsonValue("spawn"));
         hotspotsArr.Push(h);
 
@@ -1804,7 +1805,7 @@ static void CleanupExpiredHotspots()
                     {
                         if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
                     }
-                    h.Set("zone", DCAddon::JsonValue(zname));
+                    h.Set("zoneName", DCAddon::JsonValue(zname));
                 }
                 h.Set("action", DCAddon::JsonValue("expire"));
                 hotspotsArr.Push(h);

@@ -145,7 +145,7 @@ struct InvasionSpawnPoint
 
 constexpr uint32 MAX_ACTIVE_INVADERS = 20; // safety cap to avoid uncontrolled buildup
 
-const InvasionSpawnPoint SPAWN_POINTS[5] =
+[[maybe_unused]] const InvasionSpawnPoint SPAWN_POINTS[5] =
 {
     { 5838.9897f, 1180.7533f, 7.560014f, 2.3572648f, "Spawn 1" },
     { 5809.9420f, 1158.8385f, 6.1723530f, 1.4477761f, "Spawn 2" },
@@ -206,7 +206,7 @@ static giant_isles_invasion* sGiantIslesInvasion = nullptr;
 
 // Free helper wrapper that allows AIs to call this early. Forwards to the map script instance if loaded,
 // or falls back to immediate ChatHandler call if not (should be rare during initialization).
-static void SafeWorldAnnounce(Map* map, const char* text);
+static void SafeWorldAnnounce(Map* /*map*/, const char* text);
 
 // Helper to avoid circular-forward-declaration issues: call this from AIs
 void GI_TrackPlayerKill(ObjectGuid playerGuid);
@@ -565,7 +565,7 @@ class giant_isles_invasion : public WorldMapScript
 public:
     giant_isles_invasion() : WorldMapScript("giant_isles_invasion", MAP_GIANT_ISLES),
         _invasionPhase(INVASION_INACTIVE), _waveTimer(0), _spawnTimer(0), _killCount(0), _bossGUID(), _bossActivated(false),
-        _broadcastedFailure(false), _broadcastedVictory(false), _spawnCounter(0), _failInvocationCount(0), _victoryInvocationCount(0), _spawnIndex(), _lastEventStatusBroadcastTime(0), _lastEventAnnouncementTime(0), _isFailing(false)
+        _isFailing(false), _broadcastedFailure(false), _broadcastedVictory(false), _spawnCounter(0), _failInvocationCount(0), _victoryInvocationCount(0), _spawnIndex(), _lastEventStatusBroadcastTime(0), _lastEventAnnouncementTime(0)
     {
         sGiantIslesInvasion = this;
     }
@@ -1743,7 +1743,7 @@ public:
             DCAddon::JsonValue e; e.SetObject();
             e.Set("eventId", DCAddon::JsonValue(static_cast<int32>(GIANT_ISLES_INVASION_EVENT_ID)));
             e.Set("type", DCAddon::JsonValue("invasion"));
-            e.Set("reason", DCAddon::JsonValue(reason ? reason : "expired"));
+            e.Set("reason", DCAddon::JsonValue("expired"));
             e.Set("action", DCAddon::JsonValue("remove"));
             eventsArr.Push(e);
 
@@ -2213,7 +2213,7 @@ void AddSC_giant_isles_invasion()
 }
 
 // Free-level wrapper implemented after class definition to allow use in earlier AIs
-static void SafeWorldAnnounce(Map* map, const char* text)
+static void SafeWorldAnnounce(Map* /*map*/, const char* text)
 {
     if (sGiantIslesInvasion)
     {

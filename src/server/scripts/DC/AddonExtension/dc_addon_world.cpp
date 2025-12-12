@@ -11,7 +11,10 @@
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "World.h"
+#include "WorldState.h"
 #include "Log.h"
+
+#include <ctime>
 
 // Local includes to reuse hotspot helper functions
 extern uint32 GetHotspotXPBonusPercentage();
@@ -25,14 +28,8 @@ namespace DCAddon
 {
 namespace World
 {
-    namespace Opcode
-    {
-        constexpr uint8 CMSG_GET_CONTENT = 0x01;
-        constexpr uint8 SMSG_CONTENT     = 0x10;
-        constexpr uint8 SMSG_UPDATE      = 0x11; // future: push updates
-    }
-
     constexpr const char* MODULE_WORLD = Module::WORLD;
+    constexpr int32 WORLD_SCHEMA_VERSION = 1;
 
     // Helper: Build hotspots array using existing table
     static JsonValue BuildHotspotArray()
@@ -69,15 +66,16 @@ namespace World
             if (dur <= 0) continue;
 
             JsonValue h; h.SetObject();
-            h.Set("id", JsonValue(static_cast<int32>(id)));
-            h.Set("mapId", JsonValue(static_cast<int32>(mapId)));
-            h.Set("zoneId", JsonValue(static_cast<int32>(zoneId)));
+            h.Set("id", JsonValue(id));
+            h.Set("mapId", JsonValue(mapId));
+            h.Set("zoneId", JsonValue(zoneId));
             h.Set("zoneName", JsonValue(zoneName));
             h.Set("x", JsonValue(x));
             h.Set("y", JsonValue(y));
             h.Set("z", JsonValue(z));
-            h.Set("timeLeft", JsonValue(static_cast<int32>(dur)));
-            h.Set("xpBonus", JsonValue(static_cast<int32>(xpBonus)));
+            h.Set("timeRemaining", JsonValue(static_cast<uint32>(dur)));
+            h.Set("bonusPercent", JsonValue(xpBonus));
+            h.Set("name", JsonValue("Hotspot"));
             arr.Push(h);
         } while (result->NextRow());
 
@@ -122,14 +120,29 @@ namespace World
         time_t nextMidnight = mktime(&nextDayTm);
         int32 secondsUntilNextMidnight = static_cast<int32>(difftime(nextMidnight, now));
 
+        auto BossIdFromEntry = [](uint32 entry) -> std::string
+        {
+            switch (entry)
+            {
+                case 400100: return "oondasta";
+                case 400101: return "thok";
+                case 400102: return "nalak";
+                default:     return "boss_" + std::to_string(entry);
+            }
+        };
+
         JsonValue b; b.SetObject();
+        b.Set("id", JsonValue(BossIdFromEntry(bossEntry)));
         b.Set("entry", JsonValue(static_cast<int32>(bossEntry)));
         b.Set("name", JsonValue(bossName));
         b.Set("zone", JsonValue(spawnZone));
-        b.Set("active", JsonValue(true));
-        b.Set("status", JsonValue("active"));
+        // "active" means currently engaged/visible as alive in the world.
+        // Snapshot has no reliable boss-alive tracking, so default to "spawning".
+        b.Set("active", JsonValue(false));
+        b.Set("status", JsonValue("spawning"));
         b.Set("mapId", JsonValue(static_cast<int32>(0))); // mapId optional
-        b.Set("spawnIn", JsonValue(static_cast<int32>(0))); // currently active
+        // spawnIn=0 means "available" (can spawn now) for the rotation boss.
+        b.Set("spawnIn", JsonValue(static_cast<int32>(0)));
 
         // Also populate the next day's boss spawnIn so clients can show Next spawn
         uint8 nextDay = (day + 1) % 7;
@@ -149,6 +162,7 @@ namespace World
         }
         // Add the next boss as a separate entry with spawnIn
         JsonValue nb; nb.SetObject();
+        nb.Set("id", JsonValue(BossIdFromEntry(nextBossEntry)));
         nb.Set("entry", JsonValue(static_cast<int32>(nextBossEntry)));
         nb.Set("name", JsonValue(nextBossName));
         nb.Set("zone", JsonValue(nextBossZone));
@@ -190,7 +204,9 @@ namespace World
         JsonValue bosses = BuildBossArray();
         JsonValue events = BuildEventsArray();
 
-        JsonMessage response(Module::WORLD, Opcode::SMSG_CONTENT);
+        JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
+        response.Set("schemaVersion", JsonValue(WORLD_SCHEMA_VERSION));
+        response.Set("serverTime", JsonValue(static_cast<uint32>(time(nullptr))));
         response.Set("hotspots", hotspots);
         response.Set("bosses", bosses);
         response.Set("events", events);
@@ -199,7 +215,7 @@ namespace World
 
     void RegisterHandlers()
     {
-        DC_REGISTER_HANDLER(MODULE_WORLD, Opcode::CMSG_GET_CONTENT, HandleGetContent);
+        DC_REGISTER_HANDLER(MODULE_WORLD, Opcode::World::CMSG_GET_CONTENT, HandleGetContent);
         LOG_INFO("dc.addon", "World (WRLD) module handlers registered");
     }
 
