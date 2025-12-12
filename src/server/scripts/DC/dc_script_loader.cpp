@@ -66,7 +66,7 @@ void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\npc_thrall_warchie
 void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\npc_Varian_hinterlandbg.cpp
 void AddSC_hlbg_commandscript();              // Commands\cs_hl_bg.cpp (Note: in Commands folder)
 void AddSC_hl_scoreboard();                   // HinterlandBG\HL_ScoreboardNPC.cpp
-void AddSC_hlbg_addon();                      // HinterlandBG\hlbg_addon.cpp
+void AddSC_hlbg_addon();                      // HLBG chat fallback (in AddonExtension/dc_addon_hlbg.cpp)
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\npc_hinterlands_battlemaster.cpp
 void AddSC_hlbg_native_broadcast();           // HinterlandBG\hlbg_native_broadcast.cpp
 void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_registration.cpp

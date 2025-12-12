@@ -11,6 +11,7 @@
  */
 
 #include "Config.h"
+#include "Log.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"

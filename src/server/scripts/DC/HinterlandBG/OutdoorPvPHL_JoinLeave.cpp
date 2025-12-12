@@ -12,11 +12,13 @@
 #include "GroupMgr.h"
 #include "HLBG_Integration_Helper.h"
 #include <algorithm>
-#include <algorithm>
 
 // Called when a player enters the Hinterlands zone managed by this OutdoorPvP.
 void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 {
+    if (!player)
+        return;
+
     // If zone is locked, redirect entrants to base and inform them
     if (_lockEnabled && _isLocked)
     {
@@ -100,6 +102,9 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 // Called when a player leaves the Hinterlands zone.
 void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
 {
+    if (!player)
+        return;
+
     if (_lockEnabled && _isLocked)
     {
         // During lock, just pass through default leave handling without emote spam

@@ -72,6 +72,10 @@ void OutdoorPvPHL::EnterWarmupState()
 {
     // Set warmup timer (configurable, default 2 minutes)
     _warmupTimeRemaining = _warmupDurationSeconds * IN_MILLISECONDS;
+    // During warmup, the HUD clock should represent the warmup countdown.
+    // We reuse _matchEndTime as the HUD end-epoch (GetHudEndEpoch()).
+    _matchStartTime = 0;
+    _matchEndTime = NowSec() + _warmupDurationSeconds;
     
     // Announce warmup phase
     BroadcastToZone("Hinterland BG: Warmup phase started! Join now to participate.");
@@ -80,8 +84,12 @@ void OutdoorPvPHL::EnterWarmupState()
     _playerScores.clear();
     _playerHKBaseline.clear();
     
-    // Enable queue system notifications
-    _queueEnabled = true;
+    // Teleport any players who queued for the next match, then consume the queue.
+    if (!_queuedPlayers.empty())
+    {
+        TeleportQueuedPlayers();
+        ClearQueue();
+    }
     
     // Initialize worldstates for warmup
     UpdateWorldStatesAllPlayers();
@@ -89,15 +97,6 @@ void OutdoorPvPHL::EnterWarmupState()
 
 void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
 {
-    // Update worldstates regularly during warmup
-    static uint32 worldstateTimer = 0;
-    worldstateTimer += diff;
-    if (worldstateTimer >= 5000) // Update every 5 seconds
-    {
-        UpdateWorldStatesAllPlayers();
-        worldstateTimer = 0;
-    }
-    
     if (_warmupTimeRemaining <= diff)
     {
         // Warmup finished, start battle
@@ -122,9 +121,6 @@ void OutdoorPvPHL::EnterInProgressState()
     _matchStartTime = NowSec();
     _matchEndTime = _matchStartTime + _matchDurationSeconds;
     
-    // Disable queue (battle in progress)
-    _queueEnabled = false;
-    
     // Announce battle start
     BroadcastToZone("Hinterland BG: Battle has begun! Current affix: {}", GetAffixName(_activeAffix));
     
@@ -142,15 +138,6 @@ void OutdoorPvPHL::EnterInProgressState()
 
 void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
 {
-    // Update worldstates regularly for client HUD updates
-    static uint32 worldstateTimer = 0;
-    worldstateTimer += diff;
-    if (worldstateTimer >= 5000) // Update every 5 seconds
-    {
-        UpdateWorldStatesAllPlayers();
-        worldstateTimer = 0;
-    }
-    
     // Check for battle end conditions
     if (_ally_gathered == 0)
     {
@@ -252,9 +239,12 @@ void OutdoorPvPHL::UpdateFinishedState(uint32 diff)
 
 void OutdoorPvPHL::EnterCleanupState()
 {
-    // Reset to warmup for next battle
+    // Cleanup: reset the zone state and wait for players/queue to trigger warmup.
+    // Warmup is the between-matches preparation window.
     HandleReset();
-    TransitionToState(BG_STATE_WARMUP);
+    // Ensure we don't show a full match countdown while idling in cleanup.
+    _matchStartTime = 0;
+    _matchEndTime = NowSec();
 }
 
 void OutdoorPvPHL::UpdateCleanupState(uint32 /*diff*/)

@@ -68,7 +68,7 @@ void OutdoorPvPHL::HandleReset()
     {
         // clear any previous effects and choose a new one
         _clearAffixEffects();
-        uint32 roll = urand(1, 5);
+        uint32 roll = urand(1, 6);
         _activeAffix = static_cast<AffixType>(roll);
         _applyAffixEffects();
         if (_affixWeatherEnabled)

@@ -20,6 +20,19 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     if (!player)
         return;
 
+    // If warmup is already running, treat this as a late-join for the upcoming match:
+    // teleport immediately to the faction base and don't persist them in the queue.
+    if (_bgState == BG_STATE_WARMUP)
+    {
+        if (player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+        {
+            TeleportToTeamBase(player);
+        }
+        uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
+        ChatHandler(player->GetSession()).PSendSysMessage("HLBG: Warmup is active. You have been moved to your base. {} seconds until battle begins.", warmupSec);
+        return;
+    }
+
     ObjectGuid playerGuid = player->GetGUID();
     
     // Check if player is already in queue
@@ -193,8 +206,7 @@ void OutdoorPvPHL::StartWarmupPhase()
     // This prevents a zero/old _warmupTimeRemaining value being shown in the teleport welcome message.
     TransitionToState(BG_STATE_WARMUP);
 
-    // Now teleport all queued players (messages will display correct remaining time).
-    TeleportQueuedPlayers();
+    // Teleporting + queue consumption happens in EnterWarmupState().
 }
 
 void OutdoorPvPHL::TeleportQueuedPlayers()

@@ -52,6 +52,10 @@ void OutdoorPvPHL::ForceReset()
     // Record manual reset in history table before resetting
     _recordManualReset();
     HandleReset();
+
+    // After a manual reset, start the between-matches warmup unless a lock window is active.
+    if (!(_lockEnabled && _isLocked))
+        TransitionToState(BG_STATE_WARMUP);
 }
 
 // Return up to maxCount most recent winners in most-recent-first order.
@@ -106,22 +110,22 @@ void OutdoorPvPHL::SetStatsIncludeManualResets(bool include) { _statsIncludeManu
 
 uint32 OutdoorPvPHL::GetAffixPlayerSpell(uint8 code) const
 {
-    return (code <= 5) ? _affixPlayerSpell[code] : 0u;
+    return (code <= 6) ? _affixPlayerSpell[code] : 0u;
 }
 
 uint32 OutdoorPvPHL::GetAffixNpcSpell(uint8 code) const
 {
-    return (code <= 5) ? _affixNpcSpell[code] : 0u;
+    return (code <= 6) ? _affixNpcSpell[code] : 0u;
 }
 
 uint32 OutdoorPvPHL::GetAffixWeatherType(uint8 code) const
 {
-    return (code <= 5) ? _affixWeatherType[code] : 0u;
+    return (code <= 6) ? _affixWeatherType[code] : 0u;
 }
 
 float OutdoorPvPHL::GetAffixWeatherIntensity(uint8 code) const
 {
-    return (code <= 5) ? _affixWeatherIntensity[code] : 0.0f;
+    return (code <= 6) ? _affixWeatherIntensity[code] : 0.0f;
 }
 
 // Private helper: keep an in-memory ring buffer of last ~10 winners

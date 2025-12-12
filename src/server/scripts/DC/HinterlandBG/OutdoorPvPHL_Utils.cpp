@@ -106,8 +106,17 @@ namespace HLBGUtils
             errorMessage = "Player not found.";
             return OTHER_ERROR;
         }
-        
-        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+
+        // Prefer the HLBG controller's configured minimum level gate when available.
+        if (OutdoorPvPHL* hl = GetHinterlandBG())
+        {
+            if (!hl->IsPlayerMaxLevel(player))
+            {
+                errorMessage = "You do not meet the minimum level requirement.";
+                return NOT_MAX_LEVEL;
+            }
+        }
+        else if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
         {
             errorMessage = "You must be max level to participate.";
             return NOT_MAX_LEVEL;

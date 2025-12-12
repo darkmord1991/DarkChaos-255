@@ -5,7 +5,7 @@
  * DarkChaos-255 Alt Bonus Visual Aura
  *
  * Provides a visible buff showing the XP bonus from account alts
- * Spell IDs: 800020-800025 (5%, 10%, 15%, 20%, 25%)
+ * Spell IDs: 800040-800044 (5%, 10%, 15%, 20%, 25%)
  */
 
 #include "ScriptMgr.h"

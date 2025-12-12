@@ -105,15 +105,30 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
     std::vector<WorldStateUpdate> updates;
     updates.reserve(10); // Typical number of worldstates
     
-    // Use Wintergrasp worldstates (WG-like HUD for HLBG)
-    uint32 timeRemaining = GetTimeRemainingSeconds();
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_SHOW, 1});            // Enable WG HUD display
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK, timeRemaining}); // Timer display (seconds/end-epoch depending on implementation elsewhere)
-    // Use 0 for ACTIVE to match FillInitialWorldStates()/UpdateWorldStatesForPlayer (WG wartime semantics)
-    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0});          // Wartime flag (0 = active in original WG)
-    
-    // Use custom worldstates for resources (if they exist in the original implementation)
-    // For now, just use the basic WG states
+    // Use Wintergrasp worldstates (WG-like HUD for HLBG).
+    // Keep this consistent with FillInitialWorldStates()/UpdateWorldStatesForPlayer:
+    // - CLOCK/CLOCK_TEXTS use an absolute end-epoch (not seconds remaining)
+    // - VEHICLE_* carry resources
+    // - ACTIVE=0 indicates wartime (per WG implementation)
+    uint32 endEpoch = GetHudEndEpoch();
+    uint32 hordeRes = GetResources(TEAM_HORDE);
+    uint32 allianceRes = GetResources(TEAM_ALLIANCE);
+    uint32 maxVal = std::max(hordeRes, allianceRes);
+
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_SHOW, 1});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, hordeRes});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, allianceRes});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxVal});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxVal});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0});
+    updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0});
+    if (_affixWorldstateEnabled)
+        updates.push_back({WORLD_STATE_HL_AFFIX_TEXT, static_cast<uint32>(_activeAffix)});
     
     // Apply all updates to all players in batch
     for (Player* player : zonePlayers)

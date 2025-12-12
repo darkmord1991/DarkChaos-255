@@ -44,7 +44,7 @@ namespace HLBGQueueHandlers
             return;
         }
 
-        bool inQueue = pvp->IsPlayerInQueue(player);
+        bool inQueue = pvp->IsPlayerQueued(player);
         uint32 queueSize = pvp->GetQueuedPlayerCount();
         uint32 position = 0;
         

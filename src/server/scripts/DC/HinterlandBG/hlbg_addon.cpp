@@ -542,8 +542,8 @@ namespace HLBGAddon
             return true;
         }
 
-        // Max level requirement
-        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        // Level requirement (configured on the HLBG controller)
+        if (!hl->IsPlayerMaxLevel(player))
         {
             ChatHandler(player->GetSession()).SendSysMessage("[HLBG_QUEUE] too_low_level");
             return true;

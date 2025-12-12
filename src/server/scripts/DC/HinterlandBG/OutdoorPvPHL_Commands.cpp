@@ -19,9 +19,9 @@ void OutdoorPvPHL::HandleQueueJoinCommand(Player* player)
         return;
 
     // Basic eligibility checks
-    if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+    if (!IsMaxLevel(player))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be max level to join.");
+        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be at least level {} to join.", _minLevel);
         return;
     }
 
@@ -76,9 +76,9 @@ void OutdoorPvPHL::HandleGroupQueueJoinCommand(Player* player)
         return;
 
     // Basic eligibility checks first
-    if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+    if (!IsMaxLevel(player))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be max level to join.");
+        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be at least level {} to join.", _minLevel);
         return;
     }
 

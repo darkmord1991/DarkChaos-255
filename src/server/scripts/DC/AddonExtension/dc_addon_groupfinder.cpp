@@ -422,7 +422,6 @@ namespace GroupFinder
         auto json = GetJsonData(msg);
         
         int32 listingId = JsonGetInt(json, "listingId", 0);
-        uint32 guid = player->GetGUID().GetCounter();
         
         // Use manager to delete listing
         if (sGroupFinderMgr.DeleteListing(player, listingId))

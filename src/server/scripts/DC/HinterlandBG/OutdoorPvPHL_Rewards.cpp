@@ -220,6 +220,11 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     if (_lockEnabled && _isLocked)
         return; // ignore combat effects during lock
 
+    // Warmup is the between-matches preparation phase.
+    // Do not apply resource loss, scoring, or match rewards outside active matches.
+    if (_bgState != BG_STATE_IN_PROGRESS)
+        return;
+
     if (killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
     {
         // prevent self-kill manipulation and ensure victim differs from killer

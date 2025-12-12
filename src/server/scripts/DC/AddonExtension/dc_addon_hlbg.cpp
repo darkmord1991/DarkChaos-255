@@ -25,11 +25,51 @@
 #include "ObjectMgr.h"
 #include "StringFormat.h"
 #include "DCAddonNamespace.h"
+#include "OutdoorPvP/OutdoorPvPMgr.h"
+#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "../HinterlandBG/HinterlandBGConstants.h"
+#include "Time/GameTime.h"
+#include <algorithm>
+#include <cctype>
+#include <ctime>
+#include <iterator>
+#include <map>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 
 namespace DCAddon
 {
 namespace HLBG
 {
+    namespace
+    {
+        // Avoid expensive lookups and allow rate-limiting without extra dependencies.
+        static std::unordered_map<uint32, uint32> s_lastRequestMs;
+
+        static bool IsRateLimited(Player* player, uint32 cooldownMs)
+        {
+            if (!player)
+                return true;
+
+            uint32 now = GameTime::GetGameTimeMS().count();
+            uint32 key = player->GetGUID().GetCounter();
+            auto it = s_lastRequestMs.find(key);
+            if (it != s_lastRequestMs.end() && (now - it->second) < cooldownMs)
+                return true;
+            s_lastRequestMs[key] = now;
+            return false;
+        }
+
+        static OutdoorPvPHL* GetHL()
+        {
+            OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+            return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+        }
+    }
+
     // =====================================================================
     // ENUMS & STRUCTURES
     // =====================================================================
@@ -430,46 +470,78 @@ namespace HLBG
     static void HandleRequestStatus(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        uint32 mapId = player->GetMapId();
+        if (IsRateLimited(player, 300))
+            return;
 
-        // Check if player is in HLBG instance
-        if (mapId == 47) // Hinterlands zone
+        OutdoorPvPHL* hl = GetHL();
+        uint32 zoneId = player->GetZoneId();
+        uint32 mapId = player->GetMapId();
+        uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
+
+        HLBGStatus status = STATUS_NONE;
+        if (hl)
         {
-            // TODO: Get actual BG instance data from your HLBG system
-            SendStatus(player, STATUS_ACTIVE, mapId, 0);
+            if (zoneId == OutdoorPvPHLBuffZones[0])
+                status = STATUS_ACTIVE;
+            else if (hl->IsPlayerQueued(player))
+                status = STATUS_QUEUED;
         }
-        else
-        {
-            SendStatus(player, STATUS_NONE, 0, 0);
-        }
+
+        SendStatus(player, status, mapId, timeRemaining);
     }
 
     static void HandleRequestResources(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        // TODO: Get actual resource data from your HLBG system
-        SendResources(player, 0, 0, 0, 0);
+        if (IsRateLimited(player, 300))
+            return;
+
+        OutdoorPvPHL* hl = GetHL();
+        if (!hl)
+        {
+            SendResources(player, 0, 0, 0, 0);
+            return;
+        }
+
+        uint32 a = hl->GetResources(TEAM_ALLIANCE);
+        uint32 h = hl->GetResources(TEAM_HORDE);
+        // HLBG doesn't track bases like AB; keep fields for forward-compat.
+        SendResources(player, a, h, 0, 0);
     }
 
     static void HandleRequestObjective(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        // TODO: Query objective status from HLBG system
+        Message response(Module::HINTERLAND, SMSG_ERROR);
+        response.Add(std::string("Objectives not implemented for HLBG"));
+        response.Send(player);
     }
 
     static void HandleQuickQueue(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        ChatHandler handler(player->GetSession());
-        handler.ParseCommands(".hlbg queue");
+        if (IsRateLimited(player, 800))
+            return;
+
+        if (OutdoorPvPHL* hl = GetHL())
+            hl->QueueCommandFromAddon(player, "queue", "join");
+        else
+            ChatHandler(player->GetSession()).ParseCommands(".hlbg queue join");
+
         SendQueueUpdate(player, 1, 0, 0);
     }
 
     static void HandleLeaveQueue(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        ChatHandler handler(player->GetSession());
-        handler.ParseCommands(".hlbg leave");
+        if (IsRateLimited(player, 800))
+            return;
+
+        if (OutdoorPvPHL* hl = GetHL())
+                hl->QueueCommandFromAddon(player, "queue", "leave");
+        else
+            ChatHandler(player->GetSession()).ParseCommands(".hlbg queue leave");
+
         SendQueueUpdate(player, 0, 0, 0);
     }
 
@@ -477,6 +549,9 @@ namespace HLBG
     {
         if (!player) return;
         uint32 seasonId = msg.GetUInt32(0);
+        if (seasonId == 0)
+            if (OutdoorPvPHL* hl = GetHL())
+                seasonId = hl->GetSeason();
         
         // Query from unified schema
         std::string statsJson;
@@ -499,6 +574,9 @@ namespace HLBG
     {
         std::string data = msg.GetString(0);
         if (!player) return;
+
+        if (IsRateLimited(player, 800))
+            return;
         
         uint32 leaderboardType = 1;
         uint32 season = 0;
@@ -523,6 +601,12 @@ namespace HLBG
             if (sscanf(data.c_str(), "\"limit\":%d", &val) == 1)
                 limit = val;
         }
+
+        if (season == 0)
+            if (OutdoorPvPHL* hl = GetHL())
+                season = hl->GetSeason();
+
+        limit = std::min<uint32>(limit, 200u);
         
         // Query leaderboard
         std::vector<LeaderboardEntry> entries;
@@ -567,6 +651,9 @@ namespace HLBG
     {
         std::string data = msg.GetString(0);
         if (!player) return;
+
+        if (IsRateLimited(player, 800))
+            return;
         
         uint32 season = 0;
         if (data.find("\"season\"") != std::string::npos)
@@ -575,6 +662,10 @@ namespace HLBG
             if (sscanf(data.c_str(), "\"season\":%d", &val) == 1)
                 season = val;
         }
+
+        if (season == 0)
+            if (OutdoorPvPHL* hl = GetHL())
+                season = hl->GetSeason();
         
         std::string statsJson;
         std::string error;
@@ -595,6 +686,9 @@ namespace HLBG
     static void HandleGetAllTimeStats(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
+
+        if (IsRateLimited(player, 800))
+            return;
         
         std::string statsJson;
         std::string error;
@@ -618,6 +712,13 @@ namespace HLBG
     
     void RegisterHandlers()
     {
+        LoadConfig();
+        if (!s_enabled)
+        {
+            LOG_INFO("dc.addon", "HLBG unified handler disabled by config");
+            return;
+        }
+
         // Real-time BG handlers
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_STATUS, HandleRequestStatus);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_RESOURCES, HandleRequestResources);
@@ -643,3 +744,419 @@ void AddSC_dc_addon_hlbg()
 {
     DCAddon::HLBG::RegisterHandlers();
 }
+
+// ============================================================================
+// Chat-prefixed addon fallback handlers (moved from DC/HinterlandBG/hlbg_addon.cpp)
+// These are called by the centralized .hlbg command table in src/server/scripts/Commands/cs_hl_bg.cpp
+// ============================================================================
+
+namespace HLBGAddonFallback
+{
+    using namespace HinterlandBGConstants;
+
+    static std::string EscapeJson(const std::string& in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (char c : in)
+        {
+            switch (c)
+            {
+                case '\\': out += "\\\\"; break;
+                case '"':  out += "\\\""; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default:   out += c; break;
+            }
+        }
+        return out;
+    }
+
+    static OutdoorPvPHL* GetHL()
+    {
+        OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
+        return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+    }
+
+    static std::string NowTimestamp()
+    {
+        std::time_t t = std::time(nullptr);
+        char buf[64];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+        return std::string(buf);
+    }
+
+    static std::string BuildLiveJson(uint32 matchStart, uint32 a, uint32 h)
+    {
+        std::ostringstream ss;
+        ss << '{'
+           << "\"ts\":\"" << EscapeJson(NowTimestamp()) << "\",";
+        ss << "\"matchStart\":" << matchStart << ',';
+        ss << "\"A\":" << a << ',';
+        ss << "\"H\":" << h;
+        ss << '}';
+        return ss.str();
+    }
+
+    static std::unordered_map<uint32, std::string> s_SeasonNameCache;
+
+    static std::string GetSeasonName(uint32 season)
+    {
+        auto it = s_SeasonNameCache.find(season);
+        if (it != s_SeasonNameCache.end())
+            return it->second;
+
+        std::string name;
+        if (season > 0)
+        {
+            QueryResult r = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE id=" + std::to_string(season));
+            if (r)
+                name = r->Fetch()[0].Get<std::string>();
+        }
+
+        s_SeasonNameCache[season] = name;
+        return name;
+    }
+
+    static std::string BuildHistoryTsv(QueryResult& rs)
+    {
+        std::ostringstream ss;
+        bool first = true;
+        do
+        {
+            Field* f = rs->Fetch();
+            uint32 id = f[0].Get<uint32>();
+            uint32 season = f[1].Get<uint32>();
+            std::string ts = f[2].Get<std::string>();
+            uint8 winner = f[3].Get<uint8>();
+            std::string reason = f[4].Get<std::string>();
+            uint32 affix = f[5].Get<uint32>();
+            std::string seasonName = GetSeasonName(season);
+
+            if (!first)
+                ss << "||";
+            first = false;
+            ss << id << '\t' << season << '\t' << EscapeJson(seasonName) << '\t'
+               << EscapeJson(ts) << '\t' << (unsigned)winner << '\t'
+               << EscapeJson(reason) << '\t' << affix;
+        } while (rs->NextRow());
+        return ss.str();
+    }
+
+    static bool IsInWarmup(OutdoorPvPHL* hl)
+    {
+        return hl && hl->IsInWarmup();
+    }
+
+    static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
+    {
+        if (!hl)
+            return "[]";
+
+        struct Row { std::string name; std::string team; uint32 score; uint32 hk; uint8 cls; int8 subgroup; };
+        std::vector<Row> rows;
+        hl->ForEachPlayerInZone([&](Player* p)
+        {
+            if (!p)
+                return;
+            Row r;
+            r.name = p->GetName();
+            r.team = (p->GetTeamId() == TEAM_ALLIANCE) ? "A" : "H";
+            r.score = hl->GetPlayerScore(p->GetGUID());
+            r.hk = hl->GetPlayerHKDelta(p);
+            r.cls = p->getClass();
+            r.subgroup = p->GetSubGroup();
+            rows.push_back(r);
+        });
+
+        std::sort(rows.begin(), rows.end(), [](Row const& a, Row const& b) { return a.score > b.score; });
+        if (rows.size() > limit)
+            rows.resize(limit);
+
+        std::ostringstream ss;
+        ss << '[';
+        bool first = true;
+        std::string ts = EscapeJson(NowTimestamp());
+        uint32 mid = hl->GetMatchStartEpoch();
+        for (Row const& r : rows)
+        {
+            if (!first)
+                ss << ',';
+            first = false;
+            ss << '{'
+               << "\"name\":\"" << EscapeJson(r.name) << "\",";
+            ss << "\"team\":\"" << r.team << "\",";
+            ss << "\"score\":" << r.score << ',';
+            ss << "\"hk\":" << r.hk << ',';
+            ss << "\"class\":" << (unsigned)r.cls << ',';
+            ss << "\"sub\":" << (int)r.subgroup << ',';
+            ss << "\"ts\":\"" << ts << "\",";
+            ss << "\"matchStart\":" << mid;
+            ss << '}';
+        }
+        ss << ']';
+        return ss.str();
+    }
+}
+
+bool HandleHLBGLive(ChatHandler* handler, char const* args)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    if (!hl)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("[HLBG_LIVE_JSON] {\"A\":0,\"H\":0,\"matchStart\":0}");
+        return true;
+    }
+
+    uint32 a = hl->GetResources(TEAM_ALLIANCE);
+    uint32 h = hl->GetResources(TEAM_HORDE);
+    uint32 ms = hl->GetMatchStartEpoch();
+    std::string jsonAH = HLBGAddonFallback::BuildLiveJson(ms, a, h);
+    ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_LIVE_JSON] ") + jsonAH).c_str());
+
+    bool wantPlayers = false;
+    if (args && *args)
+    {
+        std::string v(args);
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        wantPlayers = (v.find("players") != std::string::npos);
+    }
+    if (wantPlayers)
+    {
+        std::string rows = HLBGAddonFallback::BuildLivePlayersJson(hl);
+        ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_LIVE_PLAYERS_JSON] ") + rows).c_str());
+    }
+    return true;
+}
+
+bool HandleHLBGWarmup(ChatHandler* handler, char const* args)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+    std::string text = args ? std::string(args) : std::string();
+    if (text.empty())
+        text = "";
+    std::string msg = std::string("[HLBG_WARMUP] ") + text;
+    ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+    return true;
+}
+
+bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    std::string winner = "Draw";
+    uint32 a = 0, h = 0, dur = 0, affix = 0;
+    if (hl)
+    {
+        TeamId w = hl->GetLastWinnerTeamId();
+        winner = (w == TEAM_ALLIANCE) ? "Alliance" : ((w == TEAM_HORDE) ? "Horde" : "Draw");
+        a = hl->GetResources(TEAM_ALLIANCE);
+        h = hl->GetResources(TEAM_HORDE);
+        dur = hl->GetCurrentMatchDurationSeconds();
+        affix = hl->GetActiveAffixCode();
+    }
+
+    std::ostringstream ss;
+    ss << '{' << "\"winner\":\"" << winner << "\",";
+    ss << "\"A\":" << a << ',';
+    ss << "\"H\":" << h << ',';
+    ss << "\"affix\":" << affix << ',';
+    ss << "\"duration\":" << dur;
+    ss << '}';
+    ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_RESULTS_JSON] ") + ss.str()).c_str());
+    return true;
+}
+
+bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    uint32 page = 1, per = 5;
+    uint32 seasonOverride = 0;
+    std::string sort = "id", dir = "DESC";
+    if (args && *args)
+    {
+        std::istringstream is(args);
+        std::vector<std::string> tokens;
+        for (std::string t; is >> t; )
+            tokens.push_back(t);
+        if (tokens.size() >= 1) page = std::max<uint32>(1u, (uint32)std::stoul(tokens[0]));
+        if (tokens.size() >= 2) per  = std::max<uint32>(1u, (uint32)std::stoul(tokens[1]));
+        if (tokens.size() >= 3)
+        {
+            bool allDigits = !tokens[2].empty() && std::all_of(tokens[2].begin(), tokens[2].end(), [](unsigned char c){ return std::isdigit(c) != 0; });
+            if (allDigits)
+                seasonOverride = (uint32)std::stoul(tokens[2]);
+        }
+        if (tokens.size() >= 4) sort = tokens[3];
+        if (tokens.size() >= 5) dir = tokens[4];
+    }
+
+    per = std::min<uint32>(per, 20u);
+    uint32 offset = (page - 1) * per;
+
+    if (!(sort == "id" || sort == "occurred_at" || sort == "season"))
+        sort = "id";
+    std::string odir = (dir == "ASC" ? "ASC" : "DESC");
+
+    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
+
+    std::string sortCol = "id";
+    if (sort == "occurred_at") sortCol = "occurred_at";
+    else if (sort == "season") sortCol = "season";
+
+    std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
+    if (season > 0)
+        query += " WHERE season=" + std::to_string(season);
+    query += " ORDER BY " + sortCol + " " + odir;
+    query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
+
+    std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
+    if (season > 0)
+        countQuery += " WHERE season=" + std::to_string(season);
+
+    uint32 totalRows = 0;
+    if (QueryResult countRes = CharacterDatabase.Query(countQuery))
+        totalRows = countRes->Fetch()[0].Get<uint32>();
+
+    QueryResult rs = CharacterDatabase.Query(query);
+    if (!rs)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_HISTORY_TSV] TOTAL=") + std::to_string(totalRows)).c_str());
+        return true;
+    }
+
+    std::string tsv = HLBGAddonFallback::BuildHistoryTsv(rs);
+    std::string msg = std::string("[HLBG_HISTORY_TSV] TOTAL=") + std::to_string(totalRows) + "||" + tsv;
+    ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+    return true;
+}
+
+bool HandleHLBGStatsUI(ChatHandler* handler, char const* args)
+{
+    // Keep the implementation in HLBG itself (DC/HinterlandBG/hlbg_addon.cpp previously).
+    // This handler remains here for link stability; it mirrors the older stats JSON.
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    uint32 winA = 0, winH = 0, draws = 0;
+    uint32 avgDur = 0;
+    std::string seasonName;
+    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    uint32 season = hl ? hl->GetSeason() : 0u;
+    if (args && *args)
+        season = (uint32)std::stoul(std::string(args));
+
+    std::string where = (season > 0) ? (" WHERE season=" + std::to_string(season)) : std::string();
+
+    if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM dc_hlbg_winner_history" + where))
+    {
+        Field* f = r->Fetch();
+        winA = f[0].Get<uint32>();
+        winH = f[1].Get<uint32>();
+        draws = f[2].Get<uint32>();
+    }
+    if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM dc_hlbg_winner_history" + where + (where.empty() ? " WHERE " : " AND ") + "duration_seconds > 0"))
+        avgDur = (uint32)r2->Fetch()[0].Get<float>();
+
+    if (season > 0)
+        seasonName = HLBGAddonFallback::GetSeasonName(season);
+
+    std::ostringstream ss;
+    ss << "{\"counts\":{\"Alliance\":" << winA << ",\"Horde\":" << winH << "},";
+    ss << "\"draws\":" << draws << ",\"avgDuration\":" << avgDur << ",\"season\":" << season << ",";
+    ss << "\"seasonName\":\"" << HLBGAddonFallback::EscapeJson(seasonName) << "\"}";
+    ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_STATS_JSON] ") + ss.str()).c_str());
+    return true;
+}
+
+bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    if (!hl)
+    {
+        handler->SendSysMessage("HLBG: system not available");
+        return true;
+    }
+
+    if (!hl->IsPlayerMaxLevel(player))
+    {
+        handler->PSendSysMessage("HLBG: You must be at least level {}.", hl->GetMinLevel());
+        return true;
+    }
+
+    if (player->HasAura(26013))
+    {
+        handler->SendSysMessage("HLBG: You cannot join while deserter.");
+        return true;
+    }
+
+    if (!player->IsAlive() || player->IsInCombat())
+    {
+        handler->SendSysMessage("HLBG: You must be alive and out of combat.");
+        return true;
+    }
+
+    // Queue join is allowed during warmup (to participate immediately) and also during an active match
+    // (queueing for the next match). The underlying HLBG queue logic enforces final eligibility.
+
+    hl->QueueCommandFromAddon(player, "queue", "join");
+    return true;
+}
+
+bool HandleHLBGQueueLeave(ChatHandler* handler, char const* /*args*/)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+    if (OutdoorPvPHL* hl = HLBGAddonFallback::GetHL())
+        hl->QueueCommandFromAddon(player, "queue", "leave");
+    return true;
+}
+
+bool HandleHLBGQueueStatus(ChatHandler* handler, char const* /*args*/)
+{
+    if (!handler || !handler->GetSession())
+        return false;
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+    if (OutdoorPvPHL* hl = HLBGAddonFallback::GetHL())
+        hl->QueueCommandFromAddon(player, "queue", "status");
+    return true;
+}
+
+// Legacy symbol expected by DC script loader; command registration is in cs_hl_bg.cpp.
+void AddSC_hlbg_addon() {}

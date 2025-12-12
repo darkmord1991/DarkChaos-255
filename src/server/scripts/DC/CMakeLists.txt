@@ -63,7 +63,7 @@ set(SCRIPTS_DC_AC
     HinterlandBG/npc_Varian_hinterlandbg.cpp
     HinterlandBG/outdoorpvp_hl_registration.cpp
     HinterlandBG/npc_hinterlands_battlemaster.cpp
-    HinterlandBG/hlbg_addon.cpp
+    # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/HL_ScoreboardNPC.cpp
     HinterlandBG/HLBG_AIO_Handlers.cpp

@@ -256,9 +256,17 @@
             {
                 return HandlePlayerCommand(player, command, args);
             }
+
+            // Public wrapper for level check (configured by HLBG controller)
+            bool IsPlayerMaxLevel(Player* player) const { return IsMaxLevel(player); }
+
+            // Public wrapper to check if a player is queued (avoids exposing private helper)
+            bool IsPlayerQueued(Player* player) { return IsPlayerInQueue(player); }
             
             // State machine interface
             BGState GetBGState() const { return _bgState; }
+            bool IsInWarmup() const { return _bgState == BG_STATE_WARMUP; }
+            uint32 GetMinLevel() const { return _minLevel; }
             void TransitionToState(BGState newState);
             void PauseBattle();
             void ResumeBattle();

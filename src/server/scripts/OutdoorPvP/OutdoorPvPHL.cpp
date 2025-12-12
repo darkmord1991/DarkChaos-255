@@ -179,7 +179,7 @@
         _affixRandomOnStart = true;
         _affixAnnounce = false;
         _affixWorldstateEnabled = false;
-        for (uint8 i = 0; i < 6; ++i)
+        for (uint8 i = 0; i < 7; ++i)
         {
             _affixPlayerSpell[i] = 0;
             _affixNpcSpell[i] = 0;
@@ -458,9 +458,11 @@
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
-        
-        // Update state machine first
-        UpdateStateMachine(diff);
+		
+        // Only tick the state machine for non-match phases.
+        // Match progression (expiry/depletion/reset) is still handled by the legacy HLBG tick code.
+        if (_bgState != BG_STATE_IN_PROGRESS)
+            UpdateStateMachine(diff);
         
         // Performance monitoring (log every 5 minutes)
         static uint32 s_perfLogTimer = 0;
@@ -482,6 +484,8 @@
 
             if (_matchEndTime == 0)
                 _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
+            // Legacy behavior: first load starts as an in-progress match.
+            _bgState = BG_STATE_IN_PROGRESS;
             _FirstLoad = true;
             _persistState();
         }
@@ -490,9 +494,13 @@
         if (_tickLock(diff))
             return false;
 
-        // 1) Timer expiry (may reset and consume the tick)
-        if (_tickTimerExpiry())
-            return false;
+
+        // 1) Timer expiry only applies while a match is in progress.
+        if (_bgState == BG_STATE_IN_PROGRESS)
+        {
+            if (_tickTimerExpiry())
+                return false;
+        }
 
         // 2) Housekeeping/diagnostics while running
         _tickEmptyZoneDiagnostics(diff);
@@ -500,9 +508,10 @@
         _tickAFK(diff);
         _tickHudRefresh(diff);
         _tickStatusBroadcast(diff);
-        _tickThresholdAnnouncements();
+        if (_bgState == BG_STATE_IN_PROGRESS)
+            _tickThresholdAnnouncements();
         // If depletion win scheduled a lock/reset, handle it before affix tick
-        if (_pendingLockFromDepletion)
+        if (_bgState == BG_STATE_IN_PROGRESS && _pendingLockFromDepletion)
         {
             _pendingLockFromDepletion = false;
             if (_lockEnabled)
@@ -521,8 +530,11 @@
             if (_autoResetTeleport)
                 TeleportPlayersToStart();
             HandleReset();
+            // After a match ends by depletion, begin warmup (unless a lock window is configured).
             if (_isLocked)
                 _matchEndTime = 0;
+            else
+                TransitionToState(BG_STATE_WARMUP);
             // Optionally pick a fresh affix for the next battle immediately when not locked
             if (!_isLocked)
             {
@@ -541,6 +553,10 @@
     bool OutdoorPvPHL::_tickTimerExpiry()
     {
         if (_matchEndTime == 0 || NowSec() < _matchEndTime)
+            return false;
+        // During warmup we do not "reset" the battleground; the state machine will transition
+        // warmup -> in-progress when the warmup timer elapses.
+        if (_bgState == BG_STATE_WARMUP)
             return false;
 
         LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
@@ -624,9 +640,12 @@
         if (_autoResetTeleport)
             TeleportPlayersToStart();
         HandleReset();
-        // While locked, freeze the match timer so expiry logic pauses until lock ends
+        // While locked, freeze the match timer so expiry logic pauses until lock ends.
+        // Otherwise, begin warmup between matches.
         if (_isLocked)
             _matchEndTime = 0;
+        else
+            TransitionToState(BG_STATE_WARMUP);
         _persistState();
         return true; // consumed this tick
     }
@@ -641,9 +660,8 @@
             // Lock expired: open the battleground and start a fresh window
             _isLocked = false;
             _lockUntilEpoch = 0;
-            // Seed a fresh match timer and refresh HUD; actors were already reset at lock start
-            _matchEndTime = NowSec() + _matchDurationSeconds;
-            UpdateWorldStatesAllPlayers();
+            // After the lock window, begin the between-matches warmup.
+            TransitionToState(BG_STATE_WARMUP);
             _persistState();
             return false; // proceed after reset on next tick
         }
