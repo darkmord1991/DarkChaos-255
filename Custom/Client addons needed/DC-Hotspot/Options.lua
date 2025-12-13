@@ -339,19 +339,19 @@ function Options:CreateCommPanel()
             if addonTable.Core and addonTable.Core.RequestHotspotList then
                 addonTable.Core:RequestHotspotList()
             elseif DC then
-                DC:Request("SPOT", 0x01, { action = "list" })
+                DC:Request("SPOT", 0x01, {})
             else
                 Print("|cFFFF0000No protocol available|r")
             end
         end, 1)
         makeTestButton("Request Hotspot Info", "Send CMSG_GET_INFO (0x02) JSON", function()
-            if DC then DC:Request("SPOT", 0x02, { action = "info", id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+            if DC then DC:Request("SPOT", 0x02, { id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 2)
         btnRow = btnRow + 1
         
         -- Row 2
         makeTestButton("Request Teleport", "Send CMSG_TELEPORT (0x03) JSON", function()
-            if DC then DC:Request("SPOT", 0x03, { action = "teleport", id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
+            if DC then DC:Request("SPOT", 0x03, { id = 1 }) else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
         makeTestButton("Send Test JSON", "Send a test JSON message", function()
             if DC then

@@ -1,7 +1,14 @@
 GOMove.FavL = {NameWidth = 17}
+local function ensureGOMoveSV()
+    if(not GOMoveSV or type(GOMoveSV) ~= "table") then
+        GOMoveSV = {}
+    end
+end
+ensureGOMoveSV()
 function GOMove.FavL:Add(name, guid)
     self:Del(guid)
     table.insert(self, 1, {name, guid})
+    ensureGOMoveSV()
     GOMoveSV.FavL = self
 end
 function GOMove.FavL:Del(guid)
@@ -11,6 +18,7 @@ function GOMove.FavL:Del(guid)
             break
         end
     end
+    ensureGOMoveSV()
     GOMoveSV.FavL = self
 end
 

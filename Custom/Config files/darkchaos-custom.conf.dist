@@ -5118,6 +5118,13 @@ DC.AddonProtocol.Seasonal.Enable = 1
 DC.AddonProtocol.HinterlandBG.Enable = 1
 
 #
+# DC.Addon.HLBG.Enable
+#     Description: Enable Hinterland BG client addon support. When enabled,
+#                  the hlbg addon receives chat and leaderboard updates.
+#     Default:     1 (Enabled)
+DC.Addon.HLBG.Enable = 1
+
+#
 #    DC.AddonProtocol.Leaderboard.Enable
 #        Description: Enable DC addon protocol for Unified Leaderboards
 #                     When enabled, client addons can request and display
@@ -5148,6 +5155,13 @@ DC.AddonProtocol.Events.Enable = 1
 #        Description: Enable addon-based GOMove integration (DC-GM addon)
 #        Default:     1 (Enabled)
 DC.AddonProtocol.GOMove.Enable = 1
+
+#    DC.AddonProtocol.Teleports.Enable
+#        Description: Enable addon-based teleports integration (DC-Teleports addon)
+#                     When enabled, clients can request / teleport UI interactions
+#                     and handle teleport validation on the server-side.
+#        Default:     1 (Enabled)
+DC.AddonProtocol.Teleports.Enable = 1
 
 #    DC.AddonProtocol.GroupFinder.Enable
 #        Description: Enable addon-based Group Finder integration (DC-MythicPlus addon)

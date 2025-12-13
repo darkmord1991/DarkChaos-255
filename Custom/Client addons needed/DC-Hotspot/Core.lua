@@ -141,24 +141,29 @@ local function NormalizeNumber(value)
 end
 
 local function BuildHotspotRecord(payload)
+    if payload and type(payload) == "table" and type(payload.hotspot) == "table" then
+        -- Server may wrap hotspot details in { hotspot = { ... } }
+        payload = payload.hotspot
+    end
+
     local id = NormalizeNumber(payload.id)
     if not id then return nil end
 
-    local dur = NormalizeNumber(payload.dur) or 0
+    local dur = NormalizeNumber(payload.dur or payload.timeRemaining) or 0
     local nowSession = GetTime()
     local nowEpoch = NowEpoch()
-    local zoneId = NormalizeNumber(payload.zone)
+    local zoneId = NormalizeNumber(payload.zone or payload.zoneId)
     local record = {
         id = id,
-        map = NormalizeNumber(payload.map),
+        map = NormalizeNumber(payload.map or payload.mapId),
         zoneId = zoneId,
-        zone = ResolveZoneName(zoneId, payload.zonename),
+        zone = ResolveZoneName(zoneId, payload.zonename or payload.zoneName),
         x = NormalizeNumber(payload.x),
         y = NormalizeNumber(payload.y),
         z = NormalizeNumber(payload.z),
         nx = NormalizeNumber(payload.nx),
         ny = NormalizeNumber(payload.ny),
-        bonus = NormalizeNumber(payload.bonus) or state.config.experienceBonus,
+        bonus = NormalizeNumber(payload.bonus or payload.bonusPercent) or state.config.experienceBonus,
         icon = NormalizeNumber(payload.icon),
         tex = payload.tex,
         texid = NormalizeNumber(payload.texid),
@@ -584,20 +589,34 @@ function Core:PLAYER_LOGIN()
         if self.elapsed >= 3 then  -- 3 second delay for server connection
             self:SetScript("OnUpdate", nil)
             DebugPrint("Auto-requesting hotspot list...")
-            Core:RequestHotspotList()
+            Core:RequestHotspotList("login")
         end
     end)
 end
 
+-- Also request on entering world (covers some relog/teleport edge cases)
+function Core:PLAYER_ENTERING_WORLD()
+    -- Avoid spamming: PLAYER_ENTERING_WORLD can fire multiple times.
+    self:MaybeRequestHotspots("enter_world", 10)
+end
+
 -- Request hotspot list from server using protocol fallback chain (JSON standard)
-function Core:RequestHotspotList()
+function Core:RequestHotspotList(reason)
     self.lastHotspotRequest = GetTime()
-    DebugPrint("Requesting hotspot list from server via", Core.protocolMode, "(JSON)")
+    DebugPrint("Requesting hotspot list from server via", Core.protocolMode, "(JSON)", reason and ("reason=" .. tostring(reason)) or "")
+
+    local payload = {}
+    -- Provide optional context; server may ignore.
+    payload.zoneText = GetZoneText and (GetZoneText() or "") or ""
+    payload.subZoneText = GetSubZoneText and (GetSubZoneText() or "") or ""
+    if GetCurrentMapAreaID then
+        payload.mapAreaId = GetCurrentMapAreaID() or 0
+    end
     
     -- Protocol fallback chain: DCAddonProtocol → AIO → Chat
     if Core.useDCProtocol and DC then
-        -- Primary: DCAddonProtocol with JSON format (standard)
-        DC:Request("SPOT", 0x01, { action = "list" })
+        -- Primary: DCAddonProtocol (JSON-by-default)
+        DC:Request("SPOT", 0x01, payload)
     elseif Core.useAIO and AIO and AIO.Handle then
         -- Secondary: AIO/Eluna
         AIO.Handle("HOTSPOT", "Request", "LIST")
@@ -626,7 +645,7 @@ function Core:RequestTeleport(hotspotId)
     DebugPrint("Requesting teleport to hotspot", hotspotId, "via", Core.protocolMode, "(JSON)")
     
     if Core.useDCProtocol and DC then
-        DC:Request("SPOT", 0x03, { action = "teleport", id = hotspotId })
+        DC:Request("SPOT", 0x03, { id = hotspotId })
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "TELEPORT", hotspotId)
     else
@@ -639,7 +658,7 @@ function Core:RequestHotspotInfo(hotspotId)
     DebugPrint("Requesting info for hotspot", hotspotId, "(JSON)")
     
     if Core.useDCProtocol and DC then
-        DC:Request("SPOT", 0x02, { action = "info", id = hotspotId })
+        DC:Request("SPOT", 0x02, { id = hotspotId })
     elseif Core.useAIO and AIO and AIO.Handle then
         AIO.Handle("HOTSPOT", "Request", "INFO", hotspotId)
     else
@@ -649,28 +668,45 @@ end
 
 -- Track zone changes to refresh hotspots
 function Core:ZONE_CHANGED_NEW_AREA()
-    -- Only request if we have no hotspots cached OR it's been a while since last request
+    self:MaybeRequestHotspots("zone_change", 10)
+end
+
+-- Request on group roster changes ("join"/"leave"), useful if hotspots are party/raid-scoped
+function Core:GROUP_ROSTER_UPDATE()
+    self:MaybeRequestHotspots("group_roster", 10)
+end
+
+-- WotLK compatibility (some clients fire PARTY_MEMBERS_CHANGED instead)
+function Core:PARTY_MEMBERS_CHANGED()
+    self:MaybeRequestHotspots("party_members", 10)
+end
+
+-- WotLK raid roster updates
+function Core:RAID_ROSTER_UPDATE()
+    self:MaybeRequestHotspots("raid_roster", 10)
+end
+
+function Core:MaybeRequestHotspots(reason, minInterval)
+    minInterval = minInterval or 30
     local now = GetTime()
     local lastRequest = self.lastHotspotRequest or 0
-    local timeSinceRequest = now - lastRequest
-    
-    -- Don't spam - wait at least 60 seconds between zone-change requests
-    if timeSinceRequest < 60 then
+    if (now - lastRequest) < minInterval then
         return
     end
-    
-    -- Use a small delay to avoid spamming
-    if self.zoneChangeTimer then return end
-    
-    self.zoneChangeTimer = true
-    local zoneFrame = CreateFrame("Frame")
-    zoneFrame.elapsed = 0
-    zoneFrame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = self.elapsed + elapsed
-        if self.elapsed >= 1 then
-            self:SetScript("OnUpdate", nil)
-            Core.zoneChangeTimer = nil
-            Core:RequestHotspotList()
+
+    if self._pendingAutoRequest then
+        return
+    end
+    self._pendingAutoRequest = true
+
+    local frame = CreateFrame("Frame")
+    frame.elapsed = 0
+    frame:SetScript("OnUpdate", function(selfFrame, elapsed)
+        selfFrame.elapsed = selfFrame.elapsed + elapsed
+        if selfFrame.elapsed >= 1 then
+            selfFrame:SetScript("OnUpdate", nil)
+            Core._pendingAutoRequest = nil
+            Core:RequestHotspotList(reason)
         end
     end)
 end
@@ -698,12 +734,21 @@ function Core:PLAYER_LOGOUT()
 end
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_LOGOUT")
-eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-eventFrame:RegisterEvent("CHAT_MSG_ADDON")
-eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+local function SafeRegister(frame, event)
+    pcall(frame.RegisterEvent, frame, event)
+end
+
+SafeRegister(eventFrame, "ADDON_LOADED")
+SafeRegister(eventFrame, "PLAYER_LOGIN")
+SafeRegister(eventFrame, "PLAYER_ENTERING_WORLD")
+SafeRegister(eventFrame, "PLAYER_LOGOUT")
+SafeRegister(eventFrame, "CHAT_MSG_SYSTEM")
+SafeRegister(eventFrame, "CHAT_MSG_ADDON")
+SafeRegister(eventFrame, "ZONE_CHANGED_NEW_AREA")
+-- Group join/leave events (varies by client version)
+SafeRegister(eventFrame, "GROUP_ROSTER_UPDATE")
+SafeRegister(eventFrame, "PARTY_MEMBERS_CHANGED")
+SafeRegister(eventFrame, "RAID_ROSTER_UPDATE")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if Core[event] then
@@ -790,30 +835,31 @@ function Core:RegisterProtocolHandlers()
         end
     end
     
-    -- SMSG_LIST (0x10) - Hotspot list response
-    -- Server sends: count (number), list (string with entries separated by ";")
-    -- Each entry format: id:mapId:zoneId:zoneName:x:y:dur:bonus
+    -- SMSG_HOTSPOT_LIST (0x10)
+    -- JSON: handler receives decoded table
+    -- Legacy: count (number) + list (semicolon-separated string)
     DC:RegisterHandler("SPOT", 0x10, function(firstArg, ...)
-        local args = {firstArg, ...}
-        
-        -- Check if first arg is "J" (JSON marker)
-        if firstArg == "J" then
-            local jsonStr = args[2]
-            DebugProtocol("Received JSON hotspot list:", jsonStr)
-            local data = ParseJSON(jsonStr)
-            if data and data.hotspots then
-                -- JSON format: { hotspots: [...], count: N }
-                for _, hs in ipairs(data.hotspots) do
+        -- JSON-by-default path: DCAddonProtocol already decoded JSON and passes a table.
+        if type(firstArg) == "table" then
+            local data = firstArg
+            local list = (data and data.hotspots) or data
+            if type(list) == "table" then
+                -- list may be {hotspots=[...]} or the array directly
+                for _, hs in ipairs(list) do
                     Core:ProcessHotspotPayload(hs)
+                end
+                if Pins and Pins.Refresh then
+                    Pins:Refresh()
                 end
             end
             return
         end
-        
-        -- Binary format: count (number) + list (semicolon-separated string)
+
+        -- Legacy format: count + semicolon-separated string
+        local args = {firstArg, ...}
         local count = tonumber(firstArg) or 0
         local listStr = args[2] or ""
-        DebugProtocol("Received hotspot list, count:", count, "data:", listStr:sub(1, 100))
+        DebugProtocol("Received hotspot list (legacy), count:", count, "data:", listStr:sub(1, 100))
         
         if count == 0 or listStr == "" then
             DebugProtocol("No hotspots in list")
@@ -832,8 +878,8 @@ function Core:RegisterProtocolHandlers()
                 local payload = {
                     id = tonumber(parts[1]),
                     map = tonumber(parts[2]),
-                    zoneId = tonumber(parts[3]),
-                    zone = parts[4],  -- Zone name from DBC
+                    zone = tonumber(parts[3]),        -- server ZoneID/AreaID
+                    zonename = parts[4],              -- zone name from DBC
                     x = tonumber(parts[5]),
                     y = tonumber(parts[6]),
                     dur = tonumber(parts[7]),
@@ -852,82 +898,23 @@ function Core:RegisterProtocolHandlers()
         end
     end)
     
-    -- SMSG_NEW_HOTSPOT (0x11) - New hotspot spawned
+    -- SMSG_HOTSPOT_INFO (0x11)
     DC:RegisterHandler("SPOT", 0x11, function(firstArg, ...)
-        if firstArg == "J" then
-            local data = ParseJSON(select(1, ...))
-            if data then
-                DebugProtocol("New hotspot (JSON):", data.id)
-                Core:ProcessHotspotPayload(data)
+        if type(firstArg) == "table" then
+            local data = firstArg
+            -- server may send { found=false, id=?, error=? }
+            if data.found == false then
+                DebugProtocol("Hotspot info: not found", data.id)
+                return
             end
+            DebugProtocol("Hotspot info (JSON):", data.id)
+            Core:ProcessHotspotPayload(data.hotspot or data)
             return
         end
-        
-        local id, mapId, zoneId, zoneName, x, y, bonus, duration = firstArg, ...
-        DebugProtocol("New hotspot:", id)
-        local payload = {
-            id = id,
-            map = mapId,
-            zone = zoneId,
-            zonename = zoneName,
-            x = x,
-            y = y,
-            bonus = bonus,
-            dur = duration,
-        }
-        Core:ProcessHotspotPayload(payload)
-    end)
-    
-    -- SMSG_HOTSPOT_EXPIRED (0x12) - Hotspot expired/removed
-    DC:RegisterHandler("SPOT", 0x12, function(hotspotId)
-        DebugProtocol("Hotspot expired:", hotspotId)
-        if hotspotId and state.hotspots[hotspotId] then
-            local record = state.hotspots[hotspotId]
-            state.hotspots[hotspotId] = nil
-            
-            if Pins and Pins.RemoveHotspot then
-                Pins:RemoveHotspot(hotspotId)
-            end
-            
-            if not state.suppressAnnouncements and state.db and state.db.announceExpire then
-                print("|cffff8800[DC-Hotspot]|r Hotspot expired in " .. (record.zone or "unknown zone"))
-            end
-        end
-    end)
-    
-    -- SMSG_TELEPORT_RESULT (0x13) - Teleport result
-    DC:RegisterHandler("SPOT", 0x13, function(success, hotspotId, message)
-        if success then
-            print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. (hotspotId or "?"))
-        else
-            print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (message or "Unknown error"))
-        end
-    end)
-    
-    -- SMSG_ENTERED_HOTSPOT (0x14) - Player entered a hotspot zone
-    DC:RegisterHandler("SPOT", 0x14, function(hotspotId, bonus)
-        print("|cff00ff00[DC-Hotspot]|r You entered an XP hotspot! (+" .. (bonus or 100) .. "% XP)")
-    end)
-    
-    -- SMSG_LEFT_HOTSPOT (0x15) - Player left a hotspot zone
-    DC:RegisterHandler("SPOT", 0x15, function(hotspotId)
-        print("|cffffff00[DC-Hotspot]|r You left the XP hotspot zone.")
-    end)
-    
-    -- SMSG_HOTSPOT_INFO (0x16) - Hotspot info response
-    DC:RegisterHandler("SPOT", 0x16, function(firstArg, ...)
-        if firstArg == "J" then
-            local data = ParseJSON(select(1, ...))
-            if data then
-                DebugProtocol("Hotspot info (JSON):", data.id)
-                Core:ProcessHotspotPayload(data)
-            end
-            return
-        end
-        
+
+        -- Legacy/non-JSON format (rare): found flag + flattened values
         local found, id, mapId, zoneId, zoneName, x, y, z, dur, bonus = firstArg, ...
         if found and found ~= 0 then
-            DebugProtocol("Hotspot info:", id)
             local payload = {
                 id = id,
                 map = mapId,
@@ -940,8 +927,71 @@ function Core:RegisterProtocolHandlers()
                 bonus = bonus,
             }
             Core:ProcessHotspotPayload(payload)
+        end
+    end)
+
+    -- SMSG_HOTSPOT_SPAWN (0x12)
+    DC:RegisterHandler("SPOT", 0x12, function(firstArg, ...)
+        if type(firstArg) == "table" then
+            local data = firstArg
+            local hs = (data and (data.hotspot or data))
+            DebugProtocol("New hotspot (JSON):", hs and hs.id)
+            Core:ProcessHotspotPayload(hs)
+            return
+        end
+
+        -- Legacy spawn format
+        local id, mapId, zoneId, zoneName, x, y, bonus, duration = firstArg, ...
+        local payload = {
+            id = id,
+            map = mapId,
+            zone = zoneId,
+            zonename = zoneName,
+            x = x,
+            y = y,
+            bonus = bonus,
+            dur = duration,
+        }
+        Core:ProcessHotspotPayload(payload)
+    end)
+
+    -- SMSG_HOTSPOT_EXPIRE (0x13)
+    DC:RegisterHandler("SPOT", 0x13, function(firstArg, ...)
+        local id
+        if type(firstArg) == "table" then
+            id = tonumber(firstArg.id)
         else
-            print("|cffff8800[DC-Hotspot]|r Hotspot not found or expired")
+            id = tonumber(firstArg)
+        end
+
+        if id then
+            DebugProtocol("Hotspot expired:", id)
+            local record = state.hotspots[id]
+            Core:RemoveHotspot(id, "expire")
+
+            if record and (not state.suppressAnnouncements) and state.db and state.db.announceExpire then
+                print("|cffff8800[DC-Hotspot]|r Hotspot expired in " .. (record.zone or "unknown zone"))
+            end
+        end
+    end)
+
+    -- SMSG_TELEPORT_RESULT (0x14)
+    DC:RegisterHandler("SPOT", 0x14, function(firstArg, ...)
+        if type(firstArg) == "table" then
+            local data = firstArg
+            if data.success then
+                print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. (data.id or "?"))
+            else
+                print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (data.error or "Unknown error"))
+            end
+            return
+        end
+
+        local success, hotspotId, message = firstArg, ...
+        if success and tostring(success) ~= "0" then
+            print("|cff00ff00[DC-Hotspot]|r Teleported to hotspot #" .. (hotspotId or "?"))
+        else
+            print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (message or "Unknown error"))
         end
     end)
     

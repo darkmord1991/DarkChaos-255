@@ -217,7 +217,7 @@ static giant_isles_invasion* sGiantIslesInvasion = nullptr;
 
 // Free helper wrapper that allows AIs to call this early. Forwards to the map script instance if loaded,
 // or falls back to immediate ChatHandler call if not (should be rare during initialization).
-static void SafeWorldAnnounce(Map* /*map*/, const char* text);
+static void SafeWorldAnnounce(Map* map, const char* text);
 
 // Helper to avoid circular-forward-declaration issues: call this from AIs
 void GI_TrackPlayerKill(ObjectGuid playerGuid);
@@ -713,7 +713,7 @@ public:
             uint64_t now = GameTime::GetGameTime().count();
             if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
             {
-                SafeWorldAnnounce("|cFFFF0000[INVASION WARNING]|r War drums echo across Seeping Shores! The Zandalari fleet approaches!");
+                SafeWorldAnnounce(map, "|cFFFF0000[INVASION WARNING]|r War drums echo across Seeping Shores! The Zandalari fleet approaches!");
                 _lastEventAnnouncementTime = now;
             }
             else
@@ -794,7 +794,8 @@ public:
             uint64_t now = GameTime::GetGameTime().count();
             if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
             {
-                SafeWorldAnnounce("Victory! The Zandalari invasion has been repelled!");
+                Map* giMap = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+                SafeWorldAnnounce(giMap, "Victory! The Zandalari invasion has been repelled!");
                 _lastEventAnnouncementTime = now;
             }
             else
@@ -916,7 +917,7 @@ public:
                 _waveTimer = WAVE_1_DURATION;
                 _spawnTimer = 0;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
-                SafeWorldAnnounce("|cFFFF8000[INVASION - WAVE 1]|r Zandalari scouts storm the beach! Kill them quickly!");
+                SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 1]|r Zandalari scouts storm the beach! Kill them quickly!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8459); });  // Battle horn
                 // Spawn the first wave batch immediately
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 1");
@@ -930,7 +931,7 @@ public:
                 _waveTimer = WAVE_2_DURATION;
                 _spawnTimer = 0;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
-                SafeWorldAnnounce("|cFFFF8000[INVASION - WAVE 2]|r Zandalari warriors and berserkers charge! Hold the line!");
+                SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 2]|r Zandalari warriors and berserkers charge! Hold the line!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8174); });  // Orc battle cry
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
                 DespawnAllInvaders(map);
@@ -944,7 +945,7 @@ public:
                 _waveTimer = WAVE_3_DURATION;
                 _spawnTimer = 0;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
-                SafeWorldAnnounce("|cFFFF4000[INVASION - WAVE 3]|r Elite Blood Guards and Witch Doctors arrive! Beware their dark magic!");
+                SafeWorldAnnounce(map, "|cFFFF4000[INVASION - WAVE 3]|r Elite Blood Guards and Witch Doctors arrive! Beware their dark magic!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8212); });  // Troll aggro
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
                 DespawnAllInvaders(map);
@@ -958,7 +959,7 @@ public:
                 _waveTimer = WAVE_4_DURATION;
                 _spawnTimer = 0;  // No more spawns, only boss
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
-                SafeWorldAnnounce("|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
+                SafeWorldAnnounce(map, "|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
                 map->DoForAllPlayers([](Player* player) { player->PlayDirectSound(8923); });  // Raid warning
                 DespawnAllInvaders(map);
                 ActivateBossWave(map);
@@ -1470,7 +1471,7 @@ public:
             uint64_t now = GameTime::GetGameTime().count();
             if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
             {
-                SafeWorldAnnounce("Defeat! The Zandalari have overrun Seeping Shores!");
+                SafeWorldAnnounce(map, "Defeat! The Zandalari have overrun Seeping Shores!");
                 _lastEventAnnouncementTime = now;
             }
             else
@@ -1617,13 +1618,30 @@ public:
         _isFailing.store(false);
     }
 
-    // Helper to post event messages safely with per-map cooldown to avoid chat spam
-    void SafeWorldAnnounce(const char* text)
+    // Helper to post event messages safely with per-map cooldown to avoid chat spam.
+    // IMPORTANT: must not broadcast globally; limit to Giant Isles map players.
+    void SafeWorldAnnounce(Map* map, const char* text)
     {
+        if (!text || !*text)
+            return;
+
+        if (!map)
+            map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+
+        if (!map)
+            return;
+
+        if (map->GetId() != MAP_GIANT_ISLES)
+            return;
+
         uint64_t now = GameTime::GetGameTime().count();
         if (_lastEventAnnouncementTime == 0 || (now - _lastEventAnnouncementTime) >= EVENT_ANNOUNCE_COOLDOWN_MS)
         {
-            ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, text);
+            map->DoForAllPlayers([&](Player* player)
+            {
+                if (player && player->IsInWorld() && player->GetSession() && player->GetMapId() == MAP_GIANT_ISLES)
+                    ChatHandler(player->GetSession()).SendSysMessage(text);
+            });
             _lastEventAnnouncementTime = now;
         }
         else
@@ -2270,14 +2288,21 @@ void AddSC_giant_isles_invasion()
 }
 
 // Free-level wrapper implemented after class definition to allow use in earlier AIs
-static void SafeWorldAnnounce(Map* /*map*/, const char* text)
+static void SafeWorldAnnounce(Map* map, const char* text)
 {
     if (sGiantIslesInvasion)
     {
-        sGiantIslesInvasion->SafeWorldAnnounce(text);
+        sGiantIslesInvasion->SafeWorldAnnounce(map, text);
     }
     else
     {
-        ChatHandler(nullptr).SendWorldText(LANG_EVENTMESSAGE, text);
+        if (!map || map->GetId() != MAP_GIANT_ISLES || !text || !*text)
+            return;
+
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (player && player->IsInWorld() && player->GetSession() && player->GetMapId() == MAP_GIANT_ISLES)
+                ChatHandler(player->GetSession()).SendSysMessage(text);
+        });
     }
 }

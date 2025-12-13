@@ -136,6 +136,10 @@ void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
 {
+    // Top-level header for DarkChaos DC script loader
+    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", "║ DarkChaos: DC Script Loader — loading DC-specific systems");
+    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
     // ═══════════════════════════════════════════════════════════════════════
     // CORE AC SCRIPTS
     // ═══════════════════════════════════════════════════════════════════════
@@ -526,25 +530,7 @@ void AddDCScripts()
     }
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // DUNGEON QUEST SYSTEM (Loaded Last)
-    // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Dungeon Quest System v3.0 (Enhanced UX + AC Standards)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    try {
-        AddSC_DungeonQuestSystem();
-        AddSC_DungeonQuestPhasing();
-        AddSC_DungeonQuestMasterFollower();
-        AddSC_npc_dungeon_quest_master();
-        AddSC_npc_dungeon_quest_daily_weekly();
-        LOG_INFO("scripts", ">>   ✓ Dungeon quest mechanics and NPCs loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in Dungeon Quest System");
-    }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    // DUNGEON QUEST SYSTEM will be loaded at the final stage (moved)
 
     // ═══════════════════════════════════════════════════════════════════════
     // ADDON EXTENSION SYSTEM (Communication Protocol)
@@ -612,7 +598,27 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // ALL DC SCRIPTS LOADED
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> DarkChaos Scripts: All systems loaded successfully");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", "║ DarkChaos: DC Scripts — All systems loaded successfully");
+    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // DUNGEON QUEST SYSTEM (Loaded Last)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", "║ Dungeon Quest System v3.0 (Enhanced UX + AC Standards) — Loaded Last");
+    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    try {
+        AddSC_DungeonQuestSystem();
+        AddSC_DungeonQuestPhasing();
+        AddSC_DungeonQuestMasterFollower();
+        AddSC_npc_dungeon_quest_master();
+        AddSC_npc_dungeon_quest_daily_weekly();
+        LOG_INFO("scripts", "║   ✓ Dungeon quest mechanics and NPCs loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", "║   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", "║   ✗ CRASH in Dungeon Quest System");
+    }
+    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
 }
