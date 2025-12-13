@@ -106,7 +106,7 @@ class ac_gryphon_taxi_800011AI : public VehicleAI
     std::unique_ptr<IFlightRoute> _currentRoute;
     
     // === NEW: Cached passenger replaces 30+ GetPassengerPlayer calls ===
-    std::optional<Player*> _cachedPassenger;
+    ObjectGuid _cachedPassengerGuid;
     uint32 _passengerCacheMs = 0;
     
     // Flight state (kept for gradual migration)
@@ -1206,7 +1206,7 @@ public:
     // === NEW: Cached passenger methods ===
     void UpdatePassengerCache()
     {
-        Player* passenger = nullptr;
+        ObjectGuid passengerGuid = ObjectGuid::Empty;
         if (Vehicle* kit = me->GetVehicleKit())
         {
             for (int i = 0; i < 8; ++i)
@@ -1215,18 +1215,21 @@ public:
                 {
                     if (Player* p = u->ToPlayer())
                     {
-                        passenger = p;
+                        passengerGuid = p->GetGUID();
                         break;
                     }
                 }
             }
         }
-        _cachedPassenger = passenger;
+        _cachedPassengerGuid = passengerGuid;
     }
     
     Player* GetCachedPassenger() const
     {
-        return _cachedPassenger.value_or(nullptr);
+        if (_cachedPassengerGuid.IsEmpty())
+            return nullptr;
+
+        return ObjectAccessor::FindPlayer(_cachedPassengerGuid);
     }
     
     // Public getters for debug commands

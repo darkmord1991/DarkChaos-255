@@ -31,7 +31,7 @@ class spell_challenge_hardcore_800020 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Hardcore Mode (One Death and You Die) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Hardcore Mode (One Death and You Die) - Player: {}", 
             player->GetName());
     }
 
@@ -41,7 +41,7 @@ class spell_challenge_hardcore_800020 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Hardcore Mode (One Death and You Die) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Hardcore Mode (One Death and You Die) - Player: {}", 
             player->GetName());
     }
 
@@ -63,7 +63,7 @@ class spell_challenge_semi_hardcore_800021 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
             player->GetName());
     }
 
@@ -73,7 +73,7 @@ class spell_challenge_semi_hardcore_800021 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Semi-Hardcore Mode (Multiple Lives Allowed) - Player: {}", 
             player->GetName());
     }
 
@@ -95,7 +95,7 @@ class spell_challenge_self_crafted_800022 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
             player->GetName());
     }
 
@@ -105,7 +105,7 @@ class spell_challenge_self_crafted_800022 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Self-Crafted Mode (You Must Craft Your Own Gear) - Player: {}", 
             player->GetName());
     }
 
@@ -127,7 +127,7 @@ class spell_challenge_item_quality_800023 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
             player->GetName());
     }
 
@@ -137,7 +137,7 @@ class spell_challenge_item_quality_800023 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Item Quality Restriction (Limited to Green or Better) - Player: {}", 
             player->GetName());
     }
 
@@ -159,7 +159,7 @@ class spell_challenge_slow_xp_800024 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
             player->GetName());
     }
 
@@ -169,7 +169,7 @@ class spell_challenge_slow_xp_800024 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Slow XP Mode (Reduced Experience Gain) - Player: {}", 
             player->GetName());
     }
 
@@ -191,7 +191,7 @@ class spell_challenge_very_slow_xp_800025 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
             player->GetName());
     }
 
@@ -201,7 +201,7 @@ class spell_challenge_very_slow_xp_800025 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Very Slow XP Mode (Minimal Experience Gain) - Player: {}", 
             player->GetName());
     }
 
@@ -223,7 +223,7 @@ class spell_challenge_quest_xp_only_800026 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Quest XP Only Mode (No Mob Experience) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Quest XP Only Mode (No Mob Experience) - Player: {}", 
             player->GetName());
     }
 
@@ -233,7 +233,7 @@ class spell_challenge_quest_xp_only_800026 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Quest XP Only Mode (No Mob Experience) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Quest XP Only Mode (No Mob Experience) - Player: {}", 
             player->GetName());
     }
 
@@ -255,7 +255,7 @@ class spell_challenge_iron_man_800027 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
             player->GetName());
     }
 
@@ -265,7 +265,7 @@ class spell_challenge_iron_man_800027 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Iron Man Mode (Hardcore + Self-Crafted + Item Restrictions) - Player: {}", 
             player->GetName());
     }
 
@@ -287,7 +287,7 @@ class spell_challenge_combination_800028 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura applied: Multiple Challenge Modes Active - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Multiple Challenge Modes Active - Player: {}", 
             player->GetName());
     }
 
@@ -297,7 +297,7 @@ class spell_challenge_combination_800028 : public AuraScript
         if (!player)
             return;
 
-        LOG_INFO("scripts.challengemode", "Challenge Mode aura removed: Multiple Challenge Modes Active - Player: {}", 
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Multiple Challenge Modes Active - Player: {}", 
             player->GetName());
     }
 

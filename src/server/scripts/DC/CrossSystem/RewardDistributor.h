@@ -287,8 +287,8 @@ namespace CrossSystem
         RewardDistributor() = default;
         
         // Internal distribution
-        bool DoDistributeTokens(Player* player, uint32 amount);
-        bool DoDistributeEssence(Player* player, uint32 amount);
+        bool DoDistributeTokens(Player* player, uint32 amount, const RewardContext& context);
+        bool DoDistributeEssence(Player* player, uint32 amount, const RewardContext& context);
         
         // Logging
         void LogTransaction(const RewardTransaction& transaction);

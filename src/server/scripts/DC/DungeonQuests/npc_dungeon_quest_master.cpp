@@ -332,108 +332,18 @@ public:
     {
         /*
          * Called when player completes quest through this NPC.
-         * This is where we award tokens and achievements!
+         * NOTE: Rewards are handled by the v4 PlayerScript (DungeonQuestSystem).
+         * This hook is kept only for compatibility and must NOT award anything,
+         * otherwise rewards/achievements can be granted twice.
          */
 
-    // creature and opt are unused in this implementation (opt kept for API compatibility)
-    (void)creature; (void)opt;
-    uint32 questId = quest->GetQuestId();
+        (void)player;
+        (void)creature;
+        (void)quest;
+        (void)opt;
 
-        // Check if this is a dungeon quest
-        if (questId < QUEST_DUNGEON_MIN || questId > QUEST_DUNGEON_MAX)
-            return false;
-
-        // =====================================================================
-        // AWARD TOKENS BASED ON QUEST TYPE
-        // =====================================================================
-
-    uint32 tokenItemId = 0;
-    uint32 tokenCount = 1;
-
-        // Daily quests
-        if (questId >= QUEST_DAILY_MIN && questId <= QUEST_DAILY_MAX)
-        {
-            tokenItemId = ITEM_DUNGEON_EXPLORER_TOKEN;
-            tokenCount = 1;
-
-            // Optional: query daily token multiplier from DB if implemented
-            // (Placeholder kept for future prepared statement integration)
-        }
-        // Weekly quests
-        else if (questId >= QUEST_WEEKLY_MIN && questId <= QUEST_WEEKLY_MAX)
-        {
-            tokenItemId = ITEM_EXPANSION_SPECIALIST_TOKEN;
-            tokenCount = 1;
-
-            // Optional: query weekly token multiplier from DB if implemented
-            // (Placeholder kept for future prepared statement integration)
-        }
-        // Dungeon quests (normal)
-        else
-        {
-            tokenItemId = ITEM_DUNGEON_EXPLORER_TOKEN;
-            tokenCount = 1;
-        }
-
-        // Award tokens to player
-        if (tokenItemId != 0 && tokenCount > 0)
-        {
-            if (player->AddItem(tokenItemId, tokenCount))
-            {
-                ChatHandler(player->GetSession()).SendNotification("You have received %u token(s)!", tokenCount);
-            }
-        }
-
-        // =====================================================================
-        // AWARD ACHIEVEMENTS
-        // =====================================================================
-
-        // Track total dungeon quests completed
-        uint32 totalQuestsCompleted = 0;
-
-        // Query completed dungeon quest count for player (adhoc query)
-        QueryResult charResult = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {}",
-            player->GetGUID().GetCounter()
-        );
-
-        if (charResult)
-            totalQuestsCompleted = (*charResult)[0].Get<uint32>();
-
-        // Award achievement for first dungeon quest
-        if (totalQuestsCompleted == 1 && !player->HasAchieved(ACHIEVEMENT_DUNGEON_NOVICE))
-        {
-            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_DUNGEON_NOVICE));
-            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Dungeon Novice!");
-        }
-
-        // Award achievement for 10 dungeon quests
-        if (totalQuestsCompleted >= 10 && !player->HasAchieved(ACHIEVEMENT_DUNGEON_EXPLORER))
-        {
-            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_DUNGEON_EXPLORER));
-            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Dungeon Explorer!");
-        }
-
-        // Award achievement for 50 dungeon quests
-        if (totalQuestsCompleted >= 50 && !player->HasAchieved(ACHIEVEMENT_LEGENDARY_DUNGEON))
-        {
-            player->CompletedAchievement(sAchievementStore.LookupEntry(ACHIEVEMENT_LEGENDARY_DUNGEON));
-            ChatHandler(player->GetSession()).SendNotification("Achievement Unlocked: Legendary Dungeon Master!");
-        }
-
-        // =====================================================================
-        // STANDARD AC QUEST COMPLETION
-        // =====================================================================
-
-        /*
-         * AzerothCore automatically:
-         * - Sets quest status to QUEST_STATUS_REWARDED
-         * - Updates character_queststatus
-         * - Handles daily/weekly reset timer (via quest_template.Flags)
-         * - No custom code needed!
-         */
-
-        return false; // Return false to allow standard AC handling
+        // Return false to allow standard AC handling.
+        return false;
     }
 };
 

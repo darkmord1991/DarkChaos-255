@@ -29,6 +29,7 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "dc_prestige_api.h"
+#include "../AddonExtension/dc_addon_prestige_notify.h"
 #include <sstream>
 
 using namespace Acore::ChatCommands;
@@ -38,7 +39,6 @@ enum PrestigeConfig
     MAX_PRESTIGE_LEVEL = 10,
     REQUIRED_LEVEL = 255,
     STAT_BONUS_PER_PRESTIGE = 1,  // 1% per prestige level
-    DEBUG_MODE = 0,  // Set to 1 to enable debug messages (GM only)
 };
 
 // Prestige spell lookup table (O(1) access)
@@ -99,6 +99,7 @@ public:
     void LoadConfig()
     {
         enabled = sConfigMgr->GetOption<bool>("Prestige.Enable", true);
+        debug = sConfigMgr->GetOption<bool>("Prestige.Debug", false);
         requireLevel = sConfigMgr->GetOption<uint32>("Prestige.RequiredLevel", REQUIRED_LEVEL);
         maxPrestigeLevel = sConfigMgr->GetOption<uint32>("Prestige.MaxLevel", MAX_PRESTIGE_LEVEL);
         statBonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", STAT_BONUS_PER_PRESTIGE);
@@ -232,6 +233,34 @@ public:
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
 
+        uint32 requiredStacks = CountRequiredRewardStacks(newPrestige);
+        if (!keepGear && grantStarterGear)
+            requiredStacks += CountRequiredStarterGearStacks(player);
+
+        if (requiredStacks)
+        {
+            uint32 freeSlots = keepGear ? player->GetFreeInventorySpace() : GetBackpackFreeSlots(player);
+
+            if (freeSlots < requiredStacks)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000Not enough bag space to prestige.|r");
+
+                if (keepGear)
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("Free slots: {}. Needed: {}.", freeSlots, requiredStacks);
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "You must have at least {} free backpack slots (bags will be removed when Prestige.KeepGear=0).", requiredStacks);
+                }
+
+                if (debug)
+                    LOG_DEBUG("scripts", "Prestige: Blocked prestige for {} due to bag space (free={}, required={})", player->GetName(), freeSlots, requiredStacks);
+                return;
+            }
+        }
+
         // Save current state for logging
         std::string playerName = player->GetName();
         uint32 oldLevel = player->GetLevel();
@@ -310,6 +339,9 @@ public:
         // Notify player
         ChatHandler(player->GetSession()).PSendSysMessage("Congratulations! You have reached Prestige Level {}!", newPrestige);
         ChatHandler(player->GetSession()).PSendSysMessage("You now have {}% bonus to all stats!", newPrestige * statBonusPercent);
+
+        // Notify client addon (if installed/enabled) so UI can refresh immediately
+        DCPrestigeAddon::NotifyPrestigeLevelUp(player, newPrestige, newPrestige * statBonusPercent);
 
         // Log to database
         try
@@ -494,7 +526,7 @@ public:
         if (player->isDead())
         {
             player->ResurrectPlayer(1.0f);
-            if (DEBUG_MODE)
+            if (debug)
                 LOG_DEBUG("scripts", "Prestige: Player {} was dead, resurrecting", player->GetName());
         }
         
@@ -502,14 +534,14 @@ public:
         if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
-            if (DEBUG_MODE)
+            if (debug)
                 LOG_DEBUG("scripts", "Prestige: Removed GHOST flag from {}", player->GetName());
         }
         
         if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
-            if (DEBUG_MODE)
+            if (debug)
                 LOG_DEBUG("scripts", "Prestige: Removed OUT_OF_BOUNDS flag from {}", player->GetName());
         }
         
@@ -517,7 +549,7 @@ public:
         if (player->HasPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN))
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-            if (DEBUG_MODE)
+            if (debug)
                 LOG_DEBUG("scripts", "Prestige: Removed NO_XP_GAIN flag from {}", player->GetName());
         }
     }
@@ -530,13 +562,13 @@ public:
         // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
         uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
 
-        if (DEBUG_MODE && player->IsGameMaster())
+        if (debug && player->IsGameMaster())
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
         AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
         if (achievementEntry)
         {
             player->CompletedAchievement(achievementEntry);
-            if (DEBUG_MODE && player->IsGameMaster())
+            if (debug && player->IsGameMaster())
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
         }
         else
@@ -548,6 +580,7 @@ public:
 
 private:
     bool enabled;
+    bool debug;
     uint32 requireLevel;
     uint32 maxPrestigeLevel;
     uint32 statBonusPercent;
@@ -559,6 +592,69 @@ private:
     bool announcePrestige;
     std::unordered_map<uint32, std::vector<PrestigeReward>> prestigeRewards;
     std::unordered_map<uint32, uint32> prestigeCache;
+
+    static uint32 CountStacksForItem(uint32 itemEntry, uint32 count)
+    {
+        if (!count)
+            return 0;
+
+        uint32 maxStack = 1;
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry))
+        {
+            maxStack = proto->GetMaxStackSize();
+            if (!maxStack)
+                maxStack = 1;
+        }
+
+        return (count + maxStack - 1) / maxStack;
+    }
+
+    static uint32 GetBackpackFreeSlots(Player* player)
+    {
+        if (!player)
+            return 0;
+
+        uint32 freeSlots = 0;
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        {
+            if (!player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                ++freeSlots;
+        }
+        return freeSlots;
+    }
+
+    uint32 CountRequiredRewardStacks(uint32 prestigeLevel) const
+    {
+        auto it = prestigeRewards.find(prestigeLevel);
+        if (it == prestigeRewards.end())
+            return 0;
+
+        uint32 requiredStacks = 0;
+        for (PrestigeReward const& reward : it->second)
+            requiredStacks += CountStacksForItem(reward.itemEntry, reward.count);
+
+        return requiredStacks;
+    }
+
+    uint32 CountRequiredStarterGearStacks(Player* player) const
+    {
+        if (!player)
+            return 0;
+
+        std::string starterGearList = sConfigMgr->GetOption<std::string>("Prestige.StarterGear." + std::to_string(player->getClass()), "");
+        if (starterGearList.empty())
+            return 0;
+
+        uint32 requiredStacks = 0;
+        std::stringstream ss(starterGearList);
+        std::string itemStr;
+        while (std::getline(ss, itemStr, ','))
+        {
+            if (Optional<uint32> itemEntry = Acore::StringTo<uint32>(itemStr))
+                requiredStacks += CountStacksForItem(*itemEntry, 1);
+        }
+        return requiredStacks;
+    }
 
     void LoadPrestigeRewards()
     {
@@ -608,13 +704,13 @@ private:
         uint32 titleId = GetPrestigeTitle(prestigeLevel);
         if (titleId)
         {
-            if (DEBUG_MODE && player->IsGameMaster())
+            if (debug && player->IsGameMaster())
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant title ID: {}", titleId);
             CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
             if (titleEntry)
             {
                 player->SetTitle(titleEntry);
-                if (DEBUG_MODE && player->IsGameMaster())
+                if (debug && player->IsGameMaster())
                     ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title granted!|r");
             }
             else

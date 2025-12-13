@@ -65,22 +65,11 @@ read_globals = {
 
 -- Addon saved variables (can be read and written)
 globals = {
-    "DCMapExtensionDB",
     "HotspotDisplayDB",
-    "DCMapExtension_ShowStitchedMap",
-    "DCMapExtension_ClearForcedMap",
     "SlashCmdList",
 }
 
 -- Files with specific rules
-files["**/DC-MapExtension/*.lua"] = {
-    globals = {
-        "DCMapExtensionDB",
-        "DCMapExtension_ShowStitchedMap",
-        "DCMapExtension_ClearForcedMap",
-    }
-}
-
 files["**/DC-HotspotXP/*.lua"] = {
     globals = {
         "HotspotDisplayDB",

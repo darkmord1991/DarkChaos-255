@@ -6,6 +6,7 @@ http://rochet2.github.io/
 */
 
 #include "GOMove.h"
+#include "GOMoveCommandIds.h"
 #include <math.h>
 #include <set>
 #include <sstream>
@@ -35,38 +36,6 @@ public:
     {
     }
 
-    enum commandIDs
-    {
-        TEST,
-        SELECTNEAR,
-        DELET,
-        X,
-        Y,
-        Z,
-        O,
-        GROUND,
-        FLOOR,
-        RESPAWN,
-        GOTO,
-        FACE,
-        SPAWN,
-        NORTH,
-        EAST,
-        SOUTH,
-        WEST,
-        NORTHEAST,
-        NORTHWEST,
-        SOUTHEAST,
-        SOUTHWEST,
-        UP,
-        DOWN,
-        LEFT,
-        RIGHT,
-        PHASE,
-        SELECTALLNEAR,
-        SPAWNSPELL,
-    };
-
     ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable GOMoveCommandTable =
@@ -81,7 +50,10 @@ public:
         if (!args)
             return false;
 
-        char* ID_t = strtok((char*)args, " ");
+        std::string argsCopy(args);
+        char* argsPtr = argsCopy.data();
+
+        char* ID_t = strtok(argsPtr, " ");
         if (!ID_t)
             return false;
         uint32 ID = static_cast<uint32>(std::strtoul(ID_t, nullptr, 10));
@@ -100,6 +72,8 @@ public:
         if (!session)
             return false;
         Player* player = session->GetPlayer();
+
+        using namespace DarkChaos::GOMove;
 
         if (ID < SPAWN) // no args
         {

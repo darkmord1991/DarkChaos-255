@@ -24,6 +24,8 @@
 #include "AchievementMgr.h"
 #include "Log.h"
 #include "DungeonQuestConstants.h"
+#include "DungeonQuestHelpers.h"
+#include "CrossSystem/CrossSystemRewards.h"
 
 using namespace DungeonQuest;
 
@@ -34,7 +36,7 @@ public:
     // Get token rewards for a daily quest
     static uint32 GetDailyQuestTokenReward(uint32 questId)
     {
-        std::string sql = Acore::StringFormat("SELECT token_amount FROM dc_daily_quest_token_rewards WHERE quest_id = {}", questId);
+        std::string sql = Acore::StringFormat("SELECT token_count FROM dc_daily_quest_token_rewards WHERE quest_id = {}", questId);
         QueryResult result = WorldDatabase.Query(sql.c_str());
         if (result)
         {
@@ -47,7 +49,7 @@ public:
     // Get token rewards for a weekly quest
     static uint32 GetWeeklyQuestTokenReward(uint32 questId)
     {
-        std::string sql = Acore::StringFormat("SELECT token_amount FROM dc_weekly_quest_token_rewards WHERE quest_id = {}", questId);
+        std::string sql = Acore::StringFormat("SELECT token_count FROM dc_weekly_quest_token_rewards WHERE quest_id = {}", questId);
         QueryResult result = WorldDatabase.Query(sql.c_str());
         if (result)
         {
@@ -275,6 +277,25 @@ public:
         }
         return 0;
     }
+
+    static uint32 GetDungeonQuestCompletions(Player* player)
+    {
+        if (!player)
+            return 0;
+
+        std::string sql = Acore::StringFormat(
+            "SELECT COUNT(*) FROM dc_character_dungeon_quests_completed "
+            "WHERE guid = {} AND quest_id BETWEEN {} AND {}",
+            player->GetGUID().GetCounter(), QUEST_DUNGEON_MIN, QUEST_DUNGEON_MAX);
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
+
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            return fields[0].Get<uint32>();
+        }
+        return 0;
+    }
 };
 
 // Main PlayerScript for dungeon quest system
@@ -283,6 +304,11 @@ class DungeonQuestPlayerScript : public PlayerScript
 public:
     DungeonQuestPlayerScript() : PlayerScript("DungeonQuestPlayerScript")
     {
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        DungeonQuestHelpers::InvalidatePlayerStatsCache(player);
     }
 
     // Called BEFORE quest completion (can block completion)
@@ -331,6 +357,9 @@ public:
         // Update statistics
         UpdateQuestStatistics(player, isDailyQuest, isWeeklyQuest, isDungeonQuest, questId);
 
+        // Gossip/UI stats cache is keyed off stats tables; invalidate after updates.
+        DungeonQuestHelpers::InvalidatePlayerStatsCache(player);
+
         // Check for achievement completion
         CheckAchievements(player, questId, isDailyQuest, isWeeklyQuest, isDungeonQuest);
     }
@@ -340,13 +369,6 @@ private:
     void HandleTokenRewards(Player* player, uint32 questId, bool isDailyQuest, bool isWeeklyQuest)
     {
         uint32 tokenAmount = 0;
-        uint32 tokenItemId = DungeonQuestDB::GetTokenItemId();
-
-        if (tokenItemId == 0)
-        {
-            LOG_DEBUG("scripts", "DungeonQuest: No token item configured, skipping token rewards");
-            return;
-        }
 
         // Get base token amount from database
         if (isDailyQuest)
@@ -374,53 +396,62 @@ private:
         LOG_INFO("scripts", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens", 
                  questId, tokenAmount, multiplier, finalTokenAmount);
 
-        // Award tokens to player
+        // Award tokens to player via central CrossSystem/Seasonal pipeline.
         if (finalTokenAmount > 0)
         {
-            if (player->AddItem(tokenItemId, finalTokenAmount))
+            using DarkChaos::CrossSystem::ContentDifficulty;
+            ContentDifficulty csDifficulty = ContentDifficulty::None;
+            switch (difficulty)
             {
-                // Build difficulty message
-                std::string difficultyText = "";
-                if (difficulty == DIFFICULTY_HEROIC)
-                    difficultyText = " |cFFFFD700(Heroic +50% bonus)|r";
-                else if (difficulty == DIFFICULTY_MYTHIC)
-                    difficultyText = " |cFFFF4500(Mythic +100% bonus)|r";
-                else if (difficulty == DIFFICULTY_MYTHIC_PLUS)
-                    difficultyText = " |cFFDC143C(Mythic+ +200% bonus)|r";
-                
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFF00FF00You have been awarded %u Dungeon Tokens!|r%s", 
-                    finalTokenAmount, 
-                    difficultyText.c_str()
-                );
-                
-                LOG_INFO("scripts", "DungeonQuest: Awarded {} tokens (item {}) to player {}", 
-                         finalTokenAmount, tokenItemId, player->GetName());
+                case DIFFICULTY_HEROIC: csDifficulty = ContentDifficulty::Heroic; break;
+                case DIFFICULTY_MYTHIC: csDifficulty = ContentDifficulty::Mythic; break;
+                case DIFFICULTY_MYTHIC_PLUS: csDifficulty = ContentDifficulty::MythicPlus; break;
+                default: csDifficulty = ContentDifficulty::Normal; break;
             }
+
+            DarkChaos::CrossSystem::EventType evt = DarkChaos::CrossSystem::EventType::QuestComplete;
+            if (isDailyQuest)
+                evt = DarkChaos::CrossSystem::EventType::DailyQuestComplete;
+            else if (isWeeklyQuest)
+                evt = DarkChaos::CrossSystem::EventType::WeeklyQuestComplete;
+
+            std::string sourceName = "Dungeon Quest";
+            if (csDifficulty == ContentDifficulty::Heroic)
+                sourceName = "Dungeon Quest (Heroic)";
+            else if (csDifficulty == ContentDifficulty::Mythic)
+                sourceName = "Dungeon Quest (Mythic)";
+            else if (csDifficulty == ContentDifficulty::MythicPlus)
+                sourceName = "Dungeon Quest (Mythic+)";
+
+            bool ok = DarkChaos::CrossSystem::Rewards::AwardTokens(
+                player,
+                finalTokenAmount,
+                DarkChaos::CrossSystem::SystemId::DungeonQuests,
+                evt,
+                sourceName,
+                questId
+            );
+
+            if (ok)
+                LOG_INFO("scripts", "DungeonQuest: Awarded {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
             else
-            {
-                LOG_ERROR("scripts", "DungeonQuest: Failed to add token item {} to player {}", 
-                         tokenItemId, player->GetName());
-            }
+                LOG_ERROR("scripts", "DungeonQuest: Failed to award {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
         }
-        
-        // v4.0: Track difficulty completion
-        uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId);
-        if (dungeonId > 0)
-        {
-            DungeonQuestDB::TrackDifficultyCompletion(player, dungeonId, difficulty);
-        }
-        
-        // v4.0: Update difficulty statistics
-        DungeonQuestDB::UpdateDifficultyStatistics(player, difficulty);
     }
 
     // Update quest completion statistics
     void UpdateQuestStatistics(Player* player, bool isDailyQuest, bool isWeeklyQuest, bool isDungeonQuest, uint32 questId)
     {
-        // v4.0: Update difficulty statistics for all quest types
+        // Update totals and v4.0 difficulty tracking
+        DungeonQuestDB::UpdateStatistics(player, "total_quests_completed", 1);
+
         QuestDifficulty difficulty = DungeonQuestDB::GetQuestDifficulty(questId);
         DungeonQuestDB::UpdateDifficultyStatistics(player, difficulty);
+
+        // v4.0: Track difficulty completion when mapping exists
+        uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId);
+        if (dungeonId > 0)
+            DungeonQuestDB::TrackDifficultyCompletion(player, dungeonId, difficulty);
         
         if (isDailyQuest)
         {
@@ -458,7 +489,7 @@ private:
         // Achievement: First dungeon quest completed (ID 13500)
         if (isDungeonQuest)
         {
-            uint32 totalCompletions = DungeonQuestDB::GetTotalQuestCompletions(player);
+            uint32 totalCompletions = DungeonQuestDB::GetDungeonQuestCompletions(player);
             
             if (totalCompletions == 1)
             {

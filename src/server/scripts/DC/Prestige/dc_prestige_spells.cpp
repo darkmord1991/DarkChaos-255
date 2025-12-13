@@ -35,7 +35,8 @@ namespace
 
         void Register() override
         {
-            DoEffectCalcAmount += AuraEffectCalcAmountFn(PrestigeBonusAuraScript::CalculateAmount, EFFECT_0, SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE);
+            // Be tolerant to DBC differences: bind to any aura/effect so the handler executes.
+            DoEffectCalcAmount += AuraEffectCalcAmountFn(PrestigeBonusAuraScript::CalculateAmount, EFFECT_ALL, SPELL_AURA_ANY);
         }
     };
 

@@ -15,6 +15,7 @@
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "ItemUpgradeUIHelpers.h"
 #include "DatabaseEnv.h"
 #include <sstream>
@@ -77,7 +78,8 @@ public:
             case GOSSIP_ACTION_INFO_DEF + 2: // Token exchange
             {
                 auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-                uint32 tokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN) : 0;
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                uint32 tokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season) : 0;
 
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                     "You currently have " + std::to_string(tokens) + " Upgrade Tokens.",
@@ -115,10 +117,11 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 5: // Weekly Stats
             {
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
                 // Query weekly earnings
                 QueryResult result = CharacterDatabase.Query(
-                    "SELECT weekly_earned FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = 1",
-                    player->GetGUID().GetCounter());
+                    "SELECT weekly_earned FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
+                    player->GetGUID().GetCounter(), season);
 
                 uint32 weeklyEarned = result ? result->Fetch()[0].Get<uint32>() : 0;
                 uint32 remaining = (weeklyEarned >= 500) ? 0 : (500 - weeklyEarned);

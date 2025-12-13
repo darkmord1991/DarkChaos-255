@@ -28,6 +28,7 @@
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include "ChatCommand.h"
+#include "Log.h"
 
 // Achievement IDs
 enum DCAchievements
@@ -99,41 +100,61 @@ class DCAchievementSystem : public PlayerScript
 public:
     DCAchievementSystem() : PlayerScript("DCAchievementSystem") { }
 
+    static bool IsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("DC.Achievements.Enable", true);
+    }
+
+    static uint32 GetDebugLevel()
+    {
+        return sConfigMgr->GetOption<uint32>("DC.Achievements.Debug", 0);
+    }
+
     // Level achievements
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
+        if (!player || !IsEnabled())
+            return;
+
         uint8 newLevel = player->GetLevel();
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700DEBUG LEVEL: {} -> {}|r", oldLevel, newLevel);
+
+        uint32 debug = GetDebugLevel();
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Level: {} -> {}", oldLevel, newLevel);
         
         // Level milestone achievements
         if (newLevel >= 100 && oldLevel < 100)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Checking Level 100 achievement");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granting Level 100 achievement");
             CompleteAchievement(player, ACHIEVEMENT_LEVEL_100);
         }
             
         if (newLevel >= 150 && oldLevel < 150)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Checking Level 150 achievement");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granting Level 150 achievement");
             CompleteAchievement(player, ACHIEVEMENT_LEVEL_150);
         }
             
         if (newLevel >= 200 && oldLevel < 200)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Checking Level 200 achievement");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granting Level 200 achievement");
             CompleteAchievement(player, ACHIEVEMENT_LEVEL_200);
         }
             
         if (newLevel >= 255 && oldLevel < 255)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Checking Level 255 achievement");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granting Level 255 achievement");
             CompleteAchievement(player, ACHIEVEMENT_LEVEL_255);
             
             // Check for server first
-            if (IsServerFirst("first_255"))
+            if (TryClaimServerFirst(player, "first_255"))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: First 255! Granting achievement");
+                if (debug >= 1)
+                    LOG_INFO("scripts", "DC.Achievements: Server First claimed: first_255 by {}", player->GetName());
                 CompleteAchievement(player, ACHIEVEMENT_FIRST_255);
                 AnnounceServerFirst(player, "First to Level 255");
             }
@@ -198,25 +219,26 @@ private:
         }
     }
     
-    bool IsServerFirst(std::string const& category)
+    bool TryClaimServerFirst(Player* player, std::string const& category)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_server_firsts WHERE category = '{}'", category
-        );
-        
-        if (!result)
-            return true;
-            
-        Field* fields = result->Fetch();
-        return fields[0].Get<uint64>() == 0;
-    }
-    
-    void RecordServerFirst(Player* player, std::string const& category)
-    {
+        if (!player)
+            return false;
+
+        // Table has UNIQUE(category). This makes the claim authoritative.
         CharacterDatabase.Execute(
-            "INSERT INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('{}', {}, '{}', UNIX_TIMESTAMP())",
+            "INSERT IGNORE INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('{}', {}, '{}', UNIX_TIMESTAMP())",
             category, player->GetGUID().GetCounter(), player->GetName()
         );
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT player_guid FROM dc_server_firsts WHERE category = '{}' LIMIT 1", category
+        );
+
+        if (!result)
+            return false;
+
+        Field* fields = result->Fetch();
+        return fields[0].Get<uint32>() == player->GetGUID().GetCounter();
     }
     
     void AnnounceServerFirst(Player* player, std::string const& achievement)
@@ -237,11 +259,17 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== PRESTIGE ACHIEVEMENTS DEBUG ===|r");
+        if (!player || !DCAchievementSystem::IsEnabled())
+            return;
+
+        uint32 debug = DCAchievementSystem::GetDebugLevel();
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Prestige achievement check");
         
         // Check prestige level and grant achievements
         uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Found prestige level: {}", prestigeLevel);
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Prestige level: {}", prestigeLevel);
         
         // Grant all prestige achievements up to current level
         for (uint32 i = 1; i <= prestigeLevel && i <= 10; ++i)
@@ -251,43 +279,43 @@ public:
             
             if (achievement)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Checking prestige achievement {} (ID: {})", i, achievementId);
+                if (debug >= 2)
+                    ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Checking prestige achievement {} (ID: {})", i, achievementId);
                 
                 if (!player->HasAchieved(achievementId))
                 {
                     player->CompletedAchievement(achievement);
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Granted prestige achievement {}|r", achievementId);
-                }
-                else
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Already has prestige achievement {}", achievementId);
+                    if (debug >= 2)
+                        ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granted prestige achievement {}", achievementId);
                 }
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Achievement {} not found in store|r", achievementId);
+                LOG_ERROR("scripts", "DC.Achievements: Prestige achievement {} not found in store", achievementId);
             }
         }
         
         // Check for server first prestige
         if (prestigeLevel >= 1)
         {
-            QueryResult firstResult = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_server_firsts WHERE category = 'first_prestige'"
+            // Atomic claim using UNIQUE(category)
+            CharacterDatabase.Execute(
+                "INSERT IGNORE INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('first_prestige', {}, '{}', UNIX_TIMESTAMP())",
+                player->GetGUID().GetCounter(), player->GetName()
             );
-            
-            if (!firstResult || firstResult->Fetch()[0].Get<uint32>() == 0)
+
+            QueryResult claimed = CharacterDatabase.Query(
+                "SELECT player_guid FROM dc_server_firsts WHERE category = 'first_prestige' LIMIT 1"
+            );
+
+            if (claimed && claimed->Fetch()[0].Get<uint32>() == player->GetGUID().GetCounter())
             {
                 AchievementEntry const* achievement = sAchievementStore.LookupEntry(ACHIEVEMENT_FIRST_PRESTIGE);
                 if (achievement)
                 {
                     player->CompletedAchievement(achievement);
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Granted FIRST PRESTIGE achievement!|r");
-                    
-                    CharacterDatabase.Execute(
-                        "INSERT INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('first_prestige', {}, '{}', UNIX_TIMESTAMP())",
-                        player->GetGUID().GetCounter(), player->GetName()
-                    );
+                    if (debug >= 2)
+                        ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Granted FIRST PRESTIGE achievement");
                     
                     std::string announcement = Acore::StringFormat(
                         "|cFFFFD700[Server First!]|r Player {} is the first to achieve Prestige!",
@@ -308,51 +336,63 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== COLLECTION ACHIEVEMENTS DEBUG ===|r");
+        if (!player || !DCAchievementSystem::IsEnabled())
+            return;
+
+        uint32 debug = DCAchievementSystem::GetDebugLevel();
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Collection achievement check");
         
         // Check mount count
         uint32 mountCount = GetMountCount(player);
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player has {} mounts", mountCount);
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Mounts: {}", mountCount);
         if (mountCount >= 50)
         {
             CompleteAchievement(player, ACHIEVEMENT_MOUNT_COLLECTOR);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Mount Collector achievement check (50+ mounts)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Mount Collector (50+)");
         }
         if (mountCount >= 100)
         {
             CompleteAchievement(player, ACHIEVEMENT_MOUNT_MASTER);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Mount Master achievement check (100+ mounts)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Mount Master (100+)");
         }
             
         // Check pet count
         uint32 petCount = GetPetCount(player);
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player has {} pets", petCount);
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pets: {}", petCount);
         if (petCount >= 50)
         {
             CompleteAchievement(player, ACHIEVEMENT_PET_COLLECTOR);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Pet Collector achievement check (50+ pets)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Collector (50+)");
         }
         if (petCount >= 100)
         {
             CompleteAchievement(player, ACHIEVEMENT_PET_MASTER);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Pet Master achievement check (100+ pets)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Master (100+)");
         }
             
         // Check title count
         uint32 titleCount = GetTitleCount(player);
-        ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Player has {} titles", titleCount);
+        if (debug >= 2)
+            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Titles: {}", titleCount);
         if (titleCount >= 25)
         {
             CompleteAchievement(player, ACHIEVEMENT_TITLE_COLLECTOR);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title Collector achievement check (25+ titles)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Title Collector (25+)");
         }
         if (titleCount >= 50)
         {
             CompleteAchievement(player, ACHIEVEMENT_THE_TITLED);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00The Titled achievement check (50+ titles)|r");
+            if (debug >= 2)
+                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] The Titled (50+)");
         }
-        
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700=== END COLLECTION DEBUG ===|r");
     }
 
 private:
@@ -402,7 +442,7 @@ private:
     {
         // Count number of titles player has earned
         uint32 count = 0;
-        for (uint32 i = 0; i < 200; ++i) // Adjust max title ID as needed
+        for (uint32 i = 1; i < sCharTitlesStore.GetNumRows(); ++i)
         {
             CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(i);
             if (titleEntry && player->HasTitle(titleEntry))

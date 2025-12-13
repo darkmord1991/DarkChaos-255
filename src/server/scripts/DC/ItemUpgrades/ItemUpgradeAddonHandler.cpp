@@ -6,6 +6,7 @@
 #include "Config.h"
 #include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -630,6 +631,8 @@ private:
 
             uint32 currentLevel = 0;
             uint32 tier = 1;
+
+            uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
             
             // Get tier from database mapping using BASE ENTRY (not clone entry)
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
@@ -646,8 +649,8 @@ private:
             // Check tier-specific max level from database
             uint32 tierMaxLevel = 15; // default fallback
             std::string tierSql = Acore::StringFormat(
-                "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
-                tier
+                "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = {}",
+                tier, season
             );
             QueryResult tierResult = WorldDatabase.Query(tierSql.c_str());
             if (tierResult)
@@ -686,8 +689,8 @@ private:
             uint32 nextLevel = currentLevel + 1;
             std::string costSql = Acore::StringFormat(
                 "SELECT SUM(token_cost) AS total_tokens, SUM(essence_cost) AS total_essence "
-                "FROM dc_item_upgrade_costs WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
-                tier, nextLevel, targetLevel
+                "FROM dc_item_upgrade_costs WHERE tier_id = {} AND season = {} AND upgrade_level BETWEEN {} AND {}",
+                tier, season, nextLevel, targetLevel
             );
             QueryResult costResult = WorldDatabase.Query(costSql.c_str());
 
@@ -807,7 +810,6 @@ private:
                 newIlvl = baseItemLevel;
 
             uint64 now = static_cast<uint64>(std::time(nullptr));
-            uint32 season = 1; // TODO: make configurable
 
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
             {

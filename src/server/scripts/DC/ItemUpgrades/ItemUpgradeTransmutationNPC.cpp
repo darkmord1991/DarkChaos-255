@@ -10,6 +10,7 @@
 
 #include "ItemUpgradeTransmutation.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Creature.h"
@@ -134,8 +135,9 @@ namespace DarkChaos
                 transMgr->GetExchangeRates(tokens_to_essence_rate, essence_to_tokens_rate);
 
                 UpgradeManager* mgr = GetUpgradeManager();
-                uint32 current_essence = mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, 1);
-                uint32 current_tokens = mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, 1);
+                uint32 season = GetCurrentSeasonId();
+                uint32 current_essence = mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, season);
+                uint32 current_tokens = mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, season);
 
                 std::ostringstream oss;
                 oss << "|cffffd700===== Currency Exchange =====|r\n\n";

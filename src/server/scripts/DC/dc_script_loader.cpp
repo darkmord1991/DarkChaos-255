@@ -43,8 +43,6 @@ void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
 
 // --- Map Extension (DISABLED - requires AIO which is not compiled) ---
-// void AddSC_cs_gps_test();                     // MapExtension\cs_gps_test.cpp
-// void AddSC_PlayerScript_MapExtension();       // MapExtension\PlayerScript_MapExtension.cpp
 
 // --- Heirloom System ---
 void AddSC_heirloom_scaling_255();            // heirloom_scaling_255.cpp
@@ -191,8 +189,6 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // MAP EXTENSION & GPS (DISABLED - requires AIO which is not compiled)
     // ═══════════════════════════════════════════════════════════════════════
-    // AddSC_cs_gps_test();
-    // AddSC_PlayerScript_MapExtension();
 
     // ═══════════════════════════════════════════════════════════════════════
     // HEIRLOOM SYSTEM

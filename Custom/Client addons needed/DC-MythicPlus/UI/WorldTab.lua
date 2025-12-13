@@ -352,7 +352,11 @@ function GF:CreateWorldContentEntry(parent, item, contentType)
     -- Name
     local name = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -4)
-    name:SetText(item.name or "Unknown")
+    if contentType == "hotspot" then
+        name:SetText(item.zoneName or item.zone or "Unknown Zone")
+    else
+        name:SetText(item.name or "Unknown")
+    end
     entry.nameText = name
     
     -- Info line
@@ -364,7 +368,7 @@ function GF:CreateWorldContentEntry(parent, item, contentType)
         info:SetText((item.zoneName or item.zone or "Unknown Zone") .. " - " .. status)
     elseif contentType == "hotspot" then
         local bonus = item.bonusPercent or item.bonus or 0
-        info:SetText((item.zoneName or "Unknown Zone") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
+        info:SetText((item.name or "Hotspot") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
     else
         info:SetText(item.description or "No description")
     end

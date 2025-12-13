@@ -193,6 +193,7 @@ function GF:SelectTab(index)
     if self.WorldTabContent then self.WorldTabContent:Hide() end
     if self.LiveRunsTabContent then self.LiveRunsTabContent:Hide() end
     if self.ScheduledTabContent then self.ScheduledTabContent:Hide() end
+    if self.MyQueuesTabContent then self.MyQueuesTabContent:Hide() end
     
     -- Show selected tab content
     if index == 1 then
@@ -385,19 +386,19 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
         frame.title = title
         
         -- Role Checkboxes
-        local tankCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        local tankCb = CreateFrame("CheckButton", "DCGroupFinderAppDialogRoleTank", frame, "UICheckButtonTemplate")
         tankCb:SetPoint("TOPLEFT", 40, -50)
-        _G[tankCb:GetName().."Text"]:SetText("Tank")
+        _G[tankCb:GetName().."Text"]:SetText("|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:16:16:0:0:64:64:0:19:22:41|t Tank")
         frame.tankCb = tankCb
         
-        local healerCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        local healerCb = CreateFrame("CheckButton", "DCGroupFinderAppDialogRoleHealer", frame, "UICheckButtonTemplate")
         healerCb:SetPoint("TOPLEFT", 120, -50)
-        _G[healerCb:GetName().."Text"]:SetText("Healer")
+        _G[healerCb:GetName().."Text"]:SetText("|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:16:16:0:0:64:64:20:39:1:20|t Healer")
         frame.healerCb = healerCb
         
-        local dpsCb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        local dpsCb = CreateFrame("CheckButton", "DCGroupFinderAppDialogRoleDPS", frame, "UICheckButtonTemplate")
         dpsCb:SetPoint("TOPLEFT", 200, -50)
-        _G[dpsCb:GetName().."Text"]:SetText("DPS")
+        _G[dpsCb:GetName().."Text"]:SetText("|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:16:16:0:0:64:64:20:39:22:41|t Damage")
         frame.dpsCb = dpsCb
         
         -- Note EditBox
@@ -532,18 +533,28 @@ function GF:UpdateSystemInfo(data)
         local text = ""
         local iconTexture = "Interface\\Icons\\INV_Misc_QuestionMark"
         
-        if data.rewardItemId > 0 then
-            local itemName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(data.rewardItemId)
+        local rewardItemId = tonumber(data.rewardItemId) or 0
+        local rewardItemCount = tonumber(data.rewardItemCount) or 1
+
+        -- Prefer central Upgrade Token if server is still sending a placeholder (commonly 49426 = Emblem of Frost)
+        local centralTokenId = (rawget(_G, "DCAddonProtocol") and rawget(_G, "DCAddonProtocol").TOKEN_ITEM_ID) or 0
+        if centralTokenId > 0 and (rewardItemId == 0 or rewardItemId == 49426) then
+            rewardItemId = centralTokenId
+            rewardItemCount = 1
+        end
+
+        if rewardItemId > 0 then
+            local itemName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(rewardItemId)
             if itemIcon then
                 iconTexture = itemIcon
             end
-            text = (data.rewardItemCount or 1) .. "x " .. (itemName or "Item")
+            text = (rewardItemCount or 1) .. "x " .. (itemName or "Item")
             
             -- If item info not cached, query it
             if not itemName then
                 -- WotLK doesn't have Item:CreateFromItemID mixin usually, just rely on GetItemInfo returning nil first time
                 -- We can try to query it again later or just show ID
-                text = (data.rewardItemCount or 1) .. "x Item " .. data.rewardItemId
+                text = (rewardItemCount or 1) .. "x Item " .. rewardItemId
             end
         elseif data.rewardCurrencyId > 0 then
             -- Currency handling

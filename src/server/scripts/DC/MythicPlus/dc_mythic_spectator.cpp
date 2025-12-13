@@ -1060,14 +1060,21 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
 
     RunReplay& replay = it->second;
     std::string serialized = replay.Serialize();
+
+    // NOTE: Even if these strings are typically derived from player names / internal JSON,
+    // escape them before embedding into SQL to avoid malformed queries.
+    std::string leaderNameEscaped = replay.leaderName;
+    CharacterDatabase.EscapeString(leaderNameEscaped);
+    std::string serializedEscaped = serialized;
+    CharacterDatabase.EscapeString(serializedEscaped);
     
     // Save to database
     CharacterDatabase.Execute(
         "INSERT INTO dc_mplus_spec_replays "
         "(map_id, keystone_level, leader_name, start_time, end_time, completed, replay_data) "
         "VALUES ({}, {}, '{}', {}, {}, {}, '{}')",
-        replay.mapId, uint32(replay.keystoneLevel), replay.leaderName,
-        replay.startTime, replay.endTime, replay.completed ? 1 : 0, serialized);
+        replay.mapId, uint32(replay.keystoneLevel), leaderNameEscaped,
+        replay.startTime, replay.endTime, replay.completed ? 1 : 0, serializedEscaped);
     
     // Cleanup old replays if over limit
     CharacterDatabase.Execute(

@@ -10,6 +10,7 @@
 
 #include "ItemUpgradeTransmutation.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -211,9 +212,10 @@ namespace DarkChaos
 
                 // Check currency requirements
                 UpgradeManager* mgr = GetUpgradeManager();
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
                 if (recipe.input_essence > 0)
                 {
-                    uint32 essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
+                    uint32 essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
                     if (essence < recipe.input_essence)
                     {
                         error_message = "Insufficient artifact essence.";
@@ -223,7 +225,7 @@ namespace DarkChaos
 
                 if (recipe.input_tokens > 0)
                 {
-                    uint32 tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                    uint32 tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
                     if (tokens < recipe.input_tokens)
                     {
                         error_message = "Insufficient upgrade tokens.";
@@ -298,10 +300,11 @@ namespace DarkChaos
                 {
                     // Deduct currencies
                     UpgradeManager* mgr = GetUpgradeManager();
+                    uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
                     if (recipe.input_essence > 0)
-                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, 1);
+                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, season);
                     if (recipe.input_tokens > 0)
-                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, 1);
+                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, season);
 
                     // Create transmutation session
                     TransmutationSession session;
@@ -391,15 +394,16 @@ namespace DarkChaos
                 {
                     // Refund partial costs
                     UpgradeManager* mgr = GetUpgradeManager();
+                    uint32 season = GetCurrentSeasonId();
                     if (config.allow_partial_refunds)
                     {
                         uint32 refund_essence = recipe.input_essence * 0.5f;
                         uint32 refund_tokens = recipe.input_tokens * 0.5f;
 
                         if (refund_essence > 0)
-                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, refund_essence, 1);
+                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, refund_essence, season);
                         if (refund_tokens > 0)
-                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, refund_tokens, 1);
+                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, refund_tokens, season);
                     }
 
                     // Remove session
@@ -429,6 +433,7 @@ namespace DarkChaos
                     return false;
 
                 UpgradeManager* mgr = GetUpgradeManager();
+                uint32 season = GetCurrentSeasonId();
 
                 try
                 {
@@ -442,12 +447,12 @@ namespace DarkChaos
                         fee_amount = required_tokens * config.currency_exchange_fee_percent / 100;
                         final_amount = amount;
 
-                        uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                        uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
                         if (current_tokens < (required_tokens + fee_amount))
                             return false;
 
-                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, required_tokens + fee_amount, 1);
-                        mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, final_amount, 1);
+                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, required_tokens + fee_amount, season);
+                        mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, final_amount, season);
                     }
                     else
                     {
@@ -457,12 +462,12 @@ namespace DarkChaos
                         fee_amount = required_essence * config.currency_exchange_fee_percent / 100;
                         final_amount = amount;
 
-                        uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
+                        uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
                         if (current_essence < (required_essence + fee_amount))
                             return false;
 
-                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, required_essence + fee_amount, 1);
-                        mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, 1);
+                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, required_essence + fee_amount, season);
+                        mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, season);
                     }
 
                     LOG_INFO("scripts", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
@@ -524,10 +529,11 @@ namespace DarkChaos
                     {
                         // Grant rewards
                         UpgradeManager* mgr = GetUpgradeManager();
+                        uint32 season = GetCurrentSeasonId();
                         if (recipe.output_essence > 0)
-                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.output_essence, 1);
+                            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.output_essence, season);
                         if (recipe.output_tokens > 0)
-                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.output_tokens, 1);
+                            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.output_tokens, season);
 
                         // Create output item if specified
                         if (recipe.output_item_id > 0)
@@ -647,8 +653,9 @@ namespace DarkChaos
                 else
                     CalculateDowngradeCost(item_guid, target_tier, essence_cost, token_cost);
 
-                uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
-                uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                uint32 season = state->season ? state->season : GetCurrentSeasonId();
+                uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
+                uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
 
                 if (current_essence < essence_cost || current_tokens < token_cost)
                     return false;
@@ -659,8 +666,8 @@ namespace DarkChaos
 
                 try
                 {
-                    mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, 1);
-                    mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, 1);
+                    mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, season);
+                    mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, season);
 
                     uint8 original_tier = state->tier_id;
                     if (success)

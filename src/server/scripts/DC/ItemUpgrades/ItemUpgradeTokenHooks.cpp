@@ -20,6 +20,7 @@
 #include "Log.h"
 #include "Chat.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "Common.h"
 #include <sstream>
 
@@ -169,19 +170,21 @@ namespace DarkChaos
                 if (!killer || !victim)
                     return;
 
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
                 // Calculate reward based on victim level
                 uint32 reward = (uint32)(PVP_KILL_REWARD * (1.0f + (victim->GetLevel() - 60) * 0.05f));
 
                 // Check weekly cap
-                    if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter()))
+                    if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter(), season))
                 {
                     ChatHandler(killer->GetSession()).PSendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
                     return;
                 }
 
                 // Award tokens
-                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward);
-                    UpdateWeeklyEarned(killer->GetGUID().GetCounter(), reward);
+                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward, season);
+                    UpdateWeeklyEarned(killer->GetGUID().GetCounter(), reward, season);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -201,6 +204,8 @@ namespace DarkChaos
                 if (!player || !quest)
                     return;
 
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
                 // Calculate reward
                 uint32 reward = CalculateQuestReward(quest->GetQuestLevel(), player->GetLevel());
 
@@ -209,14 +214,13 @@ namespace DarkChaos
                     return;
 
                 // Check weekly cap
-                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
+                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter(), season))
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID().GetCounter());
                     return;
                 }
 
                 // Cap reward if it would exceed weekly limit
-                uint32 season = 1;  // TODO: Get current season from player
                 UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
 
                 // Award tokens
@@ -241,6 +245,8 @@ namespace DarkChaos
             {
                 if (!player || !achievement)
                     return;
+
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
                 // Award essence for achievement
                 uint32 essence_reward = ACHIEVEMENT_ESSENCE_REWARD;
@@ -269,7 +275,7 @@ namespace DarkChaos
                 std::string achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
 
                 // Award essence
-                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward, season);
 
                 // Mark as claimed (using 'event' as discovery_type for achievements)
                 try
@@ -322,6 +328,8 @@ namespace DarkChaos
                 if (!player)
                     return;
 
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
                 // Don't award tokens for trivial kills (very low level creatures)
                 if (creature->GetLevel() < 50)
                     return;  // Skip low-level creatures
@@ -369,7 +377,7 @@ namespace DarkChaos
                     return;
 
                 // Check weekly cap (only for regular tokens, not essence)
-                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter()))
+                if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter(), season))
                 {
                     LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, creature kill reward only essence", player->GetGUID().GetCounter());
                     token_reward = 0;  // Zero out tokens, but still award essence
@@ -379,11 +387,11 @@ namespace DarkChaos
                 UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 if (token_reward > 0)
                 {
-                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, token_reward);
-                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), token_reward);
+                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, token_reward, season);
+                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), token_reward, season);
                 }
                 if (essence_reward > 0)
-                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward);
+                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward, season);
 
                 // Log transaction
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reward_reason.str().c_str(),

@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeUIHelpers.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "DatabaseEnv.h"
 #include <sstream>
 
@@ -45,14 +46,16 @@ public:
             auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
             if (mgr)
             {
-                upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN);
-                artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
+                artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
             }
 
             // Also query from database to verify
+            uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
             QueryResult result = CharacterDatabase.Query(
-                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'",
-                player->GetGUID().GetCounter());
+                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence' AND season = {}",
+                player->GetGUID().GetCounter(), season);
 
             if (result)
             {
@@ -145,9 +148,10 @@ public:
                 try
                 {
                     // Query database for artifact essence
+                    uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
                     QueryResult result = CharacterDatabase.Query(
-                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence'",
-                        player->GetGUID().GetCounter());
+                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence' AND season = {}",
+                        player->GetGUID().GetCounter(), season);
 
                     uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
 

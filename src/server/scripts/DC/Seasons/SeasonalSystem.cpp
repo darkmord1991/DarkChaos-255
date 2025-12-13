@@ -50,15 +50,24 @@ namespace DarkChaos
                 if (seasons_.find(season.season_id) != seasons_.end())
                     return false; // Season already exists
 
+                std::string safeName = season.season_name;
+                std::string safeDesc = season.season_description;
+                std::string safeTheme = season.theme_name;
+                std::string safeBanner = season.banner_path;
+                CharacterDatabase.EscapeString(safeName);
+                CharacterDatabase.EscapeString(safeDesc);
+                CharacterDatabase.EscapeString(safeTheme);
+                CharacterDatabase.EscapeString(safeBanner);
+
                 // Insert into database
                 std::ostringstream oss;
                 oss << "INSERT INTO dc_seasons (season_id, season_name, season_description, season_type, "
                     << "start_timestamp, end_timestamp, allow_carryover, carryover_percentage, reset_on_end, "
                     << "theme_name, banner_path) VALUES ("
-                    << season.season_id << ", '" << season.season_name << "', '" << season.season_description << "', "
+                    << season.season_id << ", '" << safeName << "', '" << safeDesc << "', "
                     << (int)season.season_type << ", " << season.start_timestamp << ", " << season.end_timestamp << ", "
                     << (season.allow_carryover ? 1 : 0) << ", " << season.carryover_percentage << ", "
-                    << (season.reset_on_end ? 1 : 0) << ", '" << season.theme_name << "', '" << season.banner_path << "')";
+                    << (season.reset_on_end ? 1 : 0) << ", '" << safeTheme << "', '" << safeBanner << "')";
 
                 CharacterDatabase.Execute(oss.str().c_str());
 
@@ -73,18 +82,27 @@ namespace DarkChaos
                 if (it == seasons_.end())
                     return false;
 
+                std::string safeName = season.season_name;
+                std::string safeDesc = season.season_description;
+                std::string safeTheme = season.theme_name;
+                std::string safeBanner = season.banner_path;
+                CharacterDatabase.EscapeString(safeName);
+                CharacterDatabase.EscapeString(safeDesc);
+                CharacterDatabase.EscapeString(safeTheme);
+                CharacterDatabase.EscapeString(safeBanner);
+
                 // Update database
                 std::ostringstream oss;
-                oss << "UPDATE dc_seasons SET season_name = '" << season.season_name << "', "
-                    << "season_description = '" << season.season_description << "', "
+                oss << "UPDATE dc_seasons SET season_name = '" << safeName << "', "
+                    << "season_description = '" << safeDesc << "', "
                     << "season_type = " << (int)season.season_type << ", "
                     << "start_timestamp = " << season.start_timestamp << ", "
                     << "end_timestamp = " << season.end_timestamp << ", "
                     << "allow_carryover = " << (season.allow_carryover ? 1 : 0) << ", "
                     << "carryover_percentage = " << season.carryover_percentage << ", "
                     << "reset_on_end = " << (season.reset_on_end ? 1 : 0) << ", "
-                    << "theme_name = '" << season.theme_name << "', "
-                    << "banner_path = '" << season.banner_path << "' "
+                    << "theme_name = '" << safeTheme << "', "
+                    << "banner_path = '" << safeBanner << "' "
                     << "WHERE season_id = " << season_id;
 
                 CharacterDatabase.Execute(oss.str().c_str());

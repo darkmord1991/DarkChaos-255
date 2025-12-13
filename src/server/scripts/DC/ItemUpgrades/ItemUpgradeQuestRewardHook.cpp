@@ -12,6 +12,8 @@
 #include "ObjectAccessor.h"
 #include "ItemUpgradeManager.h"
 #include "Log.h"
+#include "Chat.h"
+#include "ItemUpgradeSeasonResolver.h"
 
 // Forward declarations
 class UpgradeManager;
@@ -36,19 +38,13 @@ namespace DarkChaos
 
                 // Quest IDs that grant artifact items
                 static const uint32 ARTIFACT_QUEST_ID = 12340;  // Artifact Accessories quest
-                static const uint32 ARTIFACT_QUEST_SEASON = 1;  // Current season
                 static const uint32 STARTING_ESSENCE_AMOUNT = 500;  // Starting essence
 
                 // Check if this is an artifact quest
                 if (quest->GetQuestId() != ARTIFACT_QUEST_ID)
                     return;
 
-                // Safety check: Verify quest actually exists
-                if (quest->GetTitle() != "Artifact Accessories")
-                {
-                    LOG_ERROR("scripts.darkchaos", "ItemUpgradeArtifactQuestHook: Quest ID %u does not match expected artifact quest title", ARTIFACT_QUEST_ID);
-                    return;
-                }
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
                 // Get the upgrade manager
                 UpgradeManager* mgr = GetUpgradeManager();
@@ -61,7 +57,7 @@ namespace DarkChaos
                 uint32 playerGuid = player->GetGUID().GetCounter();
 
                 // Award starting essence (500)
-                if (mgr->AddCurrency(playerGuid, CURRENCY_ARTIFACT_ESSENCE, STARTING_ESSENCE_AMOUNT, ARTIFACT_QUEST_SEASON))
+                if (mgr->AddCurrency(playerGuid, CURRENCY_ARTIFACT_ESSENCE, STARTING_ESSENCE_AMOUNT, season))
                 {
                     LOG_INFO("scripts.darkchaos", "ItemUpgradeArtifactQuestHook: Awarded %u essence to player %u on quest completion (quest %u)",
                         STARTING_ESSENCE_AMOUNT, playerGuid, ARTIFACT_QUEST_ID);
@@ -106,8 +102,8 @@ void AddSC_ItemUpgradeQuestRewardHook()
  * 5. CURRENCY TYPE: CURRENCY_ARTIFACT_ESSENCE (value 2)
  *    Defined in ItemUpgradeManager.h
  *
- * 6. SEASON: Currently set to season 1
- *    Change ARTIFACT_QUEST_SEASON if using different season
+ * 6. SEASON: Resolved via `ItemUpgradeSeasonResolver.h`
+ *    (active SeasonalSystem season if available, else `DarkChaos.ActiveSeasonID`)
  *
  * 7. DEPENDENCIES:
  *    - ItemUpgradeManager.h (for UpgradeManager class)

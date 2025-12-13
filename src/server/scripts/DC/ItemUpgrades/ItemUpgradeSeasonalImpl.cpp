@@ -18,6 +18,7 @@
 #include "DatabaseEnv.h"
 #include "ItemUpgradeSeasonal.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -56,28 +57,59 @@ public:
                 ITEM_UPGRADES_TABLE, player_guid);
         }
 
-        // Calculate carryover currencies
+        // Calculate carryover currencies (migrate old season balances into the new season)
+        uint32 old_season_id = GetCurrentSeasonId();
+        if (old_season_id == 0)
+            old_season_id = 1;
+
+        uint32 essence = 0;
+        uint32 tokens = 0;
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT essence, tokens FROM dc_player_upgrade_tokens WHERE player_guid = {}",
-            player_guid);
+            "SELECT currency_type, amount FROM dc_player_upgrade_tokens "
+            "WHERE player_guid = {} AND season = {} AND currency_type IN ('artifact_essence', 'upgrade_token')",
+            player_guid, old_season_id);
 
         if (result)
         {
-            Field* fields = result->Fetch();
-            uint32 essence = fields[0].Get<uint32>();
-            uint32 tokens = fields[1].Get<uint32>();
-
-            if (config.reset_currencies)
+            do
             {
-                uint32 essence_carryover = (essence * config.essence_carryover_percent) / 100;
-                uint32 tokens_carryover = (tokens * config.token_carryover_percent) / 100;
+                Field* fields = result->Fetch();
+                std::string currency = fields[0].Get<std::string>();
+                uint32 amount = fields[1].Get<uint32>();
 
-                CharacterDatabase.Execute(
-                    "UPDATE dc_player_upgrade_tokens SET essence = {}, tokens = {} "
-                    "WHERE player_guid = {}",
-                    essence_carryover, tokens_carryover, player_guid);
-            }
+                if (currency == "artifact_essence")
+                    essence = amount;
+                else if (currency == "upgrade_token")
+                    tokens = amount;
+            } while (result->NextRow());
         }
+
+        uint32 essence_percent = config.reset_currencies ? config.essence_carryover_percent : 100;
+        uint32 token_percent = config.reset_currencies ? config.token_carryover_percent : 100;
+        uint32 essence_carryover = (essence * essence_percent) / 100;
+        uint32 tokens_carryover = (tokens * token_percent) / 100;
+
+        // Move balances into the new season (and clear old season balances so they can't leak)
+        if (old_season_id != new_season_id)
+        {
+            CharacterDatabase.Execute(
+                "UPDATE dc_player_upgrade_tokens SET amount = 0 "
+                "WHERE player_guid = {} AND season = {} AND currency_type IN ('artifact_essence', 'upgrade_token')",
+                player_guid, old_season_id);
+        }
+
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+            "VALUES ({}, 'artifact_essence', {}, {}) "
+            "ON DUPLICATE KEY UPDATE amount = {}",
+            player_guid, essence_carryover, new_season_id, essence_carryover);
+
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+            "VALUES ({}, 'upgrade_token', {}, {}) "
+            "ON DUPLICATE KEY UPDATE amount = {}",
+            player_guid, tokens_carryover, new_season_id, tokens_carryover);
 
         // Reset weekly spending counters
         CharacterDatabase.Execute(

@@ -17,6 +17,7 @@
 #include "SpellAuras.h"
 #include "Chat.h"
 #include "StringFormat.h"
+#include "dc_challenge_mode_database.h"
 #include "../Prestige/dc_prestige_api.h"
 
 #include <array>
@@ -992,10 +993,22 @@ public:
         {
             uint32 challengeId = action - 200;
             ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(challengeId);
+
+            // Validate that this is a real, selectable setting (prevents out-of-range / reserved writes)
+            if (g_ChallengeSettingConfigs.find(setting) == g_ChallengeSettingConfigs.end())
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("Invalid challenge mode selection.");
+                CloseGossipMenuFor(player);
+                return true;
+            }
             
             // Activate challenge mode
             player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
             sChallengeModes->RefreshChallengeAuras(player);
+
+            // Persist active modes to tracking DB (optional analytics / admin tooling)
+            ChallengeModeDatabase::InitializeTracking(player->GetGUID());
+            ChallengeModeDatabase::SyncActiveModesFromSettings(player);
             
             std::string title = GetChallengeTitle(setting);
             std::string activationMsg = "|cff00ff00Challenge Mode Activated:|r " + title;
@@ -1023,11 +1036,20 @@ public:
 // ==============================================
 // DarkChaos-255: HARDCORE CHARACTER LOCKING
 // ==============================================
-void HandleHardcoreDeath(Player* victim, std::string killerName)
+void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& killerName)
 {
+    if (!victim)
+        return;
+
     // Mark character as permanently dead
     victim->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
     sChallengeModes->RefreshChallengeAuras(victim);
+
+    // Persist in challenge mode DB tracking (authoritative lock)
+    ChallengeModeDatabase::InitializeTracking(victim->GetGUID());
+    ChallengeModeDatabase::SyncActiveModesFromSettings(victim);
+    ChallengeModeDatabase::RecordHardcoreDeath(victim->GetGUID(), victim, killerEntry, killerName);
+    ChallengeModeDatabase::LockCharacter(victim->GetGUID());
     
     // Global announcement
     std::ostringstream ss;
@@ -1059,7 +1081,7 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
-        HandleHardcoreDeath(victim, killer->GetName());
+        HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, killer ? killer->GetName() : "Unknown");
         
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);
@@ -1070,7 +1092,7 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
-        HandleHardcoreDeath(victim, killer->GetName());
+        HandleHardcoreDeath(victim, 0, killer ? killer->GetName() : "Unknown");
         
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);
@@ -1087,8 +1109,17 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        // Check if character died in hardcore mode
-        if (player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
+        if (!player)
+            return;
+
+        // Check if character died in hardcore mode (legacy flag) OR is DB-locked (authoritative)
+        bool isDeadFlag = player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1;
+        bool isDbLocked = ChallengeModeDatabase::IsCharacterLocked(player->GetGUID());
+
+        if (isDbLocked && !isDeadFlag)
+            player->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+
+        if (isDeadFlag || isDbLocked)
         {
             // Show death information
             ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");

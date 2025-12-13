@@ -880,7 +880,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=7631 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=8228 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1351,7 +1351,15 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   KEY `idx_leader` (`leader_guid`),
   KEY `idx_status_type` (`status`,`listing_type`),
   KEY `idx_dungeon` (`dungeon_id`,`keystone_level`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_group_finder_rewards` (
+  `player_guid` int unsigned NOT NULL,
+  `reward_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Daily, 1=Weekly',
+  `dungeon_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1=Normal, 2=Heroic, 3=Mythic, 4=Raid',
+  `claim_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`player_guid`,`reward_type`,`dungeon_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_group_finder_scheduled_events` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1629,7 +1637,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=315 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=351 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',

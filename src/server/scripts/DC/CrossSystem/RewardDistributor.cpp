@@ -8,12 +8,14 @@
 #include "RewardDistributor.h"
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
+#include "CrossSystem/DCSeasonHelper.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "Player.h"
 #include "Timer.h"
+#include "Seasons/SeasonalRewardSystem.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -272,7 +274,7 @@ namespace CrossSystem
                         }
                     }
                     
-                    if (calc.cappedAmount > 0 && DoDistributeTokens(player, calc.cappedAmount))
+                    if (calc.cappedAmount > 0 && DoDistributeTokens(player, calc.cappedAmount, context))
                     {
                         result.tokensAwarded += calc.cappedAmount;
                         result.tokenCalc = calc;
@@ -300,7 +302,7 @@ namespace CrossSystem
                         }
                     }
                     
-                    if (calc.cappedAmount > 0 && DoDistributeEssence(player, calc.cappedAmount))
+                    if (calc.cappedAmount > 0 && DoDistributeEssence(player, calc.cappedAmount, context))
                     {
                         result.essenceAwarded += calc.cappedAmount;
                         result.essenceCalc = calc;
@@ -489,43 +491,70 @@ namespace CrossSystem
     // Internal Distribution
     // =========================================================================
     
-    bool RewardDistributor::DoDistributeTokens(Player* player, uint32 amount)
+    bool RewardDistributor::DoDistributeTokens(Player* player, uint32 amount, const RewardContext& context)
     {
         if (!player || amount == 0)
             return false;
-            
-        // Use the seasonal reward system's token handling
-        // This would call into SeasonalRewardManager or update dc_player_upgrade_tokens
-        
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-            "VALUES ({}, 'upgrade_token', {}, 1) "
-            "ON DUPLICATE KEY UPDATE amount = amount + {}",
-            player->GetGUID().GetCounter(), amount, amount
-        );
-        
-        LOG_DEBUG("dc.crosssystem.rewards", "Distributed {} tokens to player {}",
-                  amount, player->GetName());
-        
-        return true;
+
+        // Central delivery path: SeasonalRewardManager (items + caps + notifications).
+        std::string source = context.sourceName.empty() ? "crosssystem" : context.sourceName;
+        uint32 sourceId = context.sourceId;
+
+        if (auto* mgr = DarkChaos::SeasonalRewards::SeasonalRewardManager::instance())
+        {
+            if (mgr->AwardTokens(player, amount, source, sourceId))
+            {
+                LOG_DEBUG("dc.crosssystem.rewards", "Distributed {} tokens to player {} (source={}, sourceId={})",
+                          amount, player->GetName(), source, sourceId);
+                return true;
+            }
+
+            // Fallback: still try to grant the configured token item directly.
+            if (uint32 tokenItemId = mgr->GetConfig().tokenItemId)
+            {
+                if (player->AddItem(tokenItemId, amount))
+                {
+                    LOG_WARN("dc.crosssystem.rewards", "SeasonalRewardManager failed; granted token item {} x{} directly to player {}",
+                             tokenItemId, amount, player->GetName());
+                    return true;
+                }
+            }
+        }
+
+        LOG_ERROR("dc.crosssystem.rewards", "Failed to distribute tokens={} to player {}", amount, player->GetName());
+        return false;
     }
     
-    bool RewardDistributor::DoDistributeEssence(Player* player, uint32 amount)
+    bool RewardDistributor::DoDistributeEssence(Player* player, uint32 amount, const RewardContext& context)
     {
         if (!player || amount == 0)
             return false;
-            
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-            "VALUES ({}, 'artifact_essence', {}, 1) "
-            "ON DUPLICATE KEY UPDATE amount = amount + {}",
-            player->GetGUID().GetCounter(), amount, amount
-        );
-        
-        LOG_DEBUG("dc.crosssystem.rewards", "Distributed {} essence to player {}",
-                  amount, player->GetName());
-        
-        return true;
+
+        std::string source = context.sourceName.empty() ? "crosssystem" : context.sourceName;
+        uint32 sourceId = context.sourceId;
+
+        if (auto* mgr = DarkChaos::SeasonalRewards::SeasonalRewardManager::instance())
+        {
+            if (mgr->AwardEssence(player, amount, source, sourceId))
+            {
+                LOG_DEBUG("dc.crosssystem.rewards", "Distributed {} essence to player {} (source={}, sourceId={})",
+                          amount, player->GetName(), source, sourceId);
+                return true;
+            }
+
+            if (uint32 essenceItemId = mgr->GetConfig().essenceItemId)
+            {
+                if (player->AddItem(essenceItemId, amount))
+                {
+                    LOG_WARN("dc.crosssystem.rewards", "SeasonalRewardManager failed; granted essence item {} x{} directly to player {}",
+                             essenceItemId, amount, player->GetName());
+                    return true;
+                }
+            }
+        }
+
+        LOG_ERROR("dc.crosssystem.rewards", "Failed to distribute essence={} to player {}", amount, player->GetName());
+        return false;
     }
     
     // =========================================================================

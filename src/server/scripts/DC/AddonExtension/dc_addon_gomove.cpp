@@ -19,6 +19,7 @@
 #include "Config.h"
 #include "Language.h"
 #include "../GOMove/GOMove.h" // Include original GOMove header
+#include "../GOMove/GOMoveCommandIds.h"
 
 namespace DCAddon
 {
@@ -70,13 +71,7 @@ namespace DCAddon
             uint32 lowguid = msg.GetUInt32(1);
             uint32 ARG = msg.GetUInt32(2);
 
-            // Enum from GOMoveScripts.cpp (we need to duplicate it or move it to header)
-            enum commandIDs
-            {
-                TEST, SELECTNEAR, DELET, X, Y, Z, O, GROUND, FLOOR, RESPAWN, GOTO, FACE,
-                SPAWN, NORTH, EAST, SOUTH, WEST, NORTHEAST, NORTHWEST, SOUTHEAST, SOUTHWEST,
-                UP, DOWN, LEFT, RIGHT, PHASE, SELECTALLNEAR, SPAWNSPELL,
-            };
+            using namespace DarkChaos::GOMove;
 
             if (ID < SPAWN) // no args
             {
@@ -219,13 +214,17 @@ namespace DCAddon
             
             // Convert to lowercase for case-insensitive search
             std::transform(searchTerm.begin(), searchTerm.end(), searchTerm.begin(), ::tolower);
+
+            // Escape user-provided search term for SQL safety
+            std::string escaped = searchTerm;
+            WorldDatabase.EscapeString(escaped);
             
             JsonValue response;
             JsonValue results; results.SetArray();
             
             uint32 count = 0;
             
-            std::string query = "SELECT entry, name, displayId FROM gameobject_template WHERE name LIKE '%" + searchTerm + "%' LIMIT 50";
+            std::string query = "SELECT entry, name, displayId FROM gameobject_template WHERE name LIKE '%" + escaped + "%' LIMIT 50";
             if (QueryResult result = WorldDatabase.Query(query.c_str()))
             {
                 do

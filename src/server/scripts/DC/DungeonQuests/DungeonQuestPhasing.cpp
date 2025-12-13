@@ -254,7 +254,9 @@ public:
             if (me->GetEntry() >= NPC_DUNGEON_QUEST_MASTER_START &&
                 me->GetEntry() <= NPC_DUNGEON_QUEST_MASTER_END)
             {
-                me->SetPhaseMask(0xFFFFFFFF, true); // All phases
+                // Visible in all phases EXCEPT default phase 1.
+                // Mythic/Mythic+ players are forced into phase 1 to hide quest NPCs.
+                me->SetPhaseMask(0xFFFFFFFE, true);
             }
         }
     };

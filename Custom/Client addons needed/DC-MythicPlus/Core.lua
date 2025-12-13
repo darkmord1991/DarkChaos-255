@@ -359,6 +359,21 @@ end
 -- =====================================================================
 namespace.inventoryKeystone = namespace.inventoryKeystone or nil
 
+local function KeystoneEqual(a, b)
+    if a == b then
+        return true
+    end
+    if (not a) ~= (not b) then
+        return false
+    end
+    return (a.hasKey == b.hasKey)
+        and (a.level == b.level)
+        and (a.dungeonName == b.dungeonName)
+        and (a.itemLink == b.itemLink)
+        and (a.bag == b.bag)
+        and (a.slot == b.slot)
+end
+
 local function ScanInventoryForKeystone()
     -- Scan all bags (0-4) for keystone-like items; try to parse level/dungeon
     local found = nil
@@ -396,8 +411,12 @@ local function ScanInventoryForKeystone()
                     tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
                     tooltip:ClearLines()
                     tooltip:SetBagItem(bag, slot)
+                    local tooltipName = tooltip.GetName and tooltip:GetName() or nil
                     for i = 1, tooltip:NumLines() do
-                        local line = _G["DCMythicPlusKeystoneScanTooltipTextLeft" .. i]
+                        local line
+                        if tooltipName then
+                            line = _G[tooltipName .. "TextLeft" .. i]
+                        end
                         if line then
                             local text = line:GetText()
                             if text then
@@ -425,11 +444,14 @@ local function ScanInventoryForKeystone()
         if found then break end
     end
 
+    local changed = not KeystoneEqual(namespace.inventoryKeystone, found)
     namespace.inventoryKeystone = found
-    if found then
-        Print("Inventory keystone detected: +" .. (found.level or 0) .. " " .. (found.dungeonName or "Unknown"))
-    else
-        Print("No inventory keystone detected")
+    if changed then
+        if found then
+            Print("Inventory keystone detected: +" .. (found.level or 0) .. " " .. (found.dungeonName or "Unknown"))
+        else
+            Print("No inventory keystone detected")
+        end
     end
     -- If GroupFinder UI exists, update the keystone panel display immediately
     if namespace.GroupFinder and type(namespace.GroupFinder.UpdateKeystoneDisplay) == "function" then

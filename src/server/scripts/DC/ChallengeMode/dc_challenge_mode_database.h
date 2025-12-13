@@ -16,14 +16,21 @@
 // Challenge mode bitwise flags for database storage
 enum ChallengeModeBitFlags : uint32
 {
-    CHALLENGE_FLAG_HARDCORE         = 0x01,  // 1
-    CHALLENGE_FLAG_SEMI_HARDCORE    = 0x02,  // 2
-    CHALLENGE_FLAG_SELF_CRAFTED     = 0x04,  // 4
-    CHALLENGE_FLAG_IRON_MAN         = 0x08,  // 8
-    CHALLENGE_FLAG_SOLO             = 0x10,  // 16 (future)
-    CHALLENGE_FLAG_DUNGEON_ONLY     = 0x20,  // 32 (future)
-    CHALLENGE_FLAG_PVP_ONLY         = 0x40,  // 64 (future)
-    CHALLENGE_FLAG_QUEST_ONLY       = 0x80   // 128
+    // IMPORTANT: Keep these aligned with ChallengeModeSettings indices
+    // (i.e., bitfield is 1 << setting).
+    CHALLENGE_FLAG_HARDCORE         = 0x01,   // 1 << 0
+    CHALLENGE_FLAG_SEMI_HARDCORE    = 0x02,   // 1 << 1
+    CHALLENGE_FLAG_SELF_CRAFTED     = 0x04,   // 1 << 2
+    CHALLENGE_FLAG_ITEM_QUALITY     = 0x08,   // 1 << 3
+    CHALLENGE_FLAG_SLOW_XP_GAIN     = 0x10,   // 1 << 4
+    CHALLENGE_FLAG_VERY_SLOW_XP_GAIN= 0x20,   // 1 << 5
+    CHALLENGE_FLAG_QUEST_ONLY       = 0x40,   // 1 << 6
+    CHALLENGE_FLAG_IRON_MAN         = 0x80,   // 1 << 7
+    // Future expansion flags (start after current setting bits)
+    CHALLENGE_FLAG_SOLO             = 0x200,  // 1 << 9 (future)
+    CHALLENGE_FLAG_DUNGEON_ONLY     = 0x400,  // 1 << 10 (future)
+    CHALLENGE_FLAG_PVP_ONLY         = 0x800,  // 1 << 11 (future)
+    CHALLENGE_FLAG_UNUSED_RESERVED  = 0x1000  // 1 << 12
 };
 
 // Event types for logging

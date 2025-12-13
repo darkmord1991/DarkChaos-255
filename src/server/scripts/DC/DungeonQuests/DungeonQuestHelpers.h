@@ -78,17 +78,18 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
     PlayerStatsCache cache{};
     cache.timestamp = now;
 
-    // Single aggregated query
+    // Single aggregated query against the actual key/value stats table.
+    // This avoids schema drift (dc_character_statistics does not exist in this project snapshot).
     QueryResult result = CharacterDatabase.Query(
         "SELECT "
-        "total_quests_completed, "
-        "daily_quests_completed, "
-        "weekly_quests_completed, "
-        "dungeon_quests_completed, "
-        "heroic_quests_completed, "
-        "mythic_quests_completed, "
-        "mythic_plus_quests_completed "
-        "FROM dc_character_statistics WHERE guid = ?",
+        "MAX(CASE WHEN stat_name='total_quests_completed' THEN stat_value ELSE 0 END) AS total_quests, "
+        "MAX(CASE WHEN stat_name='daily_quests_completed' THEN stat_value ELSE 0 END) AS daily_quests, "
+        "MAX(CASE WHEN stat_name='weekly_quests_completed' THEN stat_value ELSE 0 END) AS weekly_quests, "
+        "MAX(CASE WHEN stat_name='dungeon_quests_completed' THEN stat_value ELSE 0 END) AS dungeon_quests, "
+        "MAX(CASE WHEN stat_name='heroic_quests_completed' THEN stat_value ELSE 0 END) AS heroic_quests, "
+        "MAX(CASE WHEN stat_name='mythic_quests_completed' THEN stat_value ELSE 0 END) AS mythic_quests, "
+        "MAX(CASE WHEN stat_name='mythic_plus_quests_completed' THEN stat_value ELSE 0 END) AS mythic_plus_quests "
+        "FROM dc_character_dungeon_statistics WHERE guid = {}",
         guid
     );
 
@@ -102,6 +103,10 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
         cache.heroicQuests = fields[4].Get<uint32>();
         cache.mythicQuests = fields[5].Get<uint32>();
         cache.mythicPlusQuests = fields[6].Get<uint32>();
+
+        // If total is not explicitly tracked, derive it.
+        if (cache.totalQuests == 0)
+            cache.totalQuests = cache.dailyQuests + cache.weeklyQuests + cache.dungeonQuests;
     }
 
     // Update cache
@@ -195,10 +200,10 @@ inline uint32 GetStatisticValue(Player* player, const std::string& statName)
 
     // Safe: statName validated against whitelist, GUID is numeric
     QueryResult result = CharacterDatabase.Query(
-        "SELECT " + statName + " FROM dc_character_statistics WHERE guid = ?",
-        player->GetGUID().GetCounter()
+        "SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = '{}'",
+        player->GetGUID().GetCounter(), statName
     );
-    
+
     return result ? (*result)[0].Get<uint32>() : 0;
 }
 

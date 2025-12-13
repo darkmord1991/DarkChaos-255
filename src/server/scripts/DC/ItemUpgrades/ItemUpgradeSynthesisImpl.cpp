@@ -10,6 +10,7 @@
 
 #include "ItemUpgradeTransmutation.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
@@ -136,8 +137,9 @@ namespace DarkChaos
 
                 // Check currency requirements
                 UpgradeManager* mgr = GetUpgradeManager();
-                uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, 1);
-                uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, 1);
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
+                uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
 
                 if (current_essence < recipe.input_essence)
                 {
@@ -217,15 +219,16 @@ namespace DarkChaos
                     UpgradeManager* mgr = GetUpgradeManager();
 
                     // Consume currencies
+                    uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
                     if (recipe.input_essence > 0)
                     {
-                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, 1))
+                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, season))
                             throw std::runtime_error("Failed to consume essence");
                     }
 
                     if (recipe.input_tokens > 0)
                     {
-                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, 1))
+                        if (!mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, season))
                             throw std::runtime_error("Failed to consume tokens");
                     }
 
@@ -382,12 +385,13 @@ namespace DarkChaos
             {
                 // Quick check for basic requirements without detailed validation
                 UpgradeManager* mgr = GetUpgradeManager();
+                uint32 season = GetCurrentSeasonId();
 
                 // Check currencies
-                if (mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, 1) < recipe.input_essence)
+                if (mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, season) < recipe.input_essence)
                     return false;
 
-                if (mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, 1) < recipe.input_tokens)
+                if (mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, season) < recipe.input_tokens)
                     return false;
 
                 // Check catalyst

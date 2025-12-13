@@ -20,8 +20,11 @@ uint32 ChallengeModeDatabase::SettingToBitFlag(uint8 setting)
         case SETTING_HARDCORE:           return CHALLENGE_FLAG_HARDCORE;
         case SETTING_SEMI_HARDCORE:      return CHALLENGE_FLAG_SEMI_HARDCORE;
         case SETTING_SELF_CRAFTED:       return CHALLENGE_FLAG_SELF_CRAFTED;
-        case SETTING_IRON_MAN:           return CHALLENGE_FLAG_IRON_MAN;
+        case SETTING_ITEM_QUALITY_LEVEL: return CHALLENGE_FLAG_ITEM_QUALITY;
+        case SETTING_SLOW_XP_GAIN:       return CHALLENGE_FLAG_SLOW_XP_GAIN;
+        case SETTING_VERY_SLOW_XP_GAIN:  return CHALLENGE_FLAG_VERY_SLOW_XP_GAIN;
         case SETTING_QUEST_XP_ONLY:      return CHALLENGE_FLAG_QUEST_ONLY;
+        case SETTING_IRON_MAN:           return CHALLENGE_FLAG_IRON_MAN;
         default:                         return 0;
     }
 }
@@ -33,11 +36,14 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
         return "None";
     
     std::vector<std::string> activeModes;
-    activeModes.reserve(5); // Preallocate for typical case
+    activeModes.reserve(8); // Preallocate for typical case
     
     if (flags & CHALLENGE_FLAG_HARDCORE)      activeModes.push_back("Hardcore");
     if (flags & CHALLENGE_FLAG_SEMI_HARDCORE) activeModes.push_back("Semi-Hardcore");
     if (flags & CHALLENGE_FLAG_SELF_CRAFTED)  activeModes.push_back("Self-Crafted");
+    if (flags & CHALLENGE_FLAG_ITEM_QUALITY)  activeModes.push_back("Item Quality Restricted");
+    if (flags & CHALLENGE_FLAG_SLOW_XP_GAIN)  activeModes.push_back("Slow XP Gain");
+    if (flags & CHALLENGE_FLAG_VERY_SLOW_XP_GAIN) activeModes.push_back("Very Slow XP Gain");
     if (flags & CHALLENGE_FLAG_IRON_MAN)      activeModes.push_back("Iron Man");
     if (flags & CHALLENGE_FLAG_QUEST_ONLY)    activeModes.push_back("Quest Only");
     
@@ -331,6 +337,15 @@ void ChallengeModeDatabase::SyncActiveModesFromSettings(Player* player)
     
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_SELF_CRAFTED).value == 1)
         activeModes |= CHALLENGE_FLAG_SELF_CRAFTED;
+
+    if (player->GetPlayerSetting("mod-challenge-modes", SETTING_ITEM_QUALITY_LEVEL).value == 1)
+        activeModes |= CHALLENGE_FLAG_ITEM_QUALITY;
+
+    if (player->GetPlayerSetting("mod-challenge-modes", SETTING_SLOW_XP_GAIN).value == 1)
+        activeModes |= CHALLENGE_FLAG_SLOW_XP_GAIN;
+
+    if (player->GetPlayerSetting("mod-challenge-modes", SETTING_VERY_SLOW_XP_GAIN).value == 1)
+        activeModes |= CHALLENGE_FLAG_VERY_SLOW_XP_GAIN;
     
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_IRON_MAN).value == 1)
         activeModes |= CHALLENGE_FLAG_IRON_MAN;

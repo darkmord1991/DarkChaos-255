@@ -19,6 +19,7 @@
 #include "Guild.h"
 #include "ItemUpgradeAdvanced.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
 #include <sstream>
 #include <iomanip>
 #include <cstdlib>
@@ -58,7 +59,7 @@ public:
     {
         // Get current upgrade level
         QueryResult result = CharacterDatabase.Query(
-            "SELECT upgrade_level, essence_invested, tokens_invested "
+            "SELECT upgrade_level, essence_invested, tokens_invested, season "
             "FROM {} WHERE player_guid = {} AND item_guid = {}",
             ITEM_UPGRADES_TABLE, player_guid, item_guid);
 
@@ -69,6 +70,9 @@ public:
         uint8 current_level = fields[0].Get<uint8>();
         uint32 essence_invested = fields[1].Get<uint32>();
         uint32 tokens_invested = fields[2].Get<uint32>();
+        uint32 season = fields[3].Get<uint32>();
+        if (season == 0)
+            season = GetCurrentSeasonId();
 
         // Calculate refund
         if (config.refund_on_respec)
@@ -76,12 +80,24 @@ public:
             uint32 essence_refund = (essence_invested * config.refund_percent) / 100;
             uint32 tokens_refund = (tokens_invested * config.refund_percent) / 100;
 
-            // Add currency back to player
-            CharacterDatabase.Execute(
-                "UPDATE dc_player_upgrade_tokens "
-                "SET essence = essence + {}, tokens = tokens + {} "
-                "WHERE player_guid = {}",
-                essence_refund, tokens_refund, player_guid);
+            // Add currency back to player (season-scoped)
+            if (essence_refund > 0)
+            {
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+                    "VALUES ({}, 'artifact_essence', {}, {}) "
+                    "ON DUPLICATE KEY UPDATE amount = amount + {}",
+                    player_guid, essence_refund, season, essence_refund);
+            }
+
+            if (tokens_refund > 0)
+            {
+                CharacterDatabase.Execute(
+                    "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+                    "VALUES ({}, 'upgrade_token', {}, {}) "
+                    "ON DUPLICATE KEY UPDATE amount = amount + {}",
+                    player_guid, tokens_refund, season, tokens_refund);
+            }
         }
 
         // Reset item
@@ -312,10 +328,12 @@ public:
 
         if (ach->reward_tokens > 0)
         {
+            uint32 season = GetCurrentSeasonId();
             CharacterDatabase.Execute(
-                "UPDATE dc_player_upgrade_tokens "
-                "SET tokens = tokens + {} WHERE player_guid = {}",
-                ach->reward_tokens, player_guid);
+                "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+                "VALUES ({}, 'upgrade_token', {}, {}) "
+                "ON DUPLICATE KEY UPDATE amount = amount + {}",
+                player_guid, ach->reward_tokens, season, ach->reward_tokens);
         }
     }
 
@@ -508,12 +526,12 @@ public:
         // Award bonus tokens to all guild members based on tier
         uint32 bonus_tokens = tier * 10;  // 10 tokens per tier
 
+        uint32 season = GetCurrentSeasonId();
         CharacterDatabase.Execute(
-            "UPDATE dc_player_upgrade_tokens t "
-            "INNER JOIN guild_member gm ON gm.guid = t.player_guid "
-            "SET t.tokens = t.tokens + {} "
-            "WHERE gm.guildid = {}",
-            bonus_tokens, guild_id);
+            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
+            "SELECT gm.guid, 'upgrade_token', {}, {} FROM guild_member gm WHERE gm.guildid = {} "
+            "ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)",
+            bonus_tokens, season, guild_id);
     }
 
     uint8 GetGuildTier(uint32 guild_id) override
