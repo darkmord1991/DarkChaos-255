@@ -30,6 +30,7 @@
 #include <sstream>
 #include <atomic>
 #include <unordered_set>
+#include <limits>
 
 // ============================================================================
 // INVASION CONSTANTS
@@ -188,6 +189,10 @@ constexpr uint32 EVENT_STATUS_BROADCAST_COOLDOWN_MS = 2000;
 // Cooldown for ChatHandler world announcements (ms) to prevent duplicate world text spam
 constexpr uint32 EVENT_ANNOUNCE_COOLDOWN_MS = 2000;
 
+// Replenishment tuning: max number of invaders we may spawn per spawn-tick when below the wave cap.
+// Peak NPC count is still bounded by the per-wave cap from GetWaveSpawnBudget().
+constexpr uint32 WAVE_REPLENISH_MAX_PER_TICK = 3;
+
 // Group/session rules
 constexpr uint32 INVASION_MAX_GROUP_SIZE = 10;
 constexpr float  INVASION_REQUIRED_START_RANGE_YARDS = 50.0f;
@@ -334,13 +339,13 @@ public:
                         attemptPos.m_positionY += frand(-0.5f, 0.5f);
                     }
                     raptor = me->SummonCreature(NPC_ZANDALARI_WAR_RAPTOR, attemptPos, TEMPSUMMON_CORPSE_DESPAWN, 10 * IN_MILLISECONDS);
-                    if (raptor)
+                    if (!raptor)
                         LOG_WARN("scripts", "Giant Isles Invasion: Beast Tamer raptor spawn attempt {}/3 failed for parent {}", attempt, me->GetGUID().ToString());
                 }
-                        // Use helper to avoid requiring class definition in this AI file
-                        GI_BroadcastSpawn(map, raptor, static_cast<uint8>(GI_GetCurrentPhase()), -1);
                 if (raptor)
                 {
+                    // Use helper to avoid requiring class definition in this AI file
+                    GI_BroadcastSpawn(map, raptor, static_cast<uint8>(GI_GetCurrentPhase()), -1);
                     LOG_INFO("scripts", "Giant Isles Invasion: Beast Tamer {} summoned raptor {} at {}", me->GetGUID().ToString(), raptor->GetGUID().ToString(), raptor->GetPosition().ToString());
                     _raptorGuids.push_back(raptor->GetGUID());
                     raptor->SetFaction(16);
@@ -658,6 +663,15 @@ public:
     uint64_t _lastEventStatusBroadcastTime;
     uint64_t _lastEventStatusTickTime;
     uint64_t _lastEventAnnouncementTime;
+
+    // Wave spawning: keep invader count stable but low by replenishing up to a per-wave cap.
+    // This makes the invasion feel active without exploding NPC counts.
+    uint32 _waveInvaderActiveCap = 0;
+    uint8  _nextLaneToSpawn = 0;
+    uint32 _laneSpawnedCount[3] = { 0u, 0u, 0u };
+
+    // Remember which lane each invader belongs to so we can re-command them consistently.
+    std::map<ObjectGuid, uint8> _invaderLaneIndex;
 
     bool _reinforcementsCalledWave2;
     bool _reinforcementsCalledWave3;
@@ -1120,7 +1134,41 @@ public:
         else
             _waveTimer -= diff;
 
-        // Waves use fixed spawns at wave start; no continuous spawning here.
+        // During waves 1-3, replenish invaders gradually up to the wave's active cap.
+        // This uses the existing SPAWN_DELAY_WAVE_* timers and prevents "one burst then nothing".
+        if (_invasionPhase >= INVASION_WAVE_1 && _invasionPhase <= INVASION_WAVE_3)
+        {
+            if (_waveInvaderActiveCap == 0)
+                _waveInvaderActiveCap = GetWaveSpawnBudget();
+
+            if (_spawnTimer <= diff)
+            {
+                uint32 active = GetActiveInvaderCount(map);
+                if (_waveInvaderActiveCap > active)
+                {
+                    // Adaptive catch-up: faster refill when the wave is far below cap, but never exceed cap.
+                    uint32 missing = _waveInvaderActiveCap - active;
+                    uint32 toSpawn = 1u;
+
+                    // If we're significantly under cap (e.g., after a big wipe), refill faster.
+                    // Still bounded by WAVE_REPLENISH_MAX_PER_TICK and the missing amount.
+                    if (missing >= 6u)
+                        toSpawn = 3u;
+                    else if (missing >= 3u)
+                        toSpawn = 2u;
+
+                    toSpawn = std::min<uint32>(toSpawn, WAVE_REPLENISH_MAX_PER_TICK);
+                    toSpawn = std::min<uint32>(toSpawn, missing);
+                    for (uint32 i = 0; i < toSpawn; ++i)
+                        SpawnNextWaveInvader(map);
+                }
+
+                uint32 delay = GetSpawnDelay();
+                _spawnTimer = delay ? delay : 1 * IN_MILLISECONDS;
+            }
+            else
+                _spawnTimer -= diff;
+        }
 
         // Periodically re-issue movement/target commands to idle invaders
         if (_invaderNudgeTimer <= diff)
@@ -1158,6 +1206,7 @@ public:
                 _invasionPhase = INVASION_WAVE_1;
                 _waveTimer = WAVE_1_DURATION;
                 _spawnTimer = 0;
+                ResetWaveSpawningForCurrentWave();
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
                 SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 1]|r Raiders hit the shore! Push them back into the surf!");
                 // Spawn the first wave batch immediately
@@ -1171,6 +1220,7 @@ public:
                 _invasionPhase = INVASION_WAVE_2;
                 _waveTimer = WAVE_2_DURATION;
                 _spawnTimer = 0;
+                ResetWaveSpawningForCurrentWave();
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
                 SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 2]|r Heavy raiders advance! Hold the line!");
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
@@ -1184,6 +1234,7 @@ public:
                 _invasionPhase = INVASION_WAVE_3;
                 _waveTimer = WAVE_3_DURATION;
                 _spawnTimer = 0;
+                ResetWaveSpawningForCurrentWave();
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
                 SafeWorldAnnounce(map, "|cFFFF4000[INVASION - WAVE 3]|r Elites and witch doctors arrive! Beware their hexes!");
                 LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
@@ -1197,6 +1248,7 @@ public:
                 _invasionPhase = INVASION_WAVE_4_BOSS;
                 _waveTimer = WAVE_4_DURATION;
                 _spawnTimer = 0;  // No more spawns, only boss
+                _waveInvaderActiveCap = 0;
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 4);
                 SafeWorldAnnounce(map, "|cFFFF0000[BOSS WAVE]|r Warlord Zul'mar arrives with his honor guard! Defeat him to repel the invasion!");
                 DespawnAllInvaders(map);
@@ -1341,8 +1393,8 @@ public:
 
         LOG_INFO("scripts", "Giant Isles Invasion: SpawnWave (fixed) for phase {}", _invasionPhase);
 
-        // Scaled, low-NPC wave sizes: compute a total spawn budget from participant count.
-        uint32 totalBudget = GetWaveSpawnBudget();
+        // Scaled, low-NPC wave sizes: compute a per-wave active cap from participant count.
+        uint32 totalBudget = _waveInvaderActiveCap ? _waveInvaderActiveCap : GetWaveSpawnBudget();
         if (!totalBudget)
             return; // No spawns for warning/boss/victory/fail
 
@@ -1360,58 +1412,77 @@ public:
         if (totalBudget > MAX_ACTIVE_INVADERS)
             LOG_WARN("scripts", "Giant Isles Invasion: scaled wave spawn budget {} exceeds cap {}", totalBudget, MAX_ACTIVE_INVADERS);
 
-        // Distribute budget across lanes deterministically: first lanes get the remainder.
-        uint32 perLane = totalBudget / 3u;
-        uint32 remainder = totalBudget % 3u;
+        // Fill the wave to its target active cap immediately at wave start.
+        // Ongoing replenishment is handled in OnUpdate via SpawnNextWaveInvader().
+        while (GetActiveInvaderCount(map) < totalBudget)
+            if (!SpawnNextWaveInvader(map))
+                break;
+    }
 
-        for (uint8 lane = 0; lane < 3; ++lane)
+    void ResetWaveSpawningForCurrentWave()
+    {
+        _waveInvaderActiveCap = GetWaveSpawnBudget();
+        _nextLaneToSpawn = 0;
+        _laneSpawnedCount[0] = 0;
+        _laneSpawnedCount[1] = 0;
+        _laneSpawnedCount[2] = 0;
+    }
+
+    bool SpawnNextWaveInvader(Map* map)
+    {
+        if (!map)
+            return false;
+
+        if (!(_invasionPhase >= INVASION_WAVE_1 && _invasionPhase <= INVASION_WAVE_3))
+            return false;
+
+        if (_waveInvaderActiveCap == 0)
+            return false;
+
+        if (GetActiveInvaderCount(map) >= _waveInvaderActiveCap)
+            return false;
+
+        std::vector<uint32> waveEntries = GetWaveCreatureEntries();
+        if (waveEntries.empty())
+            return false;
+
+        // Try up to 3 lanes (round-robin) to find a successful spawn spot.
+        for (uint8 attempt = 0; attempt < 3; ++attempt)
         {
-            uint32 laneBudget = perLane + ((lane < remainder) ? 1u : 0u);
-            if (laneBudget == 0)
-                continue;
-
+            uint8 lane = (_nextLaneToSpawn + attempt) % 3;
             const InvasionSpawnPoint& point = LANE_SPAWN_POINTS[lane];
             Position base(point.x, point.y, point.z, point.o);
 
-            for (uint32 i = 0; i < laneBudget; ++i)
+            uint32 idx = _laneSpawnedCount[lane];
+            uint32 entry = waveEntries[(idx + lane) % waveEntries.size()];
+
+            float const ring = static_cast<float>(idx / 4u);
+            float const radius = 0.75f + (ring * 1.25f);
+            float const angle = static_cast<float>(lane) * 2.2f + static_cast<float>(idx) * 1.25663706f;
+            Position spawnPos = base;
+            spawnPos.m_positionX += radius * std::cos(angle);
+            spawnPos.m_positionY += radius * std::sin(angle);
+
+            Creature* invader = TrySummonCreature(map, entry, spawnPos, 4, 0.75f, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 30 * MINUTE * IN_MILLISECONDS);
+            if (!invader)
+                continue;
+
+            // Commit lane selection only after a successful summon.
+            _nextLaneToSpawn = (lane + 1) % 3;
+            ++_laneSpawnedCount[lane];
+
+            if (_sessionPhaseMask)
+                invader->SetPhaseMask(_sessionPhaseMask, true);
+            RegisterInvader(invader);
+            _invaderLaneIndex[invader->GetGUID()] = lane;
+            CommandInvader(invader, map, static_cast<int8>(lane));
+            BroadcastSpawn(map, invader, static_cast<uint8>(_invasionPhase), static_cast<int8>(lane));
+
+            // Wave 3: Beast Tamer pet (War Raptor). Pet counts toward the same active cap.
+            if (_invasionPhase == INVASION_WAVE_3 && entry == NPC_ZANDALARI_BEAST_TAMER)
             {
-                // Respect total budget even if something else spawned (shouldn't happen with DespawnAllInvaders).
-                if (GetActiveInvaderCount(map) >= totalBudget)
-                    return;
-
-                // Deterministic composition per lane (cycles through the wave's entries)
-                uint32 entry = waveEntries[(i + lane) % waveEntries.size()];
-
-                // Spread spawns slightly around the lane point to avoid stacking/collision.
-                // Still deterministic and always centered on the same lane locations.
-                float const ring = static_cast<float>(i / 4);               // 0,0,0,0,1,1,1,1...
-                float const radius = 0.75f + (ring * 1.25f);                // 0.75, 2.0, 3.25...
-                float const angle = static_cast<float>(lane) * 2.2f + static_cast<float>(i) * 1.25663706f; // lane offset + 72deg steps
-                Position spawnPos = base;
-                spawnPos.m_positionX += radius * std::cos(angle);
-                spawnPos.m_positionY += radius * std::sin(angle);
-
-                // Spawn at the same base location; allow tiny retry jitter inside TrySummonCreature.
-                Creature* invader = TrySummonCreature(map, entry, spawnPos, 4, 0.75f, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 30 * MINUTE * IN_MILLISECONDS);
-                if (!invader)
+                if (GetActiveInvaderCount(map) < _waveInvaderActiveCap)
                 {
-                    LOG_WARN("scripts", "Giant Isles Invasion: Spawn failed entry {} lane {} at pos=({}, {}, {}, {})", entry, lane, spawnPos.GetPositionX(), spawnPos.GetPositionY(), spawnPos.GetPositionZ(), spawnPos.GetOrientation());
-                    continue;
-                }
-
-                if (_sessionPhaseMask)
-                    invader->SetPhaseMask(_sessionPhaseMask, true);
-                RegisterInvader(invader);
-                CommandInvader(invader, map, static_cast<int8>(lane));
-                BroadcastSpawn(map, invader, static_cast<uint8>(_invasionPhase), static_cast<int8>(lane));
-
-                // Wave 3: Beast Tamer pet (War Raptor)
-                if (_invasionPhase == INVASION_WAVE_3 && entry == NPC_ZANDALARI_BEAST_TAMER)
-                {
-                    // Pets count toward the same budget to keep NPC counts stable.
-                    if (GetActiveInvaderCount(map) >= totalBudget)
-                        continue;
-
                     Position petPos = invader->GetPosition();
                     petPos.m_positionX += frand(-1.5f, 1.5f);
                     petPos.m_positionY += frand(-1.5f, 1.5f);
@@ -1422,12 +1493,18 @@ public:
                         if (_sessionPhaseMask)
                             pet->SetPhaseMask(_sessionPhaseMask, true);
                         RegisterInvader(pet);
+                        _invaderLaneIndex[pet->GetGUID()] = lane;
                         CommandInvader(pet, map, static_cast<int8>(lane));
                         BroadcastSpawn(map, pet, static_cast<uint8>(_invasionPhase), static_cast<int8>(lane));
                     }
                 }
             }
+
+            return true;
         }
+
+        // If we couldn't summon anywhere, don't spin; let the next tick try again.
+        return false;
     }
 
     void SpawnBossSpectators(Map* map)
@@ -1906,6 +1983,8 @@ public:
             _isFailing.store(false);
             sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE, 0);
 
+            _invaderLaneIndex.clear();
+
             // Restore participant phasing even if the map pointer is gone.
             RestoreSessionPhasing();
             return;
@@ -1920,6 +1999,7 @@ public:
             }
         }
         _invaderGuids.clear();
+        _invaderLaneIndex.clear();
 
         for (const auto& guid : _bossGuardGuids)
         {
@@ -2368,8 +2448,11 @@ public:
             if (inv->IsInCombat())
                 continue;
 
-            // If not moving, reissue movement and target
-            CommandInvader(inv, map, urand(0, 2));
+            // If not moving, reissue movement and target along the invader's assigned lane.
+            int8 lane = -1;
+            if (auto it = _invaderLaneIndex.find(guid); it != _invaderLaneIndex.end())
+                lane = static_cast<int8>(it->second);
+            CommandInvader(inv, map, lane);
 
             if (Unit* target = SelectInvasionTarget(inv, map))
             {
@@ -2384,20 +2467,45 @@ public:
         if (!creature || !map)
             return;
 
+        // Some DB templates may mark these NPCs as stationary/pacified.
+        // Ensure they are actually allowed to move and fight once spawned.
+        creature->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+        creature->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+        creature->SetReactState(REACT_AGGRESSIVE);
+        creature->SetFaction(16);
+
         creature->SetWalk(false);
         creature->SetHomePosition(creature->GetPosition());
 
         // Clear any stale movement generators before issuing a new run command
         creature->GetMotionMaster()->Clear();
 
-        if (laneIndex >= 0 && laneIndex < 3)
+        if (!(laneIndex >= 0 && laneIndex < 3))
         {
-            const InvasionSpawnPoint& target = TARGET_POINTS[laneIndex];
-            creature->GetMotionMaster()->MovePoint(laneIndex + 1, target.x, target.y, target.z);
+            // Fallback: pick the closest lane target to keep the mob moving even if lane data is missing.
+            float best = std::numeric_limits<float>::max();
+            int8 bestLane = 1;
+            for (int8 i = 0; i < 3; ++i)
+            {
+                float d = creature->GetDistance(TARGET_POINTS[i].x, TARGET_POINTS[i].y, TARGET_POINTS[i].z);
+                if (d < best)
+                {
+                    best = d;
+                    bestLane = i;
+                }
+            }
+            laneIndex = bestLane;
         }
 
+        const InvasionSpawnPoint& laneTarget = TARGET_POINTS[laneIndex];
+        creature->GetMotionMaster()->MovePoint(laneIndex + 1, laneTarget.x, laneTarget.y, laneTarget.z);
+
         if (Unit* targetUnit = SelectInvasionTarget(creature, map))
+        {
+            // Force a chase to the chosen target so idle mobs start moving.
+            creature->GetMotionMaster()->MoveChase(targetUnit);
             creature->AI()->AttackStart(targetUnit);
+        }
     }
 
     Unit* SelectInvasionTarget(Creature* seeker, Map* map) const

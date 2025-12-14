@@ -101,6 +101,14 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
                 Button:SetPoint("TOPLEFT", Frame.Buttons[i-1], "BOTTOMLEFT")
             end
             Button:SetScript("OnClick", function(self) if(Frame.ButtonOnClick) then Frame:ButtonOnClick(i) end end)
+
+            Button:SetScript("OnEnter", function(self)
+                if (Frame.ButtonTooltip) then
+                    Frame:ButtonTooltip(i, self)
+                end
+            end)
+            Button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
             local MiscButton = CreateFrame("Button", "$parent_Button"..i.."_Misc", Frame)
             MiscButton:SetSize(16, 16)
             MiscButton:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Disabled")
@@ -109,6 +117,14 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
             MiscButton:SetNormalFontObject(GameFontHighlightLeft)
             MiscButton:SetPoint("TOPLEFT", Button, "TOPRIGHT", 0, 0)
             MiscButton:SetScript("OnClick", function(self) if(Frame.MiscOnClick) then Frame:MiscOnClick(i) end end)
+
+            MiscButton:SetScript("OnEnter", function(self)
+                if (Frame.MiscTooltip) then
+                    Frame:MiscTooltip(i, self)
+                end
+            end)
+            MiscButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
             Button.MiscButton = MiscButton
             rawset(t, i, Button)
             return Button
@@ -141,6 +157,9 @@ function GOMove:CreateInput(Frame, name, width, height, Ox, Oy, letters, default
     Input:SetPoint("TOP", Frame, "TOP", Ox+2.5, Oy-10)
     Input:SetNumeric(true)
     Input:SetMaxLetters(letters)
+    if (Input.SetAutoFocus) then
+        Input:SetAutoFocus(false)
+    end
     Input:SetScript("OnEnterPressed", function() Input:ClearFocus() end)
     Input:SetScript("OnEscapePressed", function() Input:ClearFocus() end)
     if(default) then
@@ -208,6 +227,14 @@ function GOMove:Move(ID, input)
     if(not trinityID[ID] or not tonumber(trinityID[ID][1])) then
         return
     end
+
+    -- Mark client-side context for server selection responses.
+    -- These flags are consumed in GOMoveScripts.lua when handling CHAT_MSG_ADDON.
+    if ID == "SPAWN" or ID == "SPAWNSPELL" then
+        self._expectSpawnAdd = true
+    elseif ID == "SELECTALLNEAR" then
+        self._radiusSelecting = true
+    end
     if(not trinityID[ID][2]) then
         DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], 0, ARG)
     elseif(trinityID[ID][3] and tonumber(ARG) and tonumber(ARG) > 0) then
@@ -223,6 +250,14 @@ function GOMove:Move(ID, input)
                 did = true
             end
         end
+
+        -- UX: if nothing is selected, fall back to the last spawned object.
+        -- This avoids accidental multi-moves and matches the "last spawned" workflow.
+        if(not did and tonumber(self.LastSpawnedGUID)) then
+            DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], self.LastSpawnedGUID, ARG)
+            did = true
+        end
+
         if(not did) then
             UIErrorsFrame:AddMessage("No objects selected", 1.0, 0.0, 0.0, 53, 2)
             return

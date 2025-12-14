@@ -43,6 +43,28 @@ function GOMove.Selected:Del(guid)
     self[guid] = nil
 end
 
+local function clearAllSelected()
+    for guid, _ in pairs(GOMove.Selected) do
+        if (tonumber(guid)) then
+            GOMove.Selected:Del(guid)
+        end
+    end
+end
+
+local function clearSelectionList()
+    for i = #GOMove.SelL, 1, -1 do
+        GOMove.SelL:Del(GOMove.SelL[i][2])
+    end
+end
+
+local function selectOnly(name, guid)
+    clearAllSelected()
+    if (name and guid) then
+        GOMove.Selected:Add(name, guid)
+        GOMove.LastSpawnedGUID = guid
+    end
+end
+
 -- FAVOURITE LIST
 local FavFrame = GOMove:CreateFrame("Favourite_List", 200, 280, GOMove.FavL, true)
 FavFrame:Position("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
@@ -56,6 +78,20 @@ function FavFrame:MiscOnClick(ID)
     self:Update()
 end
 
+function FavFrame:ButtonTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Spawn favourite", 1, 1, 1)
+    GameTooltip:AddLine("Spawns the saved gameobject entry.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end
+
+function FavFrame:MiscTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Remove from favourites", 1, 1, 1)
+    GameTooltip:AddLine("Deletes this entry from your favourites list.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end
+
 -- SELECTION LIST
 local SelFrame = GOMove:CreateFrame("Selection_List", 250, 280, GOMove.SelL, true)
 SelFrame:Position("BOTTOMRIGHT", FavFrame, "TOPRIGHT", 0, 0)
@@ -63,10 +99,20 @@ SelFrame:Hide()  -- Hide at startup
 SelFrame:Hide()  -- Hide at startup
 function SelFrame:ButtonOnClick(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    if(GOMove.Selected[self.DataTable[DATAID][2]]) then
-        GOMove.Selected:Del(self.DataTable[DATAID][2])
+
+    -- After select-by-radius we want the user to pick a single object.
+    if (GOMove._pickOneMode) then
+        local row = self.DataTable[DATAID]
+        if (row) then
+            selectOnly(row[1], row[2])
+            GOMove._pickOneMode = false
+        end
     else
-        GOMove.Selected:Add(self.DataTable[DATAID][1], self.DataTable[DATAID][2])
+        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
+            GOMove.Selected:Del(self.DataTable[DATAID][2])
+        else
+            GOMove.Selected:Add(self.DataTable[DATAID][1], self.DataTable[DATAID][2])
+        end
     end
     self:Update()
 end
@@ -85,6 +131,33 @@ function SelFrame:UpdateScript(ID)
             self.Buttons[ID]:GetFontString():SetTextColor(1, 1, 1)
         end
     end
+end
+
+function SelFrame:ButtonTooltip(ID, owner)
+    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+    if (not self.DataTable[DATAID]) then return end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    if (GOMove._pickOneMode) then
+        GameTooltip:AddLine("Choose this object", 1, 1, 1)
+        GameTooltip:AddLine("Selects only this object and exits pick mode.", 0.8, 0.8, 0.8, true)
+    else
+        if (GOMove.Selected[self.DataTable[DATAID][2]]) then
+            GameTooltip:AddLine("Deselect", 1, 1, 1)
+            GameTooltip:AddLine("Removes this object from your selection.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:AddLine("Select", 1, 1, 1)
+            GameTooltip:AddLine("Adds this object to your selection.", 0.8, 0.8, 0.8, true)
+        end
+    end
+    GameTooltip:Show()
+end
+
+function SelFrame:MiscTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Remove from list", 1, 1, 1)
+    GameTooltip:AddLine("Removes this object from the selection list.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
 end
 local ClearButton = CreateFrame("Button", SelFrame:GetName().."_ToggleSelect", SelFrame)
 ClearButton:SetSize(16, 16)
@@ -112,6 +185,25 @@ ClearButton:SetScript("OnClick", function()
     end
     SelFrame:Update()
 end)
+ClearButton:SetScript("OnEnter", function(self)
+    local empty = true
+    for k, _ in pairs(GOMove.Selected) do
+        if (tonumber(k)) then
+            empty = false
+            break
+        end
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if (empty) then
+        GameTooltip:AddLine("Select all", 1, 1, 1)
+        GameTooltip:AddLine("Selects all objects currently in the list.", 0.8, 0.8, 0.8, true)
+    else
+        GameTooltip:AddLine("Clear selection", 1, 1, 1)
+        GameTooltip:AddLine("Unselects all currently selected objects.", 0.8, 0.8, 0.8, true)
+    end
+    GameTooltip:Show()
+end)
+ClearButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 for i = 1, SelFrame.ButtonCount do
     local Button = SelFrame.Buttons[i]
     local MiscButton = Button.MiscButton
@@ -126,6 +218,14 @@ for i = 1, SelFrame.ButtonCount do
         FavFrame.DataTable:Add(SelFrame.DataTable[DATAID][1], SelFrame.DataTable[DATAID][3])
         FavFrame:Update()
     end)
+    FavButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Add to favourites", 1, 1, 1)
+        GameTooltip:AddLine("Saves this object so you can quickly spawn it again.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    FavButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     local DeleteButton = CreateFrame("Button", Button:GetName().."_Delete", FavButton)
     DeleteButton:SetSize(16, 16)
     DeleteButton:SetNormalTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon5")
@@ -135,6 +235,14 @@ for i = 1, SelFrame.ButtonCount do
     DeleteButton:SetScript("OnClick", function()
         GOMove:Move("DELETE", SelFrame.DataTable[FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + i][2])
     end)
+    DeleteButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Delete object", 1, 1, 1)
+        GameTooltip:AddLine("Deletes this gameobject from the world.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    DeleteButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     local SpawnButton = CreateFrame("Button", Button:GetName().."_Spawn", DeleteButton)
     SpawnButton:SetSize(16, 16)
     SpawnButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
@@ -144,6 +252,13 @@ for i = 1, SelFrame.ButtonCount do
     SpawnButton:SetScript("OnClick", function()
         GOMove:Move("RESPAWN", SelFrame.DataTable[FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + i][2])
     end)
+    SpawnButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Respawn object", 1, 1, 1)
+        GameTooltip:AddLine("Respawns this gameobject (useful if it was deleted/hidden).", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    SpawnButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 local EmptyButton = CreateFrame("Button", SelFrame:GetName().."_EmptyButton", SelFrame)
 EmptyButton:SetSize(30, 30)
@@ -163,12 +278,66 @@ EmptyButton:SetScript("OnClick", function()
     end
     SelFrame:Update()
 end)
+EmptyButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Clear list", 1, 1, 1)
+    GameTooltip:AddLine("Removes all entries from the selection list and clears selection.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end)
+EmptyButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- MAIN FRAME
 local MainFrame = GOMove:CreateFrame("GOMove_UI", 170, 455)
 GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
 MainFrame:Hide()  -- Hide at startup; open only via /gomove command
+
+-- Clicking outside the GOMove UI should release EditBox focus, so movement keys work.
+if (WorldFrame and not GOMove._worldClickHooked) then
+    GOMove._worldClickHooked = true
+    WorldFrame:HookScript("OnMouseDown", function()
+        if (GOMove.MainFrame and GOMove.MainFrame:IsVisible()) then
+            for _, inputfield in ipairs(GOMove.Inputs) do
+                inputfield:ClearFocus()
+            end
+        end
+    end)
+end
+
+-- Finalize radius selection after the server stops sending ADD messages.
+local RadiusFinalizeFrame = CreateFrame("Frame")
+RadiusFinalizeFrame:Hide()
+RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
+    if (not GOMove._radiusFinalizeAt) then
+        self:Hide()
+        return
+    end
+    if (GetTime() >= GOMove._radiusFinalizeAt) then
+        self:Hide()
+        GOMove._radiusFinalizeAt = nil
+        GOMove._radiusSelecting = false
+
+        local count = #GOMove.SelL
+        if (count <= 0) then
+            return
+        end
+        if (count == 1) then
+            selectOnly(GOMove.SelL[1][1], GOMove.SelL[1][2])
+            SelFrame:Update()
+            return
+        end
+
+        clearAllSelected()
+        GOMove._pickOneMode = true
+        SelFrame:Show()
+        SelFrame:Update()
+    end
+end)
+
+local function scheduleRadiusFinalize()
+    GOMove._radiusFinalizeAt = GetTime() + 0.25
+    RadiusFinalizeFrame:Show()
+end
 
 local NEWS = GOMove:CreateInput(MainFrame, "NEWS", 40, 25, 0, -50, 4, 30)
 
@@ -280,6 +449,10 @@ end
 local RADIUS = GOMove:CreateInput(MainFrame, "RADIUS", 40, 25, -55, -325, 4)
 local SELECTALLNEAR = GOMove:CreateButton(MainFrame, "Select by radius", 110, 25, 25, -325)
 function SELECTALLNEAR:OnClick()
+    -- Populate selection list, then force choosing a single object if multiple are found.
+    clearAllSelected()
+    clearSelectionList()
+    GOMove._radiusSelecting = true
     GOMove:Move("SELECTALLNEAR", RADIUS:GetNumber())
 end
 
@@ -366,6 +539,11 @@ function SlashCmdList.GOMOVE(msg, editBox)
         MainFrame:Show()
         FavFrame:Show()
         SelFrame:Show()
+
+        -- Make sure no input box steals movement keys when opening.
+        for _, inputfield in ipairs(GOMove.Inputs) do
+            inputfield:ClearFocus()
+        end
     end
 end
 
@@ -418,7 +596,31 @@ EventFrame:SetScript("OnEvent",
                     GOMove:Update()
                 elseif(ID == "ADD") then
                     local guid = ENTRYORGUID
-                    GOMove.Selected:Add(ARG2, guid)
+
+                    -- While selecting-by-radius, gather results but don't auto-select all.
+                    if (GOMove._radiusSelecting) then
+                        local exists = false
+                        for _, tbl in ipairs(GOMove.SelL) do
+                            if (tbl[2] == guid) then
+                                exists = true
+                                break
+                            end
+                        end
+                        if (not exists) then
+                            GOMove.SelL:Add(ARG2, guid, ARG3)
+                        end
+                        scheduleRadiusFinalize()
+                        GOMove:Update()
+                        return
+                    end
+
+                    -- If SPAWN just happened, make this the only selected object.
+                    if (GOMove._expectSpawnAdd) then
+                        GOMove._expectSpawnAdd = false
+                        selectOnly(ARG2, guid)
+                    else
+                        GOMove.Selected:Add(ARG2, guid)
+                    end
                     local exists = false
                     for k, tbl in ipairs(GOMove.SelL) do
                         if(tbl[2] == guid) then
@@ -440,6 +642,12 @@ EventFrame:SetScript("OnEvent",
                             break
                         end
                     end
+
+                    if (GOMove._expectSpawnAdd) then
+                        GOMove._expectSpawnAdd = false
+                        selectOnly(GOMove.Selected[newGUID], newGUID)
+                    end
+
                     GOMove:Update()
                 end
             end
