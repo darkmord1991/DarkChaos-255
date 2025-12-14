@@ -844,10 +844,7 @@ namespace HLBGAddonFallback
         return ss.str();
     }
 
-    static bool IsInWarmup(OutdoorPvPHL* hl)
-    {
-        return hl && hl->IsInWarmup();
-    }
+
 
     static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
     {

@@ -14,7 +14,7 @@
 #ifndef DC_CROSS_SYSTEM_ADAPTERS_H
 #define DC_CROSS_SYSTEM_ADAPTERS_H
 
-#include "CrossSystemCore.h"
+#include "DC/CrossSystem/CrossSystemCore.h"
 #include "EventBus.h"
 #include "Log.h"
 #include "Map.h"

@@ -62,7 +62,7 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
 // Get current active modes bitfield for player
 uint32 ChallengeModeDatabase::GetActiveModesForPlayer(ObjectGuid guid)
 {
-    QueryResult result = CharacterDatabase.Query("SELECT active_modes FROM dc_character_challenge_modes WHERE guid = ?", guid.GetCounter());
+    QueryResult result = CharacterDatabase.Query("SELECT active_modes FROM dc_character_challenge_modes WHERE guid = {}", guid.GetCounter());
     if (result)
     {
         Field* fields = result->Fetch();
@@ -76,8 +76,8 @@ uint32 ChallengeModeDatabase::GetActiveModesForPlayer(ObjectGuid guid)
 void ChallengeModeDatabase::UpdateActiveModes(ObjectGuid guid, uint32 activeModes)
 {
     CharacterDatabase.Execute(
-        "INSERT INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES (?, ?, NOW()) "
-        "ON DUPLICATE KEY UPDATE active_modes = ?, activated_at = NOW()",
+        "INSERT INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES ({}, {}, NOW()) "
+        "ON DUPLICATE KEY UPDATE active_modes = {}, activated_at = NOW()",
         guid.GetCounter(), activeModes, activeModes
     );
 }
@@ -107,17 +107,24 @@ void ChallengeModeDatabase::LogEvent(
     // Build and execute SQL with proper parameterization
     if (player)
     {
+        // Escape strings to avoid SQL injection when using direct string formatting
+        std::string detailsEsc = details;
+        CharacterDatabase.EscapeString(detailsEsc);
+
         if (killerEntry > 0)
         {
+            std::string killerEsc = killerName;
+            CharacterDatabase.EscapeString(killerEsc);
+
             CharacterDatabase.Execute(
                 "INSERT INTO dc_character_challenge_mode_log "
                 "(guid, event_type, modes_before, modes_after, event_details, character_level, map_id, zone_id, "
                 "position_x, position_y, position_z, killer_entry, killer_name) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, details,
+                "({}, '{}', {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, '{}')",
+                guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, detailsEsc,
                 player->GetLevel(), player->GetMapId(), player->GetZoneId(),
                 player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
-                killerEntry, killerName
+                killerEntry, killerEsc
             );
         }
         else
@@ -126,8 +133,8 @@ void ChallengeModeDatabase::LogEvent(
                 "INSERT INTO dc_character_challenge_mode_log "
                 "(guid, event_type, modes_before, modes_after, event_details, character_level, map_id, zone_id, "
                 "position_x, position_y, position_z) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, details,
+                "({}, '{}', {}, {}, '{}', {}, {}, {}, {}, {}, {})",
+                guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, detailsEsc,
                 player->GetLevel(), player->GetMapId(), player->GetZoneId(),
                 player->GetPositionX(), player->GetPositionY(), player->GetPositionZ()
             );
@@ -135,10 +142,13 @@ void ChallengeModeDatabase::LogEvent(
     }
     else
     {
+        std::string detailsEsc = details;
+        CharacterDatabase.EscapeString(detailsEsc);
+
         CharacterDatabase.Execute(
             "INSERT INTO dc_character_challenge_mode_log (guid, event_type, modes_before, modes_after, event_details) "
-            "VALUES (?, ?, ?, ?, ?)",
-            guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, details
+            "VALUES ({}, '{}', {}, {}, '{}')",
+            guid.GetCounter(), eventTypeStr, modesBefore, modesAfter, detailsEsc
         );
     }
 }
@@ -147,7 +157,7 @@ void ChallengeModeDatabase::LogEvent(
 void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, const std::string& killerName)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_modes SET hardcore_deaths = hardcore_deaths + 1, last_hardcore_death = NOW() WHERE guid = ?",
+        "UPDATE dc_character_challenge_modes SET hardcore_deaths = hardcore_deaths + 1, last_hardcore_death = NOW() WHERE guid = {}",
         guid.GetCounter()
     );
     
@@ -160,7 +170,7 @@ void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player,
 void ChallengeModeDatabase::LockCharacter(ObjectGuid guid)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_modes SET character_locked = 1, locked_at = NOW() WHERE guid = ?",
+        "UPDATE dc_character_challenge_modes SET character_locked = 1, locked_at = NOW() WHERE guid = {}",
         guid.GetCounter()
     );
     
@@ -172,7 +182,7 @@ void ChallengeModeDatabase::LockCharacter(ObjectGuid guid)
 void ChallengeModeDatabase::UnlockCharacter(ObjectGuid guid)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_modes SET character_locked = 0, locked_at = NULL WHERE guid = ?",
+        "UPDATE dc_character_challenge_modes SET character_locked = 0, locked_at = NULL WHERE guid = {}",
         guid.GetCounter()
     );
     
@@ -184,7 +194,7 @@ void ChallengeModeDatabase::UnlockCharacter(ObjectGuid guid)
 bool ChallengeModeDatabase::IsCharacterLocked(ObjectGuid guid)
 {
     QueryResult result = CharacterDatabase.Query(
-        "SELECT character_locked FROM dc_character_challenge_modes WHERE guid = ?",
+        "SELECT character_locked FROM dc_character_challenge_modes WHERE guid = {}",
         guid.GetCounter()
     );
     
@@ -201,7 +211,7 @@ bool ChallengeModeDatabase::IsCharacterLocked(ObjectGuid guid)
 void ChallengeModeDatabase::IncrementActivations(ObjectGuid guid)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_modes SET total_activations = total_activations + 1 WHERE guid = ?",
+        "UPDATE dc_character_challenge_modes SET total_activations = total_activations + 1 WHERE guid = {}",
         guid.GetCounter()
     );
 }
@@ -210,7 +220,7 @@ void ChallengeModeDatabase::IncrementActivations(ObjectGuid guid)
 void ChallengeModeDatabase::IncrementDeactivations(ObjectGuid guid)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_modes SET total_deactivations = total_deactivations + 1 WHERE guid = ?",
+        "UPDATE dc_character_challenge_modes SET total_deactivations = total_deactivations + 1 WHERE guid = {}",
         guid.GetCounter()
     );
 }
@@ -224,18 +234,21 @@ void ChallengeModeDatabase::UpdateModeStats(
 {
     if (isActivating)
     {
+        std::string modeNameEsc = modeName;
+        CharacterDatabase.EscapeString(modeNameEsc);
+
         CharacterDatabase.Execute(
             "INSERT INTO dc_character_challenge_mode_stats (guid, mode_id, mode_name, times_activated, first_activated, last_activated, currently_active) "
-            "VALUES (?, ?, ?, 1, NOW(), NOW(), 1) "
+            "VALUES ({}, {}, '{}', 1, NOW(), NOW(), 1) "
             "ON DUPLICATE KEY UPDATE times_activated = times_activated + 1, last_activated = NOW(), currently_active = 1",
-            guid.GetCounter(), modeId, modeName
+            guid.GetCounter(), modeId, modeNameEsc
         );
     }
     else
     {
         CharacterDatabase.Execute(
             "UPDATE dc_character_challenge_mode_stats SET currently_active = 0, last_deactivated = NOW() "
-            "WHERE guid = ? AND mode_id = ?",
+            "WHERE guid = {} AND mode_id = {}",
             guid.GetCounter(), modeId
         );
     }
@@ -245,8 +258,8 @@ void ChallengeModeDatabase::UpdateModeStats(
 void ChallengeModeDatabase::RecordPlaytime(ObjectGuid guid, uint8 modeId, uint32 seconds)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET total_playtime_seconds = total_playtime_seconds + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET total_playtime_seconds = total_playtime_seconds + {} "
+        "WHERE guid = {} AND mode_id = {}",
         seconds, guid.GetCounter(), modeId
     );
 }
@@ -255,8 +268,8 @@ void ChallengeModeDatabase::RecordPlaytime(ObjectGuid guid, uint8 modeId, uint32
 void ChallengeModeDatabase::UpdateMaxLevel(ObjectGuid guid, uint8 modeId, uint8 level)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET max_level_reached = GREATEST(max_level_reached, ?) "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET max_level_reached = GREATEST(max_level_reached, {}) "
+        "WHERE guid = {} AND mode_id = {}",
         level, guid.GetCounter(), modeId
     );
 }
@@ -265,8 +278,8 @@ void ChallengeModeDatabase::UpdateMaxLevel(ObjectGuid guid, uint8 modeId, uint8 
 void ChallengeModeDatabase::IncrementKills(ObjectGuid guid, uint8 modeId, uint32 count)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET total_kills = total_kills + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET total_kills = total_kills + {} "
+        "WHERE guid = {} AND mode_id = {}",
         count, guid.GetCounter(), modeId
     );
 }
@@ -275,8 +288,8 @@ void ChallengeModeDatabase::IncrementKills(ObjectGuid guid, uint8 modeId, uint32
 void ChallengeModeDatabase::IncrementDeaths(ObjectGuid guid, uint8 modeId, uint32 count)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET total_deaths = total_deaths + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET total_deaths = total_deaths + {} "
+        "WHERE guid = {} AND mode_id = {}",
         count, guid.GetCounter(), modeId
     );
 }
@@ -285,8 +298,8 @@ void ChallengeModeDatabase::IncrementDeaths(ObjectGuid guid, uint8 modeId, uint3
 void ChallengeModeDatabase::IncrementQuests(ObjectGuid guid, uint8 modeId, uint32 count)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET quests_completed = quests_completed + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET quests_completed = quests_completed + {} "
+        "WHERE guid = {} AND mode_id = {}",
         count, guid.GetCounter(), modeId
     );
 }
@@ -295,8 +308,8 @@ void ChallengeModeDatabase::IncrementQuests(ObjectGuid guid, uint8 modeId, uint3
 void ChallengeModeDatabase::IncrementDungeons(ObjectGuid guid, uint8 modeId, uint32 count)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET dungeons_completed = dungeons_completed + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET dungeons_completed = dungeons_completed + {} "
+        "WHERE guid = {} AND mode_id = {}",
         count, guid.GetCounter(), modeId
     );
 }
@@ -305,8 +318,8 @@ void ChallengeModeDatabase::IncrementDungeons(ObjectGuid guid, uint8 modeId, uin
 void ChallengeModeDatabase::IncrementPvPKills(ObjectGuid guid, uint8 modeId, uint32 count)
 {
     CharacterDatabase.Execute(
-        "UPDATE dc_character_challenge_mode_stats SET pvp_kills = pvp_kills + ? "
-        "WHERE guid = ? AND mode_id = ?",
+        "UPDATE dc_character_challenge_mode_stats SET pvp_kills = pvp_kills + {} "
+        "WHERE guid = {} AND mode_id = {}",
         count, guid.GetCounter(), modeId
     );
 }
@@ -315,7 +328,7 @@ void ChallengeModeDatabase::IncrementPvPKills(ObjectGuid guid, uint8 modeId, uin
 void ChallengeModeDatabase::InitializeTracking(ObjectGuid guid)
 {
     CharacterDatabase.Execute(
-        "INSERT IGNORE INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES (?, 0, NOW())",
+        "INSERT IGNORE INTO dc_character_challenge_modes (guid, active_modes, activated_at) VALUES ({}, 0, NOW())",
         guid.GetCounter()
     );
 }

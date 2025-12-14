@@ -7,7 +7,7 @@
 --
 -- To import:
 --   use acore_characters;
---   source Custom/Custom feature SQLs/Achievements/dc_server_firsts.sql
+--   source Custom/Custom feature SQLs/chardb/dc_server_firsts.sql
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS `dc_server_firsts` (

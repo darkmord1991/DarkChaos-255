@@ -483,15 +483,10 @@ public:
                 return;
             }
 
-            // Directly notify the ship of a hit
-            // We'll call a custom function or use SpellHit simulation
-            if (ship->AI())
-            {
-                // Cast a dummy spell or use DamageTaken to register the hit
-                // Using SetData to communicate with ship AI
-                ship->AI()->SetData(1, spell->Id); // 1 = "cannon hit" event
-                LOG_INFO("scripts.dc", "Giant Isles Cannon: Notified ship of cannon hit!");
-            }
+            // Do NOT directly notify the ship of a hit here. A successful cannon hit
+            // must be registered when the missile actually strikes the ship
+            // (handled by SpellHit/DamageTaken on the ship AI). This prevents
+            // registering hits for fired shots that miss or splash on water.
         }
 
         void UpdateAI(uint32 /*diff*/) override
@@ -653,8 +648,8 @@ public:
             LOG_INFO("scripts.dc", "Giant Isles Ship: Hit {} of {} for player {}", 
                 _hitCount, HITS_REQUIRED, player->GetName());
 
-            // Visual feedback - use a simple visual that definitely exists
-            me->CastSpell(me, 30934, true); // Explosion visual
+            // Visual feedback - explosion visual
+            me->CastSpell(me, SPELL_SHIP_EXPLOSION, true);
 
             // Inform player of progress
             if (_hitCount < HITS_REQUIRED)
@@ -678,12 +673,12 @@ public:
             if (!caster || !spellInfo)
                 return;
 
-            // Check if this is any cannon-related spell
+            // Check if this is a cannon-related IMPACT spell (missile/damage),
+            // not the base cast. We must only register a hit when the missile
+            // actually strikes the ship.
             switch (spellInfo->Id)
             {
-                case SPELL_CANNON_BLAST:        // 69399 - Main cannon cast
                 case SPELL_CANNON_BLAST_MISSILE:// 69400 - Missile impact
-                case SPELL_INCINERATING_BLAST:  // 70174 - Incinerating cast
                 case SPELL_INCINERATING_DAMAGE: // 69401 - Incinerating damage
                 case SPELL_INCINERATING_MISSILE:// 69402 - Incinerating missile
                     break; // These are valid cannon spells

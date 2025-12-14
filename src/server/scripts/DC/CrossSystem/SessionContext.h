@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "CrossSystemCore.h"
+#include "DC/CrossSystem/CrossSystemCore.h"
 #include "ObjectGuid.h"
 #include <chrono>
 #include <optional>

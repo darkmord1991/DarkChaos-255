@@ -14,11 +14,11 @@
 #include "Define.h"
 #include "Player.h"
 
-#include "CrossSystem/RewardDistributor.h"
-#include "CrossSystem/SessionContext.h"
-#include "CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/RewardDistributor.h"
+#include "DC/CrossSystem/SessionContext.h"
+#include "DC/CrossSystem/DCSeasonHelper.h"
 
-#include "Seasons/SeasonalRewardSystem.h"
+#include "DC/Seasons/SeasonalRewardSystem.h"
 
 namespace DarkChaos
 {

@@ -59,9 +59,9 @@ CREATE TABLE `dc_player_upgrade_tokens` (
   `currency_type` ENUM('upgrade_token', 'artifact_essence', 'upgrade_key', 'ancient_crystal') DEFAULT 'upgrade_token',
   `amount` INT UNSIGNED DEFAULT 0,
   `weekly_earned` INT UNSIGNED DEFAULT 0,
-  `season` INT UNSIGNED DEFAULT 1,
+  `season` INT UNSIGNED NOT NULL DEFAULT 1,
   `last_transaction_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`, `currency_type`),
+  PRIMARY KEY (`player_guid`, `currency_type`, `season`),
   KEY `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player currency storage for upgrades';
 

@@ -8,14 +8,14 @@
 #include "RewardDistributor.h"
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
-#include "CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/DCSeasonHelper.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "Player.h"
 #include "Timer.h"
-#include "Seasons/SeasonalRewardSystem.h"
+#include "DC/Seasons/SeasonalRewardSystem.h"
 #include <sstream>
 
 namespace DarkChaos

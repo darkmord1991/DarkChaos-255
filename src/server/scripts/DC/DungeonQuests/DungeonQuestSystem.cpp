@@ -25,7 +25,7 @@
 #include "Log.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
-#include "CrossSystem/CrossSystemRewards.h"
+#include "DC/CrossSystem/CrossSystemRewards.h"
 
 using namespace DungeonQuest;
 
