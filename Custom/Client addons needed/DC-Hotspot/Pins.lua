@@ -20,6 +20,17 @@ local function DebugPrint(...)
     end
 end
 
+local function PlayerCanGainXP()
+    if IsXPUserDisabled and IsXPUserDisabled() then
+        return false
+    end
+    if not UnitXPMax then
+        return true
+    end
+    local xpMax = UnitXPMax("player")
+    return xpMax and xpMax > 0
+end
+
 local function ActiveWorldMapId()
     if WorldMapFrame then
         if WorldMapFrame.GetMapID then
@@ -448,6 +459,8 @@ function Pins:Init(state)
     self.worldMapWatcher:RegisterEvent("WORLD_MAP_UPDATE")
     self.worldMapWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self.worldMapWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self.worldMapWatcher:RegisterEvent("PLAYER_LEVEL_UP")
+    self.worldMapWatcher:RegisterEvent("PLAYER_XP_UPDATE")
     self.worldMapWatcher:SetScript("OnEvent", function(_, event)
         DebugPrint("Event:", event)
         self:ScheduleWorldPinUpdate()
@@ -586,6 +599,13 @@ function Pins:UpdateWorldPinsInternal()
         return
     end
 
+    if not PlayerCanGainXP() then
+        for _, pin in pairs(self.worldPins) do
+            pin:Hide()
+        end
+        return
+    end
+
     local activeMapId = ActiveWorldMapId()
     
     -- Skip redundant updates if map hasn't changed
@@ -689,6 +709,13 @@ function Pins:UpdateMinimapPins()
     local db = self.state.db
     if not db or not db.showMinimapPins or not Minimap then
         for id in pairs(self.minimapPins) do self:DestroyPin(self.minimapPins, id) end
+        return
+    end
+
+    if not PlayerCanGainXP() then
+        for _, pin in pairs(self.minimapPins) do
+            pin:Hide()
+        end
         return
     end
 

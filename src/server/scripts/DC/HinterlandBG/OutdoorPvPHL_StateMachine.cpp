@@ -7,6 +7,7 @@
 #include "HinterlandBG.h"
 #include "Chat.h"
 #include "HinterlandBGConstants.h"
+#include "ObjectAccessor.h"
 
 using namespace HinterlandBGConstants;
 
@@ -40,6 +41,32 @@ void OutdoorPvPHL::TransitionToState(BGState newState)
 {
     if (_bgState == newState)
         return;
+
+    // Server-side warmup gate: do not start warmup unless at least one player has actually
+    // joined (in-zone) OR at least one queued player is currently connected.
+    // This prevents empty warmup/in-progress cycles after timer expiry or server restarts.
+    if (newState == BG_STATE_WARMUP)
+    {
+        bool hasInZonePlayers = (_playersInZone > 0);
+        bool hasConnectedQueued = false;
+        for (QueueEntry const& entry : _queuedPlayers)
+        {
+            if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+            {
+                hasConnectedQueued = true;
+                break;
+            }
+        }
+
+        if (!hasInZonePlayers && !hasConnectedQueued)
+        {
+            LOG_INFO("outdoorpvp.hl", "[HL] Warmup blocked (no players joined). Staying in cleanup.");
+            _bgState = BG_STATE_CLEANUP;
+            _matchStartTime = 0;
+            _matchEndTime = NowSec();
+            return;
+        }
+    }
 
     BGState oldState = _bgState;
     _bgState = newState;
@@ -97,10 +124,23 @@ void OutdoorPvPHL::EnterWarmupState()
 
 void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
 {
+    // If everyone left during warmup, abort back to cleanup instead of starting an empty match.
+    // Give a short grace window so queued teleports can populate the zone.
+    uint32 warmupTotalMs = _warmupDurationSeconds * IN_MILLISECONDS;
+    uint32 warmupElapsedMs = (warmupTotalMs > _warmupTimeRemaining) ? (warmupTotalMs - _warmupTimeRemaining) : 0u;
+    if (_playersInZone == 0 && warmupElapsedMs >= 5000)
+    {
+        TransitionToState(BG_STATE_CLEANUP);
+        return;
+    }
+
     if (_warmupTimeRemaining <= diff)
     {
-        // Warmup finished, start battle
-        TransitionToState(BG_STATE_IN_PROGRESS);
+        // Warmup finished, start battle (only if someone is still present)
+        if (_playersInZone > 0)
+            TransitionToState(BG_STATE_IN_PROGRESS);
+        else
+            TransitionToState(BG_STATE_CLEANUP);
     }
     else
     {
@@ -252,6 +292,12 @@ void OutdoorPvPHL::UpdateCleanupState(uint32 /*diff*/)
     // In cleanup state, we're waiting for next battle
     // Process the queue system to check if we should start warmup
     ProcessQueueSystem();
+
+    // Also allow warmup to start as soon as at least one player is present in-zone.
+    // This keeps the battleground from running empty, while still starting promptly
+    // once someone joins.
+    if (_bgState == BG_STATE_CLEANUP && _playersInZone > 0)
+        TransitionToState(BG_STATE_WARMUP);
 }
 
 // Admin commands for state management

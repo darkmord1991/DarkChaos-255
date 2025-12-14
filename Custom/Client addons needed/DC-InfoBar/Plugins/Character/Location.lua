@@ -55,6 +55,17 @@ local LocationPlugin = {
     _blinkState = false,
 }
 
+local function PlayerCanGainXP()
+    if IsXPUserDisabled and IsXPUserDisabled() then
+        return false
+    end
+    if not UnitXPMax then
+        return true
+    end
+    local xpMax = UnitXPMax("player")
+    return xpMax and xpMax > 0
+end
+
 -- Check if player is in a hotspot zone
 local function IsInHotspotZone(hotspot, zone, subzone, mapId, areaId)
     if not hotspot then return false end
@@ -227,13 +238,15 @@ function LocationPlugin:OnUpdate(elapsed)
     self._inHotspot = false
     self._currentHotspot = nil
     self._hotspotBonus = 0
-    
-    for _, hotspot in ipairs(self._hotspots) do
-        if IsInHotspotZone(hotspot, self._zone, self._subzone, self._mapId, self._areaId) then
-            self._inHotspot = true
-            self._currentHotspot = hotspot
-            self._hotspotBonus = hotspot.bonusPercent or hotspot.bonus or 0
-            break
+
+    if PlayerCanGainXP() then
+        for _, hotspot in ipairs(self._hotspots) do
+            if IsInHotspotZone(hotspot, self._zone, self._subzone, self._mapId, self._areaId) then
+                self._inHotspot = true
+                self._currentHotspot = hotspot
+                self._hotspotBonus = hotspot.bonusPercent or hotspot.bonus or 0
+                break
+            end
         end
     end
     
@@ -244,6 +257,9 @@ function LocationPlugin:OnUpdate(elapsed)
             self._blinkTimer = 0
             self._blinkState = not self._blinkState
         end
+    else
+        self._blinkTimer = 0
+        self._blinkState = false
     end
     
     -- Build display text
@@ -309,62 +325,65 @@ function LocationPlugin:OnTooltip(tooltip)
         tooltip:AddLine("|cff888888(Use .gps to update)|r", 0.5, 0.5, 0.5)
     end
     
-    -- Current Hotspot section (if in one)
-    if self._inHotspot and self._currentHotspot then
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cffff8000★ HOTSPOT ACTIVE ★|r")
-        
-        if self._currentHotspot.name then
-            tooltip:AddDoubleLine("  Name:", self._currentHotspot.name,
-                0.7, 0.7, 0.7, 1, 0.5, 0)
-        end
-        
-        if self._hotspotBonus > 0 then
-            tooltip:AddDoubleLine("  Bonus:", "+" .. self._hotspotBonus .. "% XP/Loot",
-                0.7, 0.7, 0.7, 0.3, 1, 0.3)
-        end
-        
-        if self._currentHotspot.timeRemaining then
-            tooltip:AddDoubleLine("  Time Left:", DCInfoBar:FormatTimeShort(self._currentHotspot.timeRemaining),
-                0.7, 0.7, 0.7, 1, 0.82, 0)
-        end
-        
-        if self._currentHotspot.mobsRemaining then
-            tooltip:AddDoubleLine("  Mobs Left:", self._currentHotspot.mobsRemaining,
-                0.7, 0.7, 0.7, 1, 0.82, 0)
-        end
-    end
-    
-    -- All Active Hotspots section
-    if #self._hotspots > 0 then
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cff32c4ffActive Hotspots:|r")
-        
-        for _, hotspot in ipairs(self._hotspots) do
-            local isCurrentZone = (hotspot == self._currentHotspot)
-            local nameColor = isCurrentZone and {1, 0.5, 0} or {0.8, 0.8, 0.8}
-            local zoneColor = isCurrentZone and {1, 0.82, 0} or {0.6, 0.6, 0.6}
-            
-            local displayName = hotspot.name or "Unknown Hotspot"
-            local displayZone = hotspot.zoneName or "Unknown Zone"
-            local bonusText = hotspot.bonusPercent and (" +" .. hotspot.bonusPercent .. "%") or ""
-            
-            -- Show indicator if this is current zone
-            local indicator = isCurrentZone and "|cff00ff00►|r " or "  "
-            
-            tooltip:AddDoubleLine(indicator .. displayName, displayZone .. bonusText,
-                nameColor[1], nameColor[2], nameColor[3],
-                zoneColor[1], zoneColor[2], zoneColor[3])
-            
-            -- Show time remaining if available
-            if hotspot.timeRemaining and hotspot.timeRemaining > 0 then
-                tooltip:AddDoubleLine("    Time:", DCInfoBar:FormatTimeShort(hotspot.timeRemaining),
-                    0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+
+    if PlayerCanGainXP() then
+        -- Current Hotspot section (if in one)
+        if self._inHotspot and self._currentHotspot then
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cffff8000★ HOTSPOT ACTIVE ★|r")
+
+            if self._currentHotspot.name then
+                tooltip:AddDoubleLine("  Name:", self._currentHotspot.name,
+                    0.7, 0.7, 0.7, 1, 0.5, 0)
+            end
+
+            if self._hotspotBonus > 0 then
+                tooltip:AddDoubleLine("  Bonus:", "+" .. self._hotspotBonus .. "% XP/Loot",
+                    0.7, 0.7, 0.7, 0.3, 1, 0.3)
+            end
+
+            if self._currentHotspot.timeRemaining then
+                tooltip:AddDoubleLine("  Time Left:", DCInfoBar:FormatTimeShort(self._currentHotspot.timeRemaining),
+                    0.7, 0.7, 0.7, 1, 0.82, 0)
+            end
+
+            if self._currentHotspot.mobsRemaining then
+                tooltip:AddDoubleLine("  Mobs Left:", self._currentHotspot.mobsRemaining,
+                    0.7, 0.7, 0.7, 1, 0.82, 0)
             end
         end
-    elseif self._hotspotsLoaded then
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cff888888No active hotspots|r", 0.5, 0.5, 0.5)
+
+        -- All Active Hotspots section
+        if #self._hotspots > 0 then
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cff32c4ffActive Hotspots:|r")
+
+            for _, hotspot in ipairs(self._hotspots) do
+                local isCurrentZone = (hotspot == self._currentHotspot)
+                local nameColor = isCurrentZone and {1, 0.5, 0} or {0.8, 0.8, 0.8}
+                local zoneColor = isCurrentZone and {1, 0.82, 0} or {0.6, 0.6, 0.6}
+
+                local displayName = hotspot.name or "Unknown Hotspot"
+                local displayZone = hotspot.zoneName or "Unknown Zone"
+                local bonusText = hotspot.bonusPercent and (" +" .. hotspot.bonusPercent .. "%") or ""
+
+                -- Show indicator if this is current zone
+                local indicator = isCurrentZone and "|cff00ff00►|r " or "  "
+
+                tooltip:AddDoubleLine(indicator .. displayName, displayZone .. bonusText,
+                    nameColor[1], nameColor[2], nameColor[3],
+                    zoneColor[1], zoneColor[2], zoneColor[3])
+
+                -- Show time remaining if available
+                if hotspot.timeRemaining and hotspot.timeRemaining > 0 then
+                    tooltip:AddDoubleLine("    Time:", DCInfoBar:FormatTimeShort(hotspot.timeRemaining),
+                        0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
+                end
+            end
+        elseif self._hotspotsLoaded then
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cff888888No active hotspots|r", 0.5, 0.5, 0.5)
+        end
     end
     
     -- Zone/Map IDs section
@@ -416,7 +435,7 @@ function LocationPlugin:OnTooltip(tooltip)
     end
     
     -- Hint for hotspot teleport
-    if #self._hotspots > 0 then
+    if PlayerCanGainXP() and #self._hotspots > 0 then
         tooltip:AddLine(" ")
         tooltip:AddLine("|cff888888Middle-Click: Teleport to nearest hotspot|r", 0.5, 0.5, 0.5)
     end
@@ -438,7 +457,7 @@ function LocationPlugin:OnClick(button)
         end
     elseif button == "MiddleButton" then
         -- Teleport to first hotspot
-        if #self._hotspots > 0 then
+        if PlayerCanGainXP() and #self._hotspots > 0 then
             local hotspot = self._hotspots[1]
             local DC = rawget(_G, "DCAddonProtocol")
             if DC and hotspot.id then

@@ -227,12 +227,20 @@ function HLBG.UpdateModernHUD(data)
     HUD.hordePlayers:SetText("Players: " .. hordePlayers)
     DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%d Horde=%d (APC=%s HPC=%s)",
             alliancePlayers, hordePlayers, tostring(data.APC), tostring(data.HPC)))
+
+    local totalPlayers = alliancePlayers + hordePlayers
+    local phase = data.phase or "UNKNOWN"
+    local hasPlayerCounts = (data.alliancePlayers ~= nil) or (data.hordePlayers ~= nil) or (data.APC ~= nil) or (data.HPC ~= nil)
+    local suppressActivePhase = hasPlayerCounts and (totalPlayers <= 0) and (phase == "WARMUP" or phase == "BATTLE" or phase == "LIVE")
+    if suppressActivePhase then
+        phase = "IDLE"
+    end
     -- Update timer - CRITICAL FIX: END is epoch timestamp, convert to remaining seconds
     -- Timer sync: Store server END timestamp and sync every 30s to prevent client drift
     if not HLBG._timerSync then
         HLBG._timerSync = { lastServerEnd = 0, lastSyncTime = 0, clientOffset = 0 }
     end
-    local endTime = tonumber(data.END or data.timeLeft or 0) or 0
+    local endTime = tonumber((not suppressActivePhase and (data.END or data.timeLeft)) or 0) or 0
     local currentTime = time()  -- Current epoch time
     -- If we have a new END timestamp from server, resync
     if endTime > 0 and endTime ~= HLBG._timerSync.lastServerEnd then
@@ -267,7 +275,6 @@ function HLBG.UpdateModernHUD(data)
     end
     HUD.timerText:SetText("Time: " .. formatTime(timeLeft))
     -- Update phase
-    local phase = data.phase or "UNKNOWN"
     if phase == "WARMUP" then
         HUD.phaseText:SetText("WARMUP")
         HUD.phaseText:SetTextColor(1, 0.8, 0, 1) -- Yellow

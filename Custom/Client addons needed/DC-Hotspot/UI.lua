@@ -7,6 +7,17 @@ addonTable.UI = UI
 local playerInHotspot = false
 local currentHotspotBonus = 100
 
+local function PlayerCanGainXP()
+    if IsXPUserDisabled and IsXPUserDisabled() then
+        return false
+    end
+    if not UnitXPMax then
+        return true
+    end
+    local xpMax = UnitXPMax("player")
+    return xpMax and xpMax > 0
+end
+
 local function SafePlaySound(sound)
     if not sound then return end
     local ok = pcall(PlaySound, sound)
@@ -129,6 +140,25 @@ function UI:Init(state)
     self:EnsureHotspotIndicator()
     self:SetupMessageListener()
 
+    local xpWatcher = CreateFrame("Frame")
+    xpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+    xpWatcher:RegisterEvent("PLAYER_LEVEL_UP")
+    xpWatcher:RegisterEvent("PLAYER_XP_UPDATE")
+    xpWatcher:SetScript("OnEvent", function()
+        if addonTable and addonTable.Pins and addonTable.Pins.Refresh then
+            addonTable.Pins:Refresh()
+        end
+
+        if not PlayerCanGainXP() then
+            playerInHotspot = false
+            if UI.indicator then UI.indicator:Hide() end
+            if UI.popup then UI.popup:Hide() end
+            if UI.listFrame then UI.listFrame:Hide() end
+        else
+            UI:RefreshList()
+        end
+    end)
+
     SLASH_DCHOTSPOT1 = "/dchotspot"
     SLASH_DCHOTSPOT2 = "/dchs"
     SlashCmdList["DCHOTSPOT"] = function(msg)
@@ -184,6 +214,14 @@ function UI:Init(state)
             end
             return
         end
+
+        if not PlayerCanGainXP() then
+            if self.indicator then self.indicator:Hide() end
+            if self.popup then self.popup:Hide() end
+            if self.listFrame then self.listFrame:Hide() end
+            return
+        end
+
         if self.listFrame:IsShown() then
             self.listFrame:Hide()
         else
@@ -198,6 +236,9 @@ function UI:SetupMessageListener()
     local messageFrame = CreateFrame("Frame")
     messageFrame:RegisterEvent("CHAT_MSG_SYSTEM")
     messageFrame:SetScript("OnEvent", function(self, event, message)
+        if not PlayerCanGainXP() then
+            return
+        end
         if event == "CHAT_MSG_SYSTEM" then
             local action, bonus = ParseHotspotMessages(message)
             if action == "enter" then
@@ -375,6 +416,12 @@ end
 function UI:RefreshList()
     if not self.state then return end
     if not self.listFrame or not self.listFrame:IsShown() then return end
+
+    if not PlayerCanGainXP() then
+        self.listFrame:Hide()
+        return
+    end
+
     local sorted = {}
     for id, info in pairs(self.state.hotspots) do
         table.insert(sorted, { id = id, info = info })
@@ -402,6 +449,10 @@ end
 
 function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     if not self.state or not self.state.db then
+        return
+    end
+
+    if not PlayerCanGainXP() then
         return
     end
     
@@ -457,6 +508,10 @@ function UI:OnHotspotExpire(id)
     if not self.state or not self.state.db then
         return
     end
+
+    if not PlayerCanGainXP() then
+        return
+    end
     if self.state.db.announceExpire and DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFFA000[Hotspot]|r One of the XP hotspots expired.")
     end
@@ -465,6 +520,9 @@ function UI:OnHotspotExpire(id)
 end
 
 function UI:OnHotspotsChanged()
+    if not PlayerCanGainXP() then
+        return
+    end
     self:RefreshList()
 end
 

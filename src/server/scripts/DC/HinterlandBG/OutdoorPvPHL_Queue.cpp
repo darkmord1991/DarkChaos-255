@@ -14,6 +14,8 @@
 #include "GameTime.h"
 #include "ObjectAccessor.h"
 
+#include <algorithm>
+
 // Player queue management
 void OutdoorPvPHL::AddPlayerToQueue(Player* player)
 {
@@ -183,10 +185,22 @@ void OutdoorPvPHL::ProcessQueueSystem()
     if (_bgState != BG_STATE_CLEANUP)
         return;
 
+    // Queue can be disabled by config/admin; if so, do not auto-start warmup from queue.
+    if (!_queueEnabled)
+        return;
+
+    // Prune stale/offline entries so we don't start warmup for disconnected players.
+    _queuedPlayers.erase(std::remove_if(_queuedPlayers.begin(), _queuedPlayers.end(),
+        [](QueueEntry const& entry) {
+            return ObjectAccessor::FindConnectedPlayer(entry.playerGuid) == nullptr;
+        }),
+        _queuedPlayers.end());
+
     // Check if we have enough players to start warmup
     uint32 queuedPlayers = GetQueuedPlayerCount();
+    uint32 requiredPlayers = std::max<uint32>(_minPlayersToStart, 1u);
     
-    if (queuedPlayers >= _minPlayersToStart)
+    if (queuedPlayers >= requiredPlayers)
     {
         // Start warmup phase and teleport queued players
         StartWarmupPhase();
@@ -200,6 +214,23 @@ void OutdoorPvPHL::StartWarmupPhase()
         LOG_ERROR("bg.battleground", "HLBG: Attempted to start warmup phase from invalid state: {}", static_cast<uint32>(_bgState));
         return;
     }
+
+    if (!_queueEnabled)
+        return;
+
+    // Re-prune offline entries right before starting, and require at least one connected player.
+    _queuedPlayers.erase(std::remove_if(_queuedPlayers.begin(), _queuedPlayers.end(),
+        [](QueueEntry const& entry) {
+            return ObjectAccessor::FindConnectedPlayer(entry.playerGuid) == nullptr;
+        }),
+        _queuedPlayers.end());
+
+    if (_queuedPlayers.empty())
+        return;
+
+    uint32 requiredPlayers = std::max<uint32>(_minPlayersToStart, 1u);
+    if (GetQueuedPlayerCount() < requiredPlayers)
+        return;
 
     LOG_INFO("bg.battleground", "HLBG: Starting warmup phase with {} queued players", GetQueuedPlayerCount());
     // Transition first so warmup timer & announcements are initialized before players arrive.
