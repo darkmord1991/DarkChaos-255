@@ -13,7 +13,7 @@
                 GameTooltip:SetOwner(this, "ANCHOR_LEFT");
                 GameTooltip:AddLine("GOMove UI");
                 GameTooltip:AddLine("Type /gomove to show or hide the GOMove window");
-                GameTooltip:AddLine("Type /gomove reset to reset the gomove UI positions");
+                GameTooltip:AddLine("Type /gomove reset to reset the GOMove UI positions and input values");
                 GameTooltip:AddLine(" ");
                 GameTooltip:AddLine("Left click to show/hide");
                 GameTooltip:AddLine("Right click to drag this");

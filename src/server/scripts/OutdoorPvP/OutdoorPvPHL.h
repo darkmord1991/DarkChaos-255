@@ -518,6 +518,9 @@
     uint32  _warmupTimeRemaining;      // milliseconds remaining in warmup
     uint32  _pauseStartTime;           // when pause started (for resume calculations)
     uint32  _cleanupTimeRemaining;     // milliseconds remaining in cleanup
+    // Simple cooldowns to avoid duplicate spam from concurrent resets/instances
+    uint32  _lastGlobalAnnounceEpoch = 0; // epoch seconds when last global SysMessage sent
+    uint32  _lastZoneAnnounceEpoch = 0;   // epoch seconds when last zone SendZoneText sent
     bool    _queueEnabled;             // queue system active
 
     // Queue system structures and methods

@@ -98,7 +98,12 @@ void OutdoorPvPHL::HandleReset()
             {
                 char gmsg[180];
                 snprintf(gmsg, sizeof(gmsg), "[Hinterland BG] Battle restarted — current affix: %s", aff);
-                ChatHandler(nullptr).SendGlobalSysMessage(gmsg);
+                uint32 now = NowSec();
+                if (now - _lastGlobalAnnounceEpoch >= 3)
+                {
+                    ChatHandler(nullptr).SendGlobalSysMessage(gmsg);
+                    _lastGlobalAnnounceEpoch = now;
+                }
             }
         }
     }
@@ -122,10 +127,23 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     });
     char msg[128];
     snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
+    uint32 now = NowSec();
     if (Map* m = GetMap())
-        m->SendZoneText(zoneId, msg);
+    {
+        // Throttle zone-level reset text to once per second to avoid spam from concurrent resets
+        if (now - _lastZoneAnnounceEpoch >= 1)
+        {
+            m->SendZoneText(zoneId, msg);
+            _lastZoneAnnounceEpoch = now;
+        }
+    }
     // Optional global heads-up for the reset start (affix is chosen during HandleReset)
-    ChatHandler(nullptr).SendGlobalSysMessage("[Hinterland BG] Resetting — teleporting players to their bases...");
+    // Throttle global messages to once every few seconds to avoid duplicate broadcasts
+    if (now - _lastGlobalAnnounceEpoch >= 3)
+    {
+        ChatHandler(nullptr).SendGlobalSysMessage("[Hinterland BG] Resetting — teleporting players to their bases...");
+        _lastGlobalAnnounceEpoch = now;
+    }
 }
 
 // Teleport a single player to his/her faction base location.

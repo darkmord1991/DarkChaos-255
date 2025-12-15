@@ -472,22 +472,22 @@ DELETE FROM `creature_template_addon` WHERE `entry` BETWEEN 400000 AND 400999;
 
 INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `bytes2`, `emote`, `visibilityDistanceType`, `auras`) VALUES
 -- Basic Dinosaurs - Extended visibility (normal creatures get visibility type 3 - Large)
-(400000, 0, 0, 0, 0, 0, 3, ''),        -- Chaos Devilsaur
+(400000, 0, 0, 0, 0, 0, 3, '28126'),   -- Chaos Devilsaur
 (400001, 0, 0, 0, 0, 0, 3, '28126'),   -- Ironhide Chaos Devilsaur
 (400002, 0, 0, 0, 0, 0, 3, '28126'),   -- Tyrant Chaos Devilsaur
-(400003, 0, 0, 0, 0, 0, 3, ''),        -- Primal Stegodon
-(400004, 0, 0, 0, 0, 0, 3, ''),        -- Elder Stegodon
+(400003, 0, 0, 0, 0, 0, 3, '28126'),   -- Primal Stegodon
+(400004, 0, 0, 0, 0, 0, 3, '28126'),   -- Elder Stegodon
 (400005, 0, 0, 0, 0, 0, 3, '28126'),   -- Armored Stegodon
 (400006, 0, 0, 0, 0, 0, 3, '28126'),   -- Ancient Stegodon
-(400007, 0, 0, 0, 0, 0, 3, ''),        -- Chaos Raptor
-(400008, 0, 0, 0, 0, 0, 3, ''),        -- Chaos Raptor Runner
-(400009, 0, 0, 0, 0, 0, 3, ''),        -- Chaos Raptor Hunter
+(400007, 0, 0, 0, 0, 0, 3, '28126'),   -- Chaos Raptor
+(400008, 0, 0, 0, 0, 0, 3, '28126'),   -- Chaos Raptor Runner
+(400009, 0, 0, 0, 0, 0, 3, '28126'),   -- Chaos Raptor Hunter
 (400010, 0, 0, 0, 0, 0, 3, '28126'),   -- Venomhide Chaos Raptor
-(400011, 0, 0, 0, 0, 0, 3, ''),        -- Fledgling Chaos Pterrordax
-(400012, 0, 0, 0, 0, 0, 3, ''),        -- Chaos Pterrordax
+(400011, 0, 0, 0, 0, 0, 3, '28126'),   -- Fledgling Chaos Pterrordax
+(400012, 0, 0, 0, 0, 0, 3, '28126'),   -- Chaos Pterrordax
 (400013, 0, 0, 0, 0, 0, 3, '28126'),   -- Frenzied Chaos Pterrordax
-(400014, 0, 0, 0, 0, 0, 3, ''),        -- Young Primal Diemetradon
-(400015, 0, 0, 0, 0, 0, 3, ''),        -- Primal Diemetradon
+(400014, 0, 0, 0, 0, 0, 3, '28126'),   -- Young Primal Diemetradon
+(400015, 0, 0, 0, 0, 0, 3, '28126'),   -- Primal Diemetradon
 (400016, 0, 0, 0, 0, 0, 3, '28126'),   -- Elder Primal Diemetradon
 -- Rare Elite Dinosaurs - Gigantic visibility (rare spawns get visibility type 4)
 (400050, 0, 0, 0, 0, 0, 4, '28126'),   -- Primal Direhorn
@@ -540,6 +540,7 @@ INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `b
 (400335, 0, 0, 0, 0, 0, 3, ''),        -- Zandalari War Raptor
 (400336, 0, 0, 0, 0, 0, 5, '28126'),   -- Warlord Zul'mar (boss aura + max visibility)
 (400337, 0, 0, 0, 0, 0, 3, ''),        -- Zandalari Honor Guard
+(400338, 0, 0, 0, 0, 0, 5, '28126'),   -- General Rak'zor (boss aura + max visibility)
 -- Boss Adds - Large visibility for visibility
 (400400, 0, 0, 0, 0, 0, 3, ''),        -- Young Oondasta
 (400401, 0, 0, 0, 0, 0, 3, ''),        -- Frenzied Pack Raptor
@@ -1204,4 +1205,4 @@ UPDATE `creature_template_addon` SET `visibilityDistanceType` = 4 WHERE (`entry`
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 400338) AND (`Idx` IN (0));
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
-(400338, 0, 21899, 1.5, 1, 12340);
+(400338, 0, 21899, 1, 1, 12340);

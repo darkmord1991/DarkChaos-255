@@ -475,17 +475,35 @@
         
         if(_FirstLoad == false)
         {
-            if(_LastWin == ALLIANCE) 
+            if(_LastWin == ALLIANCE)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Alliance");
-            else if(_LastWin == HORDE) 
+            else if(_LastWin == HORDE)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Horde ");
-            else if(_LastWin == 0) 
+            else if(_LastWin == 0)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
 
-            if (_matchEndTime == 0)
-                _matchEndTime = uint32(GameTime::GetGameTime().count()) + _matchDurationSeconds;
-            // Legacy behavior: first load starts as an in-progress match.
-            _bgState = BG_STATE_IN_PROGRESS;
+            // Do not start a match automatically if there are no players in-zone or no connected queued players.
+            bool hasInZonePlayers = (_playersInZone > 0);
+            bool hasConnectedQueued = false;
+            for (QueueEntry const& entry : _queuedPlayers)
+            {
+                if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+                {
+                    hasConnectedQueued = true;
+                    break;
+                }
+            }
+
+            if (hasInZonePlayers || hasConnectedQueued)
+            {
+                TransitionToState(BG_STATE_IN_PROGRESS);
+            }
+            else
+            {
+                LOG_INFO("misc", "[OutdoorPvPHL]: Skipping automatic match start on first load (no players present)");
+                TransitionToState(BG_STATE_CLEANUP);
+            }
+
             _FirstLoad = true;
             _persistState();
         }
@@ -559,6 +577,10 @@
         if (_bgState == BG_STATE_WARMUP)
             return false;
 
+        // If there are no players in the zone, do not perform expiry resets or announcements.
+        if (_playersInZone == 0)
+            return false;
+
         LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
         // Optional tiebreaker: declare winner by higher resources (equal => draw) and reward/buff accordingly
         if (_expiryUseTiebreaker)
@@ -596,7 +618,13 @@
                     ss << " (Horde win)";
                 else
                     ss << " (Draw)";
-                ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
+
+                uint32 now = NowSec();
+                if (now - _lastGlobalAnnounceEpoch >= 3)
+                {
+                    ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
+                    _lastGlobalAnnounceEpoch = now;
+                }
             }
 
             if (winner == TEAM_ALLIANCE || winner == TEAM_HORDE)

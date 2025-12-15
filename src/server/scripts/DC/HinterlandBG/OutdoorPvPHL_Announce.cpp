@@ -27,6 +27,11 @@ void OutdoorPvPHL::HandleWinMessage(const char* message)
 
 void OutdoorPvPHL::BroadcastStatusToZone()
 {
+    uint32 now = NowSec();
+    // Throttle status broadcasts to once per second per map instance to avoid spam
+    if (now - _lastZoneAnnounceEpoch < 1)
+        return;
+    _lastZoneAnnounceEpoch = now;
     // Build lines that mirror .hlbg status
     uint32 secs = GetTimeRemainingSeconds();
     uint32 min = secs / 60u;

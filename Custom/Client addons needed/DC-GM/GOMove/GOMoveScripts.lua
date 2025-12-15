@@ -22,7 +22,9 @@ function GOMove.FavL:Del(guid)
     GOMoveSV.FavL = self
 end
 
-GOMove.SelL = {NameWidth = 17}
+local FavFrame, SelFrame
+
+GOMove.SelL = {NameWidth = 30}
 function GOMove.SelL:Add(name, guid, entry)
     table.insert(self, 1, {name, guid, entry})
 end
@@ -65,229 +67,11 @@ local function selectOnly(name, guid)
     end
 end
 
--- FAVOURITE LIST
-local FavFrame = GOMove:CreateFrame("Favourite_List", 200, 280, GOMove.FavL, true)
-FavFrame:Position("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
-FavFrame:Hide()  -- Hide at startup
-FavFrame:Hide()  -- Hide at startup
-function FavFrame:ButtonOnClick(ID)
-    GOMove:Move("SPAWN", self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2])
-end
-function FavFrame:MiscOnClick(ID)
-    self.DataTable:Del(self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2])
-    self:Update()
-end
 
-function FavFrame:ButtonTooltip(ID, owner)
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Spawn favourite", 1, 1, 1)
-    GameTooltip:AddLine("Spawns the saved gameobject entry.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end
 
-function FavFrame:MiscTooltip(ID, owner)
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Remove from favourites", 1, 1, 1)
-    GameTooltip:AddLine("Deletes this entry from your favourites list.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end
-
--- SELECTION LIST
-local SelFrame = GOMove:CreateFrame("Selection_List", 250, 280, GOMove.SelL, true)
-SelFrame:Position("BOTTOMRIGHT", FavFrame, "TOPRIGHT", 0, 0)
-SelFrame:Hide()  -- Hide at startup
-SelFrame:Hide()  -- Hide at startup
-function SelFrame:ButtonOnClick(ID)
-    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-
-    -- After select-by-radius we want the user to pick a single object.
-    if (GOMove._pickOneMode) then
-        local row = self.DataTable[DATAID]
-        if (row) then
-            selectOnly(row[1], row[2])
-            GOMove._pickOneMode = false
-        end
-    else
-        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
-            GOMove.Selected:Del(self.DataTable[DATAID][2])
-        else
-            GOMove.Selected:Add(self.DataTable[DATAID][1], self.DataTable[DATAID][2])
-        end
-    end
-    self:Update()
-end
-function SelFrame:MiscOnClick(ID)
-    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    GOMove.Selected:Del(self.DataTable[DATAID][2])
-    self.DataTable:Del(self.DataTable[DATAID][2])
-    self:Update()
-end
-function SelFrame:UpdateScript(ID)
-    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    if(self.DataTable[DATAID]) then
-        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
-            self.Buttons[ID]:GetFontString():SetTextColor(1, 0.8, 0)
-        else
-            self.Buttons[ID]:GetFontString():SetTextColor(1, 1, 1)
-        end
-    end
-end
-
-function SelFrame:ButtonTooltip(ID, owner)
-    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    if (not self.DataTable[DATAID]) then return end
-
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    if (GOMove._pickOneMode) then
-        GameTooltip:AddLine("Choose this object", 1, 1, 1)
-        GameTooltip:AddLine("Selects only this object and exits pick mode.", 0.8, 0.8, 0.8, true)
-    else
-        if (GOMove.Selected[self.DataTable[DATAID][2]]) then
-            GameTooltip:AddLine("Deselect", 1, 1, 1)
-            GameTooltip:AddLine("Removes this object from your selection.", 0.8, 0.8, 0.8, true)
-        else
-            GameTooltip:AddLine("Select", 1, 1, 1)
-            GameTooltip:AddLine("Adds this object to your selection.", 0.8, 0.8, 0.8, true)
-        end
-    end
-    GameTooltip:Show()
-end
-
-function SelFrame:MiscTooltip(ID, owner)
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Remove from list", 1, 1, 1)
-    GameTooltip:AddLine("Removes this object from the selection list.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end
-local ClearButton = CreateFrame("Button", SelFrame:GetName().."_ToggleSelect", SelFrame)
-ClearButton:SetSize(16, 16)
-ClearButton:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
-ClearButton:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-OfficerNote-Up")
-ClearButton:SetHighlightTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-ClearButton:SetPoint("TOPRIGHT", SelFrame, "TOPRIGHT", -30, -5)
-ClearButton:SetScript("OnClick", function()
-    local empty = true
-    for k,v in pairs(GOMove.Selected) do
-        if(tonumber(k)) then
-            empty = false
-        end
-    end
-    if(empty) then
-        for k, tbl in ipairs(SelFrame.DataTable) do
-            GOMove.Selected:Add(tbl[1], tbl[2])
-        end
-    else
-        for k,v in pairs(GOMove.Selected) do
-            if(tonumber(k)) then
-                GOMove.Selected:Del(k)
-            end
-        end
-    end
-    SelFrame:Update()
-end)
-ClearButton:SetScript("OnEnter", function(self)
-    local empty = true
-    for k, _ in pairs(GOMove.Selected) do
-        if (tonumber(k)) then
-            empty = false
-            break
-        end
-    end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    if (empty) then
-        GameTooltip:AddLine("Select all", 1, 1, 1)
-        GameTooltip:AddLine("Selects all objects currently in the list.", 0.8, 0.8, 0.8, true)
-    else
-        GameTooltip:AddLine("Clear selection", 1, 1, 1)
-        GameTooltip:AddLine("Unselects all currently selected objects.", 0.8, 0.8, 0.8, true)
-    end
-    GameTooltip:Show()
-end)
-ClearButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-for i = 1, SelFrame.ButtonCount do
-    local Button = SelFrame.Buttons[i]
-    local MiscButton = Button.MiscButton
-    local FavButton = CreateFrame("Button", Button:GetName().."_Favourite", MiscButton)
-    FavButton:SetSize(16, 16)
-    FavButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
-    FavButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
-    FavButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilighted")
-    FavButton:SetPoint("TOPRIGHT", MiscButton, "TOPLEFT", 0, 0)
-    FavButton:SetScript("OnClick", function()
-        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + i
-        FavFrame.DataTable:Add(SelFrame.DataTable[DATAID][1], SelFrame.DataTable[DATAID][3])
-        FavFrame:Update()
-    end)
-    FavButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Add to favourites", 1, 1, 1)
-        GameTooltip:AddLine("Saves this object so you can quickly spawn it again.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    FavButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    local DeleteButton = CreateFrame("Button", Button:GetName().."_Delete", FavButton)
-    DeleteButton:SetSize(16, 16)
-    DeleteButton:SetNormalTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon5")
-    DeleteButton:SetPushedTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon7")
-    DeleteButton:SetHighlightTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon3")
-    DeleteButton:SetPoint("TOPRIGHT", FavButton, "TOPLEFT", 0, 0)
-    DeleteButton:SetScript("OnClick", function()
-        GOMove:Move("DELETE", SelFrame.DataTable[FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + i][2])
-    end)
-    DeleteButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Delete object", 1, 1, 1)
-        GameTooltip:AddLine("Deletes this gameobject from the world.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    DeleteButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    local SpawnButton = CreateFrame("Button", Button:GetName().."_Spawn", DeleteButton)
-    SpawnButton:SetSize(16, 16)
-    SpawnButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
-    SpawnButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
-    SpawnButton:SetHighlightTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-    SpawnButton:SetPoint("TOPRIGHT", DeleteButton, "TOPLEFT", 0, 0)
-    SpawnButton:SetScript("OnClick", function()
-        GOMove:Move("RESPAWN", SelFrame.DataTable[FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + i][2])
-    end)
-    SpawnButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Respawn object", 1, 1, 1)
-        GameTooltip:AddLine("Respawns this gameobject (useful if it was deleted/hidden).", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    SpawnButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-end
-local EmptyButton = CreateFrame("Button", SelFrame:GetName().."_EmptyButton", SelFrame)
-EmptyButton:SetSize(30, 30)
-EmptyButton:SetNormalTexture("Interface\\Buttons\\CancelButton-Up")
-EmptyButton:SetPushedTexture("Interface\\Buttons\\CancelButton-Down")
-EmptyButton:SetHighlightTexture("Interface\\Buttons\\CancelButton-Highlight")
-EmptyButton:SetPoint("TOPRIGHT", SelFrame, "TOPRIGHT", -45, 0)
-EmptyButton:SetHitRectInsets(9, 7, 7, 10)
-EmptyButton:SetScript("OnClick", function()
-    for k,v in pairs(GOMove.Selected) do
-        if(tonumber(k)) then
-            GOMove.Selected:Del(k)
-        end
-    end
-    for i = #SelFrame.DataTable, 1, -1 do
-        SelFrame.DataTable:Del(SelFrame.DataTable[i][2])
-    end
-    SelFrame:Update()
-end)
-EmptyButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Clear list", 1, 1, 1)
-    GameTooltip:AddLine("Removes all entries from the selection list and clears selection.", 0.8, 0.8, 0.8, true)
-    GameTooltip:Show()
-end)
-EmptyButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- MAIN FRAME
-local MainFrame = GOMove:CreateFrame("GOMove_UI", 170, 455)
+local MainFrame = GOMove:CreateFrame("GOMove_UI", 220, 495)
 GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
 MainFrame:Hide()  -- Hide at startup; open only via /gomove command
@@ -446,7 +230,23 @@ function SPAWN:OnClick()
     GOMove:Move("SPAWN", ENTRY:GetNumber())
 end
 
-local RADIUS = GOMove:CreateInput(MainFrame, "RADIUS", 40, 25, -55, -325, 4)
+-- Label showing current focused ENTRY value
+local ENTRY_LABEL = MainFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+ENTRY_LABEL:SetPoint("TOPLEFT", ENTRY, "BOTTOMLEFT", 0, -6)
+ENTRY_LABEL:SetTextColor(0.9, 0.9, 0.9)
+local function UpdateEntryLabel()
+    local val = ENTRY:GetNumber() or 0
+    if val == 0 then
+        ENTRY_LABEL:SetText("Focused ENTRY: (none)")
+    else
+        ENTRY_LABEL:SetText("Focused ENTRY: " .. tostring(val))
+    end
+end
+-- Update when user changes ENTRY or when we set it programmatically
+ENTRY:SetScript("OnTextChanged", function() UpdateEntryLabel() end)
+UpdateEntryLabel()
+
+local RADIUS = GOMove:CreateInput(MainFrame, "RADIUS", 40, 25, -55, -325, 4, 20)
 local SELECTALLNEAR = GOMove:CreateButton(MainFrame, "Select by radius", 110, 25, 25, -325)
 function SELECTALLNEAR:OnClick()
     -- Populate selection list, then force choosing a single object if multiple are found.
@@ -485,6 +285,11 @@ function SPELLSPAWN:OnClick()
     GOMove:Move("SPAWNSPELL", SPELLENTRY:GetNumber())
 end
 
+local RESETVALUES = GOMove:CreateButton(MainFrame, "Reset", 110, 25, 0, -440)
+function RESETVALUES:OnClick()
+    GOMove:ResetInputDefaults()
+end
+
 GOMove.SCMD = {}
 function GOMove.SCMD.help()
     for k, v in pairs(GOMove.SCMD) do
@@ -503,6 +308,11 @@ function GOMove.SCMD.reset()
         end
         Frame:Show()
     end
+    -- Also reset input fields to their defaults (empty for MASK and SPELLENTRY)
+    if GOMove.ResetInputDefaults then
+        GOMove:ResetInputDefaults()
+        print("Inputs reset")
+    end
 end
 function GOMove.SCMD.invertselection()
     local sel = {}
@@ -519,6 +329,298 @@ function GOMove.SCMD.invertselection()
     end
     SelFrame:Update()
 end
+
+-- FAVOURITE LIST
+FavFrame = GOMove:CreateFrame("Favourite_List", 200, 280, GOMove.FavL, true)
+FavFrame:Position("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
+FavFrame:Hide()  -- Hide at startup
+FavFrame:Hide()  -- Hide at startup
+function FavFrame:ButtonOnClick(ID)
+    local entry = self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2]
+    if IsShiftKeyDown() then
+        GOMove:Move("SPAWN", entry)
+    else
+        local entryInput = _G["GOMove_UI_ENTRY"]
+        if (entryInput and entryInput.SetNumber) then
+            entryInput:SetNumber(tonumber(entry) or 0)
+            UpdateEntryLabel()
+            MainFrame:Show()
+            entryInput:SetFocus()
+        end
+    end
+end
+function FavFrame:MiscOnClick(ID)
+    self.DataTable:Del(self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2])
+    self:Update()
+end
+
+function FavFrame:ButtonTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Spawn favourite", 1, 1, 1)
+    GameTooltip:AddLine("Spawns the saved gameobject entry.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end
+
+function FavFrame:MiscTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Remove from favourites", 1, 1, 1)
+    GameTooltip:AddLine("Deletes this entry from your favourites list.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end
+
+-- SELECTION LIST
+SelFrame = GOMove:CreateFrame("Selection_List", 360, 320, GOMove.SelL, true, 36)
+SelFrame:Position("BOTTOMRIGHT", FavFrame, "TOPRIGHT", 0, 0)
+SelFrame:Hide()  -- Hide at startup
+SelFrame:Hide()  -- Hide at startup
+function SelFrame:ButtonOnClick(ID)
+    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+
+    -- After select-by-radius we want the user to pick a single object.
+    if (GOMove._pickOneMode) then
+        local row = self.DataTable[DATAID]
+        if (row) then
+            selectOnly(row[1], row[2])
+            GOMove._pickOneMode = false
+        end
+    else
+        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
+            GOMove.Selected:Del(self.DataTable[DATAID][2])
+        else
+            GOMove.Selected:Add(self.DataTable[DATAID][1], self.DataTable[DATAID][2])
+        end
+    end
+    self:Update()
+end
+function SelFrame:MiscOnClick(ID)
+    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+    GOMove.Selected:Del(self.DataTable[DATAID][2])
+    self.DataTable:Del(self.DataTable[DATAID][2])
+    self:Update()
+end
+function SelFrame:UpdateScript(ID)
+    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+    if(self.DataTable[DATAID]) then
+        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
+            self.Buttons[ID]:GetFontString():SetTextColor(1, 0.8, 0)
+        else
+            self.Buttons[ID]:GetFontString():SetTextColor(1, 1, 1)
+        end
+    end
+end
+
+function SelFrame:ButtonTooltip(ID, owner)
+    local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+    if (not self.DataTable[DATAID]) then return end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    if (GOMove._pickOneMode) then
+        GameTooltip:AddLine("Choose this object", 1, 1, 1)
+        GameTooltip:AddLine("Selects only this object and exits pick mode.", 0.8, 0.8, 0.8, true)
+    else
+        if (GOMove.Selected[self.DataTable[DATAID][2]]) then
+            GameTooltip:AddLine("Deselect", 1, 1, 1)
+            GameTooltip:AddLine("Removes this object from your selection.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:AddLine("Select", 1, 1, 1)
+            GameTooltip:AddLine("Adds this object to your selection.", 0.8, 0.8, 0.8, true)
+        end
+    end
+    -- Show spawn ID and GO template entry for convenience
+    local guid = tostring(self.DataTable[DATAID][2] or "")
+    local entry = tostring(self.DataTable[DATAID][3] or "")
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Spawn ID: "..guid, 0.9, 0.9, 0.9)
+    if (entry ~= "") then
+        GameTooltip:AddLine("Entry: "..entry, 0.9, 0.9, 0.9)
+    end
+    GameTooltip:Show()
+end
+
+function SelFrame:MiscTooltip(ID, owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Remove from list", 1, 1, 1)
+    GameTooltip:AddLine("Removes this object from the selection list.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end
+local ClearButton = CreateFrame("Button", SelFrame:GetName().."_ToggleSelect", SelFrame)
+ClearButton:SetSize(16, 16)
+ClearButton:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
+ClearButton:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-OfficerNote-Up")
+ClearButton:SetHighlightTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+ClearButton:SetPoint("TOPRIGHT", SelFrame, "TOPRIGHT", -30, -5)
+ClearButton:SetScript("OnClick", function()
+    local empty = true
+    for k,v in pairs(GOMove.Selected) do
+        if(tonumber(k)) then
+            empty = false
+        end
+    end
+    if(empty) then
+        for k, tbl in ipairs(SelFrame.DataTable) do
+            GOMove.Selected:Add(tbl[1], tbl[2])
+        end
+    else
+        for k,v in pairs(GOMove.Selected) do
+            if(tonumber(k)) then
+                GOMove.Selected:Del(k)
+            end
+        end
+    end
+    SelFrame:Update()
+end)
+ClearButton:SetScript("OnEnter", function(self)
+    local empty = true
+    for k, _ in pairs(GOMove.Selected) do
+        if (tonumber(k)) then
+            empty = false
+            break
+        end
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if (empty) then
+        GameTooltip:AddLine("Select all", 1, 1, 1)
+        GameTooltip:AddLine("Selects all objects currently in the list.", 0.8, 0.8, 0.8, true)
+    else
+        GameTooltip:AddLine("Clear selection", 1, 1, 1)
+        GameTooltip:AddLine("Unselects all currently selected objects.", 0.8, 0.8, 0.8, true)
+    end
+    GameTooltip:Show()
+end)
+ClearButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+for i = 1, SelFrame.ButtonCount do
+    local rowIndex = i
+    local Button = SelFrame.Buttons[rowIndex]
+    local MiscButton = Button.MiscButton
+    local FavButton = CreateFrame("Button", Button:GetName().."_Favourite", MiscButton)
+    FavButton:SetSize(16, 16)
+    FavButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+    FavButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
+    FavButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilighted")
+    FavButton:SetPoint("TOPRIGHT", MiscButton, "TOPLEFT", 0, 0)
+    FavButton:SetScript("OnClick", function()
+        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
+        local row = SelFrame.DataTable[DATAID]
+        if (not row) then return end
+        FavFrame.DataTable:Add(row[1], row[3])
+        FavFrame:Update()
+        FavFrame:Show()
+        -- Also set ENTRY to this object's entry and open main spawn UI
+        local entryInput = _G["GOMove_UI_ENTRY"]
+        if (entryInput and entryInput.SetNumber) then
+            entryInput:SetNumber(tonumber(row[3]) or 0)
+            UpdateEntryLabel()
+            MainFrame:Show()
+            entryInput:SetFocus()
+        end
+    end)
+    FavButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Add to favourites", 1, 1, 1)
+        GameTooltip:AddLine("Saves this object so you can quickly spawn it again.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    FavButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    local DeleteButton = CreateFrame("Button", Button:GetName().."_Delete", FavButton)
+    DeleteButton:SetSize(16, 16)
+    DeleteButton:SetNormalTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon5")
+    DeleteButton:SetPushedTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon7")
+    DeleteButton:SetHighlightTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon3")
+    DeleteButton:SetPoint("TOPRIGHT", FavButton, "TOPLEFT", 0, 0)
+    DeleteButton:SetScript("OnClick", function()
+        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
+        local row = SelFrame.DataTable[DATAID]
+        if (not row) then return end
+        -- Delete this specific object (do not depend on current selection).
+        GOMove:MoveOnGuid("DELETE", row[2], 0)
+    end)
+    DeleteButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Delete object", 1, 1, 1)
+        GameTooltip:AddLine("Deletes this gameobject from the world.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    DeleteButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    local SpawnButton = CreateFrame("Button", Button:GetName().."_Spawn", DeleteButton)
+    SpawnButton:SetSize(16, 16)
+    SpawnButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
+    SpawnButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
+    SpawnButton:SetHighlightTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+    SpawnButton:SetPoint("TOPRIGHT", DeleteButton, "TOPLEFT", 0, 0)
+    SpawnButton:SetScript("OnClick", function()
+        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
+        local row = SelFrame.DataTable[DATAID]
+        if (not row) then return end
+        -- Respawn this specific object (do not depend on current selection).
+        GOMove:MoveOnGuid("RESPAWN", row[2], 0)
+    end)
+    SpawnButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Respawn object", 1, 1, 1)
+        GameTooltip:AddLine("Respawns this gameobject (useful if it was deleted/hidden).", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    SpawnButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    local UseEntryButton = CreateFrame("Button", Button:GetName().."_Use", SpawnButton)
+    UseEntryButton:SetSize(16, 16)
+    UseEntryButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+    UseEntryButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
+    UseEntryButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilighted")
+    UseEntryButton:SetPoint("TOPRIGHT", SpawnButton, "TOPLEFT", 0, 0)
+    UseEntryButton:SetScript("OnClick", function()
+        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
+        local row = SelFrame.DataTable[DATAID]
+        if (not row) then return end
+        -- Set the ENTRY input to this object's entry so it can be spawned repeatedly.
+        if IsShiftKeyDown() then
+            -- shift-click spawn immediately
+            GOMove:Move("SPAWN", row[3])
+            return
+        end
+        local entryInput = _G["GOMove_UI_ENTRY"]
+        if (entryInput and entryInput.SetNumber) then
+            entryInput:SetNumber(tonumber(row[3]) or 0)
+            UpdateEntryLabel()
+            MainFrame:Show()
+            entryInput:SetFocus()
+            DEFAULT_CHAT_FRAME:AddMessage("GOMove: ENTRY set to " .. tostring(row[3]))
+        end
+    end)
+    UseEntryButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Use entry", 1, 1, 1)
+        GameTooltip:AddLine("Sets the ENTRY value to this object's entry so you can spawn it repeatedly.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    UseEntryButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+local EmptyButton = CreateFrame("Button", SelFrame:GetName().."_EmptyButton", SelFrame)
+EmptyButton:SetSize(30, 30)
+EmptyButton:SetNormalTexture("Interface\\Buttons\\CancelButton-Up")
+EmptyButton:SetPushedTexture("Interface\\Buttons\\CancelButton-Down")
+EmptyButton:SetHighlightTexture("Interface\\Buttons\\CancelButton-Highlight")
+EmptyButton:SetPoint("TOPRIGHT", SelFrame, "TOPRIGHT", -45, 0)
+EmptyButton:SetHitRectInsets(9, 7, 7, 10)
+EmptyButton:SetScript("OnClick", function()
+    for k,v in pairs(GOMove.Selected) do
+        if(tonumber(k)) then
+            GOMove.Selected:Del(k)
+        end
+    end
+    for i = #SelFrame.DataTable, 1, -1 do
+        SelFrame.DataTable:Del(SelFrame.DataTable[i][2])
+    end
+    SelFrame:Update()
+end)
+EmptyButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Clear list", 1, 1, 1)
+    GameTooltip:AddLine("Removes all entries from the selection list and clears selection.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end)
+EmptyButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 SLASH_GOMOVE1 = '/gomove'
 function SlashCmdList.GOMOVE(msg, editBox)

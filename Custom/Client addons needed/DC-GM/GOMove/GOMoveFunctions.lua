@@ -8,7 +8,8 @@ function GOMove:Update()
     end
 end
 
-function GOMove:CreateFrame(name, width, height, DataTable, both)
+function GOMove:CreateFrame(name, width, height, DataTable, both, rowHeight)
+    rowHeight = rowHeight or 16
     local Frame = CreateFrame("Frame", name, UIParent)
     Frame:SetMovable(true)
     Frame:EnableMouse(true)
@@ -19,7 +20,7 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
     Frame:SetScript("OnHide", Frame.StopMovingOrSizing)
     Frame:SetSize(width, height)
     Frame:SetPoint("CENTER")
-    Frame.ButtonCount = math.floor((height-32)/16)
+    Frame.ButtonCount = math.floor((height-32)/rowHeight)
     Frame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = true, tileSize = 16,
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
@@ -49,7 +50,7 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
         Frame.DataTable = DataTable
         function Frame:Update()
             local maxValue = #DataTable
-            FauxScrollFrame_Update(self.ScrollBar, maxValue, self.ButtonCount, 16, nil, nil, nil, nil, nil, nil, true)
+            FauxScrollFrame_Update(self.ScrollBar, maxValue, self.ButtonCount, rowHeight, nil, nil, nil, nil, nil, nil, true)
             local offset = FauxScrollFrame_GetOffset(self.ScrollBar)
             for Button = 1, self.ButtonCount do
                 local value = Button + offset
@@ -62,8 +63,24 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
                     if(not both) then
                         Button:SetText(Label)
                     else
-                        Button:SetText(DataTable[value][2].." "..Label)
+                        local guid = tostring(DataTable[value][2] or "")
+                        local entry = tostring(DataTable[value][3] or "")
+                        local extra = entry ~= "" and (" ["..entry.."]") or ""
+                        Button:SetText(guid..extra.." "..Label)
                     end
+                    
+                    -- Adjust text alignment for taller rows
+                    if (rowHeight > 16) then
+                        local fs = Button:GetFontString()
+                        if fs then
+                            fs:ClearAllPoints()
+                            fs:SetPoint("TOPLEFT", Button, "TOPLEFT", 0, -2)
+                            fs:SetPoint("TOPRIGHT", Button, "TOPRIGHT", 0, -2)
+                            fs:SetJustifyH("LEFT")
+                            fs:SetJustifyV("TOP")
+                        end
+                    end
+
                     Button.MiscButton:Show()
                     Button:Show()
                 else
@@ -81,7 +98,7 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
         ScrollBar:SetPoint("BOTTOMRIGHT", -30, 8)
 
         ScrollBar:SetScript("OnVerticalScroll", function(self, offset)
-            self.offset = math.floor(offset / 16 + 0.5)
+            self.offset = math.floor(offset / rowHeight + 0.5)
             Frame:Update()
         end)
 
@@ -93,34 +110,71 @@ function GOMove:CreateFrame(name, width, height, DataTable, both)
 
         local Buttons = setmetatable({}, { __index = function(t, i)
             local Button = CreateFrame("Button", "$parent_Button"..i, Frame)
-            Button:SetSize(width-55, 16)
+            Button:SetSize(width-55, rowHeight)
             Button:SetNormalFontObject(GameFontHighlightLeft)
             if i == 1 then
                 Button:SetPoint("TOPLEFT", ScrollBar, 8, 0)
             else
                 Button:SetPoint("TOPLEFT", Frame.Buttons[i-1], "BOTTOMLEFT")
             end
-            Button:SetScript("OnClick", function(self) if(Frame.ButtonOnClick) then Frame:ButtonOnClick(i) end end)
+            Button:SetScript("OnClick", function(self)
+                if (Frame.ButtonOnClick) then
+                    for idx, b in ipairs(Frame.Buttons) do
+                        if b == self then
+                            Frame:ButtonOnClick(idx)
+                            break
+                        end
+                    end
+                end
+            end)
 
             Button:SetScript("OnEnter", function(self)
                 if (Frame.ButtonTooltip) then
-                    Frame:ButtonTooltip(i, self)
+                    for idx, b in ipairs(Frame.Buttons) do
+                        if b == self then
+                            Frame:ButtonTooltip(idx, self)
+                            break
+                        end
+                    end
                 end
             end)
             Button:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
             local MiscButton = CreateFrame("Button", "$parent_Button"..i.."_Misc", Frame)
+            MiscButton:SetFrameLevel(Button:GetFrameLevel() + 5)
             MiscButton:SetSize(16, 16)
             MiscButton:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Disabled")
             MiscButton:SetPushedTexture("Interface\\Buttons\\UI-MinusButton-Down")
             MiscButton:SetHighlightTexture("Interface\\Buttons\\UI-MinusButton-Up")
             MiscButton:SetNormalFontObject(GameFontHighlightLeft)
-            MiscButton:SetPoint("TOPLEFT", Button, "TOPRIGHT", 0, 0)
-            MiscButton:SetScript("OnClick", function(self) if(Frame.MiscOnClick) then Frame:MiscOnClick(i) end end)
+            
+            if (rowHeight > 16) then
+                -- For taller rows, position MiscButton at bottom-right of the row content area
+                MiscButton:SetPoint("BOTTOMRIGHT", Button, "BOTTOMRIGHT", 0, 0)
+            else
+                -- Standard single-line behavior
+                MiscButton:SetPoint("TOPLEFT", Button, "TOPRIGHT", 0, 0)
+            end
+
+            MiscButton:SetScript("OnClick", function(self)
+                if (Frame.MiscOnClick) then
+                    for idx, b in ipairs(Frame.Buttons) do
+                        if b.MiscButton == self then
+                            Frame:MiscOnClick(idx)
+                            break
+                        end
+                    end
+                end
+            end)
 
             MiscButton:SetScript("OnEnter", function(self)
                 if (Frame.MiscTooltip) then
-                    Frame:MiscTooltip(i, self)
+                    for idx, b in ipairs(Frame.Buttons) do
+                        if b.MiscButton == self then
+                            Frame:MiscTooltip(idx, self)
+                            break
+                        end
+                    end
                 end
             end)
             MiscButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -162,11 +216,48 @@ function GOMove:CreateInput(Frame, name, width, height, Ox, Oy, letters, default
     end
     Input:SetScript("OnEnterPressed", function() Input:ClearFocus() end)
     Input:SetScript("OnEscapePressed", function() Input:ClearFocus() end)
-    if(default) then
+    Input._defaultValue = default
+    if(default ~= nil) then
         Input:SetNumber(default)
     end
     table.insert(GOMove.Inputs, Input)
     return Input
+end
+
+function GOMove:ResetInputDefaults()
+    for _, inputfield in ipairs(self.Inputs) do
+        inputfield:ClearFocus()
+        if (inputfield._defaultValue ~= nil) then
+            inputfield:SetNumber(inputfield._defaultValue)
+        else
+            inputfield:SetText("")
+        end
+    end
+end
+
+-- Execute a GOMove action on an explicit GUID, without relying on the selection list.
+-- This avoids the "onetime+arg" path in Move() which can break list buttons like Delete/Respawn.
+function GOMove:MoveOnGuid(ID, guid, input)
+    if(UnitIsDeadOrGhost("player")) then
+        NotWhileDeadError()
+        return
+    end
+
+    for _, inputfield in ipairs(self.Inputs) do
+        inputfield:ClearFocus()
+    end
+
+    local tid = trinityID[ID]
+    if (not tid or not tonumber(tid[1]) or not tonumber(guid)) then
+        return
+    end
+
+    local ARG = 0
+    if (input) then
+        ARG = input
+    end
+
+    DCAddonProtocol:Send("GOMV", 1, tid[1], guid, ARG)
 end
 
 local trinityID = {}

@@ -31,8 +31,10 @@
 #include "MoveSplineInit.h"
 #include "GameObject.h"
 #include "Log.h"
+#include "Time/GameTime.h"
 #include "ScriptedCreature.h"
 #include "Chat.h"
+#include <unordered_set>
 
 // ============================================================================
 // CONSTANTS
@@ -88,6 +90,12 @@ enum ShipEvents
 
 static std::unordered_map<ObjectGuid, uint8> ShipHitCount;
 static std::unordered_map<ObjectGuid, ObjectGuid> PlayerShipMap; // Player -> Ship mapping
+// Guard set to avoid duplicate concurrent spawns (race between GM spawn and cannon spawn)
+static std::unordered_set<ObjectGuid> PendingShipSpawn;
+// Record recently registered hits (seconds epoch) to avoid double-counting when we
+// manually inject a hit from the cannon cast path while a missile may also call
+// SpellHit/DamageTaken. Keyed by ship GUID -> epoch seconds.
+static std::unordered_map<ObjectGuid, uint32> ShipLastRegisteredHitSec;
 
 // ============================================================================
 // NPC SCRIPT - CAPTAIN HARLAN (Quest Giver)
@@ -233,6 +241,15 @@ public:
             PlayerShipMap.erase(it);
         }
 
+        // Prevent duplicate spawns if a cannon spawn is concurrently creating a ship
+        if (PendingShipSpawn.count(player->GetGUID()))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("Spawn already pending for you; skipping duplicate spawn.");
+            LOG_INFO("scripts.dc", "Giant Isles Captain: Duplicate spawn blocked for {}", player->GetName());
+            return;
+        }
+        PendingShipSpawn.insert(player->GetGUID());
+
         // Spawn the ship at first waypoint position
         float shipX = 5948.124f;
         float shipY = 1763.0355f;
@@ -246,12 +263,16 @@ public:
         if (!ship)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR:|r Failed to spawn ship! Check creature_template for entry %u", NPC_SHIP_HITBOX);
+            PendingShipSpawn.erase(player->GetGUID());
             return;
         }
 
         ship->SetCreatorGUID(player->GetGUID());
         PlayerShipMap[player->GetGUID()] = ship->GetGUID();
         ShipHitCount[ship->GetGUID()] = 0;
+
+        // Clear pending marker now that spawn succeeded
+        PendingShipSpawn.erase(player->GetGUID());
 
         ChatHandler(player->GetSession()).SendSysMessage(fmt::format("|cFF00FF00Ship spawned!|r Entry: {}, GUID: {}, DisplayID: {}", 
             ship->GetEntry(), ship->GetGUID().ToString(), ship->GetDisplayId()));
@@ -376,6 +397,15 @@ public:
                 PlayerShipMap.erase(it);
             }
 
+            // Prevent duplicate spawn race with GM-spawned ship
+            if (PendingShipSpawn.count(player->GetGUID()))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Spawn already pending for you; skipping duplicate spawn.");
+                LOG_INFO("scripts.dc", "Giant Isles Cannon: Duplicate spawn blocked for {}", player->GetName());
+                return;
+            }
+            PendingShipSpawn.insert(player->GetGUID());
+
             // Spawn the ship at first waypoint position
             float shipX = 5948.124f;  // First waypoint X
             float shipY = 1763.0355f; // First waypoint Y
@@ -406,6 +436,9 @@ public:
             // Store the mapping
             PlayerShipMap[player->GetGUID()] = ship->GetGUID();
             ShipHitCount[ship->GetGUID()] = 0;
+
+            // Clear pending marker now that spawn succeeded
+            PendingShipSpawn.erase(player->GetGUID());
 
             me->Whisper("Target acquired! A Zandalari scout ship is approaching. Open fire!",
                 LANG_UNIVERSAL, player);
@@ -483,10 +516,31 @@ public:
                 return;
             }
 
-            // Do NOT directly notify the ship of a hit here. A successful cannon hit
-            // must be registered when the missile actually strikes the ship
-            // (handled by SpellHit/DamageTaken on the ship AI). This prevents
-            // registering hits for fired shots that miss or splash on water.
+            // Historically we avoided directly registering hits on cast finish since
+            // hits were expected when the missile strikes the ship. However some
+            // clients/configurations don't always produce a SpellHit/DamageTaken
+            // on the ship. To ensure reliable hit registration, register a hit
+            // now but guard against double-counting if SpellHit/DamageTaken later
+            // also registers the same impact.
+            uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+            auto lit = ShipLastRegisteredHitSec.find(ship->GetGUID());
+            if (lit != ShipLastRegisteredHitSec.end() && lit->second + 2 > nowSec)
+            {
+                // Recently registered hit for this ship; skip duplicate
+                LOG_INFO("scripts.dc", "Giant Isles Cannon: Recent hit already registered for ship {}", ship->GetGUID().ToString());
+                return;
+            }
+
+            // Call the ship AI SetData path to register the hit (type==1)
+            if (ship->GetAI())
+            {
+                ship->GetAI()->SetData(1, spell->Id);
+                ShipLastRegisteredHitSec[ship->GetGUID()] = nowSec;
+                LOG_INFO("scripts.dc", "Giant Isles Cannon: Registered hit for ship {} from player {}", ship->GetGUID().ToString(), player->GetName());
+            }
+
+            // Note: We still allow the missile/SpellHit path to run; the ship AI will
+            // check ShipLastRegisteredHitSec and avoid double-counting if it runs afterwards.
         }
 
         void UpdateAI(uint32 /*diff*/) override
@@ -601,6 +655,17 @@ public:
                 return;
             }
 
+            // Avoid double-counting: if we recently registered this hit on the
+            // server-side cannon-cast path, ignore this incoming DamageTaken call.
+            uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+            auto lit = ShipLastRegisteredHitSec.find(me->GetGUID());
+            if (lit != ShipLastRegisteredHitSec.end() && lit->second + 2 > nowSec)
+            {
+                LOG_DEBUG("scripts.dc", "Giant Isles Ship: Ignoring duplicate DamageTaken for ship {}", me->GetGUID().ToString());
+                damage = 0;
+                return;
+            }
+
             // Get the player who fired (might be in vehicle)
             Player* player = nullptr;
             if (attacker->IsPlayer())
@@ -689,6 +754,16 @@ public:
             // Already sinking, ignore hits
             if (_isSinking)
                 return;
+
+            // Avoid double-counting: if a recent hit was registered by the cannon cast
+            // path, ignore duplicate SpellHit within a short grace window.
+            uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+            auto lit = ShipLastRegisteredHitSec.find(me->GetGUID());
+            if (lit != ShipLastRegisteredHitSec.end() && lit->second + 2 > nowSec)
+            {
+                LOG_DEBUG("scripts.dc", "Giant Isles Ship: Ignoring duplicate SpellHit for ship {}", me->GetGUID().ToString());
+                return;
+            }
 
             // Get the player who fired (might be in vehicle)
             Player* player = nullptr;
@@ -849,8 +924,8 @@ public:
                             init.MovebyPath(path);
                             init.SetCyclic();
                             init.SetSmooth();
-                            init.SetWalk(false);
-                            init.SetVelocity(5.0f);
+                            init.SetWalk(true); // walk to slow movement down
+                            init.SetVelocity(2.0f); // slower and more natural ship speed
                             init.Launch();
                         }
                         break;
