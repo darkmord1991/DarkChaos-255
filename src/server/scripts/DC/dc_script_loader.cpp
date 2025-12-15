@@ -41,6 +41,7 @@ void AddSC_giant_isles_invasion();            // GiantIsles\dc_giant_isles_invas
 void AddSC_boss_oondasta();                   // GiantIsles\boss_oondasta.cpp
 void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
+void AddSC_dc_giant_isles_water_monster();    // GiantIsles\dc_giant_isles_water_monster.cpp
 
 // --- Map Extension (DISABLED - requires AIO which is not compiled) ---
 
@@ -177,6 +178,7 @@ void AddDCScripts()
         AddSC_boss_oondasta();
         AddSC_boss_thok();
         AddSC_boss_nalak();
+        AddSC_dc_giant_isles_water_monster();
         LOG_INFO("scripts", ">>   ✓ Giant Isles zone scripts loaded");
         LOG_INFO("scripts", ">>   ✓ Cannon quest loaded");
         LOG_INFO("scripts", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");

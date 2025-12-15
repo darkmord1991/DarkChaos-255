@@ -18,6 +18,95 @@ function AzerothAdmin:CreateDCSection()
     inherits = nil
   })
 
+  -- Right-side panels (split DC functions)
+  FrameLib:BuildFrame({
+    name = "ma_dc_gps_panel",
+    group = "dc",
+    parent = ma_dcframe,
+    texture = { color = {0, 0, 0, 0.2} },
+    size = { width = 270, height = 130 },
+    setpoint = { pos = "TOPLEFT", offX = 170, offY = -10 },
+    inherits = nil
+  })
+  FrameLib:BuildFontString({
+    name = "ma_dc_gps_title",
+    group = "dc",
+    parent = ma_dc_gps_panel,
+    text = "GPS Coordinates",
+    setpoint = { pos = "TOPLEFT", offX = 8, offY = -6 }
+  })
+
+  FrameLib:BuildFrame({
+    name = "ma_dc_waypoints_panel",
+    group = "dc",
+    parent = ma_dcframe,
+    texture = { color = {0, 0, 0, 0.2} },
+    size = { width = 270, height = 130 },
+    setpoint = { pos = "TOPLEFT", offX = 460, offY = -10 },
+    inherits = nil
+  })
+  FrameLib:BuildFontString({
+    name = "ma_dc_waypoints_title",
+    group = "dc",
+    parent = ma_dc_waypoints_panel,
+    text = "Waypoints",
+    setpoint = { pos = "TOPLEFT", offX = 8, offY = -6 }
+  })
+
+  FrameLib:BuildButton({
+    name = "ma_dc_waypoints_open_btn",
+    group = "dc",
+    parent = ma_dc_waypoints_panel,
+    texture = {
+      name = "ma_dc_waypoints_open_btn_texture",
+      color = {0.2, 0.2, 0.2, 1},
+      gradient = { orientation = "vertical", min = {0.1, 0.1, 0.1, 1}, max = {0.2, 0.2, 0.2, 1} }
+    },
+    size = { width = 240, height = 25 },
+    setpoint = { pos = "TOPLEFT", offX = 15, offY = -35 },
+    text = "Open Waypoints UI"
+  })
+  AzerothAdmin:PrepareScript(ma_dc_waypoints_open_btn, "Open Waypoints UI", function()
+    AzerothAdmin:OpenDCWaypoints()
+    -- Close the main GM addon window when opening the dedicated Waypoints window.
+    FrameLib:HandleGroup("popup", function(frame) frame:Hide() end)
+    FrameLib:HandleGroup("bg", function(frame) frame:Hide() end)
+  end)
+
+  FrameLib:BuildFrame({
+    name = "ma_dc_protocol_panel",
+    group = "dc",
+    parent = ma_dcframe,
+    texture = { color = {0, 0, 0, 0.2} },
+    size = { width = 270, height = 99 },
+    setpoint = { pos = "TOPLEFT", offX = 170, offY = -145 },
+    inherits = nil
+  })
+  FrameLib:BuildFontString({
+    name = "ma_dc_protocol_title",
+    group = "dc",
+    parent = ma_dc_protocol_panel,
+    text = "Addon Protocol Testing",
+    setpoint = { pos = "TOPLEFT", offX = 8, offY = -6 }
+  })
+
+  FrameLib:BuildFrame({
+    name = "ma_dc_teleports_panel",
+    group = "dc",
+    parent = ma_dcframe,
+    texture = { color = {0, 0, 0, 0.2} },
+    size = { width = 270, height = 99 },
+    setpoint = { pos = "TOPLEFT", offX = 460, offY = -145 },
+    inherits = nil
+  })
+  FrameLib:BuildFontString({
+    name = "ma_dc_teleports_title",
+    group = "dc",
+    parent = ma_dc_teleports_panel,
+    text = "Teleports",
+    setpoint = { pos = "TOPLEFT", offX = 8, offY = -6 }
+  })
+
   FrameLib:BuildButton({
     name = "ma_dc_gomove_btn",
     group = "dc",
@@ -151,7 +240,7 @@ function AzerothAdmin:CreateDCSection()
   FrameLib:BuildButton({
     name = "ma_dc_gps_log_btn",
     group = "dc",
-    parent = ma_dcframe,
+    parent = ma_dc_gps_panel,
     texture = {
       name = "ma_dc_gps_log_btn_texture",
       color = {0.2, 0.2, 0.2, 1},
@@ -167,8 +256,8 @@ function AzerothAdmin:CreateDCSection()
     },
     setpoint = {
       pos = "TOPLEFT",
-      offX = 170,
-      offY = -10
+      offX = 10,
+      offY = -25
     },
     text = "GPS Log Point"
   })
@@ -177,7 +266,7 @@ function AzerothAdmin:CreateDCSection()
   FrameLib:BuildButton({
     name = "ma_dc_gps_finish_btn",
     group = "dc",
-    parent = ma_dcframe,
+    parent = ma_dc_gps_panel,
     texture = {
       name = "ma_dc_gps_finish_btn_texture",
       color = {0.2, 0.2, 0.2, 1},
@@ -193,8 +282,8 @@ function AzerothAdmin:CreateDCSection()
     },
     setpoint = {
       pos = "TOPLEFT",
-      offX = 170,
-      offY = -40
+      offX = 10,
+      offY = -55
     },
     text = "GPS Collection Done"
   })
@@ -203,7 +292,7 @@ function AzerothAdmin:CreateDCSection()
   FrameLib:BuildButton({
     name = "ma_dc_tele_list_btn",
     group = "dc",
-    parent = ma_dcframe,
+    parent = ma_dc_teleports_panel,
     texture = {
       name = "ma_dc_tele_list_btn_texture",
       color = {0.2, 0.2, 0.2, 1},
@@ -219,8 +308,8 @@ function AzerothAdmin:CreateDCSection()
     },
     setpoint = {
       pos = "TOPLEFT",
-      offX = 170,
-      offY = -70
+      offX = 10,
+      offY = -25
     },
     text = "DC Teleports List"
   })
@@ -231,7 +320,7 @@ function AzerothAdmin:CreateDCSection()
   FrameLib:BuildButton({
     name = "ma_dc_handlers_btn",
     group = "dc",
-    parent = ma_dcframe,
+    parent = ma_dc_protocol_panel,
     texture = {
       name = "ma_dc_handlers_btn_texture",
       color = {0.2, 0.2, 0.2, 1},
@@ -247,8 +336,8 @@ function AzerothAdmin:CreateDCSection()
     },
     setpoint = {
       pos = "TOPLEFT",
-      offX = 170,
-      offY = -130
+      offX = 10,
+      offY = -25
     },
     text = "DC Handlers"
   })
@@ -256,7 +345,7 @@ function AzerothAdmin:CreateDCSection()
   FrameLib:BuildButton({
     name = "ma_dc_gps_toolbar_btn",
     group = "dc",
-    parent = ma_dcframe,
+    parent = ma_dc_gps_panel,
     texture = {
       name = "ma_dc_gps_toolbar_btn_texture",
       color = {0.2, 0.2, 0.2, 1},
@@ -272,12 +361,277 @@ function AzerothAdmin:CreateDCSection()
     },
     setpoint = {
       pos = "TOPLEFT",
-      offX = 170,
-      offY = -100
+      offX = 10,
+      offY = -85
     },
     text = "Open GPS Toolbar"
   })
   AzerothAdmin:PrepareScript(ma_dc_gps_toolbar_btn, "Open standalone GPS toolbar", function() AzerothAdmin:CreateGPSFrame() end)
+
+end
+
+-- Updates the DC->Waypoints header with target entry/spawn and waypoint count.
+function AzerothAdmin:UpdateWaypointInfo()
+  local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
+  if not targetTextFrame then
+    return
+  end
+
+  local guid = UnitGUID("target")
+  if not guid then
+    targetTextFrame:SetText("Entry: -  Spawn: -  WPs: -")
+    return
+  end
+
+  local parts = {}
+  for part in string.gmatch(guid, "[^%-]+") do
+    table.insert(parts, part)
+  end
+
+  local unitType = parts[1]
+  local entry = tonumber(parts[6] or "")
+  local spawnHex = parts[7]
+  local spawnDec = spawnHex and tonumber(spawnHex, 16) or nil
+
+  if unitType ~= "Creature" and unitType ~= "Vehicle" then
+    targetTextFrame:SetText("Entry: -  Spawn: -  WPs: -")
+    return
+  end
+
+  local spawnShown = spawnDec or spawnHex or "-"
+  local entryShown = entry or "-"
+  targetTextFrame:SetText("Entry: " .. entryShown .. "  Spawn: " .. spawnShown .. "  WPs: ?")
+
+  self._dcWpInfoPending = true
+  self:ChatMsg(".wp info")
+end
+
+-- Opens a dedicated Waypoints UI window (selection + favorites + buttons).
+function AzerothAdmin:OpenDCWaypoints()
+  if ma_dcwaypoints_window then
+    ma_dcwaypoints_window:Show()
+    AzerothAdmin:UpdateWaypointInfo()
+    AzerothAdmin:UpdateDCWaypointsLists()
+    return
+  end
+
+  AzerothAdmin.db.char.waypoints = AzerothAdmin.db.char.waypoints or {}
+  AzerothAdmin.db.char.waypoints.selection = AzerothAdmin.db.char.waypoints.selection or {}
+  AzerothAdmin.db.account.favorites.waypoints = AzerothAdmin.db.account.favorites.waypoints or {}
+
+  local color = { bg = AzerothAdmin.db.account.style.color.backgrounds, btn = AzerothAdmin.db.account.style.color.buttons }
+  local transparency = { bg = AzerothAdmin.db.account.style.transparency.backgrounds, btn = AzerothAdmin.db.account.style.transparency.buttons }
+
+  local windowW, windowH = 260, 495
+  local pad = 10
+  local btnH = 18
+  local rowH = 18
+  local listRows = 6
+  local listH = (rowH * listRows) + 2
+  local contentW = windowW - (pad * 2)
+  local colGap = 6
+  local btnW = math.floor((contentW - colGap) / 2)
+  local col2X = pad + btnW + colGap
+
+  FrameLib:BuildFrame({
+    name = "ma_dcwaypoints_window",
+    group = "dcwaypoints",
+    parent = UIParent,
+    texture = { color = {color.bg.r, color.bg.g, color.bg.b, transparency.bg} },
+    size = { width = windowW, height = windowH },
+    setpoint = { pos = "LEFT", relTo = "UIParent", relPos = "LEFT", offX = 0, offY = 85 },
+    draggable = true,
+    hidden = true
+  })
+
+  ma_dcwaypoints_window:SetClampedToScreen(true)
+
+  ma_dcwaypoints_window:SetScript("OnShow", function()
+    AzerothAdmin:UpdateWaypointInfo()
+    AzerothAdmin:UpdateDCWaypointsLists()
+  end)
+
+  FrameLib:BuildFontString({ name = "ma_dcwaypoints_title", parent = ma_dcwaypoints_window, text = "DC Waypoints", setpoint = { pos = "TOP", offY = -10 } })
+  FrameLib:BuildButton({ name = "ma_dcwaypoints_close", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = 20, height = 20 }, setpoint = { pos = "TOPRIGHT", offX = -8, offY = -8 }, text = "X" })
+  AzerothAdmin:PrepareScript(ma_dcwaypoints_close, "Close", function() ma_dcwaypoints_window:Hide() end)
+
+  FrameLib:BuildFontString({ name = "ma_dcwaypoints_info", parent = ma_dcwaypoints_window, text = "Entry: -  Spawn: -  WPs: -", setpoint = { pos = "TOPLEFT", offX = pad, offY = -30 } })
+
+  FrameLib:BuildButton({ name = "ma_dcwaypoints_refresh", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = 60, height = btnH }, setpoint = { pos = "TOPRIGHT", offX = -35, offY = -32 }, text = "Refresh" })
+  AzerothAdmin:PrepareScript(ma_dcwaypoints_refresh, "Refresh waypoint info", function() AzerothAdmin:UpdateWaypointInfo() end)
+
+  -- Waypoint action buttons
+  local function WpBtn(name, text, x, y, tooltip, fn)
+    FrameLib:BuildButton({ name = name, parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = btnW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = x, offY = y }, text = text })
+    AzerothAdmin:PrepareScript(_G[name], tooltip, fn)
+  end
+
+  -- Compact 2-column layout (GOMove-like)
+  WpBtn("ma_dcwp_start", Locale["ma_WayAdd"], pad, -55, Locale["tt_WayStart"], function() WayStart() end)
+  WpBtn("ma_dcwp_add", Locale["ma_WayEndAdd"], col2X, -55, Locale["tt_WayEndAdd"], function() WayEndAdd() end)
+  WpBtn("ma_dcwp_showon", Locale["ma_WayShow1"], pad, -55 - (btnH + 2), Locale["tt_WayShow1"], function() WayShowOn() end)
+  WpBtn("ma_dcwp_showoff", Locale["ma_WayShow0"], col2X, -55 - (btnH + 2), Locale["tt_WayShow0"], function() WayShowOff() end)
+  WpBtn("ma_dcwp_insert", Locale["ma_WayMAdd"], pad, -55 - ((btnH + 2) * 2), Locale["tt_WayMAdd"], function() WayModifyAdd() end)
+  WpBtn("ma_dcwp_del", Locale["ma_WayMDel"], col2X, -55 - ((btnH + 2) * 2), Locale["tt_WayModifyDel"], function() WayModifyDel() end)
+  WpBtn("ma_dcwp_move", Locale["ma_WayMove"], pad, -55 - ((btnH + 2) * 3), Locale["tt_WayMove"], function() WayModifyMove() end)
+  WpBtn("ma_dcwp_wipe", Locale["ma_WayWipe"], col2X, -55 - ((btnH + 2) * 3), Locale["tt_WayWipe"], function() WayWipe() end)
+
+  -- Start creature movement along its waypoint path.
+  local runY = -55 - ((btnH + 2) * 4)
+  FrameLib:BuildButton({ name = "ma_dcwp_run", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = contentW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = runY }, text = Locale["ma_WayRun"] or "Run Path" })
+  AzerothAdmin:PrepareScript(ma_dcwp_run, Locale["tt_WayRun"] or "Start waypoint movement", function() WayRun() end)
+
+  -- Selection list (recent)
+  local selTopY = runY - (btnH + 22)
+  FrameLib:BuildFontString({ name = "ma_dcwp_sel_title", parent = ma_dcwaypoints_window, text = "Selection", setpoint = { pos = "TOPLEFT", offX = pad, offY = selTopY + 18 } })
+  FrameLib:BuildFrame({ type = "ScrollFrame", name = "ma_dcwp_sel_scroll", parent = ma_dcwaypoints_window, inherits = "FauxScrollFrameTemplate", size = { width = contentW, height = listH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = selTopY }, texture = { color = {0,0,0,0} } })
+  ma_dcwp_sel_scroll:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, rowH, function() AzerothAdmin:UpdateDCWaypointsLists() end) end)
+
+  for i = 1, listRows do
+    FrameLib:BuildButton({ name = "ma_dcwp_sel_entry"..i, parent = ma_dcwaypoints_window, size = { width = contentW, height = rowH }, setpoint = { pos = "TOPLEFT", relTo = (i==1 and "ma_dcwp_sel_scroll" or "ma_dcwp_sel_entry"..(i-1)), relPos = (i==1 and "TOPLEFT" or "BOTTOMLEFT"), offY = 0 }, text = "", texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, hidden = true })
+    _G["ma_dcwp_sel_entry"..i]:SetScript("OnClick", function(self)
+      AzerothAdmin._dcWpSelectedFrom = "selection"
+      AzerothAdmin._dcWpSelectedIndex = self:GetID()
+      AzerothAdmin:UpdateDCWaypointsLists()
+    end)
+  end
+
+  local selBtnsY = selTopY - listH - 6
+  FrameLib:BuildButton({ name = "ma_dcwp_sel_add", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = btnW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = selBtnsY }, text = "Add" })
+  AzerothAdmin:PrepareScript(ma_dcwp_sel_add, "Add current target to selection", function() AzerothAdmin:DCWaypoints_AddTargetToSelection() end)
+  FrameLib:BuildButton({ name = "ma_dcwp_sel_clear", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = btnW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = col2X, offY = selBtnsY }, text = "Clear" })
+  AzerothAdmin:PrepareScript(ma_dcwp_sel_clear, "Clear selection list", function() AzerothAdmin.db.char.waypoints.selection = {}; AzerothAdmin:UpdateDCWaypointsLists() end)
+
+  -- Favorites list
+  local favTopY = selBtnsY - (btnH + 30)
+  FrameLib:BuildFontString({ name = "ma_dcwp_fav_title", parent = ma_dcwaypoints_window, text = "Favorites", setpoint = { pos = "TOPLEFT", offX = pad, offY = favTopY + 18 } })
+  FrameLib:BuildFrame({ type = "ScrollFrame", name = "ma_dcwp_fav_scroll", parent = ma_dcwaypoints_window, inherits = "FauxScrollFrameTemplate", size = { width = contentW, height = listH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = favTopY }, texture = { color = {0,0,0,0} } })
+  ma_dcwp_fav_scroll:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, rowH, function() AzerothAdmin:UpdateDCWaypointsLists() end) end)
+
+  for i = 1, listRows do
+    FrameLib:BuildButton({ name = "ma_dcwp_fav_entry"..i, parent = ma_dcwaypoints_window, size = { width = contentW, height = rowH }, setpoint = { pos = "TOPLEFT", relTo = (i==1 and "ma_dcwp_fav_scroll" or "ma_dcwp_fav_entry"..(i-1)), relPos = (i==1 and "TOPLEFT" or "BOTTOMLEFT"), offY = 0 }, text = "", texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, hidden = true })
+    _G["ma_dcwp_fav_entry"..i]:SetScript("OnClick", function(self)
+      AzerothAdmin._dcWpSelectedFrom = "favorites"
+      AzerothAdmin._dcWpSelectedIndex = self:GetID()
+      AzerothAdmin:UpdateDCWaypointsLists()
+    end)
+  end
+
+  local favBtnsY = favTopY - listH - 6
+  FrameLib:BuildButton({ name = "ma_dcwp_fav_add", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = btnW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = favBtnsY }, text = "Fav" })
+  AzerothAdmin:PrepareScript(ma_dcwp_fav_add, "Add current target to favorites", function() AzerothAdmin:DCWaypoints_AddTargetToFavorites() end)
+  FrameLib:BuildButton({ name = "ma_dcwp_fav_remove", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = btnW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = col2X, offY = favBtnsY }, text = "Remove" })
+  AzerothAdmin:PrepareScript(ma_dcwp_fav_remove, "Remove selected favorite", function() AzerothAdmin:DCWaypoints_RemoveSelectedFavorite() end)
+
+  ma_dcwaypoints_window:Show()
+end
+
+local function _dcwp_getTargetEntrySpawn()
+  local guid = UnitGUID("target")
+  if not guid then
+    return nil, nil
+  end
+  local parts = {}
+  for part in string.gmatch(guid, "[^%-]+") do
+    table.insert(parts, part)
+  end
+  local unitType = parts[1]
+  if unitType ~= "Creature" and unitType ~= "Vehicle" then
+    return nil, nil
+  end
+  local entry = tonumber(parts[6] or "")
+  local spawnHex = parts[7]
+  local spawnDec = spawnHex and tonumber(spawnHex, 16) or nil
+  if not entry or not spawnDec then
+    return nil, nil
+  end
+  return entry, spawnDec
+end
+
+function AzerothAdmin:DCWaypoints_AddTargetToSelection()
+  local entry, spawn = _dcwp_getTargetEntrySpawn()
+  if not entry or not spawn then
+    AzerothAdmin:ChatMsg("No creature target selected")
+    return
+  end
+  table.insert(AzerothAdmin.db.char.waypoints.selection, 1, { entry = entry, spawn = spawn })
+  AzerothAdmin:UpdateDCWaypointsLists()
+end
+
+function AzerothAdmin:DCWaypoints_AddTargetToFavorites()
+  local entry, spawn = _dcwp_getTargetEntrySpawn()
+  if not entry or not spawn then
+    AzerothAdmin:ChatMsg("No creature target selected")
+    return
+  end
+  for _, v in ipairs(AzerothAdmin.db.account.favorites.waypoints) do
+    if v.entry == entry and v.spawn == spawn then
+      AzerothAdmin:UpdateDCWaypointsLists()
+      return
+    end
+  end
+  table.insert(AzerothAdmin.db.account.favorites.waypoints, 1, { entry = entry, spawn = spawn })
+  AzerothAdmin:UpdateDCWaypointsLists()
+end
+
+function AzerothAdmin:DCWaypoints_RemoveSelectedFavorite()
+  if AzerothAdmin._dcWpSelectedFrom ~= "favorites" then
+    return
+  end
+  local idx = AzerothAdmin._dcWpSelectedIndex
+  if not idx or idx <= 0 then
+    return
+  end
+  table.remove(AzerothAdmin.db.account.favorites.waypoints, idx)
+  AzerothAdmin._dcWpSelectedIndex = nil
+  AzerothAdmin:UpdateDCWaypointsLists()
+end
+
+function AzerothAdmin:UpdateDCWaypointsLists()
+  if not ma_dcwaypoints_window then
+    return
+  end
+
+  local rowH = 18
+  local listRows = 6
+
+  local selection = (AzerothAdmin.db.char.waypoints and AzerothAdmin.db.char.waypoints.selection) or {}
+  local favorites = (AzerothAdmin.db.account.favorites and AzerothAdmin.db.account.favorites.waypoints) or {}
+
+  AzerothAdmin.filteredDCWpSel = selection
+  AzerothAdmin.filteredDCWpFav = favorites
+
+  local selOffset = FauxScrollFrame_GetOffset(ma_dcwp_sel_scroll)
+  for i = 1, listRows do
+    local btn = _G["ma_dcwp_sel_entry"..i]
+    local idx = selOffset + i
+    local v = selection[idx]
+    if v then
+      btn:SetID(idx)
+      local prefix = (AzerothAdmin._dcWpSelectedFrom == "selection" and AzerothAdmin._dcWpSelectedIndex == idx) and "* " or ""
+      btn:SetText(prefix .. "Entry " .. v.entry .. " / Spawn " .. v.spawn)
+      btn:Show()
+    else
+      btn:Hide()
+    end
+  end
+  FauxScrollFrame_Update(ma_dcwp_sel_scroll, #selection, listRows, rowH)
+
+  local favOffset = FauxScrollFrame_GetOffset(ma_dcwp_fav_scroll)
+  for i = 1, listRows do
+    local btn = _G["ma_dcwp_fav_entry"..i]
+    local idx = favOffset + i
+    local v = favorites[idx]
+    if v then
+      btn:SetID(idx)
+      local prefix = (AzerothAdmin._dcWpSelectedFrom == "favorites" and AzerothAdmin._dcWpSelectedIndex == idx) and "* " or ""
+      btn:SetText(prefix .. "Entry " .. v.entry .. " / Spawn " .. v.spawn)
+      btn:Show()
+    else
+      btn:Hide()
+    end
+  end
+  FauxScrollFrame_Update(ma_dcwp_fav_scroll, #favorites, listRows, rowH)
 end
 
 -- Create a window to list DCAddonProtocol handlers and show details

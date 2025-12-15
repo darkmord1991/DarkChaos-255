@@ -37,9 +37,12 @@ public:
         {
             { "add",        HandleWpAddCommand,      SEC_ADMINISTRATOR, Console::No },
             { "event",      HandleWpEventCommand,    SEC_ADMINISTRATOR, Console::No },
+            { "info",       HandleWpInfoCommand,     SEC_ADMINISTRATOR, Console::No },
             { "load",       HandleWpLoadCommand,     SEC_ADMINISTRATOR, Console::No },
             { "modify",     HandleWpModifyCommand,   SEC_ADMINISTRATOR, Console::No },
+            { "start",      HandleWpStartCommand,    SEC_ADMINISTRATOR, Console::No },
             { "unload",     HandleWpUnLoadCommand,   SEC_ADMINISTRATOR, Console::No },
+            { "wipe",       HandleWpWipeCommand,     SEC_ADMINISTRATOR, Console::No },
             { "reload",     HandleWpReloadCommand,   SEC_ADMINISTRATOR, Console::No },
             { "show",       HandleWpShowCommand,     SEC_ADMINISTRATOR, Console::No }
         };
@@ -132,6 +135,208 @@ public:
         handler->PSendSysMessage("{}{}{}{}{}{}|r", "|cff00ff00", "PathID: |r|cff00ffff", pathid, "|r|cff00ff00: Waypoint |r|cff00ffff", point + 1, "|r|cff00ff00 created. ");
         return true;
     }                                                           // HandleWpAddCommand
+
+    // Returns entry/spawn/path/waypoint-count for the currently selected creature.
+    // Output is intended for parsing by the DC-GM addon.
+    static bool HandleWpInfoCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Creature* target = handler->getSelectedCreature();
+        if (!target)
+        {
+            handler->SendErrorMessage(LANG_SELECT_CREATURE);
+            return false;
+        }
+
+        if (target->GetEntry() == VISUAL_WAYPOINT)
+        {
+            handler->SendErrorMessage("|cffff33ffYou must select a creature (not a visual waypoint).|r");
+            return false;
+        }
+
+        uint32 entry = target->GetEntry();
+        uint32 spawn = target->GetSpawnId();
+        uint32 pathid = target->GetWaypointPath();
+        uint32 count = 0;
+
+        if (pathid)
+        {
+            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_MAX_POINT);
+            stmt->SetData(0, pathid);
+            PreparedQueryResult result = WorldDatabase.Query(stmt);
+            if (result)
+                count = (*result)[0].Get<uint32>();
+        }
+
+        handler->PSendSysMessage("WPINFO entry={} spawn={} path={} count={}", entry, spawn, pathid, count);
+        return true;
+    }
+
+    // Creates a brand-new waypoint path and assigns it to the selected creature.
+    // Also inserts the first waypoint at the player's current position.
+    static bool HandleWpStartCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Creature* target = handler->getSelectedCreature();
+        if (!target)
+        {
+            handler->SendErrorMessage(LANG_SELECT_CREATURE);
+            return false;
+        }
+
+        if (target->GetEntry() == VISUAL_WAYPOINT)
+        {
+            handler->SendErrorMessage("|cffff33ffYou must select a creature (not a visual waypoint).|r");
+            return false;
+        }
+
+        if (uint32 existingPathId = target->GetWaypointPath())
+        {
+            handler->PSendSysMessage("|cffff33ffTarget already has a loaded path (PathID: {}).|r", existingPathId);
+            return true;
+        }
+
+        // Allocate a new path id.
+        WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_MAX_ID);
+        PreparedQueryResult result = WorldDatabase.Query(stmt);
+        uint32 maxpathid = result ? result->Fetch()->Get<int32>() : 0;
+        uint32 pathid = maxpathid + 1;
+
+        Player* player = handler->GetSession()->GetPlayer();
+
+        // Insert first waypoint.
+        stmt = WorldDatabase.GetPreparedStatement(WORLD_INS_WAYPOINT_DATA);
+        stmt->SetData(0, pathid);
+        stmt->SetData(1, uint32(1));
+        stmt->SetData(2, player->GetPositionX());
+        stmt->SetData(3, player->GetPositionY());
+        stmt->SetData(4, player->GetPositionZ());
+        WorldDatabase.Execute(stmt);
+
+        // Assign path to creature spawn (creature_addon.path_id) and set movement type.
+        ObjectGuid::LowType guidLow = target->GetSpawnId();
+        stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_CREATURE_ADDON_BY_GUID);
+        stmt->SetData(0, guidLow);
+        PreparedQueryResult addonResult = WorldDatabase.Query(stmt);
+
+        if (addonResult)
+        {
+            stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_ADDON_PATH);
+            stmt->SetData(0, pathid);
+            stmt->SetData(1, guidLow);
+        }
+        else
+        {
+            stmt = WorldDatabase.GetPreparedStatement(WORLD_INS_CREATURE_ADDON);
+            stmt->SetData(0, guidLow);
+            stmt->SetData(1, pathid);
+        }
+        WorldDatabase.Execute(stmt);
+
+        stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_MOVEMENT_TYPE);
+        stmt->SetData(0, uint8(WAYPOINT_MOTION_TYPE));
+        stmt->SetData(1, guidLow);
+        WorldDatabase.Execute(stmt);
+
+        target->LoadPath(pathid);
+        target->SetDefaultMovementType(WAYPOINT_MOTION_TYPE);
+        target->GetMotionMaster()->Initialize();
+
+        handler->PSendSysMessage("|cff00ff00Started new path for target. PathID: |r|cff00ffff{}|r|cff00ff00 (Waypoint 1 created at your position).|r", pathid);
+        return true;
+    }
+
+    // Deletes ALL waypoints for the selected creature's currently loaded path and detaches it.
+    static bool HandleWpWipeCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Creature* target = handler->getSelectedCreature();
+        if (!target)
+        {
+            handler->PSendSysMessage("{}{}|r", "|cff33ffff", "You must select target.");
+            return true;
+        }
+
+        if (target->GetEntry() == VISUAL_WAYPOINT)
+        {
+            handler->SendErrorMessage("|cffff33ffYou must select a creature (not a visual waypoint).|r");
+            return false;
+        }
+
+        uint32 pathid = target->GetWaypointPath();
+        if (!pathid)
+        {
+            handler->PSendSysMessage("|cffff33ffTarget has no loaded path to wipe.|r");
+            return true;
+        }
+
+        // Remove visuals for this path (if any were spawned by .wp show on).
+        WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_WPGUID_BY_ID);
+        stmt->SetData(0, pathid);
+        PreparedQueryResult visuals = WorldDatabase.Query(stmt);
+        if (visuals)
+        {
+            bool hasError = false;
+            do
+            {
+                Field* fields = visuals->Fetch();
+                uint32 wpguid = fields[0].Get<uint32>();
+                if (!wpguid)
+                    continue;
+
+                Creature* creature = handler->GetSession()->GetPlayer()->GetMap()->GetCreature(ObjectGuid::Create<HighGuid::Unit>(VISUAL_WAYPOINT, wpguid));
+                if (!creature)
+                {
+                    handler->PSendSysMessage(LANG_WAYPOINT_NOTREMOVED, wpguid);
+                    hasError = true;
+
+                    WorldDatabasePreparedStatement* del = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE);
+                    del->SetData(0, wpguid);
+                    WorldDatabase.Execute(del);
+                }
+                else
+                {
+                    creature->CombatStop();
+                    creature->DeleteFromDB();
+                    creature->AddObjectToRemoveList();
+                }
+            } while (visuals->NextRow());
+
+            if (hasError)
+            {
+                handler->PSendSysMessage(LANG_WAYPOINT_TOOFAR1);
+                handler->PSendSysMessage(LANG_WAYPOINT_TOOFAR2);
+                handler->PSendSysMessage(LANG_WAYPOINT_TOOFAR3);
+            }
+        }
+
+        // Detach path from creature spawn and reset movement.
+        ObjectGuid::LowType guidLow = target->GetSpawnId();
+        if (target->GetCreatureAddon() && target->GetCreatureAddon()->path_id != 0)
+        {
+            stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_ADDON);
+            stmt->SetData(0, guidLow);
+            WorldDatabase.Execute(stmt);
+
+            target->UpdateWaypointID(0);
+
+            stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_MOVEMENT_TYPE);
+            stmt->SetData(0, uint8(IDLE_MOTION_TYPE));
+            stmt->SetData(1, guidLow);
+            WorldDatabase.Execute(stmt);
+
+            target->LoadPath(0);
+            target->SetDefaultMovementType(IDLE_MOTION_TYPE);
+            target->GetMotionMaster()->MoveTargetedHome();
+            target->GetMotionMaster()->Initialize();
+        }
+
+        // Delete DB waypoints.
+        WorldDatabase.Execute("DELETE FROM waypoint_data WHERE id='{}'", pathid);
+
+        // Ensure the waypoint manager cache is refreshed.
+        sWaypointMgr->ReloadPath(pathid);
+
+        handler->PSendSysMessage("|cff00ff00Wiped all waypoints for PathID: |r|cff00ffff{}|r|cff00ff00 and detached it from the selected creature.|r", pathid);
+        return true;
+    }
 
     static bool HandleWpLoadCommand(ChatHandler* handler, const char* args)
     {
@@ -554,9 +759,10 @@ public:
 
         std::string show = show_str;
         // Check
-        // Remember: "show" must also be the name of a column!
+        // Remember: for most subcommands, "show" must also be the name of a column!
+        // Special cases: add/wpadd/del/move
         if ((show != "delay") && (show != "action") && (show != "action_chance")
-                && (show != "move_type") && (show != "del") && (show != "move") && (show != "wpadd")
+            && (show != "move_type") && (show != "del") && (show != "move") && (show != "add") && (show != "wpadd")
            )
         {
             return false;
@@ -627,10 +833,30 @@ public:
         arg_str = strtok((char*)nullptr, " ");
 
         // Check for argument
-        if (show != "del" && show != "move" && arg_str == nullptr)
+        if (show != "del" && show != "move" && show != "add" && show != "wpadd" && arg_str == nullptr)
         {
             handler->PSendSysMessage(LANG_WAYPOINT_ARGUMENTREQ, show_str);
             return false;
+        }
+
+        // Insert a new waypoint AFTER the selected visual waypoint.
+        if (show == "add" || show == "wpadd")
+        {
+            Player* chr = handler->GetSession()->GetPlayer();
+
+            // Shift points after the selected one up by 1 (descending order avoids PK collisions).
+            WorldDatabase.Execute("UPDATE waypoint_data SET point = point + 1 WHERE id='{}' AND point > {} ORDER BY point DESC", pathid, point);
+
+            WorldDatabasePreparedStatement* ins = WorldDatabase.GetPreparedStatement(WORLD_INS_WAYPOINT_DATA);
+            ins->SetData(0, pathid);
+            ins->SetData(1, point + 1);
+            ins->SetData(2, chr->GetPositionX());
+            ins->SetData(3, chr->GetPositionY());
+            ins->SetData(4, chr->GetPositionZ());
+            WorldDatabase.Execute(ins);
+
+            handler->PSendSysMessage("|cff00ff00Inserted waypoint |r|cff00ffff{}|r|cff00ff00 on PathID |r|cff00ffff{}|r|cff00ff00 at your position.|r", point + 1, pathid);
+            return true;
         }
 
         if (show == "del")

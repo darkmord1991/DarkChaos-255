@@ -69,6 +69,10 @@ AzerothAdmin:RegisterDefaults("char",
     instantKillMode = false,
     msgDeltaTime = time(),
 
+    waypoints = {
+      selection = {}
+    },
+
   }
 )
 AzerothAdmin:RegisterDefaults("account",
@@ -83,7 +87,8 @@ AzerothAdmin:RegisterDefaults("account",
       quests = {},
       creatures = {},
       objects = {},
-      teles = {}
+      teles = {},
+      waypoints = {}
     },
     buffer = {
       tickets = {},
@@ -255,6 +260,9 @@ function AzerothAdmin:OnInitialize()
   if not self.db.account.style.showminimenu then
     FrameLib:HandleGroup("minimenu", function(frame) frame:Hide() end)
   end
+
+  -- Keep DC->Waypoints info header in sync with the current target
+  self:RegisterEvent("PLAYER_TARGET_CHANGED", "UpdateWaypointInfo")
 end
 
 function AzerothAdmin:OnEnable()
@@ -376,7 +384,8 @@ function AzerothAdmin:OnClick()
   elseif not ma_bgframe:IsVisible() and ma_popupframe:IsVisible() then
     FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
   else
-    FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
+    -- Opening from the minimap/main toggle should land in DC (Waypoints) by default.
+    AzerothAdmin:InstantGroupToggle("dc")
   end
 end
 
@@ -452,6 +461,10 @@ function AzerothAdmin:InstantGroupToggle(group)
   FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
   AzerothAdmin:ToggleTabButton(group)
   AzerothAdmin:ToggleContentGroup(group)
+
+  if group == "dc" and AzerothAdmin.UpdateWaypointInfo and _G["ma_dcwaypoints_window"] then
+    AzerothAdmin:UpdateWaypointInfo()
+  end
 end
 
 function AzerothAdmin:TogglePopup(value, param)
@@ -582,6 +595,16 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   local catchedSth = false
   local output = AzerothAdmin.db.account.style.showchat
   if id == 1 then --make sure that the message comes from the server, message id = 1
+    -- DC waypoints info response parsing
+    if self._dcWpInfoPending then
+      local entry, spawn, path, count = string.match(text, "WPINFO entry=(%d+) spawn=(%d+) path=(%d+) count=(%d+)")
+      local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
+      if entry and spawn and count and targetTextFrame then
+        targetTextFrame:SetText("Entry: " .. entry .. "  Spawn: " .. spawn .. "  WPs: " .. count)
+        self._dcWpInfoPending = false
+      end
+    end
+
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
     if self.db.char.requests.toggle and not ma_popupframe:IsVisible() then
       self.db.char.requests.toggle = false
@@ -1634,7 +1657,9 @@ function AzerothAdmin:SearchReset()
 end
 
 function AzerothAdmin:PrepareScript(object, text, script)
-  --if object then
+  if not object then
+    return
+  end
     if text then
       if self.db.account.style.showtooltips then
         object:SetScript("OnEnter", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:SetText(text); GameTooltip:Show() end)
@@ -1648,7 +1673,6 @@ function AzerothAdmin:PrepareScript(object, text, script)
         object:SetScript(unpack(v))
       end
     end
-  --end
 end
 
 --[[INITIALIZION FUNCTIONS]]
@@ -2725,6 +2749,11 @@ end
 
 -- Delay minimap button creation until PLAYER_LOGIN to ensure all libraries are loaded
 local function CreateMinimapButton()
+  -- If a minimap button already exists (from LibDBIcon or previous init), don't create another.
+  if _G["AzerothAdminMinimapButton"] or _G["LibDBIcon10_AzerothAdmin"] then
+    return
+  end
+
     -- Try to use LibDBIcon if available (provided by other addons like ElvUI or our own libraries)
     local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
     local icon = LibStub and LibStub("LibDBIcon-1.0", true)
@@ -2770,6 +2799,10 @@ else
     minimapButton:SetFrameLevel(8)
     minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  minimapButton:RegisterForDrag("RightButton")
+  minimapButton:SetMovable(true)
+  minimapButton:EnableMouse(true)
+  minimapButton:SetClampedToScreen(true)
 
     -- Set the minimap button icon
     local buttonIcon = minimapButton:CreateTexture(nil, "BACKGROUND")
@@ -2783,8 +2816,20 @@ else
     buttonText:SetText("GM")
     buttonText:SetTextColor(1, 0.82, 0) -- Gold color
 
-    -- Set the minimap button position (fixed)
-    minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - (80 * cos(45)), (80 * sin(45)) - 52)
+    -- Set the minimap button position (persisted)
+    local defaultPos = {
+      point = "TOPLEFT",
+      relPoint = "TOPLEFT",
+      x = 52 - (80 * cos(45)),
+      y = (80 * sin(45)) - 52
+    }
+
+    local pos = AzerothAdminDb and AzerothAdminDb.minimapButtonPos
+    if type(pos) == "table" and pos.point and pos.relPoint and pos.x and pos.y then
+      minimapButton:SetPoint(pos.point, Minimap, pos.relPoint, pos.x, pos.y)
+    else
+      minimapButton:SetPoint(defaultPos.point, Minimap, defaultPos.relPoint, defaultPos.x, defaultPos.y)
+    end
 
     -- Add event handlers for the minimap button
     minimapButton:SetScript("OnClick", function(self, button)
@@ -2797,6 +2842,24 @@ else
         elseif button == "RightButton" then
             AzerothAdmin:ToggleMiniMenu()
         end
+    end)
+
+    minimapButton:SetScript("OnDragStart", function(self)
+      self:StartMoving()
+    end)
+
+    minimapButton:SetScript("OnDragStop", function(self)
+      self:StopMovingOrSizing()
+      local point, _, relPoint, x, y = self:GetPoint(1)
+      if not AzerothAdminDb then
+        AzerothAdminDb = {}
+      end
+      AzerothAdminDb.minimapButtonPos = {
+        point = point,
+        relPoint = relPoint,
+        x = x,
+        y = y
+      }
     end)
 
     minimapButton:SetScript("OnEnter", function(self)

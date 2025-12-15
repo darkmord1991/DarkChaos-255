@@ -268,19 +268,29 @@ function WayEndAdd()
     AzerothAdmin:LogAction("WayPoint Add for player "..player..".")
 end
 
-function NPCAdd_Way()
-    local player = UnitName("target") or UnitName("player")
-    local npc =	ma_NPC_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".wp add "..npc)
-    --AzerothAdmin:Way_Point_Add_Start_Write(1)
-    AzerothAdmin:ChatMsg(".wp show on "..npc)
-    AzerothAdmin:LogAction("WayPoint Add for player "..player..".")
+function WayStart()
+  local player = UnitName("target") or UnitName("player")
+  AzerothAdmin:ChatMsg(".wp start")
+  AzerothAdmin:LogAction("WayPoint Start for player "..player..".")
+end
+
+function WayWipe()
+  local player = UnitName("target") or UnitName("player")
+  AzerothAdmin:ChatMsg(".wp wipe")
+  AzerothAdmin:LogAction("WayPoint Wipe for player "..player..".")
+end
+
+function WayRun()
+  local player = UnitName("target") or UnitName("player")
+  -- Start waypoint movement without deleting the path (NODEL).
+  AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
+  AzerothAdmin:LogAction("WayPoint Run (movetype way) for player "..player..".")
 end
 
 function WayModifyAdd()
     local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp modify add")
-    AzerothAdmin:LogAction("WayPoint(Modify) Add for player "..player..".")
+  AzerothAdmin:ChatMsg(".wp modify add")
+  AzerothAdmin:LogAction("WayPoint(Modify) Add for player "..player..".")
 end
 
 function WayModifyDel()
@@ -289,10 +299,15 @@ function WayModifyDel()
     AzerothAdmin:LogAction("WayPoint(Modify) Del for player "..player..".")
 end
 
+function WayModifyMove()
+  local player = UnitName("target") or UnitName("player")
+  AzerothAdmin:ChatMsg(".wp modify move")
+  AzerothAdmin:LogAction("WayPoint(Modify) Move for player "..player..".")
+end
+
 function NPCAdd_WayShowOn()
     local player = UnitName("target") or UnitName("player")
-    local npc =	ma_NPC_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".wp show on "..npc)
+  AzerothAdmin:ChatMsg(".wp show on")
     AzerothAdmin:LogAction("WayPoint Show On for player "..player..".")
 end
 
