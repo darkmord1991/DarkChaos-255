@@ -27,6 +27,7 @@
 #include "Log.h"
 #include "Config.h"
 #include <cstdio>  // for snprintf
+#include <sstream>
 #include <unordered_set>
 #include <utility>  // for std::pair
 
@@ -63,6 +64,45 @@ namespace
     
     // Forward declarations
     uint32 GetCurrentSeasonId();
+
+    // Escape a string for safe embedding in JSON string literals.
+    // Produces content WITHOUT surrounding quotes.
+    std::string JsonEscape(const std::string& input)
+    {
+        std::string out;
+        out.reserve(input.size() + 8);
+
+        for (unsigned char ch : input)
+        {
+            switch (ch)
+            {
+                case '\\': out += "\\\\"; break;
+                case '"':  out += "\\\""; break;
+                case '\b': out += "\\b"; break;
+                case '\f': out += "\\f"; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default:
+                {
+                    // JSON does not allow unescaped control characters.
+                    if (ch < 0x20)
+                    {
+                        char buf[7];
+                        snprintf(buf, sizeof(buf), "\\u%04X", static_cast<unsigned int>(ch));
+                        out += buf;
+                    }
+                    else
+                    {
+                        out.push_back(static_cast<char>(ch));
+                    }
+                    break;
+                }
+            }
+        }
+
+        return out;
+    }
     
     // ========================================================================
     // LEADERBOARD DATA FETCHERS
@@ -78,6 +118,24 @@ namespace
         // Extended fields for v1.3.0
         std::string score_str;   // For gold (uint64) sent as string
         uint32 mapId = 0;        // For M+ per-dungeon display
+
+        // Extended fields consumed by the client UI
+        // HLBG expects these for seasonal W/L and for all-time K/D displays
+        bool hasWinsLosses = false;
+        uint32 wins = 0;
+        uint32 losses = 0;
+
+        bool hasKD = false;
+        uint32 kills = 0;
+        uint32 deaths = 0;
+        double kdRatio = 0.0;
+
+        // AOE Loot expects separate quality columns in v1.4.0
+        bool hasQuality = false;
+        uint32 qLeg = 0;
+        uint32 qEpic = 0;
+        uint32 qRare = 0;
+        uint32 qUncommon = 0;
     };
     
     // Helper to get class name from class ID
@@ -412,6 +470,12 @@ namespace
                 uint32 deaths = fields[4].Get<uint32>();
                 uint32 resources = fields[5].Get<uint32>();
                 uint32 battles = fields[6].Get<uint32>();
+
+                // Client UI uses these fields for K/D rendering in several HLBG subcats
+                entry.hasKD = true;
+                entry.kills = kills;
+                entry.deaths = deaths;
+                entry.kdRatio = deaths > 0 ? (static_cast<double>(kills) / deaths) : static_cast<double>(kills);
                 
                 if (subcat == "hlbg_alltime_wins")
                 {
@@ -478,6 +542,11 @@ namespace
                 uint32 losses = fields[4].Get<uint32>();
                 uint32 totalGames = wins + losses;
                 float winRate = totalGames > 0 ? (static_cast<float>(wins) / totalGames * 100.0f) : 0.0f;
+
+                // Client UI expects wins/losses to render the extra column
+                entry.hasWinsLosses = true;
+                entry.wins = wins;
+                entry.losses = losses;
                 
                 if (subcat == "hlbg_wins")
                 {
@@ -507,32 +576,77 @@ namespace
         return entries;
     }
     
-    // Get Prestige leaderboard
-    // Table: dc_character_prestige with fields: guid, prestige_level, total_prestiges, last_prestige_time
+    // Get Prestige / Artifact Mastery leaderboard
+    // Client category "prestige" is labeled "Artifact Mastery" and expects:
+    //   - prestige_level     => mastery level
+    //   - prestige_points    => total points
+    //   - prestige_artifacts => artifacts unlocked
+    // Schema tables:
+    //   - dc_player_artifact_mastery (per artifact)
+    // Legacy subcat "prestige_resets" still uses dc_character_prestige.
     std::vector<LeaderboardEntry> GetPrestigeLeaderboard(const std::string& subcat, uint32 limit, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
-        
-        std::string orderBy = "p.prestige_level DESC, p.total_prestiges DESC";
-        
+
+        // Legacy: prestige resets leaderboard
         if (subcat == "prestige_resets")
         {
-            orderBy = "p.total_prestiges DESC, p.prestige_level DESC";
+            std::string orderBy = "p.total_prestiges DESC, p.prestige_level DESC";
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT c.name, c.class, p.prestige_level, p.total_prestiges, p.last_prestige_time "
+                "FROM dc_character_prestige p "
+                "JOIN characters c ON p.guid = c.guid "
+                "WHERE p.prestige_level > 0 OR p.total_prestiges > 0 "
+                "ORDER BY {} "
+                "LIMIT {} OFFSET {}",
+                orderBy, limit, offset);
+
+            if (!result)
+                return entries;
+
+            uint32 rank = offset + 1;
+            do
+            {
+                Field* fields = result->Fetch();
+                LeaderboardEntry entry;
+                entry.rank = rank++;
+                entry.name = fields[0].Get<std::string>();
+                entry.className = GetClassNameFromId(fields[1].Get<uint8>());
+
+                uint32 prestigeLevel = fields[2].Get<uint32>();
+                uint32 totalPrestiges = fields[3].Get<uint32>();
+                entry.score = totalPrestiges;
+                entry.extra = "P" + std::to_string(prestigeLevel);
+
+                entries.push_back(entry);
+            } while (result->NextRow());
+
+            return entries;
         }
-        
-        // Get prestige data per player
+
+        // Artifact Mastery leaderboards (default for "prestige" category)
+        std::string orderBy = "mastery_level DESC, total_points DESC";
+        if (subcat == "prestige_points")
+            orderBy = "total_points DESC, mastery_level DESC";
+        else if (subcat == "prestige_artifacts")
+            orderBy = "artifacts_unlocked DESC, total_points DESC";
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT c.name, c.class, p.prestige_level, p.total_prestiges, p.last_prestige_time "
-            "FROM dc_character_prestige p "
-            "JOIN characters c ON p.guid = c.guid "
-            "WHERE p.prestige_level > 0 OR p.total_prestiges > 0 "
+            "SELECT c.name, c.class, "
+            "MAX(am.mastery_level) as mastery_level, "
+            "SUM(am.total_points_earned) as total_points, "
+            "COUNT(DISTINCT IF(am.mastery_level > 0 OR am.unlocked_at IS NOT NULL, am.artifact_id, NULL)) as artifacts_unlocked "
+            "FROM dc_player_artifact_mastery am "
+            "JOIN characters c ON am.player_guid = c.guid "
+            "WHERE am.mastery_level > 0 OR am.total_points_earned > 0 OR am.unlocked_at IS NOT NULL "
+            "GROUP BY am.player_guid, c.name, c.class "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
-        
+
         if (!result)
             return entries;
-        
+
         uint32 rank = offset + 1;
         do
         {
@@ -541,24 +655,30 @@ namespace
             entry.rank = rank++;
             entry.name = fields[0].Get<std::string>();
             entry.className = GetClassNameFromId(fields[1].Get<uint8>());
-            
-            uint32 prestigeLevel = fields[2].Get<uint32>();
-            uint32 totalPrestiges = fields[3].Get<uint32>();
-            
-            if (subcat == "prestige_resets")
+
+            uint32 masteryLevel = fields[2].Get<uint32>();
+            uint32 totalPoints = fields[3].Get<uint32>();
+            uint32 artifactsUnlocked = fields[4].Get<uint32>();
+
+            if (subcat == "prestige_points")
             {
-                entry.score = totalPrestiges;
-                entry.extra = "P" + std::to_string(prestigeLevel);
+                entry.score = totalPoints;
+                entry.extra = "Lvl " + std::to_string(masteryLevel) + ", " + std::to_string(artifactsUnlocked) + " artifacts";
+            }
+            else if (subcat == "prestige_artifacts")
+            {
+                entry.score = artifactsUnlocked;
+                entry.extra = "Lvl " + std::to_string(masteryLevel) + ", " + std::to_string(totalPoints) + " pts";
             }
             else  // prestige_level (default)
             {
-                entry.score = prestigeLevel;
-                entry.extra = std::to_string(totalPrestiges) + " resets";
+                entry.score = masteryLevel;
+                entry.extra = std::to_string(totalPoints) + " pts";
             }
-            
+
             entries.push_back(entry);
         } while (result->NextRow());
-        
+
         return entries;
     }
     
@@ -798,6 +918,13 @@ namespace
             }
             else if (subcat == "aoe_filtered")
             {
+                // Client expects separate quality columns to be populated from filtered_* counts
+                entry.hasQuality = true;
+                entry.qLeg = fLegendary;
+                entry.qEpic = fEpic;
+                entry.qRare = fRare;
+                entry.qUncommon = fUncommon;
+
                 // Filtered items view with quality breakdown
                 uint32 totalFiltered = fPoor + fCommon + fUncommon + fRare + fEpic + fLegendary;
                 entry.score = totalFiltered;
@@ -816,6 +943,13 @@ namespace
             }
             else  // aoe_items (default)
             {
+                // Client expects separate quality columns to be populated from quality_* counts
+                entry.hasQuality = true;
+                entry.qLeg = qLegendary;
+                entry.qEpic = qEpic;
+                entry.qRare = qRare;
+                entry.qUncommon = qUncommon;
+
                 // Items view with quality breakdown
                 entry.score = items;
                 
@@ -1094,16 +1228,44 @@ namespace
             if (i > 0) entriesJson += ",";
             entriesJson += "{";
             entriesJson += "\"rank\":" + std::to_string(entries[i].rank) + ",";
-            entriesJson += "\"name\":\"" + entries[i].name + "\",";
-            entriesJson += "\"class\":\"" + entries[i].className + "\",";
+            entriesJson += "\"name\":\"" + JsonEscape(entries[i].name) + "\",";
+            entriesJson += "\"class\":\"" + JsonEscape(entries[i].className) + "\",";
             entriesJson += "\"score\":" + std::to_string(entries[i].score) + ",";
             // v1.3.0: Add score_str for large values (gold as uint64)
             if (!entries[i].score_str.empty())
-                entriesJson += "\"score_str\":\"" + entries[i].score_str + "\",";
+                entriesJson += "\"score_str\":\"" + JsonEscape(entries[i].score_str) + "\",";
             // v1.3.0: Add mapId for per-dungeon display
             if (entries[i].mapId > 0)
                 entriesJson += "\"mapId\":" + std::to_string(entries[i].mapId) + ",";
-            entriesJson += "\"extra\":\"" + entries[i].extra + "\"";
+
+            // HLBG: provide structured fields expected by the addon UI
+            if (category == "hlbg")
+            {
+                if (entries[i].hasWinsLosses)
+                {
+                    entriesJson += "\"wins\":" + std::to_string(entries[i].wins) + ",";
+                    entriesJson += "\"losses\":" + std::to_string(entries[i].losses) + ",";
+                }
+
+                if (entries[i].hasKD)
+                {
+                    entriesJson += "\"kills\":" + std::to_string(entries[i].kills) + ",";
+                    entriesJson += "\"deaths\":" + std::to_string(entries[i].deaths) + ",";
+                    // Use a compact float representation (client handles tonumber)
+                    entriesJson += "\"kdRatio\":" + std::to_string(entries[i].kdRatio) + ",";
+                }
+            }
+
+            // AOE Loot: provide separate quality columns (v1.4.0 client)
+            if (category == "aoe" && (subcategory == "aoe_items" || subcategory == "aoe_filtered") && entries[i].hasQuality)
+            {
+                entriesJson += "\"qLeg\":" + std::to_string(entries[i].qLeg) + ",";
+                entriesJson += "\"qEpic\":" + std::to_string(entries[i].qEpic) + ",";
+                entriesJson += "\"qRare\":" + std::to_string(entries[i].qRare) + ",";
+                entriesJson += "\"qUncommon\":" + std::to_string(entries[i].qUncommon) + ",";
+            }
+
+            entriesJson += "\"extra\":\"" + JsonEscape(entries[i].extra) + "\"";
             entriesJson += "}";
         }
         entriesJson += "]";
@@ -1111,8 +1273,8 @@ namespace
         // Unfortunately we need to build this manually since JsonValue doesn't support nested arrays easily
         // Send as a complete JSON string
         std::string fullJson = "{";
-        fullJson += "\"category\":\"" + category + "\",";
-        fullJson += "\"subcategory\":\"" + subcategory + "\",";
+        fullJson += "\"category\":\"" + JsonEscape(category) + "\",";
+        fullJson += "\"subcategory\":\"" + JsonEscape(subcategory) + "\",";
         fullJson += "\"page\":" + std::to_string(page) + ",";
         fullJson += "\"totalPages\":" + std::to_string(totalPages) + ",";
         fullJson += "\"totalEntries\":" + std::to_string(totalEntries) + ",";
@@ -1266,7 +1428,7 @@ namespace
             first = false;
             
             tablesJson += "{";
-            tablesJson += "\"name\":\"" + result.name + "\",";
+            tablesJson += "\"name\":\"" + JsonEscape(result.name) + "\",";
             tablesJson += "\"exists\":" + std::string(result.exists ? "true" : "false") + ",";
             tablesJson += "\"count\":" + std::to_string(result.count);
             tablesJson += "}";
@@ -1393,7 +1555,7 @@ namespace
             
             dungeonsJson += "{";
             dungeonsJson += "\"mapId\":" + std::to_string(mapId) + ",";
-            dungeonsJson += "\"name\":\"" + dungeonName + "\"";
+            dungeonsJson += "\"name\":\"" + JsonEscape(dungeonName) + "\"";
             dungeonsJson += "}";
         }
         

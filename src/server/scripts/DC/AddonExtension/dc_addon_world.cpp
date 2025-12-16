@@ -13,6 +13,8 @@
 #include "World.h"
 #include "WorldState.h"
 #include "Log.h"
+#include "DatabaseEnv.h"
+#include "ObjectMgr.h"
 
 #include <ctime>
 
@@ -96,83 +98,119 @@ namespace World
         };
 
         uint8 day = GetCurrentDay();
-        uint32 bossEntry = 0;
-        std::string bossName;
-        std::string spawnZone;
 
-        // Mon/Thu = Oondasta; Tue/Fri = Thok; Wed/Sat/Sun = Nalak
-        switch (day)
-        {
-            case 0: case 3: case 6: // Sun, Wed, Sat
-                bossEntry = 400102; bossName = "Nalak the Storm Lord"; spawnZone = "Thundering Peaks"; break;
-            case 1: case 4: // Mon, Thu
-                bossEntry = 400100; bossName = "Oondasta, King of Dinosaurs"; spawnZone = "Devilsaur Gorge"; break;
-            case 2: case 5: // Tue, Fri
-                bossEntry = 400101; bossName = "Thok the Bloodthirsty"; spawnZone = "Raptor Ridge"; break;
-            default:
-                bossEntry = 400100; bossName = "Oondasta"; spawnZone = "Devilsaur Gorge"; break;
-        }
-
-        // Determine time until next rotation (next midnight) to supply spawnIn for the next boss
+        // Determine seconds until next midnight.
         time_t now = time(nullptr);
         tm nextDayTm = *localtime(&now);
         nextDayTm.tm_hour = 0; nextDayTm.tm_min = 0; nextDayTm.tm_sec = 0; nextDayTm.tm_mday += 1;
         time_t nextMidnight = mktime(&nextDayTm);
         int32 secondsUntilNextMidnight = static_cast<int32>(difftime(nextMidnight, now));
+        if (secondsUntilNextMidnight < 0)
+            secondsUntilNextMidnight = 0;
 
-        auto BossIdFromEntry = [](uint32 entry) -> std::string
+        auto BossEntryForDay = [](uint8 d) -> uint32
         {
-            switch (entry)
+            // Mon/Thu = Oondasta; Tue/Fri = Thok; Wed/Sat/Sun = Nalak
+            switch (d)
             {
-                case 400100: return "oondasta";
-                case 400101: return "thok";
-                case 400102: return "nalak";
-                default:     return "boss_" + std::to_string(entry);
+                case 0: case 3: case 6: return 400102; // Sun, Wed, Sat
+                case 1: case 4: return 400100;         // Mon, Thu
+                case 2: case 5: return 400101;         // Tue, Fri
+                default: return 400100;
             }
         };
 
-        JsonValue b; b.SetObject();
-        b.Set("id", JsonValue(BossIdFromEntry(bossEntry)));
-        b.Set("entry", JsonValue(static_cast<int32>(bossEntry)));
-        b.Set("name", JsonValue(bossName));
-        b.Set("zone", JsonValue(spawnZone));
-        // "active" means currently engaged/visible as alive in the world.
-        // Snapshot has no reliable boss-alive tracking, so default to "spawning".
-        b.Set("active", JsonValue(false));
-        b.Set("status", JsonValue("spawning"));
-        b.Set("mapId", JsonValue(static_cast<int32>(0))); // mapId optional
-        // spawnIn=0 means "available" (can spawn now) for the rotation boss.
-        b.Set("spawnIn", JsonValue(static_cast<int32>(0)));
-
-        // Also populate the next day's boss spawnIn so clients can show Next spawn
-        uint8 nextDay = (day + 1) % 7;
-        uint32 nextBossEntry = 0;
-        std::string nextBossName;
-        std::string nextBossZone;
-        switch (nextDay)
+        auto SecondsUntilBossRotation = [&](uint32 bossEntry) -> int32
         {
-            case 0: case 3: case 6:
-                nextBossEntry = 400102; nextBossName = "Nalak the Storm Lord"; nextBossZone = "Thundering Peaks"; break;
-            case 1: case 4:
-                nextBossEntry = 400100; nextBossName = "Oondasta, King of Dinosaurs"; nextBossZone = "Devilsaur Gorge"; break;
-            case 2: case 5:
-                nextBossEntry = 400101; nextBossName = "Thok the Bloodthirsty"; nextBossZone = "Raptor Ridge"; break;
-            default:
-                nextBossEntry = 400100; nextBossName = "Oondasta"; nextBossZone = "Devilsaur Gorge"; break;
-        }
-        // Add the next boss as a separate entry with spawnIn
-        JsonValue nb; nb.SetObject();
-        nb.Set("id", JsonValue(BossIdFromEntry(nextBossEntry)));
-        nb.Set("entry", JsonValue(static_cast<int32>(nextBossEntry)));
-        nb.Set("name", JsonValue(nextBossName));
-        nb.Set("zone", JsonValue(nextBossZone));
-        nb.Set("active", JsonValue(false));
-        nb.Set("status", JsonValue("spawning"));
-        nb.Set("mapId", JsonValue(static_cast<int32>(0)));
-        nb.Set("spawnIn", JsonValue(secondsUntilNextMidnight));
+            for (int offset = 0; offset < 7; ++offset)
+            {
+                uint8 d = static_cast<uint8>((day + offset) % 7);
+                if (BossEntryForDay(d) == bossEntry)
+                {
+                    if (offset == 0)
+                        return 0;
+                    // Next occurrence is at midnight of the day it becomes active.
+                    return secondsUntilNextMidnight + static_cast<int32>((offset - 1) * 24 * 60 * 60);
+                }
+            }
+            return secondsUntilNextMidnight;
+        };
 
-        arr.Push(b);
-        arr.Push(nb);
+        struct BossDef
+        {
+            uint32 entry;
+            int32 spawnId;
+            char const* id;
+            char const* name;
+            char const* zone;
+        };
+
+        // Giant Isles DB spawn ids (requested): Thok=9000189, Oondasta=9000190, Nalak=9000191.
+        static constexpr BossDef GIANT_ISLES_BOSSES[] =
+        {
+            { 400100, 9000190, "oondasta", "Oondasta, King of Dinosaurs", "Devilsaur Gorge" },
+            { 400101, 9000189, "thok",     "Thok the Bloodthirsty",     "Raptor Ridge" },
+            { 400102, 9000191, "nalak",    "Nalak the Storm Lord",      "Thundering Peaks" },
+        };
+
+        auto TryGetRespawnInSeconds = [](ObjectGuid::LowType spawnId, uint32 mapId) -> Optional<int32>
+        {
+            // In AzerothCore, creature respawns are stored in the characters DB.
+            // If a row exists and respawnTime is in the future, the creature is currently dead.
+            QueryResult res = CharacterDatabase.Query(
+                "SELECT respawnTime FROM creature_respawn WHERE guid = {} AND mapId = {} AND instanceId = 0",
+                spawnId, mapId);
+            if (!res)
+                return {};
+
+            time_t respawnTime = (*res)[0].Get<time_t>();
+            time_t nowSec = time(nullptr);
+            if (respawnTime <= nowSec)
+                return {};
+
+            int64 diff = static_cast<int64>(respawnTime) - static_cast<int64>(nowSec);
+            if (diff <= 0)
+                return {};
+
+            // Clamp to int32 range for JSON consumers
+            if (diff > std::numeric_limits<int32>::max())
+                diff = std::numeric_limits<int32>::max();
+            return static_cast<int32>(diff);
+        };
+
+        for (BossDef const& def : GIANT_ISLES_BOSSES)
+        {
+            uint32 mapId = 0;
+            if (CreatureData const* cData = sObjectMgr->GetCreatureData(def.spawnId))
+                mapId = cData->mapid;
+
+            // If the boss is dead, show respawn timer; otherwise show as active.
+            Optional<int32> respawnIn = (mapId != 0) ? TryGetRespawnInSeconds(def.spawnId, mapId) : Optional<int32>();
+
+            JsonValue b; b.SetObject();
+            b.Set("id", JsonValue(def.id));
+            b.Set("entry", JsonValue(static_cast<int32>(def.entry)));
+            b.Set("spawnId", JsonValue(def.spawnId));
+            b.Set("name", JsonValue(def.name));
+            b.Set("zone", JsonValue(def.zone));
+            b.Set("mapId", JsonValue(static_cast<int32>(mapId)));
+
+            if (respawnIn)
+            {
+                b.Set("active", JsonValue(false));
+                b.Set("status", JsonValue("spawning"));
+                b.Set("spawnIn", JsonValue(*respawnIn));
+            }
+            else
+            {
+                b.Set("active", JsonValue(true));
+                b.Set("status", JsonValue("active"));
+                // Keep spawnIn for clients that expect a countdown even while alive;
+                // default to rotation-based value if mapId unknown.
+                b.Set("spawnIn", JsonValue(mapId ? static_cast<int32>(0) : SecondsUntilBossRotation(def.entry)));
+            }
+            arr.Push(b);
+        }
         return arr;
     }
 
@@ -218,6 +256,22 @@ namespace World
         response.Set("bosses", bosses);
         response.Set("events", events);
         response.Send(player);
+
+        // Compatibility / robustness:
+        // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
+        // Send each boss as a small SMSG_UPDATE payload so DC-InfoBar can always populate the list.
+        if (bosses.IsArray())
+        {
+            for (auto const& boss : bosses.AsArray())
+            {
+                JsonValue one; one.SetArray();
+                one.Push(boss);
+
+                JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
+                upd.Set("bosses", one);
+                upd.Send(player);
+            }
+        }
     }
 
     void RegisterHandlers()

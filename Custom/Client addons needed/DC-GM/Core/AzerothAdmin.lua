@@ -594,17 +594,46 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   -- frame is the object that was hooked (one of the ChatFrames)
   local catchedSth = false
   local output = AzerothAdmin.db.account.style.showchat
-  if id == 1 then --make sure that the message comes from the server, message id = 1
-    -- DC waypoints info response parsing
-    if self._dcWpInfoPending then
-      local entry, spawn, path, count = string.match(text, "WPINFO entry=(%d+) spawn=(%d+) path=(%d+) count=(%d+)")
-      local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
-      if entry and spawn and count and targetTextFrame then
-        targetTextFrame:SetText("Entry: " .. entry .. "  Spawn: " .. spawn .. "  WPs: " .. count)
-        self._dcWpInfoPending = false
-      end
+
+  -- DC waypoints info response parsing
+  -- NOTE: Do not rely on `id == 1` here. `.wp info` uses server system messages
+  -- and the numeric message id varies depending on the chat frame implementation.
+  if self._dcWpInfoPending and type(text) == "string" then
+    local entry, spawn, path, count = string.match(text, "WPINFO entry=(%d+) spawn=(%d+) path=(%d+) count=(%d+)")
+    if not (entry and spawn and path and count) then
+      entry = entry or string.match(text, "entry=(%d+)")
+      spawn = spawn or string.match(text, "spawn=(%d+)")
+      path = path or string.match(text, "path=(%d+)")
+      count = count or string.match(text, "count=(%d+)")
     end
 
+    local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
+    if entry and spawn and count and targetTextFrame then
+      targetTextFrame:SetText("Entry: " .. entry .. "\nSpawn: " .. spawn .. "\nWPs: " .. count)
+      self._dcWpLastWpInfo = {
+        entry = tonumber(entry) or 0,
+        spawn = tonumber(spawn) or 0,
+        path = tonumber(path) or 0,
+        count = tonumber(count) or 0,
+      }
+      self._dcWpInfoPending = false
+
+      if self._dcWpRunAfterInfo then
+        self._dcWpRunAfterInfo = false
+        if self._dcWpLastWpInfo.path and self._dcWpLastWpInfo.path > 0 then
+          -- Force-load the path and then re-init movetype to actually start moving.
+          self:ChatMsg(".wp load " .. self._dcWpLastWpInfo.path)
+          self:ChatMsg(".npc set movetype way NODEL")
+        end
+      end
+    elseif string.find(text, "WPINFO") or string.find(text, "You must select") or string.find(text, "select a creature") then
+      -- Clear the pending flag on WP-related failures to avoid a stuck state.
+      self._dcWpInfoPending = false
+      self._dcWpRunAfterInfo = false
+    end
+  end
+
+  if id == 1 then --make sure that the message comes from the server, message id = 1
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
     if self.db.char.requests.toggle and not ma_popupframe:IsVisible() then
       self.db.char.requests.toggle = false

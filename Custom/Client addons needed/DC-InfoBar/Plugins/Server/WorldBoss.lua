@@ -43,10 +43,16 @@ function WorldBossPlugin:OnUpdate(elapsed)
     if not boss then return "", "No Bosses" end
     
     local showOnlyActive = DCInfoBar:GetPluginSetting(self.id, "showOnlyActive")
+
+    local now = GetTime and GetTime() or 0
+    local isJustSpawned = boss.justSpawnedUntil and now < boss.justSpawnedUntil
     
     if boss.status == "active" then
         -- Boss is up!
         local hpText = boss.hp and (" " .. boss.hp .. "%") or ""
+        if isJustSpawned then
+            return "", "|cff50ff7a" .. boss.name .. ": Just spawned!" .. hpText .. "|r"
+        end
         return "", "|cff50ff7a" .. boss.name .. ": Active!" .. hpText .. "|r"
     elseif boss.status == "spawning" and boss.spawnIn then
         if showOnlyActive then
@@ -89,9 +95,12 @@ function WorldBossPlugin:OnTooltip(tooltip)
         for _, boss in ipairs(zoneBosses) do
             local statusText
             local r, g, b = 1, 1, 1
+
+            local now = GetTime and GetTime() or 0
+            local isJustSpawned = boss.justSpawnedUntil and now < boss.justSpawnedUntil
             
             if boss.status == "active" then
-                statusText = "Active!"
+                statusText = isJustSpawned and "Just spawned!" or "Active!"
                 if boss.hp then
                     statusText = statusText .. " (" .. boss.hp .. "% HP)"
                 end
@@ -131,7 +140,14 @@ function WorldBossPlugin:OnClick(button)
         if bosses and #bosses > 0 then
             DCInfoBar:Print("World Boss Timers:")
             for _, boss in ipairs(bosses) do
-                local status = boss.status == "active" and "ACTIVE" or DCInfoBar:FormatTimeShort(boss.spawnIn or 0)
+                local now = GetTime and GetTime() or 0
+                local isJustSpawned = boss.justSpawnedUntil and now < boss.justSpawnedUntil
+                local status
+                if boss.status == "active" then
+                    status = isJustSpawned and "JUST SPAWNED" or "ACTIVE"
+                else
+                    status = DCInfoBar:FormatTimeShort(boss.spawnIn or 0)
+                end
                 DCInfoBar:Print("  " .. boss.name .. ": " .. status)
             end
         else

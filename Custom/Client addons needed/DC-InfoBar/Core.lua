@@ -524,10 +524,12 @@ function DCInfoBar:HandleWorldContent(data)
     if data.bosses then
         self.serverData.worldBosses = self.serverData.worldBosses or {}
         local bosses = self.serverData.worldBosses
+        local now = GetTime and GetTime() or 0
         for _, b in ipairs(data.bosses) do
             local record = {}
             record.name = b.name or b.displayName or b.entry or b.guid or "Unknown"
             record.zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown"
+            record.spawnId = tonumber(b.spawnId) or nil
             -- Map status: prefer explicit status field, otherwise derive from active/action
             if b.status or b.state then
                 record.status = b.status or b.state
@@ -540,6 +542,13 @@ function DCInfoBar:HandleWorldContent(data)
             else
                 record.status = (b.active == false) and "inactive" or "spawning"
             end
+
+            -- Support explicit spawn action -> show "just spawned" for a short window.
+            if b.action == "spawn" then
+                record.status = "active"
+                record.justSpawnedUntil = now + 60
+            end
+
             -- spawnIn/timeLeft
             record.spawnIn = b.spawnIn or b.timeLeft or nil
             -- hp percent
@@ -547,8 +556,15 @@ function DCInfoBar:HandleWorldContent(data)
             if b.hp then record.hp = b.hp end
             record.guid = b.guid
 
-            -- Upsert by guid or name
+            -- Upsert by spawnId, guid, or name
             local replaced = false
+            if record.spawnId then
+                for i, ex in ipairs(bosses) do
+                    if ex.spawnId == record.spawnId then
+                        bosses[i] = record; replaced = true; break
+                    end
+                end
+            end
             if record.guid then
                 for i, ex in ipairs(bosses) do
                     if ex.guid == record.guid then
@@ -646,16 +662,25 @@ function DCInfoBar:HandleWorldUpdate(data)
     if data.bosses then
         self.serverData.worldBosses = self.serverData.worldBosses or {}
         local bosses = self.serverData.worldBosses
+        local now = GetTime and GetTime() or 0
         for _, b in ipairs(data.bosses) do
+            local spawnId = tonumber(b.spawnId) or nil
             local guid = b.guid
             local name = b.name
             local up = {}
-            if b.action == "engage" or b.action == "spawn" then
+            if spawnId then up.spawnId = spawnId end
+            if b.action == "engage" then
                 up.status = "active"
                 up.hp = b.hpPct or b.hp
             end
+            if b.action == "spawn" then
+                up.status = "active"
+                up.hp = b.hpPct or b.hp
+                up.justSpawnedUntil = now + 60
+            end
             if b.action == "death" or b.action == "remove" or b.action == "despawn" then
                 up.status = "inactive"
+                up.justSpawnedUntil = nil
             end
             if b.hpPct then up.hp = b.hpPct end
             if b.timeLeft then up.spawnIn = b.timeLeft end
@@ -664,13 +689,13 @@ function DCInfoBar:HandleWorldUpdate(data)
 
             local matched = false
             for i, ex in ipairs(bosses) do
-                if (guid and ex.guid == guid) or (name and ex.name == name) then
+                if (spawnId and ex.spawnId == spawnId) or (guid and ex.guid == guid) or (name and ex.name == name) then
                     for k, v in pairs(up) do ex[k] = v end
                     matched = true; break
                 end
             end
             if not matched then
-                local record = { name = name or "Unknown", guid = guid, zone = b.zone or b.zoneName }
+                local record = { name = name or "Unknown", guid = guid, zone = b.zone or b.zoneName, spawnId = spawnId }
                 for k,v in pairs(up) do record[k] = v end
                 table.insert(bosses, record)
             end

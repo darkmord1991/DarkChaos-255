@@ -996,8 +996,52 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_ADDON" then
         if arg1 == DC.PREFIX and arg4 == UnitName("player") then
+            -- Chunked payload support (server may split large messages into INDEX|TOTAL|DATA chunks)
+            -- Reassemble before normal parsing.
+            local payload = arg2 or ""
+            do
+                local idxStr, totalStr, dataPart = string.match(payload, "^(%d+)|(%d+)|(.*)$")
+                if idxStr and totalStr then
+                    local idx = tonumber(idxStr) or 0
+                    local total = tonumber(totalStr) or 0
+                    if total > 0 and idx >= 0 and idx < total then
+                        DC._chunkBuffers = DC._chunkBuffers or {}
+                        local sender = arg4 or "_"
+                        local now = time()
+
+                        local buf = DC._chunkBuffers[sender]
+                        -- Reset buffer if incompatible or stale
+                        if not buf or buf.total ~= total or (buf.ts and now - buf.ts > 10) then
+                            buf = { total = total, parts = {}, received = 0, seen = {}, ts = now }
+                            DC._chunkBuffers[sender] = buf
+                        else
+                            buf.ts = now
+                        end
+
+                        local key = tostring(idx)
+                        if not buf.seen[key] then
+                            buf.seen[key] = true
+                            buf.received = (buf.received or 0) + 1
+                        end
+                        buf.parts[idx + 1] = dataPart or ""
+
+                        if buf.received >= total then
+                            local full = ""
+                            for i = 1, total do
+                                full = full .. (buf.parts[i] or "")
+                            end
+                            payload = full
+                            DC._chunkBuffers[sender] = nil
+                        else
+                            -- Wait for more chunks
+                            return
+                        end
+                    end
+                end
+            end
+
             local parts = {}
-            for p in string.gmatch(arg2, "([^|]+)") do table.insert(parts, p) end
+            for p in string.gmatch(payload, "([^|]+)") do table.insert(parts, p) end
             if #parts >= 2 then
                 local module = parts[1]
                 local opcode = tonumber(parts[2]) or 0

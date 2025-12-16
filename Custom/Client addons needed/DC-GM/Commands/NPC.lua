@@ -282,9 +282,15 @@ end
 
 function WayRun()
   local player = UnitName("target") or UnitName("player")
-  -- Start waypoint movement without deleting the path (NODEL).
-  AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
-  AzerothAdmin:LogAction("WayPoint Run (movetype way) for player "..player..".")
+  if not UnitExists("target") then
+    AzerothAdmin:LogAction("WayPoint Run: no target selected.")
+    return
+  end
+
+  -- Always request authoritative path info first, then auto-run when WPINFO arrives.
+  AzerothAdmin._dcWpRunAfterInfo = true
+  AzerothAdmin:UpdateWaypointInfo()
+  AzerothAdmin:LogAction("WayPoint Run requested for player " .. player .. ".")
 end
 
 function WayModifyAdd()

@@ -880,7 +880,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=8228 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=10120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1475,7 +1475,7 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_log` (
   KEY `idx_player` (`player_guid`),
   KEY `idx_item` (`item_guid`),
   KEY `idx_timestamp` (`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
 
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -1637,7 +1637,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=351 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=394 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
@@ -2239,9 +2239,9 @@ CREATE TABLE IF NOT EXISTS `dc_player_upgrade_tokens` (
   `currency_type` enum('upgrade_token','artifact_essence','upgrade_key','ancient_crystal') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'upgrade_token',
   `amount` int unsigned DEFAULT '0',
   `weekly_earned` int unsigned DEFAULT '0',
-  `season` int unsigned DEFAULT '1',
+  `season` int unsigned NOT NULL DEFAULT '1',
   `last_transaction_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`,`currency_type`),
+  PRIMARY KEY (`player_guid`,`currency_type`,`season`),
   KEY `idx_season` (`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player currency storage for upgrades';
 
@@ -2554,7 +2554,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=345 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=346 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,

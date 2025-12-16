@@ -1140,10 +1140,27 @@ namespace DCAddon
         {
             if (!player || !player->GetSession())
                 return;
-            
+
+            std::string payload = Build();
+
+            // If the payload is large, split it into chunk frames.
+            // Client-side DCAddonProtocol reassembles INDEX|TOTAL|DATA before parsing.
+            if (payload.length() > MAX_CLIENT_MSG_SIZE - 10)
+            {
+                auto chunks = ChunkedMessage::Chunk(payload);
+                for (auto const& chunk : chunks)
+                {
+                    std::string fullMsg = std::string(DC_PREFIX) + "\t" + chunk;
+                    WorldPacket data;
+                    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
+                    player->SendDirectMessage(&data);
+                }
+                return;
+            }
+
             // Build the full message with DC prefix and tab separator
-            std::string fullMsg = std::string(DC_PREFIX) + "\t" + Build();
-            
+            std::string fullMsg = std::string(DC_PREFIX) + "\t" + payload;
+
             // Use proper ChatHandler to build addon message packet
             WorldPacket data;
             ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);

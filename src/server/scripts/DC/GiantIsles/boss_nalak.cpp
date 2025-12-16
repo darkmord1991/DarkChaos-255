@@ -128,6 +128,33 @@ public:
             me->SetPower(POWER_MANA, me->GetMaxPower(POWER_MANA));
         }
 
+        void JustAppeared()
+        {
+            // WRLD: boss spawned
+            DCAddon::JsonValue bossesArr; bossesArr.SetArray();
+            DCAddon::JsonValue b; b.SetObject();
+            b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+            b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(me->GetSpawnId())));
+            b.Set("name", DCAddon::JsonValue(me->GetName()));
+            b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
+            uint32 zoneId = me->GetZoneId();
+            std::string zoneName = "Unknown";
+            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(zoneId))
+            {
+                if (area->area_name[0] && area->area_name[0][0])
+                    zoneName = area->area_name[0];
+            }
+            b.Set("zone", DCAddon::JsonValue(zoneName));
+            b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
+            b.Set("active", DCAddon::JsonValue(true));
+            b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(me->GetHealthPct())));
+            b.Set("action", DCAddon::JsonValue("spawn"));
+            bossesArr.Push(b);
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("bosses", bossesArr);
+            if (Map* map = me->GetMap()) map->DoForAllPlayers([&](Player* player){ if (player && player->IsInWorld() && player->GetSession()) wmsg.Send(player); });
+        }
+
         void JustEngagedWith(Unit* /*who*/) override
         {
             Talk(SAY_AGGRO);
@@ -151,6 +178,7 @@ public:
             DCAddon::JsonValue bossesArr; bossesArr.SetArray();
             DCAddon::JsonValue b; b.SetObject();
             b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+            b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(me->GetSpawnId())));
             b.Set("name", DCAddon::JsonValue(me->GetName()));
             b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
             uint32 zoneId = me->GetZoneId();
@@ -180,6 +208,7 @@ public:
             DCAddon::JsonValue bossesArr; bossesArr.SetArray();
             DCAddon::JsonValue b; b.SetObject();
             b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+            b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(me->GetSpawnId())));
             b.Set("name", DCAddon::JsonValue(me->GetName()));
             b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
             uint32 zoneId = me->GetZoneId();
@@ -389,6 +418,7 @@ public:
                                 DCAddon::JsonValue bossesArr; bossesArr.SetArray();
                                 DCAddon::JsonValue b; b.SetObject();
                                 b.Set("entry", DCAddon::JsonValue(static_cast<int32>(me->GetEntry())));
+                                b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(me->GetSpawnId())));
                                 b.Set("name", DCAddon::JsonValue(me->GetName()));
                                 b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(me->GetMapId())));
                                 b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
