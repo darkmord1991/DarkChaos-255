@@ -1196,8 +1196,30 @@ private:
             uint32 enchantId = ENCHANT_BASE_ID + (packageId * 100) + targetLevel;
 
             // Apply enchantment to item (using PERM_ENCHANTMENT_SLOT)
-            // Slot 0 = PERM_ENCHANTMENT_SLOT for permanent enchants
-            item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0);
+            // IMPORTANT: Setting the enchant field alone does NOT apply stats if the item is already equipped.
+            // Mirror Spell::EffectEnchantItem behavior: remove old enchant effects, set, then apply new.
+            player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
+            item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
+            
+            // Debug Logging for Enchant Stats
+            if (SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(enchantId))
+            {
+                LOG_INFO("scripts", "ItemUpgrade: Applying Enchant ID {} to Item {}. Stats: [{}, {}], [{}, {}], [{}, {}]",
+                    enchantId, item->GetEntry(),
+                    enchant->type[0], enchant->amount[0],
+                    enchant->type[1], enchant->amount[1],
+                    enchant->type[2], enchant->amount[2]);
+            }
+            else
+            {
+                LOG_ERROR("scripts", "ItemUpgrade: Enchant ID {} NOT FOUND in DBC!", enchantId);
+            }
+
+            player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
+
+            // Nudge a recalculation so changes are reflected immediately.
+            player->UpdateAllStats();
+            player->UpdateAllRatings();
 
             // Mark item as changed and save
             item->SetState(ITEM_CHANGED, player);

@@ -43,9 +43,12 @@ function DCInfoBar:CreateBar()
     end
     
     -- Background
+    -- Some 3.3.5a clients don't apply alpha consistently via SetColorTexture,
+    -- so set RGB via SetColorTexture and alpha via SetAlpha.
     bar.bg = bar:CreateTexture(nil, "BACKGROUND")
     bar.bg:SetAllPoints()
-    bar.bg:SetColorTexture(unpack(bgColor))
+    bar.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, 1)
+    bar.bg:SetAlpha(bgColor[4] or 1)
     
     -- Border line (on opposite side of screen edge)
     bar.border = bar:CreateTexture(nil, "ARTWORK")
@@ -263,7 +266,13 @@ function DCInfoBar:RefreshBarSettings(bar)
     local borderColor = barSettings.borderColor or { 0.2, 0.5, 0.8, 0.5 }
     
     -- Update background
-    bar.bg:SetColorTexture(unpack(bgColor))
+    bar.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, 1)
+    bar.bg:SetAlpha(bgColor[4] or 1)
+    if barSettings.showBackground ~= false then
+        bar.bg:Show()
+    else
+        bar.bg:Hide()
+    end
     
     -- Update border
     bar.border:SetColorTexture(unpack(borderColor))
@@ -284,8 +293,12 @@ function DCInfoBar:RefreshBarSettings(bar)
         bar.border:SetPoint("TOPRIGHT", 0, 0)
     end
     
-    -- Update visibility
-    bar:SetShown(self.db.global.enabled)
+    -- Update visibility (3.3.5a doesn't have SetShown)
+    if self.db.global.enabled then
+        bar:Show()
+    else
+        bar:Hide()
+    end
     
     -- Refresh layout
     self:RefreshBarLayout(bar)

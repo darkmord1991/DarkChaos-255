@@ -49,8 +49,8 @@ namespace DarkChaos
                 if (item)
                 {
                     // Update item display/tooltip by re-applying item enchantments
-                    player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
                     player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
+                    player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
                 }
             }
 

@@ -211,6 +211,13 @@ public:
                 b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
                 b.Set("active", DCAddon::JsonValue(false));
                 b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(me->GetHealthPct())));
+                {
+                    time_t now = GameTime::GetGameTime().count();
+                    int64 diff = static_cast<int64>(me->GetRespawnTimeEx()) - static_cast<int64>(now);
+                    uint32 spawnIn = diff > 0 ? static_cast<uint32>(diff) : me->GetRespawnDelay();
+                    b.Set("spawnIn", DCAddon::JsonValue(static_cast<int32>(spawnIn)));
+                    b.Set("status", DCAddon::JsonValue("spawning"));
+                }
                 b.Set("action", DCAddon::JsonValue("death"));
                 bossesArr.Push(b);
 

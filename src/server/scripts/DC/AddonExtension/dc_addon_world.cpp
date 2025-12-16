@@ -13,6 +13,7 @@
 #include "World.h"
 #include "WorldState.h"
 #include "Log.h"
+#include "MapMgr.h"
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 
@@ -155,8 +156,22 @@ namespace World
 
         auto TryGetRespawnInSeconds = [](ObjectGuid::LowType spawnId, uint32 mapId) -> Optional<int32>
         {
-            // In AzerothCore, creature respawns are stored in the characters DB.
-            // If a row exists and respawnTime is in the future, the creature is currently dead.
+            // Prefer the in-memory map respawn time. This updates immediately on creature death
+            // and is the most reliable source for live timers.
+            if (Map* map = sMapMgr->FindBaseMap(mapId))
+            {
+                time_t nowSec = GameTime::GetGameTime().count();
+                time_t rt = map->GetCreatureRespawnTime(spawnId);
+                if (rt > nowSec)
+                {
+                    int64 diff = static_cast<int64>(rt) - static_cast<int64>(nowSec);
+                    if (diff > std::numeric_limits<int32>::max())
+                        diff = std::numeric_limits<int32>::max();
+                    return static_cast<int32>(diff);
+                }
+            }
+
+            // Fallback: query the characters DB (covers edge cases where the base map isn't loaded).
             QueryResult res = CharacterDatabase.Query(
                 "SELECT respawnTime FROM creature_respawn WHERE guid = {} AND mapId = {} AND instanceId = 0",
                 spawnId, mapId);
@@ -172,7 +187,6 @@ namespace World
             if (diff <= 0)
                 return {};
 
-            // Clamp to int32 range for JSON consumers
             if (diff > std::numeric_limits<int32>::max())
                 diff = std::numeric_limits<int32>::max();
             return static_cast<int32>(diff);
@@ -184,9 +198,6 @@ namespace World
             if (CreatureData const* cData = sObjectMgr->GetCreatureData(def.spawnId))
                 mapId = cData->mapid;
 
-            // If the boss is dead, show respawn timer; otherwise show as active.
-            Optional<int32> respawnIn = (mapId != 0) ? TryGetRespawnInSeconds(def.spawnId, mapId) : Optional<int32>();
-
             JsonValue b; b.SetObject();
             b.Set("id", JsonValue(def.id));
             b.Set("entry", JsonValue(static_cast<int32>(def.entry)));
@@ -195,6 +206,9 @@ namespace World
             b.Set("zone", JsonValue(def.zone));
             b.Set("mapId", JsonValue(static_cast<int32>(mapId)));
 
+            // Determine status per spawnId. If there's a future respawnTime row, the boss is dead.
+            // If there is no row (or respawnTime <= now), assume the boss is alive/active.
+            Optional<int32> respawnIn = (mapId != 0) ? TryGetRespawnInSeconds(def.spawnId, mapId) : Optional<int32>();
             if (respawnIn)
             {
                 b.Set("active", JsonValue(false));
@@ -205,10 +219,9 @@ namespace World
             {
                 b.Set("active", JsonValue(true));
                 b.Set("status", JsonValue("active"));
-                // Keep spawnIn for clients that expect a countdown even while alive;
-                // default to rotation-based value if mapId unknown.
-                b.Set("spawnIn", JsonValue(mapId ? static_cast<int32>(0) : SecondsUntilBossRotation(def.entry)));
+                b.Set("spawnIn", JsonValue(static_cast<int32>(0)));
             }
+
             arr.Push(b);
         }
         return arr;

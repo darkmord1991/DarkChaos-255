@@ -93,18 +93,26 @@ function DCInfoBar:CreateOptionsPanel()
         tabFrames[i] = content
     end
     
-    -- Create tab contents (guarded so options still register even if a tab errors)
-    local ok, err = pcall(function()
-        self:CreateGeneralTab(tabFrames[1])
-        self:CreatePluginsTab(tabFrames[2])
-        self:CreatePositionTab(tabFrames[3])
-        self:CreateCommunicationTab(tabFrames[4])
-    end)
-    if not ok then
-        if self.Print then
-            self:Print("Options UI build error: " .. tostring(err))
+    -- Create tab contents (guard each tab so one failure doesn't blank others)
+    local function SafeBuildTab(label, fn)
+        local ok, err = xpcall(fn, function(e)
+            local trace = ""
+            if debugstack then
+                trace = debugstack(2, 8, 8)
+            end
+            return tostring(e) .. (trace ~= "" and (" | " .. trace) or "")
+        end)
+        if not ok then
+            if self.Print then
+                self:Print("Options UI build error (" .. label .. "): " .. tostring(err))
+            end
         end
     end
+
+    SafeBuildTab("General", function() self:CreateGeneralTab(tabFrames[1]) end)
+    SafeBuildTab("Plugins", function() self:CreatePluginsTab(tabFrames[2]) end)
+    SafeBuildTab("Position", function() self:CreatePositionTab(tabFrames[3]) end)
+    SafeBuildTab("Communication", function() self:CreateCommunicationTab(tabFrames[4]) end)
     
     -- Show first tab
     self:RefreshTabDisplay(tabFrames, 1, tabs)
@@ -161,7 +169,7 @@ function DCInfoBar:CreateGeneralTab(parent)
     local enableCB = self:CreateCheckbox(parent, "Enable DC-InfoBar", 0, yOffset, function(checked)
         self.db.global.enabled = checked
         if self.bar then
-            self.bar:SetShown(checked)
+            if checked then self.bar:Show() else self.bar:Hide() end
         end
     end, self.db and self.db.global and self.db.global.enabled)
     yOffset = yOffset - 30
@@ -223,8 +231,17 @@ function DCInfoBar:CreatePluginsTab(parent)
     scrollFrame:SetPoint("BOTTOMRIGHT", -30, 0)
     
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetSize(scrollFrame:GetWidth(), 600)
+    -- scrollFrame:GetWidth() can be 0 during initial creation; use a sane default.
+    scrollChild:SetSize(450, 600)
     scrollFrame:SetScrollChild(scrollChild)
+
+    -- Ensure the scroll child width matches the scroll frame once laid out.
+    scrollFrame:SetScript("OnShow", function()
+        local w = scrollFrame:GetWidth()
+        if w and w > 1 then
+            scrollChild:SetWidth(w)
+        end
+    end)
     
     local yOffset = 0
     
@@ -294,6 +311,7 @@ function DCInfoBar:CreatePluginsTab(parent)
             DCInfoBar:SetPluginSetting(pluginInfo.id, "side", value:lower())
             DCInfoBar:RefreshAllPlugins()
         end)
+        sideDropdown:ClearAllPoints()
         sideDropdown:SetPoint("LEFT", name, "LEFT", 150, 0)
         
         local currentSide = self:GetPluginSetting(pluginInfo.id, "side") or "left"
@@ -343,12 +361,13 @@ function DCInfoBar:CreatePositionTab(parent)
     yOffset = yOffset - 25
     
     -- Top/Bottom radio buttons
+    local positionGroup = {}
     local topBtn = self:CreateRadioButton(parent, "Top of screen", 20, yOffset, function()
         self:SetBarSetting("position", "top")
         if self.bar then
             self.bar:RefreshSettings()
         end
-    end, self:GetBarSetting("position") == "top")
+    end, self:GetBarSetting("position") == "top", positionGroup)
     yOffset = yOffset - 25
     
     local bottomBtn = self:CreateRadioButton(parent, "Bottom of screen", 20, yOffset, function()
@@ -356,7 +375,7 @@ function DCInfoBar:CreatePositionTab(parent)
         if self.bar then
             self.bar:RefreshSettings()
         end
-    end, self:GetBarSetting("position") == "bottom")
+    end, self:GetBarSetting("position") == "bottom", positionGroup)
     yOffset = yOffset - 40
     
     -- Background settings
@@ -368,8 +387,8 @@ function DCInfoBar:CreatePositionTab(parent)
     -- Show background
     local showBgCB = self:CreateCheckbox(parent, "Show background", 20, yOffset, function(checked)
         self:SetBarSetting("showBackground", checked)
-        if self.bar then
-            self.bar.bg:SetShown(checked)
+        if self.bar and self.bar.bg then
+            if checked then self.bar.bg:Show() else self.bar.bg:Hide() end
         end
     end, self:GetBarSetting("showBackground") ~= false)
     yOffset = yOffset - 30
@@ -385,7 +404,9 @@ function DCInfoBar:CreatePositionTab(parent)
         bgColor[4] = value / 100
         self:SetBarSetting("backgroundColor", bgColor)
         if self.bar and self.bar.bg then
-            self.bar.bg:SetColorTexture(unpack(bgColor))
+            -- Apply alpha via SetAlpha for 3.3.5a consistency.
+            self.bar.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, 1)
+            self.bar.bg:SetAlpha(bgColor[4] or 1)
         end
     end)
     opacitySlider:SetPoint("LEFT", opacityLabel, "RIGHT", 20, 0)
@@ -410,23 +431,39 @@ end
 -- ============================================================================
 
 function DCInfoBar:CreateCommunicationTab(parent)
+    -- Scrollable content (communication tab is taller than the panel on 3.3.5a)
+    local scrollFrame = CreateFrame("ScrollFrame", "DCInfoBarCommunicationScrollFrame", parent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 0)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(450, 600)
+    scrollFrame:SetScrollChild(scrollChild)
+
+    scrollFrame:SetScript("OnShow", function()
+        local w = scrollFrame:GetWidth()
+        if w and w > 1 then
+            scrollChild:SetWidth(w)
+        end
+    end)
+
     local yOffset = 0
     
     -- Header
-    local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local header = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header:SetPoint("TOPLEFT", 0, yOffset)
     header:SetText("|cff32c4ffServer Communication|r")
     yOffset = yOffset - 25
     
     -- Description
-    local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local desc = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     desc:SetPoint("TOPLEFT", 0, yOffset)
     desc:SetText("DC-InfoBar communicates with the server via DCAddonProtocol")
     desc:SetTextColor(0.7, 0.7, 0.7)
     yOffset = yOffset - 30
     
     -- Connection status
-    local statusLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local statusLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statusLabel:SetPoint("TOPLEFT", 0, yOffset)
     
     local DC = rawget(_G, "DCAddonProtocol")
@@ -438,32 +475,32 @@ function DCInfoBar:CreateCommunicationTab(parent)
     yOffset = yOffset - 30
     
     -- Debug options
-    local debugHeader = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local debugHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     debugHeader:SetPoint("TOPLEFT", 0, yOffset)
     debugHeader:SetText("|cff32c4ffDebug Options|r")
     yOffset = yOffset - 25
     
     -- Show debug messages
-    local debugCB = self:CreateCheckbox(parent, "Show debug messages in chat", 0, yOffset, function(checked)
+    local debugCB = self:CreateCheckbox(scrollChild, "Show debug messages in chat", 0, yOffset, function(checked)
         self.db.communication.showDebugMessages = checked
         self.db.debug = checked
     end, self.db and self.db.communication and self.db.communication.showDebugMessages)
     yOffset = yOffset - 30
     
     -- Log requests
-    local logReqCB = self:CreateCheckbox(parent, "Log server requests", 0, yOffset, function(checked)
+    local logReqCB = self:CreateCheckbox(scrollChild, "Log server requests", 0, yOffset, function(checked)
         self.db.communication.logRequests = checked
     end, self.db and self.db.communication and self.db.communication.logRequests)
     yOffset = yOffset - 30
     
     -- Log responses
-    local logRespCB = self:CreateCheckbox(parent, "Log server responses", 0, yOffset, function(checked)
+    local logRespCB = self:CreateCheckbox(scrollChild, "Log server responses", 0, yOffset, function(checked)
         self.db.communication.logResponses = checked
     end, self.db and self.db.communication and self.db.communication.logResponses)
     yOffset = yOffset - 30
     
     -- Test mode
-    local testCB = self:CreateCheckbox(parent, "Use test/mock data (no server required)", 0, yOffset, function(checked)
+    local testCB = self:CreateCheckbox(scrollChild, "Use test/mock data (no server required)", 0, yOffset, function(checked)
         self.db.communication.testMode = checked
         if checked then
             self:LoadTestData()
@@ -472,20 +509,20 @@ function DCInfoBar:CreateCommunicationTab(parent)
     yOffset = yOffset - 40
     
     -- Manual refresh button
-    local refreshBtn = self:CreateButton(parent, "Refresh Server Data", 0, yOffset, 150, function()
+    local refreshBtn = self:CreateButton(scrollChild, "Refresh Server Data", 0, yOffset, 150, function()
         DCInfoBar:RequestServerData()
         DCInfoBar:Print("Requesting server data...")
     end)
     yOffset = yOffset - 40
     
     -- Data display
-    local dataHeader = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local dataHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     dataHeader:SetPoint("TOPLEFT", 0, yOffset)
     dataHeader:SetText("|cff32c4ffCurrent Server Data|r")
     yOffset = yOffset - 25
     
     -- Scrollable data display
-    local dataFrame = CreateFrame("Frame", nil, parent)
+    local dataFrame = CreateFrame("Frame", nil, scrollChild)
     dataFrame:SetPoint("TOPLEFT", 0, yOffset)
     dataFrame:SetSize(400, 150)
     
@@ -527,6 +564,9 @@ function DCInfoBar:CreateCommunicationTab(parent)
         
         dataFrame.text:SetText(dataText)
     end)
+
+    yOffset = yOffset - 160
+    scrollChild:SetHeight(math.abs(yOffset) + 20)
 end
 
 -- ============================================================================
@@ -618,16 +658,29 @@ function DCInfoBar:CreateButton(parent, text, x, y, width, onClick)
     return btn
 end
 
-function DCInfoBar:CreateRadioButton(parent, text, x, y, onClick, initialValue)
+function DCInfoBar:CreateRadioButton(parent, text, x, y, onClick, initialValue, group)
     local btn = CreateFrame("CheckButton", nil, parent, "UIRadioButtonTemplate")
     btn:SetPoint("TOPLEFT", x, y)
     btn:SetChecked(initialValue or false)
+
+    if type(group) == "table" then
+        table.insert(group, btn)
+    end
     
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", btn, "RIGHT", 5, 0)
     label:SetText(text)
     
     btn:SetScript("OnClick", function(self)
+        -- Radio behavior: always end up with one selected within a group.
+        if type(group) == "table" then
+            for _, other in ipairs(group) do
+                if other ~= self then
+                    other:SetChecked(false)
+                end
+            end
+            self:SetChecked(true)
+        end
         if onClick then
             onClick()
         end
@@ -662,7 +715,7 @@ end
 function DCInfoBar:CreateDropdown(parent, x, options, onChange)
     local dropdown = CreateFrame("Frame", nil, parent)
     dropdown:SetSize(100, 24)
-    dropdown:SetPoint("TOPLEFT", x, 0)
+    -- Caller should position the dropdown; avoid anchoring here.
     
     dropdown.bg = dropdown:CreateTexture(nil, "BACKGROUND")
     dropdown.bg:SetAllPoints()

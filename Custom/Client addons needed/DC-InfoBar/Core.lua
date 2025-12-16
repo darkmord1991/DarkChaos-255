@@ -508,6 +508,198 @@ local function NormalizeHotspotItem(h)
     }
 end
 
+-- Fallback boss definitions (used if the server only sends partial boss lists)
+local DEFAULT_GIANT_ISLES_BOSSES = {
+    { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge" },
+    { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge" },
+    { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks" },
+}
+
+local function GetCurrentWDay0()
+    if date then
+        local t = date("*t")
+        if t and t.wday then
+            return (tonumber(t.wday) - 1) % 7
+        end
+    end
+    return 0
+end
+
+local function SecondsUntilNextMidnight()
+    if not date or not time then
+        return 0
+    end
+
+    local t = date("*t")
+    if not t then
+        return 0
+    end
+
+    local nextMid = {
+        year = t.year,
+        month = t.month,
+        day = t.day + 1,
+        hour = 0,
+        min = 0,
+        sec = 0,
+    }
+
+    local now = time()
+    local nextTime = time(nextMid)
+    local diff = (nextTime and now) and (nextTime - now) or 0
+    if diff < 0 then diff = 0 end
+    return diff
+end
+
+local function BossEntryForDay(d0)
+    -- Mon/Thu = Oondasta; Tue/Fri = Thok; Wed/Sat/Sun = Nalak
+    if d0 == 0 or d0 == 3 or d0 == 6 then return 400102 end
+    if d0 == 1 or d0 == 4 then return 400100 end
+    if d0 == 2 or d0 == 5 then return 400101 end
+    return 400100
+end
+
+local function SecondsUntilBossRotation(currentDay0, bossEntry)
+    local secondsUntilNextMidnight = SecondsUntilNextMidnight()
+    for offset = 0, 6 do
+        local d0 = (currentDay0 + offset) % 7
+        if BossEntryForDay(d0) == bossEntry then
+            if offset == 0 then
+                return 0
+            end
+            return secondsUntilNextMidnight + ((offset - 1) * 24 * 60 * 60)
+        end
+    end
+    return secondsUntilNextMidnight
+end
+
+function DCInfoBar:EnsureDefaultWorldBosses()
+    self.serverData.worldBosses = self.serverData.worldBosses or {}
+    local bosses = self.serverData.worldBosses
+
+    local function NormName(s)
+        s = tostring(s or "")
+        s = string.lower(s)
+        s = string.gsub(s, "[^a-z0-9]+", "")
+        return s
+    end
+
+    local existingBySpawnId = {}
+    local existingByEntry = {}
+    local existingByName = {}
+    for _, b in ipairs(bosses) do
+        if b then
+            if b.spawnId then
+                existingBySpawnId[tonumber(b.spawnId)] = b
+            end
+            if b.entry then
+                existingByEntry[tonumber(b.entry)] = b
+            end
+            if b.name then
+                existingByName[NormName(b.name)] = b
+            end
+        end
+    end
+
+    local day0 = GetCurrentWDay0()
+    local activeEntry = BossEntryForDay(day0)
+
+    for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
+        -- Ensure each configured spawnId exists. spawnId is the authoritative identity.
+        local existing = existingBySpawnId[def.spawnId]
+        if existing then
+            -- Patch missing identifiers/fields so future merges can match reliably.
+            if not existing.spawnId then existing.spawnId = def.spawnId end
+            if not existing.entry then existing.entry = def.entry end
+            if not existing.zone or existing.zone == "Unknown" or existing.zone == "Unknown Zone" then
+                existing.zone = def.zone
+            end
+            if (not existing.name) or existing.name == "Unknown" or tostring(existing.name) == tostring(def.entry) then
+                existing.name = def.name
+            end
+
+            -- If we only have fallback timing and the server hasn't provided better info,
+            -- fill in a rotation-based spawnIn.
+            if (existing.status ~= "active") and (existing.spawnIn == nil or tonumber(existing.spawnIn) == nil) then
+                if def.entry == activeEntry then
+                    existing.status = existing.status or "active"
+                    existing.spawnIn = existing.spawnIn or 0
+                else
+                    existing.status = existing.status or "spawning"
+                    existing.spawnIn = existing.spawnIn or SecondsUntilBossRotation(day0, def.entry)
+                end
+            end
+        else
+            local rec = {
+                entry = def.entry,
+                name = def.name,
+                zone = def.zone,
+                spawnId = def.spawnId,
+            }
+
+            if def.entry == activeEntry then
+                rec.status = "active"
+                rec.spawnIn = 0
+            else
+                rec.status = "spawning"
+                rec.spawnIn = SecondsUntilBossRotation(day0, def.entry)
+            end
+
+            table.insert(bosses, rec)
+            existingBySpawnId[def.spawnId] = rec
+            existingByEntry[def.entry] = rec
+            existingByName[NormName(def.name)] = rec
+        end
+    end
+
+    -- Final pass: remove any duplicates that still slipped in (prefer spawnId, then active).
+    do
+        local seen = {}
+        local i = 1
+        while i <= #bosses do
+            local b = bosses[i]
+            local key = nil
+            -- Prefer spawnId as primary identity.
+            if b and b.spawnId then
+                key = "s:" .. tostring(b.spawnId)
+            elseif b and b.entry then
+                key = "e:" .. tostring(b.entry)
+            elseif b and b.name then
+                key = "n:" .. NormName(b.name)
+            elseif b and b.guid then
+                key = "g:" .. tostring(b.guid)
+            end
+
+            if key and seen[key] then
+                local kept = seen[key]
+                local drop = b
+
+                local function score(x)
+                    local s = 0
+                    if x and x.spawnId then s = s + 10 end
+                    if x and x.status == "active" then s = s + 3 end
+                    if x and x.hp ~= nil then s = s + 1 end
+                    if x and x.spawnIn ~= nil then s = s + 1 end
+                    return s
+                end
+
+                if score(drop) > score(kept) then
+                    -- Replace kept values with better data
+                    for k, v in pairs(drop) do
+                        kept[k] = v
+                    end
+                end
+                table.remove(bosses, i)
+            else
+                if key then
+                    seen[key] = b
+                end
+                i = i + 1
+            end
+        end
+    end
+end
+
 function DCInfoBar:HandleWorldContent(data)
     if not data then return end
     -- Hotspots (not currently shown in DC-InfoBar but store for completeness)
@@ -525,11 +717,17 @@ function DCInfoBar:HandleWorldContent(data)
         self.serverData.worldBosses = self.serverData.worldBosses or {}
         local bosses = self.serverData.worldBosses
         local now = GetTime and GetTime() or 0
+
+        if self.Debug and type(data.bosses) == "table" then
+            self:Debug("HandleWorldContent: bosses received=" .. tostring(#data.bosses))
+        end
+
         for _, b in ipairs(data.bosses) do
             local record = {}
             record.name = b.name or b.displayName or b.entry or b.guid or "Unknown"
             record.zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown"
             record.spawnId = tonumber(b.spawnId) or nil
+            record.entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
             -- Map status: prefer explicit status field, otherwise derive from active/action
             if b.status or b.state then
                 record.status = b.status or b.state
@@ -565,6 +763,13 @@ function DCInfoBar:HandleWorldContent(data)
                     end
                 end
             end
+            if (not replaced) and record.entry then
+                for i, ex in ipairs(bosses) do
+                    if ex.entry == record.entry then
+                        bosses[i] = record; replaced = true; break
+                    end
+                end
+            end
             if record.guid then
                 for i, ex in ipairs(bosses) do
                     if ex.guid == record.guid then
@@ -583,6 +788,9 @@ function DCInfoBar:HandleWorldContent(data)
                 table.insert(bosses, record)
             end
         end
+
+        -- If the server only sends a partial list, ensure the defaults exist so the UI shows all bosses.
+        self:EnsureDefaultWorldBosses()
     end
 
     -- Events
@@ -667,8 +875,22 @@ function DCInfoBar:HandleWorldUpdate(data)
             local spawnId = tonumber(b.spawnId) or nil
             local guid = b.guid
             local name = b.name
+            local entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
             local up = {}
             if spawnId then up.spawnId = spawnId end
+            if entry then up.entry = entry end
+
+            -- Some servers send full status payloads without an explicit action.
+            if b.status or b.state then
+                up.status = b.status or b.state
+            end
+            if b.zone or b.zoneName then
+                up.zone = b.zone or b.zoneName
+            end
+            if b.name then
+                up.name = b.name
+            end
+
             if b.action == "engage" then
                 up.status = "active"
                 up.hp = b.hpPct or b.hp
@@ -689,17 +911,20 @@ function DCInfoBar:HandleWorldUpdate(data)
 
             local matched = false
             for i, ex in ipairs(bosses) do
-                if (spawnId and ex.spawnId == spawnId) or (guid and ex.guid == guid) or (name and ex.name == name) then
+                if (spawnId and ex.spawnId == spawnId) or (entry and ex.entry == entry) or (guid and ex.guid == guid) or (name and ex.name == name) then
                     for k, v in pairs(up) do ex[k] = v end
                     matched = true; break
                 end
             end
             if not matched then
-                local record = { name = name or "Unknown", guid = guid, zone = b.zone or b.zoneName, spawnId = spawnId }
+                local record = { name = name or entry or "Unknown", guid = guid, zone = b.zone or b.zoneName, spawnId = spawnId, entry = entry }
                 for k,v in pairs(up) do record[k] = v end
                 table.insert(bosses, record)
             end
         end
+
+        -- Keep defaults present even if updates only mention one boss.
+        self:EnsureDefaultWorldBosses()
     end
 
     -- Event updates
@@ -737,7 +962,10 @@ function DCInfoBar:HandleWorldUpdate(data)
     DCInfoBar:RefreshAllPlugins()
 end
 
-function DCInfoBar:RequestServerData()
+function DCInfoBar:RequestServerData(opts)
+    opts = (type(opts) == "table") and opts or {}
+    local retries = tonumber(opts.retries) or 0
+
     if not DC then 
         DC = rawget(_G, "DCAddonProtocol")
     end
@@ -746,6 +974,25 @@ function DCInfoBar:RequestServerData()
         self:Debug("DCAddonProtocol not available for RequestServerData")
         return
     end
+
+    -- Wait until the protocol reports connected (otherwise early requests can be dropped)
+    if DC.IsConnected and not DC:IsConnected() then
+        if retries > 0 then
+            self:Debug("RequestServerData: waiting for DCAddonProtocol connection...")
+            self:After(2, function()
+                DCInfoBar:RequestServerData({ retries = retries - 1 })
+            end)
+        else
+            self:Debug("RequestServerData: DCAddonProtocol not connected (giving up)")
+        end
+        return
+    end
+
+    local now = GetTime and GetTime() or 0
+    if self._lastServerDataRequestAt and (now - self._lastServerDataRequestAt) < 1 then
+        return
+    end
+    self._lastServerDataRequestAt = now
     
     self:Debug("Requesting server data...")
     
@@ -766,14 +1013,8 @@ function DCInfoBar:RequestServerData()
         DC.Hotspot.GetList()
     end
 
-    -- Request aggregated world content snapshot (includes events like invasions)
-    -- This is an important fallback if a specific event script has addon-push disabled.
+    -- Request aggregated world content snapshot (includes hotspots, bosses, events)
     DC:Request("WRLD", 0x01, {})
-
-    -- Request world content (hotspots, bosses, events)
-    if DC.RegisterJSONHandler then
-        DC:Request("WRLD", 0x01, {})
-    end
     
     -- Request prestige info
     DC:Request("PRES", 0x01, {})
@@ -1054,20 +1295,20 @@ function DCInfoBar:Initialize()
         self:InitializeDB()
     end)
 
-    -- Lightweight runtime diagnostics (helps when the bar appears empty)
+    -- Lightweight runtime diagnostics (gated by debug)
     do
         local enabled = (self.db and self.db.global and self.db.global.enabled) and "true" or "false"
-        self:Print("Init: global.enabled=" .. enabled)
+        self:Debug("Init: global.enabled=" .. enabled)
     end
     
     -- Setup server communication
     SafeStep("SetupServerCommunication", function()
         local ok = self:SetupServerCommunication()
-        self:Print("Init: DCAddonProtocol=" .. (ok and "found" or "missing"))
+        self:Debug("Init: DCAddonProtocol=" .. (ok and "found" or "missing"))
         local DCProtocol = rawget(_G, "DCAddonProtocol")
         if DCProtocol then
-            self:Print("Init: DC.RegisterJSONHandler=" .. (DCProtocol.RegisterJSONHandler and "yes" or "no"))
-            self:Print("Init: DC.PREFIX=" .. tostring(DCProtocol.PREFIX))
+            self:Debug("Init: DC.RegisterJSONHandler=" .. (DCProtocol.RegisterJSONHandler and "yes" or "no"))
+            self:Debug("Init: DC.PREFIX=" .. tostring(DCProtocol.PREFIX))
         end
     end)
     
@@ -1080,9 +1321,9 @@ function DCInfoBar:Initialize()
         end
 
         if self.bar then
-            self:Print("Init: bar created, shown=" .. (self.bar:IsShown() and "true" or "false") .. ", h=" .. tostring(self.bar:GetHeight()) .. ", strata=" .. tostring(self.bar:GetFrameStrata()))
+            self:Debug("Init: bar created, shown=" .. (self.bar:IsShown() and "true" or "false") .. ", h=" .. tostring(self.bar:GetHeight()) .. ", strata=" .. tostring(self.bar:GetFrameStrata()))
         else
-            self:Print("Init: bar NOT created")
+            self:Debug("Init: bar NOT created")
         end
     end)
 
@@ -1099,7 +1340,7 @@ function DCInfoBar:Initialize()
         for _ in pairs(self.plugins or {}) do
             registeredCount = registeredCount + 1
         end
-        self:Print("Init: registered plugins=" .. tostring(registeredCount))
+        self:Debug("Init: registered plugins=" .. tostring(registeredCount))
 
         -- Activate all enabled plugins
         for id, plugin in pairs(self.plugins or {}) do
@@ -1110,7 +1351,7 @@ function DCInfoBar:Initialize()
 
         local leftCount = (self.activePlugins and self.activePlugins.left and #self.activePlugins.left) or 0
         local rightCount = (self.activePlugins and self.activePlugins.right and #self.activePlugins.right) or 0
-        self:Print("Init: active plugins left=" .. tostring(leftCount) .. " right=" .. tostring(rightCount))
+        self:Debug("Init: active plugins left=" .. tostring(leftCount) .. " right=" .. tostring(rightCount))
     end)
 
     -- If nothing is active, tell the user how to recover.
@@ -1125,7 +1366,7 @@ function DCInfoBar:Initialize()
         end
 
         if activeCount == 0 then
-            self:Print("Init: no active plugins (registered=" .. tostring(registeredCount) .. "). Try /infobar reset.")
+            self:Debug("Init: no active plugins (registered=" .. tostring(registeredCount) .. "). Try /infobar reset.")
         end
     end
     
@@ -1150,12 +1391,12 @@ function DCInfoBar:Initialize()
 
         -- Ensure all plugins have initial text immediately (before the first OnUpdate tick)
         self:ForceUpdateAllPlugins()
-        self:Print("Init: ForceUpdateAllPlugins done")
+        self:Debug("Init: ForceUpdateAllPlugins done")
     end)
     
     -- Request server data after a short delay (wait for connection)
     self:After(2, function()
-        DCInfoBar:RequestServerData()
+        DCInfoBar:RequestServerData({ retries = 10 })
     end)
     
     -- Setup slash commands
@@ -1181,7 +1422,7 @@ function DCInfoBar:SetupSlashCommands()
         elseif cmd == "toggle" then
             self.db.global.enabled = not self.db.global.enabled
             if self.bar then
-                self.bar:SetShown(self.db.global.enabled)
+                if self.db.global.enabled then self.bar:Show() else self.bar:Hide() end
             end
             self:Print("InfoBar " .. (self.db.global.enabled and "enabled" or "disabled"))
         elseif cmd == "reset" then
