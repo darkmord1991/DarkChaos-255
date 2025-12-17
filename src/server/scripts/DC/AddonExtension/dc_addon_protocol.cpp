@@ -75,6 +75,15 @@ namespace DCAddon
 
 }  // namespace DCAddon
 
+// Forward declarations for cross-module snapshot pushes
+namespace DCAddon
+{
+    namespace World
+    {
+        void SendWorldContentSnapshot(Player* player);
+    }
+}
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -92,6 +101,7 @@ struct DCAddonProtocolConfig
     bool EnableSeasonal;
     bool EnableHinterlandBG;
     bool EnableLeaderboard;
+    bool EnableTeleports;
     bool EnableGOMove;
     bool EnableGroupFinder;
     bool EnableHotspot;
@@ -124,6 +134,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableSeasonal    = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Seasonal.Enable", true);
     s_AddonConfig.EnableHinterlandBG= sConfigMgr->GetOption<bool>("DC.AddonProtocol.HinterlandBG.Enable", true);
     s_AddonConfig.EnableLeaderboard = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Leaderboard.Enable", true);
+    s_AddonConfig.EnableTeleports   = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Teleports.Enable", true);
     s_AddonConfig.EnableGOMove     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
     s_AddonConfig.EnableGroupFinder = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GroupFinder.Enable", true);
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
@@ -154,6 +165,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::SEASONAL, s_AddonConfig.EnableSeasonal);
     router.SetModuleEnabled(DCAddon::Module::HINTERLAND_BG, s_AddonConfig.EnableHinterlandBG);
     router.SetModuleEnabled(DCAddon::Module::LEADERBOARD, s_AddonConfig.EnableLeaderboard);
+    router.SetModuleEnabled(DCAddon::Module::TELEPORTS, s_AddonConfig.EnableTeleports);
     router.SetModuleEnabled(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
     router.SetModuleEnabled(DCAddon::Module::GROUP_FINDER, s_AddonConfig.EnableGroupFinder);
     router.SetModuleEnabled(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
@@ -544,6 +556,13 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
     featureMsg.Add(s_AddonConfig.EnableWorld);
     featureMsg.Send(player);
+
+    // Proactively send WRLD content snapshot after handshake so clients reliably populate
+    // all world bosses even if an initial CMSG_GET_CONTENT gets dropped.
+    if (s_AddonConfig.EnableWorld)
+    {
+        DCAddon::World::SendWorldContentSnapshot(player);
+    }
 }
 
 static void HandleCoreVersionCheck(Player* player, const DCAddon::ParsedMessage& msg)

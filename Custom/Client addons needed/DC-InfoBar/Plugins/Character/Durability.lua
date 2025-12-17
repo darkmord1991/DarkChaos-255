@@ -64,10 +64,13 @@ function DurabilityPlugin:OnUpdate(elapsed)
     end
     
     self._lowestDura = lowest
-    
-    -- Get repair cost (requires tooltip scanning, simplified here)
-    -- In a full implementation, you'd scan tooltips or use a library
-    self._repairCost = 0  -- Would need actual implementation
+
+    -- Repair cost is only available while interacting with a repair-capable merchant.
+    self._repairCost = 0
+    if CanMerchantRepair and CanMerchantRepair() and GetRepairAllCost then
+        local cost = GetRepairAllCost()
+        self._repairCost = tonumber(cost) or 0
+    end
     
     -- Determine color
     local color = "green"
@@ -100,9 +103,6 @@ function DurabilityPlugin:OnTooltip(tooltip)
         local data = self._slots[slot.id]
         if data then
             local percent = data.percent
-            local barWidth = 10
-            local filled = math.floor((percent / 100) * barWidth)
-            local bar = string.rep("█", filled) .. string.rep("░", barWidth - filled)
             
             local r, g, b = 0.3, 1, 0.5  -- Green
             if percent <= 25 then
@@ -113,7 +113,7 @@ function DurabilityPlugin:OnTooltip(tooltip)
             
             tooltip:AddDoubleLine(
                 data.name .. ":",
-                string.format("%s %d%%", bar, percent),
+                string.format("%d%%", percent),
                 0.7, 0.7, 0.7, r, g, b
             )
         end
@@ -133,9 +133,24 @@ function DurabilityPlugin:OnTooltip(tooltip)
     
     -- Repair cost (if available)
     local showRepairCost = DCInfoBar:GetPluginSetting(self.id, "showRepairCost")
-    if showRepairCost and self._repairCost > 0 then
-        tooltip:AddDoubleLine("Repair Cost:", DCInfoBar:FormatGold(self._repairCost),
-            0.7, 0.7, 0.7, 1, 0.82, 0)
+    if showRepairCost then
+        local canRepairHere = CanMerchantRepair and CanMerchantRepair() and GetRepairAllCost
+        local valueText
+        local vr, vg, vb
+
+        if canRepairHere then
+            valueText = DCInfoBar:FormatGold(self._repairCost)
+            vr, vg, vb = 1, 0.82, 0
+        else
+            valueText = "N/A"
+            vr, vg, vb = 0.7, 0.7, 0.7
+        end
+
+        tooltip:AddDoubleLine(
+            "Repair Cost:",
+            valueText,
+            0.7, 0.7, 0.7, vr, vg, vb
+        )
     end
     
     -- Warning if low

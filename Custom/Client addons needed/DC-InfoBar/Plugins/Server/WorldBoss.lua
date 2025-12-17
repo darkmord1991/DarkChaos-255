@@ -23,16 +23,22 @@ local WorldBossPlugin = {
     
     _currentBossIndex = 1,
     _cycleTimer = 0,
+
+    _lastSnapshotRequestAt = 0,
 }
 
 local function _NormName(s)
     s = tostring(s or "")
+    -- Strip WoW formatting codes (colors/textures) to keep keys stable.
+    s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+    s = string.gsub(s, "|r", "")
+    s = string.gsub(s, "|T.-|t", "")
     s = string.lower(s)
     s = string.gsub(s, "[^a-z0-9]+", "")
     return s
 end
 
-local DEFAULT_GIANT_ISLES_BOSSES = {
+local DEFAULT_WORLD_BOSSES = (DCInfoBar and DCInfoBar.DEFAULT_WORLD_BOSSES) or {
     { entry = 400100, spawnId = 9000190, name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge" },
     { entry = 400101, spawnId = 9000189, name = "Thok the Bloodthirsty",     zone = "Raptor Ridge" },
     { entry = 400102, spawnId = 9000191, name = "Nalak the Storm Lord",      zone = "Thundering Peaks" },
@@ -45,12 +51,34 @@ local function _GetUniqueBosses(rawBosses)
         return result
     end
 
+    local defaultSpawnIdByEntry = {}
+    local defaultSpawnIdByName = {}
+    for _, def in ipairs(DEFAULT_WORLD_BOSSES) do
+        if def and def.entry and def.spawnId then
+            defaultSpawnIdByEntry[tonumber(def.entry)] = tonumber(def.spawnId)
+        end
+        if def and def.name and def.spawnId then
+            defaultSpawnIdByName[_NormName(def.name)] = tonumber(def.spawnId)
+        end
+    end
+
     -- First: copy and dedupe existing
     for _, b in ipairs(rawBosses) do
         if type(b) == "table" then
             local key = nil
             -- Prefer spawnId as the primary identity. These bosses are keyed by spawnId in DB.
-            if b.spawnId then key = "s:" .. tostring(b.spawnId)
+
+            local sid = tonumber(b.spawnId) or nil
+            if (not sid) and b.entry then
+                sid = defaultSpawnIdByEntry[tonumber(b.entry)]
+                if sid then b.spawnId = sid end
+            end
+            if (not sid) and b.name then
+                sid = defaultSpawnIdByName[_NormName(b.name)]
+                if sid then b.spawnId = sid end
+            end
+
+            if sid then key = "s:" .. tostring(sid)
             elseif b.entry then key = "e:" .. tostring(b.entry)
             elseif b.name then key = "n:" .. _NormName(b.name)
             elseif b.guid then key = "g:" .. tostring(b.guid) end
@@ -68,7 +96,7 @@ local function _GetUniqueBosses(rawBosses)
         if b.spawnId then existingBySpawnId[tonumber(b.spawnId)] = true end
     end
 
-    for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
+    for _, def in ipairs(DEFAULT_WORLD_BOSSES) do
         -- Ensure each configured spawnId exists in the list even if entry/name overlap.
         if not existingBySpawnId[def.spawnId] then
             table.insert(result, {
@@ -86,6 +114,47 @@ local function _GetUniqueBosses(rawBosses)
 end
 
 function WorldBossPlugin:OnUpdate(elapsed)
+    -- If we only have partial boss state (common when the initial WRLD snapshot was missed),
+    -- ask the server for a fresh WRLD content payload. Throttle to avoid spam.
+    do
+        local now = GetTime and GetTime() or 0
+        if (not self._lastSnapshotRequestAt) then self._lastSnapshotRequestAt = 0 end
+
+        if DCInfoBar and DCInfoBar.serverData and type(DCInfoBar.serverData.worldBosses) == "table" then
+            local bosses = _GetUniqueBosses(DCInfoBar.serverData.worldBosses)
+            local haveState = 0
+            local needState = 0
+
+            local wanted = {}
+            for _, def in ipairs(DEFAULT_WORLD_BOSSES) do
+                if def and def.spawnId then wanted[tonumber(def.spawnId)] = true end
+            end
+
+            for _, b in ipairs(bosses) do
+                local sid = tonumber(b.spawnId) or 0
+                if wanted[sid] then
+                    needState = needState + 1
+                    local st = string.lower(tostring(b.status or ""))
+                    local has = false
+                    if st == "active" then
+                        has = true
+                    elseif tonumber(b.spawnIn) ~= nil then
+                        has = true
+                    end
+                    if has then haveState = haveState + 1 end
+                end
+            end
+
+            if needState > 0 and haveState < needState and (now - self._lastSnapshotRequestAt) > 15 then
+                local DC = rawget(_G, "DCAddonProtocol")
+                if DC and DC.Request then
+                    self._lastSnapshotRequestAt = now
+                    DC:Request("WRLD", 0x01, {})
+                end
+            end
+        end
+    end
+
     -- Keep countdown timers moving even if the server only sent a snapshot value.
     if DCInfoBar.serverData and type(DCInfoBar.serverData.worldBosses) == "table" then
         for _, b in ipairs(DCInfoBar.serverData.worldBosses) do
@@ -133,16 +202,17 @@ function WorldBossPlugin:OnUpdate(elapsed)
 
     local hpPct = tonumber(boss.hp)
     local isDeadHp = (hpPct ~= nil) and (hpPct <= 0)
-    local isInactive = boss.status == "inactive"
+    local st = string.lower(tostring(boss.status or ""))
+    local isInactive = (st == "inactive")
     
-    if (boss.status == "active") and (not isDeadHp) and (not isInactive) then
+    if (st == "active") and (not isDeadHp) and (not isInactive) then
         -- Boss is up!
         local hpText = boss.hp and (" " .. boss.hp .. "%") or ""
         if isJustSpawned then
             return "", "|cff50ff7a" .. boss.name .. ": Just spawned!" .. hpText .. "|r"
         end
         return "", "|cff50ff7a" .. boss.name .. ": Active!" .. hpText .. "|r"
-    elseif ((boss.status == "spawning") or isDeadHp or isInactive) and boss.spawnIn then
+    elseif ((st == "spawning") or isDeadHp or isInactive) and boss.spawnIn then
         if showOnlyActive then
             return "", "No Active Boss"
         end
@@ -188,15 +258,16 @@ function WorldBossPlugin:OnTooltip(tooltip)
             local isJustSpawned = boss.justSpawnedUntil and now < boss.justSpawnedUntil
             local hpPct = tonumber(boss.hp)
             local isDeadHp = (hpPct ~= nil) and (hpPct <= 0)
-            local isInactive = boss.status == "inactive"
+            local st = string.lower(tostring(boss.status or ""))
+            local isInactive = (st == "inactive")
             
-            if (boss.status == "active") and (not isDeadHp) and (not isInactive) then
+            if (st == "active") and (not isDeadHp) and (not isInactive) then
                 statusText = isJustSpawned and "Just spawned!" or "Active!"
                 if boss.hp then
                     statusText = statusText .. " (" .. boss.hp .. "% HP)"
                 end
                 r, g, b = 0.3, 1, 0.5
-            elseif ((boss.status == "spawning") or isDeadHp or isInactive) and boss.spawnIn then
+            elseif ((st == "spawning") or isDeadHp or isInactive) and boss.spawnIn then
                 statusText = "Spawns in " .. DCInfoBar:FormatTimeShort(boss.spawnIn)
                 r, g, b = 1, 0.82, 0
             else
@@ -229,17 +300,40 @@ function WorldBossPlugin:OnClick(button)
         -- Print all boss timers to chat
         local bosses = DCInfoBar.serverData.worldBosses
         if bosses and #bosses > 0 then
+            do
+                local now = GetTime and GetTime() or 0
+                local lc = DCInfoBar.serverData and DCInfoBar.serverData._lastWRLDContentAt
+                local lu = DCInfoBar.serverData and DCInfoBar.serverData._lastWRLDUpdateAt
+                DCInfoBar:Print(string.format("WRLD snapshot age: %ss | update age: %ss", tostring(lc and math.floor(now - lc) or "?"), tostring(lu and math.floor(now - lu) or "?")))
+            end
+
+            if DCInfoBar.serverData and type(DCInfoBar.serverData._lastWRLDBossContentSummary) == "table" then
+                DCInfoBar:Print("WRLD content bosses (raw):")
+                for _, line in ipairs(DCInfoBar.serverData._lastWRLDBossContentSummary) do
+                    DCInfoBar:Print("  " .. tostring(line))
+                end
+            end
+            if DCInfoBar.serverData and type(DCInfoBar.serverData._lastWRLDBossUpdateSummary) == "table" then
+                DCInfoBar:Print("WRLD update bosses (raw):")
+                for _, line in ipairs(DCInfoBar.serverData._lastWRLDBossUpdateSummary) do
+                    DCInfoBar:Print("  " .. tostring(line))
+                end
+            end
+
             DCInfoBar:Print("World Boss Timers:")
             for _, boss in ipairs(bosses) do
                 local now = GetTime and GetTime() or 0
                 local isJustSpawned = boss.justSpawnedUntil and now < boss.justSpawnedUntil
                 local status
-                if boss.status == "active" then
+                if string.lower(tostring(boss.status or "")) == "active" then
                     status = isJustSpawned and "JUST SPAWNED" or "ACTIVE"
                 else
                     status = DCInfoBar:FormatTimeShort(boss.spawnIn or 0)
                 end
-                DCInfoBar:Print("  " .. boss.name .. ": " .. status)
+                DCInfoBar:Print(string.format(
+                    "  %s (entry=%s spawnId=%s status=%s spawnIn=%s): %s",
+                    tostring(boss.name), tostring(boss.entry), tostring(boss.spawnId), tostring(boss.status), tostring(boss.spawnIn), tostring(status)
+                ))
             end
         else
             DCInfoBar:Print("No world boss data available")

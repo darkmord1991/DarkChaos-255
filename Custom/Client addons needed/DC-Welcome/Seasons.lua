@@ -448,6 +448,15 @@ end
 -------------------------------------------------------------------------------
 
 local function RegisterHandlers()
+    if DCWelcome and type(DCWelcome.IsCommunicationEnabled) == "function" then
+        if not DCWelcome:IsCommunicationEnabled() then
+            -- Communication disabled in DC-Welcome settings.
+            return
+        end
+    elseif type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false then
+        return
+    end
+
     local DC = rawget(_G, "DCAddonProtocol")
     if not DC then
         ScheduleAfter(1, RegisterHandlers)
@@ -517,18 +526,22 @@ local function RegisterHandlers()
     
     -- Request functions
     DCWelcome.Seasons.RequestSeasonData = function()
-        if DC then
+        if DC and (not (type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false)) then
             DC:Request("SEAS", 0x01, {})
             DC:Request("SEAS", 0x03, {})
         end
     end
     
     DCWelcome.Seasons.RequestRewards = function()
-        if DC then DC:Request("SEAS", 0x02, {}) end
+        if DC and (not (type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false)) then
+            DC:Request("SEAS", 0x02, {})
+        end
     end
     
     DCWelcome.Seasons.ClaimReward = function(rewardId)
-        if DC then DC:Request("SEAS", 0x04, { rewardId = rewardId }) end
+        if DC and (not (type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false)) then
+            DC:Request("SEAS", 0x04, { rewardId = rewardId })
+        end
     end
 end
 

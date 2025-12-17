@@ -4,59 +4,245 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
+local DCProto = rawget(_G, "DCAddonProtocol")
+
+local function GetTimeSeconds()
+  if type(GetTime) == "function" then
+    return GetTime()
+  end
+  if type(time) == "function" then
+    return time()
+  end
+  return 0
+end
+
+local function InvalidateDCTeleCache()
+  if not AzerothAdmin then
+    return
+  end
+  AzerothAdmin._dcteleCache = nil
+  AzerothAdmin._dcteleLastComputed = nil
+end
+
+local function EnsureDCTelePrecomputed(list)
+  if type(list) ~= "table" then
+    return
+  end
+  for i = 1, #list do
+    local tele = list[i]
+    if type(tele) == "table" then
+      if tele._id == nil then
+        tele._id = (tele.id or tele.ID or tele.Id) or 0
+      end
+      if tele._lcName == nil then
+        tele._lcName = string.lower(tele.name or "")
+      end
+    end
+  end
+end
+
+local function CopyArray(src)
+  local dst = {}
+  for i = 1, #src do
+    dst[i] = src[i]
+  end
+  return dst
+end
+
+local function GetSortedTeleports(sortBy, sortDir)
+  local list = AzerothAdmin.DCTeleports
+  if type(list) ~= "table" then
+    return {}
+  end
+
+  AzerothAdmin._dcteleCache = AzerothAdmin._dcteleCache or {}
+  local cache = AzerothAdmin._dcteleCache
+  local key = tostring(sortBy or "id") .. ":" .. tostring(sortDir or "asc")
+
+  local existing = cache[key]
+  if existing and existing._src == list then
+    return existing
+  end
+
+  EnsureDCTelePrecomputed(list)
+  local arr = CopyArray(list)
+  local dir = sortDir or "asc"
+
+  if sortBy == "name" then
+    table.sort(arr, function(a, b)
+      local an = (type(a) == "table" and a._lcName) or ""
+      local bn = (type(b) == "table" and b._lcName) or ""
+      if an == bn then
+        local aid = (type(a) == "table" and a._id) or 0
+        local bid = (type(b) == "table" and b._id) or 0
+        if dir == "asc" then return aid < bid else return aid > bid end
+      end
+      if dir == "asc" then return an < bn else return an > bn end
+    end)
+  else
+    table.sort(arr, function(a, b)
+      local aid = (type(a) == "table" and a._id) or 0
+      local bid = (type(b) == "table" and b._id) or 0
+      if dir == "asc" then return aid < bid else return aid > bid end
+    end)
+  end
+
+  arr._src = list
+  cache[key] = arr
+  return arr
+end
+
+local function ScheduleDCTeleRequest(window, payload, delaySeconds)
+  if not window then
+    return
+  end
+  window._dcteleReq = {
+    t = 0,
+    delay = delaySeconds or 0,
+    payload = payload,
+  }
+  window:SetScript("OnUpdate", function(self, elapsed)
+    -- throttle UI refresh during sync (keeps scrolling/mouse input responsive)
+    if AzerothAdmin and AzerothAdmin._dcteleNeedUIRefresh then
+      self._dcteleUiT = (self._dcteleUiT or 0) + (elapsed or 0)
+      if self._dcteleUiT >= 0.15 then
+        self._dcteleUiT = 0
+        AzerothAdmin._dcteleNeedUIRefresh = false
+        AzerothAdmin:UpdateDCTeleList(true)
+      end
+    end
+
+    if not self._dcteleReq then
+      -- no pending request; keep OnUpdate only if we still need UI refresh
+      if not (AzerothAdmin and AzerothAdmin._dcteleNeedUIRefresh) then
+        self:SetScript("OnUpdate", nil)
+      end
+      return
+    end
+
+    self._dcteleReq.t = (self._dcteleReq.t or 0) + (elapsed or 0)
+    if self._dcteleReq.t < (self._dcteleReq.delay or 0) then
+      return
+    end
+
+    local req = self._dcteleReq
+    self._dcteleReq = nil
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and DC.Request then
+      DC:Request("TELE", 0x01, req.payload or {})
+    end
+
+    if not (AzerothAdmin and AzerothAdmin._dcteleNeedUIRefresh) then
+      self:SetScript("OnUpdate", nil)
+    end
+  end)
+end
+
+local function NormalizeTeleportList(data)
+  if type(data) ~= "table" then
+    return nil
+  end
+
+  local list = data.list
+  if list == nil then
+    list = data.teleports
+  end
+
+  if type(list) == "string" then
+    if DCProto and type(DCProto.DecodeJSON) == "function" then
+      local decoded = DCProto:DecodeJSON(list)
+      if type(decoded) == "table" then
+        return decoded
+      end
+    end
+    return nil
+  end
+
+  if type(list) == "table" then
+    return list
+  end
+
+  return nil
+end
+
 function AzerothAdmin:CreateDCTeleSection()
   -- Initialize storage for dynamic teleports
     AzerothAdmin.DCTeleports = AzerothAdmin.DCTeleports or {}
-    -- Keep the main teleport table ordered by id for consistency
-    if type(AzerothAdmin.DCTeleports) == "table" and #AzerothAdmin.DCTeleports > 0 then
-        local dir = AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortDir or "asc"
-        if AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortBy == "name" then
-          table.sort(AzerothAdmin.DCTeleports, function(a, b)
-            local an = string.lower(a.name or "")
-            local bn = string.lower(b.name or "")
-            if an == bn then
-              local aid = (a.id or a.ID or a.Id) or 0
-              local bid = (b.id or b.ID or b.Id) or 0
-              if dir == "asc" then return aid < bid else return aid > bid end
-            end
-            if dir == "asc" then return an < bn else return an > bn end
-          end)
-        else
-          table.sort(AzerothAdmin.DCTeleports, function(a, b)
-            local aid = (a.id or a.ID or a.Id) or 0
-            local bid = (b.id or b.ID or b.Id) or 0
-            if dir == "asc" then return aid < bid else return aid > bid end
-          end)
-        end
-    end
+    -- Precompute lowercase names / ids for fast filtering and cached sorting.
+    EnsureDCTelePrecomputed(AzerothAdmin.DCTeleports)
 
   -- Register Protocol Handler for Teleport List (TELE module, opcode 0x10)
+  local DC = rawget(_G, "DCAddonProtocol")
   if DC and DC.RegisterHandler then
       DC:RegisterHandler("TELE", 0x10, function(data)
-            if data and data.list then
-              AzerothAdmin.DCTeleports = data.list
-              if type(AzerothAdmin.DCTeleports) == "table" and #AzerothAdmin.DCTeleports > 0 then
-                local dir = (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortDir) or "asc"
-                if AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortBy == "name" then
-                  table.sort(AzerothAdmin.DCTeleports, function(a, b)
-                    local an = string.lower(a.name or "")
-                    local bn = string.lower(b.name or "")
-                    if an == bn then
-                      local aid = (a.id or a.ID or a.Id) or 0
-                      local bid = (b.id or b.ID or b.Id) or 0
-                      if dir == "asc" then return aid < bid else return aid > bid end
-                    end
-                    if dir == "asc" then return an < bn else return an > bn end
-                  end)
-                else
-                  table.sort(AzerothAdmin.DCTeleports, function(a, b)
-                    local aid = (a.id or a.ID or a.Id) or 0
-                    local bid = (b.id or b.ID or b.Id) or 0
-                    if dir == "asc" then return aid < bid else return aid > bid end
-                  end)
-                end
+            local list = NormalizeTeleportList(data)
+            if not list then
+              return
+            end
+
+            -- Backward compatibility: old server sends the entire list as one payload
+            -- (typically under key 'list' as a JSON-string). That decode can still be heavy,
+            -- but we must NOT copy it entry-by-entry or trigger paging follow-ups.
+            local hasPagingFields = (data.offset ~= nil) or (data.total ~= nil) or (data.limit ~= nil) or (data.done ~= nil) or (data.reset ~= nil)
+            if not hasPagingFields then
+              EnsureDCTelePrecomputed(list)
+              AzerothAdmin.DCTeleports = list
+              AzerothAdmin._dcteleSync = { offset = #list, limit = 0, total = #list, done = true }
+              InvalidateDCTeleCache()
+              AzerothAdmin._dcteleNeedUIRefresh = true
+              return
+            end
+
+            local offset = tonumber(data.offset or 0) or 0
+            local total = tonumber(data.total or 0) or 0
+            local reset = (data.reset == true) or (offset == 0)
+            local done = (data.done == true)
+
+            -- Another legacy-ish case: server returned a full snapshot but also included no meaningful paging.
+            -- If total is missing/zero and the chunk is large, treat it as complete.
+            local declaredLimit = tonumber(data.limit or 0) or 0
+            if total == 0 and declaredLimit == 0 and #list > 200 then
+              EnsureDCTelePrecomputed(list)
+              AzerothAdmin.DCTeleports = list
+              AzerothAdmin._dcteleSync = { offset = #list, limit = 0, total = #list, done = true }
+              InvalidateDCTeleCache()
+              AzerothAdmin._dcteleNeedUIRefresh = true
+              return
+            end
+
+            -- Start/continue incremental sync without replacing the full list with only a chunk.
+            if reset then
+              AzerothAdmin.DCTeleports = {}
+              AzerothAdmin._dcteleSync = { offset = 0, limit = tonumber(data.limit or 0) or 20, total = total, done = false }
+              InvalidateDCTeleCache()
+            end
+
+            AzerothAdmin._dcteleSync = AzerothAdmin._dcteleSync or { offset = 0, limit = 20, total = total, done = false }
+            AzerothAdmin._dcteleSync.total = total
+
+            EnsureDCTelePrecomputed(list)
+            -- Fast append without per-item overhead if server returns the full list.
+            if reset and offset == 0 and total > 0 and #list >= total then
+              AzerothAdmin.DCTeleports = list
+            else
+              for i = 1, #list do
+                table.insert(AzerothAdmin.DCTeleports, list[i])
               end
-              AzerothAdmin:UpdateDCTeleList()
+            end
+            EnsureDCTelePrecomputed(AzerothAdmin.DCTeleports)
+            InvalidateDCTeleCache()
+
+            AzerothAdmin._dcteleSync.offset = offset + #list
+            AzerothAdmin._dcteleSync.done = done
+
+            -- Throttle expensive UI refresh; schedule via OnUpdate.
+            AzerothAdmin._dcteleNeedUIRefresh = true
+
+            -- Request next page if needed and window is visible.
+            if (not done) and ma_dctele_window and ma_dctele_window:IsShown() then
+              local nextPayload = { offset = AzerothAdmin._dcteleSync.offset, limit = AzerothAdmin._dcteleSync.limit or 20, reset = false }
+              ScheduleDCTeleRequest(ma_dctele_window, nextPayload, 0.05)
             end
       end)
   end
@@ -98,10 +284,21 @@ function AzerothAdmin:CreateDCTeleSection()
 
   -- Request list when window opens
   ma_dctele_window:SetScript("OnShow", function()
-      if DC and DC.Request then
-          DC:Request("TELE", 0x01, {}) -- Request list (CMSG_REQUEST_LIST)
+      -- Render immediately using cached/local data for smooth UX.
+      AzerothAdmin:UpdateDCTeleList(true)
+
+      -- Throttle requests so repeated opens don't re-sync constantly.
+      local now = GetTimeSeconds()
+      AzerothAdmin._dcteleLastRequest = AzerothAdmin._dcteleLastRequest or 0
+      if (now - AzerothAdmin._dcteleLastRequest) < 30 then
+        return
       end
-      AzerothAdmin:UpdateDCTeleList()
+
+      AzerothAdmin._dcteleLastRequest = now
+      AzerothAdmin._dcteleSync = { offset = 0, limit = 20, total = nil, done = false }
+
+      -- Kick off paged sync shortly after opening (lets the frame render first).
+        ScheduleDCTeleRequest(ma_dctele_window, { offset = 0, limit = 20, reset = true }, 0.10)
   end)
   
   FrameLib:BuildFontString({
@@ -133,7 +330,10 @@ function AzerothAdmin:CreateDCTeleSection()
     setpoint = { pos = "TOPLEFT", offX = 10, offY = -35 },
     text = ""
   })
-  ma_dctele_search:SetScript("OnTextChanged", function(self) AzerothAdmin:UpdateDCTeleList() end)
+  local _searchBox = rawget(_G, "ma_dctele_search")
+  if _searchBox and _searchBox.SetScript then
+    _searchBox:SetScript("OnTextChanged", function(self) AzerothAdmin:UpdateDCTeleList() end)
+  end
 
   -- Column headers for sorting
   FrameLib:BuildButton({
@@ -212,10 +412,13 @@ function AzerothAdmin:CreateDCTeleSection()
     setpoint = { pos = "TOPLEFT", offX = 10, offY = -85 },
     texture = { color = {0,0,0,0} }
   })
-  
-  ma_DCTeleScrollBar:SetScript("OnVerticalScroll", function(self, offset)
-      FauxScrollFrame_OnVerticalScroll(self, offset, 20, function() AzerothAdmin:UpdateDCTeleList() end)
-  end)
+
+  local _scrollBar = rawget(_G, "ma_DCTeleScrollBar")
+  if _scrollBar and _scrollBar.SetScript then
+    _scrollBar:SetScript("OnVerticalScroll", function(self, offset)
+        FauxScrollFrame_OnVerticalScroll(self, offset, 20, function() AzerothAdmin:UpdateDCTeleList(false) end)
+    end)
+  end
 
   for i = 1, 20 do
     FrameLib:BuildButton({
@@ -239,41 +442,52 @@ function AzerothAdmin:CreateDCTeleSection()
   end
 end
 
-function AzerothAdmin:UpdateDCTeleList()
+function AzerothAdmin:UpdateDCTeleList(recompute)
     if not AzerothAdmin.DCTeleports then return end
+
+    -- UI might not be created yet depending on load order.
+    local scrollBar = rawget(_G, "ma_DCTeleScrollBar") or ma_DCTeleScrollBar
+    if not scrollBar then
+      return
+    end
     
     local searchText = ""
-    if ma_dctele_search and type(ma_dctele_search.GetText) == "function" then
-        searchText = ma_dctele_search:GetText() or ""
+    local searchBox = rawget(_G, "ma_dctele_search") or ma_dctele_search
+    if searchBox and type(searchBox.GetText) == "function" then
+      searchText = searchBox:GetText() or ""
     end
     searchText = string.lower(searchText)
-    AzerothAdmin.filteredTeleports = {}
-    
-    for _, tele in ipairs(AzerothAdmin.DCTeleports) do
-      if searchText == "" or string.find(string.lower(tele.name), searchText) then
-        table.insert(AzerothAdmin.filteredTeleports, tele)
-      end
-    end
 
-    -- Sort teleports by the selected sort mode
-    local dir = AzerothAdmin.DCTeleSortDir or (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortDir) or "asc"
-    if AzerothAdmin.DCTeleSortBy == "name" then
-      table.sort(AzerothAdmin.filteredTeleports, function(a, b)
-        local an = string.lower(a.name or "")
-        local bn = string.lower(b.name or "")
-        if an == bn then
-          local aid = (a.id or a.ID or a.Id) or 0
-          local bid = (b.id or b.ID or b.Id) or 0
-          if dir == "asc" then return aid < bid else return aid > bid end
+    -- Recompute expensive filter/sort only when needed (open, search change, sort change, list change).
+    if recompute == nil then recompute = true end
+    local sortBy = AzerothAdmin.DCTeleSortBy or (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortBy) or "id"
+    local sortDir = AzerothAdmin.DCTeleSortDir or (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortDir) or "asc"
+    local last = AzerothAdmin._dcteleLastComputed
+
+    if recompute or (not last) or last.list ~= AzerothAdmin.DCTeleports or last.search ~= searchText or last.sortBy ~= sortBy or last.sortDir ~= sortDir then
+      EnsureDCTelePrecomputed(AzerothAdmin.DCTeleports)
+      local sorted = GetSortedTeleports(sortBy, sortDir)
+
+      if searchText == "" then
+        AzerothAdmin.filteredTeleports = sorted
+      else
+        local filtered = {}
+        for i = 1, #sorted do
+          local tele = sorted[i]
+          local name = (type(tele) == "table" and tele._lcName) or ""
+          if string.find(name, searchText, 1, true) then
+            table.insert(filtered, tele)
+          end
         end
-        if dir == "asc" then return an < bn else return an > bn end
-      end)
-    else
-      table.sort(AzerothAdmin.filteredTeleports, function(a, b)
-        local aid = (a.id or a.ID or a.Id) or 0
-        local bid = (b.id or b.ID or b.Id) or 0
-        if dir == "asc" then return aid < bid else return aid > bid end
-      end)
+        AzerothAdmin.filteredTeleports = filtered
+      end
+
+      AzerothAdmin._dcteleLastComputed = {
+        list = AzerothAdmin.DCTeleports,
+        search = searchText,
+        sortBy = sortBy,
+        sortDir = sortDir,
+      }
     end
 
     -- Update header indicators
@@ -288,13 +502,16 @@ function AzerothAdmin:UpdateDCTeleList()
       ma_dctele_col_id:SetText("ID" .. arrow)
     end
     
-    local numItems = #AzerothAdmin.filteredTeleports
-    FauxScrollFrame_Update(ma_DCTeleScrollBar, numItems, 20, 20)
+    local numItems = (AzerothAdmin.filteredTeleports and #AzerothAdmin.filteredTeleports) or 0
+    FauxScrollFrame_Update(scrollBar, numItems, 20, 20)
     
-    local offset = FauxScrollFrame_GetOffset(ma_DCTeleScrollBar)
+    local offset = FauxScrollFrame_GetOffset(scrollBar)
     for i = 1, 20 do
         local index = offset + i
         local button = _G["ma_DCTeleEntry"..i]
+        if not button then
+          return
+        end
         if index <= numItems then
             local tele = AzerothAdmin.filteredTeleports[index]
             local tid = tele.id or tele.ID or tele.Id or 0

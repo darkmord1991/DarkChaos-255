@@ -488,7 +488,7 @@ public:
         auto it = sPlayerDuelStats.find(player->GetGUID());
         if (it == sPlayerDuelStats.end())
         {
-            handler->PSendSysMessage("|cff00ff00[Duel Stats]|r %s has no duel statistics yet.", player->GetName().c_str());
+            handler->PSendSysMessage("|cff00ff00[Duel Stats]|r {} has no duel statistics yet.", player->GetName());
             return true;
         }
 
@@ -497,14 +497,14 @@ public:
         float winRate = total > 0 ? (float(stats.wins) / float(total)) * 100.0f : 0.0f;
 
         handler->SendSysMessage("|cff00ff00========== DUEL STATISTICS ==========|r");
-        handler->PSendSysMessage("|cffffd700Player:|r %s", player->GetName().c_str());
-        handler->PSendSysMessage("|cffffd700Record:|r %u W / %u L / %u D (%.1f%% Win Rate)", 
-                                  stats.wins, stats.losses, stats.draws, winRate);
-        handler->PSendSysMessage("|cffffd700Total Damage Dealt:|r %u", stats.totalDamageDealt);
-        handler->PSendSysMessage("|cffffd700Total Damage Taken:|r %u", stats.totalDamageTaken);
-        handler->PSendSysMessage("|cffffd700Longest Duel:|r %u seconds", stats.longestDuelSeconds);
+        handler->PSendSysMessage("|cffffd700Player:|r {}", player->GetName());
+        handler->PSendSysMessage("|cffffd700Record:|r {} W / {} L / {} D ({:.1f}%% Win Rate)",
+            stats.wins, stats.losses, stats.draws, winRate);
+        handler->PSendSysMessage("|cffffd700Total Damage Dealt:|r {}", stats.totalDamageDealt);
+        handler->PSendSysMessage("|cffffd700Total Damage Taken:|r {}", stats.totalDamageTaken);
+        handler->PSendSysMessage("|cffffd700Longest Duel:|r {} seconds", stats.longestDuelSeconds);
         if (stats.shortestWinSeconds < UINT32_MAX)
-            handler->PSendSysMessage("|cffffd700Fastest Win:|r %u seconds", stats.shortestWinSeconds);
+            handler->PSendSysMessage("|cffffd700Fastest Win:|r {} seconds", stats.shortestWinSeconds);
         handler->SendSysMessage("|cff00ff00======================================|r");
 
         return true;

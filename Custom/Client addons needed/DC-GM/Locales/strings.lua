@@ -20,7 +20,7 @@
 
 function ReturnStrings_enUS()
   return {
-    ["ma_GmatchRevision"] = "AzerothCore rev. (%S*)",
+    ["ma_GmatchRevision"] = "AzerothCore rev%. (.+)",
     ["ma_GmatchGPS"] = "X: (.*) Y: (.*) Z",
     ["ma_GmatchItem"] = "%|cffffffff%|Hitem:(%d+).*%[(.*)%]%|h%|r",
     ["ma_GmatchQuest"] = ".-(%d+).*%[(.*)%]%|h%|r",
@@ -41,8 +41,8 @@ function ReturnStrings_enUS()
     ["ma_GmatchTickets"] = ".+Ticket.-:(.*)Created by.-:|cff00ccff (.*)|r.+Created.-:(.*)Last change.-:(.*)",
     ["ma_GmatchAccountInfo"] = "Player(.*) %(guid: (%d+)%) Account: (.*) %(id: (%d+)%) Email: (.*) GMLevel: (%d+) Last IP: (.*) Last login: (.*) Latency: (%d+)ms",
     ["ma_GmatchAccountInfo2"] = "Race: (.*) Class: (.*) Played time: (.*) Level: (%d+) Money: (.*)",
-    ["ma_GmatchOnlinePlayers"] = "Connected players: (%d+). Characters in world: (%d+).",
-    ["ma_GmatchMaxConnections"] = "Connection peak: (%d+).",
+    ["ma_GmatchOnlinePlayers"] = "Connected players: (%d+)%. Characters in world: (%d+)%.",
+    ["ma_GmatchMaxConnections"] = "Connection peak: (%d+)%.",
     ["ma_GmatchUptime"] = "Server uptime: (.*)",
     ["ma_GmatchActiveConnections"] = "Active connections.*",
     ["ma_GmatchWho"] = "%-%[(.*)%]%[(.*)%]%[(.*)%]%[(.*)%]%[(.*)%]%[(.*)%]%[(.*)%]-",

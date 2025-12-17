@@ -297,7 +297,6 @@ function AzerothAdmin:OnEnable()
   ma_mapsoffbutton:Disable()
   ma_showmapsbutton:Disable()
   ma_hidemapsbutton:Disable()
-  ma_charlistfreezebutton:Disable()
 end
 
 --events
@@ -595,6 +594,60 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   local catchedSth = false
   local output = AzerothAdmin.db.account.style.showchat
 
+  -- Server info response parsing
+  -- NOTE: Do not rely on `id == 1` here. Some chat frame implementations vary the numeric message id.
+  local serverInfoMatched = false
+  if type(text) == "string" then
+    local revisionPattern = Strings and Strings["ma_GmatchRevision"]
+    if revisionPattern then
+      local revision = string.match(text, revisionPattern)
+      if revision then
+        ma_inforevisiontext:SetText(Locale["info_revision"] .. revision)
+        serverInfoMatched = true
+      end
+    end
+
+    local onlinePattern = Strings and Strings["ma_GmatchOnlinePlayers"]
+    if onlinePattern then
+      local users = string.match(text, onlinePattern)
+      if not users then
+        local u = string.match(text, "Connected players: (%d+)")
+        users = u
+      end
+      if users then
+        ma_infoonlinetext:SetText(Locale["info_online"] .. users)
+        serverInfoMatched = true
+      end
+    end
+
+    local maxPattern = Strings and Strings["ma_GmatchMaxConnections"]
+    if maxPattern then
+      local maxConnections = string.match(text, maxPattern)
+      if maxConnections then
+        ma_infomaxonlinetext:SetText(Locale["info_maxonline"] .. maxConnections)
+        serverInfoMatched = true
+      end
+    end
+
+    local uptimePattern = Strings and Strings["ma_GmatchUptime"]
+    if uptimePattern then
+      local uptime = string.match(text, uptimePattern)
+      if uptime then
+        ma_infouptimetext:SetText(Locale["info_uptime"] .. uptime)
+        serverInfoMatched = true
+      end
+    end
+
+    local activePattern = Strings and Strings["ma_GmatchActiveConnections"]
+    if activePattern and string.match(text, activePattern) then
+      serverInfoMatched = true
+    end
+  end
+
+  if serverInfoMatched then
+    catchedSth = true
+  end
+
   -- DC waypoints info response parsing
   -- NOTE: Do not rely on `id == 1` here. `.wp info` uses server system messages
   -- and the numeric message id varies depending on the chat frame implementation.
@@ -633,7 +686,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
     end
   end
 
-  if id == 1 then --make sure that the message comes from the server, message id = 1
+  if id == 1 or serverInfoMatched then --make sure that the message comes from the server, message id = 1
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
     if self.db.char.requests.toggle and not ma_popupframe:IsVisible() then
       self.db.char.requests.toggle = false
@@ -726,26 +779,35 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       end
     end
     if AzerothAdmin:ID_Setting_Start_Read() then
-        local npc_guid_capture = string.match(text, "GUID: (%d+)%.")
-        if npc_guid_capture then
-            AzerothAdmin:ID_Setting_Start_Write(0) -- Reset listening state after capturing GUID
-            AzerothAdmin:ID_Setting_Write(0, npc_guid_capture)
-            ma_NPC_guidbutton:SetText(npc_guid_capture)
-            self:LogAction("NPC_GUID_Get id "..npc_guid_capture..".")
-        end
+      local npc_guid_capture = string.match(text, "GUID: (%d+)%.?")
+      if npc_guid_capture then
+        AzerothAdmin:ID_Setting_Start_Write(0) -- Reset listening state after capturing GUID
+        AzerothAdmin:ID_Setting_Write(0, npc_guid_capture)
+        ma_NPC_guidbutton:SetText(npc_guid_capture)
+        self:LogAction("NPC_GUID_Get id "..npc_guid_capture..".")
+      end
 
-        local npc_entry_capture = string.match(text, "Entry: (%d+)%.")
-        if npc_entry_capture then
-            AzerothAdmin:ID_Setting_Write(1, npc_entry_capture)
-            ma_NPC_idbutton:SetText(npc_entry_capture)
-            self:LogAction("NPC_EntryID_Get id "..npc_entry_capture..".")
-        end
+      local npc_entry_capture = string.match(text, "Entry: (%d+)%.?")
+      if npc_entry_capture then
+        AzerothAdmin:ID_Setting_Start_Write(0)
+        AzerothAdmin:ID_Setting_Write(1, npc_entry_capture)
+        ma_NPC_idbutton:SetText(npc_entry_capture)
+        self:LogAction("NPC_EntryID_Get id "..npc_entry_capture..".")
+      end
 
-        local npc_displayid_capture = string.match(text, "DisplayID: (%d+)")
-        if npc_displayid_capture then
-            ma_npcdisplayid:SetText(npc_displayid_capture)
-            self:LogAction("NPC_DisplayID_Get id "..npc_displayid_capture..".")
-        end
+      local npc_displayid_capture = string.match(text, "DisplayID: (%d+)")
+      if npc_displayid_capture then
+        AzerothAdmin:ID_Setting_Start_Write(0)
+        ma_npcdisplayid:SetText(npc_displayid_capture)
+        self:LogAction("NPC_DisplayID_Get id "..npc_displayid_capture..".")
+      end
+
+      local npc_distance_capture = string.match(text, "%(Exact 3D%) ([%d%.]+)")
+      if npc_distance_capture and ma_npc_distance_box then
+        AzerothAdmin:ID_Setting_Start_Write(0)
+        ma_npc_distance_box:SetText(npc_distance_capture)
+        self:LogAction("NPC_Distance_Get distance "..npc_distance_capture..".")
+      end
     end
 
     if AzerothAdmin:OID_Setting_Start_Read() then
@@ -767,6 +829,12 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
         if obj_displayid_capture then
             ma_gobdisplayid:SetText(obj_displayid_capture)
             self:LogAction("OBJECT DisplayID"..obj_displayid_capture..".")
+        end
+
+        local obj_phasemask_capture = string.match(text, "Phasemask (%d+)")
+        if obj_phasemask_capture then
+          ma_gobsetphaseinput:SetText(obj_phasemask_capture)
+          self:LogAction("OBJECT Phasemask "..obj_phasemask_capture..".")
         end
     end
 
@@ -925,7 +993,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
 --        output = AzerothAdmin.db.account.style.showchat
         output = AzerothAdmin.db.account.style.showchat
     end
-    for users in string.gmatch(text, Strings["ma_GmatchOnlinePlayers"]) do
+    for users, charsInWorld in string.gmatch(text, Strings["ma_GmatchOnlinePlayers"]) do
       ma_infoonlinetext:SetText(Locale["info_online"]..users)
         catchedSth = true
 --        output = AzerothAdmin.db.account.style.showchat
@@ -1748,7 +1816,7 @@ function AzerothAdmin:InitButtons()
   --self:PrepareScript(ma_learnclassbutton     , nil                             , function() AzerothAdmin:LearnSpell("all_myclass") end)
   self:PrepareScript(ma_searchbutton         , nil                             , function() AzerothAdmin:SearchStart("item", ma_searcheditbox:GetText()) end)
   self:PrepareScript(ma_resetsearchbutton    , nil                             , function() AzerothAdmin:SearchReset() end)
-  self:PrepareScript(ma_closebutton          , nil                             , function() AzerothAdmin:CloseButton("bg") end)
+  self:PrepareScript(ma_closebutton          , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("bg") end)
   self:PrepareScript(ma_popupclosebutton     , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("popup") end)
   self:PrepareScript(ma_popup2closebutton    , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("popup2") end)
   self:PrepareScript(ma_inforefreshbutton    , nil                             , function() AzerothAdmin:ChatMsg(".server info") end)

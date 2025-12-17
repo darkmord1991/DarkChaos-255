@@ -95,7 +95,7 @@ function SetSpeed()
   local value = string.format("%.1f", ma_speedslider:GetValue())
   if AzerothAdmin:Selection("player") or AzerothAdmin:Selection("self") or AzerothAdmin:Selection("none") then
     local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".modify aspeed "..value)
+    AzerothAdmin:ChatMsg(".mod speed all "..value)
     AzerothAdmin:LogAction("Set all speed of "..player.." to "..value..".")
   else
     AzerothAdmin:Print(Locale["selectionerror1"])
@@ -405,12 +405,12 @@ end
 function ResetSpeed()
     ma_speedslider:SetValue(1)
     ma_speedsliderText:SetText("Speed: 1.0")
-    AzerothAdmin:ChatMsg(".modify aspeed 1")
+    AzerothAdmin:ChatMsg(".mod speed all 1")
 
 end
 
 function ResetScale()
   ma_scaleslider:SetValue(1)
   ma_scalesliderText:SetText("Scale: 1.0")
-  AzerothAdmin:ChatMsg(".modify scale 1")
+  AzerothAdmin:ChatMsg(".mod scale 1")
 end

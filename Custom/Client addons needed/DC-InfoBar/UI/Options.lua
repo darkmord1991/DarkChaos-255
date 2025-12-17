@@ -24,77 +24,41 @@ function DCInfoBar:CreateOptionsPanel()
         pcall(function() self:InitializeDB() end)
     end
 
-    -- Main panel for Interface Options
-    local panel = CreateFrame("Frame", "DCInfoBarOptionsPanel", UIParent)
-    panel.name = "DC-InfoBar"
-    panel:Hide()
-    
-    -- Title
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    -- Parent panel
+    local root = CreateFrame("Frame", "DCInfoBarOptionsPanel", UIParent)
+    root.name = "DC-InfoBar"
+    root:Hide()
+
+    local title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("DC-InfoBar Settings")
-    
-    -- Version
-    local version = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+
+    local version = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     version:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
     version:SetText("Version " .. (DCInfoBar.VERSION or "1.0.0"))
     version:SetTextColor(0.5, 0.5, 0.5)
-    
-    -- Tab container
-    local tabContainer = CreateFrame("Frame", nil, panel)
-    tabContainer:SetPoint("TOPLEFT", 16, -60)
-    tabContainer:SetPoint("BOTTOMRIGHT", -16, 16)
-    
-    -- Create tabs
-    local tabs = {}
-    local tabNames = { "General", "Plugins", "Position", "Communication" }
-    local currentTab = 1
-    
-    -- Tab content frames
-    local tabFrames = {}
-    
-    for i, tabName in ipairs(tabNames) do
-        -- Tab button
-        local tab = CreateFrame("Button", nil, panel)
-        tab:SetSize(100, 24)
-        tab:SetPoint("TOPLEFT", 16 + (i-1) * 105, -55)
-        
-        tab.bg = tab:CreateTexture(nil, "BACKGROUND")
-        tab.bg:SetAllPoints()
-        tab.bg:SetColorTexture(0.15, 0.15, 0.18, 0.8)
-        
-        tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        tab.text:SetPoint("CENTER")
-        tab.text:SetText(tabName)
-        
-        tab:SetScript("OnClick", function()
-            currentTab = i
-            DCInfoBar:RefreshTabDisplay(tabFrames, i, tabs)
-        end)
-        
-        tab:SetScript("OnEnter", function(self)
-            self.bg:SetColorTexture(0.25, 0.25, 0.3, 0.9)
-        end)
-        
-        tab:SetScript("OnLeave", function(self)
-            if currentTab ~= i then
-                self.bg:SetColorTexture(0.15, 0.15, 0.18, 0.8)
-            end
-        end)
-        
-        tabs[i] = tab
-        
-        -- Tab content frame
-        local content = CreateFrame("Frame", nil, tabContainer)
-        content:SetPoint("TOPLEFT", 0, -30)
-        content:SetPoint("BOTTOMRIGHT", 0, 0)
-        content:Hide()
-        
-        tabFrames[i] = content
+
+    local hint = root:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    hint:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -12)
+    hint:SetWidth(560)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Use the sub-categories on the left (General / Plugins / Position / Communication).")
+
+    -- Child panels (match other DC addons: Interface Options subcategories)
+    local function CreateChildPanel(suffix, displayName)
+        local p = CreateFrame("Frame", "DCInfoBarOptionsPanel_" .. suffix, UIParent)
+        p.name = displayName
+        p.parent = root.name
+        p:Hide()
+        return p
     end
-    
-    -- Create tab contents (guard each tab so one failure doesn't blank others)
-    local function SafeBuildTab(label, fn)
+
+    local general = CreateChildPanel("General", "General")
+    local plugins = CreateChildPanel("Plugins", "Plugins")
+    local position = CreateChildPanel("Position", "Position")
+    local comm = CreateChildPanel("Communication", "Communication")
+
+    local function SafeBuild(label, fn)
         local ok, err = xpcall(fn, function(e)
             local trace = ""
             if debugstack then
@@ -102,60 +66,47 @@ function DCInfoBar:CreateOptionsPanel()
             end
             return tostring(e) .. (trace ~= "" and (" | " .. trace) or "")
         end)
-        if not ok then
-            if self.Print then
-                self:Print("Options UI build error (" .. label .. "): " .. tostring(err))
-            end
+        if not ok and self.Print then
+            self:Print("Options UI build error (" .. label .. "): " .. tostring(err))
         end
     end
 
-    SafeBuildTab("General", function() self:CreateGeneralTab(tabFrames[1]) end)
-    SafeBuildTab("Plugins", function() self:CreatePluginsTab(tabFrames[2]) end)
-    SafeBuildTab("Position", function() self:CreatePositionTab(tabFrames[3]) end)
-    SafeBuildTab("Communication", function() self:CreateCommunicationTab(tabFrames[4]) end)
-    
-    -- Show first tab
-    self:RefreshTabDisplay(tabFrames, 1, tabs)
-    
+    SafeBuild("General", function() self:CreateGeneralTab(general) end)
+    SafeBuild("Plugins", function() self:CreatePluginsTab(plugins) end)
+    SafeBuild("Position", function() self:CreatePositionTab(position) end)
+    SafeBuild("Communication", function() self:CreateCommunicationTab(comm) end)
+
     -- Register with Interface Options
-    -- On some 3.3.5a clients, Blizzard_InterfaceOptions may not be loaded yet at login.
     if not InterfaceOptions_AddCategory and UIParentLoadAddOn then
         pcall(UIParentLoadAddOn, "Blizzard_InterfaceOptions")
     end
 
-    if InterfaceOptions_AddCategory then
-        InterfaceOptions_AddCategory(panel)
-    else
-        -- Defer until the Blizzard options addon is loaded.
+    local function RegisterAll()
+        if not InterfaceOptions_AddCategory then return false end
+        InterfaceOptions_AddCategory(root)
+        InterfaceOptions_AddCategory(general)
+        InterfaceOptions_AddCategory(plugins)
+        InterfaceOptions_AddCategory(position)
+        InterfaceOptions_AddCategory(comm)
+        return true
+    end
+
+    if not RegisterAll() then
         local reg = CreateFrame("Frame")
         reg:RegisterEvent("ADDON_LOADED")
         reg:SetScript("OnEvent", function(self, _, name)
-            if name == "Blizzard_InterfaceOptions" and InterfaceOptions_AddCategory then
-                InterfaceOptions_AddCategory(panel)
-                self:UnregisterEvent("ADDON_LOADED")
-                self:SetScript("OnEvent", nil)
+            if name == "Blizzard_InterfaceOptions" then
+                if RegisterAll() then
+                    self:UnregisterEvent("ADDON_LOADED")
+                    self:SetScript("OnEvent", nil)
+                end
             end
         end)
     end
-    
-    self.optionsPanel = panel
-    return panel
-end
 
-function DCInfoBar:RefreshTabDisplay(tabFrames, activeIndex, tabs)
-    for i, frame in ipairs(tabFrames) do
-        if i == activeIndex then
-            frame:Show()
-            if tabs[i] then
-                tabs[i].bg:SetColorTexture(0.3, 0.5, 0.8, 0.9)
-            end
-        else
-            frame:Hide()
-            if tabs[i] then
-                tabs[i].bg:SetColorTexture(0.15, 0.15, 0.18, 0.8)
-            end
-        end
-    end
+    self.optionsPanel = root
+    self.optionsChildPanels = { general = general, plugins = plugins, position = position, communication = comm }
+    return root
 end
 
 -- ============================================================================

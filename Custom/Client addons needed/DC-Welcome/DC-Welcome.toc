@@ -20,3 +20,6 @@ MinimapButton.lua
 TitleFix.lua
 RestoreXP.lua
 Seasons.lua
+
+## Tooltip helpers
+NPCTooltip.lua

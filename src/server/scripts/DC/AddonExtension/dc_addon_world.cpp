@@ -255,8 +255,7 @@ namespace World
         return arr;
     }
 
-    // Handler: Client requests world content
-    static void HandleGetContent(Player* player, const ParsedMessage& /*msg*/)
+    void SendWorldContentSnapshot(Player* player)
     {
         JsonValue hotspots = BuildHotspotArray();
         JsonValue bosses = BuildBossArray();
@@ -285,6 +284,12 @@ namespace World
                 upd.Send(player);
             }
         }
+    }
+
+    // Handler: Client requests world content
+    static void HandleGetContent(Player* player, const ParsedMessage& /*msg*/)
+    {
+        SendWorldContentSnapshot(player);
     }
 
     void RegisterHandlers()

@@ -38,6 +38,8 @@
 #include <functional>
 #include <unordered_map>
 #include <sstream>
+#include <iomanip>
+#include <cmath>
 #include <map>
 
 namespace DCAddon
@@ -935,8 +937,24 @@ namespace DCAddon
                 case Null: return "null";
                 case Bool: return _bool ? "true" : "false";
                 case Number: {
+                    // IMPORTANT: Preserve integer fidelity for large IDs (e.g. spawnId ~= 9,000,000).
+                    // Default iostream precision (6) would round 9000189/9000191 to 9.00019e+06.
+                    if (std::isfinite(_number))
+                    {
+                        double intPart = 0.0;
+                        if (std::modf(_number, &intPart) == 0.0)
+                        {
+                            // Integer: emit without scientific notation.
+                            std::ostringstream ss;
+                            ss.setf(std::ios::fmtflags(0), std::ios::floatfield);
+                            ss << static_cast<long long>(intPart);
+                            return ss.str();
+                        }
+                    }
+
+                    // Non-integer: emit with enough precision to round-trip.
                     std::ostringstream ss;
-                    ss << _number;
+                    ss << std::setprecision(15) << _number;
                     return ss.str();
                 }
                 case String: {

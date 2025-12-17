@@ -27,7 +27,9 @@ local FrameLib = { group = {} }
 
 --[[ADD FRAME TO GROUP]]
 function FrameLib:AddGroupFrame(group, frame)
-  if not group then return end  -- Skip if group is nil
+  if not group then
+    return
+  end
   if type(self.group[group]) ~= "table" then
     self.group[group] = {}
   end
@@ -178,6 +180,7 @@ function FrameLib:BuildFrame(def)
   end
   
   if def.type == "EditBox" then
+    frame:SetAutoFocus(false)
     frame:ClearFocus()
     --frame:SetScript("OnEnter", function() frame:SetFocus() end)
     --frame:SetScript("OnLeave", function() frame:ClearFocus() end)
@@ -327,21 +330,26 @@ function FrameLib:BuildTexture(def)
 end
 
 --[[BUILD EDITBOX]]
-function FrameLib:BuildEditBox(def)
+function FrameLib:BuildEditBox(def)	
   local editbox = CreateFrame("EditBox", def.name, def.parent, "InputBoxTemplate")
   self:AddGroupFrame(def.group, editbox)
-  if def.autofocus then
-    editbox:SetFocus()
+  -- InputBoxTemplate provides visuals; ensure API calls are valid even when options are omitted.
+  editbox:SetAutoFocus(def.autofocus == true)
+  if def.maxLetters ~= nil then
+    editbox:SetMaxLetters(def.maxLetters)
   end
-  editbox:SetMaxLetters(def.maxLetters)
-  editbox:SetMultiLine(def.multiline)
+  if def.multiline ~= nil then
+    editbox:SetMultiLine(def.multiline)
+  end
   local t = def.size
   if t then
     editbox:SetWidth(t.width or 100)
     editbox:SetHeight(t.height or 100)
   end
   editbox:SetPoint(def.setpoint.pos or "CENTER", def.setpoint.relTo or editbox:GetParent() or UIParent, def.setpoint.relPos or def.setpoint.pos or "CENTER", def.setpoint.offX or 0, def.setpoint.offY or 0)
-  editbox:CreateFontString(nil, "ARTWORK", def.fontString or "GameFontNormal")
+  if def.fontString then
+    editbox:SetFontObject(def.fontString)
+  end
   t = def.text
   if t then	editbox:SetText(t) end
   return editbox

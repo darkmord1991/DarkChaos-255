@@ -37,6 +37,7 @@ local defaults = {
     showMinimapButton = true,   -- Minimap button visibility
     enableSounds = true,        -- Sound effects
     showTooltips = true,        -- Feature tooltips
+    enableCommunication = true,  -- DCAddonProtocol server communication
     pluginSettings = {},        -- Per-plugin settings storage
 }
 
@@ -181,6 +182,10 @@ local function SaveSetting(key, value)
     DCWelcomeDB[key] = value
 end
 
+function DCWelcome:IsCommunicationEnabled()
+    return not (type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false)
+end
+
 -- =============================================================================
 -- Server Info Handling
 -- =============================================================================
@@ -194,21 +199,21 @@ function DCWelcome:GetCurrentSeason()
 end
 
 function DCWelcome:RequestServerInfo()
-    if DC then
+    if DC and self:IsCommunicationEnabled() then
         DC:Request(self.Module, self.Opcode.CMSG_GET_SERVER_INFO, {})
         DebugPrint("Requested server info")
     end
 end
 
 function DCWelcome:RequestFAQ(category)
-    if DC then
+    if DC and self:IsCommunicationEnabled() then
         DC:Request(self.Module, self.Opcode.CMSG_GET_FAQ, { category = category or "all" })
         DebugPrint("Requested FAQ data")
     end
 end
 
 function DCWelcome:RequestWhatsNew()
-    if DC then
+    if DC and self:IsCommunicationEnabled() then
         DC:Request(self.Module, self.Opcode.CMSG_GET_WHATS_NEW, {})
         DebugPrint("Requested What's New data")
     end
@@ -244,6 +249,11 @@ end
 -- =============================================================================
 
 local function RegisterHandlers()
+    if not DCWelcome:IsCommunicationEnabled() then
+        DebugPrint("Communication disabled; skipping handler registration")
+        return
+    end
+
     if not DC then
         DC = rawget(_G, "DCAddonProtocol")
     end
@@ -1125,15 +1135,24 @@ local function CreateSettingsPanel()
     desc:SetJustifyH("LEFT")
     desc:SetText("Configure the welcome screen and first-start experience settings.")
     
-    local yPos = -70
+    -- Scroll container (prevents controls from overflowing the Interface Options window)
+    local scrollFrame = CreateFrame("ScrollFrame", "DCWelcomeSettingsScrollFrame", panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 0, -60)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
+
+    local content = CreateFrame("Frame", "DCWelcomeSettingsScrollChild", scrollFrame)
+    content:SetSize(560, 800)
+    scrollFrame:SetScrollChild(content)
+
+    local yPos = -10
     
     -- Server Info Section
-    local serverHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local serverHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     serverHeader:SetPoint("TOPLEFT", 16, yPos)
     serverHeader:SetText("|cffffd700Server Information|r")
     yPos = yPos - 22
     
-    local serverInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local serverInfo = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     serverInfo:SetPoint("TOPLEFT", 24, yPos)
     serverInfo:SetWidth(300)
     serverInfo:SetJustifyH("LEFT")
@@ -1141,12 +1160,12 @@ local function CreateSettingsPanel()
     yPos = yPos - 60
     
     -- Discord link
-    local discordLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local discordLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     discordLabel:SetPoint("TOPLEFT", 16, yPos)
     discordLabel:SetText("|cffffd700Discord:|r |cff00ccffhttps://discord.gg/pNddMEMbb2|r")
     yPos = yPos - 25
     
-    local discordBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local discordBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     discordBtn:SetSize(150, 24)
     discordBtn:SetPoint("TOPLEFT", 24, yPos)
     discordBtn:SetText("Copy Discord Link")
@@ -1162,13 +1181,13 @@ local function CreateSettingsPanel()
     yPos = yPos - 40
     
     -- Settings Section
-    local settingsHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local settingsHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     settingsHeader:SetPoint("TOPLEFT", 16, yPos)
     settingsHeader:SetText("|cffffd700Display Settings|r")
     yPos = yPos - 25
     
     -- Show on login checkbox
-    local showOnLoginCheck = CreateFrame("CheckButton", "DCWelcome_ShowOnLogin", panel, "InterfaceOptionsCheckButtonTemplate")
+    local showOnLoginCheck = CreateFrame("CheckButton", "DCWelcome_ShowOnLogin", content, "InterfaceOptionsCheckButtonTemplate")
     showOnLoginCheck:SetPoint("TOPLEFT", 24, yPos)
     showOnLoginCheck:SetHitRectInsets(0, -200, 0, 0)
     _G["DCWelcome_ShowOnLoginText"]:SetText("Show welcome screen on first login")
@@ -1179,7 +1198,7 @@ local function CreateSettingsPanel()
     yPos = yPos - 28
     
     -- Show level milestones checkbox
-    local showMilestonesCheck = CreateFrame("CheckButton", "DCWelcome_ShowMilestones", panel, "InterfaceOptionsCheckButtonTemplate")
+    local showMilestonesCheck = CreateFrame("CheckButton", "DCWelcome_ShowMilestones", content, "InterfaceOptionsCheckButtonTemplate")
     showMilestonesCheck:SetPoint("TOPLEFT", 24, yPos)
     showMilestonesCheck:SetHitRectInsets(0, -200, 0, 0)
     _G["DCWelcome_ShowMilestonesText"]:SetText("Show level milestone notifications")
@@ -1189,13 +1208,35 @@ local function CreateSettingsPanel()
     end)
     yPos = yPos - 40
     
+    -- Tooltip checkbox
+    local showTooltipsCheck = CreateFrame("CheckButton", "DCWelcome_ShowTooltips", content, "InterfaceOptionsCheckButtonTemplate")
+    showTooltipsCheck:SetPoint("TOPLEFT", 24, yPos)
+    showTooltipsCheck:SetHitRectInsets(0, -260, 0, 0)
+    _G["DCWelcome_ShowTooltipsText"]:SetText("Show NPC tooltips (Entry + Spawn ID)")
+    showTooltipsCheck:SetScript("OnClick", function(self)
+        DCWelcomeDB = DCWelcomeDB or {}
+        DCWelcomeDB.showTooltips = self:GetChecked()
+    end)
+    yPos = yPos - 28
+
+    -- Communication checkbox
+    local commCheck = CreateFrame("CheckButton", "DCWelcome_EnableCommunication", content, "InterfaceOptionsCheckButtonTemplate")
+    commCheck:SetPoint("TOPLEFT", 24, yPos)
+    commCheck:SetHitRectInsets(0, -260, 0, 0)
+    _G["DCWelcome_EnableCommunicationText"]:SetText("Enable server communication (DCAddonProtocol)")
+    commCheck:SetScript("OnClick", function(self)
+        DCWelcomeDB = DCWelcomeDB or {}
+        DCWelcomeDB.enableCommunication = self:GetChecked()
+    end)
+    yPos = yPos - 40
+
     -- Quick Actions Section
-    local actionsHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local actionsHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     actionsHeader:SetPoint("TOPLEFT", 16, yPos)
     actionsHeader:SetText("|cffffd700Quick Actions|r")
     yPos = yPos - 25
     
-    local openWelcomeBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local openWelcomeBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     openWelcomeBtn:SetSize(150, 24)
     openWelcomeBtn:SetPoint("TOPLEFT", 24, yPos)
     openWelcomeBtn:SetText("Open Welcome Screen")
@@ -1203,7 +1244,7 @@ local function CreateSettingsPanel()
         DCWelcome:ShowWelcome(true)
     end)
     
-    local openFAQBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local openFAQBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     openFAQBtn:SetSize(100, 24)
     openFAQBtn:SetPoint("LEFT", openWelcomeBtn, "RIGHT", 10, 0)
     openFAQBtn:SetText("Open FAQ")
@@ -1217,7 +1258,7 @@ local function CreateSettingsPanel()
     end)
     yPos = yPos - 35
     
-    local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     resetBtn:SetSize(150, 24)
     resetBtn:SetPoint("TOPLEFT", 24, yPos)
     resetBtn:SetText("Reset Welcome State")
@@ -1232,27 +1273,32 @@ local function CreateSettingsPanel()
     yPos = yPos - 50
     
     -- About Section
-    local aboutHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local aboutHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     aboutHeader:SetPoint("TOPLEFT", 16, yPos)
     aboutHeader:SetText("|cffffd700About|r")
     yPos = yPos - 20
     
-    local aboutText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local aboutText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     aboutText:SetPoint("TOPLEFT", 24, yPos)
     aboutText:SetWidth(500)
     aboutText:SetJustifyH("LEFT")
-    aboutText:SetText("DC-Welcome v1.0.0\n" ..
+    aboutText:SetText("DC-Welcome v" .. tostring(DCWelcome.VERSION or "2.0.0") .. "\n" ..
                       "First-start experience and new player introduction for DarkChaos-255.\n\n" ..
                       "Commands:\n" ..
                       "  /welcome - Open the welcome screen\n" ..
                       "  /faq - Open the FAQ section\n" ..
                       "  /discord - Get Discord invite link")
+
+    -- Finalize scroll child height
+    content:SetHeight(math.abs(yPos) + 40)
     
     -- Update values on show
     panel:SetScript("OnShow", function(self)
         DCWelcomeDB = DCWelcomeDB or {}
         showOnLoginCheck:SetChecked(not DCWelcomeDB.dismissed)
         showMilestonesCheck:SetChecked(DCWelcomeDB.showMilestones ~= false)
+        showTooltipsCheck:SetChecked(DCWelcomeDB.showTooltips ~= false)
+        commCheck:SetChecked(DCWelcomeDB.enableCommunication ~= false)
         
         local info = DCWelcome:GetServerInfo()
         local season = DCWelcome:GetCurrentSeason()

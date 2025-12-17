@@ -509,69 +509,14 @@ local function NormalizeHotspotItem(h)
 end
 
 -- Fallback boss definitions (used if the server only sends partial boss lists)
-local DEFAULT_GIANT_ISLES_BOSSES = {
+-- Single source of truth for client-side boss identity/metadata.
+DCInfoBar.DEFAULT_WORLD_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES or {
     { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge" },
     { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge" },
     { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks" },
 }
 
-local function GetCurrentWDay0()
-    if date then
-        local t = date("*t")
-        if t and t.wday then
-            return (tonumber(t.wday) - 1) % 7
-        end
-    end
-    return 0
-end
-
-local function SecondsUntilNextMidnight()
-    if not date or not time then
-        return 0
-    end
-
-    local t = date("*t")
-    if not t then
-        return 0
-    end
-
-    local nextMid = {
-        year = t.year,
-        month = t.month,
-        day = t.day + 1,
-        hour = 0,
-        min = 0,
-        sec = 0,
-    }
-
-    local now = time()
-    local nextTime = time(nextMid)
-    local diff = (nextTime and now) and (nextTime - now) or 0
-    if diff < 0 then diff = 0 end
-    return diff
-end
-
-local function BossEntryForDay(d0)
-    -- Mon/Thu = Oondasta; Tue/Fri = Thok; Wed/Sat/Sun = Nalak
-    if d0 == 0 or d0 == 3 or d0 == 6 then return 400102 end
-    if d0 == 1 or d0 == 4 then return 400100 end
-    if d0 == 2 or d0 == 5 then return 400101 end
-    return 400100
-end
-
-local function SecondsUntilBossRotation(currentDay0, bossEntry)
-    local secondsUntilNextMidnight = SecondsUntilNextMidnight()
-    for offset = 0, 6 do
-        local d0 = (currentDay0 + offset) % 7
-        if BossEntryForDay(d0) == bossEntry then
-            if offset == 0 then
-                return 0
-            end
-            return secondsUntilNextMidnight + ((offset - 1) * 24 * 60 * 60)
-        end
-    end
-    return secondsUntilNextMidnight
-end
+local DEFAULT_GIANT_ISLES_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES
 
 function DCInfoBar:EnsureDefaultWorldBosses()
     self.serverData.worldBosses = self.serverData.worldBosses or {}
@@ -579,6 +524,10 @@ function DCInfoBar:EnsureDefaultWorldBosses()
 
     local function NormName(s)
         s = tostring(s or "")
+        -- Strip WoW formatting codes so comparisons are stable.
+        s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+        s = string.gsub(s, "|r", "")
+        s = string.gsub(s, "|T.-|t", "")
         s = string.lower(s)
         s = string.gsub(s, "[^a-z0-9]+", "")
         return s
@@ -587,8 +536,55 @@ function DCInfoBar:EnsureDefaultWorldBosses()
     local existingBySpawnId = {}
     local existingByEntry = {}
     local existingByName = {}
+
+    local defaultBySpawnId = {}
+    local defaultByEntry = {}
+    local defaultByName = {}
+    for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
+        defaultBySpawnId[tonumber(def.spawnId)] = def
+        defaultByEntry[tonumber(def.entry)] = def
+        defaultByName[NormName(def.name)] = def
+    end
+
     for _, b in ipairs(bosses) do
         if b then
+            if b.spawnId ~= nil then b.spawnId = tonumber(b.spawnId) or b.spawnId end
+            if b.entry ~= nil then b.entry = tonumber(b.entry) or b.entry end
+
+            -- If the server sent a legacy record without spawnId, recover it using defaults.
+            if (not b.spawnId) and b.entry and defaultByEntry[tonumber(b.entry)] then
+                b.spawnId = defaultByEntry[tonumber(b.entry)].spawnId
+            end
+
+            -- If we have spawnId but are missing entry, recover entry using defaults.
+            if (not b.entry) and b.spawnId and defaultBySpawnId[tonumber(b.spawnId)] then
+                b.entry = defaultBySpawnId[tonumber(b.spawnId)].entry
+            end
+
+            -- Patch missing identifiers/fields so future merges can match reliably.
+            local def = nil
+            if b.spawnId and defaultBySpawnId[tonumber(b.spawnId)] then
+                def = defaultBySpawnId[tonumber(b.spawnId)]
+            elseif b.entry and defaultByEntry[tonumber(b.entry)] then
+                def = defaultByEntry[tonumber(b.entry)]
+            elseif b.name and defaultByName[NormName(b.name)] then
+                def = defaultByName[NormName(b.name)]
+            end
+
+            if def then
+                if not b.spawnId then b.spawnId = def.spawnId end
+                -- For these three scripted bosses, prefer canonical metadata to keep UI stable.
+                if (not b.entry) or tonumber(b.entry) ~= tonumber(def.entry) then
+                    b.entry = def.entry
+                end
+                if (not b.zone) or b.zone == "Unknown" or b.zone == "Unknown Zone" or NormName(b.zone) == "" or (NormName(b.zone) ~= NormName(def.zone)) then
+                    b.zone = def.zone
+                end
+                if (not b.name) or b.name == "Unknown" or tostring(b.name) == tostring(def.entry) or (NormName(b.name) ~= NormName(def.name)) then
+                    b.name = def.name
+                end
+            end
+
             if b.spawnId then
                 existingBySpawnId[tonumber(b.spawnId)] = b
             end
@@ -601,49 +597,21 @@ function DCInfoBar:EnsureDefaultWorldBosses()
         end
     end
 
-    local day0 = GetCurrentWDay0()
-    local activeEntry = BossEntryForDay(day0)
-
     for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
         -- Ensure each configured spawnId exists. spawnId is the authoritative identity.
         local existing = existingBySpawnId[def.spawnId]
         if existing then
-            -- Patch missing identifiers/fields so future merges can match reliably.
-            if not existing.spawnId then existing.spawnId = def.spawnId end
-            if not existing.entry then existing.entry = def.entry end
-            if not existing.zone or existing.zone == "Unknown" or existing.zone == "Unknown Zone" then
-                existing.zone = def.zone
-            end
-            if (not existing.name) or existing.name == "Unknown" or tostring(existing.name) == tostring(def.entry) then
-                existing.name = def.name
-            end
-
-            -- If we only have fallback timing and the server hasn't provided better info,
-            -- fill in a rotation-based spawnIn.
-            if (existing.status ~= "active") and (existing.spawnIn == nil or tonumber(existing.spawnIn) == nil) then
-                if def.entry == activeEntry then
-                    existing.status = existing.status or "active"
-                    existing.spawnIn = existing.spawnIn or 0
-                else
-                    existing.status = existing.status or "spawning"
-                    existing.spawnIn = existing.spawnIn or SecondsUntilBossRotation(day0, def.entry)
-                end
-            end
+            -- Do not invent timers client-side; server is authoritative.
+            existing.status = existing.status or "spawning"
         else
             local rec = {
                 entry = def.entry,
                 name = def.name,
                 zone = def.zone,
                 spawnId = def.spawnId,
+                status = "spawning",
+                spawnIn = nil,
             }
-
-            if def.entry == activeEntry then
-                rec.status = "active"
-                rec.spawnIn = 0
-            else
-                rec.status = "spawning"
-                rec.spawnIn = SecondsUntilBossRotation(day0, def.entry)
-            end
 
             table.insert(bosses, rec)
             existingBySpawnId[def.spawnId] = rec
@@ -659,9 +627,16 @@ function DCInfoBar:EnsureDefaultWorldBosses()
         while i <= #bosses do
             local b = bosses[i]
             local key = nil
-            -- Prefer spawnId as primary identity.
-            if b and b.spawnId then
-                key = "s:" .. tostring(b.spawnId)
+
+            -- Prefer spawnId as primary identity. If missing, try to recover it from defaults.
+            local sid = (b and b.spawnId and tonumber(b.spawnId)) or nil
+            if (not sid) and b and b.entry and defaultByEntry[tonumber(b.entry)] then
+                sid = defaultByEntry[tonumber(b.entry)].spawnId
+                b.spawnId = sid
+            end
+
+            if sid then
+                key = "s:" .. tostring(sid)
             elseif b and b.entry then
                 key = "e:" .. tostring(b.entry)
             elseif b and b.name then
@@ -702,6 +677,20 @@ end
 
 function DCInfoBar:HandleWorldContent(data)
     if not data then return end
+    self.serverData._lastWRLDContentAt = (GetTime and GetTime() or 0)
+
+    -- Debug capture: store a small summary of the raw boss payload.
+    if type(data.bosses) == "table" then
+        self.serverData._lastWRLDBossContentSummary = {}
+        for _, b in ipairs(data.bosses) do
+            if type(b) == "table" then
+                table.insert(self.serverData._lastWRLDBossContentSummary, string.format(
+                    "spawnId=%s entry=%s status=%s active=%s spawnIn=%s action=%s",
+                    tostring(b.spawnId), tostring(b.entry or b.npcEntry or b.creatureEntry), tostring(b.status or b.state), tostring(b.active), tostring(b.spawnIn or b.timeLeft), tostring(b.action)
+                ))
+            end
+        end
+    end
     -- Hotspots (not currently shown in DC-InfoBar but store for completeness)
     if data.hotspots then
         local hotspots = {}
@@ -833,6 +822,20 @@ end
 -- Handle world content updates (partial updates - merge with existing state)
 function DCInfoBar:HandleWorldUpdate(data)
     if not data then return end
+    self.serverData._lastWRLDUpdateAt = (GetTime and GetTime() or 0)
+
+    -- Debug capture: store a small summary of the most recent boss update payload.
+    if type(data.bosses) == "table" then
+        self.serverData._lastWRLDBossUpdateSummary = {}
+        for _, b in ipairs(data.bosses) do
+            if type(b) == "table" then
+                table.insert(self.serverData._lastWRLDBossUpdateSummary, string.format(
+                    "spawnId=%s entry=%s status=%s active=%s spawnIn=%s action=%s",
+                    tostring(b.spawnId), tostring(b.entry or b.npcEntry or b.creatureEntry), tostring(b.status or b.state), tostring(b.active), tostring(b.spawnIn or b.timeLeft), tostring(b.action)
+                ))
+            end
+        end
+    end
 
     -- Hotspot updates
     if data.hotspots then

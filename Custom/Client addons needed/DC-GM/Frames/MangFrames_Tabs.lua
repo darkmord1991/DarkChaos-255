@@ -47,7 +47,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 30,
       height = 20
     },
     setpoint = {
@@ -74,7 +74,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 40,
       height = 20
     },
     setpoint = {
@@ -100,7 +100,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 35,
       height = 20
     },
     setpoint = {
@@ -126,7 +126,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 35,
       height = 20
     },
     setpoint = {
@@ -153,7 +153,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 40,
       height = 20
     },
     setpoint = {
@@ -179,7 +179,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 55,
       height = 20
     },
     setpoint = {
@@ -205,7 +205,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 40,
       height = 20
     },
     setpoint = {
@@ -232,7 +232,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 55,
       height = 20
     },
     setpoint = {
@@ -258,7 +258,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 35,
       height = 20
     },
     setpoint = {
@@ -284,7 +284,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 35,
       height = 20
     },
     setpoint = {
@@ -310,7 +310,7 @@ function AzerothAdmin:CreateTabs()
       }
     },
     size = {
-      width = 60,
+      width = 30,
       height = 20
     },
     setpoint = {

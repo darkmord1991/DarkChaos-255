@@ -20,6 +20,7 @@
 #include "Player.h"
 #include "World.h"
 #include "Chat.h"
+#include "GameTime.h"
 #include "../AddonExtension/DCAddonNamespace.h"
 
 enum OondastaSpells
@@ -211,9 +212,19 @@ public:
                 b.Set("guid", DCAddon::JsonValue(me->GetGUID().ToString()));
                 b.Set("active", DCAddon::JsonValue(false));
                 b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(me->GetHealthPct())));
+                // Ensure respawn time is recorded before we compute it
+                me->SetRespawnTime(me->GetRespawnDelay());
+                me->SaveRespawnTime();
                 {
                     time_t now = GameTime::GetGameTime().count();
-                    int64 diff = static_cast<int64>(me->GetRespawnTimeEx()) - static_cast<int64>(now);
+                    int64 diff = 0;
+                    if (Map* map = me->GetMap())
+                    {
+                        time_t rt = map->GetCreatureRespawnTime(static_cast<ObjectGuid::LowType>(me->GetSpawnId()));
+                        diff = static_cast<int64>(rt) - static_cast<int64>(now);
+                    }
+                    if (diff <= 0)
+                        diff = static_cast<int64>(me->GetRespawnTimeEx()) - static_cast<int64>(now);
                     uint32 spawnIn = diff > 0 ? static_cast<uint32>(diff) : me->GetRespawnDelay();
                     b.Set("spawnIn", DCAddon::JsonValue(static_cast<int32>(spawnIn)));
                     b.Set("status", DCAddon::JsonValue("spawning"));
