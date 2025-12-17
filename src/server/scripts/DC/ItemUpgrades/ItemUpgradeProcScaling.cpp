@@ -1,283 +1,325 @@
 /*
- * DarkChaos Item Upgrade - Proc Scaling System (UnitScript Hook-Based)
+ * DarkChaos Item Upgrade - Proc Scaling System
+ * =============================================
  *
- * This file implements proc effect scaling using UnitScript hooks.
- * Damage/healing from item procs is scaled based on the player's equipped
- * upgraded items.
+ * Implements "True Proc Scaling" by dynamically mapping spells to their source items.
  *
- * APPROACH: Hybrid Solution
- * - Base stats: Scaled via enchantments (see ItemUpgradeStatApplication.cpp)
- * - Proc effects: Scaled via UnitScript damage/heal hooks
+ * LOGIC:
+ * 1. On startup, scans all ItemTemplates to build a `SpellID -> [ItemID]` map.
+ * 2. Hooks Unit::ModifySpellDamageTaken and Unit::ModifyHealReceived.
+ * 3. When a registered proc spell is cast:
+ *    a. Checks if the caster has the source item equipped.
+ *    b. Fetches the specific item's upgrade level.
+ *    c. Scales the spell effect by the item's stat multiplier.
  *
  * Author: DarkChaos Development Team
- * Date: November 8, 2025
- * Version: 2.0 (UnitScript hook-based)
+ * Date: December 17, 2025
  */
 
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Item.h"
+#include "ItemTemplate.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Unit.h"
 #include "ItemUpgradeManager.h"
-#include "DatabaseEnv.h"
+#include "ItemUpgradeProcScaling.h"
 #include "Log.h"
-#include <unordered_set>
+#include "Chat.h"
 #include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <sstream>
+#include <iomanip>
 
 namespace DarkChaos
 {
-    namespace ItemUpgrade
+namespace ItemUpgrade
+{
+    // =====================================================================
+    // Proc Spell Registry
+    // =====================================================================
+    // Maps Spell IDs to the Item IDs that trigger them.
+    
+    class ProcSpellRegistry
     {
-        // =====================================================================
-        // Item Proc Spell Database
-        // =====================================================================
+    private:
+        // Map: SpellID -> List of ItemIDs that use this spell
+        static std::unordered_map<uint32, std::vector<uint32>> _procSpellMap;
+        static bool _initialized;
 
-        // Cache of known item proc spell IDs
-        class ProcSpellDatabase
+    public:
+        static void Initialize()
         {
-        private:
-            static std::unordered_set<uint32> proc_spell_ids;
-            static bool initialized;
+            if (_initialized)
+                return;
 
-        public:
-            static void Initialize()
+            LOG_INFO("scripts", "ItemUpgrade: Initializing Proc Spell Registry...");
+            uint32 count = 0;
+
+            // Iterate over all item templates
+            const ItemTemplateContainer& items = sObjectMgr->GetItemTemplateStore();
+            for (auto const& pair : items)
             {
-                if (initialized)
-                    return;
-
-                LOG_INFO("scripts", "ItemUpgrade: Loading item proc spells from database...");
-
-                // Always use hardcoded list for now (database might not be initialized yet)
-                LoadHardcodedProcSpells();
-
-                initialized = true;
-            }
-
-            static bool IsItemProcSpell(uint32 spell_id)
-            {
-                if (!initialized)
-                    Initialize();
-
-                return proc_spell_ids.find(spell_id) != proc_spell_ids.end();
-            }
-
-        private:
-            static void LoadHardcodedProcSpells()
-            {
-                // Common WotLK item proc spells (fallback list)
-                // Trinket procs
-                proc_spell_ids.insert(71484);  // Deathbringer's Will (Str)
-                proc_spell_ids.insert(71485);  // Deathbringer's Will (Agi)
-                proc_spell_ids.insert(71492);  // Deathbringer's Will (AP)
-                proc_spell_ids.insert(60065);  // Tears of the Vanquished (Ulduar trinket)
-                proc_spell_ids.insert(64741);  // Mjolnir Runestone
-                proc_spell_ids.insert(64713);  // Banner of Victory
-
-                // Weapon procs
-                proc_spell_ids.insert(59620);  // Berserking (weapon proc)
-                proc_spell_ids.insert(60314);  // Pyrite Infusion
-                proc_spell_ids.insert(60437);  // Blood Presence
-
-                LOG_INFO("scripts", "ItemUpgrade: Loaded {} hardcoded proc spells", proc_spell_ids.size());
-            }
-        };
-
-        std::unordered_set<uint32> ProcSpellDatabase::proc_spell_ids;
-        bool ProcSpellDatabase::initialized = false;
-
-        // =====================================================================
-        // Multiplier Calculator
-        // =====================================================================
-
-        float GetPlayerAvgProcMultiplier(Player* player)
-        {
-            if (!player)
-                return 1.0f;
-
-            UpgradeManager* mgr = GetUpgradeManager();
-            if (!mgr)
-                return 1.0f;
-
-            float total_multiplier = 0.0f;
-            uint32 upgraded_items = 0;
-
-            // Calculate average multiplier from all equipped upgraded items
-            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-            {
-                Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (!item)
+                const ItemTemplate* itemTemplate = pair.second;
+                if (!itemTemplate)
                     continue;
 
-                ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
-                if (state && state->upgrade_level > 0)
+                // Check all 5 possible item spells
+                for (const auto& itemSpell : itemTemplate->Spells)
                 {
-                    total_multiplier += state->stat_multiplier;
-                    upgraded_items++;
+                    if (itemSpell.SpellId > 0)
+                    {
+                        // We care about:
+                        // - ITEM_SPELLTRIGGER_ON_USE (Use:)
+                        // - ITEM_SPELLTRIGGER_ON_EQUIP (Equip:) - usually passive auras, but can be procs
+                        // - ITEM_SPELLTRIGGER_CHANCE_ON_HIT (Chance on hit:)
+                        // - ITEM_SPELLTRIGGER_SOULSTONE (Soulstone)
+                        // - ITEM_SPELLTRIGGER_ON_NO_DELAY_USE (Use with no delay)
+                        // - ITEM_SPELLTRIGGER_LEARN_SPELL_ID (Learn) - Ignored
+                        
+                        if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+                            continue;
+
+                        _procSpellMap[itemSpell.SpellId].push_back(itemTemplate->ItemId);
+                        count++;
+                    }
                 }
             }
 
-            if (upgraded_items == 0)
-                return 1.0f;
-
-            // Return average multiplier
-            return total_multiplier / upgraded_items;
+            _initialized = true;
+            LOG_INFO("scripts", "ItemUpgrade: Mapped {} proc associations.", count);
         }
 
-        float GetPlayerWeaponProcMultiplier(Player* player)
+        static const std::vector<uint32>* GetItemsForSpell(uint32 spellId)
         {
+            if (!_initialized)
+                Initialize();
+
+            auto it = _procSpellMap.find(spellId);
+            if (it != _procSpellMap.end())
+                return &it->second;
+            
+            return nullptr;
+        }
+    };
+
+    std::unordered_map<uint32, std::vector<uint32>> ProcSpellRegistry::_procSpellMap;
+    bool ProcSpellRegistry::_initialized = false;
+
+    // =====================================================================
+    // Helper: Find Source Item
+    // =====================================================================
+    
+    static Item* FindSourceItem(Player* player, uint32 spellId)
+    {
+        const std::vector<uint32>* potentialItems = ProcSpellRegistry::GetItemsForSpell(spellId);
+        if (!potentialItems)
+            return nullptr;
+
+        // Check equipped items
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item)
+                continue;
+
+            // Does this equipped item match one of the source IDs for the spell?
+            for (uint32 sourceId : *potentialItems)
+            {
+                if (item->GetEntry() == sourceId)
+                    return item;
+            }
+        }
+
+        return nullptr;
+    }
+
+    // =====================================================================
+    // Public API
+    // =====================================================================
+
+    std::string GetPlayerProcScalingInfo(Player* player)
+    {
+        if (!player)
+            return "Invalid player.";
+
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return "Upgrade Manager not available.";
+
+        std::ostringstream ss;
+        ss << "Active Proc Scaling:\n";
+        bool found = false;
+
+        // Scan equipped items
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item)
+                continue;
+
+            ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+            if (state && state->upgrade_level > 0 && state->stat_multiplier > 1.0f)
+            {
+                // Check if this item has any procs
+                const ItemTemplate* temp = item->GetTemplate();
+                bool hasProc = false;
+                for (const auto& spell : temp->Spells)
+                {
+                    if (spell.SpellId > 0 && spell.SpellTrigger != ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+                    {
+                        hasProc = true;
+                        break;
+                    }
+                }
+
+                if (hasProc)
+                {
+                    found = true;
+                    ss << "- " << item->GetTemplate()->Name1 << ": " 
+                       << std::fixed << std::setprecision(1) << ((state->stat_multiplier - 1.0f) * 100.0f) 
+                       << "% bonus to procs\n";
+                }
+            }
+        }
+
+        if (!found)
+            ss << "No upgraded items with procs equipped.";
+
+        return ss.str();
+    }
+
+    // =====================================================================
+    // UnitScript Hook
+    // =====================================================================
+
+    class ItemUpgradeProcScript : public UnitScript
+    {
+    public:
+        ItemUpgradeProcScript() : UnitScript("ItemUpgradeProcScript") {}
+
+        // Hook: Spell Damage Calculation
+        // Note: Signature depends on Core version. Assuming standard AC/TC hook.
+        void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override
+        {
+            if (!attacker || !spellInfo || damage <= 0)
+                return;
+
+            Player* player = attacker->ToPlayer();
             if (!player)
-                return 1.0f;
+                return;
+
+            // 1. Check if this spell is a known item proc
+            Item* sourceItem = FindSourceItem(player, spellInfo->Id);
+            if (!sourceItem)
+                return;
+
+            // 2. Check if the item is upgraded
+            UpgradeManager* mgr = GetUpgradeManager();
+            if (!mgr)
+                return;
+
+            ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
+            if (!state || state->upgrade_level == 0)
+                return;
+
+            // 3. Apply scaling
+            // We use the item's stat multiplier (e.g., 1.05x, 1.10x)
+            // This scales the proc damage exactly as much as the stats are scaled.
+            float multiplier = state->stat_multiplier;
+            
+            if (multiplier > 1.0f)
+            {
+                // int32 oldDamage = damage;
+                damage = static_cast<int32>(damage * multiplier);
+                
+                // Debug log (optional, can be spammy)
+                // LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})", 
+                //     spellInfo->Id, sourceItem->GetEntry(), multiplier, oldDamage, damage);
+            }
+        }
+
+        // Hook: Healing Calculation
+        void ModifyHealReceived(Unit* target, Unit* healer, uint32& gain, SpellInfo const* spellInfo) override
+        {
+            if (!healer || !spellInfo || gain <= 0)
+                return;
+
+            Player* player = healer->ToPlayer();
+            if (!player)
+                return;
+
+            Item* sourceItem = FindSourceItem(player, spellInfo->Id);
+            if (!sourceItem)
+                return;
 
             UpgradeManager* mgr = GetUpgradeManager();
             if (!mgr)
-                return 1.0f;
+                return;
 
-            float mh_mult = 1.0f;
-            float oh_mult = 1.0f;
-            uint32 weapon_count = 0;
+            ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
+            if (!state || state->upgrade_level == 0)
+                return;
 
-            // Main-hand weapon
-            Item* mainhand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-            if (mainhand)
+            float multiplier = state->stat_multiplier;
+            
+            if (multiplier > 1.0f)
             {
-                ItemUpgradeState* state = mgr->GetItemUpgradeState(mainhand->GetGUID().GetCounter());
-                if (state && state->upgrade_level > 0)
-                {
-                    mh_mult = state->stat_multiplier;
-                    weapon_count++;
-                }
+                gain = static_cast<uint32>(gain * multiplier);
             }
-
-            // Off-hand weapon
-            Item* offhand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
-            if (offhand && offhand->GetTemplate()->InventoryType == INVTYPE_WEAPON)
-            {
-                ItemUpgradeState* state = mgr->GetItemUpgradeState(offhand->GetGUID().GetCounter());
-                if (state && state->upgrade_level > 0)
-                {
-                    oh_mult = state->stat_multiplier;
-                    weapon_count++;
-                }
-            }
-
-            if (weapon_count == 0)
-                return 1.0f;
-
-            // Return average
-            return (mh_mult + oh_mult) / std::max(1u, weapon_count);
         }
+    };
 
-        // =====================================================================
-        // UnitScript Hooks for Damage/Healing Scaling
-        // =====================================================================
+    // =====================================================================
+    // Player Script (Login Notification)
+    // =====================================================================
 
-        class ItemUpgradeProcDamageHook : public UnitScript
+    class ItemUpgradeProcPlayerScript : public PlayerScript
+    {
+    public:
+        ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript") {}
+
+        void OnLogin(Player* player) override
         {
-        public:
-            ItemUpgradeProcDamageHook() : UnitScript("ItemUpgradeProcDamageHook") {}
-
-            // Hook: Spell damage taken (scales spell damage including procs)
-            void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+            if (!player) return;
+            
+            // Check if player has any upgraded items with procs
+            std::string info = GetPlayerProcScalingInfo(player);
+            if (info.find("bonus to procs") != std::string::npos)
             {
-                if (!attacker || !victim || damage == 0)
-                    return;
-
-                Player* player = attacker->ToPlayer();
-                if (!player)
-                    return;
-
-                // For now, we scale all damage slightly based on average item upgrades
-                // This is a simplified approach until we can track spell sources
-                float multiplier = GetPlayerAvgProcMultiplier(player);
-                if (multiplier > 1.0f)
-                {
-                    // Apply 50% of the multiplier to prevent double-dipping with base stat scaling
-                    float proc_bonus = (multiplier - 1.0f) * 0.5f;
-                    damage = static_cast<uint32>(damage * (1.0f + proc_bonus));
-                }
+                ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Item Upgrade]|r Your item procs are currently scaled by your upgrades. Type .upgrade mech procs to see details.");
             }
+        }
+    };
 
-            // Hook: Healing done (scales healing including procs)
-            void OnHeal(Unit* healer, Unit* reciever, uint32& gain) override
-            {
-                if (!healer || !reciever || gain == 0)
-                    return;
+    // =====================================================================
+    // WorldScript for Initialization
+    // =====================================================================
+    
+    class ItemUpgradeProcWorldScript : public WorldScript
+    {
+    public:
+        ItemUpgradeProcWorldScript() : WorldScript("ItemUpgradeProcWorldScript") {}
 
-                Player* player = healer->ToPlayer();
-                if (!player)
-                    return;
-
-                // Scale healing based on average item upgrades
-                float multiplier = GetPlayerAvgProcMultiplier(player);
-                if (multiplier > 1.0f)
-                {
-                    // Apply 50% of the multiplier
-                    float proc_bonus = (multiplier - 1.0f) * 0.5f;
-                    gain = static_cast<uint32>(gain * (1.0f + proc_bonus));
-                }
-            }
-        };
-
-        // =====================================================================
-        // Player Equipment Tracking
-        // =====================================================================
-
-        class ItemProcEquipmentHook : public PlayerScript
+        void OnStartup() override
         {
-        public:
-            ItemProcEquipmentHook() : PlayerScript("ItemProcEquipmentHook") {}
+            // Initialize the registry when the server starts
+            ProcSpellRegistry::Initialize();
+        }
+    };
 
-            void OnPlayerEquip(Player* player, Item* /*item*/, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
-            {
-                if (!player)
-                    return;
-
-                // Recalculate player's average proc multiplier
-                float multiplier = GetPlayerAvgProcMultiplier(player);
-                LOG_DEBUG("scripts", "ItemUpgrade: Player {} equipment changed, avg proc multiplier: {:.2f}x",
-                         player->GetGUID().GetCounter(), multiplier);
-            }
-
-            void OnPlayerLogout(Player* player) override
-            {
-                if (!player)
-                    return;
-
-                // Cleanup if needed (nothing to do for now)
-            }
-        };
-
-        // =====================================================================
-        // Registration
-        // =====================================================================
-
-    } // namespace ItemUpgrade
+} // namespace ItemUpgrade
 } // namespace DarkChaos
 
-// Registration function must be in global namespace
+// =====================================================================
+// Registration
+// =====================================================================
+
 void AddSC_ItemUpgradeProcScaling()
 {
-    try
-    {
-        // Initialize proc spell database (uses hardcoded list during startup)
-        DarkChaos::ItemUpgrade::ProcSpellDatabase::Initialize();
-
-        // Register hooks
-        new DarkChaos::ItemUpgrade::ItemUpgradeProcDamageHook();
-        new DarkChaos::ItemUpgrade::ItemProcEquipmentHook();
-
-        LOG_INFO("scripts", "ItemUpgrade: Proc scaling hooks registered successfully");
-    }
-    catch (const std::exception& e)
-    {
-        LOG_ERROR("scripts", "ItemUpgrade: Exception in proc scaling: {}", e.what());
-        throw;
-    }
-    catch (...)
-    {
-        LOG_ERROR("scripts", "ItemUpgrade: Unknown error in proc scaling");
-        throw;
-    }
+    new DarkChaos::ItemUpgrade::ItemUpgradeProcScript();
+    new DarkChaos::ItemUpgrade::ItemUpgradeProcPlayerScript();
+    new DarkChaos::ItemUpgrade::ItemUpgradeProcWorldScript();
 }

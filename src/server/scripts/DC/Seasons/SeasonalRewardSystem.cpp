@@ -15,6 +15,7 @@
 #include "ScriptMgr.h"
 #include "Item.h"
 #include "Chat.h"
+#include "ItemUpgradeManager.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -62,8 +63,8 @@ namespace DarkChaos
             }
             
             // Load canonical seasonal currency from DarkChaos.Seasonal.* (Section 9 unified settings)
-            config_.tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);       // Default: DC Seasonal Token
-            config_.essenceItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);   // Default: DC Seasonal Essence
+            config_.tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+            config_.essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
             config_.weeklyTokenCap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxTokensPerWeek", 0);
             config_.weeklyEssenceCap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxEssencePerWeek", 0);
             config_.questMultiplier = sConfigMgr->GetOption<float>("SeasonalRewards.QuestMultiplier", 1.0f);

@@ -597,18 +597,8 @@ public:
         }
 
         // Grant currency (support for canonical seasonal currency)
-        bool useSeasonalCurrency = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
-        uint32 ESSENCE_ID, TOKEN_ID;
-        if (useSeasonalCurrency)
-        {
-            ESSENCE_ID = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
-            TOKEN_ID = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-        }
-        else
-        {
-            ESSENCE_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
-            TOKEN_ID = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-        }
+        uint32 ESSENCE_ID = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        uint32 TOKEN_ID = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         const uint32 TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
         const uint32 TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
 

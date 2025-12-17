@@ -28,6 +28,7 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
+#include "ItemUpgradeManager.h"
 #include "World.h"
 #include "WorldSession.h"
 #include "SpellMgr.h"
@@ -468,7 +469,7 @@ namespace DCCustomLogin
         if (useCanonical)
         {
             // Use canonical seasonal token from DarkChaos.Seasonal.TokenItemID
-            tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+            tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         }
         else
         {

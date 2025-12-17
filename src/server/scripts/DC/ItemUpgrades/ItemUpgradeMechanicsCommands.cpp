@@ -15,6 +15,7 @@
 #include "Player.h"
 #include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeProcScaling.h"
 #include <sstream>
 #include <iomanip>
 
@@ -26,6 +27,17 @@ class ItemUpgradeMechanicsCommands : public CommandScript
 public:
     ItemUpgradeMechanicsCommands() : CommandScript("item_upgrade_mechanics_commands") { }
 
+    static bool HandleProcsCommand(ChatHandler* handler, const char* /*args*/)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        std::string info = GetPlayerProcScalingInfo(player);
+        handler->SendSysMessage(info.c_str());
+        return true;
+    }
+
     ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable upgradeCommandTable =
@@ -33,7 +45,8 @@ public:
             ChatCommandBuilder("cost", HandleCostCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("stats", HandleStatsCommand, SEC_ADMINISTRATOR, Console::No),
             ChatCommandBuilder("ilvl", HandleILvLCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("reset", HandleResetCommand, SEC_ADMINISTRATOR, Console::No)
+            ChatCommandBuilder("reset", HandleResetCommand, SEC_ADMINISTRATOR, Console::No),
+            ChatCommandBuilder("procs", HandleProcsCommand, SEC_PLAYER, Console::No)
         };
 
         static ChatCommandTable mechCommandTable =

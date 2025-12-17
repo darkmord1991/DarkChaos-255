@@ -13,14 +13,20 @@
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
+#include "ItemUpgradeManager.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <map>
 #include <vector>
 #include <sstream>
 
+#include "Config.h"
+
 // Token item ID (DC Item Upgrade Token)
-constexpr uint32 MYTHIC_TOKEN_ITEM = 300311;
+// Default: 300311
+// uint32 GetMythicTokenId() - Removed, using shared function
+
+constexpr uint32 ESSENCE_PER_TOKEN = 500; // 1 Token = 500 Essence
 
 // Gear slot categories
 enum TokenGearSlot : uint8
@@ -173,7 +179,7 @@ public:
         ClearGossipMenuFor(player);
         
         // Count player's tokens
-        uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         std::string armorType = GetArmorTypeForClass(player->getClass());
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Mythic+ Token Vendor ===|r", GOSSIP_SENDER_MAIN, 0);
@@ -189,6 +195,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffff8000Item Level 252 Gear|r (15 tokens)", GOSSIP_SENDER_MAIN, 252);
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "|cffffd700Currency Exchange (Tokens <-> Essence)|r", GOSSIP_SENDER_MAIN, 2000);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Info] How do tokens work?|r", GOSSIP_SENDER_MAIN, 1000);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 0);
         
@@ -225,6 +232,104 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
+
+        // Currency Exchange Menu
+        if (action == 2000)
+        {
+            auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+            if (!upgradeMgr) return true;
+
+            uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+            uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Token Exchange ===|r", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, 
+                "Current Essence: |cffffffff" + std::to_string(currentEssence) + "|r", 
+                GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, 
+                "Current Tokens: |cffffffff" + std::to_string(tokenCount) + "|r", 
+                GOSSIP_SENDER_MAIN, 0);
+            
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+
+            // Token -> Essence
+            if (tokenCount >= 1)
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange 1 Token for " + std::to_string(ESSENCE_PER_TOKEN) + " Essence", GOSSIP_SENDER_MAIN, 2001);
+            if (tokenCount >= 5)
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange 5 Tokens for " + std::to_string(ESSENCE_PER_TOKEN * 5) + " Essence", GOSSIP_SENDER_MAIN, 2002);
+
+            // Essence -> Token
+            if (currentEssence >= ESSENCE_PER_TOKEN)
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange " + std::to_string(ESSENCE_PER_TOKEN) + " Essence for 1 Token", GOSSIP_SENDER_MAIN, 2003);
+            if (currentEssence >= ESSENCE_PER_TOKEN * 5)
+                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange " + std::to_string(ESSENCE_PER_TOKEN * 5) + " Essence for 5 Tokens", GOSSIP_SENDER_MAIN, 2004);
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);
+            
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
+
+        // Perform Exchange
+        if (action >= 2001 && action <= 2004)
+        {
+            auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+            if (!upgradeMgr) return true;
+
+            uint32 tokensToTake = 0;
+            uint32 essenceToGive = 0;
+            uint32 essenceToTake = 0;
+            uint32 tokensToGive = 0;
+
+            switch (action)
+            {
+                case 2001: tokensToTake = 1; essenceToGive = ESSENCE_PER_TOKEN; break;
+                case 2002: tokensToTake = 5; essenceToGive = ESSENCE_PER_TOKEN * 5; break;
+                case 2003: essenceToTake = ESSENCE_PER_TOKEN; tokensToGive = 1; break;
+                case 2004: essenceToTake = ESSENCE_PER_TOKEN * 5; tokensToGive = 5; break;
+            }
+
+            if (tokensToTake > 0)
+            {
+                if (player->HasItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake))
+                {
+                    player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake, true);
+                    upgradeMgr->AddCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive);
+                    ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Tokens for %u Essence.", tokensToTake, essenceToGive);
+                }
+                else
+                    ChatHandler(player->GetSession()).SendSysMessage("You don't have enough tokens.");
+            }
+            else if (essenceToTake > 0)
+            {
+                uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+                if (currentEssence >= essenceToTake)
+                {
+                    ItemPosCountVec dest;
+                    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToGive);
+                    if (msg == EQUIP_ERR_OK)
+                    {
+                        if (upgradeMgr->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToTake))
+                        {
+                            if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
+                            {
+                                player->SendNewItem(item, tokensToGive, true, false);
+                                ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Essence for %u Tokens.", essenceToTake, tokensToGive);
+                            }
+                        }
+                    }
+                    else
+                        player->SendEquipError(msg, nullptr, nullptr, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
+                }
+                else
+                    ChatHandler(player->GetSession()).SendSysMessage("You don't have enough Essence.");
+            }
+
+            // Return to exchange menu
+            OnGossipSelect(player, creature, sender, 2000);
             return true;
         }
 
@@ -269,7 +374,7 @@ private:
     {
         ClearGossipMenuFor(player);
         
-        uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         uint32 cost = GetTokenCost(itemLevel);
         std::string armorType = GetArmorTypeForClass(player->getClass());
         
@@ -303,7 +408,7 @@ private:
     {
         ClearGossipMenuFor(player);
         
-        uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         uint32 cost = GetTokenCost(itemLevel);
         
         // Query item_template for suitable items
@@ -359,7 +464,7 @@ private:
         }
         
         uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
-        uint32 tokenCount = player->GetItemCount(MYTHIC_TOKEN_ITEM);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         
         // Check if player has enough tokens
         if (tokenCount < cost)
@@ -370,7 +475,7 @@ private:
         }
 
         // Remove tokens
-        player->DestroyItemCount(MYTHIC_TOKEN_ITEM, cost, true);
+        player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), cost, true);
 
         // Give item
         ItemPosCountVec dest;

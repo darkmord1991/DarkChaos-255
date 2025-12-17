@@ -56,6 +56,13 @@ namespace DarkChaos
         inline constexpr const char* ITEM_UPGRADE_LOG_TABLE = "dc_item_upgrade_log";
 
         // =====================================================================
+        // Configuration Helpers
+        // =====================================================================
+        
+        uint32 GetUpgradeTokenItemId();
+        uint32 GetArtifactEssenceItemId();
+
+        // =====================================================================
         // Upgrade Cost Structure
         // =====================================================================
 
@@ -202,6 +209,10 @@ namespace DarkChaos
 
         // Singleton accessor (implementation provides GetUpgradeManager)
         UpgradeManager* GetUpgradeManager();
+
+        // Helper functions for currency IDs
+        uint32 GetUpgradeTokenItemId();
+        uint32 GetArtifactEssenceItemId();
 
         // =====================================================================
         // Stat Application Helper (defined in ItemUpgradeStatApplication.cpp)

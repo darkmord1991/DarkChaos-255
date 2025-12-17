@@ -18,38 +18,14 @@
 #include "Chat.h"
 // Note: These headers may not exist - using database queries directly
 // #include "ItemUpgradeMechanics.h"
-// #include "ItemUpgradeManager.h"
+#include "ItemUpgradeManager.h"
 
 namespace DCAddon
 {
 namespace Upgrade
 {
-    // Currency item IDs (cached from config)
-    static uint32 s_TokenId = 300311;
-    static uint32 s_EssenceId = 300312;
-    
     // Player package selections (migrated from itemupgrade_communication.lua)
     static std::unordered_map<uint32, uint32> s_PlayerPackageSelections;
-    
-    // Load config
-    static void LoadConfig()
-    {
-        // Check if Item Upgrade should use canonical seasonal currency
-        bool useSeasonalCurrency = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
-        
-        if (useSeasonalCurrency)
-        {
-            // Use canonical seasonal currency (DarkChaos.Seasonal.*)
-            s_TokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-            s_EssenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
-        }
-        else
-        {
-            // Use Item Upgrade specific currency
-            s_TokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-            s_EssenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
-        }
-    }
     
     // Translate addon bag/slot to server format
     static bool TranslateAddonBagSlot(uint32 extBag, uint32 extSlot, uint8& bagOut, uint8& slotOut)
@@ -96,14 +72,16 @@ namespace Upgrade
     // Send currency update to client
     static void SendCurrencyUpdate(Player* player)
     {
-        uint32 tokens = player->GetItemCount(s_TokenId);
-        uint32 essence = player->GetItemCount(s_EssenceId);
+        uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+        uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        uint32 tokens = player->GetItemCount(tokenId);
+        uint32 essence = player->GetItemCount(essenceId);
         
         Message(Module::UPGRADE, Opcode::Upgrade::SMSG_CURRENCY_UPDATE)
             .Add(tokens)
             .Add(essence)
-            .Add(s_TokenId)
-            .Add(s_EssenceId)
+            .Add(tokenId)
+            .Add(essenceId)
             .Send(player);
     }
     
@@ -424,8 +402,6 @@ namespace Upgrade
     // Register all handlers
     void RegisterHandlers()
     {
-        LoadConfig();
-        
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_ITEM_INFO, HandleGetItemInfo);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_COSTS, HandleGetCosts);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_LIST_UPGRADEABLE, HandleListUpgradeable);

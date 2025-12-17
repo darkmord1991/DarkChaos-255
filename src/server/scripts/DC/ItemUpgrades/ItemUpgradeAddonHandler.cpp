@@ -129,18 +129,8 @@ private:
         }
 
         // Get currency item IDs from config (support for canonical seasonal currency)
-    bool useSeasonalCurrency = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
-    uint32 essenceId, tokenId;
-    if (useSeasonalCurrency)
-    {
-        essenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
-        tokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-    }
-    else
-    {
-        essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
-        tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-    }
+    uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+    uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
 
         // Parse arguments
         std::string argStr = args ? args : "";
@@ -1153,18 +1143,8 @@ private:
             }
 
             // Get currency item IDs from config (support for canonical seasonal currency)
-            bool useSeasonalCurrency2 = sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false);
-            uint32 tokenId, essenceId;
-            if (useSeasonalCurrency2)
-            {
-                tokenId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-                essenceId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
-            }
-            else
-            {
-                tokenId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
-                essenceId = sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
-            }
+            uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+            uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 
             // Check if player has enough currency
             uint32 currentTokens = player->GetItemCount(tokenId);

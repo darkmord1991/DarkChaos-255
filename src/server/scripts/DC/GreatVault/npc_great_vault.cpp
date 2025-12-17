@@ -1,22 +1,25 @@
 /*
- * Great Vault NPC script - Updated with token/ilvl display
+ * Great Vault NPC script
  */
 
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "MythicPlusRunManager.h"
-#include "MythicPlusRewards.h"
+#include "GreatVault.h"
+#include "MythicPlusRunManager.h" // For Season/Week info
+#include "MythicPlusRewards.h" // For constants if needed
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
+#include "ObjectMgr.h"
+#include "ItemTemplate.h"
 
 #include <unordered_map>
 
-class npc_mythic_plus_great_vault : public CreatureScript
+class npc_great_vault : public CreatureScript
 {
 public:
-    npc_mythic_plus_great_vault() : CreatureScript("npc_mythic_plus_great_vault") { }
+    npc_great_vault() : CreatureScript("npc_great_vault") { }
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
@@ -54,7 +57,7 @@ public:
         }
 
         // Fetch reward pool info (global slot index -> reward)
-        auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+        auto rewards = sGreatVault->GetVaultRewardPool(guidLow, seasonId, weekStart);
         std::unordered_map<uint8, std::pair<uint32, uint32>> rewardBySlot;
         for (auto const& [slotIndex, itemId, itemLevel] : rewards)
             rewardBySlot[slotIndex] = { itemId, itemLevel };
@@ -78,7 +81,7 @@ public:
         // Display Mythic+ track slots (global slots 4-6)
         for (uint8 slot = 1; slot <= 3; ++slot)
         {
-            uint8 threshold = sMythicRuns->GetVaultThreshold(slot);
+            uint8 threshold = sGreatVault->GetVaultThreshold(slot);
             uint8 globalSlot = static_cast<uint8>(3 + slot); // Track 1 (Mythic+)
             
             if (claimed && claimedSlot == globalSlot)
@@ -93,8 +96,8 @@ public:
                 if (itr == rewardBySlot.end())
                 {
                     // Try generating pool if missing
-                    sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart);
-                    rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+                    sGreatVault->GenerateVaultRewardPool(guidLow, seasonId, weekStart);
+                    rewards = sGreatVault->GetVaultRewardPool(guidLow, seasonId, weekStart);
                     rewardBySlot.clear();
                     for (auto const& [slotIndex, itemId, itemLevel] : rewards)
                         rewardBySlot[slotIndex] = { itemId, itemLevel };
@@ -111,7 +114,8 @@ public:
                     std::string name = itemTemplate ? std::string(itemTemplate->Name1) : ("Item " + std::to_string(itemId));
 
                     std::string rewardText;
-                    if (itemId == MythicPlusConstants::ITEM_MYTHIC_TOKEN)
+                    // Check if it's a token (assuming 300311 is the token ID)
+                    if (itemId == 300311)
                     {
                         rewardText = "|cff00ff00[Slot " + std::to_string(slot) + "]|r Claim |cffffffff" +
                             std::to_string(tokenCount) + " Tokens|r |cffff8000(ilvl " + std::to_string(itemLevel) + " equivalent)|r";
@@ -172,7 +176,7 @@ public:
             uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
             uint32 guidLow = player->GetGUID().GetCounter();
             
-            auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+            auto rewards = sGreatVault->GetVaultRewardPool(guidLow, seasonId, weekStart);
 
             uint32 itemId = 0;
             for (auto const& [slotIndex, rewardItemId, /*ilvl*/ _] : rewards)
@@ -191,7 +195,7 @@ public:
                 return true;
             }
 
-            if (sMythicRuns->ClaimVaultItemReward(player, globalSlot, itemId))
+            if (sGreatVault->ClaimVaultItemReward(player, globalSlot, itemId))
             {
                 ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
                 std::string itemName = itemTemplate ? std::string(itemTemplate->Name1) : "Item";
@@ -216,7 +220,7 @@ public:
     }
 };
 
-void AddSC_npc_mythic_plus_great_vault()
+void AddSC_npc_great_vault()
 {
-    new npc_mythic_plus_great_vault();
+    new npc_great_vault();
 }

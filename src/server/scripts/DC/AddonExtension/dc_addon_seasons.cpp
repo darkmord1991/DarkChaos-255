@@ -14,6 +14,7 @@
 #include "Log.h"
 #include "DatabaseEnv.h"
 #include "DCAddonNamespace.h"
+#include "ItemUpgradeManager.h"
 
 namespace DCAddon
 {
@@ -160,8 +161,8 @@ namespace Seasons
             seasonId = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
 
         // Get seasonal token/essence item IDs from config
-        uint32 tokenItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-        uint32 essenceItemId = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+        uint32 tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+        uint32 essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
         
         // Get current token count from player's inventory
         uint32 currentTokens = player->GetItemCount(tokenItemId);

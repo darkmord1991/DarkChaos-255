@@ -19,6 +19,7 @@
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
+#include "Config.h"
 #include <sstream>
 
 namespace
@@ -46,6 +47,20 @@ namespace DarkChaos
 {
     namespace ItemUpgrade
     {
+        uint32 GetUpgradeTokenItemId()
+        {
+            if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
+                return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
+            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+        }
+
+        uint32 GetArtifactEssenceItemId()
+        {
+            if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
+                return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
+            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+        }
+
         // =====================================================================
         // Upgrade Manager Implementation
         // =====================================================================

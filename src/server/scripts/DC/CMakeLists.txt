@@ -176,11 +176,19 @@ set(SCRIPTS_DC_MythicPlus
     MythicPlus/MythicPlusRunManager.cpp
     MythicPlus/MythicPlusSeasonalIntegration.cpp
     MythicPlus/go_mythic_plus_font_of_power.cpp
-    MythicPlus/npc_mythic_plus_great_vault.cpp
+    MythicPlus/npc_mythic_token_vendor.cpp
     MythicPlus/mythic_plus_core_scripts.cpp
     MythicPlus/mythic_plus_loader.cpp
     MythicPlus/npc_dungeon_portal_selector.cpp
     MythicPlus/dc_mythic_spectator.cpp
+)
+
+# DC Great Vault System
+set(SCRIPTS_DC_GreatVault
+    GreatVault/GreatVault.h
+    GreatVault/GreatVault.cpp
+    GreatVault/GreatVaultUtils.h
+    GreatVault/npc_great_vault.cpp
 )
 
 # DC Addon Extension System - Unified client/server protocol
@@ -247,6 +255,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_DungeonQuests}
     ${SCRIPTS_DC_ItemUpgrade}
     ${SCRIPTS_DC_MythicPlus}
+    ${SCRIPTS_DC_GreatVault}
     ${SCRIPTS_DC_DungeonEnhancement}
     ${SCRIPTS_DC_Jadeforest}
     ${SCRIPTS_DC_GiantIsles}
