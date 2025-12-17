@@ -1,12 +1,6 @@
 only two Patches Right now, they were merged!
 Patch-A -> AllRaces All Classes
-Patch-5 -> ALL DC stuff + dungeon Maps, worldmaps, etc.
+Patch-4 -> ALL DC stuff + dungeon Maps, worldmaps, etc.
 
-------------------------------------
-Patch-A -> AllRaces All Classes
-Patch-B -> Custom Currency
-Patch-C -> Custom Currency
-Patch-D -> ItemExtendedCost
-Patch-E -> Item
-Patch-F -> Worldstates for HLBG
-Patch-G -> Spellstuff
+the current MPQ files can be downloaded from:
+https://1drv.ms/f/c/d9368532fb96da3d/IgApzcL1PyeoRLhaAbJlbvj8AQIH_JILZu_DqlLn61TIWbw?e=5%3Apc5TRp&sharingv2=true&fromShare=true&at=9

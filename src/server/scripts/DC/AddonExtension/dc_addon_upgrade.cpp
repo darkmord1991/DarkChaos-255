@@ -70,7 +70,7 @@ namespace Upgrade
     }
     
     // Send currency update to client
-    static void SendCurrencyUpdate(Player* player)
+    void SendCurrencyUpdate(Player* player)
     {
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();

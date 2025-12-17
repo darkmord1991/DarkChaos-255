@@ -35,7 +35,6 @@ namespace Upgrade
         
         TransmutationManager* transMgr = GetTransmutationManager();
         SynthesisManager* synthMgr = GetSynthesisManager();
-        TierConversionManager* tierMgr = GetTierConversionManager();
         
         // 1. Get Exchange Rates
         uint32 tokensToEssence, essenceToTokens;
@@ -58,11 +57,14 @@ namespace Upgrade
              << "},";
              
         // Session Status
+        bool sessionActive = (session.player_guid != 0 && !session.completed);
         json << "\"session\":{"
-             << "\"active\":" << (session.active ? "true" : "false") << ","
+             << "\"active\":" << (sessionActive ? "true" : "false") << ","
              << "\"completed\":" << (session.completed ? "true" : "false") << ","
-             << "\"type\":" << session.type << ","
-             << "\"startTime\":" << session.start_time
+             << "\"recipeId\":" << session.recipe_id << ","
+             << "\"success\":" << (session.success ? "true" : "false") << ","
+             << "\"startTime\":" << session.start_time << ","
+             << "\"endTime\":" << session.end_time
              << "},";
              
         // Recipes
@@ -120,10 +122,8 @@ namespace Upgrade
             TransmutationManager* transMgr = GetTransmutationManager();
             bool success = false;
             
-            if (exchangeType == 1)
-                success = transMgr->ExchangeTokensForEssence(player);
-            else
-                success = transMgr->ExchangeEssenceForTokens(player);
+            // Use the manager's ExchangeCurrency interface
+            success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), exchangeType == 1, 1);
                 
             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
                 .Add(success)
@@ -135,12 +135,9 @@ namespace Upgrade
         }
         else if (type == 3) // Synthesis
         {
-            uint32 recipeId = msg.GetUInt32(1);
-            SynthesisManager* synthMgr = GetSynthesisManager();
-            
             // Need to gather input items from player inventory... complex logic
             // For now, just send error
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
+            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
                 .Add(0)
                 .Add(type)
                 .Add("Not implemented via addon yet")
@@ -150,8 +147,9 @@ namespace Upgrade
 
     void RegisterTransmutationHandlers()
     {
-        DCAddonMgr::RegisterHandler(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_TRANSMUTE_INFO, HandleGetTransmuteInfo);
-        DCAddonMgr::RegisterHandler(Module::UPGRADE, Opcode::Upgrade::CMSG_DO_TRANSMUTE, HandleDoTransmute);
+        // Ensure module enabled via config if desired; using DC_REGISTER_HANDLER macro
+        DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_TRANSMUTE_INFO, HandleGetTransmuteInfo);
+        DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_DO_TRANSMUTE, HandleDoTransmute);
     }
 
 } // namespace Upgrade
