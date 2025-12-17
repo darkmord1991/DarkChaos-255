@@ -61,10 +61,10 @@ end
 -- Constants
 local TRACK_COUNT = 3
 local SLOTS_PER_TRACK = 3
-local SLOT_WIDTH = 200
-local SLOT_HEIGHT = 150
-local PADDING_X = 18
-local PADDING_Y = 14
+local SLOT_WIDTH = 230
+local SLOT_HEIGHT = 120
+local PADDING_X = 5
+local PADDING_Y = 5
 
 function GV:CreateFrame()
     if frame then return frame end
@@ -100,22 +100,22 @@ function GV:CreateFrame()
     local trackTitles = { "Raid", "Mythic+", "PvP" }
     for trackIndex = 1, TRACK_COUNT do
         local track = CreateFrame("Frame", nil, frame)
-        track:SetSize(SLOT_WIDTH, 3 * SLOT_HEIGHT + 2 * PADDING_Y)
+        track:SetSize(3 * SLOT_WIDTH + 2 * PADDING_X, SLOT_HEIGHT + 30)
         track:SetPoint(
             "TOPLEFT",
-            PADDING_X + (trackIndex - 1) * (SLOT_WIDTH + PADDING_X),
-            -78
+            20,
+            -60 - (trackIndex - 1) * (SLOT_HEIGHT + 35)
         )
 
         track.title = track:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        track.title:SetPoint("TOP", 0, 0)
+        track.title:SetPoint("TOPLEFT", 5, 0)
         track.title:SetText(trackTitles[trackIndex] or "Track")
 
         track.slots = {}
         for row = 1, SLOTS_PER_TRACK do
             local slot = CreateFrame("Frame", nil, track)
             slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
-            slot:SetPoint("TOP", 0, -22 - (row - 1) * (SLOT_HEIGHT + PADDING_Y))
+            slot:SetPoint("TOPLEFT", (row - 1) * (SLOT_WIDTH + PADDING_X), -25)
 
             slot.bg = slot:CreateTexture(nil, "BACKGROUND")
             slot.bg:SetAllPoints()
@@ -223,7 +223,13 @@ function GV:Toggle()
 end
 
 function GV:Update(data)
-    if not frame then return end
+    if not frame then
+        self:CreateFrame()
+    end
+
+    if data.open then
+        frame:Show()
+    end
 
     local tracks = data.tracks
     if type(tracks) ~= "table" then

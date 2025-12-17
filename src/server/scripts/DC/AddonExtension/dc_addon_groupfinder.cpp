@@ -18,11 +18,25 @@
 #include "Log.h"
 #include "GameTime.h"
 #include "DBCEnums.h"
+#include "DCAddonGroupFinder.h"
 
 namespace DCAddon
 {
 namespace GroupFinder
 {
+    // ========================================================================
+    // PUBLIC API
+    // ========================================================================
+
+    void SendOpenGroupFinder(Player* player)
+    {
+        if (!player)
+            return;
+
+        Message(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_OPEN_UI)
+            .Send(player);
+    }
+
     // ========================================================================
     // JSON HELPER FUNCTIONS
     // ========================================================================

@@ -1214,12 +1214,12 @@ if DC then
             data.keystoneDungeonName = json.dungeonName or json.dungeon
             data.depleted = json.depleted
             if data.hasKeystone then
-                Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
+                -- Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
                 if data.depleted then
-                    Print("(Depleted)")
+                    -- Print("(Depleted)")
                 end
             else
-                Print("No keystone in inventory")
+                -- Print("No keystone in inventory")
             end
         else
             -- Pipe-delimited format
@@ -1229,10 +1229,10 @@ if DC then
                 data.keystoneLevel = tonumber(keyLevel) or 0
                 data.keystoneDungeonName = mapName
                 data.depleted = (depleted == "1" or depleted == 1)
-                Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
+                -- Print("Your key: +" .. (data.keystoneLevel or "?") .. " " .. (data.keystoneDungeonName or ""))
             else
                 data.hasKeystone = false
-                Print("No keystone in inventory")
+                -- Print("No keystone in inventory")
             end
         end
         -- Store latest server-provided keystone data and update UI

@@ -1191,6 +1191,48 @@ MythicPlus.Vault.TokenReward.Slot2 = 100
 #        Range:       30 - 1500
 #
 MythicPlus.Vault.TokenReward.Slot3 = 150
+
+#
+#    MythicPlus.Vault.Raid.Threshold1
+#        Description: Number of raid bosses to defeat to unlock the first Raid Vault slot
+#        Default:     2
+#
+MythicPlus.Vault.Raid.Threshold1 = 2
+
+#
+#    MythicPlus.Vault.Raid.Threshold2
+#        Description: Number of raid bosses to defeat to unlock the second Raid Vault slot
+#        Default:     4
+#
+MythicPlus.Vault.Raid.Threshold2 = 4
+
+#
+#    MythicPlus.Vault.Raid.Threshold3
+#        Description: Number of raid bosses to defeat to unlock the third Raid Vault slot
+#        Default:     6
+#
+MythicPlus.Vault.Raid.Threshold3 = 6
+
+#
+#    MythicPlus.Vault.PvP.Threshold1
+#        Description: Amount of Honor/Conquest to earn to unlock the first PvP Vault slot
+#        Default:     1
+#
+MythicPlus.Vault.PvP.Threshold1 = 1
+
+#
+#    MythicPlus.Vault.PvP.Threshold2
+#        Description: Amount of Honor/Conquest to earn to unlock the second PvP Vault slot
+#        Default:     4
+#
+MythicPlus.Vault.PvP.Threshold2 = 4
+
+#
+#    MythicPlus.Vault.PvP.Threshold3
+#        Description: Amount of Honor/Conquest to earn to unlock the third PvP Vault slot
+#        Default:     8
+#
+MythicPlus.Vault.PvP.Threshold3 = 8
 #                     2 = Verbose (includes per-creature scaling details)
 #                     3 = Debug (all operations, very noisy)
 #

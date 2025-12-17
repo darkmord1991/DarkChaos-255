@@ -167,6 +167,14 @@ namespace DCAddon
             constexpr uint8 SMSG_COST_INFO         = 0x13;
             constexpr uint8 SMSG_CURRENCY_UPDATE   = 0x14;
             constexpr uint8 SMSG_PACKAGE_SELECTED  = 0x15;  // Confirm package selection
+            
+            // Transmutation Opcodes
+            constexpr uint8 CMSG_GET_TRANSMUTE_INFO = 0x20; // Get recipes and status
+            constexpr uint8 CMSG_DO_TRANSMUTE       = 0x21; // Perform transmutation
+            
+            constexpr uint8 SMSG_TRANSMUTE_INFO     = 0x30; // Recipes, rates, status
+            constexpr uint8 SMSG_TRANSMUTE_RESULT   = 0x31; // Result of operation
+            constexpr uint8 SMSG_OPEN_TRANSMUTE_UI  = 0x32; // Open the UI
         }
         
         // Phased Duels opcodes
@@ -364,6 +372,9 @@ namespace DCAddon
             constexpr uint8 SMSG_SCHEDULED_EVENTS    = 0x72;  // List of events
             constexpr uint8 SMSG_MY_SIGNUPS          = 0x73;  // My event signups
             
+            // Server -> Client: UI Control
+            constexpr uint8 SMSG_OPEN_UI             = 0x50;  // Open the Group Finder UI
+
             // Server -> Client: Errors
             constexpr uint8 SMSG_ERROR               = 0x5F;  // Error response
         }

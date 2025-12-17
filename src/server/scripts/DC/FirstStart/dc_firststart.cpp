@@ -28,7 +28,7 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "World.h"
 #include "WorldSession.h"
 #include "SpellMgr.h"

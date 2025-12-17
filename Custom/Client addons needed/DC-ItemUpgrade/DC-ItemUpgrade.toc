@@ -12,5 +12,7 @@ Core.lua
 Costs.lua
 Cache.lua
 Heirloom.lua
+Transmutation.lua
+Transmutation.xml
 DarkChaos_ItemUpgrade_Retail.lua
 DarkChaos_ItemUpgrade_Retail.xml

@@ -23,6 +23,7 @@
 #include "StringFormat.h"
 #include "World.h"
 #include "../AddonExtension/DCGroupFinderMgr.h"
+#include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
 #include "AIO.h"
 #endif
@@ -588,6 +589,22 @@ void MythicPlusRunManager::BuildVaultMenu(Player* /*player*/, Creature* /*creatu
 void MythicPlusRunManager::HandleVaultSelection(Player* /*player*/, Creature* /*creature*/, uint32 /*actionId*/)
 {
     // Implemented in npc script; logic handled by our NPC wrapper
+}
+
+// Forwarding wrappers to Great Vault manager
+bool MythicPlusRunManager::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+{
+    return sGreatVault->GenerateVaultRewardPool(playerGuid, seasonId, weekStart);
+}
+
+std::vector<std::tuple<uint8, uint32, uint32>> MythicPlusRunManager::GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+{
+    return sGreatVault->GetVaultRewardPool(playerGuid, seasonId, weekStart);
+}
+
+bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint32 itemId)
+{
+    return sGreatVault->ClaimVaultItemReward(player, slot, itemId);
 }
 
 // Reset weekly vault progress for all or specific players

@@ -18,6 +18,7 @@
 #include "DBCStores.h"
 #include "../MythicPlus/MythicPlusRunManager.h"
 #include "../MythicPlus/MythicPlusConstants.h"
+#include "DCAddonMythicPlus.h"
 
 #include <unordered_map>
 
@@ -172,7 +173,7 @@ namespace MythicPlus
     }
 
     // Send Great Vault info
-    static void SendVaultInfo(Player* player)
+    void SendVaultInfo(Player* player, bool openWindow)
     {
         uint32 guidLow = player->GetGUID().GetCounter();
         uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
@@ -432,13 +433,19 @@ namespace MythicPlus
             .Set("claimedSlot", static_cast<int32>(claimedSlot))
             .Set("highestLevel", static_cast<int32>(mplusHighest))
             .Set("tracks", tracksArr)
+            .Set("open", openWindow)
             .Send(player);
+    }
+
+    void SendOpenVault(Player* player)
+    {
+        SendVaultInfo(player, true);
     }
 
     // Handler: Get vault info
     static void HandleGetVaultInfo(Player* player, const ParsedMessage& /*msg*/)
     {
-        SendVaultInfo(player);
+        SendVaultInfo(player, false);
     }
 
     // Handler: Claim vault reward

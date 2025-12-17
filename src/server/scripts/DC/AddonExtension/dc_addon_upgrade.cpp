@@ -18,7 +18,7 @@
 #include "Chat.h"
 // Note: These headers may not exist - using database queries directly
 // #include "ItemUpgradeMechanics.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 
 namespace DCAddon
 {

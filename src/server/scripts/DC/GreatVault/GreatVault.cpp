@@ -1,6 +1,6 @@
 #include "GreatVault.h"
 #include "GreatVaultUtils.h"
-#include "MythicPlusRunManager.h"
+#include "DC/MythicPlus/MythicPlusRunManager.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
@@ -11,7 +11,7 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "ScriptMgr.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <algorithm>
 #include <random>
 #include <unordered_set>

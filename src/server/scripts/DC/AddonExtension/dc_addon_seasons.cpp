@@ -14,7 +14,7 @@
 #include "Log.h"
 #include "DatabaseEnv.h"
 #include "DCAddonNamespace.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 
 namespace DCAddon
 {

@@ -59,15 +59,16 @@ namespace ItemUpgrade
             uint32 count = 0;
 
             // Iterate over all item templates
-            const ItemTemplateContainer& items = sObjectMgr->GetItemTemplateStore();
-            for (auto const& pair : items)
+            ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
+            if (!items)
+                return;
+
+            for (auto const& pair : *items)
             {
-                const ItemTemplate* itemTemplate = pair.second;
-                if (!itemTemplate)
-                    continue;
+                ItemTemplate const& itemTemplate = pair.second;
 
                 // Check all 5 possible item spells
-                for (const auto& itemSpell : itemTemplate->Spells)
+                for (const auto& itemSpell : itemTemplate.Spells)
                 {
                     if (itemSpell.SpellId > 0)
                     {
@@ -82,7 +83,7 @@ namespace ItemUpgrade
                         if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
                             continue;
 
-                        _procSpellMap[itemSpell.SpellId].push_back(itemTemplate->ItemId);
+                        _procSpellMap[itemSpell.SpellId].push_back(itemTemplate.ItemId);
                         count++;
                     }
                 }
@@ -204,6 +205,7 @@ namespace ItemUpgrade
         // Note: Signature depends on Core version. Assuming standard AC/TC hook.
         void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override
         {
+            (void)target;
             if (!attacker || !spellInfo || damage <= 0)
                 return;
 
@@ -244,6 +246,7 @@ namespace ItemUpgrade
         // Hook: Healing Calculation
         void ModifyHealReceived(Unit* target, Unit* healer, uint32& gain, SpellInfo const* spellInfo) override
         {
+            (void)target;
             if (!healer || !spellInfo || gain <= 0)
                 return;
 
@@ -281,7 +284,7 @@ namespace ItemUpgrade
     public:
         ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript") {}
 
-        void OnLogin(Player* player) override
+        void OnPlayerLogin(Player* player) override
         {
             if (!player) return;
             

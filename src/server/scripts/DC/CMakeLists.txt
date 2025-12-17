@@ -197,6 +197,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_protocol.cpp
     AddonExtension/dc_addon_aoeloot.cpp
     AddonExtension/dc_addon_upgrade.cpp
+    AddonExtension/dc_addon_transmutation.cpp
     AddonExtension/dc_addon_mythicplus.cpp
     AddonExtension/dc_addon_spectator.cpp
     AddonExtension/dc_addon_hotspot.cpp
@@ -207,6 +208,8 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_welcome.cpp
     AddonExtension/dc_addon_duels.cpp
     AddonExtension/dc_addon_prestige.cpp
+    AddonExtension/dc_addon_groupfinder.cpp
+    AddonExtension/npc_group_finder.cpp
 )
 
 # DC First Start System - First-start experience, login system

@@ -13,7 +13,7 @@
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <map>

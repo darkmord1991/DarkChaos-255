@@ -27,7 +27,7 @@
 #include <random>
 #include <vector>
 
-#include "GreatVaultUtils.h"
+#include "DC/GreatVault/GreatVaultUtils.h"
 
 namespace
 {

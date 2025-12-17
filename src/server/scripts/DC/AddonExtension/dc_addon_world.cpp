@@ -121,7 +121,7 @@ namespace World
             }
         };
 
-        auto SecondsUntilBossRotation = [&](uint32 bossEntry) -> int32
+        [[maybe_unused]] auto SecondsUntilBossRotation = [&](uint32 bossEntry) -> int32
         {
             for (int offset = 0; offset < 7; ++offset)
             {

@@ -15,7 +15,7 @@
 #include "ScriptMgr.h"
 #include "Item.h"
 #include "Chat.h"
-#include "ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <sstream>
 
 namespace DarkChaos
