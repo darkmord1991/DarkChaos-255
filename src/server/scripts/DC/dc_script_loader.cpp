@@ -130,6 +130,7 @@ void AddSC_dc_firststart();                   // Integration\\dc_firststart.cpp
 
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
+void AddSC_dc_teleporter();                   // Teleporters\\dc_teleporter.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -148,6 +149,7 @@ void AddDCScripts()
     AddSC_ac_quest_npc_800009();
     AddSC_aio_bridge();
     AddSC_flightmasters();
+    AddSC_dc_teleporter();
 
     // ═══════════════════════════════════════════════════════════════════════
     // JADEFOREST ZONE
