@@ -662,7 +662,16 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
 
     local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
     if entry and spawn and count and targetTextFrame then
-      targetTextFrame:SetText("Entry: " .. entry .. "\nSpawn: " .. spawn .. "\nWPs: " .. count)
+      local wanderText = "?"
+      if self._dcWpLastSpawnDist ~= nil then
+        if (tonumber(self._dcWpLastSpawnDist) or 0) > 0 then
+          wanderText = "ON (" .. tostring(self._dcWpLastSpawnDist) .. ")"
+        else
+          wanderText = "OFF"
+        end
+      end
+
+      targetTextFrame:SetText("Entry: " .. entry .. "\nSpawn: " .. spawn .. "\nWPs: " .. count .. "\nWander: " .. wanderText)
       self._dcWpLastWpInfo = {
         entry = tonumber(entry) or 0,
         spawn = tonumber(spawn) or 0,
@@ -683,6 +692,37 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       -- Clear the pending flag on WP-related failures to avoid a stuck state.
       self._dcWpInfoPending = false
       self._dcWpRunAfterInfo = false
+    end
+  end
+
+  -- DC waypoint wander-distance (spawndist) parsing
+  -- Triggered by the DC Waypoints UI calling `.npc info` to detect random wandering.
+  if self._dcWpSpawnDistPending and type(text) == "string" then
+    if self._dcWpSpawnDistPendingUntil and GetTime and (GetTime() > self._dcWpSpawnDistPendingUntil) then
+      self._dcWpSpawnDistPending = false
+      self._dcWpSpawnDistPendingUntil = nil
+    else
+      local lower = string.lower(text)
+      local dist = string.match(lower, "spawndist[:%s]+([%d%.]+)")
+        or string.match(lower, "spawn%s+distance[:%s]+([%d%.]+)")
+        or string.match(lower, "wanderdistance[:%s]+([%d%.]+)")
+        or string.match(lower, "wander%s+distance[:%s]+([%d%.]+)")
+
+      if dist then
+        self._dcWpLastSpawnDist = tonumber(dist) or 0
+        self._dcWpSpawnDistPending = false
+        self._dcWpSpawnDistPendingUntil = nil
+
+        local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
+        if targetTextFrame and self._dcWpLastWpInfo and self._dcWpLastWpInfo.entry and self._dcWpLastWpInfo.spawn and self._dcWpLastWpInfo.count then
+          local wanderText = (self._dcWpLastSpawnDist > 0) and ("ON (" .. tostring(self._dcWpLastSpawnDist) .. ")") or "OFF"
+          targetTextFrame:SetText(
+            "Entry: " .. tostring(self._dcWpLastWpInfo.entry)
+            .. "\nSpawn: " .. tostring(self._dcWpLastWpInfo.spawn)
+            .. "\nWPs: " .. tostring(self._dcWpLastWpInfo.count)
+            .. "\nWander: " .. wanderText)
+        end
+      end
     end
   end
 

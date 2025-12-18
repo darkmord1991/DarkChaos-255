@@ -7,6 +7,8 @@
 #include "CommandScript.h"
 #include "DatabaseEnv.h"
 
+using namespace Acore::ChatCommands;
+
 enum TeleporterTypes
 {
     TELEPORTER_TYPE_MENU = 1,
@@ -31,7 +33,7 @@ std::map<uint32, TeleporterOption> sTeleporterOptions;
 void LoadTeleporterOptions()
 {
     sTeleporterOptions.clear();
-    QueryResult result = WorldDatabase.Query("SELECT id, parent, type, faction, security_level, icon, name, map, x, y, z, o FROM DC_teleporter");
+    QueryResult result = WorldDatabase.Query("SELECT id, parent, type, faction, security_level, icon, name, map, x, y, z, o FROM dc_teleporter");
 
     if (!result)
     {
@@ -102,6 +104,27 @@ public:
     }
 
 private:
+    /*
+     * ShowMenu - builds gossip menu for teleporter NPC
+     *
+     * Notes about gossip buttons/icons:
+     * - `option.Icon` is an integer stored in the `dc_teleporter` table and maps to
+     *   GossipOptionIcon values (see `GossipDef.h`). Common icons and appearance:
+     *     - GOSSIP_ICON_CHAT (0): white chat bubble — plain text/button
+     *     - GOSSIP_ICON_VENDOR (1): brown bag — merchant-style action
+     *     - GOSSIP_ICON_TAXI (2): paper plane — flight/taxi marker
+     *     - GOSSIP_ICON_TRAINER (3): brown book — trainer-like action
+     *     - GOSSIP_ICON_INTERACT_1/2 (4/5): golden interaction wheel
+     *     - GOSSIP_ICON_MONEY_BAG (6): bag with coin — purchase/payment
+     *     - GOSSIP_ICON_TALK (7): chat bubble with ellipsis — more info
+     *     - GOSSIP_ICON_TABARD (8): tabard icon
+     *     - GOSSIP_ICON_BATTLE (9): crossed swords — battle/duel
+     *     - GOSSIP_ICON_DOT (10): small yellow dot — marker/indicator
+     *
+     * - Example usage:
+     *     AddGossipItemFor(player, option.Icon, option.Name, 0, option.Id);
+     *     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "[Back]", 0, backId);
+     */
     void ShowMenu(Player* player, Creature* creature, uint32 parentId)
     {
         ClearGossipMenuFor(player);
@@ -165,26 +188,31 @@ class dc_teleporter_command_script : public CommandScript
 public:
     dc_teleporter_command_script() : CommandScript("dc_teleporter_command_script") { }
 
-    std::vector<ChatCommandDetails> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommandDetails> dcCommandTable =
+        static ChatCommandTable teleporterSubCommands =
         {
-            { "teleporter", GetTeleporterSubCommands() }
+            ChatCommandBuilder("reload", HandleReloadCommand, SEC_GAMEMASTER, Console::No)
         };
 
-        static std::vector<ChatCommandDetails> commandTable =
+        static ChatCommandTable dcCommandTable =
         {
-            { "dc", dcCommandTable }
+            ChatCommandBuilder("teleporter", teleporterSubCommands)
+        };
+
+        static ChatCommandTable commandTable =
+        {
+            ChatCommandBuilder("dc", dcCommandTable)
         };
 
         return commandTable;
     }
 
-    static std::vector<ChatCommandDetails> GetTeleporterSubCommands()
+    static ChatCommandTable GetTeleporterSubCommands()
     {
-        static std::vector<ChatCommandDetails> commandTable =
+        static ChatCommandTable commandTable =
         {
-            { "reload", HandleReloadCommand, SEC_GAMEMASTER, Console::No }
+            ChatCommandBuilder("reload", HandleReloadCommand, SEC_GAMEMASTER, Console::No)
         };
 
         return commandTable;

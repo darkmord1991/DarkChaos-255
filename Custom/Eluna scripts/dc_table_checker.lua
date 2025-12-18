@@ -234,6 +234,8 @@ local DC_TABLE_CHECKER = {
         
         -- Hotspots
         {"acore_world", "dc_hotspots_active", "Hotspot System", true},
+        -- Teleporters
+        {"acore_world", "dc_teleporter", "Teleporters", false},
         
         -- Item Upgrade Config
         {"acore_world", "dc_item_proc_spells", "Item Procs", false},

@@ -235,6 +235,9 @@ function GOMove:ResetInputDefaults()
     end
 end
 
+-- Forward declaration: MoveOnGuid is defined before IDs are populated below.
+local trinityID = {}
+
 -- Execute a GOMove action on an explicit GUID, without relying on the selection list.
 -- This avoids the "onetime+arg" path in Move() which can break list buttons like Delete/Respawn.
 function GOMove:MoveOnGuid(ID, guid, input)
@@ -260,7 +263,6 @@ function GOMove:MoveOnGuid(ID, guid, input)
     DCAddonProtocol:Send("GOMV", 1, tid[1], guid, ARG)
 end
 
-local trinityID = {}
 local TIDs = 0
 local function TID(name, reqguid, onetime)
     trinityID[name] = {TIDs, reqguid, onetime}

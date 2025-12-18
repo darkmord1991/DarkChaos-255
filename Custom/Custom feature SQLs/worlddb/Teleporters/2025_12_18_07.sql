@@ -1,6 +1,6 @@
-RENAME TABLE `eluna_teleporter` TO `DC_teleporter`;
+RENAME TABLE `eluna_teleporter` TO `dc_teleporter`;
 
-ALTER TABLE `DC_teleporter`
+ALTER TABLE `dc_teleporter`
     ADD COLUMN `security_level` INT DEFAULT 0 AFTER `faction`,
     ADD COLUMN `comment` TEXT AFTER `security_level`;
 

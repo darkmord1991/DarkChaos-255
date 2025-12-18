@@ -67,6 +67,11 @@ local function selectOnly(name, guid)
     end
 end
 
+-- Filled in after MainFrame is created.
+local UpdateMainHeader
+local UpdateSelectedInfoPanel
+local focusSelectionRow
+
 
 
 
@@ -75,6 +80,33 @@ local MainFrame = GOMove:CreateFrame("GOMove_UI", 220, 495)
 GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
 MainFrame:Hide()  -- Hide at startup; open only via /gomove command
+
+-- Small info panel attached to the main UI to show the currently focused selection.
+local SelectedInfoPanel = CreateFrame("Frame", "GOMove_UI_SelectedInfo", MainFrame)
+SelectedInfoPanel:SetSize(250, 70)
+SelectedInfoPanel:SetPoint("TOPLEFT", MainFrame, "TOPRIGHT", 6, -8)
+SelectedInfoPanel:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = true, tileSize = 16,
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+})
+SelectedInfoPanel:Hide()
+
+local SelInfoTitle = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+SelInfoTitle:SetPoint("TOPLEFT", SelectedInfoPanel, "TOPLEFT", 8, -6)
+SelInfoTitle:SetText("Selected GameObject")
+
+local SelInfoGuid = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+SelInfoGuid:SetPoint("TOPLEFT", SelInfoTitle, "BOTTOMLEFT", 0, -4)
+SelInfoGuid:SetText("Spawn GUID: -")
+
+local SelInfoEntry = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+SelInfoEntry:SetPoint("TOPLEFT", SelInfoGuid, "BOTTOMLEFT", 0, -2)
+SelInfoEntry:SetText("Entry: -")
+
+local SelInfoName = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+SelInfoName:SetPoint("TOPLEFT", SelInfoEntry, "BOTTOMLEFT", 0, -2)
+SelInfoName:SetText("Name: -")
 
 -- Clicking outside the GOMove UI should release EditBox focus, so movement keys work.
 if (WorldFrame and not GOMove._worldClickHooked) then
@@ -105,16 +137,24 @@ RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
         if (count <= 0) then
             return
         end
+        -- Always open the selection window when radius results are available.
+        SelFrame:Show()
+
         if (count == 1) then
-            selectOnly(GOMove.SelL[1][1], GOMove.SelL[1][2])
+            focusSelectionRow(GOMove.SelL[1])
             SelFrame:Update()
+            if (UpdateSelectedInfoPanel) then
+                UpdateSelectedInfoPanel()
+            end
             return
         end
 
         clearAllSelected()
         GOMove._pickOneMode = true
-        SelFrame:Show()
         SelFrame:Update()
+        if (UpdateSelectedInfoPanel) then
+            UpdateSelectedInfoPanel()
+        end
     end
 end)
 
@@ -245,6 +285,111 @@ end
 -- Update when user changes ENTRY or when we set it programmatically
 ENTRY:SetScript("OnTextChanged", function() UpdateEntryLabel() end)
 UpdateEntryLabel()
+
+local function findSelRowByGuid(guid)
+    if (not guid) then return nil end
+    for _, row in ipairs(GOMove.SelL) do
+        if (tostring(row[2]) == tostring(guid)) then
+            return row
+        end
+    end
+    return nil
+end
+
+UpdateMainHeader = function()
+    if (not MainFrame or not MainFrame.NameFrame or not MainFrame.NameFrame.text) then
+        return
+    end
+
+    local selectedGuid, selectedName
+    local selectedCount = 0
+    for guid, name in pairs(GOMove.Selected) do
+        if (tonumber(guid)) then
+            selectedCount = selectedCount + 1
+            if (selectedCount == 1) then
+                selectedGuid = guid
+                selectedName = name
+            end
+        end
+    end
+
+    local base = "GOMove UI"
+    if (selectedCount == 0) then
+        MainFrame.NameFrame.text:SetText(base)
+        return
+    end
+    if (selectedCount > 1) then
+        MainFrame.NameFrame.text:SetText(base .. " (" .. tostring(selectedCount) .. " selected)")
+        return
+    end
+
+    MainFrame.NameFrame.text:SetText(base)
+end
+
+UpdateSelectedInfoPanel = function()
+    if (not SelectedInfoPanel) then
+        return
+    end
+    if (not MainFrame:IsVisible()) then
+        SelectedInfoPanel:Hide()
+        return
+    end
+
+    local selectedGuid, selectedName
+    local selectedCount = 0
+    for guid, name in pairs(GOMove.Selected) do
+        if (tonumber(guid)) then
+            selectedCount = selectedCount + 1
+            if (selectedCount == 1) then
+                selectedGuid = guid
+                selectedName = name
+            end
+        end
+    end
+
+    SelectedInfoPanel:Show()
+    if (selectedCount == 0) then
+        SelInfoGuid:SetText("Spawn GUID: -")
+        SelInfoEntry:SetText("Entry: -")
+        SelInfoName:SetText("Name: -")
+        return
+    end
+    if (selectedCount > 1) then
+        SelInfoGuid:SetText("Spawn GUID: (multiple)")
+        SelInfoEntry:SetText("Entry: (multiple)")
+        SelInfoName:SetText("Name: (" .. tostring(selectedCount) .. " selected)")
+        return
+    end
+
+    local row = findSelRowByGuid(selectedGuid)
+    local entry = row and row[3] or "?"
+    local name = selectedName or (row and row[1]) or "(unknown)"
+    SelInfoGuid:SetText("Spawn GUID: " .. tostring(selectedGuid))
+    SelInfoEntry:SetText("Entry: " .. tostring(entry))
+    SelInfoName:SetText("Name: " .. tostring(name))
+end
+
+focusSelectionRow = function(row)
+    if (not row) then return end
+
+    -- Set current spawn GUID as the only selected object for modifications.
+    selectOnly(row[1], row[2])
+
+    -- Fill the ENTRY box for quick spawn/usage.
+    local entryInput = _G["GOMove_UI_ENTRY"]
+    if (entryInput and entryInput.SetNumber) then
+        entryInput:SetNumber(tonumber(row[3]) or 0)
+        UpdateEntryLabel()
+    end
+
+    if (UpdateMainHeader) then
+        UpdateMainHeader()
+    end
+    if (UpdateSelectedInfoPanel) then
+        UpdateSelectedInfoPanel()
+    end
+    MainFrame:Show()
+end
 
 local RADIUS = GOMove:CreateInput(MainFrame, "RADIUS", 40, 25, -55, -325, 4, 20)
 local SELECTALLNEAR = GOMove:CreateButton(MainFrame, "Select by radius", 110, 25, 25, -325)
@@ -380,22 +525,45 @@ function SelFrame:ButtonOnClick(ID)
     if (GOMove._pickOneMode) then
         local row = self.DataTable[DATAID]
         if (row) then
-            selectOnly(row[1], row[2])
+            focusSelectionRow(row)
             GOMove._pickOneMode = false
         end
     else
-        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
-            GOMove.Selected:Del(self.DataTable[DATAID][2])
+        local row = self.DataTable[DATAID]
+        if (not row) then
+            return
+        end
+
+        -- Default: focus the clicked object for modification (single-select + fill ENTRY).
+        -- Shift-click preserves legacy multi-select toggle behavior.
+        if (IsShiftKeyDown()) then
+            if (GOMove.Selected[row[2]]) then
+                GOMove.Selected:Del(row[2])
+            else
+                GOMove.Selected:Add(row[1], row[2])
+            end
+            if (UpdateMainHeader) then
+                UpdateMainHeader()
+            end
         else
-            GOMove.Selected:Add(self.DataTable[DATAID][1], self.DataTable[DATAID][2])
+            focusSelectionRow(row)
         end
     end
     self:Update()
+    if (UpdateSelectedInfoPanel) then
+        UpdateSelectedInfoPanel()
+    end
 end
 function SelFrame:MiscOnClick(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
     GOMove.Selected:Del(self.DataTable[DATAID][2])
     self.DataTable:Del(self.DataTable[DATAID][2])
+    if (UpdateMainHeader) then
+        UpdateMainHeader()
+    end
+    if (UpdateSelectedInfoPanel) then
+        UpdateSelectedInfoPanel()
+    end
     self:Update()
 end
 function SelFrame:UpdateScript(ID)
@@ -595,6 +763,27 @@ for i = 1, SelFrame.ButtonCount do
         GameTooltip:Show()
     end)
     UseEntryButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    local FocusButton = CreateFrame("Button", Button:GetName().."_Focus", UseEntryButton)
+    FocusButton:SetSize(16, 16)
+    FocusButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
+    FocusButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
+    FocusButton:SetHighlightTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+    FocusButton:SetPoint("TOPRIGHT", UseEntryButton, "TOPLEFT", 0, 0)
+    FocusButton:SetScript("OnClick", function()
+        local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
+        local row = SelFrame.DataTable[DATAID]
+        if (not row) then return end
+        focusSelectionRow(row)
+        SelFrame:Update()
+    end)
+    FocusButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Select for modify", 1, 1, 1)
+        GameTooltip:AddLine("Selects only this spawn GUID and fills ENTRY in the GOMove UI.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    FocusButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 local EmptyButton = CreateFrame("Button", SelFrame:GetName().."_EmptyButton", SelFrame)
 EmptyButton:SetSize(30, 30)
@@ -611,6 +800,12 @@ EmptyButton:SetScript("OnClick", function()
     end
     for i = #SelFrame.DataTable, 1, -1 do
         SelFrame.DataTable:Del(SelFrame.DataTable[i][2])
+    end
+    if (UpdateMainHeader) then
+        UpdateMainHeader()
+    end
+    if (UpdateSelectedInfoPanel) then
+        UpdateSelectedInfoPanel()
     end
     SelFrame:Update()
 end)
@@ -637,10 +832,20 @@ function SlashCmdList.GOMOVE(msg, editBox)
         MainFrame:Hide()
         FavFrame:Hide()
         SelFrame:Hide()
+        if (UpdateSelectedInfoPanel) then
+            UpdateSelectedInfoPanel()
+        end
     else
         MainFrame:Show()
         FavFrame:Show()
         SelFrame:Show()
+
+        if (UpdateMainHeader) then
+            UpdateMainHeader()
+        end
+        if (UpdateSelectedInfoPanel) then
+            UpdateSelectedInfoPanel()
+        end
 
         -- Make sure no input box steals movement keys when opening.
         for _, inputfield in ipairs(GOMove.Inputs) do
@@ -696,6 +901,12 @@ EventFrame:SetScript("OnEvent",
                         end
                     end
                     GOMove:Update()
+                    if (UpdateMainHeader) then
+                        UpdateMainHeader()
+                    end
+                    if (UpdateSelectedInfoPanel) then
+                        UpdateSelectedInfoPanel()
+                    end
                 elseif(ID == "ADD") then
                     local guid = ENTRYORGUID
 
@@ -713,6 +924,12 @@ EventFrame:SetScript("OnEvent",
                         end
                         scheduleRadiusFinalize()
                         GOMove:Update()
+                        if (UpdateMainHeader) then
+                            UpdateMainHeader()
+                        end
+                        if (UpdateSelectedInfoPanel) then
+                            UpdateSelectedInfoPanel()
+                        end
                         return
                     end
 
@@ -734,6 +951,12 @@ EventFrame:SetScript("OnEvent",
                         GOMove.SelL:Add(ARG2, guid, ARG3)
                     end
                     GOMove:Update()
+                    if (UpdateMainHeader) then
+                        UpdateMainHeader()
+                    end
+                    if (UpdateSelectedInfoPanel) then
+                        UpdateSelectedInfoPanel()
+                    end
                 elseif(ID == "SWAP") then
                     local oldGUID, newGUID = ENTRYORGUID, ARG3
                     GOMove.Selected:Add(GOMove.Selected[oldGUID], newGUID)
@@ -751,6 +974,12 @@ EventFrame:SetScript("OnEvent",
                     end
 
                     GOMove:Update()
+                    if (UpdateMainHeader) then
+                        UpdateMainHeader()
+                    end
+                    if (UpdateSelectedInfoPanel) then
+                        UpdateSelectedInfoPanel()
+                    end
                 end
             end
         elseif(MSG == "GOMove" and event == "ADDON_LOADED") then

@@ -378,15 +378,21 @@ function AzerothAdmin:UpdateWaypointInfo()
   end
 
   if not UnitExists("target") then
-    targetTextFrame:SetText("Entry: -\nSpawn: -\nWPs: -")
+    targetTextFrame:SetText("Entry: -\nSpawn: -\nWPs: -\nWander: -")
     return
   end
 
   -- 3.3.5 UnitGUID formats vary (often hex-only), so don't parse it client-side.
   -- Always ask the server for authoritative entry/spawn/path/count.
-  targetTextFrame:SetText("Entry: ?\nSpawn: ?\nWPs: ?")
+  targetTextFrame:SetText("Entry: ?\nSpawn: ?\nWPs: ?\nWander: ?")
   self._dcWpInfoPending = true
+  -- Also fetch the selected spawn's wander distance (spawndist) via `.npc info`.
+  -- This helps detect random wandering which can interfere with waypoint movement.
+  self._dcWpSpawnDistPending = true
+  self._dcWpSpawnDistPendingUntil = (GetTime and (GetTime() + 2)) or nil
+  self._dcWpLastSpawnDist = nil
   self:ChatMsg(".wp info")
+  self:ChatMsg(".npc info")
 end
 
 -- Opens a dedicated Waypoints UI window (selection + favorites + buttons).
@@ -432,7 +438,7 @@ function AzerothAdmin:OpenDCWaypoints()
   FrameLib:BuildButton({ name = "ma_dcwaypoints_close", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = 20, height = 20 }, setpoint = { pos = "TOPRIGHT", offX = -8, offY = -8 }, text = "X" })
   AzerothAdmin:PrepareScript(ma_dcwaypoints_close, "Close", function() ma_dcwaypoints_window:Hide() end)
 
-  FrameLib:BuildFontString({ name = "ma_dcwaypoints_info", parent = ma_dcwaypoints_window, text = "Entry: -\nSpawn: -\nWPs: -", setpoint = { pos = "TOPLEFT", offX = pad, offY = -30 } })
+  FrameLib:BuildFontString({ name = "ma_dcwaypoints_info", parent = ma_dcwaypoints_window, text = "Entry: -\nSpawn: -\nWPs: -\nWander: -", setpoint = { pos = "TOPLEFT", offX = pad, offY = -30 } })
 
   FrameLib:BuildButton({ name = "ma_dcwaypoints_refresh", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = 60, height = btnH }, setpoint = { pos = "TOPRIGHT", offX = -35, offY = -32 }, text = "Refresh" })
   AzerothAdmin:PrepareScript(ma_dcwaypoints_refresh, "Refresh waypoint info", function() AzerothAdmin:UpdateWaypointInfo() end)
