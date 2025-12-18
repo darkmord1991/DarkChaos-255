@@ -2980,3 +2980,4 @@ minimapFrame:RegisterEvent("PLAYER_LOGIN")
 minimapFrame:SetScript("OnEvent", function()
     CreateMinimapButton()
 end)
+

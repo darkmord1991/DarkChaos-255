@@ -513,6 +513,19 @@ function Return_enUS()
     ["ma_WayEndAdd"]                  = "WayEndAdd",
     ["ma_WayAdd"]                     = "WayAdd",
     ["ma_WayShow"]                    = "WayShow",
+    ["ma_WayShow1"]                   = "Show On",
+    ["tt_WayShow1"]                   = "Show waypoints",
+    ["ma_WayShow0"]                   = "Show Off",
+    ["tt_WayShow0"]                   = "Hide waypoints",
+    ["ma_WayMAdd"]                    = "Insert",
+    ["tt_WayMAdd"]                    = "Insert waypoint",
+    ["tt_WayModifyDel"]               = "Delete selected waypoint",
+    ["ma_WayMove"]                    = "Move WP",
+    ["tt_WayMove"]                    = "Move selected waypoint to current location",
+    ["ma_WayWipe"]                    = "Wipe",
+    ["tt_WayWipe"]                    = "Clear all waypoints",
+    ["ma_WayRun"]                     = "Run Path",
+    ["tt_WayRun"]                     = "Start moving on the path",
   --[[Other]]
 
 

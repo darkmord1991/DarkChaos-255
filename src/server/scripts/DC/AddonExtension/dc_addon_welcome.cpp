@@ -35,6 +35,7 @@
 #include "AchievementMgr.h"
 #include "../CrossSystem/DCSeasonHelper.h"
 #include <string>
+#include <sstream>
 
 namespace DCWelcome
 {
@@ -51,6 +52,7 @@ namespace DCWelcome
         constexpr uint8 CMSG_MARK_FEATURE_SEEN   = 0x04;
         constexpr uint8 CMSG_GET_WHATS_NEW       = 0x05;
         constexpr uint8 CMSG_GET_PROGRESS        = 0x06;  // NEW: Request progress data
+        constexpr uint8 CMSG_GET_NPC_INFO        = 0x07;  // NEW: Request NPC info (DB GUID)
         
         // Server -> Client
         constexpr uint8 SMSG_SHOW_WELCOME        = 0x10;
@@ -60,6 +62,7 @@ namespace DCWelcome
         constexpr uint8 SMSG_WHATS_NEW           = 0x14;
         constexpr uint8 SMSG_LEVEL_MILESTONE     = 0x15;
         constexpr uint8 SMSG_PROGRESS_DATA       = 0x16;  // NEW: Progress data response
+        constexpr uint8 SMSG_NPC_INFO            = 0x17;  // NEW: NPC info response
     }
     
     // Configuration keys
@@ -462,6 +465,64 @@ namespace DCWelcome
         
         response.Send(player);
     }
+
+    void HandleGetNPCInfo(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        if (!json.HasKey("guid") || !json["guid"].IsString())
+            return;
+            
+        std::string guidStr = json["guid"].AsString();
+        
+        // Allow strings like "0xf130..." or plain hex
+        if (guidStr.size() > 1 && guidStr.rfind("0x", 0) == 0)
+            guidStr = guidStr.substr(2);
+
+        uint64 guidVal = 0;
+        try {
+            guidVal = std::stoull(guidStr, nullptr, 16);
+        } catch (...) {
+            // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Failed to parse GUID string {}", guidStr.c_str());
+            return;
+        }
+        
+        ObjectGuid guid(guidVal);
+        // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Parsed GUID {} from string {}", guid.ToString().c_str(), guidStr.c_str());
+
+        uint32 spawnId = 0;
+        uint32 entry = 0;
+        
+        if (guid.IsCreatureOrVehicle())
+        {
+            if (Creature* creature = ObjectAccessor::GetCreature(*player, guid))
+            {
+                spawnId = creature->GetSpawnId();
+                entry = creature->GetEntry();
+                // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Found creature {} (Entry: {}, SpawnID: {})", guid.ToString().c_str(), entry, spawnId);
+            }
+            else
+            {
+                // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Creature {} not found", guid.ToString().c_str());
+            }
+        }
+        else if (guid.IsGameObject())
+        {
+             if (GameObject* go = ObjectAccessor::GetGameObject(*player, guid))
+             {
+                 spawnId = go->GetSpawnId();
+                 entry = go->GetEntry();
+             }
+        }
+        
+        DCAddon::JsonMessage response(MODULE, Opcode::SMSG_NPC_INFO);
+        response.Set("guid", guidStr);
+        response.Set("spawnId", static_cast<int32>(spawnId));
+        response.Set("entry", static_cast<int32>(entry));
+        response.Send(player);
+    }
     
     void RegisterHandlers()
     {
@@ -473,6 +534,7 @@ namespace DCWelcome
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_MARK_FEATURE_SEEN, HandleMarkFeatureSeen);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_WHATS_NEW, HandleGetWhatsNew);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_PROGRESS, HandleGetProgress);
+        MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_NPC_INFO, HandleGetNPCInfo);
         
         MessageRouter::Instance().SetModuleEnabled(MODULE, true);
     }

@@ -20,10 +20,8 @@ local OPCODE_SMSG_TRANSMUTE_RESULT   = 0x31;
 local OPCODE_SMSG_OPEN_TRANSMUTE_UI  = 0x32;
 
 -- Variables
-local currentRecipes = {};
 local currentExchangeRates = { tokensToEssence = 100, essenceToTokens = 80 };
 local currentStatus = {};
-local selectedRecipeId = 0;
 
 -- ============================================================================
 -- Initialization
@@ -84,11 +82,7 @@ function DarkChaos_Transmutation_ParseInfo(data)
         currentStatus = data.session;
     end
     
-    -- Parse Recipes
-    if data.recipes then
-        currentRecipes = data.recipes;
-    end
-    
+
     DarkChaos_Transmutation_UpdateUI();
 end
 
@@ -189,13 +183,7 @@ function DarkChaos_Transmutation_DoExchange(type)
     end
 end
 
-function DarkChaos_Transmutation_DoSynthesis(recipeId)
-    local DCProtocol = rawget(_G, "DCAddonProtocol");
-    if DCProtocol then
-        local payload = string.format("{\"action\":\"synthesis\",\"recipeId\":%d}", recipeId);
-        DCProtocol:Send(MODULE, OPCODE_CMSG_DO_TRANSMUTE, payload);
-    end
-end
+
 
 function DarkChaos_Transmutation_Show()
     DarkChaos_TransmutationFrame:Show();

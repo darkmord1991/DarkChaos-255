@@ -137,6 +137,7 @@ DCWelcome.Opcode = {
     CMSG_MARK_FEATURE_SEEN = 0x04,
     CMSG_GET_WHATS_NEW = 0x05,
     CMSG_GET_PROGRESS = 0x06,        -- NEW: Request progress data
+    CMSG_GET_NPC_INFO = 0x07,        -- NEW: Request NPC info (DB GUID)
     
     -- Server -> Client
     SMSG_SHOW_WELCOME = 0x10,
@@ -146,6 +147,7 @@ DCWelcome.Opcode = {
     SMSG_WHATS_NEW = 0x14,
     SMSG_LEVEL_MILESTONE = 0x15,
     SMSG_PROGRESS_DATA = 0x16,       -- NEW: Progress data response
+    SMSG_NPC_INFO = 0x17,            -- NEW: NPC info response
 }
 
 -- =============================================================================
@@ -422,6 +424,18 @@ local function RegisterHandlers()
             DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
             
             DebugPrint("Progress data updated from server")
+        end
+    end)
+    
+    -- SMSG_NPC_INFO - Server sends NPC info (DB GUID)
+    DC:RegisterHandler(DCWelcome.Module, DCWelcome.Opcode.SMSG_NPC_INFO, function(data)
+        -- DebugPrint("Received SMSG_NPC_INFO")
+        
+        if type(data) == "table" and data.guid then
+            -- Pass to NPCTooltip handler
+            if DCWelcome.OnNPCInfoReceived then
+                DCWelcome.OnNPCInfoReceived(data)
+            end
         end
     end)
     

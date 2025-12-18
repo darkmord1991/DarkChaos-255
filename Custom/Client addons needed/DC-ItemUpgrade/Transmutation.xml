@@ -108,27 +108,7 @@
                     </Button>
                 </Frames>
             </Frame>                    
-                    <!-- List Buttons (created manually for simplicity) -->
-                    <Button name="$parentButton1" inherits="UIPanelButtonTemplate" text="Recipe 1">
-                        <Size x="500" y="20"/>
-                        <Anchors><Anchor point="TOPLEFT" x="10" y="-10"/></Anchors>
-                    </Button>
-                    <Button name="$parentButton2" inherits="UIPanelButtonTemplate" text="Recipe 2">
-                        <Size x="500" y="20"/>
-                        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentButton1" relativePoint="BOTTOMLEFT" y="-2"/></Anchors>
-                    </Button>
-                    <Button name="$parentButton3" inherits="UIPanelButtonTemplate" text="Recipe 3">
-                        <Size x="500" y="20"/>
-                        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentButton2" relativePoint="BOTTOMLEFT" y="-2"/></Anchors>
-                    </Button>
-                    <Button name="$parentButton4" inherits="UIPanelButtonTemplate" text="Recipe 4">
-                        <Size x="500" y="20"/>
-                        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentButton3" relativePoint="BOTTOMLEFT" y="-2"/></Anchors>
-                    </Button>
-                    <Button name="$parentButton5" inherits="UIPanelButtonTemplate" text="Recipe 5">
-                        <Size x="500" y="20"/>
-                        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentButton4" relativePoint="BOTTOMLEFT" y="-2"/></Anchors>
-                    </Button>
+
         </Frames>
         <Scripts>
             <OnLoad>

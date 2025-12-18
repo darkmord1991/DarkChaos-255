@@ -1,6 +1,102 @@
 -- DC-Welcome: NPC tooltip extension (Entry + Spawn ID)
 -- Adds two lines to unit tooltips for creatures/vehicles.
 
+local DC = _G.DCAddonProtocol
+local npcInfoCache = {}
+local pendingRequests = {}
+local UpdateTargetInfo -- Forward declaration
+
+function DCWelcome.GetNPCInfo(guid)
+    -- Re-check global if nil (in case of load order issues)
+    if not DC then DC = _G.DCAddonProtocol end
+    
+    if not DC then 
+        -- print("DCWelcome: DC lib missing")
+        return 
+    end
+    if pendingRequests[guid] then return end
+    if npcInfoCache[guid] then return end
+    
+    pendingRequests[guid] = true
+    
+    -- Send request
+    if DCWelcome.Module and DCWelcome.Opcode and DCWelcome.Opcode.CMSG_GET_NPC_INFO then
+        -- print("DCWelcome: Requesting info for " .. guid)
+        if DC.Request then
+            DC:Request(DCWelcome.Module, DCWelcome.Opcode.CMSG_GET_NPC_INFO, { guid = guid })
+        else
+            DC:Send(DCWelcome.Module, DCWelcome.Opcode.CMSG_GET_NPC_INFO, { guid = guid })
+        end
+    else
+        -- print("DCWelcome: Module/Opcode missing")
+    end
+end
+
+function DCWelcome.OnNPCInfoReceived(data)
+    local guid = data.guid
+    if not guid then return end
+    
+    -- Normalize GUID to match UnitGUID format (0x prefix)
+    -- The server strips the 0x prefix, so we must add it back to match the cache key.
+    if string.sub(guid, 1, 2) ~= "0x" then
+        guid = "0x" .. guid
+    end
+    
+    -- print("DCWelcome: Received info for " .. guid .. " SpawnID: " .. tostring(data.spawnId))
+
+    pendingRequests[guid] = nil
+    npcInfoCache[guid] = {
+        spawnId = data.spawnId,
+        entry = data.entry
+    }
+    
+    -- Refresh tooltip if it's showing this unit
+    if GameTooltip:IsShown() then
+        local _, unit = GameTooltip:GetUnit()
+        if unit then
+            local currentGuid = UnitGUID(unit)
+            -- Case-insensitive comparison just in case
+            if currentGuid and string.lower(currentGuid) == string.lower(guid) then
+                local dbGuid = data.spawnId
+                if dbGuid then
+                    local rightText = tostring(dbGuid)
+                    -- Hex removed as requested
+                    
+                    -- Try to find existing "Fetching..." line to update
+                    local updated = false
+                    local numLines = GameTooltip:NumLines()
+                    for i = 1, numLines do
+                        local left = _G["GameTooltipTextLeft"..i]
+                        local right = _G["GameTooltipTextRight"..i]
+                        if left and left:GetText() == "DB GUID:" then
+                            right:SetText(rightText)
+                            right:SetTextColor(1, 1, 1) -- Reset color to white
+                            updated = true
+                            break
+                        end
+                    end
+                    
+                    if not updated then
+                        GameTooltip:AddDoubleLine("DB GUID:", rightText, 0.7, 0.7, 0.7, 1, 1, 1)
+                    end
+                    
+                    GameTooltip:Show() -- Force resize
+                end
+            end
+        end
+    end
+    
+    -- Refresh target info
+    -- if UnitExists("target") then
+    --     local targetGuid = UnitGUID("target")
+    --     if targetGuid and string.lower(targetGuid) == string.lower(guid) then
+    --         if UpdateTargetInfo then
+    --             UpdateTargetInfo()
+    --         end
+    --     end
+    -- end
+end
+
 local function ParseNPCIdsFromGuid(guid)
     if not guid or type(guid) ~= "string" then
         return nil
@@ -90,8 +186,25 @@ local function AddNpcLines(tooltip, unit)
         return
     end
 
-    local entry, spawnId, spawnHex = ParseNPCIdsFromGuid(guid)
-    if not entry and not spawnId then
+    local entry, _, _ = ParseNPCIdsFromGuid(guid)
+    local dbGuid = nil
+    local dbGuidHex = nil
+    
+    -- Check cache for server-provided info (overrides local parse)
+    if npcInfoCache[guid] then
+        if npcInfoCache[guid].spawnId and npcInfoCache[guid].spawnId > 0 then
+            dbGuid = npcInfoCache[guid].spawnId
+            dbGuidHex = string.format("%x", dbGuid)
+        end
+        if npcInfoCache[guid].entry and npcInfoCache[guid].entry > 0 then
+            entry = npcInfoCache[guid].entry
+        end
+    else
+        -- Request info if not cached
+        DCWelcome.GetNPCInfo(guid)
+    end
+    
+    if not entry and not dbGuid then
         return
     end
 
@@ -101,59 +214,73 @@ local function AddNpcLines(tooltip, unit)
     if entry then
         tooltip:AddDoubleLine("Entry:", tostring(entry), 0.7, 0.7, 0.7, 1, 1, 1)
     end
-    if spawnId then
-        local right = tostring(spawnId)
-        if spawnHex and spawnHex ~= "" then
-            right = right .. "  (0x" .. string.upper(spawnHex) .. ")"
-        end
-        -- Renamed "Spawn ID" to "DB GUID" to match the database column name
+    if dbGuid then
+        local right = tostring(dbGuid)
+        -- Hex removed as requested
         tooltip:AddDoubleLine("DB GUID:", right, 0.7, 0.7, 0.7, 1, 1, 1)
+    else
+        tooltip:AddDoubleLine("DB GUID:", "Fetching...", 0.7, 0.7, 0.7, 0.5, 0.5, 0.5)
     end
     tooltip:Show()
 end
 
 -- --- Target Frame Integration ---
-local targetInfoFrame = CreateFrame("Frame", "DCWelcomeTargetInfo", TargetFrame)
-targetInfoFrame:SetSize(150, 40)
--- Positioned below the TargetFrame to be visible when targeting
-targetInfoFrame:SetPoint("TOPLEFT", TargetFrame, "BOTTOMLEFT", 5, 5)
+-- Removed as requested
+-- local targetInfoFrame = CreateFrame("Frame", "DCWelcomeTargetInfo", TargetFrame)
+-- targetInfoFrame:SetSize(150, 40)
+-- -- Positioned below the TargetFrame to be visible when targeting
+-- targetInfoFrame:SetPoint("TOPLEFT", TargetFrame, "BOTTOMLEFT", 5, 5)
 
-local targetInfoText = targetInfoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-targetInfoText:SetPoint("TOPLEFT", targetInfoFrame, "TOPLEFT", 0, 0)
-targetInfoText:SetJustifyH("LEFT")
-targetInfoText:SetTextColor(0.8, 0.8, 0.8)
+-- local targetInfoText = targetInfoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+-- targetInfoText:SetPoint("TOPLEFT", targetInfoFrame, "TOPLEFT", 0, 0)
+-- targetInfoText:SetJustifyH("LEFT")
+-- targetInfoText:SetTextColor(0.8, 0.8, 0.8)
 
-local function UpdateTargetInfo()
-    if not UnitExists("target") then
-        targetInfoText:SetText("")
-        return
-    end
+UpdateTargetInfo = function()
+    -- if not UnitExists("target") then
+    --     targetInfoText:SetText("")
+    --     return
+    -- end
 
-    if not ShouldShowNpcTooltip() then
-        targetInfoText:SetText("")
-        return
-    end
+    -- if not ShouldShowNpcTooltip() then
+    --     targetInfoText:SetText("")
+    --     return
+    -- end
 
-    local guid = UnitGUID("target")
-    local entry, spawnId, spawnHex = ParseNPCIdsFromGuid(guid)
+    -- local guid = UnitGUID("target")
+    -- local entry, _, _ = ParseNPCIdsFromGuid(guid)
+    -- local dbGuid = nil
+    -- local dbGuidHex = nil
+    
+    -- -- Check cache for server-provided info
+    -- if npcInfoCache[guid] then
+    --     if npcInfoCache[guid].spawnId and npcInfoCache[guid].spawnId > 0 then
+    --         dbGuid = npcInfoCache[guid].spawnId
+    --         dbGuidHex = string.format("%x", dbGuid)
+    --     end
+    --     if npcInfoCache[guid].entry and npcInfoCache[guid].entry > 0 then
+    --         entry = npcInfoCache[guid].entry
+    --     end
+    -- else
+    --     -- Request info if not cached
+    --     DCWelcome.GetNPCInfo(guid)
+    -- end
 
-    if entry or spawnId then
-        local text = ""
-        if entry then
-            text = text .. "Entry: |cffffffff" .. entry .. "|r"
-        end
-        if spawnId then
-            if text ~= "" then text = text .. "\n" end
-            text = text .. "DB GUID: |cffffffff" .. spawnId .. "|r"
-            if spawnHex then
-                text = text .. " (|cffffffff0x" .. string.upper(spawnHex) .. "|r)"
-            end
-        end
+    -- if entry or dbGuid then
+    --     local text = ""
+    --     if entry then
+    --         text = text .. "Entry: |cffffffff" .. entry .. "|r"
+    --     end
+    --     if dbGuid then
+    --         if text ~= "" then text = text .. "\n" end
+    --         text = text .. "DB GUID: |cffffffff" .. dbGuid .. "|r"
+    --         -- Hex removed as requested
+    --     end
         
-        targetInfoText:SetText(text)
-    else
-        targetInfoText:SetText("")
-    end
+    --     targetInfoText:SetText(text)
+    -- else
+    --     targetInfoText:SetText("")
+    -- end
 end
 
 local function HookTooltip()
@@ -199,6 +326,11 @@ local function HookTooltip()
         end
     end)
 
+    -- Reset flag when tooltip is cleared to ensure fresh updates on next show
+    GameTooltip:HookScript("OnTooltipCleared", function(self)
+        self._dcwelcomeNpcGuid = nil
+    end)
+
     -- Fallback: ensure we still try when tooltip is shown but unit isn't reported.
     GameTooltip:HookScript("OnShow", function(self)
         local _, unit = self:GetUnit()
@@ -223,6 +355,6 @@ f:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         HookTooltip()
     elseif event == "PLAYER_TARGET_CHANGED" then
-        UpdateTargetInfo()
+        -- UpdateTargetInfo()
     end
 end)

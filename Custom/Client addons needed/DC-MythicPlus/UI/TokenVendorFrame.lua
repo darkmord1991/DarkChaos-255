@@ -508,11 +508,10 @@ local function ensureFrame()
         b.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         
         -- Icon Border
-        b.iconBorder = b:CreateTexture(nil, "OVERLAY")
+        b.iconBorder = b:CreateTexture(nil, "BORDER")
         b.iconBorder:SetPoint("CENTER", b.icon, "CENTER")
         b.iconBorder:SetSize(42, 42)
         b.iconBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
-        b.iconBorder:SetDrawLayer("OVERLAY", -1)
 
         b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         b.text:SetPoint("LEFT", b.icon, "RIGHT", 15, 5)

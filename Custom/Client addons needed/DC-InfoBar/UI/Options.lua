@@ -640,21 +640,24 @@ function DCInfoBar:CreateRadioButton(parent, text, x, y, onClick, initialValue, 
     return btn
 end
 
+local sliderCounter = 0
 function DCInfoBar:CreateSlider(parent, x, y, minVal, maxVal, currentVal, onChange)
-    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    sliderCounter = sliderCounter + 1
+    local name = "DCInfoBarSlider" .. sliderCounter
+    local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", x, y)
     slider:SetSize(150, 20)
     slider:SetMinMaxValues(minVal, maxVal)
     slider:SetValue(currentVal)
     slider:SetValueStep(1)
     
-    slider.Low:SetText(minVal)
-    slider.High:SetText(maxVal)
-    slider.Text:SetText(currentVal)
+    if _G[name.."Low"] then _G[name.."Low"]:SetText(minVal) end
+    if _G[name.."High"] then _G[name.."High"]:SetText(maxVal) end
+    if _G[name.."Text"] then _G[name.."Text"]:SetText(currentVal) end
     
     slider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value + 0.5)
-        self.Text:SetText(value)
+        if _G[name.."Text"] then _G[name.."Text"]:SetText(value) end
         if onChange then
             onChange(value)
         end
