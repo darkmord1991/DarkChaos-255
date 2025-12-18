@@ -60,7 +60,7 @@ KUI.Print = Print
 function KUI:CreateActivationFrame()
     if self.frame then return self.frame end
 
-    local frame = CreateFrame("Frame", "DCKeystoneActivationFrame", UIParent, "UIPanelDialogTemplate")
+    local frame = CreateFrame("Frame", "DCKeystoneActivationFrame", UIParent)
     frame:SetSize(500, 400)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -72,23 +72,32 @@ function KUI:CreateActivationFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
 
+    -- Background (WotLK/Retail style)
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 1)
+
     if frame.TitleText then
         frame.TitleText:SetText("Dungeon Finder")
     end
-    if frame.portrait then
-        SetPortraitToTexture(frame.portrait, "Interface\\Icons\\INV_Relics_Hourglass")
-    end
-    if frame.CloseButton then
-        frame.CloseButton:SetScript("OnClick", function()
-            KUI:CancelActivation()
-        end)
-    end
+    
+    -- Close Button
+    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.CloseButton:SetPoint("TOPRIGHT", -8, -8)
+    frame.CloseButton:SetScript("OnClick", function()
+        KUI:CancelActivation()
+    end)
 
-    -- Title: "MYTHIC KEYSTONE" (keep the internal title, positioned below the dialog title)
+    -- Title: "MYTHIC KEYSTONE"
     local title = frame:CreateFontString(nil, "OVERLAY")
     title:SetFont("Fonts\\FRIZQT__.TTF", 18, "OUTLINE")
-    title:SetPoint("TOP", 0, -48)
+    title:SetPoint("TOP", 0, -20)
     title:SetText("MYTHIC KEYSTONE")
+    title:SetTextColor(1, 0.82, 0, 1)
     frame.title = title
     
     -- =====================================================
@@ -96,8 +105,8 @@ function KUI:CreateActivationFrame()
     -- =====================================================
     
     local keystoneSection = CreateFrame("Frame", nil, frame)
-    keystoneSection:SetPoint("TOPLEFT", 20, -70)
-    keystoneSection:SetPoint("TOPRIGHT", -20, -70)
+    keystoneSection:SetPoint("TOPLEFT", 20, -50)
+    keystoneSection:SetPoint("TOPRIGHT", -20, -50)
     keystoneSection:SetHeight(150)
     
     -- Keystone icon (large)
@@ -109,11 +118,10 @@ function KUI:CreateActivationFrame()
     
     -- Keystone icon border
     local iconBorder = keystoneSection:CreateTexture(nil, "OVERLAY")
-    iconBorder:SetSize(88, 88)
+    iconBorder:SetSize(82, 82)
     iconBorder:SetPoint("CENTER", keystoneIcon, "CENTER")
-    iconBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    iconBorder:SetBlendMode("ADD")
-    iconBorder:SetVertexColor(0.2, 0.6, 1.0, 0.8)
+    iconBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    iconBorder:SetDrawLayer("OVERLAY", -1)
     
     -- Dungeon name
     local dungeonName = keystoneSection:CreateFontString(nil, "OVERLAY")
@@ -149,6 +157,7 @@ function KUI:CreateActivationFrame()
     local affixLabel = affixSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     affixLabel:SetPoint("TOPLEFT", 20, -5)
     affixLabel:SetText("Active Affixes:")
+    affixLabel:SetTextColor(1, 0.82, 0, 1)
     
     -- Affix icons container
     frame.affixIcons = {}
@@ -158,15 +167,14 @@ function KUI:CreateActivationFrame()
         affixFrame:SetPoint("LEFT", 20 + ((i - 1) * 50), -25)
         
         local icon = affixFrame:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints()
+        icon:SetPoint("TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", -1, 1)
         icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         affixFrame.icon = icon
         
-        local border = affixFrame:CreateTexture(nil, "OVERLAY")
-        border:SetSize(42, 42)
-        border:SetPoint("CENTER")
-        border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        border:SetBlendMode("ADD")
+        local border = affixFrame:CreateTexture(nil, "BACKGROUND")
+        border:SetAllPoints()
+        border:SetColorTexture(0.3, 0.3, 0.3, 1)
         
         -- Tooltip
         affixFrame:EnableMouse(true)
@@ -198,6 +206,7 @@ function KUI:CreateActivationFrame()
     local readyLabel = readySection:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     readyLabel:SetPoint("TOP", 0, -5)
     readyLabel:SetText("Party Ready Check")
+    readyLabel:SetTextColor(1, 0.82, 0, 1)
     frame.readyLabel = readyLabel
     
     -- Party member slots
@@ -212,7 +221,17 @@ function KUI:CreateActivationFrame()
         
         slot.bg = slot:CreateTexture(nil, "BACKGROUND")
         slot.bg:SetAllPoints()
-        slot.bg:SetColorTexture(0.1, 0.1, 0.15, 0.9)
+        slot.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+        
+        slot.border = slot:CreateTexture(nil, "BORDER")
+        slot.border:SetAllPoints()
+        slot.border:SetColorTexture(0.3, 0.3, 0.3, 1)
+        slot.border:SetDrawLayer("BORDER", -1)
+        
+        local slotInner = slot:CreateTexture(nil, "BACKGROUND", nil, 1)
+        slotInner:SetPoint("TOPLEFT", 1, -1)
+        slotInner:SetPoint("BOTTOMRIGHT", -1, 1)
+        slotInner:SetColorTexture(0.1, 0.1, 0.1, 0.8)
         
         -- Role icon
         slot.roleIcon = slot:CreateTexture(nil, "ARTWORK")
@@ -226,6 +245,7 @@ function KUI:CreateActivationFrame()
         slot.nameText:SetPoint("TOP", slot.roleIcon, "BOTTOM", 0, -2)
         slot.nameText:SetText("Player " .. i)
         slot.nameText:SetWidth(slotWidth - 10)
+        slot.nameText:SetTextColor(1, 1, 1, 1)
         
         -- Ready status icon
         slot.statusIcon = slot:CreateTexture(nil, "OVERLAY")
@@ -261,21 +281,54 @@ function KUI:CreateActivationFrame()
     buttonSection:SetPoint("BOTTOMRIGHT", -20, 20)
     buttonSection:SetHeight(40)
     
+    local function CreateStyledButton(parent, text, width)
+        local btn = CreateFrame("Button", nil, parent)
+        btn:SetSize(width, 30)
+        
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+        
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        btn.text:SetPoint("CENTER")
+        btn.text:SetText(text)
+        btn:SetFontString(btn.text)
+        
+        btn:SetScript("OnEnter", function(self)
+            if self:IsEnabled() then
+                self.bg:SetColorTexture(0.3, 0.3, 0.3, 1)
+            end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if self:IsEnabled() then
+                self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+            else
+                self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
+            end
+        end)
+        btn:SetScript("OnEnable", function(self)
+            self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+            self.text:SetTextColor(1, 1, 1, 1)
+        end)
+        btn:SetScript("OnDisable", function(self)
+            self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
+            self.text:SetTextColor(0.5, 0.5, 0.5, 1)
+        end)
+        
+        return btn
+    end
+    
     -- Ready button (for party members)
-    local readyBtn = CreateFrame("Button", nil, buttonSection, "UIPanelButtonTemplate")
-    readyBtn:SetSize(120, 30)
+    local readyBtn = CreateStyledButton(buttonSection, "Ready!", 120)
     readyBtn:SetPoint("LEFT", 40, 0)
-    readyBtn:SetText("Ready!")
     readyBtn:SetScript("OnClick", function()
         KUI:SendReady()
     end)
     frame.readyBtn = readyBtn
     
     -- Start button (for leader only)
-    local startBtn = CreateFrame("Button", nil, buttonSection, "UIPanelButtonTemplate")
-    startBtn:SetSize(150, 30)
+    local startBtn = CreateStyledButton(buttonSection, "Activate Keystone", 150)
     startBtn:SetPoint("CENTER")
-    startBtn:SetText("Activate Keystone")
     startBtn:Disable()
     startBtn:SetScript("OnClick", function()
         KUI:StartActivation()
@@ -283,7 +336,7 @@ function KUI:CreateActivationFrame()
     frame.startBtn = startBtn
     
     -- Cancel button
-    local cancelBtn = CreateFrame("Button", nil, buttonSection, "UIPanelButtonTemplate")
+    local cancelBtn = CreateStyledButton(buttonSection, "Cancel", 100)
     cancelBtn:SetSize(100, 30)
     cancelBtn:SetPoint("RIGHT", -40, 0)
     cancelBtn:SetText("Cancel")

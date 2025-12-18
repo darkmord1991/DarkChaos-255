@@ -4330,6 +4330,16 @@ DCDuelAddon.Enable = 1
 DC.AddonProtocol.MythicPlus.Enable = 1
 
 #
+#    DC.MythicPlus.AddonUI.AutoOpen
+#        Description: Auto-open Mythic+ addon UI when interacting with DC Mythic+ NPCs
+#                     (token vendor + seasonal dungeon portal selector), without showing gossip first.
+#                     Requires DC.AddonProtocol.Core.Enable and DC.AddonProtocol.MythicPlus.Enable.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - show gossip first)
+#
+DC.MythicPlus.AddonUI.AutoOpen = 1
+
+#
 #    DC.AddonProtocol.Prestige.Enable
 #        Description: Enable DC addon protocol for Prestige system
 #                     When enabled, client addons can display prestige level,

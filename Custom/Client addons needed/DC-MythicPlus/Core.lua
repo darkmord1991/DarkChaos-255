@@ -210,6 +210,8 @@ local function EnsureFrame()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:SetFrameStrata("HIGH")
+    
+    -- Background (WotLK/Retail style)
     if frame.SetBackdrop then
         frame:SetBackdrop({
             bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -242,6 +244,7 @@ local function EnsureFrame()
     headerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     headerText:SetPoint("TOP", frame, "TOP", 0, -12)
     headerText:SetText("Mythic+ HUD")
+    headerText:SetTextColor(1, 0.82, 0, 1)
 
     timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -40)
@@ -391,7 +394,7 @@ local function ScanInventoryForKeystone()
                 local isKeystoneId = KEYSTONE_IDS[itemId]
                 if isKeystoneId or (itemName and string.find(itemName, "Keystone")) then
                     -- Attempt to extract level
-                    local level = tonumber((itemName and (string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)"))) or nil) or nil
+                    local level = tonumber((itemName and (string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)") or string.match(itemName, "%((%d+)%)")))) or nil
                     local dungeon = (itemName and (string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)"))) or nil
                     -- Fallback to tooltip parsing for more detailed info
                     local tooltipLevel, tooltipDungeon
@@ -420,24 +423,28 @@ local function ScanInventoryForKeystone()
                         if line then
                             local text = line:GetText()
                             if text then
-                                local lvl = string.match(text, "Level:?%s*(%d+)") or string.match(text, "%+(%d+)")
+                                local lvl = string.match(text, "Level:?%s*(%d+)") or string.match(text, "%+(%d+)") or string.match(text, "Mythic Level (%d+)") or string.match(text, "Keystone Level (%d+)")
                                 if lvl then tooltipLevel = tonumber(lvl) end
-                                local dng = string.match(text, "Dungeon:?%s*(.+)") or string.match(text, "Instance:?%s*(.+)")
+                                local dng = string.match(text, "Dungeon:?%s*(.+)") or string.match(text, "Instance:?%s*(.+)") or string.match(text, "Map:?%s*(.+)")
                                 if dng then tooltipDungeon = dng end
                             end
                         end
                     end
                     if not level and tooltipLevel then level = tooltipLevel end
                     if not dungeon and tooltipDungeon then dungeon = tooltipDungeon end
-                    found = {
-                        hasKey = true,
-                        level = level or 0,
-                        dungeonName = dungeon or "Unknown",
-                        itemLink = itemLink,
-                        bag = bag,
-                        slot = slot,
-                    }
-                    break
+                    
+                    -- Only accept if we found a valid level
+                    if level and level > 0 then
+                        found = {
+                            hasKey = true,
+                            level = level or 0,
+                            dungeonName = dungeon or "Unknown",
+                            itemLink = itemLink,
+                            bag = bag,
+                            slot = slot,
+                        }
+                        break
+                    end
                 end
             end
         end

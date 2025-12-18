@@ -1715,7 +1715,7 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		if current >= maxUpgrade then
 			progressColor = "|cff00ff00"; -- Green for maxed
 		end
-		tooltip:AddLine(string.format("%sUpgrade Level %d / %d|r", progressColor, current, maxUpgrade));
+		tooltip:AddLine(string.format("%sUpgrade Level %d / %d Tier %d|r", progressColor, current, maxUpgrade, tier));
 		
 		-- Show stat bonus if upgraded
 		if totalBonus > 0 then
@@ -1741,7 +1741,7 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		end
 	elseif maxUpgrade > 0 then
 		-- Show that item is upgradeable but not upgraded yet
-		tooltip:AddLine(string.format("|cff888888Upgrade Level 0 / %d|r", maxUpgrade));
+		tooltip:AddLine(string.format("|cff888888Upgrade Level 0 / %d Tier %d|r", maxUpgrade, tier));
 		
 		-- For unupgraded heirlooms, show hint about package selection
 		if isHeirloom then

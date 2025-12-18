@@ -81,7 +81,8 @@ function GF:CreateLiveRunsTab()
     
     local title = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 10, -8)
-    title:SetText("|cff32c4ffLive Mythic+ Runs|r")
+    title:SetText("Live Mythic+ Runs")
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     local desc = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
@@ -97,6 +98,7 @@ function GF:CreateLiveRunsTab()
     local filterLabel = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     filterLabel:SetPoint("LEFT", 5, 0)
     filterLabel:SetText("Show:")
+    filterLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Filter checkboxes
     local showPublic = CreateFrame("CheckButton", nil, filterFrame, "UICheckButtonTemplate")
@@ -106,6 +108,7 @@ function GF:CreateLiveRunsTab()
     local showPublicText = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     showPublicText:SetPoint("LEFT", showPublic, "RIGHT", 2, 0)
     showPublicText:SetText("Public")
+    showPublicText:SetTextColor(0.9, 0.9, 0.9)
     
     local showFriends = CreateFrame("CheckButton", nil, filterFrame, "UICheckButtonTemplate")
     showFriends:SetPoint("LEFT", showPublicText, "RIGHT", 15, 0)
@@ -114,6 +117,7 @@ function GF:CreateLiveRunsTab()
     local showFriendsText = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     showFriendsText:SetPoint("LEFT", showFriends, "RIGHT", 2, 0)
     showFriendsText:SetText("Friends")
+    showFriendsText:SetTextColor(0.9, 0.9, 0.9)
     
     local showGuild = CreateFrame("CheckButton", nil, filterFrame, "UICheckButtonTemplate")
     showGuild:SetPoint("LEFT", showFriendsText, "RIGHT", 15, 0)
@@ -122,12 +126,33 @@ function GF:CreateLiveRunsTab()
     local showGuildText = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     showGuildText:SetPoint("LEFT", showGuild, "RIGHT", 2, 0)
     showGuildText:SetText("Guild")
+    showGuildText:SetTextColor(0.9, 0.9, 0.9)
     
     -- Refresh button
-    local refreshBtn = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
+    local refreshBtn = CreateFrame("Button", nil, filterFrame)
     refreshBtn:SetSize(80, 22)
     refreshBtn:SetPoint("RIGHT", -5, 0)
-    refreshBtn:SetText("Refresh")
+    
+    refreshBtn.bg = refreshBtn:CreateTexture(nil, "BACKGROUND")
+    refreshBtn.bg:SetAllPoints()
+    refreshBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    refreshBtn.border = CreateFrame("Frame", nil, refreshBtn)
+    refreshBtn.border:SetPoint("TOPLEFT", -1, 1)
+    refreshBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    refreshBtn.border:SetFrameLevel(refreshBtn:GetFrameLevel() - 1)
+    local rBorder = refreshBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    refreshBtn.text = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshBtn.text:SetPoint("CENTER")
+    refreshBtn.text:SetText("Refresh")
+    refreshBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    refreshBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    refreshBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     refreshBtn:SetScript("OnClick", function()
         GF:RefreshLiveRuns()
     end)
@@ -150,18 +175,37 @@ function GF:CreateLiveRunsTab()
     
     joinFrame.bg = joinFrame:CreateTexture(nil, "BACKGROUND")
     joinFrame.bg:SetAllPoints()
-    joinFrame.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
+    joinFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
     
     local joinLabel = joinFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     joinLabel:SetPoint("LEFT", 10, 0)
-    joinLabel:SetText("|cff32c4ffJoin by Spectator Code:|r")
+    joinLabel:SetText("Join by Spectator Code:")
+    joinLabel:SetTextColor(1, 0.82, 0) -- Gold
     
-    local codeEdit = CreateFrame("EditBox", nil, joinFrame, "InputBoxTemplate")
-    codeEdit:SetSize(120, 22)
-    codeEdit:SetPoint("LEFT", joinLabel, "RIGHT", 10, 0)
+    -- Styled code input
+    local codeFrame = CreateFrame("Frame", nil, joinFrame)
+    codeFrame:SetSize(130, 22)
+    codeFrame:SetPoint("LEFT", joinLabel, "RIGHT", 10, 0)
+    
+    codeFrame.bg = codeFrame:CreateTexture(nil, "BACKGROUND")
+    codeFrame.bg:SetAllPoints()
+    codeFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+    
+    codeFrame.border = CreateFrame("Frame", nil, codeFrame)
+    codeFrame.border:SetPoint("TOPLEFT", -1, 1)
+    codeFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    codeFrame.border:SetFrameLevel(codeFrame:GetFrameLevel() - 1)
+    local cBorder = codeFrame.border:CreateTexture(nil, "BACKGROUND")
+    cBorder:SetAllPoints()
+    cBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    local codeEdit = CreateFrame("EditBox", nil, codeFrame)
+    codeEdit:SetPoint("TOPLEFT", 5, 0)
+    codeEdit:SetPoint("BOTTOMRIGHT", -5, 0)
     codeEdit:SetAutoFocus(false)
     codeEdit:SetMaxLetters(16)
     codeEdit:SetText("")
+    codeEdit:SetFontObject("GameFontHighlight")
     frame.codeEdit = codeEdit
     
     -- Placeholder text
@@ -179,10 +223,30 @@ function GF:CreateLiveRunsTab()
     codeEdit.placeholder:SetPoint("LEFT", 5, 0)
     codeEdit.placeholder:SetText("Enter code...")
     
-    local joinBtn = CreateFrame("Button", nil, joinFrame, "UIPanelButtonTemplate")
+    local joinBtn = CreateFrame("Button", nil, joinFrame)
     joinBtn:SetSize(80, 22)
-    joinBtn:SetPoint("LEFT", codeEdit, "RIGHT", 10, 0)
-    joinBtn:SetText("Join")
+    joinBtn:SetPoint("LEFT", codeFrame, "RIGHT", 10, 0)
+    
+    joinBtn.bg = joinBtn:CreateTexture(nil, "BACKGROUND")
+    joinBtn.bg:SetAllPoints()
+    joinBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    joinBtn.border = CreateFrame("Frame", nil, joinBtn)
+    joinBtn.border:SetPoint("TOPLEFT", -1, 1)
+    joinBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    joinBtn.border:SetFrameLevel(joinBtn:GetFrameLevel() - 1)
+    local jBorder = joinBtn.border:CreateTexture(nil, "BACKGROUND")
+    jBorder:SetAllPoints()
+    jBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    joinBtn.text = joinBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    joinBtn.text:SetPoint("CENTER")
+    joinBtn.text:SetText("Join")
+    joinBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    joinBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    joinBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     joinBtn:SetScript("OnClick", function()
         local code = codeEdit:GetText()
         if code and code ~= "" then
@@ -204,19 +268,30 @@ function GF:CreateLiveRunsTab()
     
     settingsFrame.bg = settingsFrame:CreateTexture(nil, "BACKGROUND")
     settingsFrame.bg:SetAllPoints()
-    settingsFrame.bg:SetColorTexture(0.08, 0.1, 0.12, 0.9)
+    settingsFrame.bg:SetColorTexture(0.08, 0.08, 0.08, 1)
     
     local myRunLabel = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     myRunLabel:SetPoint("LEFT", 10, 10)
     myRunLabel:SetText("Your Run Privacy:")
+    myRunLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Privacy dropdown placeholder
     local privacyBtn = CreateFrame("Button", nil, settingsFrame)
     privacyBtn:SetSize(120, 24)
     privacyBtn:SetPoint("LEFT", myRunLabel, "RIGHT", 10, 0)
+    
     privacyBtn.bg = privacyBtn:CreateTexture(nil, "BACKGROUND")
     privacyBtn.bg:SetAllPoints()
-    privacyBtn.bg:SetColorTexture(0.2, 0.2, 0.25, 0.9)
+    privacyBtn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+    
+    privacyBtn.border = CreateFrame("Frame", nil, privacyBtn)
+    privacyBtn.border:SetPoint("TOPLEFT", -1, 1)
+    privacyBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    privacyBtn.border:SetFrameLevel(privacyBtn:GetFrameLevel() - 1)
+    local pBorder = privacyBtn.border:CreateTexture(nil, "BACKGROUND")
+    pBorder:SetAllPoints()
+    pBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
     privacyBtn.text = privacyBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     privacyBtn.text:SetPoint("CENTER")
     privacyBtn.text:SetText("Public")
@@ -225,20 +300,59 @@ function GF:CreateLiveRunsTab()
     local maxSpecLabel = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     maxSpecLabel:SetPoint("LEFT", privacyBtn, "RIGHT", 20, 0)
     maxSpecLabel:SetText("Max Spectators:")
+    maxSpecLabel:SetTextColor(1, 0.82, 0) -- Gold
     
-    local maxSpecEdit = CreateFrame("EditBox", nil, settingsFrame, "InputBoxTemplate")
-    maxSpecEdit:SetSize(40, 22)
-    maxSpecEdit:SetPoint("LEFT", maxSpecLabel, "RIGHT", 10, 0)
+    -- Styled max spec input
+    local maxSpecFrame = CreateFrame("Frame", nil, settingsFrame)
+    maxSpecFrame:SetSize(50, 22)
+    maxSpecFrame:SetPoint("LEFT", maxSpecLabel, "RIGHT", 10, 0)
+    
+    maxSpecFrame.bg = maxSpecFrame:CreateTexture(nil, "BACKGROUND")
+    maxSpecFrame.bg:SetAllPoints()
+    maxSpecFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+    
+    maxSpecFrame.border = CreateFrame("Frame", nil, maxSpecFrame)
+    maxSpecFrame.border:SetPoint("TOPLEFT", -1, 1)
+    maxSpecFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    maxSpecFrame.border:SetFrameLevel(maxSpecFrame:GetFrameLevel() - 1)
+    local mBorder = maxSpecFrame.border:CreateTexture(nil, "BACKGROUND")
+    mBorder:SetAllPoints()
+    mBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    local maxSpecEdit = CreateFrame("EditBox", nil, maxSpecFrame)
+    maxSpecEdit:SetPoint("TOPLEFT", 5, 0)
+    maxSpecEdit:SetPoint("BOTTOMRIGHT", -5, 0)
     maxSpecEdit:SetAutoFocus(false)
     maxSpecEdit:SetNumeric(true)
     maxSpecEdit:SetMaxLetters(2)
     maxSpecEdit:SetText("10")
+    maxSpecEdit:SetFontObject("GameFontHighlight")
     frame.maxSpecEdit = maxSpecEdit
     
-    local saveBtn = CreateFrame("Button", nil, settingsFrame, "UIPanelButtonTemplate")
+    local saveBtn = CreateFrame("Button", nil, settingsFrame)
     saveBtn:SetSize(100, 22)
     saveBtn:SetPoint("RIGHT", -10, 10)
-    saveBtn:SetText("Save Settings")
+    
+    saveBtn.bg = saveBtn:CreateTexture(nil, "BACKGROUND")
+    saveBtn.bg:SetAllPoints()
+    saveBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    saveBtn.border = CreateFrame("Frame", nil, saveBtn)
+    saveBtn.border:SetPoint("TOPLEFT", -1, 1)
+    saveBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    saveBtn.border:SetFrameLevel(saveBtn:GetFrameLevel() - 1)
+    local sBorder = saveBtn.border:CreateTexture(nil, "BACKGROUND")
+    sBorder:SetAllPoints()
+    sBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    saveBtn.text = saveBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    saveBtn.text:SetPoint("CENTER")
+    saveBtn.text:SetText("Save Settings")
+    saveBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    saveBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    saveBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     saveBtn:SetScript("OnClick", function()
         GF:SaveSpectatorSettings()
     end)

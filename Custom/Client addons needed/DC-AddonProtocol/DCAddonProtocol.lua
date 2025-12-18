@@ -66,6 +66,11 @@ DCAddonProtocol = {
 
 local DC = DCAddonProtocol
 
+-- Ensure the addon-message prefix is registered (required for SendAddonMessage/CHAT_MSG_ADDON)
+if type(RegisterAddonMessagePrefix) == "function" then
+    pcall(RegisterAddonMessagePrefix, DC.PREFIX)
+end
+
 -- ============================================================================
 -- ChatFrame Channel Name Protection (WoW 3.3.5a Bug Fix)
 -- ============================================================================
@@ -995,7 +1000,10 @@ frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_ADDON" then
-        if arg1 == DC.PREFIX and arg4 == UnitName("player") then
+        -- Accept DC protocol whispers regardless of sender name.
+        -- Some server packets can arrive with sender != UnitName("player"),
+        -- and filtering on sender would drop all server->client messages.
+        if arg1 == DC.PREFIX and (arg3 == "WHISPER" or arg3 == "WHISPER_INFORM" or not arg3) then
             -- Chunked payload support (server may split large messages into INDEX|TOTAL|DATA chunks)
             -- Reassemble before normal parsing.
             local payload = arg2 or ""

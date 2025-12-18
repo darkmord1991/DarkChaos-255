@@ -69,8 +69,8 @@ local PADDING_Y = 5
 function GV:CreateFrame()
     if frame then return frame end
 
-    frame = CreateFrame("Frame", "DCMythicPlusGreatVaultFrame", UIParent, "UIPanelDialogTemplate")
-    frame:SetSize(740, 540)
+    frame = CreateFrame("Frame", "DCMythicPlusGreatVaultFrame", UIParent)
+    frame:SetSize(740, 600) -- Increased height to fit separators
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -79,20 +79,31 @@ function GV:CreateFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:SetFrameStrata("DIALOG")
 
-    if frame.TitleText then
-        frame.TitleText:SetText("The Great Vault")
-    end
-    if frame.portrait then
-        SetPortraitToTexture(frame.portrait, "Interface\\Icons\\INV_Box_04")
-    end
-    if frame.CloseButton then
-        frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
-    end
+    -- Background (WotLK/Retail style)
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 1) -- Black background
+
+    -- Title
+    frame.TitleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.TitleText:SetPoint("TOP", 0, -15)
+    frame.TitleText:SetText("The Great Vault")
+    frame.TitleText:SetTextColor(1, 0.82, 0, 1)
+
+    -- Close Button
+    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.CloseButton:SetPoint("TOPRIGHT", -5, -5)
+    frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
 
     -- Subtitle
     frame.subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame.subtitle:SetPoint("TOP", 0, -52)
+    frame.subtitle:SetPoint("TOP", 0, -40)
     frame.subtitle:SetText("Earn rewards from Raid, Mythic+, and PvP")
+    frame.subtitle:SetTextColor(1, 0.82, 0, 1)
 
     frame.tracks = {}
     frame.slotByGlobalId = {}
@@ -100,37 +111,52 @@ function GV:CreateFrame()
     local trackTitles = { "Raid", "Mythic+", "PvP" }
     for trackIndex = 1, TRACK_COUNT do
         local track = CreateFrame("Frame", nil, frame)
-        track:SetSize(3 * SLOT_WIDTH + 2 * PADDING_X, SLOT_HEIGHT + 30)
+        track:SetSize(3 * SLOT_WIDTH + 2 * PADDING_X + 20, SLOT_HEIGHT + 45)
         track:SetPoint(
             "TOPLEFT",
-            20,
-            -60 - (trackIndex - 1) * (SLOT_HEIGHT + 35)
+            10,
+            -60 - (trackIndex - 1) * (SLOT_HEIGHT + 50)
         )
 
+        -- Track Background/Separator
+        track.bg = track:CreateTexture(nil, "BACKGROUND")
+        track.bg:SetAllPoints()
+        track.bg:SetColorTexture(0.25, 0.25, 0.25, 0.5)
+
+        track.border = {}
+        track.border.T = track:CreateTexture(nil, "BORDER"); track.border.T:SetPoint("TOPLEFT"); track.border.T:SetPoint("TOPRIGHT"); track.border.T:SetHeight(1); track.border.T:SetColorTexture(0.5, 0.5, 0.5, 1)
+        track.border.B = track:CreateTexture(nil, "BORDER"); track.border.B:SetPoint("BOTTOMLEFT"); track.border.B:SetPoint("BOTTOMRIGHT"); track.border.B:SetHeight(1); track.border.B:SetColorTexture(0.5, 0.5, 0.5, 1)
+        track.border.L = track:CreateTexture(nil, "BORDER"); track.border.L:SetPoint("TOPLEFT"); track.border.L:SetPoint("BOTTOMLEFT"); track.border.L:SetWidth(1); track.border.L:SetColorTexture(0.5, 0.5, 0.5, 1)
+        track.border.R = track:CreateTexture(nil, "BORDER"); track.border.R:SetPoint("TOPRIGHT"); track.border.R:SetPoint("BOTTOMRIGHT"); track.border.R:SetWidth(1); track.border.R:SetColorTexture(0.5, 0.5, 0.5, 1)
+
         track.title = track:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        track.title:SetPoint("TOPLEFT", 5, 0)
+        track.title:SetPoint("TOPLEFT", 10, -8)
         track.title:SetText(trackTitles[trackIndex] or "Track")
+        track.title:SetTextColor(1, 0.82, 0, 1)
 
         track.slots = {}
         for row = 1, SLOTS_PER_TRACK do
             local slot = CreateFrame("Frame", nil, track)
             slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
-            slot:SetPoint("TOPLEFT", (row - 1) * (SLOT_WIDTH + PADDING_X), -25)
+            slot:SetPoint("TOPLEFT", 10 + (row - 1) * (SLOT_WIDTH + PADDING_X), -35)
 
             slot.bg = slot:CreateTexture(nil, "BACKGROUND")
             slot.bg:SetAllPoints()
-            slot.bg:SetColorTexture(0.12, 0.12, 0.12, 0.65)
+            slot.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
 
-            slot.border = CreateFrame("Frame", nil, slot)
-            slot.border:SetAllPoints()
-            slot.border:SetBackdrop({
-                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                edgeSize = 12,
-            })
+            slot.border = {}
+            slot.border.T = slot:CreateTexture(nil, "BORDER"); slot.border.T:SetPoint("TOPLEFT"); slot.border.T:SetPoint("TOPRIGHT"); slot.border.T:SetHeight(1); slot.border.T:SetColorTexture(0.3, 0.3, 0.3, 1)
+            slot.border.B = slot:CreateTexture(nil, "BORDER"); slot.border.B:SetPoint("BOTTOMLEFT"); slot.border.B:SetPoint("BOTTOMRIGHT"); slot.border.B:SetHeight(1); slot.border.B:SetColorTexture(0.3, 0.3, 0.3, 1)
+            slot.border.L = slot:CreateTexture(nil, "BORDER"); slot.border.L:SetPoint("TOPLEFT"); slot.border.L:SetPoint("BOTTOMLEFT"); slot.border.L:SetWidth(1); slot.border.L:SetColorTexture(0.3, 0.3, 0.3, 1)
+            slot.border.R = slot:CreateTexture(nil, "BORDER"); slot.border.R:SetPoint("TOPRIGHT"); slot.border.R:SetPoint("BOTTOMRIGHT"); slot.border.R:SetWidth(1); slot.border.R:SetColorTexture(0.3, 0.3, 0.3, 1)
+            
+            -- slotInner removed as it's redundant with the border lines approach
+            -- local slotInner = slot:CreateTexture(nil, "BACKGROUND", nil, 1) ...
 
             slot.title = slot:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             slot.title:SetPoint("TOPLEFT", 10, -10)
             slot.title:SetText("Reward " .. row)
+            slot.title:SetTextColor(1, 0.82, 0, 1)
 
             slot.req = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             slot.req:SetPoint("TOPLEFT", slot.title, "BOTTOMLEFT", 0, -4)
@@ -139,9 +165,14 @@ function GV:CreateFrame()
             slot.iconFrame = CreateFrame("Frame", nil, slot)
             slot.iconFrame:SetSize(40, 40)
             slot.iconFrame:SetPoint("LEFT", 12, 0)
+            
+            slot.iconFrame.border = slot.iconFrame:CreateTexture(nil, "BACKGROUND")
+            slot.iconFrame.border:SetAllPoints()
+            slot.iconFrame.border:SetColorTexture(0.3, 0.3, 0.3, 1)
 
             slot.icon = slot.iconFrame:CreateTexture(nil, "ARTWORK")
-            slot.icon:SetAllPoints()
+            slot.icon:SetPoint("TOPLEFT", 1, -1)
+            slot.icon:SetPoint("BOTTOMRIGHT", -1, 1)
             slot.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
 
             slot.status = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -149,10 +180,40 @@ function GV:CreateFrame()
             slot.status:SetJustifyH("LEFT")
             slot.status:SetText("Locked")
 
-            slot.button = CreateFrame("Button", nil, slot, "UIPanelButtonTemplate")
+            slot.button = CreateFrame("Button", nil, slot)
             slot.button:SetSize(120, 24)
             slot.button:SetPoint("BOTTOM", 0, 10)
-            slot.button:SetText("Select")
+            
+            slot.button.bg = slot.button:CreateTexture(nil, "BACKGROUND")
+            slot.button.bg:SetAllPoints()
+            slot.button.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+            
+            slot.button.text = slot.button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            slot.button.text:SetPoint("CENTER")
+            slot.button.text:SetText("Select")
+            slot.button:SetFontString(slot.button.text)
+            
+            slot.button:SetScript("OnEnter", function(self)
+                if self:IsEnabled() then
+                    self.bg:SetColorTexture(0.3, 0.3, 0.3, 1)
+                end
+            end)
+            slot.button:SetScript("OnLeave", function(self)
+                if self:IsEnabled() then
+                    self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+                else
+                    self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
+                end
+            end)
+            slot.button:SetScript("OnEnable", function(self)
+                self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+                self.text:SetTextColor(1, 1, 1, 1)
+            end)
+            slot.button:SetScript("OnDisable", function(self)
+                self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
+                self.text:SetTextColor(0.5, 0.5, 0.5, 1)
+            end)
+            
             slot.button:Disable()
 
             slot.iconFrame:SetScript("OnEnter", function(self)

@@ -21,11 +21,11 @@ local L = DCWelcome.L
 -- Frame Dimensions
 -- =============================================================================
 
-local FRAME_WIDTH = 650
+local FRAME_WIDTH = 700
 local FRAME_HEIGHT = 500
 local TAB_HEIGHT = 30
 local CONTENT_PADDING = 15
-local SCROLL_WIDTH = 580
+local SCROLL_WIDTH = 630
 local SCROLL_HEIGHT = 380
 
 -- =============================================================================
@@ -59,19 +59,30 @@ end
 
 local function CreateTabButton(parent, id, label, icon, xOffset)
     local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(100, TAB_HEIGHT - 2)  -- Reduced from 120 to fit 6 tabs
+    btn:SetSize(100, TAB_HEIGHT - 2)
     btn:SetPoint("TOPLEFT", xOffset, 0)
     btn.id = id
     
     -- Background
-    local bg = CreateTexture(btn, 0.15, 0.15, 0.15, 0.9)
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(0.15, 0.15, 0.15, 1) -- Solid color
     btn.bg = bg
+    
+    -- Active Accent (Bottom Line)
+    local accent = btn:CreateTexture(nil, "ARTWORK")
+    accent:SetHeight(3)
+    accent:SetPoint("BOTTOMLEFT", 0, 0)
+    accent:SetPoint("BOTTOMRIGHT", 0, 0)
+    accent:SetTexture(1, 0.8, 0, 1) -- Gold
+    accent:Hide()
+    btn.accent = accent
     
     -- Icon
     if icon then
         local ico = btn:CreateTexture(nil, "ARTWORK")
-        ico:SetSize(18, 18)  -- Slightly smaller icon
-        ico:SetPoint("LEFT", 5, 0)
+        ico:SetSize(16, 16)
+        ico:SetPoint("LEFT", 8, 0)
         ico:SetTexture(icon)
         btn.icon = ico
     end
@@ -79,22 +90,25 @@ local function CreateTabButton(parent, id, label, icon, xOffset)
     -- Label
     local txt = CreateFontString(btn, "GameFontNormalSmall", label)
     if icon then
-        txt:SetPoint("LEFT", btn.icon, "RIGHT", 3, 0)
+        txt:SetPoint("LEFT", btn.icon, "RIGHT", 5, 0)
     else
         txt:SetPoint("CENTER", 0, 0)
     end
+    txt:SetTextColor(0.7, 0.7, 0.7)
     btn.text = txt
     
     -- Highlight
     btn:SetScript("OnEnter", function(self)
         if currentTab ~= self.id then
-            self.bg:SetTexture(0.25, 0.25, 0.3, 0.9)
+            self.bg:SetTexture(0.25, 0.25, 0.25, 1)
+            self.text:SetTextColor(1, 1, 1)
         end
     end)
     
     btn:SetScript("OnLeave", function(self)
         if currentTab ~= self.id then
-            self.bg:SetTexture(0.15, 0.15, 0.15, 0.9)
+            self.bg:SetTexture(0.15, 0.15, 0.15, 1)
+            self.text:SetTextColor(0.7, 0.7, 0.7)
         end
     end)
     
@@ -202,7 +216,7 @@ local function PopulateGettingStarted(scrollChild)
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
     header:SetPoint("TOP", 0, yOffset)
     header:SetText(L["GETTING_STARTED_HEADER"])
-    header:SetTextColor(0, 1, 0)
+    header:SetTextColor(1, 0.82, 0) -- Gold
     yOffset = yOffset - 35
     
     -- Steps
@@ -270,7 +284,7 @@ local function CreateExpandableFeatureCard(parent, feature, yOffset, index)
     card.isExpanded = expandedFeatures[featureId] or false
     
     -- Background for entire card
-    local bg = CreateTexture(card, 0.08, 0.08, 0.12, 0.95)
+    local bg = CreateTexture(card, 0.15, 0.15, 0.15, 0.95)
     card.bg = bg
     
     -- Left color bar (accent) - anchored to full card height
@@ -429,11 +443,11 @@ local function CreateExpandableFeatureCard(parent, feature, yOffset, index)
     
     -- Hover effects
     card:SetScript("OnEnter", function(self)
-        self.bg:SetTexture(0.12, 0.12, 0.18, 0.98)
+        self.bg:SetTexture(0.2, 0.2, 0.2, 0.98)
     end)
     
     card:SetScript("OnLeave", function(self)
-        self.bg:SetTexture(0.08, 0.08, 0.12, 0.95)
+        self.bg:SetTexture(0.15, 0.15, 0.15, 0.95)
     end)
     
     -- Return card and its current height
@@ -707,7 +721,7 @@ local function CreateFAQEntry(parent, entry, yOffset, index)
     question:SetSize(SCROLL_WIDTH - 30, 24)
     question:SetPoint("TOPLEFT", 0, 0)
     
-    local qBg = CreateTexture(question, 0.15, 0.2, 0.15, 0.8)
+    local qBg = CreateTexture(question, 0.15, 0.15, 0.15, 0.8)
     
     local qText = CreateFontString(question, "GameFontNormal")
     qText:SetPoint("LEFT", 10, 0)
@@ -733,7 +747,7 @@ local function PopulateFAQ(scrollChild)
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
     header:SetPoint("TOP", 0, yOffset)
     header:SetText(L["FAQ_HEADER"])
-    header:SetTextColor(0, 0.8, 0.8)
+    header:SetTextColor(1, 0.82, 0) -- Gold
     yOffset = yOffset - 35
     
     -- FAQ entries
@@ -755,7 +769,7 @@ local function CreateLinkCard(parent, linkInfo, yOffset)
     card:SetPoint("TOPLEFT", 10, yOffset)
     
     -- Background
-    local bg = CreateTexture(card, 0.12, 0.12, 0.18, 0.9)
+    local bg = CreateTexture(card, 0.15, 0.15, 0.15, 0.9)
     card.bg = bg
     
     -- Icon
@@ -781,14 +795,14 @@ local function CreateLinkCard(parent, linkInfo, yOffset)
     
     -- Hover effect
     card:SetScript("OnEnter", function(self)
-        self.bg:SetTexture(0.18, 0.18, 0.25, 0.95)
+        self.bg:SetTexture(0.2, 0.2, 0.2, 0.95)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Click to copy: " .. linkInfo.url, 1, 1, 1)
         GameTooltip:Show()
     end)
     
     card:SetScript("OnLeave", function(self)
-        self.bg:SetTexture(0.12, 0.12, 0.18, 0.9)
+        self.bg:SetTexture(0.15, 0.15, 0.15, 0.9)
         GameTooltip:Hide()
     end)
     
@@ -827,7 +841,7 @@ local function PopulateCommunity(scrollChild)
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
     header:SetPoint("TOP", 0, yOffset)
     header:SetText(L["LINKS_HEADER"])
-    header:SetTextColor(0.8, 0.5, 1)
+    header:SetTextColor(1, 0.82, 0) -- Gold
     yOffset = yOffset - 25
     
     -- Intro
@@ -873,46 +887,29 @@ function DCWelcome:CreateWelcomeFrame()
     frame:Hide()
     
     -- Background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
-    bg:SetVertexColor(0.06, 0.06, 0.08, 0.98)
-    
-    -- Border
-    local border = CreateFrame("Frame", nil, frame)
-    border:SetAllPoints()
-    border:SetBackdrop({
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        edgeSize = 32,
+        tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
+    frame:SetBackdropColor(0, 0, 0, 1) -- Black background
     
-    -- Title bar
-    local titleBar = CreateFrame("Frame", nil, frame)
-    titleBar:SetSize(FRAME_WIDTH - 20, 40)
-    titleBar:SetPoint("TOP", 0, -10)
-    local titleBg = CreateTexture(titleBar, 0.1, 0.25, 0.1, 0.8)
+    -- Title Header Background
+    local titleBg = frame:CreateTexture(nil, "ARTWORK")
+    titleBg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+    titleBg:SetWidth(350)
+    titleBg:SetHeight(64)
+    titleBg:SetPoint("TOP", 0, 12)
     
-    -- Server Logo (left side of title bar)
-    -- Note: Logo file should be placed at: Interface\AddOns\DC-Welcome\Textures\ServerLogo.tga
-    -- For WoW 3.3.5a, use TGA (32-bit uncompressed) or BLP format
-    -- Recommended size: 64x64 or 128x128 pixels
-    local logoPath = "Interface\\AddOns\\DC-Welcome\\Textures\\ServerLogo"
-    local logo = frame:CreateTexture(nil, "ARTWORK")
-    logo:SetSize(36, 36)
-    logo:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
-    logo:SetTexture(logoPath)
-    -- If no logo file exists, this will just show blank (no error)
-    frame.logo = logo
-    
-    -- Title text (shifted right to account for logo)
+    -- Title text
     local title = CreateFontString(frame, "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -20)
+    title:SetPoint("TOP", titleBg, "TOP", 0, -14)
     title:SetText(L["WELCOME_TITLE"])
-    title:SetTextColor(0, 1, 0)
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Subtitle
-    local subtitle = CreateFontString(frame, "GameFontHighlight")
+    local subtitle = CreateFontString(frame, "GameFontHighlightSmall")
     subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
     subtitle:SetText(L["WELCOME_SUBTITLE"])
     subtitle:SetTextColor(0.7, 0.7, 0.7)
@@ -940,12 +937,12 @@ function DCWelcome:CreateWelcomeFrame()
     
     frame.tabs = {}
     local tabX = 0
-    local TAB_BUTTON_WIDTH = 88  -- Reduced to fit 7 tabs (88 * 7 = 616, fits in ~620 frame)
+    local TAB_BUTTON_WIDTH = 95
     for _, tabInfo in ipairs(tabs) do
         local tab = CreateTabButton(tabContainer, tabInfo.id, tabInfo.label, tabInfo.icon, tabX)
         tab:SetWidth(TAB_BUTTON_WIDTH)
         frame.tabs[tabInfo.id] = tab
-        tabX = tabX + TAB_BUTTON_WIDTH + 2  -- Small spacing
+        tabX = tabX + TAB_BUTTON_WIDTH + 2
     end
     
     -- Create content frames
@@ -1011,11 +1008,13 @@ function DCWelcome:CreateWelcomeFrame()
         -- Update tab appearances
         for id, tab in pairs(frame.tabs) do
             if id == tabId then
-                tab.bg:SetTexture(0.2, 0.4, 0.2, 0.95)
-                tab.text:SetTextColor(0, 1, 0)
-            else
-                tab.bg:SetTexture(0.15, 0.15, 0.15, 0.9)
+                tab.bg:SetTexture(0.25, 0.25, 0.25, 1)
                 tab.text:SetTextColor(1, 1, 1)
+                tab.accent:Show()
+            else
+                tab.bg:SetTexture(0.15, 0.15, 0.15, 1)
+                tab.text:SetTextColor(0.7, 0.7, 0.7)
+                tab.accent:Hide()
             end
         end
         

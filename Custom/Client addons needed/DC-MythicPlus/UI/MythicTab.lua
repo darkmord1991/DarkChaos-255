@@ -168,11 +168,12 @@ function GF:CreateMythicTab()
         
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.15, 0.2, 0.25, 0.8)
+        btn.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
         
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.text:SetPoint("CENTER")
         btn.text:SetText(tabText)
+        btn.text:SetTextColor(0.7, 0.7, 0.7)
         
         btn.tabIndex = i
         btn:SetScript("OnClick", function(self)
@@ -206,10 +207,10 @@ function GF:SelectMythicSubTab(index)
     local subTabs = self.MythicTabContent.subTabBtns
     for i, btn in ipairs(subTabs) do
         if i == index then
-            btn.bg:SetColorTexture(0.2, 0.4, 0.6, 0.9)
-            btn.text:SetTextColor(1, 1, 1)
+            btn.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
+            btn.text:SetTextColor(1, 0.82, 0) -- Gold
         else
-            btn.bg:SetColorTexture(0.15, 0.2, 0.25, 0.8)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
             btn.text:SetTextColor(0.7, 0.7, 0.7)
         end
     end
@@ -236,11 +237,12 @@ function GF:CreateMythicBrowsePanel(parent)
     headerBar:SetHeight(32)
     headerBar.bg = headerBar:CreateTexture(nil, "BACKGROUND")
     headerBar.bg:SetAllPoints()
-    headerBar.bg:SetColorTexture(0.12, 0.12, 0.14, 1)
+    headerBar.bg:SetColorTexture(0.1, 0.1, 0.1, 0.95)
     
     local headerTitle = headerBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     headerTitle:SetPoint("LEFT", 12, 0)
-    headerTitle:SetText("|cffffffffFind a Group|r")
+    headerTitle:SetText("Find a Group")
+    headerTitle:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Refresh button (right side of header)
     local refreshBtn = CreateFrame("Button", nil, headerBar)
@@ -265,11 +267,12 @@ function GF:CreateMythicBrowsePanel(parent)
     filterBar:SetHeight(28)
     filterBar.bg = filterBar:CreateTexture(nil, "BACKGROUND")
     filterBar.bg:SetAllPoints()
-    filterBar.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+    filterBar.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
     
     local filterLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     filterLabel:SetPoint("LEFT", 12, 0)
-    filterLabel:SetText("|cff888888Dungeon:|r")
+    filterLabel:SetText("Dungeon:")
+    filterLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Dropdown button (styled like retail)
     local filterDropdown = CreateFrame("Button", nil, filterBar)
@@ -277,7 +280,7 @@ function GF:CreateMythicBrowsePanel(parent)
     filterDropdown:SetPoint("LEFT", filterLabel, "RIGHT", 8, 0)
     filterDropdown.bg = filterDropdown:CreateTexture(nil, "BACKGROUND")
     filterDropdown.bg:SetAllPoints()
-    filterDropdown.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    filterDropdown.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
     filterDropdown.text = filterDropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     filterDropdown.text:SetPoint("LEFT", 8, 0)
     filterDropdown.text:SetText("All Dungeons")
@@ -294,8 +297,8 @@ function GF:CreateMythicBrowsePanel(parent)
     filterDropdown.border:SetColorTexture(0.3, 0.3, 0.35, 1)
     
     -- Click handler
-    filterDropdown:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.25, 1) end)
-    filterDropdown:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.15, 0.15, 0.18, 1) end)
+    filterDropdown:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.25, 0.25, 0.25, 1) end)
+    filterDropdown:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
     filterDropdown:SetScript("OnClick", function(self)
         GF:ShowBrowseFilterDropdown(self, panel)
     end)
@@ -663,7 +666,7 @@ function GF:ShowDungeonDropdown(anchorBtn, panel)
         
         dungeonDropdownFrame.bg = dungeonDropdownFrame:CreateTexture(nil, "BACKGROUND")
         dungeonDropdownFrame.bg:SetAllPoints()
-        dungeonDropdownFrame.bg:SetColorTexture(0.1, 0.1, 0.12, 0.98)
+        dungeonDropdownFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.98)
         
         -- Border
         dungeonDropdownFrame.border = CreateFrame("Frame", nil, dungeonDropdownFrame)
@@ -671,7 +674,7 @@ function GF:ShowDungeonDropdown(anchorBtn, panel)
         dungeonDropdownFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
         local borderTex = dungeonDropdownFrame.border:CreateTexture(nil, "BACKGROUND")
         borderTex:SetAllPoints()
-        borderTex:SetColorTexture(0.4, 0.4, 0.45, 1)
+        borderTex:SetColorTexture(0.3, 0.3, 0.3, 1)
         dungeonDropdownFrame.border:SetFrameLevel(dungeonDropdownFrame:GetFrameLevel() - 1)
         
         -- Close button at top
@@ -749,7 +752,7 @@ function GF:ShowDungeonDropdown(anchorBtn, panel)
             
             btn.bg = btn:CreateTexture(nil, "BACKGROUND")
             btn.bg:SetAllPoints()
-            btn.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             
             btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             btn.text:SetPoint("LEFT", 10, 0)
@@ -757,10 +760,10 @@ function GF:ShowDungeonDropdown(anchorBtn, panel)
             btn.text:SetJustifyH("LEFT")
             
             btn:SetScript("OnEnter", function(self)
-                self.bg:SetColorTexture(0.25, 0.4, 0.6, 1)
+                self.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
             end)
             btn:SetScript("OnLeave", function(self)
-                self.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+                self.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             end)
             
             dungeonButtons[i] = btn
@@ -812,7 +815,7 @@ function GF:ShowBrowseFilterDropdown(anchorBtn, panel)
         
         browseFilterFrame.bg = browseFilterFrame:CreateTexture(nil, "BACKGROUND")
         browseFilterFrame.bg:SetAllPoints()
-        browseFilterFrame.bg:SetColorTexture(0.1, 0.1, 0.12, 0.98)
+        browseFilterFrame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.98)
         
         -- Border
         browseFilterFrame.border = CreateFrame("Frame", nil, browseFilterFrame)
@@ -820,7 +823,7 @@ function GF:ShowBrowseFilterDropdown(anchorBtn, panel)
         browseFilterFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
         local borderTex = browseFilterFrame.border:CreateTexture(nil, "BACKGROUND")
         borderTex:SetAllPoints()
-        borderTex:SetColorTexture(0.4, 0.4, 0.45, 1)
+        borderTex:SetColorTexture(0.3, 0.3, 0.3, 1)
         browseFilterFrame.border:SetFrameLevel(browseFilterFrame:GetFrameLevel() - 1)
         
         -- Close button
@@ -894,7 +897,7 @@ function GF:ShowBrowseFilterDropdown(anchorBtn, panel)
             
             btn.bg = btn:CreateTexture(nil, "BACKGROUND")
             btn.bg:SetAllPoints()
-            btn.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             
             btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             btn.text:SetPoint("LEFT", 10, 0)
@@ -902,10 +905,10 @@ function GF:ShowBrowseFilterDropdown(anchorBtn, panel)
             btn.text:SetJustifyH("LEFT")
             
             btn:SetScript("OnEnter", function(self)
-                self.bg:SetColorTexture(0.25, 0.4, 0.6, 1)
+                self.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
             end)
             btn:SetScript("OnLeave", function(self)
-                self.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+                self.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             end)
             
             browseFilterButtons[btnIndex] = btn
@@ -968,6 +971,7 @@ function GF:CreateMythicCreatePanel(parent)
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
     title:SetText("Create a Mythic+ Group")
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     local y = -50
     
@@ -975,7 +979,7 @@ function GF:CreateMythicCreatePanel(parent)
     local dungeonLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     dungeonLabel:SetPoint("TOPLEFT", 20, y)
     dungeonLabel:SetText("Select Dungeon:")
-    dungeonLabel:SetTextColor(0.9, 0.8, 0.5)  -- Gold color for labels
+    dungeonLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     local dungeonBtn = CreateFrame("Button", nil, panel)
     dungeonBtn:SetSize(250, 28)
@@ -984,7 +988,7 @@ function GF:CreateMythicCreatePanel(parent)
     -- Styled background
     dungeonBtn.bg = dungeonBtn:CreateTexture(nil, "BACKGROUND")
     dungeonBtn.bg:SetAllPoints()
-    dungeonBtn.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    dungeonBtn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
     -- Border
     dungeonBtn.border = CreateFrame("Frame", nil, dungeonBtn)
@@ -993,7 +997,7 @@ function GF:CreateMythicCreatePanel(parent)
     dungeonBtn.border:SetFrameLevel(dungeonBtn:GetFrameLevel() - 1)
     local borderTex = dungeonBtn.border:CreateTexture(nil, "BACKGROUND")
     borderTex:SetAllPoints()
-    borderTex:SetColorTexture(0.4, 0.35, 0.25, 1)  -- Gold border
+    borderTex:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     dungeonBtn.text = dungeonBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     dungeonBtn.text:SetPoint("LEFT", 12, 0)
@@ -1003,14 +1007,14 @@ function GF:CreateMythicCreatePanel(parent)
     local arrow = dungeonBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     arrow:SetPoint("RIGHT", -10, 0)
     arrow:SetText("▼")
-    arrow:SetTextColor(0.6, 0.6, 0.6)
+    arrow:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Highlight on hover
     dungeonBtn:SetScript("OnEnter", function(self)
-        self.bg:SetColorTexture(0.22, 0.22, 0.28, 1)
+        self.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
     end)
     dungeonBtn:SetScript("OnLeave", function(self)
-        self.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+        self.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     end)
     
     -- Click to show dropdown menu
@@ -1027,7 +1031,7 @@ function GF:CreateMythicCreatePanel(parent)
     local levelLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     levelLabel:SetPoint("TOPLEFT", 20, y)
     levelLabel:SetText("Keystone Level:")
-    levelLabel:SetTextColor(0.9, 0.8, 0.5)
+    levelLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Styled level input
     local levelFrame = CreateFrame("Frame", nil, panel)
@@ -1035,11 +1039,11 @@ function GF:CreateMythicCreatePanel(parent)
     levelFrame:SetPoint("TOPLEFT", 150, y + 3)
     levelFrame.bg = levelFrame:CreateTexture(nil, "BACKGROUND")
     levelFrame.bg:SetAllPoints()
-    levelFrame.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    levelFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     levelFrame.border = levelFrame:CreateTexture(nil, "BORDER")
     levelFrame.border:SetPoint("TOPLEFT", -1, 1)
     levelFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
-    levelFrame.border:SetColorTexture(0.4, 0.35, 0.25, 1)
+    levelFrame.border:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     local levelEdit = CreateFrame("EditBox", nil, levelFrame)
     levelEdit:SetSize(70, 22)
@@ -1065,7 +1069,7 @@ function GF:CreateMythicCreatePanel(parent)
     local noteLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     noteLabel:SetPoint("TOPLEFT", 20, y)
     noteLabel:SetText("Group Note:")
-    noteLabel:SetTextColor(0.9, 0.8, 0.5)
+    noteLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Styled note input
     local noteFrame = CreateFrame("Frame", nil, panel)
@@ -1073,11 +1077,11 @@ function GF:CreateMythicCreatePanel(parent)
     noteFrame:SetPoint("TOPLEFT", 150, y + 3)
     noteFrame.bg = noteFrame:CreateTexture(nil, "BACKGROUND")
     noteFrame.bg:SetAllPoints()
-    noteFrame.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    noteFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     noteFrame.border = noteFrame:CreateTexture(nil, "BORDER")
     noteFrame.border:SetPoint("TOPLEFT", -1, 1)
     noteFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
-    noteFrame.border:SetColorTexture(0.4, 0.35, 0.25, 1)
+    noteFrame.border:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     local noteEdit = CreateFrame("EditBox", nil, noteFrame)
     noteEdit:SetSize(340, 22)
@@ -1098,10 +1102,30 @@ function GF:CreateMythicCreatePanel(parent)
     panel.statusText = statusText
     
     -- Create button
-    local createBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local createBtn = CreateFrame("Button", nil, panel)
     createBtn:SetSize(150, 30)
     createBtn:SetPoint("TOP", 0, y)
-    createBtn:SetText("Create Group")
+    
+    createBtn.bg = createBtn:CreateTexture(nil, "BACKGROUND")
+    createBtn.bg:SetAllPoints()
+    createBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    createBtn.border = CreateFrame("Frame", nil, createBtn)
+    createBtn.border:SetPoint("TOPLEFT", -1, 1)
+    createBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    createBtn.border:SetFrameLevel(createBtn:GetFrameLevel() - 1)
+    local btnBorder = createBtn.border:CreateTexture(nil, "BACKGROUND")
+    btnBorder:SetAllPoints()
+    btnBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    createBtn.text = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    createBtn.text:SetPoint("CENTER")
+    createBtn.text:SetText("Create Group")
+    createBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    createBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    createBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     createBtn:SetScript("OnClick", function()
         if not panel.selectedDungeon then
             panel.statusText:SetText("|cffff4444Please select a dungeon first!|r")
@@ -1215,6 +1239,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
     title:SetText("Your Mythic Keystone & Difficulty")
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     -- =====================================================
     -- Keystone Display Section
@@ -1225,7 +1250,16 @@ function GF:CreateMythicKeystonePanel(parent)
     
     keystoneFrame.bg = keystoneFrame:CreateTexture(nil, "BACKGROUND")
     keystoneFrame.bg:SetAllPoints()
-    keystoneFrame.bg:SetColorTexture(0.08, 0.1, 0.15, 0.95)
+    keystoneFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 0.95)
+    
+    -- Border
+    keystoneFrame.border = CreateFrame("Frame", nil, keystoneFrame)
+    keystoneFrame.border:SetPoint("TOPLEFT", -1, 1)
+    keystoneFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    keystoneFrame.border:SetFrameLevel(keystoneFrame:GetFrameLevel() - 1)
+    local kBorder = keystoneFrame.border:CreateTexture(nil, "BACKGROUND")
+    kBorder:SetAllPoints()
+    kBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     local keystoneIcon = keystoneFrame:CreateTexture(nil, "ARTWORK")
     keystoneIcon:SetSize(54, 54)
@@ -1241,6 +1275,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local keystoneLevel = keystoneFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     keystoneLevel:SetPoint("TOPLEFT", keystoneName, "BOTTOMLEFT", 0, -4)
     keystoneLevel:SetText("Level: +?")
+    keystoneLevel:SetTextColor(1, 0.82, 0) -- Gold
     panel.keystoneLevel = keystoneLevel
     
     local keystoneDungeon = keystoneFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -1249,10 +1284,30 @@ function GF:CreateMythicKeystonePanel(parent)
     panel.keystoneDungeon = keystoneDungeon
     
     -- Refresh keystone button
-    local refreshBtn = CreateFrame("Button", nil, keystoneFrame, "UIPanelButtonTemplate")
+    local refreshBtn = CreateFrame("Button", nil, keystoneFrame)
     refreshBtn:SetSize(90, 22)
     refreshBtn:SetPoint("RIGHT", -10, 0)
-    refreshBtn:SetText("Refresh")
+    
+    refreshBtn.bg = refreshBtn:CreateTexture(nil, "BACKGROUND")
+    refreshBtn.bg:SetAllPoints()
+    refreshBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    refreshBtn.border = CreateFrame("Frame", nil, refreshBtn)
+    refreshBtn.border:SetPoint("TOPLEFT", -1, 1)
+    refreshBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    refreshBtn.border:SetFrameLevel(refreshBtn:GetFrameLevel() - 1)
+    local rBorder = refreshBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    refreshBtn.text = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshBtn.text:SetPoint("CENTER")
+    refreshBtn.text:SetText("Refresh")
+    refreshBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    refreshBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    refreshBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     refreshBtn:SetScript("OnClick", function()
         GF:RequestKeystoneInfo()
     end)
@@ -1267,6 +1322,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local diffTitle = diffSection:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     diffTitle:SetPoint("TOP", 0, -5)
     diffTitle:SetText("Dungeon Difficulty")
+    diffTitle:SetTextColor(1, 0.82, 0) -- Gold
     
     local diffDesc = diffSection:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     diffDesc:SetPoint("TOP", diffTitle, "BOTTOM", 0, -3)
@@ -1276,7 +1332,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local currentDiffLabel = diffSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     currentDiffLabel:SetPoint("TOPLEFT", 20, -45)
     currentDiffLabel:SetText("Current:")
-    currentDiffLabel:SetTextColor(0.9, 0.8, 0.5)
+    currentDiffLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     panel.currentDiffText = diffSection:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     panel.currentDiffText:SetPoint("LEFT", currentDiffLabel, "RIGHT", 10, 0)
@@ -1290,10 +1346,27 @@ function GF:CreateMythicKeystonePanel(parent)
     
     panel.diffButtons = {}
     for i, diff in ipairs(DIFFICULTY_OPTIONS) do
-        local btn = CreateFrame("Button", nil, diffSection, "UIPanelButtonTemplate")
+        local btn = CreateFrame("Button", nil, diffSection)
         btn:SetSize(btnWidth, 30)
         btn:SetPoint("TOPLEFT", startX + ((i - 1) * btnSpacing), btnY)
-        btn:SetText(diff.name)
+        
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+        
+        btn.border = CreateFrame("Frame", nil, btn)
+        btn.border:SetPoint("TOPLEFT", -1, 1)
+        btn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+        btn.border:SetFrameLevel(btn:GetFrameLevel() - 1)
+        local bBorder = btn.border:CreateTexture(nil, "BACKGROUND")
+        bBorder:SetAllPoints()
+        bBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+        
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.text:SetPoint("CENTER")
+        btn.text:SetText(diff.name)
+        btn.text:SetTextColor(1, 0.82, 0) -- Gold
+        
         btn.diffInfo = diff
         
         -- Color the button text

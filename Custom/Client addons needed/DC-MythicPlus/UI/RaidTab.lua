@@ -207,17 +207,38 @@ function GF:CreateRaidTab()
         
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.15, 0.2, 0.25, 0.8)
+        btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+        
+        btn.border = CreateFrame("Frame", nil, btn)
+        btn.border:SetPoint("BOTTOMLEFT", 0, 0)
+        btn.border:SetPoint("BOTTOMRIGHT", 0, 0)
+        btn.border:SetHeight(2)
+        local borderTex = btn.border:CreateTexture(nil, "BACKGROUND")
+        borderTex:SetAllPoints()
+        borderTex:SetColorTexture(0.3, 0.3, 0.3, 1)
+        btn.borderTex = borderTex
         
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.text:SetPoint("CENTER")
         btn.text:SetText(tabText)
+        btn.text:SetTextColor(0.7, 0.7, 0.7)
         
         btn.tabIndex = i
         btn:SetScript("OnClick", function(self)
             GF:SelectRaidSubTab(self.tabIndex)
         end)
-        btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        
+        btn:SetScript("OnEnter", function(self)
+            if self.tabIndex ~= GF.selectedRaidSubTab then
+                self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+            end
+        end)
+        
+        btn:SetScript("OnLeave", function(self)
+            if self.tabIndex ~= GF.selectedRaidSubTab then
+                self.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+            end
+        end)
         
         subTabBtns[i] = btn
     end
@@ -240,14 +261,18 @@ end
 function GF:SelectRaidSubTab(index)
     if not self.RaidTabContent then return end
     
+    GF.selectedRaidSubTab = index
+    
     local subTabs = self.RaidTabContent.subTabBtns
     for i, btn in ipairs(subTabs) do
         if i == index then
-            btn.bg:SetColorTexture(0.2, 0.4, 0.6, 0.9)
-            btn.text:SetTextColor(1, 1, 1)
+            btn.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
+            btn.text:SetTextColor(1, 0.82, 0) -- Gold
+            btn.borderTex:SetColorTexture(1, 0.82, 0, 1) -- Gold underline
         else
-            btn.bg:SetColorTexture(0.15, 0.2, 0.25, 0.8)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             btn.text:SetTextColor(0.7, 0.7, 0.7)
+            btn.borderTex:SetColorTexture(0.3, 0.3, 0.3, 1)
         end
     end
     
@@ -273,22 +298,53 @@ function GF:CreateRaidBrowsePanel(parent)
     local filterLabel = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     filterLabel:SetPoint("LEFT", 5, 0)
     filterLabel:SetText("Filter by Raid:")
+    filterLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     local filterDropdown = CreateFrame("Button", nil, filterFrame)
     filterDropdown:SetSize(180, 24)
     filterDropdown:SetPoint("LEFT", filterLabel, "RIGHT", 10, 0)
+    
     filterDropdown.bg = filterDropdown:CreateTexture(nil, "BACKGROUND")
     filterDropdown.bg:SetAllPoints()
-    filterDropdown.bg:SetColorTexture(0.2, 0.2, 0.25, 0.9)
+    filterDropdown.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+    
+    filterDropdown.border = CreateFrame("Frame", nil, filterDropdown)
+    filterDropdown.border:SetPoint("TOPLEFT", -1, 1)
+    filterDropdown.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    filterDropdown.border:SetFrameLevel(filterDropdown:GetFrameLevel() - 1)
+    local fBorder = filterDropdown.border:CreateTexture(nil, "BACKGROUND")
+    fBorder:SetAllPoints()
+    fBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
     filterDropdown.text = filterDropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     filterDropdown.text:SetPoint("CENTER")
     filterDropdown.text:SetText("All Raids")
     
     -- Refresh button
-    local refreshBtn = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
+    local refreshBtn = CreateFrame("Button", nil, filterFrame)
     refreshBtn:SetSize(80, 22)
     refreshBtn:SetPoint("RIGHT", -5, 0)
-    refreshBtn:SetText("Refresh")
+    
+    refreshBtn.bg = refreshBtn:CreateTexture(nil, "BACKGROUND")
+    refreshBtn.bg:SetAllPoints()
+    refreshBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    refreshBtn.border = CreateFrame("Frame", nil, refreshBtn)
+    refreshBtn.border:SetPoint("TOPLEFT", -1, 1)
+    refreshBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    refreshBtn.border:SetFrameLevel(refreshBtn:GetFrameLevel() - 1)
+    local rBorder = refreshBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    refreshBtn.text = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshBtn.text:SetPoint("CENTER")
+    refreshBtn.text:SetText("Refresh")
+    refreshBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    refreshBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    refreshBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     refreshBtn:SetScript("OnClick", function()
         GF:RefreshRaidGroups()
     end)
@@ -310,7 +366,7 @@ function GF:CreateRaidBrowsePanel(parent)
     actionBar:SetHeight(28)
     actionBar.bg = actionBar:CreateTexture(nil, "BACKGROUND")
     actionBar.bg:SetAllPoints()
-    actionBar.bg:SetColorTexture(0.10, 0.10, 0.12, 1)
+    actionBar.bg:SetColorTexture(0.10, 0.10, 0.10, 1)
     
     -- Results count
     local resultsText = actionBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -319,11 +375,30 @@ function GF:CreateRaidBrowsePanel(parent)
     panel.resultsText = resultsText
     
     -- View Applicants button (only visible when you have a listing)
-    local applicantBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
+    local applicantBtn = CreateFrame("Button", nil, actionBar)
     applicantBtn:SetSize(120, 22)
     applicantBtn:SetPoint("RIGHT", -12, 0)
-    applicantBtn:SetText("View Applicants")
-    applicantBtn:GetFontString():SetTextColor(1, 0.82, 0)
+    
+    applicantBtn.bg = applicantBtn:CreateTexture(nil, "BACKGROUND")
+    applicantBtn.bg:SetAllPoints()
+    applicantBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    applicantBtn.border = CreateFrame("Frame", nil, applicantBtn)
+    applicantBtn.border:SetPoint("TOPLEFT", -1, 1)
+    applicantBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    applicantBtn.border:SetFrameLevel(applicantBtn:GetFrameLevel() - 1)
+    local aBorder = applicantBtn.border:CreateTexture(nil, "BACKGROUND")
+    aBorder:SetAllPoints()
+    aBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    applicantBtn.text = applicantBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    applicantBtn.text:SetPoint("CENTER")
+    applicantBtn.text:SetText("View Applicants")
+    applicantBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    applicantBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    applicantBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     applicantBtn:SetScript("OnClick", function()
         GF:ShowApplicantPanel()
     end)
@@ -501,6 +576,7 @@ function GF:CreateRaidCreatePanel(parent)
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
     title:SetText("Create a Raid Group")
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     local y = -50
     
@@ -508,7 +584,7 @@ function GF:CreateRaidCreatePanel(parent)
     local raidLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     raidLabel:SetPoint("TOPLEFT", 20, y)
     raidLabel:SetText("Select Raid:")
-    raidLabel:SetTextColor(0.9, 0.8, 0.5)
+    raidLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     local raidBtn = CreateFrame("Button", nil, panel)
     raidBtn:SetSize(250, 28)
@@ -516,31 +592,15 @@ function GF:CreateRaidCreatePanel(parent)
     
     raidBtn.bg = raidBtn:CreateTexture(nil, "BACKGROUND")
     raidBtn.bg:SetAllPoints()
-    raidBtn.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    raidBtn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
-    raidBtn.borderTop = raidBtn:CreateTexture(nil, "BORDER")
-    raidBtn.borderTop:SetHeight(1)
-    raidBtn.borderTop:SetPoint("TOPLEFT", 0, 0)
-    raidBtn.borderTop:SetPoint("TOPRIGHT", 0, 0)
-    raidBtn.borderTop:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    raidBtn.borderBottom = raidBtn:CreateTexture(nil, "BORDER")
-    raidBtn.borderBottom:SetHeight(1)
-    raidBtn.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
-    raidBtn.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-    raidBtn.borderBottom:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    raidBtn.borderLeft = raidBtn:CreateTexture(nil, "BORDER")
-    raidBtn.borderLeft:SetWidth(1)
-    raidBtn.borderLeft:SetPoint("TOPLEFT", 0, 0)
-    raidBtn.borderLeft:SetPoint("BOTTOMLEFT", 0, 0)
-    raidBtn.borderLeft:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    raidBtn.borderRight = raidBtn:CreateTexture(nil, "BORDER")
-    raidBtn.borderRight:SetWidth(1)
-    raidBtn.borderRight:SetPoint("TOPRIGHT", 0, 0)
-    raidBtn.borderRight:SetPoint("BOTTOMRIGHT", 0, 0)
-    raidBtn.borderRight:SetColorTexture(0.4, 0.4, 0.45, 1)
+    raidBtn.border = CreateFrame("Frame", nil, raidBtn)
+    raidBtn.border:SetPoint("TOPLEFT", -1, 1)
+    raidBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    raidBtn.border:SetFrameLevel(raidBtn:GetFrameLevel() - 1)
+    local rBorder = raidBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     raidBtn.text = raidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     raidBtn.text:SetPoint("LEFT", 10, 0)
@@ -550,10 +610,10 @@ function GF:CreateRaidCreatePanel(parent)
     local raidArrow = raidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     raidArrow:SetPoint("RIGHT", -10, 0)
     raidArrow:SetText("▼")
-    raidArrow:SetTextColor(0.6, 0.6, 0.6)
+    raidArrow:SetTextColor(1, 0.82, 0) -- Gold
     
-    raidBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.22, 0.22, 0.26, 1) end)
-    raidBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.15, 0.15, 0.18, 1) end)
+    raidBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.25, 0.25, 0.25, 1) end)
+    raidBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.15, 0.15, 0.15, 1) end)
     raidBtn:SetScript("OnClick", function(self)
         GF:ShowRaidDropdown(self, panel)
     end)
@@ -566,7 +626,7 @@ function GF:CreateRaidCreatePanel(parent)
     local diffLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     diffLabel:SetPoint("TOPLEFT", 20, y)
     diffLabel:SetText("Difficulty:")
-    diffLabel:SetTextColor(0.9, 0.8, 0.5)
+    diffLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     local diffBtn = CreateFrame("Button", nil, panel)
     diffBtn:SetSize(160, 28)
@@ -574,31 +634,15 @@ function GF:CreateRaidCreatePanel(parent)
     
     diffBtn.bg = diffBtn:CreateTexture(nil, "BACKGROUND")
     diffBtn.bg:SetAllPoints()
-    diffBtn.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    diffBtn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
-    diffBtn.borderTop = diffBtn:CreateTexture(nil, "BORDER")
-    diffBtn.borderTop:SetHeight(1)
-    diffBtn.borderTop:SetPoint("TOPLEFT", 0, 0)
-    diffBtn.borderTop:SetPoint("TOPRIGHT", 0, 0)
-    diffBtn.borderTop:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    diffBtn.borderBottom = diffBtn:CreateTexture(nil, "BORDER")
-    diffBtn.borderBottom:SetHeight(1)
-    diffBtn.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
-    diffBtn.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-    diffBtn.borderBottom:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    diffBtn.borderLeft = diffBtn:CreateTexture(nil, "BORDER")
-    diffBtn.borderLeft:SetWidth(1)
-    diffBtn.borderLeft:SetPoint("TOPLEFT", 0, 0)
-    diffBtn.borderLeft:SetPoint("BOTTOMLEFT", 0, 0)
-    diffBtn.borderLeft:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    diffBtn.borderRight = diffBtn:CreateTexture(nil, "BORDER")
-    diffBtn.borderRight:SetWidth(1)
-    diffBtn.borderRight:SetPoint("TOPRIGHT", 0, 0)
-    diffBtn.borderRight:SetPoint("BOTTOMRIGHT", 0, 0)
-    diffBtn.borderRight:SetColorTexture(0.4, 0.4, 0.45, 1)
+    diffBtn.border = CreateFrame("Frame", nil, diffBtn)
+    diffBtn.border:SetPoint("TOPLEFT", -1, 1)
+    diffBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    diffBtn.border:SetFrameLevel(diffBtn:GetFrameLevel() - 1)
+    local dBorder = diffBtn.border:CreateTexture(nil, "BACKGROUND")
+    dBorder:SetAllPoints()
+    dBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     diffBtn.text = diffBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     diffBtn.text:SetPoint("LEFT", 10, 0)
@@ -608,10 +652,10 @@ function GF:CreateRaidCreatePanel(parent)
     local diffArrow = diffBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     diffArrow:SetPoint("RIGHT", -10, 0)
     diffArrow:SetText("▼")
-    diffArrow:SetTextColor(0.6, 0.6, 0.6)
+    diffArrow:SetTextColor(1, 0.82, 0) -- Gold
     
-    diffBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.22, 0.22, 0.26, 1) end)
-    diffBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.15, 0.15, 0.18, 1) end)
+    diffBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.25, 0.25, 0.25, 1) end)
+    diffBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.15, 0.15, 0.15, 1) end)
     diffBtn:SetScript("OnClick", function(self)
         GF:ShowDifficultyDropdown(self, panel)
     end)
@@ -624,7 +668,7 @@ function GF:CreateRaidCreatePanel(parent)
     local progressLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     progressLabel:SetPoint("TOPLEFT", 20, y)
     progressLabel:SetText("Progress:")
-    progressLabel:SetTextColor(0.9, 0.8, 0.5)
+    progressLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Styled progress input
     local progressFrame = CreateFrame("Frame", nil, panel)
@@ -633,31 +677,15 @@ function GF:CreateRaidCreatePanel(parent)
     
     progressFrame.bg = progressFrame:CreateTexture(nil, "BACKGROUND")
     progressFrame.bg:SetAllPoints()
-    progressFrame.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    progressFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
-    progressFrame.borderTop = progressFrame:CreateTexture(nil, "BORDER")
-    progressFrame.borderTop:SetHeight(1)
-    progressFrame.borderTop:SetPoint("TOPLEFT", 0, 0)
-    progressFrame.borderTop:SetPoint("TOPRIGHT", 0, 0)
-    progressFrame.borderTop:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    progressFrame.borderBottom = progressFrame:CreateTexture(nil, "BORDER")
-    progressFrame.borderBottom:SetHeight(1)
-    progressFrame.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
-    progressFrame.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-    progressFrame.borderBottom:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    progressFrame.borderLeft = progressFrame:CreateTexture(nil, "BORDER")
-    progressFrame.borderLeft:SetWidth(1)
-    progressFrame.borderLeft:SetPoint("TOPLEFT", 0, 0)
-    progressFrame.borderLeft:SetPoint("BOTTOMLEFT", 0, 0)
-    progressFrame.borderLeft:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    progressFrame.borderRight = progressFrame:CreateTexture(nil, "BORDER")
-    progressFrame.borderRight:SetWidth(1)
-    progressFrame.borderRight:SetPoint("TOPRIGHT", 0, 0)
-    progressFrame.borderRight:SetPoint("BOTTOMRIGHT", 0, 0)
-    progressFrame.borderRight:SetColorTexture(0.4, 0.4, 0.45, 1)
+    progressFrame.border = CreateFrame("Frame", nil, progressFrame)
+    progressFrame.border:SetPoint("TOPLEFT", -1, 1)
+    progressFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    progressFrame.border:SetFrameLevel(progressFrame:GetFrameLevel() - 1)
+    local pBorder = progressFrame.border:CreateTexture(nil, "BACKGROUND")
+    pBorder:SetAllPoints()
+    pBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     local progressEdit = CreateFrame("EditBox", nil, progressFrame)
     progressEdit:SetPoint("TOPLEFT", 8, -6)
@@ -675,7 +703,7 @@ function GF:CreateRaidCreatePanel(parent)
     local noteLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     noteLabel:SetPoint("TOPLEFT", 20, y)
     noteLabel:SetText("Group Note:")
-    noteLabel:SetTextColor(0.9, 0.8, 0.5)
+    noteLabel:SetTextColor(1, 0.82, 0) -- Gold
     
     -- Styled note input
     local noteFrame = CreateFrame("Frame", nil, panel)
@@ -684,31 +712,15 @@ function GF:CreateRaidCreatePanel(parent)
     
     noteFrame.bg = noteFrame:CreateTexture(nil, "BACKGROUND")
     noteFrame.bg:SetAllPoints()
-    noteFrame.bg:SetColorTexture(0.15, 0.15, 0.18, 1)
+    noteFrame.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
-    noteFrame.borderTop = noteFrame:CreateTexture(nil, "BORDER")
-    noteFrame.borderTop:SetHeight(1)
-    noteFrame.borderTop:SetPoint("TOPLEFT", 0, 0)
-    noteFrame.borderTop:SetPoint("TOPRIGHT", 0, 0)
-    noteFrame.borderTop:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    noteFrame.borderBottom = noteFrame:CreateTexture(nil, "BORDER")
-    noteFrame.borderBottom:SetHeight(1)
-    noteFrame.borderBottom:SetPoint("BOTTOMLEFT", 0, 0)
-    noteFrame.borderBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-    noteFrame.borderBottom:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    noteFrame.borderLeft = noteFrame:CreateTexture(nil, "BORDER")
-    noteFrame.borderLeft:SetWidth(1)
-    noteFrame.borderLeft:SetPoint("TOPLEFT", 0, 0)
-    noteFrame.borderLeft:SetPoint("BOTTOMLEFT", 0, 0)
-    noteFrame.borderLeft:SetColorTexture(0.4, 0.4, 0.45, 1)
-    
-    noteFrame.borderRight = noteFrame:CreateTexture(nil, "BORDER")
-    noteFrame.borderRight:SetWidth(1)
-    noteFrame.borderRight:SetPoint("TOPRIGHT", 0, 0)
-    noteFrame.borderRight:SetPoint("BOTTOMRIGHT", 0, 0)
-    noteFrame.borderRight:SetColorTexture(0.4, 0.4, 0.45, 1)
+    noteFrame.border = CreateFrame("Frame", nil, noteFrame)
+    noteFrame.border:SetPoint("TOPLEFT", -1, 1)
+    noteFrame.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    noteFrame.border:SetFrameLevel(noteFrame:GetFrameLevel() - 1)
+    local nBorder = noteFrame.border:CreateTexture(nil, "BACKGROUND")
+    nBorder:SetAllPoints()
+    nBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
     
     local noteEdit = CreateFrame("EditBox", nil, noteFrame)
     noteEdit:SetPoint("TOPLEFT", 8, -6)
@@ -722,10 +734,30 @@ function GF:CreateRaidCreatePanel(parent)
     y = y - 60
     
     -- Create button
-    local createBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local createBtn = CreateFrame("Button", nil, panel)
     createBtn:SetSize(150, 30)
     createBtn:SetPoint("TOP", 0, y)
-    createBtn:SetText("Create Raid Group")
+    
+    createBtn.bg = createBtn:CreateTexture(nil, "BACKGROUND")
+    createBtn.bg:SetAllPoints()
+    createBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    createBtn.border = CreateFrame("Frame", nil, createBtn)
+    createBtn.border:SetPoint("TOPLEFT", -1, 1)
+    createBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    createBtn.border:SetFrameLevel(createBtn:GetFrameLevel() - 1)
+    local cBorder = createBtn.border:CreateTexture(nil, "BACKGROUND")
+    cBorder:SetAllPoints()
+    cBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    createBtn.text = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    createBtn.text:SetPoint("CENTER")
+    createBtn.text:SetText("Create Raid Group")
+    createBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    createBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    createBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     createBtn:SetScript("OnClick", function()
         local raid = panel.selectedRaid or "Unknown"
         local difficulty = panel.selectedDifficulty or "25 Normal"

@@ -22,4 +22,6 @@ UI\WorldTab.lua
 UI\LiveRunsTab.lua
 UI\ScheduledTab.lua
 UI\KeystoneActivation.lua
+UI\TokenVendorFrame.lua
+UI\SeasonalPortalFrame.lua
 UI\GreatVaultFrame.lua

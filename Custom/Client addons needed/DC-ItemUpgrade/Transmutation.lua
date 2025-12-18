@@ -49,8 +49,8 @@ function DarkChaos_Transmutation_OnLoad(self)
     end
     
     -- Initialize Tabs
-    PanelTemplates_SetNumTabs(DarkChaos_TransmutationFrame, 3);
-    PanelTemplates_SetTab(DarkChaos_TransmutationFrame, 1);
+    -- PanelTemplates_SetNumTabs(DarkChaos_TransmutationFrame, 2);
+    -- PanelTemplates_SetTab(DarkChaos_TransmutationFrame, 1);
     DarkChaos_Transmutation_ShowTab(1);
 end
 
@@ -116,18 +116,12 @@ end
 
 function DarkChaos_Transmutation_ShowTab(tabId)
     local frame = DarkChaos_TransmutationFrame;
-    frame.ConversionFrame:Hide();
-    frame.ExchangeFrame:Hide();
-    frame.SynthesisFrame:Hide();
+    frame.ExchangeFrame:Show();
+    -- frame.SynthesisFrame:Hide();
     
     if tabId == 1 then
-        frame.ConversionFrame:Show();
-    elseif tabId == 2 then
         frame.ExchangeFrame:Show();
         DarkChaos_Transmutation_UpdateExchangeTab();
-    elseif tabId == 3 then
-        frame.SynthesisFrame:Show();
-        DarkChaos_Transmutation_UpdateSynthesisList();
     end
 end
 
@@ -135,43 +129,28 @@ function DarkChaos_Transmutation_UpdateUI()
     if DarkChaos_TransmutationFrame.ExchangeFrame:IsShown() then
         DarkChaos_Transmutation_UpdateExchangeTab();
     end
-    if DarkChaos_TransmutationFrame.SynthesisFrame:IsShown() then
-        DarkChaos_Transmutation_UpdateSynthesisList();
-    end
 end
 
--- Conversion Tab
-function DarkChaos_Transmutation_ConversionSlot_OnClick(self, button)
-    if button == "LeftButton" then
-        local type, _, link = GetCursorInfo();
-        if type == "item" then
-            -- Place item in slot
-            self.itemLink = link;
-            SetItemButtonTexture(self, GetItemIcon(link));
-            ClearCursor();
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
-            GameTooltip:SetHyperlink(link);
-            GameTooltip:Show();
-        else
-            -- Clear slot
-            self.itemLink = nil;
-            SetItemButtonTexture(self, nil);
-            GameTooltip:Hide();
-        end
-    end
-end
-
-function DarkChaos_Transmutation_DoConversion()
-    local slot = DarkChaos_TransmutationFrame.ConversionFrame.ItemSlot;
-    if not slot.itemLink then
-        UIErrorsFrame:AddMessage("No item selected.", 1.0, 0.0, 0.0, 1.0, UIERRORS_HOLD_TIME);
-        return;
+function DarkChaos_Transmutation_UpdateExchangeCalculations()
+    local frame = DarkChaos_TransmutationFrame.ExchangeFrame;
+    local amount = tonumber(frame.AmountInput:GetText()) or 0;
+    
+    -- Calculate results
+    -- Tokens -> Essence (Rate: tokensToEssence)
+    local essenceResult = 0;
+    if currentExchangeRates.tokensToEssence > 0 then
+        essenceResult = math.floor(amount / currentExchangeRates.tokensToEssence);
     end
     
-    -- TODO: Implement conversion logic (sending item GUID and target tier)
-    -- For now, just a placeholder as the backend expects specific opcodes for conversion
-    -- which might be different from the generic DO_TRANSMUTE
-    print("Conversion not yet fully implemented in UI.");
+    -- Essence -> Tokens (Rate: essenceToTokens)
+    local tokensResult = amount * currentExchangeRates.essenceToTokens;
+    
+    if frame.ToEssenceBtn then
+        frame.ToEssenceBtn:SetText(string.format("Tokens -> Essence\n(Get %d)", essenceResult));
+    end
+    if frame.ToTokensBtn then
+        frame.ToTokensBtn:SetText(string.format("Essence -> Tokens\n(Get %d)", tokensResult));
+    end
 end
 
 -- Exchange Tab
@@ -186,47 +165,27 @@ function DarkChaos_Transmutation_UpdateExchangeTab()
     
     frame.RateText:SetText(string.format("|cffffd700Exchange Rates:|r\n%d Tokens -> 1 Essence\n1 Essence -> %d Tokens", 
         currentExchangeRates.tokensToEssence, currentExchangeRates.essenceToTokens));
+        
+    DarkChaos_Transmutation_UpdateExchangeCalculations();
 end
 
 function DarkChaos_Transmutation_DoExchange(type)
     -- Type 1: Tokens -> Essence
     -- Type 2: Essence -> Tokens
     
+    local amountInput = DarkChaos_TransmutationFrame.ExchangeFrame.AmountInput;
+    local amount = tonumber(amountInput:GetText()) or 0;
+    
+    if amount <= 0 then
+        UIErrorsFrame:AddMessage("Please enter a valid amount.", 1.0, 0.0, 0.0, 1.0, UIERRORS_HOLD_TIME);
+        return;
+    end
+
     local DCProtocol = rawget(_G, "DCAddonProtocol");
     if DCProtocol then
         -- Send JSON payload
-        local payload = string.format("{\"action\":\"exchange\",\"type\":%d,\"amount\":1}", type);
+        local payload = string.format("{\"action\":\"exchange\",\"type\":%d,\"amount\":%d}", type, amount);
         DCProtocol:Send(MODULE, OPCODE_CMSG_DO_TRANSMUTE, payload);
-    end
-end
-
--- Synthesis Tab
-function DarkChaos_Transmutation_UpdateSynthesisList()
-    local scrollFrame = DarkChaos_TransmutationFrame.SynthesisFrame.Scroll;
-    local offset = FauxScrollFrame_GetOffset(scrollFrame);
-    local numRecipes = #currentRecipes;
-    
-    -- Update scroll frame
-    FauxScrollFrame_Update(scrollFrame, numRecipes, 5, 20);
-    
-    -- Update buttons
-    for i = 1, 5 do
-        local button = getglobal("DarkChaos_TransmutationFrameSynthesisFrameButton"..i);
-        if button then
-            local index = offset + i;
-            if index <= numRecipes then
-                local recipe = currentRecipes[index];
-                button:SetText(recipe.name or "Unknown Recipe");
-                button:Show();
-                
-                button:SetScript("OnClick", function()
-                    selectedRecipeId = recipe.id;
-                    DarkChaos_Transmutation_DoSynthesis(recipe.id);
-                end);
-            else
-                button:Hide();
-            end
-        end
     end
 end
 

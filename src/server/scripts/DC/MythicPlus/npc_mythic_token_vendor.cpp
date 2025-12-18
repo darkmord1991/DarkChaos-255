@@ -13,12 +13,15 @@
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
+#include "DC/AddonExtension/DCAddonNamespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
+#include "ObjectAccessor.h"
 #include <map>
 #include <vector>
 #include <sstream>
+#include <unordered_map>
 
 #include "Config.h"
 
@@ -62,6 +65,113 @@ struct ClassGearPool
 {
     std::map<uint8, std::vector<uint32>> gearBySlot;  // slot -> list of item IDs
 };
+
+enum class VendorRoleHint : uint8
+{
+    Any = 0,
+    Melee,
+    Ranged,
+    Tank,
+    Caster,
+    Healer
+};
+
+static uint32 GetClassMask(uint8 playerClass)
+{
+    if (playerClass == 0)
+        return 0;
+    return 1u << (playerClass - 1u);
+}
+
+static VendorRoleHint GetRoleHint(Player* player)
+{
+    if (!player)
+        return VendorRoleHint::Any;
+
+    // Use existing spec heuristics from core.
+    if (player->HasHealSpec())
+        return VendorRoleHint::Healer;
+    if (player->HasTankSpec())
+        return VendorRoleHint::Tank;
+    if (player->HasCasterSpec())
+        return VendorRoleHint::Caster;
+    if (player->HasMeleeSpec())
+        return VendorRoleHint::Melee;
+
+    // Fallback: class-based defaults.
+    switch (player->getClass())
+    {
+        case CLASS_HUNTER:
+            return VendorRoleHint::Ranged;
+        case CLASS_MAGE:
+        case CLASS_WARLOCK:
+            return VendorRoleHint::Caster;
+        case CLASS_PRIEST:
+            return VendorRoleHint::Healer;
+        default:
+            return VendorRoleHint::Melee;
+    }
+}
+
+static bool HasItemStat(ItemTemplate const* proto, ItemModType mod)
+{
+    if (!proto)
+        return false;
+    uint32 count = std::min<uint32>(proto->StatsCount, MAX_ITEM_PROTO_STATS);
+    for (uint32 i = 0; i < count; ++i)
+        if (proto->ItemStat[i].ItemStatType == uint32(mod) && proto->ItemStat[i].ItemStatValue != 0)
+            return true;
+    return false;
+}
+
+static bool IsRoleFit(ItemTemplate const* proto, VendorRoleHint role)
+{
+    if (!proto || role == VendorRoleHint::Any)
+        return true;
+
+    bool hasInt = HasItemStat(proto, ITEM_MOD_INTELLECT);
+    bool hasSpi = HasItemStat(proto, ITEM_MOD_SPIRIT);
+    bool hasStr = HasItemStat(proto, ITEM_MOD_STRENGTH);
+    bool hasAgi = HasItemStat(proto, ITEM_MOD_AGILITY);
+    bool hasAP = HasItemStat(proto, ITEM_MOD_ATTACK_POWER) || HasItemStat(proto, ITEM_MOD_RANGED_ATTACK_POWER);
+    bool hasSP = HasItemStat(proto, ITEM_MOD_SPELL_POWER);
+
+    switch (role)
+    {
+        case VendorRoleHint::Melee:
+        case VendorRoleHint::Ranged:
+        {
+            // Reject obvious caster/healer gear unless it also has a physical primary stat.
+            bool looksCaster = hasInt || hasSpi || hasSP;
+            bool looksPhysical = hasStr || hasAgi || hasAP;
+            return !looksCaster || looksPhysical;
+        }
+        case VendorRoleHint::Caster:
+        {
+            bool looksPhysical = hasStr || hasAgi || hasAP;
+            bool looksCaster = hasInt || hasSP;
+            return looksCaster && !looksPhysical;
+        }
+        case VendorRoleHint::Healer:
+        {
+            bool looksPhysical = hasStr || hasAgi || hasAP;
+            // Healers can have INT/SPI (and sometimes SP) but should not be STR/AGI/AP.
+            return !looksPhysical && (hasInt || hasSpi || hasSP);
+        }
+        case VendorRoleHint::Tank:
+        {
+            // Tanks shouldn't get pure caster items.
+            if (hasInt || hasSP)
+                return false;
+            // Defense is a strong hint but not required.
+            return true;
+        }
+        default:
+            break;
+    }
+
+    return true;
+}
 
 // Get class-appropriate armor subclass
 uint8 GetArmorSubclassForClass(uint8 playerClass)
@@ -166,6 +276,519 @@ uint32 GetTokenCost(uint32 itemLevel)
     return 11;
 }
 
+namespace
+{
+    constexpr uint32 GOSSIP_ACTION_OPEN_VENDOR_UI = 9000;
+    constexpr uint32 VENDOR_UI_DISTANCE = 12; // yards
+    constexpr time_t VENDOR_UI_SESSION_SECONDS = 60;
+
+    struct VendorUiSession
+    {
+        ObjectGuid creatureGuid;
+        time_t expiresAt = 0;
+    };
+
+    static std::unordered_map<uint32, VendorUiSession> s_vendorUiSessions;
+
+    static bool IsVendorSessionValid(Player* player, Creature** outCreature = nullptr)
+    {
+        if (!player)
+            return false;
+
+        uint32 key = player->GetGUID().GetCounter();
+        auto it = s_vendorUiSessions.find(key);
+        if (it == s_vendorUiSessions.end())
+            return false;
+
+        time_t now = time(nullptr);
+        if (now > it->second.expiresAt)
+        {
+            s_vendorUiSessions.erase(it);
+            return false;
+        }
+
+        Creature* creature = ObjectAccessor::GetCreature(*player, it->second.creatureGuid);
+        if (!creature)
+            return false;
+
+        if (!player->IsWithinDistInMap(creature, float(VENDOR_UI_DISTANCE)))
+            return false;
+
+        if (outCreature)
+            *outCreature = creature;
+
+        return true;
+    }
+
+    static std::string GetWeaponFilterForClass(uint8 playerClass, uint8 slot)
+    {
+        std::ostringstream filter;
+
+        if (slot == TOKEN_SLOT_OFFHAND)
+        {
+            // Shields for plate/mail tanks, off-hand for others
+            if (playerClass == CLASS_WARRIOR || playerClass == CLASS_PALADIN || playerClass == CLASS_SHAMAN)
+            {
+                filter << "class = " << ITEM_CLASS_ARMOR << " AND subclass = " << ITEM_SUBCLASS_ARMOR_SHIELD;
+            }
+            else
+            {
+                filter << "(InventoryType = " << INVTYPE_WEAPONOFFHAND << " OR InventoryType = " << INVTYPE_HOLDABLE << ")";
+            }
+        }
+        else
+        {
+            // Main hand weapons - allow various types based on class
+            std::vector<uint8> allowedTypes;
+
+            switch (playerClass)
+            {
+                case CLASS_WARRIOR:
+                case CLASS_PALADIN:
+                case CLASS_DEATH_KNIGHT:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2,
+                        ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_POLEARM };
+                    break;
+                case CLASS_HUNTER:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
+                        ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF };
+                    break;
+                case CLASS_ROGUE:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                    break;
+                case CLASS_DRUID:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_STAFF,
+                        ITEM_SUBCLASS_WEAPON_POLEARM };
+                    break;
+                case CLASS_SHAMAN:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST };
+                    break;
+                case CLASS_MAGE:
+                case CLASS_PRIEST:
+                case CLASS_WARLOCK:
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                        ITEM_SUBCLASS_WEAPON_SWORD };
+                    break;
+                default:
+                    break;
+            }
+
+            filter << "class = " << ITEM_CLASS_WEAPON << " AND (";
+            for (size_t i = 0; i < allowedTypes.size(); ++i)
+            {
+                if (i > 0)
+                    filter << " OR ";
+                filter << "subclass = " << uint32(allowedTypes[i]);
+            }
+            filter << ")";
+        }
+
+        return filter.str();
+    }
+
+    static std::vector<ItemChoice> GetItemsForSlotAndClass(Player* player, uint8 slot, uint32 itemLevel)
+    {
+        std::vector<ItemChoice> choices;
+
+        if (!player)
+            return choices;
+
+        uint8 playerClass = player->getClass();
+        uint32 classMask = GetClassMask(playerClass);
+        VendorRoleHint roleHint = GetRoleHint(player);
+
+        uint8 invType = TokenSlotToInventoryType(slot);
+        if (invType == INVTYPE_NON_EQUIP)
+            return choices;
+
+        std::string query;
+
+        // For armor slots, filter by armor subclass
+        if (slot >= TOKEN_SLOT_HEAD && slot <= TOKEN_SLOT_FEET && slot != TOKEN_SLOT_NECK && slot != TOKEN_SLOT_BACK)
+        {
+            uint8 armorSubclass = GetArmorSubclassForClass(playerClass);
+            query = "SELECT entry, name, ItemLevel FROM item_template "
+                "WHERE class = " + std::to_string(ITEM_CLASS_ARMOR) + " "
+                "AND subclass = " + std::to_string(armorSubclass) + " "
+                "AND InventoryType = " + std::to_string(invType) + " "
+                "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                "AND (AllowableClass = 0 OR (AllowableClass & " + std::to_string(classMask) + ") != 0) "
+                "AND Quality >= 3 "
+                "ORDER BY ItemLevel DESC, name ASC "
+                "LIMIT 60";
+        }
+        else if (slot == TOKEN_SLOT_NECK || slot == TOKEN_SLOT_BACK || slot == TOKEN_SLOT_FINGER || slot == TOKEN_SLOT_TRINKET)
+        {
+            query = "SELECT entry, name, ItemLevel FROM item_template "
+                "WHERE InventoryType = " + std::to_string(invType) + " "
+                "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                "AND (AllowableClass = 0 OR (AllowableClass & " + std::to_string(classMask) + ") != 0) "
+                "AND Quality >= 3 "
+                "ORDER BY ItemLevel DESC, name ASC "
+                "LIMIT 80";
+        }
+        else if (slot == TOKEN_SLOT_WEAPON || slot == TOKEN_SLOT_OFFHAND)
+        {
+            std::string weaponFilter = GetWeaponFilterForClass(playerClass, slot);
+            if (!weaponFilter.empty())
+            {
+                query = "SELECT entry, name, ItemLevel FROM item_template "
+                    "WHERE (" + weaponFilter + ") "
+                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
+                    "AND (AllowableClass = 0 OR (AllowableClass & " + std::to_string(classMask) + ") != 0) "
+                    "AND Quality >= 3 "
+                    "ORDER BY ItemLevel DESC, name ASC "
+                    "LIMIT 80";
+            }
+        }
+
+        if (query.empty())
+            return choices;
+
+        QueryResult result = WorldDatabase.Query(query.c_str());
+        if (!result)
+            return choices;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 entry = fields[0].Get<uint32>();
+
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+            if (!proto)
+                continue;
+
+            // Hard class gating (set pieces etc).
+            if (proto->AllowableClass != 0 && (proto->AllowableClass & classMask) == 0)
+                continue;
+
+            // Ensure the player can actually use the item.
+            if (player->CanUseItem(proto) != EQUIP_ERR_OK)
+                continue;
+
+            // Spec/role fitment (avoid obvious mismatches).
+            if (!IsRoleFit(proto, roleHint))
+                continue;
+
+            ItemChoice choice;
+            choice.itemId = entry;
+            choice.name = fields[1].Get<std::string>();
+            choice.itemLevel = fields[2].Get<uint32>();
+            choices.push_back(choice);
+
+            if (choices.size() >= 3)
+                break;
+        } while (result->NextRow());
+
+        return choices;
+    }
+
+    static void SendVendorState(Player* player)
+    {
+        if (!player)
+            return;
+        auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!upgradeMgr)
+            return;
+
+        uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+
+        DCAddon::JsonMessage msg(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_STATE);
+        msg.Set("essence", currentEssence);
+        msg.Set("tokens", tokenCount);
+        msg.Send(player);
+    }
+
+    static void SendVendorResult(Player* player, bool success, std::string const& message)
+    {
+        DCAddon::JsonMessage msg(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_RESULT);
+        msg.Set("success", success);
+        msg.Set("message", message);
+        msg.Send(player);
+        SendVendorState(player);
+    }
+
+    static void HandleTokenVendorChoices(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        if (!player)
+            return;
+
+        uint32 itemLevel = 0;
+        uint32 slot = 0;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue req = DCAddon::GetJsonData(msg);
+            if (req.IsObject())
+            {
+                if (req.HasKey("itemLevel") && req["itemLevel"].IsNumber())
+                    itemLevel = req["itemLevel"].AsUInt32();
+                if (req.HasKey("slot") && req["slot"].IsNumber())
+                    slot = req["slot"].AsUInt32();
+            }
+        }
+
+        if (itemLevel < 200 || itemLevel > 252 || slot == 0)
+        {
+            SendVendorResult(player, false, "Invalid selection.");
+            return;
+        }
+
+        if (!IsVendorSessionValid(player))
+        {
+            SendVendorResult(player, false, "Please talk to the vendor again.");
+            return;
+        }
+
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        uint32 cost = GetTokenCost(itemLevel);
+
+        std::vector<ItemChoice> choices = GetItemsForSlotAndClass(player, uint8(slot), itemLevel);
+
+        DCAddon::JsonMessage resp(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_CHOICES);
+        resp.Set("itemLevel", itemLevel);
+        resp.Set("slot", slot);
+        resp.Set("cost", cost);
+        resp.Set("tokens", tokenCount);
+
+        DCAddon::JsonValue arr;
+        arr.SetArray();
+        for (auto const& choice : choices)
+        {
+            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(choice.itemId))
+            {
+                DCAddon::JsonValue obj;
+                obj.SetObject();
+                obj.Set("itemId", DCAddon::JsonValue(choice.itemId));
+                obj.Set("name", DCAddon::JsonValue(std::string(proto->Name1)));
+                obj.Set("itemLevel", DCAddon::JsonValue(choice.itemLevel));
+                obj.Set("quality", DCAddon::JsonValue(uint32(proto->Quality)));
+                arr.Push(obj);
+            }
+        }
+        resp.Set("items", arr);
+        resp.Send(player);
+    }
+
+    static void HandleTokenVendorBuy(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        if (!player)
+            return;
+
+        uint32 itemId = 0;
+        uint32 itemLevel = 0;
+        uint32 slot = 0;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue req = DCAddon::GetJsonData(msg);
+            if (req.IsObject())
+            {
+                if (req.HasKey("itemId") && req["itemId"].IsNumber())
+                    itemId = req["itemId"].AsUInt32();
+                if (req.HasKey("itemLevel") && req["itemLevel"].IsNumber())
+                    itemLevel = req["itemLevel"].AsUInt32();
+                if (req.HasKey("slot") && req["slot"].IsNumber())
+                    slot = req["slot"].AsUInt32();
+            }
+        }
+
+        if (!itemId || !itemLevel || !slot)
+        {
+            SendVendorResult(player, false, "Invalid purchase request.");
+            return;
+        }
+
+        if (!IsVendorSessionValid(player))
+        {
+            SendVendorResult(player, false, "Please talk to the vendor again.");
+            return;
+        }
+
+        // Security: only allow purchases from the current top-3 choice list
+        bool allowed = false;
+        for (auto const& choice : GetItemsForSlotAndClass(player, uint8(slot), itemLevel))
+        {
+            if (choice.itemId == itemId)
+            {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed)
+        {
+            SendVendorResult(player, false, "That item is not available for this selection.");
+            return;
+        }
+
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+        if (!itemTemplate)
+        {
+            SendVendorResult(player, false, "Item template not found.");
+            return;
+        }
+
+        uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        if (tokenCount < cost)
+        {
+            SendVendorResult(player, false, Acore::StringFormat("You need {} tokens but only have {}.", cost, tokenCount));
+            return;
+        }
+
+        player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), cost, true);
+
+        ItemPosCountVec dest;
+        uint8 canStore = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
+        if (canStore == EQUIP_ERR_OK)
+        {
+            if (Item* item = player->StoreNewItem(dest, itemId, true))
+            {
+                player->SendNewItem(item, 1, true, false);
+                SendVendorResult(player, true, Acore::StringFormat("Purchased [{}] for {} tokens!", itemTemplate->Name1, cost));
+                return;
+            }
+        }
+
+        // Inventory full or failed to store: mail
+        player->SendItemRetrievalMail(itemId, 1);
+        SendVendorResult(player, true, Acore::StringFormat("Inventory full. [{}] mailed!", itemTemplate->Name1));
+    }
+
+    static void HandleTokenVendorExchange(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        if (!player)
+            return;
+
+        if (!IsVendorSessionValid(player))
+        {
+            SendVendorResult(player, false, "Please talk to the vendor again.");
+            return;
+        }
+
+        std::string direction;
+        uint32 amount = 0;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue req = DCAddon::GetJsonData(msg);
+            if (req.IsObject())
+            {
+                if (req.HasKey("direction") && req["direction"].IsString())
+                    direction = req["direction"].AsString();
+                if (req.HasKey("amount") && req["amount"].IsNumber())
+                    amount = req["amount"].AsUInt32();
+            }
+        }
+
+        if (!(amount == 1 || amount == 5))
+        {
+            SendVendorResult(player, false, "Invalid exchange amount.");
+            return;
+        }
+
+        auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!upgradeMgr)
+        {
+            SendVendorResult(player, false, "Upgrade manager not available.");
+            return;
+        }
+
+        uint32 essenceDelta = ESSENCE_PER_TOKEN * amount;
+
+        if (direction == "token_to_essence")
+        {
+            if (!player->HasItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount))
+            {
+                SendVendorResult(player, false, "You don't have enough tokens.");
+                return;
+            }
+
+            player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount, true);
+            upgradeMgr->AddCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta);
+            SendVendorResult(player, true, Acore::StringFormat("Exchanged {} tokens for {} essence.", amount, essenceDelta));
+            return;
+        }
+
+        if (direction == "essence_to_token")
+        {
+            uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+            if (currentEssence < essenceDelta)
+            {
+                SendVendorResult(player, false, "You don't have enough essence.");
+                return;
+            }
+
+            ItemPosCountVec dest;
+            InventoryResult canStore = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount);
+            if (canStore != EQUIP_ERR_OK)
+            {
+                player->SendEquipError(canStore, nullptr, nullptr, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
+                SendVendorResult(player, false, "Not enough bag space.");
+                return;
+            }
+
+            if (!upgradeMgr->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta))
+            {
+                SendVendorResult(player, false, "Failed to remove essence.");
+                return;
+            }
+
+            if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
+            {
+                player->SendNewItem(item, amount, true, false);
+                SendVendorResult(player, true, Acore::StringFormat("Exchanged {} essence for {} tokens.", essenceDelta, amount));
+                return;
+            }
+
+            SendVendorResult(player, false, "Failed to create token item.");
+            return;
+        }
+
+        SendVendorResult(player, false, "Invalid exchange direction.");
+    }
+
+    static void SendVendorOpen(Player* player)
+    {
+        auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!upgradeMgr)
+            return;
+
+        uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
+        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        std::string armorType = GetArmorTypeForClass(player->getClass());
+
+        DCAddon::JsonMessage open(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_OPEN);
+        open.Set("tokens", tokenCount);
+        open.Set("essence", currentEssence);
+        open.Set("armorType", armorType);
+
+        // Tier definitions (for UI rendering)
+        DCAddon::JsonValue tiers;
+        tiers.SetArray();
+        auto addTier = [&](uint32 ilvl)
+        {
+            DCAddon::JsonValue t;
+            t.SetObject();
+            t.Set("itemLevel", DCAddon::JsonValue(ilvl));
+            t.Set("cost", DCAddon::JsonValue(GetTokenCost(ilvl)));
+            tiers.Push(t);
+        };
+        addTier(200);
+        addTier(213);
+        addTier(226);
+        addTier(239);
+        addTier(252);
+        open.Set("tiers", tiers);
+
+        open.Send(player);
+    }
+}
+
 class npc_mythic_token_vendor : public CreatureScript
 {
 public:
@@ -176,6 +799,24 @@ public:
         if (!player || !creature)
             return false;
 
+        bool protocolEnabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.MythicPlus.Enable", true);
+        static bool didLogMissingAutoOpenConfigOnce = false;
+        bool autoOpenUi = sConfigMgr->GetOption<int32>(
+            "DC.MythicPlus.AddonUI.AutoOpen",
+            1,
+            !didLogMissingAutoOpenConfigOnce) != 0;
+        didLogMissingAutoOpenConfigOnce = true;
+        if (protocolEnabled && autoOpenUi)
+        {
+            VendorUiSession session;
+            session.creatureGuid = creature->GetGUID();
+            session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
+            s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
+            SendVendorOpen(player);
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         ClearGossipMenuFor(player);
         
         // Count player's tokens
@@ -185,6 +826,10 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Mythic+ Token Vendor ===|r", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffYour Tokens:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffArmor Type:|r " + armorType, GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+
+        // Addon UI entry (recommended)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Token Vendor UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_VENDOR_UI);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
         
         // Item level tiers
@@ -211,6 +856,18 @@ public:
             return false;
 
         ClearGossipMenuFor(player);
+
+        // Open Addon UI
+        if (action == GOSSIP_ACTION_OPEN_VENDOR_UI)
+        {
+            VendorUiSession session;
+            session.creatureGuid = creature->GetGUID();
+            session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
+            s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
+            SendVendorOpen(player);
+            CloseGossipMenuFor(player);
+            return true;
+        }
 
         // Show info
         if (action == 1000)
@@ -412,7 +1069,7 @@ private:
         uint32 cost = GetTokenCost(itemLevel);
         
         // Query item_template for suitable items
-        std::vector<ItemChoice> choices = GetItemsForSlotAndClass(player->getClass(), slot, itemLevel);
+        std::vector<ItemChoice> choices = ::GetItemsForSlotAndClass(player, slot, itemLevel);
         
         if (choices.empty())
         {
@@ -500,150 +1157,19 @@ private:
         CloseGossipMenuFor(player);
     }
 
-    // Query item_template for class/spec appropriate items
-    std::vector<ItemChoice> GetItemsForSlotAndClass(uint8 playerClass, uint8 slot, uint32 itemLevel)
-    {
-        std::vector<ItemChoice> choices;
-        
-        uint8 invType = TokenSlotToInventoryType(slot);
-        if (invType == INVTYPE_NON_EQUIP)
-            return choices;
-        
-        // Build query based on slot type
-        std::string query;
-        
-        // For armor slots, filter by armor subclass
-        if (slot >= TOKEN_SLOT_HEAD && slot <= TOKEN_SLOT_FEET && slot != TOKEN_SLOT_NECK && slot != TOKEN_SLOT_BACK)
-        {
-            uint8 armorSubclass = GetArmorSubclassForClass(playerClass);
-            
-            query = "SELECT entry, name, ItemLevel FROM item_template "
-                    "WHERE class = " + std::to_string(ITEM_CLASS_ARMOR) + " "
-                    "AND subclass = " + std::to_string(armorSubclass) + " "
-                    "AND InventoryType = " + std::to_string(invType) + " "
-                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
-                    "AND Quality >= 3 "  // Rare or better
-                    "ORDER BY ItemLevel DESC, name ASC "
-                    "LIMIT 3";
-        }
-        // For non-armor slots (neck, back, finger, trinket)
-        else if (slot == TOKEN_SLOT_NECK || slot == TOKEN_SLOT_BACK || slot == TOKEN_SLOT_FINGER || slot == TOKEN_SLOT_TRINKET)
-        {
-            query = "SELECT entry, name, ItemLevel FROM item_template "
-                    "WHERE InventoryType = " + std::to_string(invType) + " "
-                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
-                    "AND Quality >= 3 "
-                    "ORDER BY ItemLevel DESC, name ASC "
-                    "LIMIT 3";
-        }
-        // For weapon slots
-        else if (slot == TOKEN_SLOT_WEAPON || slot == TOKEN_SLOT_OFFHAND)
-        {
-            // Get class-appropriate weapon types
-            std::string weaponFilter = GetWeaponFilterForClass(playerClass, slot);
-            
-            query = "SELECT entry, name, ItemLevel FROM item_template "
-                    "WHERE (" + weaponFilter + ") "
-                    "AND ItemLevel BETWEEN " + std::to_string(itemLevel - 2) + " AND " + std::to_string(itemLevel + 2) + " "
-                    "AND Quality >= 3 "
-                    "ORDER BY ItemLevel DESC, name ASC "
-                    "LIMIT 3";
-        }
-        
-        if (query.empty())
-            return choices;
-        
-        QueryResult result = WorldDatabase.Query(query.c_str());
-        if (!result)
-            return choices;
-        
-        do
-        {
-            Field* fields = result->Fetch();
-            ItemChoice choice;
-            choice.itemId = fields[0].Get<uint32>();
-            choice.name = fields[1].Get<std::string>();
-            choice.itemLevel = fields[2].Get<uint32>();
-            choices.push_back(choice);
-        }
-        while (result->NextRow());
-        
-        return choices;
-    }
-    
-    // Get weapon filter SQL for class
-    std::string GetWeaponFilterForClass(uint8 playerClass, uint8 slot)
-    {
-        std::ostringstream filter;
-        
-        if (slot == TOKEN_SLOT_OFFHAND)
-        {
-            // Shields for plate/mail tanks, off-hand for others
-            if (playerClass == CLASS_WARRIOR || playerClass == CLASS_PALADIN || playerClass == CLASS_SHAMAN)
-            {
-                filter << "class = " << ITEM_CLASS_ARMOR << " AND subclass = " << ITEM_SUBCLASS_ARMOR_SHIELD;
-            }
-            else
-            {
-                filter << "(InventoryType = " << INVTYPE_WEAPONOFFHAND << " OR InventoryType = " << INVTYPE_HOLDABLE << ")";
-            }
-        }
-        else
-        {
-            // Main hand weapons - allow various types based on class
-            std::vector<uint8> allowedTypes;
-            
-            switch (playerClass)
-            {
-                case CLASS_WARRIOR:
-                case CLASS_PALADIN:
-                case CLASS_DEATH_KNIGHT:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2, 
-                                   ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
-                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
-                                   ITEM_SUBCLASS_WEAPON_POLEARM};
-                    break;
-                case CLASS_HUNTER:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
-                                   ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF};
-                    break;
-                case CLASS_ROGUE:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
-                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST};
-                    break;
-                case CLASS_DRUID:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
-                                   ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_STAFF,
-                                   ITEM_SUBCLASS_WEAPON_POLEARM};
-                    break;
-                case CLASS_SHAMAN:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
-                                   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
-                                   ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST};
-                    break;
-                case CLASS_MAGE:
-                case CLASS_PRIEST:
-                case CLASS_WARLOCK:
-                    allowedTypes = {ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
-                                   ITEM_SUBCLASS_WEAPON_SWORD};
-                    break;
-            }
-            
-            filter << "class = " << ITEM_CLASS_WEAPON << " AND (";
-            for (size_t i = 0; i < allowedTypes.size(); ++i)
-            {
-                if (i > 0)
-                    filter << " OR ";
-                filter << "subclass = " << (uint32)allowedTypes[i];
-            }
-            filter << ")";
-        }
-        
-        return filter.str();
-    }
+    // Note: item selection queries are implemented in file-scope helpers for reuse
 };
 
 void AddSC_npc_mythic_token_vendor()
 {
     new npc_mythic_token_vendor();
+
+    // DCAddonProtocol handlers for UI
+    bool enabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.MythicPlus.Enable", true);
+    if (enabled)
+    {
+        DCAddon::MessageRouter::Instance().RegisterHandler(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::CMSG_TOKEN_VENDOR_CHOICES, HandleTokenVendorChoices);
+        DCAddon::MessageRouter::Instance().RegisterHandler(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::CMSG_TOKEN_VENDOR_BUY, HandleTokenVendorBuy);
+        DCAddon::MessageRouter::Instance().RegisterHandler(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::CMSG_TOKEN_VENDOR_EXCHANGE, HandleTokenVendorExchange);
+    }
 }

@@ -13,9 +13,15 @@
 #include "WorldSession.h"
 #include "Map.h"
 #include "Log.h"
+#include "Config.h"
+#include "StringFormat.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
+#include "DC/AddonExtension/DCAddonNamespace.h"
+#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "ObjectAccessor.h"
 #include <algorithm>
 #include <array>
+#include <unordered_map>
 
 namespace
 {
@@ -56,6 +62,218 @@ float GetDungeonZOffset(uint32 dungeonMapId)
         default:
             return 0.0f;
     }
+}
+
+constexpr uint32 GOSSIP_ACTION_OPEN_SEASONAL_UI = 9001;
+constexpr uint32 PORTAL_UI_DISTANCE = 12; // yards
+constexpr time_t PORTAL_UI_SESSION_SECONDS = 60;
+
+struct PortalUiSession
+{
+    ObjectGuid creatureGuid;
+    time_t expiresAt = 0;
+};
+
+static std::unordered_map<uint32, PortalUiSession> s_portalUiSessions;
+
+static bool IsPortalSessionValid(Player* player, Creature** outCreature = nullptr)
+{
+    if (!player)
+        return false;
+
+    uint32 key = player->GetGUID().GetCounter();
+    auto it = s_portalUiSessions.find(key);
+    if (it == s_portalUiSessions.end())
+        return false;
+
+    time_t now = time(nullptr);
+    if (now > it->second.expiresAt)
+    {
+        s_portalUiSessions.erase(it);
+        return false;
+    }
+
+    Creature* creature = ObjectAccessor::GetCreature(*player, it->second.creatureGuid);
+    if (!creature)
+        return false;
+
+    if (!player->IsWithinDistInMap(creature, float(PORTAL_UI_DISTANCE)))
+        return false;
+
+    if (outCreature)
+        *outCreature = creature;
+    return true;
+}
+
+static void TeleportToDungeonEntranceByDungeonMap(Player* player, uint32 dungeonMapId)
+{
+    if (!player)
+        return;
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o FROM dc_dungeon_entrances WHERE dungeon_map = {}",
+        dungeonMapId);
+
+    if (!result)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "Error: Dungeon entrance coordinates not found in database.");
+        LOG_ERROR("mythic.portal", "No dc_dungeon_entrances entry found for dungeon map {}", dungeonMapId);
+        return;
+    }
+
+    Field* fields = result->Fetch();
+    uint32 entranceMap = fields[0].Get<uint32>();
+    float x = fields[1].Get<float>();
+    float y = fields[2].Get<float>();
+    float z = fields[3].Get<float>();
+    float o = fields[4].Get<float>();
+
+    // Preserve small map-specific z fixes
+    z += GetDungeonZOffset(dungeonMapId);
+
+    if (player->TeleportTo(entranceMap, x, y, z, o))
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Teleporting to dungeon entrance...|r");
+        LOG_INFO("mythic.portal", "Player {} teleported to seasonal dungeon {}", player->GetName(), dungeonMapId);
+    }
+    else
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("Error: Failed to teleport to dungeon entrance.");
+        LOG_ERROR("mythic.portal", "Failed to teleport player {} to seasonal dungeon {}", player->GetName(), dungeonMapId);
+    }
+}
+
+static bool IsSeasonalDungeon(uint32 dungeonMapId, uint32 seasonId)
+{
+    QueryResult result = WorldDatabase.Query(
+        "SELECT is_unlocked, mythic_plus_enabled, IFNULL(season_lock, 0) FROM dc_dungeon_setup WHERE map_id = {}",
+        dungeonMapId);
+
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    bool isUnlocked = fields[0].Get<bool>();
+    bool mplusEnabled = fields[1].Get<bool>();
+    uint32 requiredSeason = fields[2].Get<uint32>();
+
+    return isUnlocked && mplusEnabled && (requiredSeason == 0 || requiredSeason == seasonId);
+}
+
+static void SendSeasonalPortalOpen(Player* player)
+{
+    if (!player)
+        return;
+
+    uint32 seasonId = DarkChaos::GetActiveSeasonId();
+
+    // Only include dungeons that have an entrance record.
+    QueryResult result = WorldDatabase.Query(
+        "SELECT s.map_id, s.dungeon_name "
+        "FROM dc_dungeon_setup s "
+        "INNER JOIN dc_dungeon_entrances e ON e.dungeon_map = s.map_id "
+        "WHERE s.is_unlocked = 1 AND s.mythic_plus_enabled = 1 AND (IFNULL(s.season_lock, 0) = 0 OR s.season_lock = {}) "
+        "ORDER BY s.dungeon_name ASC",
+        seasonId);
+
+    DCAddon::JsonMessage open(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_SEASONAL_PORTAL_OPEN);
+    open.Set("seasonId", seasonId);
+
+    DCAddon::JsonValue list;
+    list.SetArray();
+
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 mapId = fields[0].Get<uint32>();
+            std::string name = fields[1].Get<std::string>();
+
+            DCAddon::JsonValue obj;
+            obj.SetObject();
+            obj.Set("mapId", DCAddon::JsonValue(mapId));
+            obj.Set("name", DCAddon::JsonValue(name));
+            list.Push(obj);
+        } while (result->NextRow());
+    }
+
+    open.Set("dungeons", list);
+    open.Send(player);
+}
+
+static void SendSeasonalPortalResult(Player* player, bool success, std::string const& message)
+{
+    DCAddon::JsonMessage resp(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_SEASONAL_PORTAL_RESULT);
+    resp.Set("success", success);
+    resp.Set("message", message);
+    resp.Send(player);
+}
+
+static void HandleSeasonalPortalTeleport(Player* player, DCAddon::ParsedMessage const& msg)
+{
+    if (!player)
+        return;
+
+    if (!IsPortalSessionValid(player))
+    {
+        SendSeasonalPortalResult(player, false, "Please use the portal again.");
+        return;
+    }
+
+    uint32 dungeonMapId = 0;
+    uint32 difficulty = 0;
+    if (DCAddon::IsJsonMessage(msg))
+    {
+        DCAddon::JsonValue req = DCAddon::GetJsonData(msg);
+        if (req.IsObject())
+        {
+            if (req.HasKey("mapId") && req["mapId"].IsNumber())
+                dungeonMapId = req["mapId"].AsUInt32();
+            if (req.HasKey("difficulty") && req["difficulty"].IsNumber())
+                difficulty = req["difficulty"].AsUInt32();
+        }
+    }
+
+    if (!dungeonMapId)
+    {
+        SendSeasonalPortalResult(player, false, "Invalid dungeon selection.");
+        return;
+    }
+
+    uint32 seasonId = DarkChaos::GetActiveSeasonId();
+    if (!IsSeasonalDungeon(dungeonMapId, seasonId))
+    {
+        SendSeasonalPortalResult(player, false, "That dungeon is not available this season.");
+        return;
+    }
+
+    Difficulty selectedDifficulty = DUNGEON_DIFFICULTY_EPIC;
+    char const* difficultyLabel = "Mythic";
+    switch (difficulty)
+    {
+        case 1:
+            selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
+            difficultyLabel = "Normal";
+            break;
+        case 2:
+            selectedDifficulty = DUNGEON_DIFFICULTY_HEROIC;
+            difficultyLabel = "Heroic";
+            break;
+        case 3:
+        default:
+            selectedDifficulty = DUNGEON_DIFFICULTY_EPIC;
+            difficultyLabel = "Mythic";
+            break;
+    }
+
+    player->SetDungeonDifficulty(selectedDifficulty);
+    ChatHandler(player->GetSession()).SendSysMessage(
+        Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} entrance...", difficultyLabel).c_str());
+
+    TeleportToDungeonEntranceByDungeonMap(player, dungeonMapId);
+    SendSeasonalPortalResult(player, true, "Teleporting...");
 }
 }
 
@@ -222,6 +440,24 @@ public:
         if (!player || !creature)
             return false;
 
+        bool protocolEnabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.MythicPlus.Enable", true);
+        static bool didLogMissingAutoOpenConfigOnce = false;
+        bool autoOpenUi = sConfigMgr->GetOption<int32>(
+            "DC.MythicPlus.AddonUI.AutoOpen",
+            1,
+            !didLogMissingAutoOpenConfigOnce) != 0;
+        didLogMissingAutoOpenConfigOnce = true;
+        if (protocolEnabled && autoOpenUi)
+        {
+            PortalUiSession session;
+            session.creatureGuid = creature->GetGUID();
+            session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
+            s_portalUiSessions[player->GetGUID().GetCounter()] = session;
+            SendSeasonalPortalOpen(player);
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         ClearGossipMenuFor(player);
         
         // Show dungeon selection menu - using teleporter entry IDs
@@ -231,6 +467,10 @@ public:
         
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
             GOSSIP_SENDER_MAIN, 0);
+
+        // Addon UI entry (recommended)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Seasonal Dungeon Portal UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_SEASONAL_UI);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
         
         // WotLK Dungeons - use teleporter entry IDs from eluna_teleporter table
         for (auto const& option : kDungeonTeleporterOptions)
@@ -246,6 +486,17 @@ public:
             return false;
 
         ClearGossipMenuFor(player);
+
+        if (action == GOSSIP_ACTION_OPEN_SEASONAL_UI)
+        {
+            PortalUiSession session;
+            session.creatureGuid = creature->GetGUID();
+            session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
+            s_portalUiSessions[player->GetGUID().GetCounter()] = session;
+            SendSeasonalPortalOpen(player);
+            CloseGossipMenuFor(player);
+            return true;
+        }
 
         // If action is 0, just close (was a header)
         if (action == 0)
@@ -319,4 +570,10 @@ public:
 void AddSC_dungeon_portal_selector()
 {
     new npc_dungeon_portal_selector();
+
+    bool enabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.MythicPlus.Enable", true);
+    if (enabled)
+    {
+        DCAddon::MessageRouter::Instance().RegisterHandler(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::CMSG_SEASONAL_PORTAL_TELEPORT, HandleSeasonalPortalTeleport);
+    }
 }

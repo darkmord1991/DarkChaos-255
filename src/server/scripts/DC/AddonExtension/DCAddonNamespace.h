@@ -212,6 +212,26 @@ namespace DCAddon
             constexpr uint8 SMSG_KEYSTONE_LIST     = 0x17;  // Server -> Client: JSON list of keystone item IDs
             constexpr uint8 SMSG_VAULT_INFO        = 0x18;  // Great Vault info (JSON)
             constexpr uint8 SMSG_CLAIM_VAULT_RESULT = 0x19; // Claim result
+
+            // =================================================================
+            // Mythic+ Token Vendor UI (NPC-driven)
+            // =================================================================
+            // Note: These are UI helpers around npc_mythic_token_vendor.cpp
+            constexpr uint8 SMSG_TOKEN_VENDOR_OPEN   = 0x80; // Server -> Client: open vendor UI + initial state
+            constexpr uint8 CMSG_TOKEN_VENDOR_CHOICES = 0x81; // Client -> Server: request item choices for ilvl+slot
+            constexpr uint8 SMSG_TOKEN_VENDOR_CHOICES = 0x82; // Server -> Client: item choices response
+            constexpr uint8 CMSG_TOKEN_VENDOR_BUY     = 0x83; // Client -> Server: purchase selected item
+            constexpr uint8 SMSG_TOKEN_VENDOR_RESULT  = 0x84; // Server -> Client: purchase result + refreshed counts
+            constexpr uint8 CMSG_TOKEN_VENDOR_EXCHANGE = 0x85; // Client -> Server: token<->essence exchange
+            constexpr uint8 SMSG_TOKEN_VENDOR_STATE   = 0x86; // Server -> Client: refreshed essence/tokens counts
+
+            // =================================================================
+            // Seasonal Dungeon Teleporter UI (NPC-driven)
+            // =================================================================
+            // Note: These are UI helpers around npc_dungeon_portal_selector.cpp
+            constexpr uint8 SMSG_SEASONAL_PORTAL_OPEN  = 0x90; // Server -> Client: open seasonal teleporter UI
+            constexpr uint8 CMSG_SEASONAL_PORTAL_TELEPORT = 0x91; // Client -> Server: teleport request
+            constexpr uint8 SMSG_SEASONAL_PORTAL_RESULT = 0x92; // Server -> Client: teleport result
         }
         
         // Prestige opcodes

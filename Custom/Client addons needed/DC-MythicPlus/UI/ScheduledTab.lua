@@ -75,7 +75,8 @@ function GF:CreateScheduledTab()
     
     local title = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 10, -8)
-    title:SetText("|cff32c4ffScheduled Events|r")
+    title:SetText("Scheduled Events")
+    title:SetTextColor(1, 0.82, 0) -- Gold
     
     local desc = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
@@ -83,19 +84,59 @@ function GF:CreateScheduledTab()
     desc:SetTextColor(0.7, 0.7, 0.7)
     
     -- Create Event button
-    local createBtn = CreateFrame("Button", nil, headerFrame, "UIPanelButtonTemplate")
+    local createBtn = CreateFrame("Button", nil, headerFrame)
     createBtn:SetSize(120, 24)
     createBtn:SetPoint("TOPRIGHT", -10, -8)
-    createBtn:SetText("Create Event")
+    
+    createBtn.bg = createBtn:CreateTexture(nil, "BACKGROUND")
+    createBtn.bg:SetAllPoints()
+    createBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    createBtn.border = CreateFrame("Frame", nil, createBtn)
+    createBtn.border:SetPoint("TOPLEFT", -1, 1)
+    createBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    createBtn.border:SetFrameLevel(createBtn:GetFrameLevel() - 1)
+    local cBorder = createBtn.border:CreateTexture(nil, "BACKGROUND")
+    cBorder:SetAllPoints()
+    cBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    createBtn.text = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    createBtn.text:SetPoint("CENTER")
+    createBtn.text:SetText("Create Event")
+    createBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    createBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    createBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     createBtn:SetScript("OnClick", function()
         GF:ShowCreateEventDialog()
     end)
     
     -- Refresh button
-    local refreshBtn = CreateFrame("Button", nil, headerFrame, "UIPanelButtonTemplate")
+    local refreshBtn = CreateFrame("Button", nil, headerFrame)
     refreshBtn:SetSize(80, 24)
     refreshBtn:SetPoint("RIGHT", createBtn, "LEFT", -10, 0)
-    refreshBtn:SetText("Refresh")
+    
+    refreshBtn.bg = refreshBtn:CreateTexture(nil, "BACKGROUND")
+    refreshBtn.bg:SetAllPoints()
+    refreshBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    refreshBtn.border = CreateFrame("Frame", nil, refreshBtn)
+    refreshBtn.border:SetPoint("TOPLEFT", -1, 1)
+    refreshBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    refreshBtn.border:SetFrameLevel(refreshBtn:GetFrameLevel() - 1)
+    local rBorder = refreshBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    refreshBtn.text = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshBtn.text:SetPoint("CENTER")
+    refreshBtn.text:SetText("Refresh")
+    refreshBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    refreshBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    refreshBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     refreshBtn:SetScript("OnClick", function()
         GF:RefreshScheduledEvents()
     end)

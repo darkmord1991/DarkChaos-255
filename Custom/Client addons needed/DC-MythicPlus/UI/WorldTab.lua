@@ -83,7 +83,7 @@ function GF:CreateWorldTab()
     
     local filterBg = filterPanel:CreateTexture(nil, "BACKGROUND")
     filterBg:SetAllPoints()
-    filterBg:SetColorTexture(0.03, 0.03, 0.04, 1)
+    filterBg:SetColorTexture(0.1, 0.1, 0.1, 1)
     
     -- Filter header
     local filterHeader = filterPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -101,7 +101,15 @@ function GF:CreateWorldTab()
         
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.05, 0.05, 0.06, 1)
+        btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+        
+        btn.border = CreateFrame("Frame", nil, btn)
+        btn.border:SetPoint("BOTTOMLEFT", 0, 0)
+        btn.border:SetPoint("BOTTOMRIGHT", 0, 0)
+        btn.border:SetHeight(1)
+        local borderTex = btn.border:CreateTexture(nil, "BACKGROUND")
+        borderTex:SetAllPoints()
+        borderTex:SetColorTexture(0.25, 0.25, 0.25, 1)
         
         btn.icon = btn:CreateTexture(nil, "ARTWORK")
         btn.icon:SetSize(20, 20)
@@ -119,11 +127,13 @@ function GF:CreateWorldTab()
         end)
         
         btn:SetScript("OnEnter", function(self)
-            self.bg:SetColorTexture(0.1, 0.1, 0.12, 1)
+            if GF.selectedWorldFilter ~= self.contentId then
+                self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+            end
         end)
         btn:SetScript("OnLeave", function(self)
             if GF.selectedWorldFilter ~= self.contentId then
-                self.bg:SetColorTexture(0.05, 0.05, 0.06, 1)
+                self.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             end
         end)
         
@@ -138,12 +148,13 @@ function GF:CreateWorldTab()
     
     local listBg = listPanel:CreateTexture(nil, "BACKGROUND")
     listBg:SetAllPoints()
-    listBg:SetColorTexture(0.03, 0.03, 0.04, 1)
+    listBg:SetColorTexture(0.1, 0.1, 0.1, 1)
     
     -- List header
     local listHeader = listPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     listHeader:SetPoint("TOPLEFT", 10, -10)
     listHeader:SetText("|cffffffffWorld Content|r")
+    listHeader:SetTextColor(1, 0.82, 0) -- Gold
     self.worldListHeader = listHeader
     
     -- Scroll frame for content
@@ -164,32 +175,92 @@ function GF:CreateWorldTab()
     
     local actionBg = actionBar:CreateTexture(nil, "BACKGROUND")
     actionBg:SetAllPoints()
-    actionBg:SetColorTexture(0.06, 0.06, 0.07, 1)
+    actionBg:SetColorTexture(0.15, 0.15, 0.15, 1)
     
     -- Create Group button
-    local createBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
+    local createBtn = CreateFrame("Button", nil, actionBar)
     createBtn:SetSize(120, 24)
     createBtn:SetPoint("LEFT", 10, 0)
-    createBtn:SetText("Create Group")
+    
+    createBtn.bg = createBtn:CreateTexture(nil, "BACKGROUND")
+    createBtn.bg:SetAllPoints()
+    createBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    createBtn.border = CreateFrame("Frame", nil, createBtn)
+    createBtn.border:SetPoint("TOPLEFT", -1, 1)
+    createBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    createBtn.border:SetFrameLevel(createBtn:GetFrameLevel() - 1)
+    local cBorder = createBtn.border:CreateTexture(nil, "BACKGROUND")
+    cBorder:SetAllPoints()
+    cBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    createBtn.text = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    createBtn.text:SetPoint("CENTER")
+    createBtn.text:SetText("Create Group")
+    createBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    createBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    createBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     createBtn:SetScript("OnClick", function()
         GF:ShowWorldGroupCreateDialog()
     end)
     self.worldCreateBtn = createBtn
     
     -- Refresh button
-    local refreshBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
+    local refreshBtn = CreateFrame("Button", nil, actionBar)
     refreshBtn:SetSize(80, 24)
     refreshBtn:SetPoint("LEFT", createBtn, "RIGHT", 10, 0)
-    refreshBtn:SetText("Refresh")
+    
+    refreshBtn.bg = refreshBtn:CreateTexture(nil, "BACKGROUND")
+    refreshBtn.bg:SetAllPoints()
+    refreshBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    refreshBtn.border = CreateFrame("Frame", nil, refreshBtn)
+    refreshBtn.border:SetPoint("TOPLEFT", -1, 1)
+    refreshBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    refreshBtn.border:SetFrameLevel(refreshBtn:GetFrameLevel() - 1)
+    local rBorder = refreshBtn.border:CreateTexture(nil, "BACKGROUND")
+    rBorder:SetAllPoints()
+    rBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    refreshBtn.text = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshBtn.text:SetPoint("CENTER")
+    refreshBtn.text:SetText("Refresh")
+    refreshBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    refreshBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    refreshBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     refreshBtn:SetScript("OnClick", function()
         GF:RefreshWorldContent()
     end)
     
     -- Teleport to Hotspot button
-    local teleportBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
+    local teleportBtn = CreateFrame("Button", nil, actionBar)
     teleportBtn:SetSize(120, 24)
     teleportBtn:SetPoint("RIGHT", -10, 0)
-    teleportBtn:SetText("Teleport")
+    
+    teleportBtn.bg = teleportBtn:CreateTexture(nil, "BACKGROUND")
+    teleportBtn.bg:SetAllPoints()
+    teleportBtn.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
+    
+    teleportBtn.border = CreateFrame("Frame", nil, teleportBtn)
+    teleportBtn.border:SetPoint("TOPLEFT", -1, 1)
+    teleportBtn.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    teleportBtn.border:SetFrameLevel(teleportBtn:GetFrameLevel() - 1)
+    local tBorder = teleportBtn.border:CreateTexture(nil, "BACKGROUND")
+    tBorder:SetAllPoints()
+    tBorder:SetColorTexture(0.3, 0.3, 0.3, 1)
+    
+    teleportBtn.text = teleportBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    teleportBtn.text:SetPoint("CENTER")
+    teleportBtn.text:SetText("Teleport")
+    teleportBtn.text:SetTextColor(1, 0.82, 0) -- Gold
+    
+    teleportBtn:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.3, 0.3, 0.3, 1) end)
+    teleportBtn:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.2, 0.2, 0.2, 1) end)
+    
     teleportBtn:SetScript("OnClick", function()
         GF:TeleportToSelectedWorld()
     end)
@@ -210,10 +281,10 @@ function GF:SelectWorldFilter(contentId)
     -- Update button visuals
     for id, btn in pairs(self.worldFilterButtons) do
         if id == contentId then
-            btn.bg:SetColorTexture(0.15, 0.3, 0.5, 1)
-            btn.text:SetTextColor(1, 1, 1)
+            btn.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
+            btn.text:SetTextColor(1, 0.82, 0) -- Gold
         else
-            btn.bg:SetColorTexture(0.05, 0.05, 0.06, 1)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
             btn.text:SetTextColor(0.7, 0.7, 0.7)
         end
     end

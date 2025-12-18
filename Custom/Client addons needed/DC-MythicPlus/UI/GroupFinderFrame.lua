@@ -36,7 +36,7 @@ GF.Print = Print
 function GF:CreateMainFrame()
     if self.mainFrame then return self.mainFrame end
 
-    local frame = CreateFrame("Frame", "DCMythicPlusGroupFinderFrame", UIParent, "UIPanelDialogTemplate")
+    local frame = CreateFrame("Frame", "DCMythicPlusGroupFinderFrame", UIParent)
     frame:SetSize(self.FRAME_WIDTH, self.FRAME_HEIGHT)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
@@ -49,20 +49,39 @@ function GF:CreateMainFrame()
     frame:SetToplevel(true)
     frame:Hide()
 
-    if frame.TitleText then
-        frame.TitleText:SetText("Dungeon Finder")
-    end
-    if frame.portrait then
-        SetPortraitToTexture(frame.portrait, "Interface\\Icons\\Achievement_challengemode_gold")
-    end
-    if frame.CloseButton then
-        frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
-    end
+    -- Background
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 1)
+
+    -- Title Header Background
+    local titleBg = frame:CreateTexture(nil, "ARTWORK")
+    titleBg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+    titleBg:SetWidth(350)
+    titleBg:SetHeight(64)
+    titleBg:SetPoint("TOP", 0, 12)
+
+    -- Title text
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", titleBg, "TOP", 0, -14)
+    title:SetText("Dungeon Finder")
+    title:SetTextColor(1, 0.82, 0) -- Gold
+    frame.TitleText = title
+
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    frame.CloseButton = closeBtn
 
     -- Legacy Dungeon Finder button (opens Blizzard's LFG frame)
     local legacyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     legacyBtn:SetSize(100, 20)
-    legacyBtn:SetPoint("TOPRIGHT", -58, -28)
+    legacyBtn:SetPoint("TOPRIGHT", -40, -28)
     legacyBtn:SetText("LFG Tool")
     legacyBtn:SetScript("OnClick", function()
         -- Toggle the native Dungeon Finder (LFG) frame
@@ -93,21 +112,19 @@ function GF:CreateMainFrame()
     tabBar:SetPoint("TOPLEFT", 12, -52)
     tabBar:SetPoint("TOPRIGHT", -12, -52)
     tabBar:SetHeight(32)
-    tabBar.bg = tabBar:CreateTexture(nil, "BACKGROUND")
-    tabBar.bg:SetAllPoints()
-    tabBar.bg:SetColorTexture(0.06, 0.06, 0.07, 0.75)
+    -- Removed background texture for cleaner look
     frame.tabContainer = tabBar
     
     -- Content container
     local contentFrame = CreateFrame("Frame", nil, frame)
     contentFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 8, -8)
-    contentFrame:SetPoint("BOTTOMRIGHT", -8, 8)
+    contentFrame:SetPoint("BOTTOMRIGHT", -15, 15)
     frame.contentFrame = contentFrame
     
     -- Content background (slightly lighter)
     local contentBg = contentFrame:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
-    contentBg:SetColorTexture(0.05, 0.05, 0.06, 1)
+    contentBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
     
     self.mainFrame = frame
     self:CreateTabButtons()
@@ -124,7 +141,7 @@ end
 -- =====================================================================
 
 function GF:CreateTabButtons()
-    local tabWidth = (self.FRAME_WIDTH - 20) / #self.TAB_NAMES
+    local tabWidth = (self.FRAME_WIDTH - 40) / #self.TAB_NAMES
     
     for i, tabName in ipairs(self.TAB_NAMES) do
         local btn = CreateFrame("Button", "DCGroupFinderTab" .. i, self.mainFrame.tabContainer)
@@ -134,31 +151,33 @@ function GF:CreateTabButtons()
         -- Background (darker inactive)
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+        btn.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
         
         -- Bottom accent line (shows when selected)
         btn.accent = btn:CreateTexture(nil, "ARTWORK")
         btn.accent:SetPoint("BOTTOMLEFT", 0, 0)
         btn.accent:SetPoint("BOTTOMRIGHT", 0, 0)
         btn.accent:SetHeight(3)
-        btn.accent:SetColorTexture(0.2, 0.5, 0.8, 1)
+        btn.accent:SetColorTexture(1, 0.82, 0, 1) -- Gold
         btn.accent:Hide()
         
         -- Text
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.text:SetPoint("CENTER", 0, 1)
         btn.text:SetText(tabName)
-        btn.text:SetTextColor(0.6, 0.6, 0.6)
+        btn.text:SetTextColor(0.7, 0.7, 0.7)
         
         -- Highlight on hover
         btn:SetScript("OnEnter", function(self)
             if GF.currentTab ~= self.tabIndex then
-                self.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+                self.bg:SetColorTexture(0.25, 0.25, 0.25, 0.9)
+                self.text:SetTextColor(1, 1, 1)
             end
         end)
         btn:SetScript("OnLeave", function(self)
             if GF.currentTab ~= self.tabIndex then
-                self.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
+                self.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+                self.text:SetTextColor(0.7, 0.7, 0.7)
             end
         end)
         
@@ -177,12 +196,12 @@ function GF:SelectTab(index)
     -- Update tab visuals
     for i, btn in ipairs(self.TABS) do
         if i == index then
-            btn.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+            btn.bg:SetColorTexture(0.25, 0.25, 0.25, 1)
             btn.text:SetTextColor(1, 1, 1)
             btn.accent:Show()
         else
-            btn.bg:SetColorTexture(0.04, 0.04, 0.05, 1)
-            btn.text:SetTextColor(0.6, 0.6, 0.6)
+            btn.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+            btn.text:SetTextColor(0.7, 0.7, 0.7)
             btn.accent:Hide()
         end
     end
@@ -364,25 +383,19 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
         frame:EnableMouse(true)
         
         -- Background
-        frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-        frame.bg:SetAllPoints()
-        frame.bg:SetColorTexture(0.1, 0.1, 0.12, 0.95)
-        
-        -- Border
-        local border = CreateFrame("Frame", nil, frame)
-        border:SetPoint("TOPLEFT", -2, 2)
-        border:SetPoint("BOTTOMRIGHT", 2, -2)
-        border:SetBackdrop({
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
         })
-        border:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        frame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
         
         -- Title
         local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -15)
         title:SetText("Apply to Group")
+        title:SetTextColor(1, 0.82, 0) -- Gold
         frame.title = title
         
         -- Role Checkboxes
@@ -405,6 +418,7 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
         local noteLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         noteLabel:SetPoint("TOPLEFT", 20, -90)
         noteLabel:SetText("Note (optional):")
+        noteLabel:SetTextColor(1, 0.82, 0) -- Gold
         
         local noteBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
         noteBox:SetSize(260, 20)
@@ -506,6 +520,7 @@ function GF:CreateRewardFrame()
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("LEFT", 0, 0)
     label:SetText("Daily Reward:")
+    label:SetTextColor(1, 0.82, 0) -- Gold
     frame.label = label
     
     -- Icon

@@ -37,102 +37,10 @@
             </Button>
 
             <!-- Tabs -->
-            <Button name="$parentTab1" inherits="CharacterFrameTabButtonTemplate" id="1" text="Conversion">
-                <Anchors>
-                    <Anchor point="CENTER" relativePoint="BOTTOMLEFT" x="60" y="-10"/>
-                </Anchors>
-                <Scripts>
-                    <OnClick>
-                        PanelTemplates_SetTab(DarkChaos_TransmutationFrame, 1);
-                        DarkChaos_Transmutation_ShowTab(1);
-                    </OnClick>
-                </Scripts>
-            </Button>
-            <Button name="$parentTab2" inherits="CharacterFrameTabButtonTemplate" id="2" text="Exchange">
-                <Anchors>
-                    <Anchor point="LEFT" relativeTo="$parentTab1" relativePoint="RIGHT" x="-16" y="0"/>
-                </Anchors>
-                <Scripts>
-                    <OnClick>
-                        PanelTemplates_SetTab(DarkChaos_TransmutationFrame, 2);
-                        DarkChaos_Transmutation_ShowTab(2);
-                    </OnClick>
-                </Scripts>
-            </Button>
-            <Button name="$parentTab3" inherits="CharacterFrameTabButtonTemplate" id="3" text="Synthesis">
-                <Anchors>
-                    <Anchor point="LEFT" relativeTo="$parentTab2" relativePoint="RIGHT" x="-16" y="0"/>
-                </Anchors>
-                <Scripts>
-                    <OnClick>
-                        PanelTemplates_SetTab(DarkChaos_TransmutationFrame, 3);
-                        DarkChaos_Transmutation_ShowTab(3);
-                    </OnClick>
-                </Scripts>
-            </Button>
-
-            <!-- Tab 1: Tier Conversion -->
-            <Frame parentKey="ConversionFrame" hidden="false">
-                <Anchors>
-                    <Anchor point="TOPLEFT" x="20" y="-40"/>
-                    <Anchor point="BOTTOMRIGHT" x="-20" y="40"/>
-                </Anchors>
-                <Layers>
-                    <Layer level="ARTWORK">
-                        <FontString inherits="GameFontNormal" text="Drag an item here to convert its tier" justifyH="CENTER">
-                            <Anchors>
-                                <Anchor point="TOP" x="0" y="-20"/>
-                            </Anchors>
-                        </FontString>
-                    </Layer>
-                </Layers>
-                <Frames>
-                    <Button name="$parentItemSlot" parentKey="ItemSlot" inherits="ItemButtonTemplate">
-                        <Size x="64" y="64"/>
-                        <Anchors>
-                            <Anchor point="CENTER" y="50"/>
-                        </Anchors>
-                        <Scripts>
-                            <OnLoad>
-                                this:RegisterForDrag("LeftButton");
-                            </OnLoad>
-                            <OnClick>
-                                DarkChaos_Transmutation_ConversionSlot_OnClick(this, button);
-                            </OnClick>
-                            <OnEnter>
-                                GameTooltip:SetOwner(this, "ANCHOR_RIGHT");
-                                if (this.itemLink) then
-                                    GameTooltip:SetHyperlink(this.itemLink);
-                                else
-                                    GameTooltip:SetText("Place Item Here");
-                                end
-                                GameTooltip:Show();
-                            </OnEnter>
-                            <OnLeave>
-                                GameTooltip:Hide();
-                            </OnLeave>
-                            <OnReceiveDrag>
-                                DarkChaos_Transmutation_ConversionSlot_OnClick(this, "LeftButton");
-                            </OnReceiveDrag>
-                        </Scripts>
-                    </Button>
-                    
-                    <Button name="$parentConvertButton" inherits="UIPanelButtonTemplate" text="Convert Tier">
-                        <Size x="120" y="30"/>
-                        <Anchors>
-                            <Anchor point="BOTTOM" y="20"/>
-                        </Anchors>
-                        <Scripts>
-                            <OnClick>
-                                DarkChaos_Transmutation_DoConversion();
-                            </OnClick>
-                        </Scripts>
-                    </Button>
-                </Frames>
-            </Frame>
-
-            <!-- Tab 2: Currency Exchange -->
-            <Frame parentKey="ExchangeFrame" hidden="true">
+            <!-- Single tab active: Exchange -->
+            
+            <!-- Tab 1: Currency Exchange -->
+            <Frame parentKey="ExchangeFrame" hidden="false">
                 <Anchors>
                     <Anchor point="TOPLEFT" x="20" y="-40"/>
                     <Anchor point="BOTTOMRIGHT" x="-20" y="40"/>
@@ -152,10 +60,34 @@
                     </Layer>
                 </Layers>
                 <Frames>
-                    <Button name="$parentToEssenceBtn" inherits="UIPanelButtonTemplate" text="Tokens -> Essence">
+                    <EditBox name="$parentAmountInput" parentKey="AmountInput" inherits="InputBoxTemplate" autoFocus="false" numeric="true">
+                        <Size x="80" y="20"/>
+                        <Anchors>
+                            <Anchor point="CENTER" x="0" y="20"/>
+                        </Anchors>
+                        <Layers>
+                            <Layer level="ARTWORK">
+                                <FontString inherits="GameFontNormal" text="Amount:">
+                                    <Anchors>
+                                        <Anchor point="RIGHT" relativePoint="LEFT" x="-5" y="0"/>
+                                    </Anchors>
+                                </FontString>
+                            </Layer>
+                        </Layers>
+                        <Scripts>
+                            <OnLoad>
+                                this:SetText("1");
+                            </OnLoad>
+                            <OnTextChanged>
+                                DarkChaos_Transmutation_UpdateExchangeCalculations();
+                            </OnTextChanged>
+                        </Scripts>
+                    </EditBox>
+
+                    <Button name="$parentToEssenceBtn" parentKey="ToEssenceBtn" inherits="UIPanelButtonTemplate" text="Tokens -> Essence">
                         <Size x="160" y="40"/>
                         <Anchors>
-                            <Anchor point="CENTER" x="-100" y="0"/>
+                            <Anchor point="TOPRIGHT" relativePoint="CENTER" x="-10" y="-20"/>
                         </Anchors>
                         <Scripts>
                             <OnClick>
@@ -163,10 +95,10 @@
                             </OnClick>
                         </Scripts>
                     </Button>
-                    <Button name="$parentToTokensBtn" inherits="UIPanelButtonTemplate" text="Essence -> Tokens">
+                    <Button name="$parentToTokensBtn" parentKey="ToTokensBtn" inherits="UIPanelButtonTemplate" text="Essence -> Tokens">
                         <Size x="160" y="40"/>
                         <Anchors>
-                            <Anchor point="CENTER" x="100" y="0"/>
+                            <Anchor point="TOPLEFT" relativePoint="CENTER" x="10" y="-20"/>
                         </Anchors>
                         <Scripts>
                             <OnClick>
@@ -175,26 +107,7 @@
                         </Scripts>
                     </Button>
                 </Frames>
-            </Frame>
-
-            <!-- Tab 3: Synthesis -->
-            <Frame parentKey="SynthesisFrame" hidden="true">
-                <Anchors>
-                    <Anchor point="TOPLEFT" x="20" y="-40"/>
-                    <Anchor point="BOTTOMRIGHT" x="-20" y="40"/>
-                </Anchors>
-                <Frames>
-                    <ScrollFrame name="$parentScroll" inherits="FauxScrollFrameTemplate">
-                        <Size x="520" y="350"/>
-                        <Anchors>
-                            <Anchor point="TOPLEFT" x="0" y="-10"/>
-                        </Anchors>
-                        <Scripts>
-                            <OnVerticalScroll>
-                                FauxScrollFrame_OnVerticalScroll(this, offset, 16, DarkChaos_Transmutation_UpdateSynthesisList);
-                            </OnVerticalScroll>
-                        </Scripts>
-                    </ScrollFrame>                    
+            </Frame>                    
                     <!-- List Buttons (created manually for simplicity) -->
                     <Button name="$parentButton1" inherits="UIPanelButtonTemplate" text="Recipe 1">
                         <Size x="500" y="20"/>
@@ -215,9 +128,7 @@
                     <Button name="$parentButton5" inherits="UIPanelButtonTemplate" text="Recipe 5">
                         <Size x="500" y="20"/>
                         <Anchors><Anchor point="TOPLEFT" relativeTo="$parentButton4" relativePoint="BOTTOMLEFT" y="-2"/></Anchors>
-                    </Button>                </Frames>
-            </Frame>
-
+                    </Button>
         </Frames>
         <Scripts>
             <OnLoad>
