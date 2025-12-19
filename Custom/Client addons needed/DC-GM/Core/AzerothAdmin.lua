@@ -680,18 +680,64 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       }
       self._dcWpInfoPending = false
 
+      if self._dcWpAddAfterInfo then
+        self._dcWpAddAfterInfo = false
+        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
+        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
+        if pathId > 0 then
+          if wpCount <= 0 then
+            -- Broken state: creature has a path_id but no waypoint_data rows.
+            -- Wipe to detach/reset, then start a new path.
+            self:ChatMsg(".wp wipe")
+            self:ChatMsg(".wp start")
+          else
+            self:ChatMsg(".wp load " .. pathId)
+            self:ChatMsg(".wp add")
+          end
+        else
+          self:ChatMsg(".wp start")
+        end
+      end
+
+      if self._dcWpStartOrAddAfterInfo then
+        self._dcWpStartOrAddAfterInfo = false
+        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
+        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
+        if pathId > 0 then
+          if wpCount <= 0 then
+            self:ChatMsg(".wp wipe")
+            self:ChatMsg(".wp start")
+          else
+            self:ChatMsg(".wp load " .. pathId)
+            self:ChatMsg(".wp add")
+          end
+        else
+          self:ChatMsg(".wp start")
+        end
+      end
+
       if self._dcWpRunAfterInfo then
         self._dcWpRunAfterInfo = false
-        if self._dcWpLastWpInfo.path and self._dcWpLastWpInfo.path > 0 then
-          -- Force-load the path and then re-init movetype to actually start moving.
-          self:ChatMsg(".wp load " .. self._dcWpLastWpInfo.path)
-          self:ChatMsg(".npc set movetype way NODEL")
+        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
+        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
+        if pathId > 0 then
+          if wpCount <= 0 then
+            -- Avoid loading an empty path; reset and create a fresh one.
+            self:ChatMsg(".wp wipe")
+            self:ChatMsg(".wp start")
+          else
+            -- Force-load the path and then re-init movetype to actually start moving.
+            self:ChatMsg(".wp load " .. pathId)
+            self:ChatMsg(".npc set movetype way NODEL")
+          end
         end
       end
     elseif string.find(text, "WPINFO") or string.find(text, "You must select") or string.find(text, "select a creature") then
       -- Clear the pending flag on WP-related failures to avoid a stuck state.
       self._dcWpInfoPending = false
       self._dcWpRunAfterInfo = false
+      self._dcWpAddAfterInfo = false
+      self._dcWpStartOrAddAfterInfo = false
     end
   end
 

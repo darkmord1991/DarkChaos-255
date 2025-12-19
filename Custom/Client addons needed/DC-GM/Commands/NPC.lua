@@ -315,8 +315,33 @@ end
 
 function WayEndAdd()
     local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp add")
-    AzerothAdmin:LogAction("WayPoint Add for player "..player..".")
+    -- Make adding robust: if the target has a path assigned but not loaded,
+    -- `.wp add` can silently create an unattached path. Ask the server for WPINFO
+    -- and then load the path before adding.
+    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
+        AzerothAdmin._dcWpAddAfterInfo = true
+        AzerothAdmin:UpdateWaypointInfo()
+        AzerothAdmin:LogAction("Waypoint add requested for player "..player..".")
+    else
+        AzerothAdmin:ChatMsg(".wp add")
+        AzerothAdmin:LogAction("WayPoint Add (fallback) for player "..player..".")
+    end
+end
+
+-- Start waypoint movement for the selected creature.
+-- Some UI buttons call this legacy helper; keep it defined to avoid nil errors.
+function WayStart()
+    local player = UnitName("target") or UnitName("player")
+    -- UI label is "WayAdd" in some places. Make it do the intuitive thing:
+    -- if the target already has a path, add a waypoint; otherwise start a new path.
+    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
+        AzerothAdmin._dcWpStartOrAddAfterInfo = true
+        AzerothAdmin:UpdateWaypointInfo()
+        AzerothAdmin:LogAction("Waypoint start/add requested for player "..player..".")
+    else
+        AzerothAdmin:ChatMsg(".wp start")
+        AzerothAdmin:LogAction("Waypoint path started (fallback) for player "..player..".")
+    end
 end
 
 function NPCAdd_Way()
@@ -340,6 +365,12 @@ function WayModifyDel()
     AzerothAdmin:LogAction("WayPoint(Modify) Del for player "..player..".")
 end
 
+function WayModifyMove()
+    local player = UnitName("target") or UnitName("player")
+    AzerothAdmin:ChatMsg(".wp modify move")
+    AzerothAdmin:LogAction("WayPoint(Modify) Move for player "..player..".")
+end
+
 function NPCAdd_WayShowOn()
     local player = UnitName("target") or UnitName("player")
     local npc =	ma_NPC_guidbutton:GetText()
@@ -357,6 +388,29 @@ function WayShowOff()
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".wp show off")
     AzerothAdmin:LogAction("WayPoint Show Off for player "..player..".")
+end
+
+function WayWipe()
+    local player = UnitName("target") or UnitName("player")
+    -- AzerothCore supports `.wp wipe` which deletes all waypoints for the selected
+    -- creature's loaded path and detaches it.
+    AzerothAdmin:ChatMsg(".wp wipe")
+    AzerothAdmin:LogAction("Waypoint path wiped for player "..player..".")
+end
+
+function WayRun()
+    local player = UnitName("target") or UnitName("player")
+    -- This project parses `.wp info` and (optionally) auto-runs `.wp load <path>`
+    -- + `.npc set movetype way NODEL` when `_dcWpRunAfterInfo` is true.
+    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
+        AzerothAdmin._dcWpRunAfterInfo = true
+        AzerothAdmin:UpdateWaypointInfo()
+        AzerothAdmin:LogAction("Run waypoint path requested for player "..player..".")
+    else
+        -- Fallback: try to re-init movement on current target.
+        AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
+        AzerothAdmin:LogAction("Run waypoint path (fallback) for player "..player..".")
+    end
 end
 
 function NPCUnFreeze_Way()

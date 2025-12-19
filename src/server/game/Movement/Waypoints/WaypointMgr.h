@@ -19,6 +19,7 @@
 #define ACORE_WAYPOINTMANAGER_H
 
 #include "Define.h"
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -46,7 +47,7 @@ struct WaypointData
 };
 
 typedef std::map<uint32, WaypointData> WaypointPath;
-typedef std::unordered_map<uint32, WaypointPath> WaypointPathContainer;
+typedef std::unordered_map<uint32, std::unique_ptr<WaypointPath>> WaypointPathContainer;
 
 class WaypointMgr
 {
@@ -63,8 +64,8 @@ public:
     WaypointPath const* GetPath(uint32 id) const
     {
         WaypointPathContainer::const_iterator itr = _waypointStore.find(id);
-        if (itr != _waypointStore.end())
-            return &itr->second;
+        if (itr != _waypointStore.end() && itr->second)
+            return itr->second.get();
 
         return nullptr;
     }

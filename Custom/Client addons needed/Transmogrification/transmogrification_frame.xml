@@ -179,7 +179,7 @@
 			<OnLeave function="OnLeaveHideToolTip"/>
 		</Scripts>
 	</Button>
-	<Frame name="TransmogrificationFrame" parent="UIParent" toplevel="true" setAllPoints="true" id="6" hidden="true" enableMouse="true" movable="true" frameStrata="DIALOG">
+	<Frame name="TransmogrificationFrame" parent="UIParent" toplevel="true" id="6" hidden="true" enableMouse="true" movable="true" frameStrata="DIALOG">
 		<Size x="1200" y="700"/>
 		<Anchors>
 			<Anchor point="CENTER" relativeTo="UIParent"/>

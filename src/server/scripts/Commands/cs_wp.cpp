@@ -313,26 +313,33 @@ public:
             }
         }
 
-        // Detach path from creature spawn and reset movement.
+        // Detach path from creature spawn (DB) and reset movement (in-memory).
+        // NOTE: Temp spawns may not have creature_addon rows, but still have a loaded
+        // in-memory path id (Creature::m_path_id). Always clear the in-memory state.
         ObjectGuid::LowType guidLow = target->GetSpawnId();
-        if (target->GetCreatureAddon() && target->GetCreatureAddon()->path_id != 0)
-        {
-            stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_ADDON);
-            stmt->SetData(0, guidLow);
-            WorldDatabase.Execute(stmt);
 
-            target->UpdateWaypointID(0);
+        if (guidLow)
+        {
+            // Preserve other creature_addon fields (auras/emote/etc): only clear path_id.
+            if (target->GetCreatureAddon() && target->GetCreatureAddon()->path_id != 0)
+            {
+                stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_ADDON_PATH);
+                stmt->SetData(0, uint32(0));
+                stmt->SetData(1, guidLow);
+                WorldDatabase.Execute(stmt);
+            }
 
             stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_MOVEMENT_TYPE);
             stmt->SetData(0, uint8(IDLE_MOTION_TYPE));
             stmt->SetData(1, guidLow);
             WorldDatabase.Execute(stmt);
-
-            target->LoadPath(0);
-            target->SetDefaultMovementType(IDLE_MOTION_TYPE);
-            target->GetMotionMaster()->MoveTargetedHome();
-            target->GetMotionMaster()->Initialize();
         }
+
+        target->UpdateWaypointID(0);
+        target->LoadPath(0);
+        target->SetDefaultMovementType(IDLE_MOTION_TYPE);
+        target->GetMotionMaster()->MoveTargetedHome();
+        target->GetMotionMaster()->Initialize();
 
         // Delete DB waypoints.
         WorldDatabase.Execute("DELETE FROM waypoint_data WHERE id='{}'", pathid);

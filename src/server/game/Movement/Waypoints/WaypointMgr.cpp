@@ -28,11 +28,6 @@ WaypointMgr::WaypointMgr()
 
 WaypointMgr::~WaypointMgr()
 {
-    for (WaypointPathContainer::iterator itr = _waypointStore.begin(); itr != _waypointStore.end(); ++itr)
-    {
-        itr->second.clear();
-    }
-
     _waypointStore.clear();
 }
 
@@ -64,7 +59,10 @@ void WaypointMgr::Load()
         WaypointData data;
 
         uint32 pathId = fields[0].Get<uint32>();
-        WaypointPath& path = _waypointStore[pathId];
+        auto& pathPtr = _waypointStore[pathId];
+        if (!pathPtr)
+            pathPtr = std::make_unique<WaypointPath>();
+        WaypointPath& path = *pathPtr;
 
         float x = fields[2].Get<float>();
         float y = fields[3].Get<float>();
@@ -99,9 +97,16 @@ void WaypointMgr::Load()
 
     for (auto itr = _waypointStore.begin(); itr != _waypointStore.end(); )
     {
-        uint32 first = itr->second.begin()->first;
-        uint32 last = itr->second.rbegin()->first;
-        if (last - first + 1 != itr->second.size())
+        if (!itr->second || itr->second->empty())
+        {
+            LOG_ERROR("sql.sql", "Waypoint {} in waypoint_data is empty, skipping", itr->first);
+            itr = _waypointStore.erase(itr);
+            continue;
+        }
+
+        uint32 first = itr->second->begin()->first;
+        uint32 last = itr->second->rbegin()->first;
+        if (last - first + 1 != itr->second->size())
         {
             LOG_ERROR("sql.sql", "Waypoint {} in waypoint_data has non-contiguous pointids, skipping", itr->first);
             itr = _waypointStore.erase(itr);
@@ -116,11 +121,16 @@ void WaypointMgr::Load()
 
 void WaypointMgr::ReloadPath(uint32 id)
 {
-    WaypointPathContainer::iterator itr = _waypointStore.find(id);
-    if (itr != _waypointStore.end())
-    {
-        _waypointStore.erase(itr);
-    }
+    // IMPORTANT: Do not erase/reinsert into the container here.
+    // Movement generators keep raw pointers to WaypointPath objects; with an
+    // unordered_map, insert/erase can rehash and invalidate those pointers.
+    // Paths are stored on the heap (unique_ptr) so the pointed-to map remains
+    // stable even if the unordered_map rehashes.
+    auto& pathPtr = _waypointStore[id];
+    if (!pathPtr)
+        pathPtr = std::make_unique<WaypointPath>();
+    else
+        pathPtr->clear();
 
     WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_BY_ID);
 
@@ -131,7 +141,7 @@ void WaypointMgr::ReloadPath(uint32 id)
     if (!result)
         return;
 
-    WaypointPath& path = _waypointStore[id];
+    WaypointPath& path = *pathPtr;
 
     do
     {
@@ -167,4 +177,21 @@ void WaypointMgr::ReloadPath(uint32 id)
 
         path.emplace(data.id, data);
     } while (result->NextRow());
+
+    // Validate the path we just loaded.
+    if (path.empty())
+    {
+        LOG_ERROR("sql.sql", "Waypoint {} in waypoint_data is empty after reload, skipping", id);
+        _waypointStore.erase(id);
+        return;
+    }
+
+    uint32 first = path.begin()->first;
+    uint32 last = path.rbegin()->first;
+    if (last - first + 1 != path.size())
+    {
+        LOG_ERROR("sql.sql", "Waypoint {} in waypoint_data has non-contiguous pointids after reload, skipping", id);
+        _waypointStore.erase(id);
+        return;
+    }
 }

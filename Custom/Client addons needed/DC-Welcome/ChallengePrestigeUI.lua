@@ -293,7 +293,7 @@ local function ShouldShowInTab(tabId, option)
 end
 
 local function HideGossipFrameInput()
-	if GossipFrame and GossipFrame:IsShown() then
+	if GossipFrame then
 		GossipFrame:SetAlpha(0)
 		GossipFrame:EnableMouse(false)
 		UI._gossipHidden = true
@@ -962,7 +962,7 @@ function UI:Close()
 		self.frame:Hide()
 	end
 	-- Do not restore gossip frame input if we are closing the session.
-	-- RestoreGossipFrameInput()
+	RestoreGossipFrameInput()
 end
 
 function UI:TryOpenFromGossip()

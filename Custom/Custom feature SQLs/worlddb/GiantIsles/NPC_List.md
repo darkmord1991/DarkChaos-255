@@ -5,12 +5,21 @@
 *   **Rokhan the Beast Tamer** (400202) - Zandalari Beast Master
 *   **Scout Zan'do** (400203) - Zandalari Scout
 *   **Trader Zal'aman** (400210) - Zandalari Supplies
+*   **Zandalari Expedition Guard** (400220) - Guard
+*   **Spirit of the Primal** (400300) - Quest Giver
+*   **Bartender Zul'tik** (400310) - Innkeeper
+*   **Windwalker Ta'zo** (400311) - Flight Master
 *   **Ku'ma** (401110) - The Bone Collector (Vendor)
 *   **Safari Trainer Rex** (401111) - Dinosaur Taming Trainer
 *   **Professor Ironpaw** (401112) - Archaeology Trainer
 *   **Primal Quartermaster** (401113) - Reputation Rewards
 *   **Stable Master Thornhide** (401114) - Stable Master
 *   **Banker Goldtusk** (401115) - Banker
+*   **Angler Rolo** (401118) - Fishing Supplies
+*   **Flight Master Skywing** (401116) - Flight Master
+*   **Flight Master Windsoar** (401117) - Flight Master
+*   **Primal Guardian** (401008) - Guard (Level 81 Elite)
+*   **Ancient Primal Guardian** (401009) - Guard (Level 82 Elite)
 *   **Commander Stonewall** (401200) - Expedition Commander (Quest Giver)
 *   **Dr. Zira Fossildigger** (401201) - Lead Archaeologist (Quest Giver)
 *   **Huntmaster Grimtusk** (401202) - Beast Tracker (Quest Giver)
@@ -23,7 +32,7 @@
 *   **Storm Chaser Volta** (401222) - World Boss Hunter
 *   **Captain Harlan** (400320) - Coastal Defense (Quest Giver)
 
-## Horde NPCs (Faction 1734 - Primal Horde)
+## Horde NPCs (Faction 29 - Orgrimmar)
 *   **Bozzle** (401105) - Goblin Expedition Leader
 *   **Grizzek Fizzlecrank** (401106) - Repairs
 *   **Zasha** (401107) - General Goods
@@ -34,7 +43,7 @@
 *   **Beast Hunter Trapper** (401006) - Guard (Level 80)
 *   **Beast Hunter Warlord** (401007) - Guard (Level 82 Elite)
 
-## Alliance NPCs (Faction 1735 - Jurassic Expedition)
+## Alliance NPCs (Faction 12 - Stormwind)
 *   **Beeble Cogsworth** (401100) - Gnome Expedition Leader
 *   **Tinker Sprocketwrench** (401101) - Repairs
 *   **Emily Stormwind** (401102) - General Goods

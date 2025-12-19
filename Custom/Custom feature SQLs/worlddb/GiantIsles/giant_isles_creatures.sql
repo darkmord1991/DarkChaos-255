@@ -555,15 +555,15 @@ INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `b
 DELETE FROM `creature_template` WHERE `entry` BETWEEN 401000 AND 401099;
 INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `rank`, `type`, `unit_class`, `unit_flags`, `BaseAttackTime`, `RangeAttackTime`, `HealthModifier`, `DamageModifier`, `ArmorModifier`, `mingold`, `maxgold`, `AIName`, `MovementType`, `ScriptName`) VALUES
 -- Alliance Guards (Jurassic Expedition)
-(401000, 'Primal Warden', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
-(401001, 'Primal Warden Sergeant', 'Jurassic Expedition', 81, 81, 1735, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
-(401002, 'Primal Warden Marksman', 'Jurassic Expedition', 80, 80, 1735, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
-(401003, 'Primal Warden Captain', 'Jurassic Expedition', 82, 82, 1735, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
+(401000, 'Primal Warden', 'Jurassic Expedition', 80, 80, 12, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
+(401001, 'Primal Warden Sergeant', 'Jurassic Expedition', 81, 81, 12, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
+(401002, 'Primal Warden Marksman', 'Jurassic Expedition', 80, 80, 12, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
+(401003, 'Primal Warden Captain', 'Jurassic Expedition', 82, 82, 12, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
 -- Horde Guards (Beast Hunters)
-(401004, 'Beast Hunter', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
-(401005, 'Beast Hunter Veteran', 'Primal Horde', 81, 81, 1734, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
-(401006, 'Beast Hunter Trapper', 'Primal Horde', 80, 80, 1734, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
-(401007, 'Beast Hunter Warlord', 'Primal Horde', 82, 82, 1734, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
+(401004, 'Beast Hunter', 'Primal Horde', 80, 80, 29, 0, 0, 7, 1, 0, 2000, 2000, 2.0, 1.5, 1.0, 0, 0, '', 1, ''),
+(401005, 'Beast Hunter Veteran', 'Primal Horde', 81, 81, 29, 0, 1, 7, 1, 0, 2000, 2000, 4.0, 2.0, 1.5, 0, 0, '', 1, ''),
+(401006, 'Beast Hunter Trapper', 'Primal Horde', 80, 80, 29, 0, 0, 7, 1, 0, 2000, 2000, 1.8, 1.5, 0.8, 0, 0, '', 1, ''),
+(401007, 'Beast Hunter Warlord', 'Primal Horde', 82, 82, 29, 0, 2, 7, 1, 0, 2000, 2000, 8.0, 3.0, 2.0, 0, 0, '', 0, ''),
 -- Neutral Guards (Primal Wardens Faction)
 (401008, 'Primal Guardian', 'Primal Wardens', 81, 81, 35, 0, 1, 7, 1, 0, 2000, 2000, 5.0, 2.5, 1.5, 0, 0, '', 1, ''),
 (401009, 'Ancient Primal Guardian', 'Primal Wardens', 82, 82, 35, 0, 2, 7, 1, 0, 2000, 2000, 10.0, 4.0, 2.0, 0, 0, '', 0, '');
@@ -576,24 +576,27 @@ INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlev
 DELETE FROM `creature_template` WHERE `entry` BETWEEN 401100 AND 401150;
 INSERT INTO `creature_template` (`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `rank`, `type`, `unit_class`, `unit_flags`, `HealthModifier`, `AIName`, `MovementType`) VALUES
 -- Alliance Services (Beeble's Wreck)
-(401100, 'Beeble Cogsworth', 'Gnome Expedition Leader', 400100, 80, 80, 1735, 3, 0, 7, 1, 0, 1.0, '', 0),
-(401101, 'Tinker Sprocketwrench', 'Repairs', 400101, 80, 80, 1735, 4225, 0, 7, 1, 0, 1.0, '', 0),
-(401102, 'Emily Stormwind', 'General Goods', 400102, 80, 80, 1735, 4225, 0, 7, 1, 0, 1.0, '', 0),
-(401103, 'Flight Master Aldric', 'Flight Master', 400103, 80, 80, 1735, 8201, 0, 7, 1, 0, 1.0, '', 0),
-(401104, 'Innkeeper Molly', 'Innkeeper', 400104, 80, 80, 1735, 65537, 0, 7, 1, 0, 1.0, '', 0),
+(401100, 'Beeble Cogsworth', 'Gnome Expedition Leader', 400100, 80, 80, 12, 3, 0, 7, 1, 0, 1.0, '', 0),
+(401101, 'Tinker Sprocketwrench', 'Repairs', 400101, 80, 80, 12, 4225, 0, 7, 1, 0, 1.0, '', 0),
+(401102, 'Emily Stormwind', 'General Goods', 400102, 80, 80, 12, 4225, 0, 7, 1, 0, 1.0, '', 0),
+(401103, 'Flight Master Aldric', 'Flight Master', 400103, 80, 80, 12, 8201, 0, 7, 1, 0, 1.0, '', 0),
+(401104, 'Innkeeper Molly', 'Innkeeper', 400104, 80, 80, 12, 65537, 0, 7, 1, 0, 1.0, '', 0),
 -- Horde Services (Bozzle's Wreck)
-(401105, 'Bozzle', 'Goblin Expedition Leader', 400105, 80, 80, 1734, 3, 0, 7, 1, 0, 1.0, '', 0),
-(401106, 'Grizzek Fizzlecrank', 'Repairs', 400106, 80, 80, 1734, 4225, 0, 7, 1, 0, 1.0, '', 0),
-(401107, 'Zasha', 'General Goods', 400107, 80, 80, 1734, 4225, 0, 7, 1, 0, 1.0, '', 0),
-(401108, 'Flight Master Krag', 'Flight Master', 400108, 80, 80, 1734, 8201, 0, 7, 1, 0, 1.0, '', 0),
-(401109, 'Innkeeper Grok', 'Innkeeper', 400109, 80, 80, 1734, 65537, 0, 7, 1, 0, 1.0, '', 0),
+(401105, 'Bozzle', 'Goblin Expedition Leader', 400105, 80, 80, 29, 3, 0, 7, 1, 0, 1.0, '', 0),
+(401106, 'Grizzek Fizzlecrank', 'Repairs', 400106, 80, 80, 29, 4225, 0, 7, 1, 0, 1.0, '', 0),
+(401107, 'Zasha', 'General Goods', 400107, 80, 80, 29, 4225, 0, 7, 1, 0, 1.0, '', 0),
+(401108, 'Flight Master Krag', 'Flight Master', 400108, 80, 80, 29, 8201, 0, 7, 1, 0, 1.0, '', 0),
+(401109, 'Innkeeper Grok', 'Innkeeper', 400109, 80, 80, 29, 65537, 0, 7, 1, 0, 1.0, '', 0),
 -- Neutral Services (Primal Camp)
 (401110, 'Ku\'ma', 'The Bone Collector', 400110, 80, 80, 35, 131, 0, 7, 1, 0, 1.0, '', 0),
 (401111, 'Safari Trainer Rex', 'Dinosaur Taming', 400111, 80, 80, 35, 19, 0, 7, 1, 0, 1.0, '', 0),
 (401112, 'Professor Ironpaw', 'Archaeology Trainer', 400112, 80, 80, 35, 19, 0, 7, 1, 0, 1.0, '', 0),
 (401113, 'Primal Quartermaster', 'Reputation Rewards', 400113, 80, 80, 35, 129, 0, 7, 1, 0, 1.0, '', 0),
 (401114, 'Stable Master Thornhide', 'Stable Master', 400114, 80, 80, 35, 4194433, 0, 7, 1, 0, 1.0, '', 0),
-(401115, 'Banker Goldtusk', 'Banker', 400115, 80, 80, 35, 134217857, 0, 7, 1, 0, 1.0, '', 0);
+(401116, 'Flight Master Skywing', 'Flight Master', 400116, 80, 80, 35, 8201, 0, 7, 1, 0, 1.0, '', 0),
+(401117, 'Flight Master Windsoar', 'Flight Master', 400117, 80, 80, 35, 8201, 0, 7, 1, 0, 1.0, '', 0),
+(401115, 'Banker Goldtusk', 'Banker', 400115, 80, 80, 35, 134217857, 0, 7, 1, 0, 1.0, '', 0),
+(401118, 'Angler Rolo', 'Fishing Supplies', 400118, 80, 80, 35, 129, 0, 7, 1, 0, 1.0, '', 0);
 
 -- ============================================================================
 -- QUEST GIVERS (401200-401299)
@@ -645,12 +648,15 @@ INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `BroadcastTextId0`, `lang0`,
 (400107, 'Fresh supplies, straight from the Horde! Well, as fresh as anything can be on this dinosaur-infested rock.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400108, 'Ready to fly, friend? I\'ve trained these wyverns to handle the island\'s unique... challenges.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400109, 'Lok\'tar ogar! Welcome to Bozzle\'s Inn. Make yourself at home.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
+(400116, 'The skies are open to all who seek passage. Where would you like to go?', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
+(400117, 'I fly for coin, not for faction. If you have the gold, I have the wings.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400110, 'Bones... I collect bones. Bring me the bones of the great beasts, and I shall craft for you items of incredible power.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400111, 'So you want to tame one of these prehistoric beasts? It won\'t be easy, but I can teach you the ancient techniques.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400112, 'The archaeological treasures of this island are beyond imagination! Ancient Titan artifacts, fossilized remains, and more!', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400113, 'Prove your worth to the Primal Wardens, and you shall have access to our finest rewards.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400114, 'Your pets will be safe with me. I\'ve got plenty of space in the stables.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400115, 'Your gold is safe with me. Even the dinosaurs can\'t break into my vault!', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
+(400118, 'The fish here are bigger than anything I\'ve ever seen! Careful they don\'t bite you back.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 -- Quest Givers (400120-400129)
 (400120, 'The expedition faces threats from all sides - hostile Zandalari, corrupted beasts, and the world bosses that terrorize this land. We need capable adventurers.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
 (400121, 'The secrets buried here predate even the Titans! We must uncover them before the Zandalari do.', '', 0, 0, 1, 0, 0, 0, 0, 0, 0),
@@ -687,6 +693,8 @@ INSERT INTO `gossip_menu` (`MenuId`, `TextId`) VALUES
 (400107, 400107), -- Zasha
 (400108, 400108), -- Flight Master Krag
 (400109, 400109), -- Innkeeper Grok
+(400116, 400116), -- Flight Master Skywing
+(400117, 400117), -- Flight Master Windsoar
 -- Neutral Services
 (400110, 400110), -- Ku'ma
 (400111, 400111), -- Safari Trainer Rex
@@ -694,6 +702,7 @@ INSERT INTO `gossip_menu` (`MenuId`, `TextId`) VALUES
 (400113, 400113), -- Primal Quartermaster
 (400114, 400114), -- Stable Master Thornhide
 (400115, 400115), -- Banker Goldtusk
+(400118, 400118), -- Angler Rolo
 -- Quest Givers
 (400120, 400120), -- Commander Stonewall
 (400121, 400121), -- Dr. Zira Fossildigger
@@ -717,6 +726,7 @@ INSERT INTO `gossip_menu_option` (`MenuId`, `OptionId`, `OptionIcon`, `OptionTex
 (400107, 0, 1, 'I need supplies.', 0, 3, 128, 0, 0, 0, 0, '', 0),
 (400110, 0, 1, 'What can you craft for me?', 0, 3, 128, 0, 0, 0, 0, '', 0),
 (400113, 0, 1, 'Show me your reputation rewards.', 0, 3, 128, 0, 0, 0, 0, '', 0),
+(400118, 0, 1, 'Let me see your fishing supplies.', 0, 3, 128, 0, 0, 0, 0, '', 0),
 -- Trainer gossip options
 (400111, 0, 3, 'Train me in dinosaur taming.', 0, 5, 16, 0, 0, 0, 0, '', 0),
 (400112, 0, 3, 'Teach me about archaeology.', 0, 5, 16, 0, 0, 0, 0, '', 0),
@@ -781,6 +791,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (401113, 0, 2095, 1, 1, 12340),  -- Primal Quartermaster (Human Male)
 (401114, 0, 2095, 1, 1, 12340),  -- Stable Master Thornhide (Human Male)
 (401115, 0, 7110, 0.8, 1, 12340), -- Banker Goldtusk (Goblin)
+(401116, 0, 7110, 1, 1, 12340), -- Flight Master Skywing (Goblin)
+(401118, 0, 2095, 1, 1, 12340), -- Angler Rolo (Human Male)
 -- Quest Givers
 (401200, 0, 2095, 1.1, 1, 12340), -- Commander Stonewall (Human)
 (401201, 0, 7125, 0.7, 1, 12340), -- Dr. Zira Fossildigger (Gnome Female)
@@ -1011,6 +1023,7 @@ INSERT INTO `creature_equip_template` (`CreatureID`, `ID`, `ItemID1`, `ItemID2`,
 (401113, 1, 12749, 12651, 0, 12340),  -- Primal Quartermaster - Sword + Shield
 (401114, 1, 12748, 0, 0, 12340),      -- Stable Master Thornhide - Axe
 (401115, 1, 0, 0, 0, 12340),          -- Banker Goldtusk - No weapon
+(401118, 1, 6256, 0, 0, 12340),       -- Angler Rolo - Fishing Pole
 
 -- Quest Givers
 (401200, 1, 13160, 12651, 0, 12340),  -- Commander Stonewall - 2H Sword + Shield
@@ -1193,6 +1206,85 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`, `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`) VALUES
 (400072, 0, 0, 0, 0, 0, 100, 0, 8000, 12000, 0, 0, 11, 745, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 'Spider - Web'),
 (400072, 0, 1, 0, 0, 0, 100, 0, 5000, 8000, 0, 0, 11, 744, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 'Spider - Poison');
+
+-- ============================================================================
+-- NPC VENDOR ITEMS
+-- ============================================================================
+-- Format: (entry, slot, item, maxcount, incrtime, ExtendedCost, VerifiedBuild)
+-- ============================================================================
+
+DELETE FROM `npc_vendor` WHERE `entry` IN (401101, 401102, 401106, 401107, 401110, 401113, 401118, 400210);
+
+INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES
+-- Emily Stormwind (Alliance General Goods) - 401102
+(401102, 1, 4599, 0, 0, 0, 12340),   -- Refreshing Spring Water
+(401102, 2, 4601, 0, 0, 0, 12340),   -- Morning Glory Dew
+(401102, 3, 4608, 0, 0, 0, 12340),   -- Ice Cold Milk
+(401102, 4, 4540, 0, 0, 0, 12340),   -- Tough Jerky
+(401102, 5, 4542, 0, 0, 0, 12340),   -- Haunch of Meat
+(401102, 6, 4544, 0, 0, 0, 12340),   -- Mutton Chop
+(401102, 7, 17030, 0, 0, 0, 12340),  -- Moonberry Juice
+(401102, 8, 17029, 0, 0, 0, 12340),  -- Sweet Nectar
+(401102, 9, 21151, 0, 0, 0, 12340),  -- Rumsey Rum's Black Label
+(401102, 10, 4498, 0, 0, 0, 12340),  -- Brown Leather Satchel
+(401102, 11, 17056, 0, 0, 0, 12340), -- Light Feather
+(401102, 12, 17057, 0, 0, 0, 12340), -- Arcane Powder
+(401102, 13, 17058, 0, 0, 0, 12340), -- Fish Oil
+
+-- Zasha (Horde General Goods) - 401107
+(401107, 1, 4599, 0, 0, 0, 12340),   -- Refreshing Spring Water
+(401107, 2, 4601, 0, 0, 0, 12340),   -- Morning Glory Dew
+(401107, 3, 4608, 0, 0, 0, 12340),   -- Ice Cold Milk
+(401107, 4, 4540, 0, 0, 0, 12340),   -- Tough Jerky
+(401107, 5, 4542, 0, 0, 0, 12340),   -- Haunch of Meat
+(401107, 6, 4544, 0, 0, 0, 12340),   -- Mutton Chop
+(401107, 7, 17030, 0, 0, 0, 12340),  -- Moonberry Juice
+(401107, 8, 17029, 0, 0, 0, 12340),  -- Sweet Nectar
+(401107, 9, 21151, 0, 0, 0, 12340),  -- Rumsey Rum's Black Label
+(401107, 10, 4498, 0, 0, 0, 12340),  -- Brown Leather Satchel
+(401107, 11, 17056, 0, 0, 0, 12340), -- Light Feather
+(401107, 12, 17057, 0, 0, 0, 12340), -- Arcane Powder
+(401107, 13, 17058, 0, 0, 0, 12340), -- Fish Oil
+
+-- Tinker Sprocketwrench (Alliance Repairs) - 401101
+(401101, 1, 5956, 0, 0, 0, 12340),   -- Blacksmith Hammer
+(401101, 2, 2901, 0, 0, 0, 12340),   -- Mining Pick
+(401101, 3, 6219, 0, 0, 0, 12340),   -- Arclight Spanner
+(401101, 4, 6218, 0, 0, 0, 12340),   -- Copper Rod
+(401101, 5, 2332, 0, 0, 0, 12340),   -- Simple Wood
+(401101, 6, 20815, 0, 0, 0, 12340),  -- Simple Grinder
+(401101, 7, 20824, 0, 0, 0, 12340),  -- Simple Flour
+
+-- Grizzek Fizzlecrank (Horde Repairs) - 401106
+(401106, 1, 5956, 0, 0, 0, 12340),   -- Blacksmith Hammer
+(401106, 2, 2901, 0, 0, 0, 12340),   -- Mining Pick
+(401106, 3, 6219, 0, 0, 0, 12340),   -- Arclight Spanner
+(401106, 4, 6218, 0, 0, 0, 12340),   -- Copper Rod
+(401106, 5, 2332, 0, 0, 0, 12340),   -- Simple Wood
+(401106, 6, 20815, 0, 0, 0, 12340),  -- Simple Grinder
+(401106, 7, 20824, 0, 0, 0, 12340),  -- Simple Flour
+
+-- Angler Rolo (Fishing Supplies) - 401118
+(401118, 1, 6256, 0, 0, 0, 12340),   -- Fishing Pole
+(401118, 2, 6365, 0, 0, 0, 12340),   -- Strong Fishing Pole
+(401118, 3, 12225, 0, 0, 0, 12340),  -- Blump Family Fishing Pole
+(401118, 4, 6529, 0, 0, 0, 12340),   -- Shiny Bauble
+(401118, 5, 6530, 0, 0, 0, 12340),   -- Nightcrawlers
+(401118, 6, 6532, 0, 0, 0, 12340),   -- Bright Baubles
+(401118, 7, 6533, 0, 0, 0, 12340),   -- Aquadynamic Fish Attractor
+(401118, 8, 6811, 0, 0, 0, 12340),   -- Aquadynamic Fish Lens
+
+-- Trader Zal'aman (Zandalari Supplies) - 400210
+(400210, 1, 3387, 0, 0, 0, 12340),   -- Limited Invulnerability Potion
+(400210, 2, 3823, 0, 0, 0, 12340),   -- Lesser Invisibility Potion
+(400210, 3, 9172, 0, 0, 0, 12340),   -- Invisibility Potion
+(400210, 4, 20008, 0, 0, 0, 12340),  -- Living Action Potion
+
+-- Primal Quartermaster (Reputation Rewards) - 401113
+(401113, 1, 5976, 0, 0, 0, 12340),   -- Guild Tabard
+(401113, 2, 23192, 0, 0, 0, 12340),  -- Tabard of the Argent Dawn
+(401113, 3, 31404, 0, 0, 0, 12340),  -- Green Trophy Tabard of the Illidari
+(401113, 4, 31405, 0, 0, 0, 12340);  -- Purple Trophy Tabard of the Illidari
 
 -- ============================================================================
 -- END OF GIANT ISLES CREATURE TEMPLATES

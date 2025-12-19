@@ -49,7 +49,7 @@ void WaypointMovementGenerator<Creature>::LoadPath(Creature* creature)
         }
     }
 
-    if (!i_path)
+    if (!i_path || i_path->empty())
     {
         // No movement found for entry
         LOG_ERROR("sql.sql", "WaypointMovementGenerator::LoadPath: creature {} ({}) doesn't have waypoint path id: {}",
