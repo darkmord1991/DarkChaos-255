@@ -24,7 +24,6 @@
 
 // --- Core AC Scripts ---
 void AddSC_ac_guard_npc();                    // AC\ac_guard_npc.cpp
-void AddSC_flighthelper_test();               // AC\cs_flighthelper_test.cpp
 void AddSC_dc_login_announce();               // dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC\ac_quest_npc_800009.cpp
 void AddSC_aio_bridge();                      // AIO\aio_bridge.cpp
@@ -144,7 +143,6 @@ void AddDCScripts()
     // CORE AC SCRIPTS
     // ═══════════════════════════════════════════════════════════════════════
     AddSC_ac_guard_npc();
-    AddSC_flighthelper_test();
     AddSC_dc_login_announce();
     AddSC_ac_quest_npc_800009();
     AddSC_aio_bridge();

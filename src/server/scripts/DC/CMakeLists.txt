@@ -52,12 +52,9 @@ set(SCRIPTS_DC_PhasedDuels
 # Main AC scripts
 set(SCRIPTS_DC_AC
     AC/ac_guard_npc.cpp
-    AC/cs_flighthelper_test.cpp
     heirloom_scaling_255.cpp
     dc_login_announce.cpp
     AC/ac_flightmasters.cpp
-    AC/ac_flightmasters_data.cpp
-    AC/ac_flightmasters_path.cpp
     AC/ac_quest_npc_800009.cpp
     HinterlandBG/npc_thrall_warchief.cpp
     HinterlandBG/npc_Varian_hinterlandbg.cpp
