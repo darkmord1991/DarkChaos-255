@@ -285,9 +285,9 @@ function LocationPlugin:OnUpdate(elapsed)
     local prefix = ""
     if self._inHotspot then
         if self._blinkState then
-            prefix = "|cffff8000★|r "  -- Orange star
+            prefix = "|cffff8000!|r "  -- Orange indicator (ASCII)
         else
-            prefix = "|cffffff00★|r "  -- Yellow star
+            prefix = "|cffffff00!|r "  -- Yellow indicator (ASCII)
         end
     end
     
@@ -330,7 +330,7 @@ function LocationPlugin:OnTooltip(tooltip)
         -- Current Hotspot section (if in one)
         if self._inHotspot and self._currentHotspot then
             tooltip:AddLine(" ")
-            tooltip:AddLine("|cffff8000★ HOTSPOT ACTIVE ★|r")
+            tooltip:AddLine("|cffff8000HOTSPOT ACTIVE|r")
 
             if self._currentHotspot.name then
                 tooltip:AddDoubleLine("  Name:", self._currentHotspot.name,
@@ -368,7 +368,7 @@ function LocationPlugin:OnTooltip(tooltip)
                 local bonusText = hotspot.bonusPercent and (" +" .. hotspot.bonusPercent .. "%") or ""
 
                 -- Show indicator if this is current zone
-                local indicator = isCurrentZone and "|cff00ff00►|r " or "  "
+                local indicator = isCurrentZone and "|cff00ff00>|r " or "  "
 
                 tooltip:AddDoubleLine(indicator .. displayName, displayZone .. bonusText,
                     nameColor[1], nameColor[2], nameColor[3],

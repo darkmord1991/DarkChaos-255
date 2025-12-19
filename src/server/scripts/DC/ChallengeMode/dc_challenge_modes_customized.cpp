@@ -33,6 +33,9 @@ namespace
         ACTION_PRESTIGE_OVERVIEW = 1100,
         ACTION_PRESTIGE_WARNINGS = 1101,
         ACTION_PRESTIGE_CONFIRM  = 1102,
+        ACTION_RANDOM_INFO       = 1200,
+        ACTION_RANDOM_CONFIRM    = 1201,
+        ACTION_RANDOM_ACTIVATE   = 1202,
     };
 }
 
@@ -94,6 +97,13 @@ const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSetting
         "No deaths, no auction house, no player trading",
         1 << SETTING_IRON_MAN,
         SPELL_AURA_IRON_MAN
+    }},
+    { SETTING_IRON_MAN_PLUS, {
+        SETTING_IRON_MAN_PLUS,
+        "Iron Man+",
+        "No talents, no glyphs, no grouping, no dungeons, no professions",
+        1 << SETTING_IRON_MAN_PLUS,
+        SPELL_AURA_IRON_MAN_PLUS
     }}
 };
 
@@ -124,6 +134,8 @@ bool ChallengeModes::challengeEnabled(ChallengeModeSettings setting) const
             return questXpOnlyEnable;
         case SETTING_IRON_MAN:
             return ironManEnable;
+        case SETTING_IRON_MAN_PLUS:
+            return ironManPlusEnable;
         default:
             return false;
     }
@@ -149,6 +161,8 @@ uint32 ChallengeModes::getDisableLevel(ChallengeModeSettings setting) const
             return questXpOnlyDisableLevel;
         case SETTING_IRON_MAN:
             return ironManDisableLevel;
+        case SETTING_IRON_MAN_PLUS:
+            return ironManPlusDisableLevel;
         default:
             return 0;
     }
@@ -174,6 +188,8 @@ float ChallengeModes::getXpBonusForChallenge(ChallengeModeSettings setting) cons
             return questXpOnlyXpBonus;
         case SETTING_IRON_MAN:
             return ironManXpBonus;
+        case SETTING_IRON_MAN_PLUS:
+            return ironManPlusXpBonus;
         default:
             return 1.0f;
     }
@@ -199,6 +215,8 @@ const std::unordered_map<uint8, uint32>* ChallengeModes::getTitleMapForChallenge
             return &questXpOnlyTitleRewards;
         case SETTING_IRON_MAN:
             return &ironManTitleRewards;
+        case SETTING_IRON_MAN_PLUS:
+            return &ironManPlusTitleRewards;
         default:
             return nullptr;
     }
@@ -224,6 +242,8 @@ const std::unordered_map<uint8, uint32>* ChallengeModes::getTalentMapForChalleng
             return &questXpOnlyTalentRewards;
         case SETTING_IRON_MAN:
             return &ironManTalentRewards;
+        case SETTING_IRON_MAN_PLUS:
+            return &ironManPlusTalentRewards;
         default:
             return nullptr;
     }
@@ -249,6 +269,8 @@ const std::unordered_map<uint8, uint32>* ChallengeModes::getItemMapForChallenge(
             return &questXpOnlyItemRewards;
         case SETTING_IRON_MAN:
             return &ironManItemRewards;
+        case SETTING_IRON_MAN_PLUS:
+            return &ironManPlusItemRewards;
         default:
             return nullptr;
     }
@@ -274,6 +296,8 @@ uint32 ChallengeModes::getItemRewardAmount(ChallengeModeSettings setting) const
             return questXpOnlyItemRewardAmount;
         case SETTING_IRON_MAN:
             return ironManItemRewardAmount;
+        case SETTING_IRON_MAN_PLUS:
+            return ironManPlusItemRewardAmount;
         default:
             return 1;
     }
@@ -337,6 +361,8 @@ const std::unordered_map<uint8, uint32>* ChallengeModes::getAchievementMapForCha
             return &questXpOnlyAchievementReward;
         case SETTING_IRON_MAN:
             return &ironManAchievementReward;
+        case SETTING_IRON_MAN_PLUS:
+            return &ironManPlusAchievementReward;
         default:
             return nullptr;
     }
@@ -436,6 +462,18 @@ std::string GetChallengeExplanation(ChallengeModeSettings setting)
                    "Only the most dedicated players complete this.\n\n"
                    "Do you have what it takes?";
 
+        case SETTING_IRON_MAN_PLUS:
+            return "|cffFFD700IRON MAN+ CHALLENGE|r\n\n"
+                   "Iron Man+, with additional restrictions:\n\n"
+                   "Rules:\n"
+                   "- NO talents\n"
+                   "- NO glyphs\n"
+                   "- NO professions (no exceptions)\n"
+                   "- NO grouping or party play\n"
+                   "- NO dungeons or raids\n\n"
+                   "This mode is designed for solo, skill-focused play.\n\n"
+                   "Do you accept?";
+
         default:
             return "Unknown challenge mode.";
     }
@@ -510,6 +548,12 @@ public:
         sChallengeModes->ironManDisableLevel = sConfigMgr->GetOption<uint32>("IronMan.DisableLevel", 0);
         sChallengeModes->ironManItemRewardAmount = sConfigMgr->GetOption<uint32>("IronMan.ItemRewardAmount", 1);
 
+        // Iron Man+
+        sChallengeModes->ironManPlusEnable = sConfigMgr->GetOption<bool>("IronManPlus.Enable", true);
+        sChallengeModes->ironManPlusXpBonus = sConfigMgr->GetOption<float>("IronManPlus.XPMultiplier", 1.0f);
+        sChallengeModes->ironManPlusDisableLevel = sConfigMgr->GetOption<uint32>("IronManPlus.DisableLevel", 0);
+        sChallengeModes->ironManPlusItemRewardAmount = sConfigMgr->GetOption<uint32>("IronManPlus.ItemRewardAmount", 1);
+
         // Load reward maps
         for (auto const& [key, map] : sChallengeModes->rewardConfigMap)
         {
@@ -538,6 +582,94 @@ class gobject_challenge_modes : public GameObjectScript
 {
 public:
     gobject_challenge_modes() : GameObjectScript("gobject_challenge_modes") { }
+
+    static bool IsIronManOrPlusActive(Player* player)
+    {
+        return player && (sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player) ||
+            sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN_PLUS, player));
+    }
+
+    static void ApplyIronManOrPlusImmediateRestrictions(Player* player)
+    {
+        if (!player)
+            return;
+
+        // Remove talent points & talents
+        player->resetTalents(true);
+        player->SetFreeTalentPoints(0);
+
+        // Clear glyphs
+        for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+            player->SetGlyph(slot, 0, true);
+
+        // Leave group if currently grouped
+        if (Group* group = player->GetGroup())
+            group->RemoveMember(player->GetGUID(), GROUP_REMOVEMETHOD_LEAVE, player->GetGUID());
+
+        // If in an instance map, teleport to its entrance.
+        if (MapEntry const* mapEntry = sMapStore.LookupEntry(player->GetMapId()))
+        {
+            if (mapEntry->IsDungeon())
+            {
+                int32 entranceMapId;
+                float x;
+                float y;
+                if (mapEntry->GetEntrancePos(entranceMapId, x, y))
+                    player->TeleportTo(static_cast<uint32>(entranceMapId), x, y, player->GetPositionZ(), player->GetOrientation());
+            }
+        }
+    }
+
+    static bool PlayerHasAnyActiveChallengeMode(Player* player)
+    {
+        if (!player)
+            return false;
+
+        for (auto const& [setting, config] : g_ChallengeSettingConfigs)
+        {
+            (void)config;
+            if (player->GetPlayerSetting("mod-challenge-modes", setting).value == 1)
+                return true;
+        }
+
+        return false;
+    }
+
+    static std::vector<ChallengeModeSettings> GetEligibleRandomChallengeModes(Player* player)
+    {
+        std::vector<ChallengeModeSettings> eligible;
+        if (!player)
+            return eligible;
+
+        if (!sChallengeModes->enabled())
+            return eligible;
+
+        // Random mode is meant to pick exactly ONE mode.
+        // Keep conflict logic simple and consistent with the existing UI:
+        // - If any mode is already active, random selection is not allowed.
+        if (PlayerHasAnyActiveChallengeMode(player))
+            return eligible;
+
+        for (auto const& [setting, config] : g_ChallengeSettingConfigs)
+        {
+            // Only pick modes that are enabled in config.
+            if (!sChallengeModes->challengeEnabled(setting))
+                continue;
+
+            // Skip modes that are effectively disabled for the player's current level.
+            uint32 disableLevel = sChallengeModes->getDisableLevel(setting);
+            if (disableLevel > 0 && player->GetLevel() >= disableLevel)
+                continue;
+
+            // Ensure selectable (defensive; map already represents selectable settings).
+            if (config.setting != setting)
+                continue;
+
+            eligible.push_back(setting);
+        }
+
+        return eligible;
+    }
 
     bool OnGossipHello(Player* player, GameObject* go) override
     {
@@ -605,6 +737,7 @@ public:
         bool hasVerySlowXP = sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player);
         bool hasQuestXPOnly = sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player);
         bool hasIronMan = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player);
+        bool hasIronManPlus = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN_PLUS, player);
         
         // XP modes are mutually exclusive
         [[maybe_unused]] bool hasAnyXPMode = hasSlowXP || hasVerySlowXP || hasQuestXPOnly;
@@ -688,11 +821,25 @@ public:
         {
             if (hasIronMan)
                 AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00FF00[Iron Man Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
-            else if (hasHardcore || hasSemiHardcore || hasSelfCrafted || hasItemQuality)
+            else if (hasIronManPlus || hasHardcore || hasSemiHardcore || hasSelfCrafted || hasItemQuality)
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Iron Man Mode]|r - Conflicts with active challenge modes", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
             else
                 AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man Mode]|r - Ultimate challenge", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN);
         }
+
+        if (sChallengeModes->challengeEnabled(SETTING_IRON_MAN_PLUS))
+        {
+            if (hasIronManPlus)
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00FF00[Iron Man+ Mode]|r |cffFFD700(ACTIVE)|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else if (hasIronMan || hasHardcore || hasSemiHardcore || hasSelfCrafted || hasItemQuality || hasSlowXP || hasVerySlowXP || hasQuestXPOnly)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff666666[Iron Man+ Mode]|r - Conflicts with active challenge modes", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            else
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cffFFD700[Iron Man+ Mode]|r - No talents/glyphs/groups/dungeons/professions", GOSSIP_SENDER_MAIN, SETTING_IRON_MAN_PLUS);
+        }
+
+        // Random picker (chooses ONE mode).
+        if (sChallengeModes->enabled())
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[Random Challenge Mode]|r - Pick one at random", GOSSIP_SENDER_MAIN, ACTION_RANDOM_INFO);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
@@ -707,15 +854,110 @@ public:
 
         // DarkChaos-255: THREE-STEP FLOW
         // Action codes:
-        // 0-7: Show information page
-        // 100-107: Show confirmation page
-        // 200-207: Confirmed - activate mode
+        // 0-99: Show information page for a specific setting (by enum id)
+        // 100-199: Show confirmation page
+        // 200-299: Confirmed - activate mode
         // 999: Close
         // 9999: Do nothing (non-clickable items)
 
         if (action == ACTION_GOSSIP_CLOSE) // Close
         {
             CloseGossipMenuFor(player);
+            return true;
+        }
+
+        if (action == ACTION_RANDOM_INFO)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== RANDOM CHALLENGE MODE ===|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "This will randomly choose ONE challenge mode", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "from the currently enabled modes.", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000This decision is PERMANENT!|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[Continue] Roll a random mode|r", GOSSIP_SENDER_MAIN, ACTION_RANDOM_CONFIRM);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+            return true;
+        }
+
+        if (action == ACTION_RANDOM_CONFIRM)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700=== FINAL CONFIRMATION ===|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "You are about to activate a randomly selected", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "challenge mode.", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000This decision is PERMANENT!|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[CONFIRM] Yes, pick for me!|r", GOSSIP_SENDER_MAIN, ACTION_RANDOM_ACTIVATE);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Let me reconsider...|r", GOSSIP_SENDER_MAIN, ACTION_RANDOM_INFO);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+            return true;
+        }
+
+        if (action == ACTION_RANDOM_ACTIVATE)
+        {
+            // Random should never stack with existing modes.
+            if (PlayerHasAnyActiveChallengeMode(player))
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "A challenge mode is already active.", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Random selection only works when none are active.", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                return true;
+            }
+
+            std::vector<ChallengeModeSettings> eligible = GetEligibleRandomChallengeModes(player);
+            if (eligible.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF8800No eligible challenge modes available.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Either ChallengeModes are disabled, or all modes", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "are disabled by config / level restrictions.", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                return true;
+            }
+
+            ChallengeModeSettings picked = eligible[urand(0, eligible.size() - 1)];
+
+            // Activate the picked mode.
+            player->UpdatePlayerSetting("mod-challenge-modes", picked, 1);
+            sChallengeModes->RefreshChallengeAuras(player);
+
+            if (picked == SETTING_IRON_MAN || picked == SETTING_IRON_MAN_PLUS)
+                ApplyIronManOrPlusImmediateRestrictions(player);
+
+            ChallengeModeDatabase::InitializeTracking(player->GetGUID());
+            ChallengeModeDatabase::SyncActiveModesFromSettings(player);
+
+            std::string title = GetChallengeTitle(picked);
+            std::string activationMsg = "|cff00ff00Challenge Mode Activated (Random):|r " + title;
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff00=== CHALLENGE ACTIVATED ===|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Random pick result:", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, title, GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700Good luck on your journey!|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+
+            if (player->GetSession())
+                ChatHandler(player->GetSession()).PSendSysMessage("%s", activationMsg.c_str());
+
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
 
@@ -814,6 +1056,10 @@ public:
         if (action < 100) // Step 1: Show detailed information
         {
             ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(action);
+
+            if (g_ChallengeSettingConfigs.find(setting) == g_ChallengeSettingConfigs.end())
+                return OnGossipHello(player, go);
+
             std::string explanation = GetChallengeExplanation(setting);
             std::string title = GetChallengeTitle(setting);
             
@@ -858,6 +1104,9 @@ public:
             uint32 challengeId = action - 100;
             ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(challengeId);
             std::string title = GetChallengeTitle(setting);
+
+            if (g_ChallengeSettingConfigs.find(setting) == g_ChallengeSettingConfigs.end())
+                return OnGossipHello(player, go);
             
             // Check if already enabled
             if (sChallengeModes->challengeEnabledForPlayer(setting, player))
@@ -905,7 +1154,8 @@ public:
                 bool hasConflict = sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player) ||
                                    sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player) ||
                                    sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player) ||
-                                   sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player);
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN_PLUS, player);
                 if (hasConflict)
                 {
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
@@ -921,10 +1171,35 @@ public:
                 }
             }
 
+            // Iron Man+ conflicts with ALL other modes (it includes restrictions that overlap).
+            if (setting == SETTING_IRON_MAN_PLUS)
+            {
+                bool hasConflict = sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player) ||
+                                   sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player);
+                if (hasConflict)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Iron Man+ cannot be enabled with any other", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "challenge mode already active.", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
+                    SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
+                    return true;
+                }
+            }
+
             // Cannot enable individual modes if Iron Man is active
             if ((setting == SETTING_HARDCORE || setting == SETTING_SEMI_HARDCORE || 
                  setting == SETTING_SELF_CRAFTED || setting == SETTING_ITEM_QUALITY_LEVEL) &&
-                sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player))
+                IsIronManOrPlusActive(player))
             {
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000CONFLICT DETECTED!|r", GOSSIP_SENDER_MAIN, 9999);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
@@ -1006,6 +1281,10 @@ public:
             player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
             sChallengeModes->RefreshChallengeAuras(player);
 
+            // Apply immediate restrictions for Iron Man / Iron Man+ (so the player can't keep talents/glyphs/groups).
+            if (setting == SETTING_IRON_MAN || setting == SETTING_IRON_MAN_PLUS)
+                ApplyIronManOrPlusImmediateRestrictions(player);
+
             // Persist active modes to tracking DB (optional analytics / admin tooling)
             ChallengeModeDatabase::InitializeTracking(player->GetGUID());
             ChallengeModeDatabase::SyncActiveModesFromSettings(player);
@@ -1075,6 +1354,22 @@ class ChallengeMode_Hardcore : public PlayerScript
 {
 public:
     ChallengeMode_Hardcore() : PlayerScript("ChallengeMode_Hardcore") { }
+
+    void OnPlayerJustDied(Player* player) override
+    {
+        if (!player)
+            return;
+
+        if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player))
+            return;
+
+        // If we already processed the death (e.g., creature/PvP callbacks), don't run twice.
+        if (player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
+            return;
+
+        HandleHardcoreDeath(player, 0, "Environment");
+        player->SetPvPDeath(true);
+    }
 
     void OnPlayerKilledByCreature(Creature* killer, Player* victim) override
     {

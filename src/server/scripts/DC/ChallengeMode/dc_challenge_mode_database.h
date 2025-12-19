@@ -26,11 +26,13 @@ enum ChallengeModeBitFlags : uint32
     CHALLENGE_FLAG_VERY_SLOW_XP_GAIN= 0x20,   // 1 << 5
     CHALLENGE_FLAG_QUEST_ONLY       = 0x40,   // 1 << 6
     CHALLENGE_FLAG_IRON_MAN         = 0x80,   // 1 << 7
+    // Note: bit 1<<8 is reserved for HARDCORE_DEAD (player state, not a selectable mode).
+    CHALLENGE_FLAG_IRON_MAN_PLUS    = 0x200,  // 1 << 9
     // Future expansion flags (start after current setting bits)
-    CHALLENGE_FLAG_SOLO             = 0x200,  // 1 << 9 (future)
-    CHALLENGE_FLAG_DUNGEON_ONLY     = 0x400,  // 1 << 10 (future)
-    CHALLENGE_FLAG_PVP_ONLY         = 0x800,  // 1 << 11 (future)
-    CHALLENGE_FLAG_UNUSED_RESERVED  = 0x1000  // 1 << 12
+    CHALLENGE_FLAG_SOLO             = 0x400,  // 1 << 10 (future)
+    CHALLENGE_FLAG_DUNGEON_ONLY     = 0x800,  // 1 << 11 (future)
+    CHALLENGE_FLAG_PVP_ONLY         = 0x1000, // 1 << 12 (future)
+    CHALLENGE_FLAG_UNUSED_RESERVED  = 0x2000  // 1 << 13
 };
 
 // Event types for logging

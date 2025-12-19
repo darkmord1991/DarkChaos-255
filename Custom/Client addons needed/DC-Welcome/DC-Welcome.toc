@@ -13,6 +13,7 @@ Core.lua
 AddonsPanel.lua
 ProgressPanel.lua
 WelcomeFrame.lua
+ChallengePrestigeUI.lua
 FAQ.lua
 MinimapButton.lua
 

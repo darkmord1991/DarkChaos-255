@@ -25,6 +25,7 @@ uint32 ChallengeModeDatabase::SettingToBitFlag(uint8 setting)
         case SETTING_VERY_SLOW_XP_GAIN:  return CHALLENGE_FLAG_VERY_SLOW_XP_GAIN;
         case SETTING_QUEST_XP_ONLY:      return CHALLENGE_FLAG_QUEST_ONLY;
         case SETTING_IRON_MAN:           return CHALLENGE_FLAG_IRON_MAN;
+        case SETTING_IRON_MAN_PLUS:      return CHALLENGE_FLAG_IRON_MAN_PLUS;
         default:                         return 0;
     }
 }
@@ -45,6 +46,7 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
     if (flags & CHALLENGE_FLAG_SLOW_XP_GAIN)  activeModes.push_back("Slow XP Gain");
     if (flags & CHALLENGE_FLAG_VERY_SLOW_XP_GAIN) activeModes.push_back("Very Slow XP Gain");
     if (flags & CHALLENGE_FLAG_IRON_MAN)      activeModes.push_back("Iron Man");
+    if (flags & CHALLENGE_FLAG_IRON_MAN_PLUS) activeModes.push_back("Iron Man+");
     if (flags & CHALLENGE_FLAG_QUEST_ONLY)    activeModes.push_back("Quest Only");
     
     // Join with ", " - single string allocation
@@ -362,6 +364,9 @@ void ChallengeModeDatabase::SyncActiveModesFromSettings(Player* player)
     
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_IRON_MAN).value == 1)
         activeModes |= CHALLENGE_FLAG_IRON_MAN;
+
+    if (player->GetPlayerSetting("mod-challenge-modes", SETTING_IRON_MAN_PLUS).value == 1)
+        activeModes |= CHALLENGE_FLAG_IRON_MAN_PLUS;
     
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_QUEST_XP_ONLY).value == 1)
         activeModes |= CHALLENGE_FLAG_QUEST_ONLY;

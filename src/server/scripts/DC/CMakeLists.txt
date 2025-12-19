@@ -13,6 +13,8 @@ set(SCRIPTS_DC_Prestige
 set(SCRIPTS_DC_ChallengeMode
     ChallengeMode/dc_challenge_modes_customized.cpp
     ChallengeMode/dc_challenge_mode_database.cpp
+    ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
+    ChallengeMode/dc_challenge_mode_enforcement.cpp
     ChallengeMode/spell_challenge_mode_auras.cpp
 )
 

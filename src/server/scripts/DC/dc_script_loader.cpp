@@ -79,6 +79,8 @@ void AddSC_spell_prestige_alt_bonus_aura();   // Prestige\spell_prestige_alt_bon
 
 // --- Challenge Mode System ---
 void AddSC_dc_challenge_modes();              // ChallengeMode\dc_challenge_modes_customized.cpp
+void AddSC_dc_challenge_mode_equipment_restrictions(); // ChallengeMode\dc_challenge_mode_equipment_restrictions.cpp
+void AddSC_dc_challenge_mode_enforcement();   // ChallengeMode\dc_challenge_mode_enforcement.cpp
 void AddSC_spell_challenge_mode_auras();      // ChallengeMode\spell_challenge_mode_auras.cpp
 
 // --- Custom Achievements ---
@@ -265,6 +267,8 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_challenge_modes();
+        AddSC_dc_challenge_mode_equipment_restrictions();
+        AddSC_dc_challenge_mode_enforcement();
         AddSC_spell_challenge_mode_auras();
         LOG_INFO("scripts", ">>   ✓ Challenge modes and auras loaded");
     } catch (std::exception& e) {

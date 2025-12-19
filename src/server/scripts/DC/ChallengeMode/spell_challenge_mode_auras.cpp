@@ -4,7 +4,7 @@
  *
  * DarkChaos-255 Challenge Mode Aura Scripts
  * 
- * Spell IDs: 800020-800028 (Challenge Mode Markers)
+ * Spell IDs: 800020-800029 (Challenge Mode Markers)
  * 
  * These are DUMMY marker auras that display which challenge mode(s)
  * a player has active. They have no mechanical effect - the actual
@@ -276,6 +276,38 @@ class spell_challenge_iron_man_800027 : public AuraScript
     }
 };
 
+// Spell 800029: Iron Man+ Mode
+class spell_challenge_iron_man_plus_800029 : public AuraScript
+{
+    PrepareAuraScript(spell_challenge_iron_man_plus_800029);
+
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura applied: Iron Man+ Mode (No talents/glyphs/groups/dungeons/professions) - Player: {}",
+            player->GetName());
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetTarget()->ToPlayer();
+        if (!player)
+            return;
+
+        LOG_DEBUG("scripts.challengemode", "Challenge Mode aura removed: Iron Man+ Mode (No talents/glyphs/groups/dungeons/professions) - Player: {}",
+            player->GetName());
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_challenge_iron_man_plus_800029::OnApply, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_challenge_iron_man_plus_800029::OnRemove, 0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
 // Spell 800028: Multiple Challenges Combination
 class spell_challenge_combination_800028 : public AuraScript
 {
@@ -320,4 +352,5 @@ void AddSC_spell_challenge_mode_auras()
     RegisterSpellScript(spell_challenge_quest_xp_only_800026);
     RegisterSpellScript(spell_challenge_iron_man_800027);
     RegisterSpellScript(spell_challenge_combination_800028);
+    RegisterSpellScript(spell_challenge_iron_man_plus_800029);
 }
