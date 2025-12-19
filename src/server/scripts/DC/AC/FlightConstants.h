@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "ac_flightmasters_data.h"
 
 /*
  * FlightConstants.h
@@ -31,7 +32,7 @@ namespace Distance
     
     // Specific node overrides
     constexpr float NODE_STICKY_NEAR_2D = 8.0f;       // For nodes 2, 13, 30
-    constexpr float L25_TO_L40_FINAL_NEAR = 10.0f;    // For acfm15 on L25→L40 route
+    constexpr float L25_TO_L40_FINAL_NEAR = 12.0f;    // For acfm15 on L25→L40 route (increased to 12.0f for reliability)
     
     // Starting point proximity checks
     constexpr float START_NEARBY_THRESHOLD = 80.0f;   // Consider "at start point" within this range
@@ -171,12 +172,13 @@ namespace Debug
 
 namespace Route
 {
-    // Anchor indices (from ac_flightmasters_data.h)
-    constexpr uint8 INDEX_ACFM15 = 14;
-    constexpr uint8 INDEX_ACFM19 = 15;
-    constexpr uint8 INDEX_ACFM35 = 31;
-    constexpr uint8 INDEX_ACFM40 = 32;
-    constexpr uint8 INDEX_ACFM57 = 49;
+    // Anchor indices (legacy names mapped to semantic constants)
+    // These map the legacy INDEX_ACFM* names to the new semantic `kIndex_*` constants
+    constexpr uint8 INDEX_ACFM15 = kIndex_L25_End;
+    constexpr uint8 INDEX_ACFM19 = kIndex_L25_Start;
+    constexpr uint8 INDEX_ACFM35 = kIndex_L40_End;
+    constexpr uint8 INDEX_ACFM40 = kIndex_L40_Start;
+    constexpr uint8 INDEX_ACFM57 = kIndex_L60_End;
     
     // Specific hop overrides
     constexpr uint32 ACFM19_HOP_TIMEOUT_MS = 3500;    // Special timeout for sticky acfm19

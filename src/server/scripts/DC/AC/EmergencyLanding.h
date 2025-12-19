@@ -36,24 +36,30 @@ public:
     {
         switch (route)
         {
-            case ROUTE_TOUR:           // Scenic tour returns to camp
-            case ROUTE_RETURN:         // Return to camp
+            case ROUTE_TOUR:           // Scenic tour returns to L25_End
+                return Position(kPath[kIndex_L25_End].GetPositionX(), kPath[kIndex_L25_End].GetPositionY(), 
+                              kPath[kIndex_L25_End].GetPositionZ(), kPath[kIndex_L25_End].GetOrientation());
+
+            case ROUTE_RETURN:         // Return to camp (Startcamp)
             case ROUTE_L40_RETURN0:    // L40+ return to camp
             case ROUTE_L60_RETURN0:    // L60+ return to camp
-            case ROUTE_L60_RETURN19:   // L60+ alternate return
-                return Position(kPath[0].GetPositionX(), kPath[0].GetPositionY(), 
-                              kPath[0].GetPositionZ(), kPath[0].GetOrientation());
+                return Position(kPath[kIndex_startcamp].GetPositionX(), kPath[kIndex_startcamp].GetPositionY(), 
+                              kPath[kIndex_startcamp].GetPositionZ(), kPath[kIndex_startcamp].GetOrientation());
+            
+            case ROUTE_L60_RETURN19:   // L60+ alternate return to L25_Start
+                return Position(kPath[kIndex_L25_Start].GetPositionX(), kPath[kIndex_L25_Start].GetPositionY(), 
+                              kPath[kIndex_L25_Start].GetPositionZ(), kPath[kIndex_L25_Start].GetOrientation());
             
             case ROUTE_L25_TO_40:      // Camp to L40 zone
             case ROUTE_L40_DIRECT:     // Direct to L40
-                return Position(kPath[kIndex_acfm35].GetPositionX(), kPath[kIndex_acfm35].GetPositionY(),
-                              kPath[kIndex_acfm35].GetPositionZ(), kPath[kIndex_acfm35].GetOrientation());
+                return Position(kPath[kIndex_L40_End].GetPositionX(), kPath[kIndex_L40_End].GetPositionY(),
+                              kPath[kIndex_L40_End].GetPositionZ(), kPath[kIndex_L40_End].GetOrientation());
             
             case ROUTE_L25_TO_60:      // Camp to L60 zone
             case ROUTE_L40_SCENIC:     // L40 to L60 zone
             case ROUTE_L0_TO_57:       // L60 scenic route
-                return Position(kPath[kIndex_acfm57].GetPositionX(), kPath[kIndex_acfm57].GetPositionY(),
-                              kPath[kIndex_acfm57].GetPositionZ(), kPath[kIndex_acfm57].GetOrientation());
+                return Position(kPath[kIndex_L60_End].GetPositionX(), kPath[kIndex_L60_End].GetPositionY(),
+                              kPath[kIndex_L60_End].GetPositionZ(), kPath[kIndex_L60_End].GetOrientation());
             
             default:
                 return std::nullopt;
@@ -193,18 +199,18 @@ inline Position EmergencyLandingSystem::GetAnchorEmergencySpot(uint8 anchorIndex
     // Map specific anchor indices to their dedicated emergency spots
     switch (anchorIndex)
     {
-        case 14: // acfm15
-        case 15: // acfm19
+        case kIndex_L25_End: // L25 end anchor
+        case kIndex_L25_Start: // L25 start anchor
             return Position(-20.3f, 419.1f, 308.2f, 5.92f); // Level 25 Anchor
             
-        case 31: // acfm35
-        case 32: // acfm40
+        case kIndex_L40_End: // L40 end anchor
+        case kIndex_L40_Start: // L40 start anchor
             return Position(684.2f, 109.8f, 283.2f, 0.072f); // Level 40 Anchor
             
-        case 49: // acfm57
+        case kIndex_L60_End: // L60 end anchor
             return Position(1070.1f, -23.5f, 330.2f, 3.67f); // Level 60 Anchor
             
-        case 50: // startcamp
+        case kIndex_startcamp: // Startcamp anchor
         default:
             return Position(131.0f, 1012.0f, 295.0f, 5.0f); // Startcamp Main
     }

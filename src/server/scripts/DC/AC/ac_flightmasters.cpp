@@ -41,37 +41,62 @@ enum : uint32
     NPC_AC_GRYPHON_TAXI    = 800011   // DB: vehicle-capable gryphon, ScriptName = ac_gryphon_taxi_800011
 };
 
+// Custom DBC taxi nodes (from generated TaxiNodes_add.csv)
+enum : uint32
+{
+    DBC_TAXI_NODE_CAMP = 441,
+    DBC_TAXI_NODE_L25  = 442,
+    DBC_TAXI_NODE_L40  = 443,
+    DBC_TAXI_NODE_L60  = 444
+};
+
+static bool StartDbcTaxiFlight(Player* player, Creature* creature, uint32 sourceNode, uint32 destNode)
+{
+    if (!player || !creature)
+        return false;
+
+    if (!sourceNode || !destNode || sourceNode == destNode)
+        return false;
+
+    // SpellId must be non-zero to avoid InstantTaxi teleport behavior.
+    std::vector<uint32> nodes;
+    nodes.reserve(2);
+    nodes.push_back(sourceNode);
+    nodes.push_back(destNode);
+    return player->ActivateTaxiPathTo(nodes, creature, 1);
+}
+
 // Route selection for the flight
 // enum FlightRouteMode : uint32
 // {
-//     // Camp (acfm0) starts
-//     ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> acfm15
-//     ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> acfm35
-//     ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> acfm57
+//     // Camp (StartCamp) starts
+//     ROUTE_TOUR          = 0,  // Camp to Level 25+: acfm1 -> L25_End
+//     ROUTE_L40_DIRECT    = 1,  // Camp to Level 40+: acfm1 -> ... -> L40_End
+//     ROUTE_L0_TO_57      = 2,  // Camp to Level 60+: acfm1 -> ... -> L60_End
 //
 //     // Level 25+ starts
-//     ROUTE_RETURN        = 3,  // Level 25+ to Camp: acfm15 -> ... -> acfm0
-//     ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: acfm19 -> ... -> acfm35
-//     ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: acfm19 -> ... -> acfm57
+//     ROUTE_RETURN        = 3,  // Level 25+ to Camp: L25_End -> ... -> StartCamp
+//     ROUTE_L25_TO_40     = 4,  // Level 25+ to Level 40+: L25_Start -> ... -> L40_End
+//     ROUTE_L25_TO_60     = 5,  // Level 25+ to Level 60+: L25_Start -> ... -> L60_End
 //
 //     // Level 40+ starts
-//     ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: acfm35 -> ... -> acfm19
-//     ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: acfm40 -> ... -> acfm57
+//     ROUTE_L40_RETURN25  = 6,  // Level 40+ to Level 25+: L40_End -> ... -> L25_Start
+//     ROUTE_L40_SCENIC    = 7,  // Level 40+ to Level 60+: L40_Start -> ... -> L60_End
 //
 //     // Level 60+ starts
-//     ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: acfm57 -> ... -> acfm40
-//     ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: acfm57 -> ... -> acfm19
-//     ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: acfm57 -> ... -> acfm0
-//     ,ROUTE_L40_RETURN0  = 11  // Level 40+ to Camp: acfm35 -> ... -> acfm0
+//     ROUTE_L60_RETURN40  = 8,  // Level 60+ to Level 40+: L60_End -> ... -> L40_Start
+//     ROUTE_L60_RETURN19  = 9,  // Level 60+ to Level 25+: L60_End -> ... -> L25_Start
+//     ROUTE_L60_RETURN0   = 10  // Level 60+ to Camp: L60_End -> ... -> StartCamp
+//     ,ROUTE_L40_RETURN0  = 11  // Level 40+ to Camp: L40_End -> ... -> StartCamp
 // };
 
 // Gossip action IDs for readability
 enum GossipAction : uint32
 {
-    // Camp (acfm0)
-    GA_TOUR_25              = 1,  // Camp to Level 25+ (acfm1 -> acfm15)
-    GA_L40_DIRECT           = 2,  // Camp to Level 40+ (to acfm35)
-    GA_L0_TO_57             = 3,  // Camp to Level 60+ (to acfm57)
+    // Camp (StartCamp)
+    GA_TOUR_25              = 1,  // Camp to Level 25+ (acfm1 -> L25_End)
+    GA_L40_DIRECT           = 2,  // Camp to Level 40+ (to L40_End)
+    GA_L0_TO_57             = 3,  // Camp to Level 60+ (to L60_End)
 
     // Level 25+
     GA_RETURN_STARTCAMP     = 4,  // Level 25+ to Camp
@@ -120,14 +145,14 @@ class ac_gryphon_taxi_800011AI : public VehicleAI
     bool _started = false;           // whether the flight has started
     FlightRouteMode _routeMode = ROUTE_TOUR; // current route mode
 
-    // Default per-node config: only acfm57 needs more aggressive handling so far
+    // Default per-node config: only L60_End needs more aggressive handling so far
     inline static const std::vector<NodeConfig> kPerNodeConfigDefaults = [](){
         std::vector<NodeConfig> v(static_cast<size_t>(kPathLength), { Recovery::FAIL_ESCALATION_THRESHOLD, 0.0f });
-        if (kIndex_acfm57 < kPathLength)
-            v[kIndex_acfm57] = { 2u, 12.0f };
-        // Make acfm15 a bit more aggressive to avoid landing fallbacks on the L25->L40 route
-        if (kIndex_acfm15 < kPathLength)
-            v[kIndex_acfm15] = { 2u, 6.0f };
+        if (kIndex_L60_End < kPathLength)
+            v[kIndex_L60_End] = { 2u, 12.0f };
+        // Make L25_End a bit more aggressive to avoid landing fallbacks on the L25->L40 route
+        if (kIndex_L25_End < kPathLength)
+            v[kIndex_L25_End] = { 2u, 6.0f };
         return v;
     }();
 
@@ -393,21 +418,21 @@ public:
         switch (_routeMode)
         {
             case ROUTE_TOUR:
-                return idx >= kIndex_acfm15;
+                return idx >= kIndex_L25_End;
             case ROUTE_RETURN:
                 return idx == kIndex_startcamp;
             case ROUTE_L40_DIRECT:
             case ROUTE_L25_TO_40:
-                return idx >= kIndex_acfm35;
+                return idx >= kIndex_L40_End;
             case ROUTE_L0_TO_57:
             case ROUTE_L25_TO_60:
             case ROUTE_L40_SCENIC:
-                return idx >= kIndex_acfm57;
+                return idx >= kIndex_L60_End;
             case ROUTE_L40_RETURN25:
             case ROUTE_L60_RETURN19:
-                return idx <= kIndex_acfm19;
+                return idx <= kIndex_L25_Start;
             case ROUTE_L60_RETURN40:
-                return idx <= kIndex_acfm40;
+                return idx <= kIndex_L40_Start;
             case ROUTE_L60_RETURN0:
             case ROUTE_L40_RETURN0:
                 return idx == kIndex_startcamp;
@@ -563,11 +588,11 @@ public:
                 float dist2d = sqrtf(dx * dx + dy * dy);
                 
                 // Relax vertical tolerance slightly because smart hops and terrain can cause Z offsets
-                float near2d = (_index >= kIndex_acfm40) ? Distance::WAYPOINT_NEAR_2D_L40 : Distance::WAYPOINT_NEAR_2D;
+                float near2d = (_index >= kIndex_L40_Start) ? Distance::WAYPOINT_NEAR_2D_L40 : Distance::WAYPOINT_NEAR_2D;
                 float nearDz = Distance::WAYPOINT_NEAR_Z;
                 
-                // Known anchor: acfm19 can be sticky when descending from 40+ → Camp; accept a wider proximity
-                if (_currentRoute && _currentRoute->GetMode() == ROUTE_L40_RETURN0 && _index == kIndex_acfm19)
+                // Known anchor: L25_Start can be sticky when descending from 40+ → Camp; accept a wider proximity
+                if (_currentRoute && _currentRoute->GetMode() == ROUTE_L40_RETURN0 && _index == kIndex_L25_Start)
                     near2d = Distance::WAYPOINT_NEAR_2D_STICKY;
                     
                 if (dist2d < near2d && dz < nearDz)
@@ -587,27 +612,35 @@ public:
                 else if (!_splineActive)
                 {
                         // Per-node proximity tuning: nodes known to be sticky get relaxed near2d thresholds
-                        if (_index == 2 || _index == 30 || _index == 13) // acfm3, acfm34, acfm14
+                        // Index 2 (acfm3) is near Startcamp and can be tricky.
+                        if (_index == 2) 
                         {
                             near2d = std::max(near2d, Distance::NODE_STICKY_NEAR_2D);
                         }
-                        // The L25 -> L40 final anchor (acfm15) can be finicky in some terrain; accept a wider proximity
-                        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L25_TO_40 && _index == kIndex_acfm15)
+                        // L25 return leg sticky nodes (increased tolerance)
+                        if (_index == 30 || _index == 31 || _index == 32 || _index == kIndex_startcamp)
+                        {
+                            near2d = std::max(near2d, Distance::WAYPOINT_NEAR_2D_STICKY);
+                        }
+                        // The L25 -> L40 final anchor (L25_End) can be finicky in some terrain; accept a wider proximity
+                        // Also applies to ROUTE_TOUR which ends at L25_End
+                        if (_index == kIndex_L25_End && _currentRoute && 
+                           (_currentRoute->GetMode() == ROUTE_L25_TO_40 || _currentRoute->GetMode() == ROUTE_TOUR))
                         {
                             near2d = std::max(near2d, Distance::L25_TO_L40_FINAL_NEAR);
                         }
 
-                        // Special-case watchdog: if we're targeting acfm19 on 40+ → Camp for too long, skip directly to acfm15
+                        // Special-case watchdog: if we're targeting L25_Start on 40+ → Camp for too long, skip directly to L25_End
                         if (_currentRoute && _currentRoute->GetMode() == ROUTE_L40_RETURN0 && 
-                            _index == kIndex_acfm19 && 
+                            _index == kIndex_L25_Start && 
                             _hopElapsedMs > Timeout::ANCHOR19_SKIP_MS && 
                             !_stateMachine.IsDescending())
                     {
                         Player* anchorSkipPlayer = GetCachedPassenger();
                         if (anchorSkipPlayer && anchorSkipPlayer->IsGameMaster())
-                            ChatHandler(anchorSkipPlayer->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_acfm15));
+                            ChatHandler(anchorSkipPlayer->GetSession()).PSendSysMessage("[Flight Debug] Anchor {} timeout. Skipping to {}.", NodeLabel(_index), NodeLabel(kIndex_L25_End));
                         _awaitingArrival = false;
-                        _index = kIndex_acfm15;
+                        _index = kIndex_L25_End;
                         MoveToIndex(_index);
                         return;
                     }
@@ -925,17 +958,21 @@ public:
                     // Choose nearest final node for route
                     switch (_routeMode)
                     {
+                        case ROUTE_TOUR:
+                            finalIdx = kIndex_L25_End; break;
+                        case ROUTE_RETURN:
+                            finalIdx = kIndex_startcamp; break;
                         case ROUTE_L25_TO_40:
                         case ROUTE_L40_DIRECT:
-                            finalIdx = kIndex_acfm35; break;
+                            finalIdx = kIndex_L40_End; break;
                         case ROUTE_L25_TO_60:
                         case ROUTE_L40_SCENIC:
                         case ROUTE_L0_TO_57:
-                            finalIdx = kIndex_acfm57; break;
+                            finalIdx = kIndex_L60_End; break;
                         case ROUTE_L60_RETURN40:
-                            finalIdx = kIndex_acfm40; break;
+                            finalIdx = kIndex_L40_Start; break;
                         case ROUTE_L60_RETURN19:
-                            finalIdx = kIndex_acfm19; break;
+                            finalIdx = kIndex_L25_Start; break;
                         case ROUTE_L60_RETURN0:
                         case ROUTE_L40_RETURN0:
                             finalIdx = kIndex_startcamp; break;
@@ -981,7 +1018,10 @@ public:
                 // If smart path failed, fail-safe by delivering everyone to the intended destination instead of the start
                 Player* passenger = GetCachedPassenger();
                 if (passenger && passenger->IsGameMaster())
-                    ChatHandler(passenger->GetSession()).PSendSysMessage("[Flight Debug] Smart-path recovery failed. Teleporting safely to destination.");
+                    ChatHandler(passenger->GetSession()).PSendSysMessage(
+                        "[Flight Debug] Smart-path recovery failed. Teleporting safely to destination (mode={}, idx={}, finalIdx={}, dest=%.2f,%.2f,%.2f).",
+                        (uint32)_routeMode, (uint32)_index, (uint32)finalIdx,
+                        dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ());
 
                 float dx = dest.GetPositionX();
                 float dy = dest.GetPositionY();
@@ -1034,7 +1074,7 @@ public:
         }
     }
 
-    void MoveToIndex(uint8 idx)
+    void MoveToIndexRaw(uint8 idx)
     {
         ClearSplineState();
         auto pos = FlightPathAccessor::GetSafePosition(idx);
@@ -1073,6 +1113,34 @@ public:
         _lastDepartIdx = idx;
     }
 
+    void MoveToIndex(uint8 idx)
+    {
+        // Delegate to smart pathing for known tricky hops
+        if (!_movingToCustom && !_useSmartPathfinding)
+        {
+            if (idx == kIndex_startcamp && _lastArrivedIdx == 0)
+            {
+                if (Player* p = GetCachedPassenger())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Delegating Startcamp approach to smart pathing.");
+                MoveToIndexWithSmartPath(idx);
+                return;
+            }
+
+            // Last hop into L25_End is a known obstruction point (tree cover / terrain lip).
+            if (idx == kIndex_L25_End && _lastArrivedIdx == static_cast<uint8>(kIndex_L25_End - 1))
+            {
+                if (Player* p = GetCachedPassenger())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Delegating L25_End approach to smart pathing.");
+                MoveToIndexWithSmartPath(idx);
+                return;
+            }
+        }
+
+        MoveToIndexRaw(idx);
+    }
+
     void MoveToCustom(Position const& pos)
     {
         ClearSplineState();
@@ -1098,64 +1166,17 @@ public:
         _splineSegments = 0;
         _splineProgress = 0;
         _splineWatchdogMs = 0;
+        _splinePoints.clear();
         me->ClearUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
     }
 
     bool LaunchSplineFromQueue(Position const& finalDestination)
     {
-        if (_smartPathQueue.empty())
-            return false;
-
-        Movement::PointsArray splinePoints;
-        splinePoints.reserve(_smartPathQueue.size() + 2);
-        auto appendPoint = [&splinePoints](float x, float y, float z)
-        {
-            if (!splinePoints.empty())
-            {
-                G3D::Vector3 const& last = splinePoints.back();
-                float dx = last.x - x;
-                float dy = last.y - y;
-                float dz = last.z - z;
-                constexpr float kDuplicateEpsilonSq = 0.0625f; // ~0.25 units tolerance
-                if ((dx * dx + dy * dy + dz * dz) < kDuplicateEpsilonSq)
-                    return;
-            }
-            splinePoints.emplace_back(x, y, z);
-        };
-
-        appendPoint(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ());
-        for (Position const& hop : _smartPathQueue)
-            appendPoint(hop.GetPositionX(), hop.GetPositionY(), hop.GetPositionZ());
-        appendPoint(finalDestination.GetPositionX(), finalDestination.GetPositionY(), finalDestination.GetPositionZ());
-
-        if (splinePoints.size() < 3)
-            return false; // need at least two intermediate points to benefit
-
-        me->SetCanFly(true);
-        me->SetDisableGravity(true);
-        me->SetHover(true);
-        me->GetMotionMaster()->Clear();
-        me->AddUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
-        me->GetMotionMaster()->MoveSplinePath(&splinePoints, FORCED_MOVEMENT_NONE);
-
-        _splineActive = true;
-        _activeSplineId = me->movespline ? me->movespline->GetId() : 0;
-        _splineSegments = static_cast<uint32>(splinePoints.size() - 1);
-        _splineProgress = 0;
-        _splineWatchdogMs = 0;
-        _movingToCustom = true;
-        _customTarget = finalDestination;
-        _awaitingArrival = true;
-        _sinceMoveMs = 0;
-        _hopElapsedMs = 0;
-        _hopRetries = 0;
-        _useSmartPathfinding = true;
-        _smartPathQueue.clear();
-
-        if (Player* gm = GetCachedPassenger(); gm && gm->IsGameMaster())
-            ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] Launching spline chain with {} segments toward {}.", _splineSegments, NodeLabel(_index));
-
-        return true;
+        // Disabled: MoveSplinePath chaining has proven unreliable in this script context
+        // (missed completion signaling / watchdog loops). We keep smart-path points
+        // but traverse them via MovePoint (see MoveToCustom chaining).
+        (void)finalDestination;
+        return false;
     }
 
     void ResumeAfterSpline(char const* reason = nullptr)
@@ -1280,6 +1301,7 @@ public:
     uint32 _splineSegments = 0;           // number of spline hops (points - 1)
     uint32 _splineProgress = 0;           // last completed hop index
     uint32 _splineWatchdogMs = 0;         // elapsed time spent inside current spline chain
+    Movement::PointsArray _splinePoints;  // must outlive MoveSplinePath
     
     // Enhanced pathfinding with fallback to waypoints
     void MoveToIndexWithSmartPath(uint8 idx)
@@ -1305,8 +1327,40 @@ public:
         Position destination(destPos->GetPositionX(), destPos->GetPositionY(),
                              destPos->GetPositionZ(), destPos->GetOrientation());
 
-        // Known sticky hop: acfm34 -> acfm35 sits under tree cover. Inject a short vertical arc to avoid terrain clipping.
-        if (idx == kIndex_acfm35 && _lastArrivedIdx == kIndex_acfm35 - 1 &&
+        // Final hop into L25_End can clip tree cover / terrain lip. Use a small elevation arc.
+        if (idx == kIndex_L25_End && _lastArrivedIdx == static_cast<uint8>(kIndex_L25_End - 1) &&
+            _routeMode == ROUTE_TOUR)
+        {
+            _smartPathQueue.clear();
+
+            Position rise = me->GetPosition();
+            rise.m_positionZ = std::max(rise.GetPositionZ() + Recovery::ARC_RISE_HEIGHT,
+                                        destination.GetPositionZ() + Recovery::ARC_GLIDE_MIN_HEIGHT);
+
+            Position glide = destination;
+            glide.m_positionZ = std::max(rise.GetPositionZ(), destination.GetPositionZ() + Recovery::ARC_GLIDE_MIN_HEIGHT);
+
+            _smartPathQueue.push_back(rise);
+            _smartPathQueue.push_back(glide);
+            _smartPathQueue.push_back(destination);
+
+            _useSmartPathfinding = true;
+            _pathfindingRetries = 0;
+
+            if (LaunchSplineFromQueue(destination))
+                return;
+
+            Position next = _smartPathQueue.front();
+            _smartPathQueue.pop_front();
+            MoveToCustom(next);
+            Player* gm = GetCachedPassenger();
+            if (gm && gm->IsGameMaster())
+                ChatHandler(gm->GetSession()).PSendSysMessage("[Flight Debug] Elevation arc engaged for L25_End.");
+            return;
+        }
+
+        // Known sticky hop: acfm34 -> L40_End sits under tree cover. Inject a short vertical arc to avoid terrain clipping.
+        if (idx == kIndex_L40_End && _lastArrivedIdx == kIndex_L40_End - 1 &&
             (_routeMode == ROUTE_L40_DIRECT || _routeMode == ROUTE_L25_TO_40))
         {
             _smartPathQueue.clear();
@@ -1396,6 +1450,14 @@ public:
         float dz = me->GetPositionZ() - destination.GetPositionZ();
         float dist3D = sqrtf(dx*dx + dy*dy + dz*dz);
         
+        // Debug: check why smart pathfinding triggers unexpectedly
+        if (dist3D <= 120.0f && _pathfindingRetries > 0)
+        {
+             if (Player* p = GetCachedPassenger())
+                 if (p->IsGameMaster())
+                     ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Smart path forced by retries: dist={:.1f}, retries={}", dist3D, _pathfindingRetries);
+        }
+
         // Use smart pathfinding for medium/long distances or when stuck recovery is needed
         if (dist3D > 120.0f || _pathfindingRetries > 0)
         {
@@ -1456,7 +1518,7 @@ public:
                 ChatHandler(fallbackPathPlayer->GetSession()).PSendSysMessage("[Flight Debug] Smart pathfinding unavailable for {}. Continuing on scripted path.", NodeLabel(idx));
         }
         _useSmartPathfinding = false;
-        MoveToIndex(idx);
+        MoveToIndexRaw(idx);
     }
 
     void HandleArriveAtCurrentNode(bool isProximity)
@@ -1466,21 +1528,21 @@ public:
 
         Player* handleArrivalPlayer = GetCachedPassenger();
 
-        // Sanity guard: if Level 40+ → 60+ route somehow starts at the final node (acfm57)
-        // while we are NOT near acfm57, reset to a proper starting anchor
-        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L40_SCENIC && _index == kIndex_acfm57)
+        // Sanity guard: if Level 40+ → 60+ route somehow starts at the final node (L60_End)
+        // while we are NOT near L60_End, reset to a proper starting anchor
+        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L40_SCENIC && _index == kIndex_L60_End)
         {
-            auto pos57 = FlightPathAccessor::GetDistanceToWaypoint(
-                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_acfm57, false);
+            auto distToL60End = FlightPathAccessor::GetDistanceToWaypoint(
+                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_L60_End, false);
             
-            if (pos57.value_or(999.0f) > Distance::START_NEARBY_THRESHOLD)
+            if (distToL60End.value_or(999.0f) > Distance::START_NEARBY_THRESHOLD)
             {
-                // Decide anchor: if near acfm40, start at acfm41; otherwise start from acfm1
-                auto pos40 = FlightPathAccessor::GetDistanceToWaypoint(
-                    me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_acfm40, false);
+                // Decide anchor: if near L40_Start, start at acfm41; otherwise start from acfm1
+                auto distToL40Start = FlightPathAccessor::GetDistanceToWaypoint(
+                    me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_L40_Start, false);
                 
-                uint8 start = (pos40.value_or(999.0f) < Distance::START_NEARBY_THRESHOLD) 
-                    ? static_cast<uint8>(kIndex_acfm40 + 1) : 0;
+                uint8 start = (distToL40Start.value_or(999.0f) < Distance::START_NEARBY_THRESHOLD) 
+                    ? static_cast<uint8>(kIndex_L40_Start + 1) : 0;
                 
                 if (handleArrivalPlayer && handleArrivalPlayer->IsGameMaster())
                     ChatHandler(handleArrivalPlayer->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 40+ → 60+ start from {} to {}.", NodeLabel(_index), NodeLabel(start));
@@ -1491,18 +1553,18 @@ public:
             }
         }
 
-        // Sanity guard: if Level 25+ → 60 route somehow targets the final node (acfm57)
-        // while we are NOT near acfm57, reset to a proper starting anchor
-        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L25_TO_60 && _index == kIndex_acfm57)
+        // Sanity guard: if Level 25+ → 60 route somehow targets the final node (L60_End)
+        // while we are NOT near L60_End, reset to a proper starting anchor
+        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L25_TO_60 && _index == kIndex_L60_End)
         {
-            auto pos57 = FlightPathAccessor::GetDistanceToWaypoint(
-                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_acfm57, false);
+            auto distToL60End = FlightPathAccessor::GetDistanceToWaypoint(
+                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_L60_End, false);
             
-            if (pos57.value_or(999.0f) > Distance::START_NEARBY_THRESHOLD)
+            if (distToL60End.value_or(999.0f) > Distance::START_NEARBY_THRESHOLD)
             {
-                // Choose anchor: acfm20 if near acfm19, otherwise start from acfm1
-                uint8 start = IsNearIndex(kIndex_acfm19, Distance::START_NEARBY_THRESHOLD) 
-                    ? static_cast<uint8>(kIndex_acfm19 + 1) : 0;
+                // Choose anchor: acfm20 if near L25_Start, otherwise start from acfm1
+                uint8 start = IsNearIndex(kIndex_L25_Start, Distance::START_NEARBY_THRESHOLD) 
+                    ? static_cast<uint8>(kIndex_L25_Start + 1) : 0;
                 
                 if (handleArrivalPlayer && handleArrivalPlayer->IsGameMaster())
                     ChatHandler(handleArrivalPlayer->GetSession()).PSendSysMessage("[Flight Debug] Sanity: resetting Level 25+ → 60 start from {} to {}.", NodeLabel(_index), NodeLabel(start));
@@ -1513,26 +1575,26 @@ public:
             }
         }
 
-        // Sanity guard: if Level 25+ → 40 route somehow targets the final node (acfm35)
-        // while we are NOT near acfm35, reset to an earlier anchor
-        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L25_TO_40 && _index == kIndex_acfm35 && !_l25to40ResetApplied)
+        // Sanity guard: if Level 25+ → 40 route somehow targets the final node (L40_End)
+        // while we are NOT near L40_End, reset to an earlier anchor
+        if (_currentRoute && _currentRoute->GetMode() == ROUTE_L25_TO_40 && _index == kIndex_L40_End && !_l25to40ResetApplied)
         {
-            auto pos35 = FlightPathAccessor::GetDistanceToWaypoint(
-                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_acfm35, false);
+            auto distToL40End = FlightPathAccessor::GetDistanceToWaypoint(
+                me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), kIndex_L40_End, false);
             
             // Only perform this reset if we're significantly far and have been on this hop for a bit
-            if (pos35.value_or(0.0f) > Distance::SANITY_CHECK_DISTANCE && _hopElapsedMs > Timeout::HOP_SCENIC_MS)
+            if (distToL40End.value_or(0.0f) > Distance::SANITY_CHECK_DISTANCE && _hopElapsedMs > Timeout::HOP_SCENIC_MS)
             {
-                // Prefer stepping from acfm34 if near; otherwise anchor from acfm19; else from acfm1
-                auto pos34 = FlightPathAccessor::GetDistanceToWaypoint(
+                // Prefer stepping from acfm34 if near; otherwise anchor from L25_Start; else from acfm1
+                auto distToL40Prev = FlightPathAccessor::GetDistanceToWaypoint(
                     me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 
-                    static_cast<uint8>(kIndex_acfm35 - 1), false);
+                    static_cast<uint8>(kIndex_L40_End - 1), false);
                 
                 uint8 start = 0;
-                if (pos34.value_or(999.0f) < Distance::START_NEARBY_THRESHOLD)
-                    start = static_cast<uint8>(kIndex_acfm35 - 1);
-                else if (IsNearIndex(kIndex_acfm19, Distance::START_NEARBY_THRESHOLD))
-                    start = kIndex_acfm19;
+                if (distToL40Prev.value_or(999.0f) < Distance::START_NEARBY_THRESHOLD)
+                    start = static_cast<uint8>(kIndex_L40_End - 1);
+                else if (IsNearIndex(kIndex_L25_Start, Distance::START_NEARBY_THRESHOLD))
+                    start = kIndex_L25_Start;
                 else
                     start = 0;
                     
@@ -1581,32 +1643,32 @@ public:
                 }
             }
             
-            // Check for anchor-specific bypass (acfm35)
-            if (nextIdx == kIndex_acfm35)
+            // Check for anchor-specific bypass (L40_End)
+            if (nextIdx == kIndex_L40_End)
             {
-                // Throttle repeated acfm35 remaps as well
-                if (_lastBypassedAnchor == kIndex_acfm35 && _bypassMs < Timeout::BYPASS_THROTTLE_MS)
+                // Throttle repeated L40_End remaps as well
+                if (_lastBypassedAnchor == kIndex_L40_End && _bypassMs < Timeout::BYPASS_THROTTLE_MS)
                 {
                     if (routePlayer && routePlayer->IsGameMaster())
-                        ChatHandler(routePlayer->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for acfm35 (throttle).");
+                        ChatHandler(routePlayer->GetSession()).PSendSysMessage("[Flight Debug] Skipping redundant bypass for L40_End (throttle).");
                 }
                 else
                 {
-                    // For routes that target acfm35, prefer stepping from acfm34 to avoid a single long sticky hop
-                    uint8 altPrev = static_cast<uint8>(kIndex_acfm35 - 1);
-                    auto dist34 = FlightPathAccessor::GetDistanceToWaypoint(
+                    // For routes that target L40_End, prefer stepping from acfm34 to avoid a single long sticky hop
+                    uint8 altPrev = static_cast<uint8>(kIndex_L40_End - 1);
+                    auto distToPrev = FlightPathAccessor::GetDistanceToWaypoint(
                         me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), altPrev, false);
                     
-                    if (dist34.value_or(999.0f) < Distance::START_TAKEOFF_THRESHOLD)
+                    if (distToPrev.value_or(999.0f) < Distance::START_TAKEOFF_THRESHOLD)
                         nextIdx = altPrev;
-                    else if (kIndex_acfm35 + 1 < FlightPathAccessor::GetPathLength())
-                        nextIdx = static_cast<uint8>(kIndex_acfm35 + 1);
+                    else if (kIndex_L40_End + 1 < FlightPathAccessor::GetPathLength())
+                        nextIdx = static_cast<uint8>(kIndex_L40_End + 1);
 
-                    _lastBypassedAnchor = kIndex_acfm35;
+                    _lastBypassedAnchor = kIndex_L40_End;
                     _bypassMs = 0;
                     if (routePlayer && routePlayer->IsGameMaster())
                         ChatHandler(routePlayer->GetSession()).PSendSysMessage(
-                            "[Flight Debug] Aggressive bypass: remapped anchor acfm35 -> {}.", NodeLabel(nextIdx));
+                            "[Flight Debug] Aggressive bypass: remapped anchor L40_End -> {}.", NodeLabel(nextIdx));
                 }
             }
             // Turn-aware speed smoothing: slow down on sharp turns to reduce camera shake
@@ -1632,6 +1694,9 @@ public:
             // Reset per-node failure counter on successful arrival
             if (arrivedIdx < _nodeFailCount.size())
                 _nodeFailCount[arrivedIdx] = 0;
+
+            // Reset pathfinding retries on successful arrival to prevent sticky smart-path behavior
+            _pathfindingRetries = 0;
             // Corner smoothing: if the turn is sharp, perform a short micro-hop along the outgoing direction
             {
                 // Recompute turn using prevIdx/arrivedIdx/nextIdx from the smoothing block above
@@ -1678,7 +1743,7 @@ public:
                     }
                 }
             }
-            MoveToIndexWithSmartPath(_index);
+            MoveToIndex(_index);
             return;
         }
 
@@ -1693,7 +1758,12 @@ public:
             auto distToFinal = FlightPathAccessor::GetDistanceToWaypoint(
                 me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), _index, true);
             
-            if (distToFinal.value_or(0.0f) > Distance::NODE_STICKY_NEAR_2D || 
+            // Relax final landing check for known tricky anchors
+            float finalThreshold = Distance::NODE_STICKY_NEAR_2D;
+            if (_index == kIndex_startcamp || _index == kIndex_L25_End)
+                finalThreshold = Distance::WAYPOINT_NEAR_2D_STICKY;
+
+            if (distToFinal.value_or(0.0f) > finalThreshold || 
                 fabs(me->GetPositionZ() - finalPos->GetPositionZ()) > Distance::WAYPOINT_NEAR_Z)
             {
                 // Snap one more hop to the exact final location before landing
@@ -1711,9 +1781,26 @@ public:
             float x = finalPos->GetPositionX();
             float y = finalPos->GetPositionY();
             float z = finalPos->GetPositionZ();
-            me->UpdateGroundPositionZ(x, y, z);
-            Position landPos = { x, y, z + Debug::LANDING_HEIGHT_OFFSET, finalPos->GetOrientation() };
             
+            // Attempt to find ground Z, but fallback to waypoint Z if it fails or returns garbage
+            float groundZ = z;
+            me->UpdateGroundPositionZ(x, y, groundZ);
+            
+            // Sanity check for groundZ (valid range for WoW coordinates)
+            if (groundZ < -500.0f || groundZ > 2000.0f || !std::isfinite(groundZ))
+            {
+                if (Player* p = GetCachedPassenger())
+                    if (p->IsGameMaster())
+                        ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Invalid ground Z detected (%.2f). Using waypoint Z.", groundZ);
+                groundZ = z;
+            }
+            
+            Position landPos = { x, y, groundZ + Debug::LANDING_HEIGHT_OFFSET, finalPos->GetOrientation() };
+            
+            if (Player* p = GetCachedPassenger())
+                if (p->IsGameMaster())
+                    ChatHandler(p->GetSession()).PSendSysMessage("[Flight Debug] Initiating landing at %.2f, %.2f, %.2f.", landPos.GetPositionX(), landPos.GetPositionY(), landPos.GetPositionZ());
+
             _stateMachine.TransitionTo(FlightState::Landing, FlightEvent::StartLanding);
             me->GetMotionMaster()->MoveLand(POINT_LAND_FINAL, landPos, Speed::LAND_APPROACH_SPEED);
             
@@ -1845,12 +1932,12 @@ public:
     {
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
-        FlightRouteMode mode = ROUTE_TOUR;
-        if (action == GA_TOUR_25) mode = ROUTE_TOUR;
-        else if (action == GA_L40_DIRECT) mode = ROUTE_L40_DIRECT;
-        else if (action == GA_L0_TO_57) mode = ROUTE_L0_TO_57;
+        uint32 destNode = 0;
+        if (action == GA_TOUR_25) destNode = DBC_TAXI_NODE_L25;
+        else if (action == GA_L40_DIRECT) destNode = DBC_TAXI_NODE_L40;
+        else if (action == GA_L0_TO_57) destNode = DBC_TAXI_NODE_L60;
         else return true;
-        SummonTaxiAndStart(player, creature, mode);
+        StartDbcTaxiFlight(player, creature, DBC_TAXI_NODE_CAMP, destNode);
         return true;
     }
 };
@@ -1876,12 +1963,12 @@ public:
     {
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
-        FlightRouteMode mode = ROUTE_RETURN;
-        if (action == GA_RETURN_STARTCAMP) mode = ROUTE_RETURN;
-        else if (action == GA_L25_TO_40) mode = ROUTE_L25_TO_40;
-        else if (action == GA_L25_TO_60) mode = ROUTE_L25_TO_60;
+        uint32 destNode = 0;
+        if (action == GA_RETURN_STARTCAMP) destNode = DBC_TAXI_NODE_CAMP;
+        else if (action == GA_L25_TO_40) destNode = DBC_TAXI_NODE_L40;
+        else if (action == GA_L25_TO_60) destNode = DBC_TAXI_NODE_L60;
         else return true;
-        SummonTaxiAndStart(player, creature, mode);
+        StartDbcTaxiFlight(player, creature, DBC_TAXI_NODE_L25, destNode);
         return true;
     }
 };
@@ -1907,12 +1994,12 @@ public:
     {
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
-        FlightRouteMode mode = ROUTE_L40_RETURN0;
-        if (action == GA_L40_BACK_TO_0) mode = ROUTE_L40_RETURN0;
-        else if (action == GA_L40_BACK_TO_25) mode = ROUTE_L40_RETURN25;
-        else if (action == GA_L40_SCENIC_40_TO_57) mode = ROUTE_L40_SCENIC;
+        uint32 destNode = 0;
+        if (action == GA_L40_BACK_TO_0) destNode = DBC_TAXI_NODE_CAMP;
+        else if (action == GA_L40_BACK_TO_25) destNode = DBC_TAXI_NODE_L25;
+        else if (action == GA_L40_SCENIC_40_TO_57) destNode = DBC_TAXI_NODE_L60;
         else return true;
-        SummonTaxiAndStart(player, creature, mode);
+        StartDbcTaxiFlight(player, creature, DBC_TAXI_NODE_L40, destNode);
         return true;
     }
 };
@@ -1938,12 +2025,12 @@ public:
     {
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
-        FlightRouteMode mode = ROUTE_L60_RETURN0;
-        if (action == GA_L60_BACK_TO_0) mode = ROUTE_L60_RETURN0;
-        else if (action == GA_L60_BACK_TO_25) mode = ROUTE_L60_RETURN19;
-        else if (action == GA_L60_BACK_TO_40) mode = ROUTE_L60_RETURN40;
+        uint32 destNode = 0;
+        if (action == GA_L60_BACK_TO_0) destNode = DBC_TAXI_NODE_CAMP;
+        else if (action == GA_L60_BACK_TO_25) destNode = DBC_TAXI_NODE_L25;
+        else if (action == GA_L60_BACK_TO_40) destNode = DBC_TAXI_NODE_L40;
         else return true;
-        SummonTaxiAndStart(player, creature, mode);
+        StartDbcTaxiFlight(player, creature, DBC_TAXI_NODE_L60, destNode);
         return true;
     }
 };

@@ -30,22 +30,22 @@ static uint8 FindNearestIndex(float x, float y, uint8 maxIndex)
 }
 
 // ============================================================================
-// RouteTour: Camp to Level 25+ (acfm1 -> acfm15)
+// RouteTour: Camp to Level 25+ (acfm1 -> L25_End)
 // ============================================================================
 
 uint8 RouteTour::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentZ;
-    uint8 nearest = FindNearestIndex(currentX, currentY, kIndex_acfm15);
-    // Clamp to acfm15 to avoid starting past classic section
-    if (nearest > kIndex_acfm15)
-        nearest = kIndex_acfm15;
+    uint8 nearest = FindNearestIndex(currentX, currentY, kIndex_L25_End);
+    // Clamp to L25_End to avoid starting past classic section
+    if (nearest > kIndex_L25_End)
+        nearest = kIndex_L25_End;
     return (nearest > 0) ? static_cast<uint8>(nearest - 1) : 0;
 }
 
 bool RouteTour::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm15)
+    if (currentIndex < kIndex_L25_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -55,7 +55,7 @@ bool RouteTour::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteTour::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm15;
+    return index >= kIndex_L25_End;
 }
 
 FlightRouteMode RouteTour::GetMode() const
@@ -64,16 +64,16 @@ FlightRouteMode RouteTour::GetMode() const
 }
 
 // ============================================================================
-// RouteL40Direct: Camp to Level 40+ (acfm1 -> acfm35)
+// RouteL40Direct: Camp to Level 40+ (acfm1 -> L40_End)
 // ============================================================================
 
 uint8 RouteL40Direct::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentZ;
-    // Check if near acfm35
-    float dist35 = Distance2D(currentX, currentY, kPath[kIndex_acfm35].GetPositionX(), kPath[kIndex_acfm35].GetPositionY());
+    // Check if near L40_End
+    float dist35 = Distance2D(currentX, currentY, kPath[kIndex_L40_End].GetPositionX(), kPath[kIndex_L40_End].GetPositionY());
     if (dist35 < Distance::START_NEARBY_THRESHOLD)
-        return kIndex_acfm35;
+        return kIndex_L40_End;
     
     // Otherwise start from beginning
     return 0;
@@ -81,7 +81,7 @@ uint8 RouteL40Direct::GetStartIndex(float currentX, float currentY, float curren
 
 bool RouteL40Direct::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm35)
+    if (currentIndex < kIndex_L40_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -91,7 +91,7 @@ bool RouteL40Direct::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteL40Direct::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm35;
+    return index >= kIndex_L40_End;
 }
 
 FlightRouteMode RouteL40Direct::GetMode() const
@@ -100,7 +100,7 @@ FlightRouteMode RouteL40Direct::GetMode() const
 }
 
 // ============================================================================
-// RouteL0To57: Camp to Level 60+ (acfm1 -> acfm57)
+// RouteL0To57: Camp to Level 60+ (acfm1 -> L60_End)
 // ============================================================================
 
 uint8 RouteL0To57::GetStartIndex(float currentX, float currentY, float currentZ) const
@@ -111,7 +111,7 @@ uint8 RouteL0To57::GetStartIndex(float currentX, float currentY, float currentZ)
 
 bool RouteL0To57::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm57)
+    if (currentIndex < kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -121,7 +121,7 @@ bool RouteL0To57::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteL0To57::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm57;
+    return index >= kIndex_L60_End;
 }
 
 FlightRouteMode RouteL0To57::GetMode() const
@@ -130,14 +130,15 @@ FlightRouteMode RouteL0To57::GetMode() const
 }
 
 // ============================================================================
-// RouteReturn: Level 25+ to Camp (acfm15 -> acfm0)
+// RouteReturn: Level 25+ to Camp (L25_End -> StartCamp)
 // ============================================================================
 
 uint8 RouteReturn::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
-    (void)currentZ;
-    uint8 nearest = FindNearestIndex(currentX, currentY, LastScenicIndex());
-    return nearest;
+    (void)currentX; (void)currentY; (void)currentZ;
+    // Always start from the designated L25 end point (18) to ensure the full return path is flown,
+    // even if the player is standing at the old L25 location (index 14).
+    return kIndex_L25_End;
 }
 
 bool RouteReturn::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
@@ -166,22 +167,22 @@ FlightRouteMode RouteReturn::GetMode() const
 }
 
 // ============================================================================
-// RouteL25To40: Level 25+ to Level 40+ (acfm19 -> acfm35)
+// RouteL25To40: Level 25+ to Level 40+ (L25_Start -> L40_End)
 // ============================================================================
 
 uint8 RouteL25To40::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentZ;
-    float dist19 = Distance2D(currentX, currentY, kPath[kIndex_acfm19].GetPositionX(), kPath[kIndex_acfm19].GetPositionY());
+    float dist19 = Distance2D(currentX, currentY, kPath[kIndex_L25_Start].GetPositionX(), kPath[kIndex_L25_Start].GetPositionY());
     
-    // If near acfm19, start one past it
+    // If near L25_Start, start one past it
     if (dist19 < Distance::START_NEARBY_THRESHOLD)
-        return static_cast<uint8>(kIndex_acfm19 + 1);
+        return static_cast<uint8>(kIndex_L25_Start + 1);
     
-    // If near acfm35, start one before it
-    float dist35 = Distance2D(currentX, currentY, kPath[kIndex_acfm35].GetPositionX(), kPath[kIndex_acfm35].GetPositionY());
+    // If near L40_End, start one before it
+    float dist35 = Distance2D(currentX, currentY, kPath[kIndex_L40_End].GetPositionX(), kPath[kIndex_L40_End].GetPositionY());
     if (dist35 < Distance::START_NEARBY_THRESHOLD)
-        return static_cast<uint8>(kIndex_acfm35 - 1);
+        return static_cast<uint8>(kIndex_L40_End - 1);
     
     // Default: start from beginning
     return 0;
@@ -189,7 +190,7 @@ uint8 RouteL25To40::GetStartIndex(float currentX, float currentY, float currentZ
 
 bool RouteL25To40::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm35)
+    if (currentIndex < kIndex_L40_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -199,7 +200,7 @@ bool RouteL25To40::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteL25To40::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm35;
+    return index >= kIndex_L40_End;
 }
 
 FlightRouteMode RouteL25To40::GetMode() const
@@ -208,23 +209,23 @@ FlightRouteMode RouteL25To40::GetMode() const
 }
 
 // ============================================================================
-// RouteL25To60: Level 25+ to Level 60+ (acfm19 -> acfm57)
+// RouteL25To60: Level 25+ to Level 60+ (L25_Start -> L60_End)
 // ============================================================================
 
 uint8 RouteL25To60::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentZ;
-    float dist19 = Distance2D(currentX, currentY, kPath[kIndex_acfm19].GetPositionX(), kPath[kIndex_acfm19].GetPositionY());
+    float dist19 = Distance2D(currentX, currentY, kPath[kIndex_L25_Start].GetPositionX(), kPath[kIndex_L25_Start].GetPositionY());
     
     if (dist19 < Distance::START_NEARBY_THRESHOLD)
-        return static_cast<uint8>(kIndex_acfm19 + 1);
+        return static_cast<uint8>(kIndex_L25_Start + 1);
     
     return 0;
 }
 
 bool RouteL25To60::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm57)
+    if (currentIndex < kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -234,7 +235,7 @@ bool RouteL25To60::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteL25To60::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm57;
+    return index >= kIndex_L60_End;
 }
 
 FlightRouteMode RouteL25To60::GetMode() const
@@ -243,18 +244,18 @@ FlightRouteMode RouteL25To60::GetMode() const
 }
 
 // ============================================================================
-// RouteL40Return25: Level 40+ to Level 25+ (acfm35 -> acfm19)
+// RouteL40Return25: Level 40+ to Level 25+ (L40_End -> L25_Start)
 // ============================================================================
 
 uint8 RouteL40Return25::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentX; (void)currentY; (void)currentZ;
-    return kIndex_acfm35;
+    return kIndex_L40_End;
 }
 
 bool RouteL40Return25::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex > kIndex_acfm19 && currentIndex <= kIndex_acfm35)
+    if (currentIndex > kIndex_L25_Start && currentIndex <= kIndex_L40_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex - 1);
         return true;
@@ -264,7 +265,7 @@ bool RouteL40Return25::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) con
 
 bool RouteL40Return25::IsFinalIndex(uint8 index) const
 {
-    return index <= kIndex_acfm19;
+    return index <= kIndex_L25_Start;
 }
 
 FlightRouteMode RouteL40Return25::GetMode() const
@@ -274,33 +275,33 @@ FlightRouteMode RouteL40Return25::GetMode() const
 
 bool RouteL40Return25::ShouldBypassAnchor(uint8 anchorIndex, uint8& outBypassIndex) const
 {
-    // Descending routes should bypass acfm19 -> acfm15
-    if (anchorIndex == kIndex_acfm19)
+    // Descending routes should bypass L25_Start -> L25_End
+    if (anchorIndex == kIndex_L25_Start)
     {
-        outBypassIndex = kIndex_acfm15;
+        outBypassIndex = kIndex_L25_End;
         return true;
     }
     return false;
 }
 
 // ============================================================================
-// RouteL40Scenic: Level 40+ to Level 60+ (acfm40 -> acfm57)
+// RouteL40Scenic: Level 40+ to Level 60+ (L40_Start -> L60_End)
 // ============================================================================
 
 uint8 RouteL40Scenic::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentZ;
-    float dist40 = Distance2D(currentX, currentY, kPath[kIndex_acfm40].GetPositionX(), kPath[kIndex_acfm40].GetPositionY());
+    float dist40 = Distance2D(currentX, currentY, kPath[kIndex_L40_Start].GetPositionX(), kPath[kIndex_L40_Start].GetPositionY());
     
     if (dist40 < Distance::START_NEARBY_THRESHOLD)
-        return static_cast<uint8>(kIndex_acfm40 + 1);
+        return static_cast<uint8>(kIndex_L40_Start + 1);
     
     return 0;
 }
 
 bool RouteL40Scenic::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex < kIndex_acfm57)
+    if (currentIndex < kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex + 1);
         return true;
@@ -310,7 +311,7 @@ bool RouteL40Scenic::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 
 bool RouteL40Scenic::IsFinalIndex(uint8 index) const
 {
-    return index >= kIndex_acfm57;
+    return index >= kIndex_L60_End;
 }
 
 FlightRouteMode RouteL40Scenic::GetMode() const
@@ -319,18 +320,18 @@ FlightRouteMode RouteL40Scenic::GetMode() const
 }
 
 // ============================================================================
-// RouteL60Return40: Level 60+ to Level 40+ (acfm57 -> acfm40)
+// RouteL60Return40: Level 60+ to Level 40+ (L60_End -> L40_Start)
 // ============================================================================
 
 uint8 RouteL60Return40::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentX; (void)currentY; (void)currentZ;
-    return kIndex_acfm57;
+    return kIndex_L60_End;
 }
 
 bool RouteL60Return40::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex > kIndex_acfm40 && currentIndex <= kIndex_acfm57)
+    if (currentIndex > kIndex_L40_Start && currentIndex <= kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex - 1);
         return true;
@@ -340,7 +341,7 @@ bool RouteL60Return40::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) con
 
 bool RouteL60Return40::IsFinalIndex(uint8 index) const
 {
-    return index <= kIndex_acfm40;
+    return index <= kIndex_L40_Start;
 }
 
 FlightRouteMode RouteL60Return40::GetMode() const
@@ -349,18 +350,18 @@ FlightRouteMode RouteL60Return40::GetMode() const
 }
 
 // ============================================================================
-// RouteL60Return19: Level 60+ to Level 25+ (acfm57 -> acfm19)
+// RouteL60Return19: Level 60+ to Level 25+ (L60_End -> L25_Start)
 // ============================================================================
 
 uint8 RouteL60Return19::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentX; (void)currentY; (void)currentZ;
-    return kIndex_acfm57;
+    return kIndex_L60_End;
 }
 
 bool RouteL60Return19::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex > kIndex_acfm19 && currentIndex <= kIndex_acfm57)
+    if (currentIndex > kIndex_L25_Start && currentIndex <= kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex - 1);
         return true;
@@ -370,7 +371,7 @@ bool RouteL60Return19::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) con
 
 bool RouteL60Return19::IsFinalIndex(uint8 index) const
 {
-    return index <= kIndex_acfm19;
+    return index <= kIndex_L25_Start;
 }
 
 FlightRouteMode RouteL60Return19::GetMode() const
@@ -380,27 +381,27 @@ FlightRouteMode RouteL60Return19::GetMode() const
 
 bool RouteL60Return19::ShouldBypassAnchor(uint8 anchorIndex, uint8& outBypassIndex) const
 {
-    if (anchorIndex == kIndex_acfm19)
+    if (anchorIndex == kIndex_L25_Start)
     {
-        outBypassIndex = kIndex_acfm15;
+        outBypassIndex = kIndex_L25_End;
         return true;
     }
     return false;
 }
 
 // ============================================================================
-// RouteL60Return0: Level 60+ to Camp (acfm57 -> acfm0)
+// RouteL60Return0: Level 60+ to Camp (L60_End -> StartCamp)
 // ============================================================================
 
 uint8 RouteL60Return0::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentX; (void)currentY; (void)currentZ;
-    return kIndex_acfm57;
+    return kIndex_L60_End;
 }
 
 bool RouteL60Return0::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex > 0 && currentIndex <= kIndex_acfm57)
+    if (currentIndex > 0 && currentIndex <= kIndex_L60_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex - 1);
         return true;
@@ -425,32 +426,32 @@ FlightRouteMode RouteL60Return0::GetMode() const
 
 bool RouteL60Return0::ShouldBypassAnchor(uint8 anchorIndex, uint8& outBypassIndex) const
 {
-    if (anchorIndex == kIndex_acfm19)
+    if (anchorIndex == kIndex_L25_Start)
     {
-        outBypassIndex = kIndex_acfm15;
+        outBypassIndex = kIndex_L25_End;
         return true;
     }
     return false;
 }
 
 // ============================================================================
-// RouteL40Return0: Level 40+ to Camp (acfm35 -> acfm0)
+// RouteL40Return0: Level 40+ to Camp (L40_End -> StartCamp)
 // ============================================================================
 
 uint8 RouteL40Return0::GetStartIndex(float currentX, float currentY, float currentZ) const
 {
     (void)currentX; (void)currentY; (void)currentZ;
-    return kIndex_acfm35;
+    return kIndex_L40_End;
 }
 
 bool RouteL40Return0::GetNextIndex(uint8 currentIndex, uint8& outNextIndex) const
 {
-    if (currentIndex > 0 && currentIndex <= kIndex_acfm35)
+    if (currentIndex > 0 && currentIndex <= kIndex_L40_End)
     {
         outNextIndex = static_cast<uint8>(currentIndex - 1);
-        // Skip acfm19 when descending
-        if (outNextIndex == kIndex_acfm19)
-            outNextIndex = kIndex_acfm15;
+        // Skip L25_Start when descending
+        if (outNextIndex == kIndex_L25_Start)
+            outNextIndex = kIndex_L25_End;
         return true;
     }
     else if (currentIndex == 0)
@@ -473,9 +474,9 @@ FlightRouteMode RouteL40Return0::GetMode() const
 
 bool RouteL40Return0::ShouldBypassAnchor(uint8 anchorIndex, uint8& outBypassIndex) const
 {
-    if (anchorIndex == kIndex_acfm19)
+    if (anchorIndex == kIndex_L25_Start)
     {
-        outBypassIndex = kIndex_acfm15;
+        outBypassIndex = kIndex_L25_End;
         return true;
     }
     return false;

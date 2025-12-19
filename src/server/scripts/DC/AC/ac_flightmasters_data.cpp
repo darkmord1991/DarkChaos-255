@@ -2,22 +2,48 @@
 #include "Position.h"
 
 Position const kPath[] = {
-    { 137.1860f, 954.9300f, 327.5140f, 0.327798f },
-    { 269.8730f, 827.0230f, 289.0940f, 5.185540f },
-    { 267.8360f, 717.6040f, 291.3220f, 4.173980f },
-    { 198.4970f, 627.0770f, 293.5140f, 4.087590f },
-    { 117.5790f, 574.0660f, 297.4290f, 2.723360f },
-    { 11.1490f, 598.8440f, 284.8780f, 4.851790f },
-    { 33.1020f, 542.8160f, 291.3630f, 5.169860f },
-    { 42.6800f, 499.4120f, 315.3510f, 5.323030f },
-    { 64.4858f, 485.8540f, 328.2840f, 5.758730f },
-    { 80.5593f, 444.3300f, 338.0710f, 4.785630f },
-    { 69.1581f, 403.6100f, 335.2570f, 4.257060f },
-    { 36.7813f, 383.8160f, 320.9390f, 3.294960f },
-    { 4.0747f, 388.9040f, 310.3970f, 2.729470f },
-    { -12.7592f, 405.7640f, 307.0690f, 2.060310f },
-    { -18.4005f, 416.3530f, 307.4260f, 2.060310f },
+    // Camp to Level 25 (New coordinates)
+    { 72.20501f, 933.05414f, 344.008f, 0.43402696f },
+    { 85.137665f, 938.72473f, 340.328f, 0.73169297f },
+    { 98.16486f, 959.1172f, 333.261f, 1.0929762f },
+    { 104.25571f, 970.87915f, 328.72687f, 1.0929762f },
+    { 137.74155f, 985.01965f, 319.19788f, 6.033133f },
+    { 165.38466f, 969.68286f, 310.6464f, 5.5736904f },
+    { 175.33064f, 961.14276f, 305.73276f, 5.5736904f },
+    { 197.36015f, 931.62445f, 294.03082f, 5.2045603f },
+    { 211.72496f, 908.08624f, 289.49268f, 5.302729f },
+    { 226.48721f, 884.4441f, 287.32257f, 5.275242f },
+    { 241.42621f, 860.76636f, 286.88425f, 5.275242f },
+    { 256.3652f, 837.0886f, 286.44595f, 5.275242f },
+    { 272.9618f, 806.08203f, 287.66794f, 5.0906835f },
+    { 279.88235f, 787.4412f, 289.9211f, 4.8126526f },
+    { 280.60355f, 761.75165f, 292.8414f, 4.4780726f },
+    { 275.70215f, 741.6444f, 295.18268f, 4.3484817f },
+    { 270.75073f, 728.6441f, 296.75613f, 4.3484817f },
+    { 263.4317f, 709.91705f, 299.03134f, 4.1764793f },
+    { 244.85925f, 684.7479f, 302.58734f, 3.969134f },
+    { 229.35776f, 667.7132f, 305.19296f, 4.1081495f },
+    { 218.82945f, 652.0764f, 307.32657f, 4.3013577f },
+    { 194.89029f, 608.1211f, 313.0036f, 4.148205f },
+    { 180.56284f, 592.3687f, 315.4267f, 3.896092f },
+    { 167.2178f, 584.63525f, 317.1764f, 3.4437025f },
+    { 146.84813f, 582.13904f, 319.52084f, 2.9842443f },
+    { 119.36925f, 586.49884f, 322.66776f, 2.9842443f },
+    { 78.15091f, 593.0385f, 327.3881f, 2.9842443f },
+    { 59.53268f, 595.84827f, 329.51855f, 3.1397533f },
+    { 25.692005f, 589.256f, 333.55286f, 4.0940123f },
+    { 18.740433f, 570.91077f, 335.82803f, 4.7702403f },
+    { 23.212633f, 548.43256f, 338.43365f, 4.8668447f },
+    { 27.089815f, 496.96326f, 339.7125f, 4.662652f },
+    { 25.299849f, 469.40338f, 335.26498f, 4.6390915f },
+    { 23.297552f, 442.1349f, 329.22998f, 4.6390915f },
+    { 21.295254f, 414.86642f, 323.195f, 4.6390915f },
+    { -7.0082026f, 378.97467f, 316.2475f, 3.5002775f },
+    { -26.267124f, 382.03073f, 313.57895f, 2.1101222f },
+    { -21.575489f, 400.50146f, 313.58752f, 1.167644f },
+    { -16.575891f, 412.41058f, 309.74927f, 1.2697458f },
 
+    // Level 25+ onwards (Existing coordinates shifted)
     { -20.3265f, 419.0570f, 308.2240f, 5.91598f },
     { 0.70243f,403.3250f, 313.2740f, 5.59253f },
     { 69.2940f, 343.8420f, 308.4380f, 5.55719f },
@@ -54,38 +80,29 @@ Position const kPath[] = {
     { 1051.0700f, 39.0495f, 334.1950f, 4.45447f },
     { 1049.7600f, 13.1380f, 330.9040f, 4.90214f },
     { 1070.1400f, -23.4705f, 330.2390f, 3.66827f },
-    { 73.2833f, 938.1900f, 341.0360f, 3.309180f }
+    { 123.732f, 976.912f, 295.085f, 1.16879f }
 };
 
-constexpr uint8 kPathLength = static_cast<uint8>(sizeof(kPath) / sizeof(kPath[0]));
-constexpr uint8 kIndex_startcamp = static_cast<uint8>(kPathLength - 1);
-uint8 LastScenicIndex()
-{
-    return static_cast<uint8>(kPathLength - 2);
-}
-constexpr uint8 kIndex_acfm15 = 14;
-constexpr uint8 kIndex_acfm19 = 15;
-constexpr uint8 kIndex_acfm35 = 31;
-constexpr uint8 kIndex_acfm40 = 32;
-constexpr uint8 kIndex_acfm57 = 49;
+// `kPathLength`, `kIndex_startcamp`, and `LastScenicIndex` are defined as
+// inline constexpr in `ac_flightmasters_data.h` to allow usage as constant
+// expressions in other headers (e.g., switch case labels). Keep the
+// runtime array `kPath` here only.
+// NOTE: kIndex_L25_End, kIndex_L25_Start, kIndex_L40_End, kIndex_L40_Start, and kIndex_L60_End
+// are now defined as inline constexpr in the header `ac_flightmasters_data.h` to enable
+// usage in other header-level constexpr contexts. Keep definitions here minimal to avoid ODR issues.
 
 std::string NodeLabel(uint8 idx)
 {
-    if (idx == kIndex_startcamp)
-        return "Startcamp";
-    if (idx <= 14)
-        return std::string("acfm") + std::to_string(static_cast<unsigned>(idx + 1));
-    if (idx >= 15 && idx <= 31)
-    {
-        unsigned n = 19u + static_cast<unsigned>(idx - 15);
-        return std::string("acfm") + std::to_string(n);
-    }
-    if (idx >= 32 && idx <= 48)
-    {
-        unsigned n = 40u + static_cast<unsigned>(idx - 32);
-        return std::string("acfm") + std::to_string(n);
-    }
-    if (idx == 49)
-        return std::string("acfm57");
-    return std::string("acfm?");
+    if (idx == kIndex_startcamp) return "Startcamp";
+    if (idx == kIndex_L25_End) return "L25_End";
+    if (idx == kIndex_L25_Start) return "L25_Start";
+    if (idx == kIndex_L40_End) return "L40_End";
+    if (idx == kIndex_L40_Start) return "L40_Start";
+    if (idx == kIndex_L60_End) return "L60_End";
+
+    // Give descriptive names to the new L25 leg points
+    if (idx < kIndex_L25_End)
+        return "L25_Leg_" + std::to_string(idx + 1);
+
+    return std::string("acfm") + std::to_string(static_cast<unsigned>(idx + 1));
 }
